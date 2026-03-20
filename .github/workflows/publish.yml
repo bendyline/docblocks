@@ -53,8 +53,6 @@ jobs:
       - name: Build site
         if: inputs.deploy_pages
         run: npm run build -w docblocks-site
-        env:
-          VITE_BASE: /docblocks/
 
       - name: Upload pages artifact
         if: inputs.deploy_pages
