@@ -1,0 +1,60 @@
+{
+  "name": "@bendyline/docblocks-react",
+  "version": "0.1.0",
+  "description": "React components for DocBlocks — file explorer, workspace picker, and editor shell",
+  "license": "MIT",
+  "author": "Bendyline",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendyline/docblocks.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/bendyline/docblocks",
+  "keywords": [
+    "docblocks",
+    "react",
+    "markdown",
+    "file-explorer",
+    "editor"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles": "./src/styles/docblocks.css"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@bendyline/docblocks": "0.1.0",
+    "@bendyline/squisq-editor-react": "^1.1.0",
+    "@bendyline/squisq-react": "^1.0.2",
+    "@bendyline/squisq": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "@bendyline/docblocks-cli",
+  "version": "0.1.0",
+  "description": "DocBlocks CLI — build, serve, and manage markdown document projects",
+  "license": "MIT",
+  "author": "Bendyline",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendyline/docblocks.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/bendyline/docblocks",
+  "keywords": [
+    "docblocks",
+    "cli",
+    "markdown"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "docblocks": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bendyline/squisq": "^1.1.0",
+    "commander": "^13.0.0"
+  }
+}

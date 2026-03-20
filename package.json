@@ -1,0 +1,44 @@
+{
+  "name": "docblocks",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "all": "npm install && npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
+    "build": "npm run build:core && npm run build:react && npm run build:cli",
+    "build:core": "npm run build -w @bendyline/docblocks",
+    "build:react": "npm run build -w @bendyline/docblocks-react",
+    "build:cli": "npm run build -w @bendyline/docblocks-cli",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "site": "npm run build && npm run dev -w docblocks-site",
+    "dev": "npm run dev -w docblocks-site",
+    "typecheck": "tsc -b packages/core packages/react packages/cli",
+    "clean": "rimraf packages/*/dist",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@eslint/js": "^9.0.0",
+    "@playwright/test": "^1.58.2",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.0",
+    "eslint-plugin-sonarjs": "^4.0.2",
+    "globals": "^15.0.0",
+    "prettier": "^3.0.0",
+    "rimraf": "^5.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^2.0.0"
+  }
+}

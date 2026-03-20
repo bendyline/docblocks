@@ -1,0 +1,54 @@
+{
+  "name": "@bendyline/docblocks",
+  "version": "0.1.0",
+  "description": "Core data structures and filesystem abstractions for DocBlocks",
+  "license": "MIT",
+  "author": "Bendyline",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendyline/docblocks.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/bendyline/docblocks",
+  "keywords": [
+    "docblocks",
+    "markdown",
+    "filesystem",
+    "editor"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./filesystem": {
+      "types": "./dist/filesystem/index.d.ts",
+      "import": "./dist/filesystem/index.js",
+      "default": "./dist/filesystem/index.js"
+    },
+    "./workspace": {
+      "types": "./dist/workspace/index.d.ts",
+      "import": "./dist/workspace/index.js",
+      "default": "./dist/workspace/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bendyline/squisq": "^1.1.0"
+  }
+}
