@@ -17,5 +17,9 @@ export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 export { DocBlocksShell } from './DocBlocksShell/index.js';
 export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 
+// AppMenu
+export { AppMenu } from './AppMenu/index.js';
+export type { AppMenuProps } from './AppMenu/index.js';
+
 // Hooks
 export { useAutoSave } from './hooks/index.js';

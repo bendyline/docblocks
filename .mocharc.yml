@@ -1,0 +1,3 @@
+spec: 'packages/*/test/**/*.test.ts'
+require: 'tsx'
+timeout: 10000

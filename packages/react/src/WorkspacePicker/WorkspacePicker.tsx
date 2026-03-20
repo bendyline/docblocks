@@ -5,11 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
-import {
-  listWorkspaces,
-  saveWorkspace,
-  touchWorkspace,
-} from '@bendyline/docblocks/workspace';
+import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
 
 export interface WorkspacePickerProps {

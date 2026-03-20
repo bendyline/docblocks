@@ -16,11 +16,7 @@ import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
 
 /** Normalise a path: strip leading/trailing slashes, collapse doubles. */
 function normalisePath(p: string): string {
-  return p
-    .replace(/\\/g, '/')
-    .replace(/\/+/g, '/')
-    .replace(/^\//, '')
-    .replace(/\/$/, '');
+  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
 }
 
 /** Get the parent directory of a path, or empty string for root-level. */

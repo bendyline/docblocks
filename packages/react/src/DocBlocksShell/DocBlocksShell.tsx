@@ -19,13 +19,19 @@ import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/f
 import {
   IndexedDBFileSystemProvider,
   openNativeFolder,
+  restoreNativeFolder,
+  removeDirectoryHandle,
 } from '@bendyline/docblocks/filesystem';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
+  getWorkspace,
+  listWorkspaces,
+  removeWorkspace,
   saveWorkspace,
   touchWorkspace,
 } from '@bendyline/docblocks/workspace';
+import { AppMenu } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
@@ -37,7 +43,8 @@ export interface DocBlocksShellProps {
 
 function useOsTheme(): 'light' | 'dark' {
   const [dark, setDark] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
+    () =>
+      typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
   );
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -65,9 +72,32 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
     [],
   );
 
-  // Initialise default workspace on mount
+  // Initialise workspace on mount — restore last-used (including native folders)
   useEffect(() => {
     (async () => {
+      const workspaces = await listWorkspaces();
+      // Pick the most recently opened workspace
+      const sorted = [...workspaces].sort((a, b) =>
+        (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
+      );
+      for (const ws of sorted) {
+        if (ws.type === 'native') {
+          const restored = await restoreNativeFolder(ws.id);
+          if (restored) {
+            await touchWorkspace(ws.id);
+            setProvider(restored);
+            setActiveWorkspaceId(ws.id);
+            return;
+          }
+        } else {
+          const fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
+          await touchWorkspace(ws.id);
+          setProvider(fsProvider);
+          setActiveWorkspaceId(ws.id);
+          return;
+        }
+      }
+      // No workspaces yet — create default
       const defaultWs = await ensureDefaultWorkspace();
       const fsProvider = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
       setProvider(fsProvider);
@@ -80,7 +110,15 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
 
   const handleWorkspaceSelect = useCallback(async (ws: WorkspaceDescriptor) => {
     await touchWorkspace(ws.id);
-    if (ws.type === 'indexeddb') {
+    if (ws.type === 'native') {
+      const restored = await restoreNativeFolder(ws.id);
+      if (restored) {
+        setProvider(restored);
+      } else {
+        // Permission denied or handle lost — fall through without changing provider
+        return;
+      }
+    } else {
       setProvider(new IndexedDBFileSystemProvider(ws.id, ws.name));
     }
     setActiveWorkspaceId(ws.id);
@@ -146,23 +184,98 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
     setEditorContent(source);
   }, []);
 
-  const isDark = resolvedTheme === 'dark';
+  const handleRenameWorkspace = useCallback(async () => {
+    if (!activeWorkspaceId) return;
+    const ws = await getWorkspace(activeWorkspaceId);
+    if (!ws) return;
+    const newName = prompt('Rename workspace:', ws.name);
+    if (!newName || newName === ws.name) return;
+    await saveWorkspace({ ...ws, name: newName });
+    if (provider && 'label' in provider) {
+      (provider as FileSystemProvider & { label: string }).label = newName;
+    }
+    // Force re-render by bumping editor key
+    setEditorKey((k) => k + 1);
+  }, [activeWorkspaceId, provider]);
+
+  const handleDownloadWorkspace = useCallback(async () => {
+    if (!provider) return;
+    try {
+      const entries = await provider.readDirectory('/');
+      const lines: string[] = [];
+      for (const entry of entries) {
+        if (entry.kind === 'file') {
+          const content = await provider.readFile(entry.path);
+          lines.push(`--- ${entry.path} ---\n${content ?? ''}\n`);
+        }
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'workspace.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // ignore
+    }
+  }, [provider]);
+
+  const handleRemoveWorkspace = useCallback(async () => {
+    if (!activeWorkspaceId) return;
+    if (!confirm('Remove this workspace? This cannot be undone.')) return;
+    await removeDirectoryHandle(activeWorkspaceId);
+    await removeWorkspace(activeWorkspaceId);
+    // Switch to most recent remaining workspace or create default
+    const remaining = await listWorkspaces();
+    if (remaining.length > 0) {
+      const next = remaining[0];
+      await handleWorkspaceSelect(next);
+    } else {
+      const defaultWs = await ensureDefaultWorkspace();
+      const fsProvider = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
+      setProvider(fsProvider);
+      setActiveWorkspaceId(defaultWs.id);
+      setSelectedFile(null);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setEditorContent('');
+      setEditorKey((k) => k + 1);
+    }
+  }, [activeWorkspaceId, handleWorkspaceSelect]);
 
   return (
-    <div
-      className="db-shell"
-      data-theme={resolvedTheme}
-    >
+    <div className="db-shell" data-theme={resolvedTheme}>
       {/* Main area */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left sidebar */}
         <div className="db-shell-sidebar">
-          <WorkspacePicker
-            activeWorkspaceId={activeWorkspaceId}
-            onSelect={handleWorkspaceSelect}
-            onOpenFolder={handleOpenFolder}
+          <div className="db-shell-sidebar-header">
+            <AppMenu
+              onRenameWorkspace={handleRenameWorkspace}
+              onDownloadWorkspace={handleDownloadWorkspace}
+              onRemoveWorkspace={handleRemoveWorkspace}
+            />
+            <WorkspacePicker
+              activeWorkspaceId={activeWorkspaceId}
+              onSelect={handleWorkspaceSelect}
+              onOpenFolder={handleOpenFolder}
+            />
+          </div>
+          <FileExplorer
+            provider={provider}
+            onSelect={handleSelect}
+            onTreeChange={handleTreeChange}
           />
-          <FileExplorer provider={provider} onSelect={handleSelect} onTreeChange={handleTreeChange} />
+          <div className="db-shell-sidebar-footer">
+            <a
+              href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Terms of Use
+            </a>
+          </div>
         </div>
 
         {/* Editor area */}

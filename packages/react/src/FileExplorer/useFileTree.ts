@@ -36,9 +36,7 @@ export interface FileTreeActions {
   refresh: () => Promise<void>;
 }
 
-export function useFileTree(
-  provider: FileSystemProvider | null,
-): FileTreeState & FileTreeActions {
+export function useFileTree(provider: FileSystemProvider | null): FileTreeState & FileTreeActions {
   const [entries, setEntries] = useState<FileSystemEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);

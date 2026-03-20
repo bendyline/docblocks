@@ -12,4 +12,8 @@ export {
   NativeFileSystemProvider,
   isNativeFileSystemSupported,
   openNativeFolder,
+  restoreNativeFolder,
+  storeDirectoryHandle,
+  loadDirectoryHandle,
+  removeDirectoryHandle,
 } from './native-provider.js';

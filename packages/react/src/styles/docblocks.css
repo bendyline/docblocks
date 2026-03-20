@@ -259,8 +259,8 @@
 
 .db-workspace-picker {
   position: relative;
-  padding: 8px;
-  border-bottom: 1px solid var(--db-border);
+  flex: 1;
+  min-width: 0;
 }
 
 .db-workspace-picker-btn {
@@ -334,6 +334,80 @@
   margin: 4px 0;
 }
 
+/* ── App Menu ────────────────────────────────────────────────── */
+
+.db-app-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.db-app-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--db-text);
+  border-radius: 4px;
+}
+
+.db-app-menu-btn:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-app-menu-caret {
+  font-size: 10px;
+  color: var(--db-text-muted);
+}
+
+.db-app-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 70;
+  min-width: 200px;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+  padding: 4px 0;
+}
+
+.db-app-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 13px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--db-text-secondary);
+  text-decoration: none;
+}
+
+.db-app-menu-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-app-menu-item--danger {
+  color: var(--db-danger);
+}
+
+.db-app-menu-item--danger:hover {
+  background: var(--db-danger-bg);
+}
+
+.db-app-menu-divider {
+  height: 1px;
+  background: var(--db-border);
+  margin: 4px 0;
+}
+
 /* ── DocBlocks Shell ─────────────────────────────────────────── */
 
 .db-shell {
@@ -342,7 +416,15 @@
   height: 100vh;
   background: var(--db-bg);
   color: var(--db-text);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
 }
 
 .db-shell-topbar {
@@ -366,6 +448,32 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+}
+
+.db-shell-sidebar-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--db-border);
+  padding: 4px;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.db-shell-sidebar-footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--db-border);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.db-shell-sidebar-footer a {
+  color: var(--db-text-muted);
+  text-decoration: none;
+}
+
+.db-shell-sidebar-footer a:hover {
+  color: var(--db-text-secondary);
+  text-decoration: underline;
 }
 
 .db-shell-empty {

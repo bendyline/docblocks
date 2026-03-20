@@ -14,14 +14,82 @@ export function isNativeFileSystemSupported(): boolean {
   return typeof globalThis !== 'undefined' && 'showDirectoryPicker' in globalThis;
 }
 
+// ── Handle persistence (IndexedDB, structured clone) ───────────────
+
+const HANDLE_DB_NAME = 'docblocks-handles';
+const HANDLE_STORE_NAME = 'directory-handles';
+
+function openHandleDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HANDLE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(HANDLE_STORE_NAME);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Persist a FileSystemDirectoryHandle so it survives page reloads. */
+export async function storeDirectoryHandle(
+  workspaceId: string,
+  handle: FileSystemDirectoryHandle,
+): Promise<void> {
+  const db = await openHandleDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE_NAME, 'readwrite');
+    tx.objectStore(HANDLE_STORE_NAME).put(handle, workspaceId);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+/** Retrieve a previously stored handle. Returns null if not found. */
+export async function loadDirectoryHandle(
+  workspaceId: string,
+): Promise<FileSystemDirectoryHandle | null> {
+  const db = await openHandleDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE_NAME, 'readonly');
+    const req = tx.objectStore(HANDLE_STORE_NAME).get(workspaceId);
+    req.onsuccess = () => {
+      db.close();
+      resolve(req.result ?? null);
+    };
+    req.onerror = () => {
+      db.close();
+      reject(req.error);
+    };
+  });
+}
+
+/** Remove a stored handle (e.g. when deleting a workspace). */
+export async function removeDirectoryHandle(workspaceId: string): Promise<void> {
+  const db = await openHandleDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(HANDLE_STORE_NAME, 'readwrite');
+    tx.objectStore(HANDLE_STORE_NAME).delete(workspaceId);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 function normalisePath(p: string): string {
-  return p
-    .replace(/\\/g, '/')
-    .replace(/\/+/g, '/')
-    .replace(/^\//, '')
-    .replace(/\/$/, '');
+  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
 }
 
 /**
@@ -143,7 +211,9 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     if (!dir) return [];
 
     const entries: FileSystemEntry[] = [];
-    for await (const [name, handle] of (dir as unknown as AsyncIterable<[string, FileSystemHandle]>)) {
+    for await (const [name, handle] of dir as unknown as AsyncIterable<
+      [string, FileSystemHandle]
+    >) {
       const entryPath = p ? `${p}/${name}` : name;
       if (handle.kind === 'directory') {
         entries.push({ kind: 'directory', name, path: entryPath });
@@ -234,6 +304,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
 /**
  * Prompt the user to pick a local folder and return a NativeFileSystemProvider.
+ * The directory handle is persisted in IndexedDB so it can be restored later.
  * Throws if the user cancels or the API is unsupported.
  */
 export async function openNativeFolder(): Promise<NativeFileSystemProvider> {
@@ -241,7 +312,37 @@ export async function openNativeFolder(): Promise<NativeFileSystemProvider> {
     throw new Error('File System Access API is not supported in this browser');
   }
 
-  const handle = await (globalThis as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker();
+  const handle = await (
+    globalThis as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }
+  ).showDirectoryPicker();
   const id = `native-${handle.name}-${Date.now()}`;
+  await storeDirectoryHandle(id, handle);
   return new NativeFileSystemProvider(id, handle);
+}
+
+/**
+ * Restore a previously opened native folder from a persisted handle.
+ * Re-requests read/write permission (browser will show a prompt).
+ * Returns null if the handle is not found or permission is denied.
+ */
+export async function restoreNativeFolder(
+  workspaceId: string,
+): Promise<NativeFileSystemProvider | null> {
+  const handle = await loadDirectoryHandle(workspaceId);
+  if (!handle) return null;
+
+  // Verify/request permission
+  const opts = { mode: 'readwrite' as const };
+  const h = handle as FileSystemDirectoryHandle & {
+    queryPermission(desc: { mode: string }): Promise<string>;
+    requestPermission(desc: { mode: string }): Promise<string>;
+  };
+  if ((await h.queryPermission(opts)) === 'granted') {
+    return new NativeFileSystemProvider(workspaceId, handle);
+  }
+  if ((await h.requestPermission(opts)) === 'granted') {
+    return new NativeFileSystemProvider(workspaceId, handle);
+  }
+
+  return null;
 }

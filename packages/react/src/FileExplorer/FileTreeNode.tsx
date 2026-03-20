@@ -135,7 +135,10 @@ export function FileTreeNode({
           <button className="db-tree-context-item" onClick={handleRenameStart}>
             Rename
           </button>
-          <button className="db-tree-context-item db-tree-context-item--danger" onClick={handleDeleteClick}>
+          <button
+            className="db-tree-context-item db-tree-context-item--danger"
+            onClick={handleDeleteClick}
+          >
             Delete
           </button>
         </div>

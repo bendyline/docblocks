@@ -59,9 +59,7 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
     const name = newItemName.trim();
     // Scope to currently selected folder (or root)
     const prefix =
-      tree.selectedKind === 'directory' && tree.selectedPath
-        ? `${tree.selectedPath}/`
-        : '';
+      tree.selectedKind === 'directory' && tree.selectedPath ? `${tree.selectedPath}/` : '';
     if (newItemType === 'file') {
       const filename = name.endsWith('.md') ? name : `${name}.md`;
       await tree.createFile(`${prefix}${filename}`, '');
@@ -108,7 +106,7 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
             title="New File"
             aria-label="New File"
           >
-            + F
+            + F
           </button>
           <button
             className="db-explorer-btn"
@@ -116,7 +114,7 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
             title="New Folder"
             aria-label="New Folder"
           >
-            + D
+            + D
           </button>
           <button
             className="db-explorer-btn"
@@ -152,10 +150,10 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
               }}
               autoFocus
             />
-            {newItemType === 'file' && (
-              <span className="db-new-item-suffix">.md</span>
-            )}
-            <button type="submit" className="db-new-item-add">Add</button>
+            {newItemType === 'file' && <span className="db-new-item-suffix">.md</span>}
+            <button type="submit" className="db-new-item-add">
+              Add
+            </button>
           </form>
         </div>
       )}

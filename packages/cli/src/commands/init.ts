@@ -22,10 +22,7 @@ export const initCommand = new Command('init')
       version: '0.1.0',
     };
 
-    fs.writeFileSync(
-      path.join(configDir, 'config.json'),
-      JSON.stringify(config, null, 2) + '\n',
-    );
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify(config, null, 2) + '\n');
 
     console.error(`Initialized DocBlocks workspace in ${targetDir}`);
   });
