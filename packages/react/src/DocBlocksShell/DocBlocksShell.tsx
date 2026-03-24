@@ -5,9 +5,9 @@
  * the center editor area (squisq EditorShell).
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
-import type { EditorTheme } from '@bendyline/squisq-editor-react';
+import type { EditorTheme, EditorView } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
@@ -55,6 +55,29 @@ function useOsTheme(): 'light' | 'dark' {
   return dark ? 'dark' : 'light';
 }
 
+/** Encode workspace + optional file path into a URL hash. */
+function buildHash(workspaceId: string, filePath?: string | null): string {
+  const ws = encodeURIComponent(workspaceId);
+  if (!filePath) return `#${ws}`;
+  // Strip leading slash for cleaner URLs
+  const fp = filePath.replace(/^\//, '');
+  return `#${ws}/${encodeURIComponent(fp)}`;
+}
+
+/** Decode the current URL hash into workspace id + file path. */
+function parseHash(): { workspaceId: string; filePath: string | null } | null {
+  const raw = window.location.hash.slice(1); // strip #
+  if (!raw) return null;
+  const slashIdx = raw.indexOf('/');
+  if (slashIdx === -1) {
+    return { workspaceId: decodeURIComponent(raw), filePath: null };
+  }
+  return {
+    workspaceId: decodeURIComponent(raw.slice(0, slashIdx)),
+    filePath: '/' + decodeURIComponent(raw.slice(slashIdx + 1)),
+  };
+}
+
 export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const resolvedTheme: 'light' | 'dark' = theme === 'auto' ? osTheme : theme;
@@ -65,6 +88,9 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
   const [editorContent, setEditorContent] = useState('');
   const [editorKey, setEditorKey] = useState(0);
+  const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
+  /** Suppress popstate handling during programmatic navigation. */
+  const skipPopState = useRef(false);
 
   /** MediaProvider backed by an in-memory container. */
   const mediaProvider = useMemo<MediaProvider>(
@@ -72,9 +98,78 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
     [],
   );
 
-  // Initialise workspace on mount — restore last-used (including native folders)
+  /** Push a new history entry with the given hash. */
+  const pushHash = useCallback((wsId: string, filePath?: string | null) => {
+    const hash = buildHash(wsId, filePath);
+    if (window.location.hash !== hash) {
+      skipPopState.current = true;
+      window.history.pushState(null, '', hash);
+    }
+  }, []);
+
+  /** Open a workspace (and optionally a file) from identifiers. */
+  const openFromIds = useCallback(
+    async (wsId: string, filePath: string | null, push: boolean) => {
+      const workspaces = await listWorkspaces();
+      const ws = workspaces.find((w) => w.id === wsId);
+      if (!ws) return false;
+
+      let fsProvider: FileSystemProvider | null = null;
+      if (ws.type === 'native') {
+        const restored = await restoreNativeFolder(ws.id);
+        if (!restored) return false;
+        fsProvider = restored;
+      } else {
+        fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
+      }
+      await touchWorkspace(ws.id);
+      setProvider(fsProvider);
+      setActiveWorkspaceId(ws.id);
+
+      if (filePath) {
+        const content = await fsProvider.readFile(filePath);
+        if (content !== null) {
+          setSelectedFile(filePath);
+          setSelectedFolder(null);
+          setFolderEntries([]);
+          setEditorContent(content);
+          setInitialView('wysiwyg');
+          setEditorKey((k) => k + 1);
+        } else {
+          setSelectedFile(null);
+          setSelectedFolder(null);
+          setFolderEntries([]);
+          setEditorContent('');
+          setEditorKey((k) => k + 1);
+        }
+      } else {
+        setSelectedFile(null);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+        setEditorContent('');
+        setEditorKey((k) => k + 1);
+      }
+
+      if (push) {
+        pushHash(ws.id, filePath);
+      }
+      return true;
+    },
+    [pushHash],
+  );
+
+  // Initialise workspace on mount — restore from hash or last-used
   useEffect(() => {
     (async () => {
+      // Try restoring from URL hash first
+      const hashState = parseHash();
+      if (hashState) {
+        const ok = await openFromIds(hashState.workspaceId, hashState.filePath, false);
+        if (ok) return;
+      }
+
+      let fsProvider: FileSystemProvider | null = null;
+
       const workspaces = await listWorkspaces();
       // Pick the most recently opened workspace
       const sorted = [...workspaces].sort((a, b) =>
@@ -85,25 +180,89 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
           const restored = await restoreNativeFolder(ws.id);
           if (restored) {
             await touchWorkspace(ws.id);
+            fsProvider = restored;
             setProvider(restored);
             setActiveWorkspaceId(ws.id);
-            return;
+            break;
           }
         } else {
-          const fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
+          const p = new IndexedDBFileSystemProvider(ws.id, ws.name);
           await touchWorkspace(ws.id);
-          setProvider(fsProvider);
+          fsProvider = p;
+          setProvider(p);
           setActiveWorkspaceId(ws.id);
-          return;
+          break;
         }
       }
-      // No workspaces yet — create default
-      const defaultWs = await ensureDefaultWorkspace();
-      const fsProvider = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
-      setProvider(fsProvider);
-      setActiveWorkspaceId(defaultWs.id);
+
+      if (!fsProvider) {
+        // No workspaces yet — create default
+        const defaultWs = await ensureDefaultWorkspace();
+        const p = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
+        fsProvider = p;
+        setProvider(p);
+        setActiveWorkspaceId(defaultWs.id);
+      }
+
+      // Set initial hash
+      pushHash(fsProvider.id, null);
+
+      // Seed welcome file if workspace is empty
+      await seedWelcomeFile(fsProvider);
     })();
   }, []);
+
+  const seedWelcomeFile = useCallback(async (fs: FileSystemProvider) => {
+    const entries = await fs.readDirectory('/');
+    if (entries.length > 0) return;
+
+    const welcomePath = '/aboutDocblocks.md';
+    const welcomeContent = [
+      '# Welcome to DocBlocks',
+      '',
+      'DocBlocks is a browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser.',
+      '',
+      '## Features',
+      '',
+      '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime',
+      '- **Workspaces** — Organize your documents into separate workspaces',
+      '- **Local Storage** — Your documents are stored securely in your browser',
+      '- **Native Folders** — Open folders from your computer using the File System Access API',
+      '- **Dark Mode** — Automatically adapts to your system theme',
+      '- **No Account Required** — Everything runs locally in your browser',
+      '',
+      '## Getting Started',
+      '',
+      '1. Create a new file using the **New File** button in the sidebar',
+      '2. Start writing in markdown — the editor supports headings, lists, links, images, and more',
+      '3. Your work is saved automatically',
+      '',
+      'Built with [Squiggly Square](https://github.com/nicoth-in/squisq) by [Bendyline](https://bendyline.com).',
+    ].join('\n');
+
+    await fs.writeFile(welcomePath, welcomeContent);
+    setSelectedFile(welcomePath);
+    setEditorContent(welcomeContent);
+    setInitialView('preview');
+    setEditorKey((k) => k + 1);
+    pushHash(fs.id, welcomePath);
+  }, [pushHash]);
+
+  // Handle browser back/forward
+  useEffect(() => {
+    const onPopState = () => {
+      if (skipPopState.current) {
+        skipPopState.current = false;
+        return;
+      }
+      const hashState = parseHash();
+      if (hashState) {
+        openFromIds(hashState.workspaceId, hashState.filePath, false);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [openFromIds]);
 
   // Auto-save current file
   useAutoSave(provider, selectedFile, editorContent);
@@ -127,7 +286,8 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
     setFolderEntries([]);
     setEditorContent('');
     setEditorKey((k) => k + 1);
-  }, []);
+    pushHash(ws.id, null);
+  }, [pushHash]);
 
   const handleOpenFolder = useCallback(async () => {
     try {
@@ -146,14 +306,15 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
       setFolderEntries([]);
       setEditorContent('');
       setEditorKey((k) => k + 1);
+      pushHash(descriptor.id, null);
     } catch {
       // User cancelled or API not supported
     }
-  }, []);
+  }, [pushHash]);
 
   const handleSelect = useCallback(
     async (path: string, kind: 'file' | 'directory') => {
-      if (!provider) return;
+      if (!provider || !activeWorkspaceId) return;
 
       if (kind === 'directory') {
         setSelectedFile(null);
@@ -162,16 +323,19 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
         setFolderEntries(entries);
         setEditorContent('');
         setEditorKey((k) => k + 1);
+        pushHash(activeWorkspaceId, null);
       } else {
         const content = await provider.readFile(path);
         setSelectedFile(path);
         setSelectedFolder(null);
         setFolderEntries([]);
         setEditorContent(content ?? '');
+        setInitialView('wysiwyg');
         setEditorKey((k) => k + 1);
+        pushHash(activeWorkspaceId, path);
       }
     },
-    [provider],
+    [provider, activeWorkspaceId, pushHash],
   );
 
   const handleTreeChange = useCallback(async () => {
@@ -285,6 +449,7 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
               <EditorShell
                 key={`${selectedFile}-${editorKey}`}
                 initialMarkdown={editorContent}
+                initialView={initialView}
                 articleId={selectedFile}
                 onChange={handleEditorChange}
                 theme={resolvedTheme}

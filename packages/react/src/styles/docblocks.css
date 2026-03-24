@@ -98,9 +98,12 @@
   border: 1px solid transparent;
   border-radius: 3px;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 3px;
   font-size: 12px;
   color: var(--db-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .db-explorer-btn:hover {
@@ -174,7 +177,7 @@
 .db-tree-row {
   display: flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 6px 4px;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -483,6 +486,92 @@
   height: 100%;
   color: var(--db-text-placeholder);
   font-size: 14px;
+}
+
+/* ── Dialog ───────────────────────────────────────────────────── */
+
+.db-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.db-dialog {
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px var(--db-shadow);
+  width: 380px;
+  max-width: 90vw;
+}
+
+.db-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--db-text);
+}
+
+.db-dialog-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--db-text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.db-dialog-close:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-dialog-body {
+  padding: 16px 20px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--db-text-secondary);
+}
+
+.db-dialog-body p {
+  margin: 0 0 12px;
+}
+
+.db-dialog-body p:last-child {
+  margin-bottom: 0;
+}
+
+.db-dialog-body a {
+  color: var(--db-accent);
+  text-decoration: none;
+}
+
+.db-dialog-body a:hover {
+  text-decoration: underline;
+}
+
+.db-dialog-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-dialog-sep {
+  color: var(--db-text-placeholder);
 }
 
 /* ── Folder View ─────────────────────────────────────────────── */

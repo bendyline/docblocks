@@ -9,6 +9,7 @@ import { useCallback, useState } from 'react';
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { useFileTree } from './useFileTree.js';
 import { FileTreeNode } from './FileTreeNode.js';
+import { NewFileIcon, NewFolderIcon, RefreshIcon } from '../icons.js';
 
 export interface FileExplorerProps {
   /** The filesystem to display. */
@@ -106,7 +107,7 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
             title="New File"
             aria-label="New File"
           >
-            + F
+            <NewFileIcon />
           </button>
           <button
             className="db-explorer-btn"
@@ -114,15 +115,15 @@ export function FileExplorer({ provider, onSelect, onTreeChange, className }: Fi
             title="New Folder"
             aria-label="New Folder"
           >
-            + D
+            <NewFolderIcon />
           </button>
           <button
             className="db-explorer-btn"
             onClick={() => tree.refresh()}
-            title="Refresh"
-            aria-label="Refresh"
+            title="Refresh file list"
+            aria-label="Refresh file list"
           >
-            ↻
+            <RefreshIcon />
           </button>
         </div>
       </div>

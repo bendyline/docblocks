@@ -125,7 +125,9 @@ export function FileTreeNode({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="db-tree-label">{entry.name}</span>
+          <span className="db-tree-label">
+            {entry.name.endsWith('.md') ? entry.name.slice(0, -3) : entry.name}
+          </span>
         )}
       </div>
 
