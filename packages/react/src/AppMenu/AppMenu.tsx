@@ -11,12 +11,18 @@ export interface AppMenuProps {
   onRenameWorkspace: () => void;
   /** Called when "Download this workspace" is selected. */
   onDownloadWorkspace: () => void;
+  /** URL for the about page. */
+  aboutUrl?: string;
+  /** Optional logo image URL to display instead of the text label. */
+  logoUrl?: string;
 }
 
 export function AppMenu({
   onRemoveWorkspace,
   onRenameWorkspace,
   onDownloadWorkspace,
+  aboutUrl = '#about',
+  logoUrl,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -39,17 +45,20 @@ export function AppMenu({
   }, []);
 
   return (
-    <>
-      <div ref={menuRef} className="db-app-menu">
-        <button
-          className="db-app-menu-btn"
-          onClick={() => setIsOpen(!isOpen)}
-          aria-expanded={isOpen}
-          aria-haspopup="true"
-        >
+    <div ref={menuRef} className="db-app-menu">
+      <button
+        className="db-app-menu-btn"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+      >
+        {logoUrl ? (
+          <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
+        ) : (
           <span className="db-app-menu-label">docblocks</span>
-          <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
-        </button>
+        )}
+        <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
+      </button>
 
         {isOpen && (
           <div className="db-app-menu-dropdown" role="menu">

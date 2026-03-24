@@ -39,6 +39,8 @@ import { useAutoSave } from '../hooks/useAutoSave.js';
 export interface DocBlocksShellProps {
   /** Optional theme override. Omit or pass 'auto' to follow OS preference. */
   theme?: EditorTheme | 'auto';
+  /** Optional logo image URL for the app menu. */
+  logoUrl?: string;
 }
 
 function useOsTheme(): 'light' | 'dark' {
@@ -55,30 +57,7 @@ function useOsTheme(): 'light' | 'dark' {
   return dark ? 'dark' : 'light';
 }
 
-/** Encode workspace + optional file path into a URL hash. */
-function buildHash(workspaceId: string, filePath?: string | null): string {
-  const ws = encodeURIComponent(workspaceId);
-  if (!filePath) return `#${ws}`;
-  // Strip leading slash for cleaner URLs
-  const fp = filePath.replace(/^\//, '');
-  return `#${ws}/${encodeURIComponent(fp)}`;
-}
-
-/** Decode the current URL hash into workspace id + file path. */
-function parseHash(): { workspaceId: string; filePath: string | null } | null {
-  const raw = window.location.hash.slice(1); // strip #
-  if (!raw) return null;
-  const slashIdx = raw.indexOf('/');
-  if (slashIdx === -1) {
-    return { workspaceId: decodeURIComponent(raw), filePath: null };
-  }
-  return {
-    workspaceId: decodeURIComponent(raw.slice(0, slashIdx)),
-    filePath: '/' + decodeURIComponent(raw.slice(slashIdx + 1)),
-  };
-}
-
-export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
+export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const resolvedTheme: 'light' | 'dark' = theme === 'auto' ? osTheme : theme;
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
@@ -419,6 +398,7 @@ export function DocBlocksShell({ theme = 'auto' }: DocBlocksShellProps) {
               onRenameWorkspace={handleRenameWorkspace}
               onDownloadWorkspace={handleDownloadWorkspace}
               onRemoveWorkspace={handleRemoveWorkspace}
+              logoUrl={logoUrl}
             />
             <WorkspacePicker
               activeWorkspaceId={activeWorkspaceId}

@@ -362,8 +362,14 @@
   background: var(--db-bg-hover);
 }
 
+.db-app-menu-logo {
+  height: 20px;
+  width: auto;
+  display: block;
+}
+
 .db-app-menu-caret {
-  font-size: 10px;
+  font-size: 18px;
   color: var(--db-text-muted);
 }
 
