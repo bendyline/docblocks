@@ -57,6 +57,28 @@ function useOsTheme(): 'light' | 'dark' {
   return dark ? 'dark' : 'light';
 }
 
+/** Encode workspace + optional file path into a URL hash. */
+function buildHash(workspaceId: string, filePath?: string | null): string {
+  const ws = encodeURIComponent(workspaceId);
+  if (!filePath) return `#${ws}`;
+  const fp = filePath.replace(/^\//, '');
+  return `#${ws}/${encodeURIComponent(fp)}`;
+}
+
+/** Decode the current URL hash into workspace id + file path. */
+function parseHash(): { workspaceId: string; filePath: string | null } | null {
+  const raw = window.location.hash.slice(1);
+  if (!raw) return null;
+  const slashIdx = raw.indexOf('/');
+  if (slashIdx === -1) {
+    return { workspaceId: decodeURIComponent(raw), filePath: null };
+  }
+  return {
+    workspaceId: decodeURIComponent(raw.slice(0, slashIdx)),
+    filePath: '/' + decodeURIComponent(raw.slice(slashIdx + 1)),
+  };
+}
+
 export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const resolvedTheme: 'light' | 'dark' = theme === 'auto' ? osTheme : theme;

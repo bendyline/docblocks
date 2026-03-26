@@ -45,6 +45,7 @@ export function AppMenu({
   }, []);
 
   return (
+    <>
     <div ref={menuRef} className="db-app-menu">
       <button
         className="db-app-menu-btn"
