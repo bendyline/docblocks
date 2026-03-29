@@ -22,7 +22,10 @@
     "clean": "rimraf packages/*/dist",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "prettierfix": "prettier --write .",
+    "format:check": "prettier --check .",
+    "link:squisq": "cd ../squisq && npm link -ws && cd ../docblocks && npm link @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react",
+    "unlink:squisq": "npm unlink --no-save @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react && npm install"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",

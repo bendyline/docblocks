@@ -48,7 +48,7 @@ export function WorkspacePicker({
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, activeWorkspaceId]);
 
   const handleSelect = useCallback(
     async (ws: WorkspaceDescriptor) => {

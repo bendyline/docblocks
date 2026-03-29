@@ -6,9 +6,13 @@ export default defineConfig({
   base: process.env.VITE_BASE || '/',
   plugins: [react()],
   resolve: {
+    preserveSymlinks: false,
     dedupe: ['react', 'react-dom'],
     alias: {
-      '@bendyline/docblocks-react/styles': path.resolve(__dirname, '../react/src/styles/docblocks.css'),
+      '@bendyline/docblocks-react/styles': path.resolve(
+        __dirname,
+        '../react/src/styles/docblocks.css',
+      ),
       '@bendyline/docblocks-react': path.resolve(__dirname, '../react/src/index.ts'),
       '@bendyline/docblocks/filesystem': path.resolve(__dirname, '../core/src/filesystem/index.ts'),
       '@bendyline/docblocks/workspace': path.resolve(__dirname, '../core/src/workspace/index.ts'),

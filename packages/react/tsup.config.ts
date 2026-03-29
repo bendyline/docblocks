@@ -13,6 +13,9 @@ export default defineConfig({
     '@bendyline/squisq',
     '@bendyline/squisq-react',
     '@bendyline/squisq-editor-react',
+    '@bendyline/squisq-formats',
+    '@bendyline/squisq-video',
+    '@bendyline/squisq-video-react',
     'monaco-editor',
   ],
   esbuildOptions(options) {

@@ -21,7 +21,7 @@ export function AppMenu({
   onRemoveWorkspace,
   onRenameWorkspace,
   onDownloadWorkspace,
-  aboutUrl = '#about',
+  aboutUrl: _aboutUrl = '#about',
   logoUrl,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -46,20 +46,20 @@ export function AppMenu({
 
   return (
     <>
-    <div ref={menuRef} className="db-app-menu">
-      <button
-        className="db-app-menu-btn"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        aria-haspopup="true"
-      >
-        {logoUrl ? (
-          <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
-        ) : (
-          <span className="db-app-menu-label">docblocks</span>
-        )}
-        <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
-      </button>
+      <div ref={menuRef} className="db-app-menu">
+        <button
+          className="db-app-menu-btn"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+        >
+          {logoUrl ? (
+            <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
+          ) : (
+            <span className="db-app-menu-label">docblocks</span>
+          )}
+          <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
+        </button>
 
         {isOpen && (
           <div className="db-app-menu-dropdown" role="menu">
@@ -117,8 +117,8 @@ export function AppMenu({
             </div>
             <div className="db-dialog-body">
               <p>
-                <strong>DocBlocks</strong> is a markdown document editor that runs
-                entirely in your browser. Your files stay on your device.
+                <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
+                browser. Your files stay on your device.
               </p>
               <p>
                 Built on{' '}

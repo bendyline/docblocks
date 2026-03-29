@@ -35,6 +35,7 @@ import { AppMenu } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
+import { ExportToolbarControls } from '../Export/ExportToolbarControls.js';
 
 export interface DocBlocksShellProps {
   /** Optional theme override. Omit or pass 'auto' to follow OS preference. */
@@ -89,6 +90,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
   const [editorContent, setEditorContent] = useState('');
   const [editorKey, setEditorKey] = useState(0);
+  const [explorerKey, setExplorerKey] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
@@ -159,6 +161,66 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
     [pushHash],
   );
 
+  const seedWelcomeFile = useCallback(
+    async (fs: FileSystemProvider) => {
+      const entries = await fs.readDirectory('/');
+
+      // If the only file is the welcome doc, auto-select it
+      if (
+        entries.length === 1 &&
+        entries[0].kind === 'file' &&
+        entries[0].path === '/aboutDocblocks.md'
+      ) {
+        const content = await fs.readFile('/aboutDocblocks.md');
+        if (content !== null) {
+          setSelectedFile('/aboutDocblocks.md');
+          setEditorContent(content);
+          setInitialView('preview');
+          setEditorKey((k) => k + 1);
+          setExplorerKey((k) => k + 1);
+          pushHash(fs.id, '/aboutDocblocks.md');
+        }
+        return;
+      }
+
+      if (entries.length > 0) return;
+
+      const welcomePath = '/aboutDocblocks.md';
+      const welcomeContent = [
+        '# Welcome to DocBlocks',
+        '',
+        'DocBlocks is a browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser.',
+        '',
+        '## Features',
+        '',
+        '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime',
+        '- **Workspaces** — Organize your documents into separate workspaces',
+        '- **Playback & Video** — Preview your documents as rich visual presentations and export them as MP4 video',
+        '- **Export Anywhere** — Export documents to PDF, Word, PowerPoint, HTML, or Markdown with theme options',
+        '- **Local Storage** — Your documents are stored in your browser using temporary browser storage (backup often!)',
+        '- **Device Folders** — Create workspaces based on folders on your computer',
+        '- **No BS** — Free, no ads, no accounts, no tracking - everything runs locally in your browser',
+        '',
+        '## Getting Started',
+        '',
+        '1. Create a new file using the **New File** button in the sidebar',
+        '2. Start writing in markdown — the editor supports headings, lists, links, images, and more',
+        '3. Your work is saved automatically',
+        '',
+        'Built with [Squiggly Square](https://github.com/nicoth-in/squisq) by [Bendyline](https://bendyline.com).',
+      ].join('\n');
+
+      await fs.writeFile(welcomePath, welcomeContent);
+      setSelectedFile(welcomePath);
+      setEditorContent(welcomeContent);
+      setInitialView('preview');
+      setEditorKey((k) => k + 1);
+      setExplorerKey((k) => k + 1);
+      pushHash(fs.id, welcomePath);
+    },
+    [pushHash],
+  );
+
   // Initialise workspace on mount — restore from hash or last-used
   useEffect(() => {
     (async () => {
@@ -211,43 +273,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       // Seed welcome file if workspace is empty
       await seedWelcomeFile(fsProvider);
     })();
-  }, []);
-
-  const seedWelcomeFile = useCallback(async (fs: FileSystemProvider) => {
-    const entries = await fs.readDirectory('/');
-    if (entries.length > 0) return;
-
-    const welcomePath = '/aboutDocblocks.md';
-    const welcomeContent = [
-      '# Welcome to DocBlocks',
-      '',
-      'DocBlocks is a browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser.',
-      '',
-      '## Features',
-      '',
-      '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime',
-      '- **Workspaces** — Organize your documents into separate workspaces',
-      '- **Local Storage** — Your documents are stored securely in your browser',
-      '- **Native Folders** — Open folders from your computer using the File System Access API',
-      '- **Dark Mode** — Automatically adapts to your system theme',
-      '- **No Account Required** — Everything runs locally in your browser',
-      '',
-      '## Getting Started',
-      '',
-      '1. Create a new file using the **New File** button in the sidebar',
-      '2. Start writing in markdown — the editor supports headings, lists, links, images, and more',
-      '3. Your work is saved automatically',
-      '',
-      'Built with [Squiggly Square](https://github.com/nicoth-in/squisq) by [Bendyline](https://bendyline.com).',
-    ].join('\n');
-
-    await fs.writeFile(welcomePath, welcomeContent);
-    setSelectedFile(welcomePath);
-    setEditorContent(welcomeContent);
-    setInitialView('preview');
-    setEditorKey((k) => k + 1);
-    pushHash(fs.id, welcomePath);
-  }, [pushHash]);
+  }, [openFromIds, pushHash, seedWelcomeFile]);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -268,27 +294,30 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
   // Auto-save current file
   useAutoSave(provider, selectedFile, editorContent);
 
-  const handleWorkspaceSelect = useCallback(async (ws: WorkspaceDescriptor) => {
-    await touchWorkspace(ws.id);
-    if (ws.type === 'native') {
-      const restored = await restoreNativeFolder(ws.id);
-      if (restored) {
-        setProvider(restored);
+  const handleWorkspaceSelect = useCallback(
+    async (ws: WorkspaceDescriptor) => {
+      await touchWorkspace(ws.id);
+      if (ws.type === 'native') {
+        const restored = await restoreNativeFolder(ws.id);
+        if (restored) {
+          setProvider(restored);
+        } else {
+          // Permission denied or handle lost — fall through without changing provider
+          return;
+        }
       } else {
-        // Permission denied or handle lost — fall through without changing provider
-        return;
+        setProvider(new IndexedDBFileSystemProvider(ws.id, ws.name));
       }
-    } else {
-      setProvider(new IndexedDBFileSystemProvider(ws.id, ws.name));
-    }
-    setActiveWorkspaceId(ws.id);
-    setSelectedFile(null);
-    setSelectedFolder(null);
-    setFolderEntries([]);
-    setEditorContent('');
-    setEditorKey((k) => k + 1);
-    pushHash(ws.id, null);
-  }, [pushHash]);
+      setActiveWorkspaceId(ws.id);
+      setSelectedFile(null);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setEditorContent('');
+      setEditorKey((k) => k + 1);
+      pushHash(ws.id, null);
+    },
+    [pushHash],
+  );
 
   const handleOpenFolder = useCallback(async () => {
     try {
@@ -429,6 +458,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
             />
           </div>
           <FileExplorer
+            key={explorerKey}
             provider={provider}
             onSelect={handleSelect}
             onTreeChange={handleTreeChange}
@@ -456,6 +486,12 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
                 onChange={handleEditorChange}
                 theme={resolvedTheme}
                 height="100%"
+                toolbarSlotLeft={
+                  <div style={{ minHeight: 48 }} aria-hidden />
+                }
+                toolbarSlotRight={
+                  <ExportToolbarControls selectedFile={selectedFile} />
+                }
               />
             </MediaContext.Provider>
           ) : selectedFolder ? (

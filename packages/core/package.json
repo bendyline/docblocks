@@ -49,6 +49,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "^1.1.0"
+    "@bendyline/squisq": "^1.1.1",
+    "@bendyline/squisq-video": "^1.0.1"
   }
 }
