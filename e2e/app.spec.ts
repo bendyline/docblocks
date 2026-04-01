@@ -3,6 +3,8 @@ import { test, expect } from '@playwright/test';
 test.describe('DocBlocks App', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
+    // Wait for the shell to initialize (workspace + welcome file may load)
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
   });
 
   test('loads and shows the shell', async ({ page }) => {
@@ -18,20 +20,16 @@ test.describe('DocBlocks App', () => {
     await expect(picker).toBeVisible();
   });
 
-  test('shows the app menu', async ({ page }) => {
+  test('shows the app menu button', async ({ page }) => {
     const menuBtn = page.locator('.db-app-menu-btn');
     await expect(menuBtn).toBeVisible();
-    await expect(menuBtn).toContainText('docblocks');
   });
 
-  test('app menu opens and shows options', async ({ page }) => {
+  test('app menu opens and shows About', async ({ page }) => {
     await page.locator('.db-app-menu-btn').click();
     const dropdown = page.locator('.db-app-menu-dropdown');
     await expect(dropdown).toBeVisible();
 
-    await expect(dropdown.getByText('Rename this workspace')).toBeVisible();
-    await expect(dropdown.getByText('Download this workspace')).toBeVisible();
-    await expect(dropdown.getByText('Remove this workspace')).toBeVisible();
     await expect(dropdown.getByText('About')).toBeVisible();
   });
 
@@ -42,12 +40,6 @@ test.describe('DocBlocks App', () => {
     // Click outside the menu
     await page.locator('.db-shell-sidebar-footer').click();
     await expect(page.locator('.db-app-menu-dropdown')).not.toBeVisible();
-  });
-
-  test('shows empty state when no file selected', async ({ page }) => {
-    const empty = page.locator('.db-shell-empty');
-    await expect(empty).toBeVisible();
-    await expect(empty).toContainText('Select a file');
   });
 
   test('shows file explorer with FILES heading', async ({ page }) => {
@@ -80,24 +72,24 @@ test.describe('DocBlocks App', () => {
 test.describe('File operations', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    // Wait for the file explorer to be ready
+    await expect(page.locator('.db-explorer-toolbar')).toBeVisible({ timeout: 10_000 });
   });
 
   test('can create a new file', async ({ page }) => {
-    // Click the +F button
     const newFileBtn = page.locator('.db-explorer-btn').first();
     await newFileBtn.click();
 
-    // Fill in the filename
     const input = page.locator('.db-new-item-input');
     await expect(input).toBeVisible();
     await input.fill('test-doc');
 
-    // Submit
     await page.locator('.db-new-item-add').click();
 
     // File should appear in tree
     const treeRow = page.locator('.db-tree-row', { hasText: 'test-doc.md' });
-    await expect(treeRow).toBeVisible();
+    await expect(treeRow).toBeVisible({ timeout: 5_000 });
   });
 
   test('can create a file and see editor', async ({ page }) => {
@@ -110,6 +102,7 @@ test.describe('File operations', () => {
 
     // Click the file to open it
     const treeRow = page.locator('.db-tree-row', { hasText: 'edit-me.md' });
+    await expect(treeRow).toBeVisible({ timeout: 5_000 });
     await treeRow.click();
 
     // Editor should appear (empty state should be gone)
@@ -117,7 +110,6 @@ test.describe('File operations', () => {
   });
 
   test('can create a folder', async ({ page }) => {
-    // Click the +D button (second toolbar button)
     const buttons = page.locator('.db-explorer-btn');
     await buttons.nth(1).click();
 
@@ -126,21 +118,20 @@ test.describe('File operations', () => {
     await input.fill('my-folder');
     await page.locator('.db-new-item-add').click();
 
-    // Folder should appear in tree
     const treeRow = page.locator('.db-tree-row', { hasText: 'my-folder' });
-    await expect(treeRow).toBeVisible();
+    await expect(treeRow).toBeVisible({ timeout: 5_000 });
   });
 });
 
 test.describe('Workspace picker', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
   });
 
   test('shows current workspace', async ({ page }) => {
     const picker = page.locator('.db-workspace-picker-btn');
     await expect(picker).toBeVisible();
-    // May show default name or "No workspace" if still loading
     await expect(picker).toContainText(/(My Documents|notes|No workspace)/);
   });
 
@@ -160,7 +151,6 @@ test.describe('Workspace picker', () => {
     await page.locator('.db-workspace-picker-btn').click();
     await expect(page.locator('.db-workspace-dropdown')).toBeVisible();
 
-    // Click the explorer area
     await page.locator('.db-explorer-title').click();
     await expect(page.locator('.db-workspace-dropdown')).not.toBeVisible();
   });

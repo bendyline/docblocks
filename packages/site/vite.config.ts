@@ -27,10 +27,27 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       'monaco-editor',
-      // CJS transitive deps that need pre-bundling for ESM compat
+      // CJS transitive deps of squisq packages that need pre-bundling.
+      // The squisq packages themselves are excluded (served from source
+      // via symlinks for live dev), but their CJS deps must be bundled.
       'localforage',
       'extend',
       'debug',
+      'format',
+      'jszip',
+      'ngeohash',
+      'pako',
+      'lie',
+      'immediate',
+      'setimmediate',
+      'readable-stream',
+      'inherits',
+      'core-util-is',
+      'isarray',
+      'safe-buffer',
+      'string_decoder',
+      'process-nextick-args',
+      'util-deprecate',
     ],
     exclude: [
       // Symlinked squisq packages — serve from source for live dev
