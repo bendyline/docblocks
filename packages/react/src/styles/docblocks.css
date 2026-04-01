@@ -69,6 +69,24 @@
   height: 100%;
   overflow: hidden;
   font-size: 13px;
+  position: relative;
+}
+
+.db-file-explorer--drop-active::after {
+  content: 'Drop to import';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(37, 99, 235, 0.08);
+  border: 2px dashed #2563eb;
+  border-radius: 6px;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .db-explorer-toolbar {
@@ -223,6 +241,10 @@
 
 /* ── Context Menu ────────────────────────────────────────────── */
 
+.db-tree-node {
+  position: relative;
+}
+
 .db-tree-context {
   position: absolute;
   z-index: 50;
@@ -371,6 +393,12 @@
 .db-app-menu-caret {
   font-size: 18px;
   color: var(--db-text-muted);
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.db-app-menu-caret--open {
+  transform: rotate(180deg);
 }
 
 .db-app-menu-dropdown {
@@ -412,6 +440,78 @@
 }
 
 .db-app-menu-divider {
+  height: 1px;
+  background: var(--db-border);
+  margin: 4px 0;
+}
+
+/* ── Workspace Settings Button ───────────────────────────────── */
+
+.db-ws-settings {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.db-ws-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--db-text-muted);
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+
+.db-ws-settings-btn:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-ws-settings-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 200px;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+  padding: 4px 0;
+  margin-top: 2px;
+}
+
+.db-ws-settings-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
+.db-ws-settings-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-ws-settings-item--danger {
+  color: var(--db-danger);
+}
+
+.db-ws-settings-item--danger:hover {
+  background: var(--db-danger-bg);
+}
+
+.db-ws-settings-divider {
   height: 1px;
   background: var(--db-border);
   margin: 4px 0;
@@ -493,6 +593,44 @@
   height: 100%;
   color: var(--db-text-placeholder);
   font-size: 14px;
+}
+
+/* ── Mobile Layout ──────────────────────────────────────────── */
+
+.db-shell--mobile .db-shell-sidebar {
+  width: 100%;
+  border-right: none;
+}
+
+.db-mobile-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.db-mobile-back:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-mobile-back-arrow {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* In folder/empty views, the back button sits as a standalone bar */
+.db-folder-view > .db-mobile-back {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--db-border);
+  border-radius: 0;
+  background: var(--db-bg-subtle);
 }
 
 /* ── Dialog ───────────────────────────────────────────────────── */
@@ -641,10 +779,19 @@
 
 /* ── Toolbar Image Button Override ─────────────────────────── */
 
-.squisq-toolbar-button[aria-label="Insert image"] {
+/* Remove max-width so editor fills the available space */
+.squisq-wysiwyg-editor {
+  max-width: none;
+}
+
+.squisq-toolbar {
+  min-height: 48px;
+}
+
+.squisq-toolbar-button[aria-label='Insert image'] {
   font-size: 0;
   background: no-repeat center / 18px
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' fill='none' stroke='%234b5563' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.5' y='2.5' width='15' height='13' rx='1.5'/%3E%3Ccircle cx='5.5' cy='6.5' r='1.5'/%3E%3Cpath d='M1.5 13l4-4.5 3 3 2.5-3L16.5 13'/%3E%3C/svg%3E");
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' fill='none' stroke='%23374151' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.5' y='2.5' width='15' height='13' rx='1.5'/%3E%3Ccircle cx='5.5' cy='6.5' r='1.5'/%3E%3Cpath d='M1.5 13l4-4.5 3 3 2.5-3L16.5 13'/%3E%3C/svg%3E");
   width: 32px;
   height: 32px;
 }

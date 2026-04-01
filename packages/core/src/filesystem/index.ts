@@ -7,6 +7,7 @@ export type {
 } from './types.js';
 
 export { IndexedDBFileSystemProvider } from './indexeddb-provider.js';
+export { IndexedDBContentContainer } from './indexeddb-content-container.js';
 
 export {
   NativeFileSystemProvider,

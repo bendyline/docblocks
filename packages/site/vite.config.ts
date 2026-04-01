@@ -25,6 +25,21 @@ export default defineConfig({
     open: true,
   },
   optimizeDeps: {
-    include: ['monaco-editor'],
+    include: [
+      'monaco-editor',
+      // CJS transitive deps that need pre-bundling for ESM compat
+      'localforage',
+      'extend',
+      'debug',
+    ],
+    exclude: [
+      // Symlinked squisq packages — serve from source for live dev
+      '@bendyline/squisq',
+      '@bendyline/squisq-react',
+      '@bendyline/squisq-editor-react',
+      '@bendyline/squisq-formats',
+      '@bendyline/squisq-video',
+      '@bendyline/squisq-video-react',
+    ],
   },
 });

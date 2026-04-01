@@ -32,7 +32,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "^1.1.1",
-    "commander": "^13.0.0"
+    "@bendyline/squisq": "^1.2.0",
+    "@bendyline/squisq-cli": "^1.1.0",
+    "@bendyline/squisq-editor-react": "^1.2.0",
+    "@bendyline/squisq-formats": "^1.2.0",
+    "@bendyline/squisq-react": "^1.1.0",
+    "@bendyline/squisq-video": "^1.0.2",
+    "@modelcontextprotocol/sdk": "1.28.0",
+    "commander": "13.1.0",
+    "playwright-core": "1.58.2",
+    "zod": "3.25.76"
   }
 }

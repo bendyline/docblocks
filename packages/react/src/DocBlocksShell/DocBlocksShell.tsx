@@ -5,19 +5,17 @@
  * the center editor area (squisq EditorShell).
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
 import type { EditorTheme, EditorView } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
-import {
-  createMediaProviderFromContainer,
-  MemoryContentContainer,
-} from '@bendyline/squisq/storage';
+import { createMediaProviderFromContainer } from '@bendyline/squisq/storage';
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import {
   IndexedDBFileSystemProvider,
+  IndexedDBContentContainer,
   openNativeFolder,
   restoreNativeFolder,
   removeDirectoryHandle,
@@ -34,6 +32,7 @@ import {
 import { AppMenu } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
+import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
 import { ExportToolbarControls } from '../Export/ExportToolbarControls.js';
 
@@ -80,9 +79,24 @@ function parseHash(): { workspaceId: string; filePath: string | null } | null {
   };
 }
 
+function useIsMobile(breakpoint = 768): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const resolvedTheme: 'light' | 'dark' = theme === 'auto' ? osTheme : theme;
+  const isMobile = useIsMobile();
+  const [mobileShowEditor, setMobileShowEditor] = useState(false);
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -95,11 +109,9 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
 
-  /** MediaProvider backed by an in-memory container. */
-  const mediaProvider = useMemo<MediaProvider>(
-    () => createMediaProviderFromContainer(new MemoryContentContainer()),
-    [],
-  );
+  /** Persistent media container backed by IndexedDB (survives page refresh). */
+  const mediaContainerRef = useRef<IndexedDBContentContainer | null>(null);
+  const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -128,6 +140,11 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       await touchWorkspace(ws.id);
       setProvider(fsProvider);
       setActiveWorkspaceId(ws.id);
+
+      // Set up persistent media container for this workspace
+      const mc = new IndexedDBContentContainer(ws.id);
+      mediaContainerRef.current = mc;
+      setMediaProvider(createMediaProviderFromContainer(mc));
 
       if (filePath) {
         const content = await fsProvider.readFile(filePath);
@@ -246,6 +263,10 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
             fsProvider = restored;
             setProvider(restored);
             setActiveWorkspaceId(ws.id);
+
+            const mc = new IndexedDBContentContainer(ws.id);
+            mediaContainerRef.current = mc;
+            setMediaProvider(createMediaProviderFromContainer(mc));
             break;
           }
         } else {
@@ -254,6 +275,10 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
           fsProvider = p;
           setProvider(p);
           setActiveWorkspaceId(ws.id);
+
+          const mc = new IndexedDBContentContainer(ws.id);
+          mediaContainerRef.current = mc;
+          setMediaProvider(createMediaProviderFromContainer(mc));
           break;
         }
       }
@@ -265,6 +290,10 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
         fsProvider = p;
         setProvider(p);
         setActiveWorkspaceId(defaultWs.id);
+
+        const mc = new IndexedDBContentContainer(defaultWs.id);
+        mediaContainerRef.current = mc;
+        setMediaProvider(createMediaProviderFromContainer(mc));
       }
 
       // Set initial hash
@@ -315,6 +344,11 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorContent('');
       setEditorKey((k) => k + 1);
       pushHash(ws.id, null);
+
+      // Set up persistent media container for this workspace
+      const mc = new IndexedDBContentContainer(ws.id);
+      mediaContainerRef.current = mc;
+      setMediaProvider(createMediaProviderFromContainer(mc));
     },
     [pushHash],
   );
@@ -337,6 +371,11 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorContent('');
       setEditorKey((k) => k + 1);
       pushHash(descriptor.id, null);
+
+      // Set up persistent media container for this workspace
+      const mc = new IndexedDBContentContainer(descriptor.id);
+      mediaContainerRef.current = mc;
+      setMediaProvider(createMediaProviderFromContainer(mc));
     } catch {
       // User cancelled or API not supported
     }
@@ -363,16 +402,92 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
         setInitialView('wysiwyg');
         setEditorKey((k) => k + 1);
         pushHash(activeWorkspaceId, path);
+        if (isMobile) setMobileShowEditor(true);
       }
     },
-    [provider, activeWorkspaceId, pushHash],
+    [provider, activeWorkspaceId, pushHash, isMobile],
   );
 
   const handleTreeChange = useCallback(async () => {
-    if (!provider || !selectedFolder) return;
-    const entries = await provider.readDirectory(selectedFolder);
-    setFolderEntries(entries);
-  }, [provider, selectedFolder]);
+    if (!provider) return;
+    // If the open file was deleted, clear the editor
+    if (selectedFile) {
+      const exists = await provider.exists(selectedFile);
+      if (!exists) {
+        setSelectedFile(null);
+        setEditorContent('');
+        setEditorKey((k) => k + 1);
+        if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
+      }
+    }
+    if (selectedFolder) {
+      const entries = await provider.readDirectory(selectedFolder);
+      setFolderEntries(entries);
+    }
+  }, [provider, selectedFile, selectedFolder, activeWorkspaceId, pushHash]);
+
+  /** Copy non-markdown files from an imported container into persistent media storage. */
+  const persistContainerMedia = useCallback(
+    async (source: {
+      listFiles(): Promise<Array<{ path: string; mimeType: string }>>;
+      readFile(path: string): Promise<ArrayBuffer | null>;
+    }) => {
+      const mc = mediaContainerRef.current;
+      if (!mc) return;
+      const entries = await source.listFiles();
+      for (const entry of entries) {
+        if (entry.path.endsWith('.md')) continue;
+        const data = await source.readFile(entry.path);
+        if (data) {
+          await mc.writeFile(entry.path, new Uint8Array(data), entry.mimeType);
+        }
+      }
+      setMediaProvider(createMediaProviderFromContainer(mc));
+    },
+    [],
+  );
+
+  const handleImportFiles = useCallback(
+    async (files: File[]) => {
+      if (!provider) return;
+      for (const file of files) {
+        const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        const destPath = `${baseName}.md`;
+
+        try {
+          let markdown: string;
+          if (ext === '.md' || ext === '.txt') {
+            markdown = await file.text();
+          } else if (ext === '.docx') {
+            const { docxToContainer } = await import('@bendyline/squisq-formats/docx');
+            const container = await docxToContainer(await file.arrayBuffer());
+            markdown = (await container.readDocument()) ?? '';
+            await persistContainerMedia(container);
+          } else if (ext === '.pdf') {
+            const { pdfToContainer } = await import('@bendyline/squisq-formats/pdf');
+            const container = await pdfToContainer(await file.arrayBuffer());
+            markdown = (await container.readDocument()) ?? '';
+            await persistContainerMedia(container);
+          } else if (ext === '.dbk' || ext === '.zip') {
+            const { zipToContainer } = await import('@bendyline/squisq-formats/container');
+            const container = await zipToContainer(await file.arrayBuffer());
+            markdown = (await container.readDocument()) ?? '';
+            await persistContainerMedia(container);
+          } else {
+            continue;
+          }
+
+          await provider.writeFile(destPath, markdown);
+        } catch (err) {
+          console.error(`Failed to import ${file.name}:`, err);
+        }
+      }
+      // Refresh file tree and select the last imported file
+      setExplorerKey((k) => k + 1);
+    },
+    [provider, persistContainerMedia],
+  );
 
   const handleEditorChange = useCallback((source: string) => {
     setEditorContent(source);
@@ -435,96 +550,126 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setFolderEntries([]);
       setEditorContent('');
       setEditorKey((k) => k + 1);
+
+      const mc = new IndexedDBContentContainer(defaultWs.id);
+      mediaContainerRef.current = mc;
+      setMediaProvider(createMediaProviderFromContainer(mc));
     }
   }, [activeWorkspaceId, handleWorkspaceSelect]);
 
   return (
-    <div className="db-shell" data-theme={resolvedTheme}>
+    <div className={`db-shell${isMobile ? ' db-shell--mobile' : ''}`} data-theme={resolvedTheme}>
       {/* Main area */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left sidebar */}
-        <div className="db-shell-sidebar">
-          <div className="db-shell-sidebar-header">
-            <AppMenu
-              onRenameWorkspace={handleRenameWorkspace}
-              onDownloadWorkspace={handleDownloadWorkspace}
-              onRemoveWorkspace={handleRemoveWorkspace}
-              logoUrl={logoUrl}
-            />
-            <WorkspacePicker
-              activeWorkspaceId={activeWorkspaceId}
-              onSelect={handleWorkspaceSelect}
-              onOpenFolder={handleOpenFolder}
-            />
-          </div>
-          <FileExplorer
-            key={explorerKey}
-            provider={provider}
-            onSelect={handleSelect}
-            onTreeChange={handleTreeChange}
-          />
-          <div className="db-shell-sidebar-footer">
-            <a
-              href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Terms of Use
-            </a>
-          </div>
-        </div>
-
-        {/* Editor area */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          {selectedFile ? (
-            <MediaContext.Provider value={mediaProvider}>
-              <EditorShell
-                key={`${selectedFile}-${editorKey}`}
-                initialMarkdown={editorContent}
-                initialView={initialView}
-                articleId={selectedFile}
-                onChange={handleEditorChange}
-                theme={resolvedTheme}
-                height="100%"
-                toolbarSlotLeft={
-                  <div style={{ minHeight: 48 }} aria-hidden />
-                }
-                toolbarSlotRight={
-                  <ExportToolbarControls selectedFile={selectedFile} />
-                }
+        {/* Left sidebar — hidden on mobile when editor is shown */}
+        {(!isMobile || !mobileShowEditor) && (
+          <div className="db-shell-sidebar">
+            <div className="db-shell-sidebar-header">
+              <AppMenu logoUrl={logoUrl} />
+              <WorkspacePicker
+                activeWorkspaceId={activeWorkspaceId}
+                onSelect={handleWorkspaceSelect}
+                onOpenFolder={handleOpenFolder}
               />
-            </MediaContext.Provider>
-          ) : selectedFolder ? (
-            <div className="db-folder-view">
-              <div className="db-folder-view-header">
-                <span className="db-folder-view-icon">📁</span>
-                <span className="db-folder-view-path">{selectedFolder}</span>
+              <WorkspaceSettingsButton
+                onRename={handleRenameWorkspace}
+                onDownload={handleDownloadWorkspace}
+                onRemove={handleRemoveWorkspace}
+              />
+            </div>
+            <FileExplorer
+              key={explorerKey}
+              provider={provider}
+              onSelect={handleSelect}
+              onTreeChange={handleTreeChange}
+              onImportFiles={handleImportFiles}
+            />
+            <div className="db-shell-sidebar-footer">
+              <a
+                href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Terms of Use
+              </a>
+            </div>
+          </div>
+        )}
+
+        {/* Editor area — hidden on mobile when sidebar is shown */}
+        {(!isMobile || mobileShowEditor) && (
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {selectedFile && mediaProvider ? (
+              <MediaContext.Provider value={mediaProvider}>
+                <EditorShell
+                  key={`${selectedFile}-${editorKey}`}
+                  initialMarkdown={editorContent}
+                  initialView={initialView}
+                  articleId={selectedFile}
+                  onChange={handleEditorChange}
+                  theme={resolvedTheme}
+                  height="100%"
+                  mediaProvider={mediaProvider}
+                  container={mediaContainerRef.current ?? undefined}
+                  toolbarSlotLeft={
+                    isMobile ? (
+                      <button
+                        className="db-mobile-back"
+                        onClick={() => setMobileShowEditor(false)}
+                      >
+                        <span className="db-mobile-back-arrow">&larr;</span>
+                      </button>
+                    ) : undefined
+                  }
+                  toolbarSlotRight={
+                    <ExportToolbarControls
+                      selectedFile={selectedFile}
+                      mediaContainer={mediaContainerRef.current}
+                    />
+                  }
+                />
+              </MediaContext.Provider>
+            ) : selectedFolder ? (
+              <div className="db-folder-view">
+                {isMobile && (
+                  <button
+                    className="db-mobile-back"
+                    onClick={() => setMobileShowEditor(false)}
+                  >
+                    <span className="db-mobile-back-arrow">&larr;</span>
+                    Back to files
+                  </button>
+                )}
+                <div className="db-folder-view-header">
+                  <span className="db-folder-view-icon">📁</span>
+                  <span className="db-folder-view-path">{selectedFolder}</span>
+                </div>
+                {folderEntries.length === 0 ? (
+                  <p className="db-folder-view-empty">This folder is empty.</p>
+                ) : (
+                  <ul className="db-folder-view-list">
+                    {folderEntries.map((entry) => (
+                      <li
+                        key={entry.path}
+                        className="db-folder-view-item"
+                        onClick={() => handleSelect(entry.path, entry.kind)}
+                      >
+                        <span className="db-folder-view-item-icon">
+                          {entry.kind === 'directory' ? '📁' : '📄'}
+                        </span>
+                        {entry.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {folderEntries.length === 0 ? (
-                <p className="db-folder-view-empty">This folder is empty.</p>
-              ) : (
-                <ul className="db-folder-view-list">
-                  {folderEntries.map((entry) => (
-                    <li
-                      key={entry.path}
-                      className="db-folder-view-item"
-                      onClick={() => handleSelect(entry.path, entry.kind)}
-                    >
-                      <span className="db-folder-view-item-icon">
-                        {entry.kind === 'directory' ? '📁' : '📄'}
-                      </span>
-                      {entry.name}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : (
-            <div className="db-shell-empty">
-              <p>Select a file to start editing, or create a new one.</p>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="db-shell-empty">
+                <p>Select a file to start editing, or create a new one.</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

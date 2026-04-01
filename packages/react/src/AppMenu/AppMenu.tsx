@@ -5,25 +5,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 export interface AppMenuProps {
-  /** Called when "Remove this workspace" is selected. */
-  onRemoveWorkspace: () => void;
-  /** Called when "Rename this workspace" is selected. */
-  onRenameWorkspace: () => void;
-  /** Called when "Download this workspace" is selected. */
-  onDownloadWorkspace: () => void;
   /** URL for the about page. */
   aboutUrl?: string;
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
 }
 
-export function AppMenu({
-  onRemoveWorkspace,
-  onRenameWorkspace,
-  onDownloadWorkspace,
-  aboutUrl: _aboutUrl = '#about',
-  logoUrl,
-}: AppMenuProps) {
+export function AppMenu({ aboutUrl: _aboutUrl = '#about', logoUrl }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -58,34 +46,13 @@ export function AppMenu({
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
-          <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
+          <span className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}>
+            {'\u25BE'}
+          </span>
         </button>
 
         {isOpen && (
           <div className="db-app-menu-dropdown" role="menu">
-            <button
-              className="db-app-menu-item"
-              role="menuitem"
-              onClick={() => handleAction(onRenameWorkspace)}
-            >
-              Rename this workspace
-            </button>
-            <button
-              className="db-app-menu-item"
-              role="menuitem"
-              onClick={() => handleAction(onDownloadWorkspace)}
-            >
-              Download this workspace
-            </button>
-            <div className="db-app-menu-divider" />
-            <button
-              className="db-app-menu-item db-app-menu-item--danger"
-              role="menuitem"
-              onClick={() => handleAction(onRemoveWorkspace)}
-            >
-              Remove this workspace
-            </button>
-            <div className="db-app-menu-divider" />
             <button
               className="db-app-menu-item"
               role="menuitem"

@@ -2,12 +2,18 @@
  * Execute an export using @bendyline/squisq-formats.
  */
 
+import type {
+  MarkdownDocument,
+  MarkdownBlockNode,
+  MarkdownInlineNode,
+} from '@bendyline/squisq/markdown';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownToDoc } from '@bendyline/squisq/doc';
 import { applyTransform } from '@bendyline/squisq/transform';
 import { markdownDocToDocx } from '@bendyline/squisq-formats/docx';
 import { markdownDocToPdf } from '@bendyline/squisq-formats/pdf';
 import { docToPptx } from '@bendyline/squisq-formats/pptx';
+import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
 
@@ -31,9 +37,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 /** Derive a filename from the selected file path and export format. */
 function buildFilename(selectedFile: string | null, format: ExportFormat): string {
-  const base = selectedFile
-    ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '')
-    : 'document';
+  const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
   return base + FORMAT_EXTENSIONS[format];
 }
 
@@ -42,6 +46,7 @@ export async function runExport(
   markdown: string,
   selectedFile: string | null,
   options: ExportOptions,
+  mediaContainer?: ContentContainer | null,
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
   const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
@@ -60,7 +65,8 @@ export async function runExport(
   const doc = parseMarkdown(markdown);
 
   if (options.format === 'docx') {
-    const buf = await markdownDocToDocx(doc, { themeId });
+    const images = mediaContainer ? await resolveImages(doc, mediaContainer) : undefined;
+    const buf = await markdownDocToDocx(doc, { themeId, images });
     downloadBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename);
     return;
   }
@@ -176,4 +182,57 @@ function escapeHtml(s: string): string {
 
 function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+};
+
+/** Walk the markdown AST and collect all image URLs. */
+function collectImageUrls(doc: MarkdownDocument): string[] {
+  const urls: string[] = [];
+  function walkBlocks(nodes: MarkdownBlockNode[]): void {
+    for (const node of nodes) {
+      if ('children' in node && Array.isArray(node.children)) {
+        // Check if children are inline or block nodes
+        for (const child of node.children as (MarkdownBlockNode | MarkdownInlineNode)[]) {
+          if (child.type === 'image') {
+            urls.push((child as { url: string }).url);
+          } else if ('children' in child && Array.isArray(child.children)) {
+            walkBlocks(child.children as MarkdownBlockNode[]);
+          }
+        }
+      }
+    }
+  }
+  walkBlocks(doc.children);
+  return urls;
+}
+
+/** Resolve image URLs to binary data from a ContentContainer. */
+async function resolveImages(
+  doc: MarkdownDocument,
+  container: ContentContainer,
+): Promise<Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>> {
+  const urls = collectImageUrls(doc);
+  const map = new Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>();
+
+  for (const url of urls) {
+    if (map.has(url)) continue;
+    // Skip external URLs
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))
+      continue;
+    const data = await container.readFile(url);
+    if (!data) continue;
+    const ext = url.slice(url.lastIndexOf('.') + 1).toLowerCase();
+    const contentType = IMAGE_MIME[ext] || 'image/png';
+    map.set(url, { data, contentType });
+  }
+
+  return map;
 }

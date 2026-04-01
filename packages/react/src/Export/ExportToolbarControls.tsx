@@ -15,6 +15,7 @@ import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownToDoc } from '@bendyline/squisq/doc';
 import { VideoExportModal } from '@bendyline/squisq-video-react';
 import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
+import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions } from './export-options.js';
 import {
   DEFAULT_OPTIONS,
@@ -28,6 +29,8 @@ import { runExport } from './run-export.js';
 export interface ExportToolbarControlsProps {
   /** Currently selected file path — used to derive the download filename. */
   selectedFile: string | null;
+  /** Media container for resolving images during export. */
+  mediaContainer?: ContentContainer | null;
 }
 
 /** Build the quick-export label from saved options. */
@@ -50,7 +53,10 @@ function quickLabel(opts: ExportOptions): string {
   return `Export ${ext}`;
 }
 
-export function ExportToolbarControls({ selectedFile }: ExportToolbarControlsProps) {
+export function ExportToolbarControls({
+  selectedFile,
+  mediaContainer,
+}: ExportToolbarControlsProps) {
   const { markdownSource } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -105,13 +111,13 @@ export function ExportToolbarControls({ selectedFile }: ExportToolbarControlsPro
     async (opts: ExportOptions) => {
       setExporting(true);
       try {
-        await runExport(markdownSource, selectedFile, opts);
+        await runExport(markdownSource, selectedFile, opts, mediaContainer);
       } finally {
         setExporting(false);
         setDialogOpen(false);
       }
     },
-    [markdownSource, selectedFile],
+    [markdownSource, selectedFile, mediaContainer],
   );
 
   const handleQuickExport = useCallback(async () => {
@@ -120,11 +126,11 @@ export function ExportToolbarControls({ selectedFile }: ExportToolbarControlsPro
     setExporting(true);
     try {
       saveExportOptions(lastOptions);
-      await runExport(markdownSource, selectedFile, lastOptions);
+      await runExport(markdownSource, selectedFile, lastOptions, mediaContainer);
     } finally {
       setExporting(false);
     }
-  }, [lastOptions, markdownSource, selectedFile]);
+  }, [lastOptions, markdownSource, selectedFile, mediaContainer]);
 
   return (
     <>
@@ -170,11 +176,7 @@ export function ExportToolbarControls({ selectedFile }: ExportToolbarControlsPro
       )}
 
       {videoModalOpen && doc && (
-        <VideoExportModal
-          doc={doc}
-          playerScript={PLAYER_BUNDLE}
-          onClose={handleCloseVideoModal}
-        />
+        <VideoExportModal doc={doc} playerScript={PLAYER_BUNDLE} onClose={handleCloseVideoModal} />
       )}
     </>
   );

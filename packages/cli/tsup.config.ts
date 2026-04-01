@@ -9,4 +9,14 @@ export default defineConfig({
   banner: {
     js: '#!/usr/bin/env node',
   },
+  external: [
+    '@modelcontextprotocol/sdk',
+    'playwright-core',
+    '@bendyline/squisq-cli',
+    '@bendyline/squisq-formats',
+    '@bendyline/squisq-react',
+    '@bendyline/squisq-video',
+    '@bendyline/squisq',
+    'zod',
+  ],
 });

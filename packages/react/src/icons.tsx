@@ -45,3 +45,16 @@ export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function WorkspaceIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaults} {...props}>
+      {/* Desk surface (top-down rectangle) */}
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      {/* Blotter/pad with two vertical lines */}
+      <rect x="4" y="4.5" width="8" height="7" rx="0.5" />
+      <line x1="6.5" y1="5.5" x2="6.5" y2="10.5" strokeWidth="1" />
+      <line x1="9.5" y1="5.5" x2="9.5" y2="10.5" strokeWidth="1" />
+    </svg>
+  );
+}

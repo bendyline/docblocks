@@ -32,8 +32,10 @@ export function FileTreeNode({
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
   const [showContext, setShowContext] = useState(false);
+  const [contextPos, setContextPos] = useState({ x: 0, y: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   const isDir = entry.kind === 'directory';
   const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
@@ -45,13 +47,16 @@ export function FileTreeNode({
     onSelect(entry.path);
   }, [isDir, entry.path, onToggle, onSelect]);
 
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setShowContext(!showContext);
-    },
-    [showContext],
-  );
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = nodeRef.current?.getBoundingClientRect();
+    setContextPos({
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0),
+    });
+    setShowContext(true);
+  }, []);
 
   const handleRenameStart = useCallback(() => {
     setRenameValue(entry.name);
@@ -75,16 +80,22 @@ export function FileTreeNode({
     await onDelete(entry.path);
   }, [entry.path, onDelete]);
 
-  // Close context menu on outside click
+  // Close context menu on outside click or scroll
   useEffect(() => {
     if (!showContext) return;
-    function handleOutsideClick(e: MouseEvent) {
+    function handleClose(e: Event) {
       if (contextRef.current && !contextRef.current.contains(e.target as Node)) {
         setShowContext(false);
       }
     }
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
+    // Use click (not mousedown) so menu button clicks register first
+    document.addEventListener('click', handleClose, true);
+    document.addEventListener('contextmenu', handleClose, true);
+    document.addEventListener('scroll', () => setShowContext(false), { capture: true, once: true });
+    return () => {
+      document.removeEventListener('click', handleClose, true);
+      document.removeEventListener('contextmenu', handleClose, true);
+    };
   }, [showContext]);
 
   // Focus input when renaming
@@ -96,7 +107,7 @@ export function FileTreeNode({
   }, [renaming]);
 
   return (
-    <div className="db-tree-node">
+    <div className="db-tree-node" ref={nodeRef}>
       <div
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''}`}
         style={{ paddingLeft: depth * 16 + 4 }}
@@ -133,7 +144,11 @@ export function FileTreeNode({
 
       {/* Context menu */}
       {showContext && (
-        <div ref={contextRef} className="db-tree-context">
+        <div
+          ref={contextRef}
+          className="db-tree-context"
+          style={{ left: contextPos.x, top: contextPos.y }}
+        >
           <button className="db-tree-context-item" onClick={handleRenameStart}>
             Rename
           </button>
