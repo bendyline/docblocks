@@ -8,7 +8,7 @@
  * underlying squisq libraries directly.
  */
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, stat } from 'node:fs/promises';
 import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
@@ -44,9 +44,6 @@ export interface ConvertResult {
   outputFiles: { path: string; format: string; size: number }[];
 }
 
-/**
- * Core convert logic — reusable by both CLI and MCP tools.
- */
 export async function runConvert(inputPath: string, opts: ConvertOptions): Promise<ConvertResult> {
   const resolvedInput = resolve(inputPath);
   const formats: Format[] = opts.formats ? parseFormats(opts.formats) : [...ALL_FORMATS];
@@ -106,8 +103,7 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   for (const format of formats) {
     const outPath = join(outputDir, `${baseName}.${format}`);
     const buf = await exportToFormat(format, exportMarkdownDoc, container, baseName, themeId);
-    await writeFile(outPath, buf instanceof Uint8Array || Buffer.isBuffer(buf) ? buf : buf);
-    const { stat } = await import('node:fs/promises');
+    await writeFile(outPath, buf);
     const info = await stat(outPath);
     outputFiles.push({ path: outPath, format, size: info.size });
     console.error(`  ✓ ${outPath}`);
@@ -117,9 +113,6 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   return { outputFiles };
 }
 
-/**
- * Export a markdown document to a single format, returning the file content.
- */
 async function exportToFormat(
   format: Format,
   markdownDoc: MarkdownDocument,
@@ -183,7 +176,7 @@ async function exportToFormat(
 /**
  * Apply a transform style to a MarkdownDocument.
  */
-async function applyTransformToMarkdown(
+export async function applyTransformToMarkdown(
   markdownDoc: MarkdownDocument,
   container: ContentContainer,
   transformStyle: string,
@@ -198,9 +191,6 @@ async function applyTransformToMarkdown(
   return docToMarkdown(result.doc);
 }
 
-/**
- * Collect all image files from a container.
- */
 async function collectContainerImages(
   container: ContentContainer,
 ): Promise<Map<string, ArrayBuffer>> {

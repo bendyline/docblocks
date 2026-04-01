@@ -10,24 +10,20 @@ export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
 
-  // Track the last version we received to prevent echo loops
-  const lastVersionRef = useRef<number>(0);
-  // Track whether the current change originated from the webview
-  const isLocalEditRef = useRef(false);
+  // Flag set after we post an edit, cleared when we receive the echo back.
+  // Prevents re-setting markdown from our own change.
+  const awaitingEchoRef = useRef(false);
 
-  // Listen for messages from the extension host
   useEffect(() => {
     function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
       const msg = event.data;
       switch (msg.type) {
         case 'setContent':
-          // Skip if this is an echo of our own edit
-          if (isLocalEditRef.current && msg.version === lastVersionRef.current + 1) {
-            isLocalEditRef.current = false;
-            lastVersionRef.current = msg.version;
+          if (awaitingEchoRef.current) {
+            // This is the echo from our own edit — ignore it
+            awaitingEchoRef.current = false;
             return;
           }
-          lastVersionRef.current = msg.version;
           setMarkdown(msg.content);
           break;
         case 'themeChange':
@@ -55,7 +51,7 @@ export function VscodeEditor() {
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
-      isLocalEditRef.current = true;
+      awaitingEchoRef.current = true;
       vscode.postMessage({ type: 'edit', content: source });
     }, 300);
   }, []);

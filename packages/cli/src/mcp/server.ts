@@ -10,7 +10,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { writeFile, readFile, stat } from 'node:fs/promises';
+import { writeFile, readFile, stat, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -47,9 +47,27 @@ async function resolveMarkdownInput(
  */
 async function cleanupTemp(filePath: string, isTemp: boolean): Promise<void> {
   if (isTemp) {
-    const { rm } = await import('node:fs/promises');
     await rm(filePath, { force: true });
   }
+}
+
+/**
+ * Resolve markdown input to text content. Used by tools that operate
+ * on the markdown string directly (analyze, restyle) rather than via file.
+ */
+async function resolveMarkdownText(markdown: string): Promise<string> {
+  if (!markdown.includes('\n') && markdown.length < 500) {
+    try {
+      const resolved = resolve(markdown);
+      const info = await stat(resolved);
+      if (info.isFile()) {
+        return await readFile(resolved, 'utf-8');
+      }
+    } catch {
+      // Not a valid path — use as-is
+    }
+  }
+  return markdown;
 }
 
 export function createMcpServer(): McpServer {
@@ -60,177 +78,75 @@ export function createMcpServer(): McpServer {
 
   // ── Export Tools ─────────────────────────────────────────────────
 
-  server.tool(
-    'export_markdown_to_docx',
-    'Export a markdown document to a polished Microsoft Word (.docx) file with professional formatting and themes. Accepts raw markdown text or a file path.',
+  const EXPORT_FORMATS: { format: string; description: string }[] = [
     {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .docx file path'),
-      theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
-      transform: z
-        .string()
-        .optional()
-        .describe(
-          'Transform style to apply before export (use list_transform_styles to see options)',
-        ),
+      format: 'docx',
+      description:
+        'Export a markdown document to a polished Microsoft Word (.docx) file with professional formatting and themes. Accepts raw markdown text or a file path.',
     },
-    async ({ markdown, outputPath, theme, transform }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runConvert } = await import('../commands/convert.js');
-        const result = await runConvert(filePath, {
-          outputDir: resolve(outputPath, '..'),
-          formats: 'docx',
-          theme,
-          transform,
-        });
-        const file = result.outputFiles[0];
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: file.path,
-                fileSize: file.size,
-                format: 'docx',
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
+    {
+      format: 'pdf',
+      description:
+        'Export a markdown document to a styled PDF file. Accepts raw markdown text or a file path.',
     },
-  );
+    {
+      format: 'pptx',
+      description:
+        'Export a markdown document to a PowerPoint presentation — each section becomes a slide. Accepts raw markdown text or a file path.',
+    },
+    {
+      format: 'html',
+      description:
+        'Export a markdown document to a self-contained interactive HTML page with an embedded player. Accepts raw markdown text or a file path.',
+    },
+  ];
 
-  server.tool(
-    'export_markdown_to_pdf',
-    'Export a markdown document to a styled PDF file. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .pdf file path'),
-      theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
-      transform: z
-        .string()
-        .optional()
-        .describe(
-          'Transform style to apply before export (use list_transform_styles to see options)',
-        ),
-    },
-    async ({ markdown, outputPath, theme, transform }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runConvert } = await import('../commands/convert.js');
-        const result = await runConvert(filePath, {
-          outputDir: resolve(outputPath, '..'),
-          formats: 'pdf',
-          theme,
-          transform,
-        });
-        const file = result.outputFiles[0];
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: file.path,
-                fileSize: file.size,
-                format: 'pdf',
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
-    },
-  );
-
-  server.tool(
-    'export_markdown_to_pptx',
-    'Export a markdown document to a PowerPoint presentation — each section becomes a slide. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .pptx file path'),
-      theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
-      transform: z
-        .string()
-        .optional()
-        .describe(
-          'Transform style to apply before export (use list_transform_styles to see options)',
-        ),
-    },
-    async ({ markdown, outputPath, theme, transform }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runConvert } = await import('../commands/convert.js');
-        const result = await runConvert(filePath, {
-          outputDir: resolve(outputPath, '..'),
-          formats: 'pptx',
-          theme,
-          transform,
-        });
-        const file = result.outputFiles[0];
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: file.path,
-                fileSize: file.size,
-                format: 'pptx',
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
-    },
-  );
-
-  server.tool(
-    'export_markdown_to_html',
-    'Export a markdown document to a self-contained interactive HTML page with an embedded player. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .html file path'),
-      theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
-      transform: z
-        .string()
-        .optional()
-        .describe(
-          'Transform style to apply before export (use list_transform_styles to see options)',
-        ),
-    },
-    async ({ markdown, outputPath, theme, transform }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runConvert } = await import('../commands/convert.js');
-        const result = await runConvert(filePath, {
-          outputDir: resolve(outputPath, '..'),
-          formats: 'html',
-          theme,
-          transform,
-        });
-        const file = result.outputFiles[0];
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: file.path,
-                fileSize: file.size,
-                format: 'html',
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
-    },
-  );
+  for (const { format, description } of EXPORT_FORMATS) {
+    server.tool(
+      `export_markdown_to_${format}`,
+      description,
+      {
+        markdown: z
+          .string()
+          .describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
+        outputPath: z.string().describe(`Output .${format} file path`),
+        theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
+        transform: z
+          .string()
+          .optional()
+          .describe(
+            'Transform style to apply before export (use list_transform_styles to see options)',
+          ),
+      },
+      async ({ markdown, outputPath, theme, transform }) => {
+        const { filePath, isTemp } = await resolveMarkdownInput(markdown);
+        try {
+          const { runConvert } = await import('../commands/convert.js');
+          const result = await runConvert(filePath, {
+            outputDir: resolve(outputPath, '..'),
+            formats: format,
+            theme,
+            transform,
+          });
+          const file = result.outputFiles[0];
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  outputPath: file.path,
+                  fileSize: file.size,
+                  format,
+                }),
+              },
+            ],
+          };
+        } finally {
+          await cleanupTemp(filePath, isTemp);
+        }
+      },
+    );
+  }
 
   server.tool(
     'export_markdown_to_video',
@@ -294,19 +210,7 @@ export function createMcpServer(): McpServer {
       markdown: z.string().describe('Raw markdown text or path to a .md file'),
     },
     async ({ markdown }) => {
-      // Read content — either from file or use directly
-      let content = markdown;
-      if (!markdown.includes('\n') && markdown.length < 500) {
-        try {
-          const resolved = resolve(markdown);
-          const info = await stat(resolved);
-          if (info.isFile()) {
-            content = await readFile(resolved, 'utf-8');
-          }
-        } catch {
-          // Use as-is
-        }
-      }
+      const content = await resolveMarkdownText(markdown);
 
       const { parseMarkdown } = await import('@bendyline/squisq/markdown');
       const { extractContent } = await import('@bendyline/squisq/generate');
@@ -361,26 +265,9 @@ export function createMcpServer(): McpServer {
         .describe('If provided, write the transformed markdown to this file path'),
     },
     async ({ markdown, style, theme, outputPath }) => {
-      // Read content
-      let content = markdown;
-      if (!markdown.includes('\n') && markdown.length < 500) {
-        try {
-          const resolved = resolve(markdown);
-          const info = await stat(resolved);
-          if (info.isFile()) {
-            content = await readFile(resolved, 'utf-8');
-          }
-        } catch {
-          // Use as-is
-        }
-      }
+      const content = await resolveMarkdownText(markdown);
 
-      const { parseMarkdown, stringifyMarkdown } = await import('@bendyline/squisq/markdown');
-      const { markdownToDoc, docToMarkdown } = await import('@bendyline/squisq/doc');
-      const { applyTransform, extractDocImages, getTransformStyleIds } =
-        await import('@bendyline/squisq/transform');
-
-      // Validate style
+      const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
       const validStyles = getTransformStyleIds();
       if (!validStyles.includes(style)) {
         return {
@@ -394,11 +281,18 @@ export function createMcpServer(): McpServer {
         };
       }
 
+      const { parseMarkdown, stringifyMarkdown } = await import('@bendyline/squisq/markdown');
+      const { MemoryContentContainer } = await import('@bendyline/squisq/storage');
+      const { applyTransformToMarkdown } = await import('../commands/convert.js');
+
       const markdownDoc = parseMarkdown(content);
-      const doc = markdownToDoc(markdownDoc);
-      const images = extractDocImages(doc.blocks);
-      const result = applyTransform(doc, style, { themeId: theme, images });
-      const transformedMarkdownDoc = docToMarkdown(result.doc);
+      const container = new MemoryContentContainer();
+      const transformedMarkdownDoc = await applyTransformToMarkdown(
+        markdownDoc,
+        container,
+        style,
+        theme,
+      );
       const transformedText = stringifyMarkdown(transformedMarkdownDoc);
 
       if (outputPath) {

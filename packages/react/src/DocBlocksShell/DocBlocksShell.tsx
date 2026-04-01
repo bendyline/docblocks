@@ -81,7 +81,8 @@ function parseHash(): { workspaceId: string; filePath: string | null } | null {
 
 function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
+    () =>
+      typeof window !== 'undefined' && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
   );
   useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
@@ -113,6 +114,13 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
   const mediaContainerRef = useRef<IndexedDBContentContainer | null>(null);
   const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
 
+  /** Set up persistent media container for a workspace. */
+  const setupMediaContainer = useCallback((workspaceId: string) => {
+    const mc = new IndexedDBContentContainer(workspaceId);
+    mediaContainerRef.current = mc;
+    setMediaProvider(createMediaProviderFromContainer(mc));
+  }, []);
+
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
     const hash = buildHash(wsId, filePath);
@@ -141,10 +149,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setProvider(fsProvider);
       setActiveWorkspaceId(ws.id);
 
-      // Set up persistent media container for this workspace
-      const mc = new IndexedDBContentContainer(ws.id);
-      mediaContainerRef.current = mc;
-      setMediaProvider(createMediaProviderFromContainer(mc));
+      setupMediaContainer(ws.id);
 
       if (filePath) {
         const content = await fsProvider.readFile(filePath);
@@ -175,7 +180,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       }
       return true;
     },
-    [pushHash],
+    [pushHash, setupMediaContainer],
   );
 
   const seedWelcomeFile = useCallback(
@@ -264,9 +269,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
             setProvider(restored);
             setActiveWorkspaceId(ws.id);
 
-            const mc = new IndexedDBContentContainer(ws.id);
-            mediaContainerRef.current = mc;
-            setMediaProvider(createMediaProviderFromContainer(mc));
+            setupMediaContainer(ws.id);
             break;
           }
         } else {
@@ -276,9 +279,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
           setProvider(p);
           setActiveWorkspaceId(ws.id);
 
-          const mc = new IndexedDBContentContainer(ws.id);
-          mediaContainerRef.current = mc;
-          setMediaProvider(createMediaProviderFromContainer(mc));
+          setupMediaContainer(ws.id);
           break;
         }
       }
@@ -291,9 +292,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
         setProvider(p);
         setActiveWorkspaceId(defaultWs.id);
 
-        const mc = new IndexedDBContentContainer(defaultWs.id);
-        mediaContainerRef.current = mc;
-        setMediaProvider(createMediaProviderFromContainer(mc));
+        setupMediaContainer(defaultWs.id);
       }
 
       // Set initial hash
@@ -302,7 +301,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       // Seed welcome file if workspace is empty
       await seedWelcomeFile(fsProvider);
     })();
-  }, [openFromIds, pushHash, seedWelcomeFile]);
+  }, [openFromIds, pushHash, seedWelcomeFile, setupMediaContainer]);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -345,12 +344,9 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorKey((k) => k + 1);
       pushHash(ws.id, null);
 
-      // Set up persistent media container for this workspace
-      const mc = new IndexedDBContentContainer(ws.id);
-      mediaContainerRef.current = mc;
-      setMediaProvider(createMediaProviderFromContainer(mc));
+      setupMediaContainer(ws.id);
     },
-    [pushHash],
+    [pushHash, setupMediaContainer],
   );
 
   const handleOpenFolder = useCallback(async () => {
@@ -372,14 +368,11 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorKey((k) => k + 1);
       pushHash(descriptor.id, null);
 
-      // Set up persistent media container for this workspace
-      const mc = new IndexedDBContentContainer(descriptor.id);
-      mediaContainerRef.current = mc;
-      setMediaProvider(createMediaProviderFromContainer(mc));
+      setupMediaContainer(descriptor.id);
     } catch {
       // User cancelled or API not supported
     }
-  }, [pushHash]);
+  }, [pushHash, setupMediaContainer]);
 
   const handleSelect = useCallback(
     async (path: string, kind: 'file' | 'directory') => {
@@ -442,7 +435,6 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
           await mc.writeFile(entry.path, new Uint8Array(data), entry.mimeType);
         }
       }
-      setMediaProvider(createMediaProviderFromContainer(mc));
     },
     [],
   );
@@ -483,7 +475,12 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
           console.error(`Failed to import ${file.name}:`, err);
         }
       }
-      // Refresh file tree and select the last imported file
+      // Refresh media provider once after all imports (not per-file)
+      const mc = mediaContainerRef.current;
+      if (mc) {
+        setMediaProvider(createMediaProviderFromContainer(mc));
+      }
+      // Refresh file tree
       setExplorerKey((k) => k + 1);
     },
     [provider, persistContainerMedia],
@@ -500,10 +497,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
     const newName = prompt('Rename workspace:', ws.name);
     if (!newName || newName === ws.name) return;
     await saveWorkspace({ ...ws, name: newName });
-    if (provider && 'label' in provider) {
-      (provider as FileSystemProvider & { label: string }).label = newName;
-    }
-    // Force re-render by bumping editor key
+    // Bump key to trigger re-render — workspace name is read from the descriptor, not the provider
     setEditorKey((k) => k + 1);
   }, [activeWorkspaceId, provider]);
 
@@ -551,11 +545,9 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorContent('');
       setEditorKey((k) => k + 1);
 
-      const mc = new IndexedDBContentContainer(defaultWs.id);
-      mediaContainerRef.current = mc;
-      setMediaProvider(createMediaProviderFromContainer(mc));
+      setupMediaContainer(defaultWs.id);
     }
-  }, [activeWorkspaceId, handleWorkspaceSelect]);
+  }, [activeWorkspaceId, handleWorkspaceSelect, setupMediaContainer]);
 
   return (
     <div className={`db-shell${isMobile ? ' db-shell--mobile' : ''}`} data-theme={resolvedTheme}>
@@ -613,10 +605,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
                   container={mediaContainerRef.current ?? undefined}
                   toolbarSlotLeft={
                     isMobile ? (
-                      <button
-                        className="db-mobile-back"
-                        onClick={() => setMobileShowEditor(false)}
-                      >
+                      <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
                         <span className="db-mobile-back-arrow">&larr;</span>
                       </button>
                     ) : undefined
@@ -632,10 +621,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
             ) : selectedFolder ? (
               <div className="db-folder-view">
                 {isMobile && (
-                  <button
-                    className="db-mobile-back"
-                    onClick={() => setMobileShowEditor(false)}
-                  >
+                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
                     <span className="db-mobile-back-arrow">&larr;</span>
                     Back to files
                   </button>
