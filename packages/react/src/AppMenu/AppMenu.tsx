@@ -5,23 +5,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 export interface AppMenuProps {
-  /** Called when "Remove this workspace" is selected. */
-  onRemoveWorkspace: () => void;
-  /** Called when "Rename this workspace" is selected. */
-  onRenameWorkspace: () => void;
-  /** Called when "Download this workspace" is selected. */
-  onDownloadWorkspace: () => void;
   /** URL for the about page. */
   aboutUrl?: string;
+  /** Optional logo image URL to display instead of the text label. */
+  logoUrl?: string;
 }
 
-export function AppMenu({
-  onRemoveWorkspace,
-  onRenameWorkspace,
-  onDownloadWorkspace,
-  aboutUrl = '#about',
-}: AppMenuProps) {
+export function AppMenu({ aboutUrl: _aboutUrl = '#about', logoUrl }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,52 +33,92 @@ export function AppMenu({
   }, []);
 
   return (
-    <div ref={menuRef} className="db-app-menu">
-      <button
-        className="db-app-menu-btn"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        aria-haspopup="true"
-      >
-        <span className="db-app-menu-label">docblocks</span>
-        <span className="db-app-menu-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
-      </button>
+    <>
+      <div ref={menuRef} className="db-app-menu">
+        <button
+          className="db-app-menu-btn"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+        >
+          {logoUrl ? (
+            <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
+          ) : (
+            <span className="db-app-menu-label">docblocks</span>
+          )}
+          <span className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}>
+            {'\u25BE'}
+          </span>
+        </button>
 
-      {isOpen && (
-        <div className="db-app-menu-dropdown" role="menu">
-          <button
-            className="db-app-menu-item"
-            role="menuitem"
-            onClick={() => handleAction(onRenameWorkspace)}
+        {isOpen && (
+          <div className="db-app-menu-dropdown" role="menu">
+            <button
+              className="db-app-menu-item"
+              role="menuitem"
+              onClick={() => handleAction(() => setShowAbout(true))}
+            >
+              About
+            </button>
+          </div>
+        )}
+      </div>
+
+      {showAbout && (
+        <div className="db-dialog-overlay" onClick={() => setShowAbout(false)}>
+          <div
+            className="db-dialog"
+            role="dialog"
+            aria-label="About DocBlocks"
+            onClick={(e) => e.stopPropagation()}
           >
-            Rename this workspace
-          </button>
-          <button
-            className="db-app-menu-item"
-            role="menuitem"
-            onClick={() => handleAction(onDownloadWorkspace)}
-          >
-            Download this workspace
-          </button>
-          <div className="db-app-menu-divider" />
-          <button
-            className="db-app-menu-item db-app-menu-item--danger"
-            role="menuitem"
-            onClick={() => handleAction(onRemoveWorkspace)}
-          >
-            Remove this workspace
-          </button>
-          <div className="db-app-menu-divider" />
-          <a
-            className="db-app-menu-item"
-            href={aboutUrl}
-            role="menuitem"
-            onClick={() => setIsOpen(false)}
-          >
-            About
-          </a>
+            <div className="db-dialog-header">
+              <h2 className="db-dialog-title">About DocBlocks</h2>
+              <button
+                className="db-dialog-close"
+                onClick={() => setShowAbout(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="db-dialog-body">
+              <p>
+                <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
+                browser. Your files stay on your device.
+              </p>
+              <p>
+                Built on{' '}
+                <a
+                  href="https://github.com/nicoth-in/squisq"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  squisq
+                </a>{' '}
+                by Bendyline.
+              </p>
+              <p className="db-dialog-links">
+                <a
+                  href="https://github.com/bendyline/docblocks"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GitHub
+                </a>
+                <span className="db-dialog-sep">&middot;</span>
+                <a
+                  href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  License (MIT)
+                </a>
+              </p>
+            </div>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

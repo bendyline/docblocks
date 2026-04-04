@@ -21,5 +21,11 @@ export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 export { AppMenu } from './AppMenu/index.js';
 export type { AppMenuProps } from './AppMenu/index.js';
 
+// Export
+export { ExportToolbarControls } from './Export/index.js';
+export type { ExportToolbarControlsProps, ExportFormat, ExportOptions } from './Export/index.js';
+export { ExportDialog } from './Export/index.js';
+export type { ExportDialogProps } from './Export/index.js';
+
 // Hooks
 export { useAutoSave } from './hooks/index.js';

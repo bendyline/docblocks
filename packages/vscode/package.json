@@ -18,6 +18,7 @@
     "Other"
   ],
   "main": "./dist/extension.js",
+  "browser": "./dist/extension.web.js",
   "activationEvents": [],
   "contributes": {
     "commands": [
@@ -25,15 +26,53 @@
         "command": "docblocks.openEditor",
         "title": "DocBlocks: Open Editor"
       }
-    ]
+    ],
+    "customEditors": [
+      {
+        "viewType": "docblocks.markdownEditor",
+        "displayName": "DocBlocks Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docblocks",
+          "title": "DocBlocks",
+          "icon": "resources/docblocks-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "docblocks": [
+        {
+          "type": "webview",
+          "id": "docblocks.setupView",
+          "name": "Setup"
+        }
+      ]
+    }
   },
   "scripts": {
-    "build": "tsup",
-    "typecheck": "tsc --noEmit"
+    "build": "npm run build:webview && tsup",
+    "build:webview": "vite build --config webview/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test:web": "vscode-test-web --extensionDevelopmentPath=. --browser=none --port=3100",
+    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
-    "tsup": "^8.0.0",
-    "typescript": "^5.3.0"
+    "@types/vscode": "1.110.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "@vscode/test-web": "0.0.80",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vite": "6.4.1"
   }
 }

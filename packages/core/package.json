@@ -49,6 +49,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "^1.1.0"
+    "@bendyline/squisq": "1.2.1",
+    "@bendyline/squisq-editor-react": "1.2.1",
+    "@bendyline/squisq-formats": "1.2.1",
+    "@bendyline/squisq-react": "1.1.1",
+    "@bendyline/squisq-video": "1.0.3",
+    "@bendyline/squisq-video-react": "1.0.3"
   }
 }

@@ -14,6 +14,9 @@ export default tseslint.config(
       '**/*.config.ts',
       '**/*.config.js',
       '**/vitest.setup.ts',
+      '**/.vscode-test-web/**',
+      '**/playwright-report/**',
+      '**/test-results/**',
     ],
   },
 
@@ -25,7 +28,11 @@ export default tseslint.config(
 
   // React hooks rules for react & site packages
   {
-    files: ['packages/react/**/*.{ts,tsx}', 'packages/site/**/*.{ts,tsx}'],
+    files: [
+      'packages/react/**/*.{ts,tsx}',
+      'packages/site/**/*.{ts,tsx}',
+      'packages/vscode/webview/**/*.{ts,tsx}',
+    ],
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
