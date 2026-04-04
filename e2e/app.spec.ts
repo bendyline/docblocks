@@ -88,7 +88,7 @@ test.describe('File operations', () => {
     await page.locator('.db-new-item-add').click();
 
     // File should appear in tree
-    const treeRow = page.locator('.db-tree-row', { hasText: 'test-doc.md' });
+    const treeRow = page.locator('.db-tree-row', { hasText: 'test-doc' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
   });
 
@@ -101,7 +101,7 @@ test.describe('File operations', () => {
     await page.locator('.db-new-item-add').click();
 
     // Click the file to open it
-    const treeRow = page.locator('.db-tree-row', { hasText: 'edit-me.md' });
+    const treeRow = page.locator('.db-tree-row', { hasText: 'edit-me' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
     await treeRow.click();
 
