@@ -4,16 +4,28 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 
+export type ThemePreference = 'auto' | 'light' | 'dark';
+
 export interface AppMenuProps {
   /** URL for the about page. */
   aboutUrl?: string;
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
+  /** Current theme preference. */
+  themePreference?: ThemePreference;
+  /** Called when the user changes the theme preference. */
+  onThemeChange?: (theme: ThemePreference) => void;
 }
 
-export function AppMenu({ aboutUrl: _aboutUrl = '#about', logoUrl }: AppMenuProps) {
+export function AppMenu({
+  aboutUrl: _aboutUrl = '#about',
+  logoUrl,
+  themePreference = 'auto',
+  onThemeChange,
+}: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,6 +68,14 @@ export function AppMenu({ aboutUrl: _aboutUrl = '#about', logoUrl }: AppMenuProp
             <button
               className="db-app-menu-item"
               role="menuitem"
+              onClick={() => handleAction(() => setShowSettings(true))}
+            >
+              Settings
+            </button>
+            <div className="db-app-menu-divider" />
+            <button
+              className="db-app-menu-item"
+              role="menuitem"
               onClick={() => handleAction(() => setShowAbout(true))}
             >
               About
@@ -63,6 +83,63 @@ export function AppMenu({ aboutUrl: _aboutUrl = '#about', logoUrl }: AppMenuProp
           </div>
         )}
       </div>
+
+      {showSettings && (
+        <div className="db-dialog-overlay" onClick={() => setShowSettings(false)}>
+          <div
+            className="db-dialog"
+            role="dialog"
+            aria-label="Settings"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="db-dialog-header">
+              <h2 className="db-dialog-title">Settings</h2>
+              <button
+                className="db-dialog-close"
+                onClick={() => setShowSettings(false)}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="db-dialog-body">
+              <fieldset className="db-settings-fieldset">
+                <legend className="db-settings-legend">Theme</legend>
+                <label className="db-settings-radio">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="auto"
+                    checked={themePreference === 'auto'}
+                    onChange={() => onThemeChange?.('auto')}
+                  />
+                  System default
+                </label>
+                <label className="db-settings-radio">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="light"
+                    checked={themePreference === 'light'}
+                    onChange={() => onThemeChange?.('light')}
+                  />
+                  Light
+                </label>
+                <label className="db-settings-radio">
+                  <input
+                    type="radio"
+                    name="theme"
+                    value="dark"
+                    checked={themePreference === 'dark'}
+                    onChange={() => onThemeChange?.('dark')}
+                  />
+                  Dark
+                </label>
+              </fieldset>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAbout && (
         <div className="db-dialog-overlay" onClick={() => setShowAbout(false)}>

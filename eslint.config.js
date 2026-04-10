@@ -2,7 +2,6 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
-import sonarjs from 'eslint-plugin-sonarjs';
 import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
@@ -45,9 +44,6 @@ export default tseslint.config(
 
   // Project-wide rule overrides
   {
-    plugins: {
-      sonarjs,
-    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': [
@@ -55,8 +51,6 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
-      'sonarjs/no-identical-functions': 'warn',
-      'sonarjs/no-duplicated-branches': 'warn',
     },
   },
 

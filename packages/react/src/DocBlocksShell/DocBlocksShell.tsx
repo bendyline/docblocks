@@ -29,7 +29,7 @@ import {
   saveWorkspace,
   touchWorkspace,
 } from '@bendyline/docblocks/workspace';
-import { AppMenu } from '../AppMenu/AppMenu.js';
+import { AppMenu, type ThemePreference } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
@@ -79,6 +79,52 @@ function parseHash(): { workspaceId: string; filePath: string | null } | null {
   };
 }
 
+const LAST_STATE_KEY = 'docblocks:lastState';
+
+interface LastState {
+  workspaceId: string;
+  filePath: string;
+  view: EditorView;
+}
+
+function saveLastState(state: LastState): void {
+  try {
+    localStorage.setItem(LAST_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function loadLastState(): LastState | null {
+  try {
+    const raw = localStorage.getItem(LAST_STATE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+const THEME_PREF_KEY = 'docblocks:themePreference';
+
+function loadThemePreference(): ThemePreference {
+  try {
+    const raw = localStorage.getItem(THEME_PREF_KEY);
+    if (raw === 'light' || raw === 'dark' || raw === 'auto') return raw;
+  } catch {
+    // ignore
+  }
+  return 'auto';
+}
+
+function saveThemePreference(pref: ThemePreference): void {
+  try {
+    localStorage.setItem(THEME_PREF_KEY, pref);
+  } catch {
+    // ignore quota errors
+  }
+}
+
 function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState(
     () =>
@@ -93,9 +139,17 @@ function useIsMobile(breakpoint = 768): boolean {
   return isMobile;
 }
 
-export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps) {
+export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
-  const resolvedTheme: 'light' | 'dark' = theme === 'auto' ? osTheme : theme;
+  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
+  // User setting overrides the component prop
+  const effectiveTheme = themePreference !== 'auto' ? themePreference : themeProp;
+  const resolvedTheme: 'light' | 'dark' = effectiveTheme === 'auto' ? osTheme : effectiveTheme;
+
+  const handleThemeChange = useCallback((pref: ThemePreference) => {
+    setThemePreference(pref);
+    saveThemePreference(pref);
+  }, []);
   const isMobile = useIsMobile();
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
@@ -130,17 +184,23 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
     }
   }, []);
 
-  /** Open a workspace (and optionally a file) from identifiers. */
+  /** Open a workspace (and optionally a file) from identifiers.
+   *  Returns the FileSystemProvider on success, or null on failure. */
   const openFromIds = useCallback(
-    async (wsId: string, filePath: string | null, push: boolean) => {
+    async (
+      wsId: string,
+      filePath: string | null,
+      push: boolean,
+      view?: EditorView,
+    ): Promise<FileSystemProvider | null> => {
       const workspaces = await listWorkspaces();
       const ws = workspaces.find((w) => w.id === wsId);
-      if (!ws) return false;
+      if (!ws) return null;
 
       let fsProvider: FileSystemProvider | null = null;
       if (ws.type === 'native') {
         const restored = await restoreNativeFolder(ws.id);
-        if (!restored) return false;
+        if (!restored) return null;
         fsProvider = restored;
       } else {
         fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
@@ -158,8 +218,10 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
           setSelectedFolder(null);
           setFolderEntries([]);
           setEditorContent(content);
-          setInitialView('wysiwyg');
+          const effectiveView = view ?? 'wysiwyg';
+          setInitialView(effectiveView);
           setEditorKey((k) => k + 1);
+          saveLastState({ workspaceId: wsId, filePath, view: effectiveView });
         } else {
           setSelectedFile(null);
           setSelectedFolder(null);
@@ -178,7 +240,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       if (push) {
         pushHash(ws.id, filePath);
       }
-      return true;
+      return fsProvider;
     },
     [pushHash, setupMediaContainer],
   );
@@ -191,16 +253,18 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       if (
         entries.length === 1 &&
         entries[0].kind === 'file' &&
-        entries[0].path === '/aboutDocblocks.md'
+        entries[0].path.replace(/^\//, '') === 'aboutDocblocks.md'
       ) {
-        const content = await fs.readFile('/aboutDocblocks.md');
+        const aboutPath = entries[0].path;
+        const content = await fs.readFile(aboutPath);
         if (content !== null) {
-          setSelectedFile('/aboutDocblocks.md');
+          setSelectedFile(aboutPath);
           setEditorContent(content);
           setInitialView('preview');
           setEditorKey((k) => k + 1);
           setExplorerKey((k) => k + 1);
-          pushHash(fs.id, '/aboutDocblocks.md');
+          pushHash(fs.id, aboutPath);
+          saveLastState({ workspaceId: fs.id, filePath: aboutPath, view: 'preview' });
         }
         return;
       }
@@ -239,6 +303,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       setEditorKey((k) => k + 1);
       setExplorerKey((k) => k + 1);
       pushHash(fs.id, welcomePath);
+      saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'preview' });
     },
     [pushHash],
   );
@@ -249,8 +314,30 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
       // Try restoring from URL hash first
       const hashState = parseHash();
       if (hashState) {
-        const ok = await openFromIds(hashState.workspaceId, hashState.filePath, false);
-        if (ok) return;
+        const restoredProvider = await openFromIds(
+          hashState.workspaceId,
+          hashState.filePath,
+          false,
+        );
+        if (restoredProvider) {
+          // If the hash had no file, check whether we should auto-select the welcome doc
+          if (!hashState.filePath) {
+            await seedWelcomeFile(restoredProvider);
+          }
+          return;
+        }
+      }
+
+      // Try restoring last viewed document from localStorage
+      const lastState = loadLastState();
+      if (lastState) {
+        const restoredProvider = await openFromIds(
+          lastState.workspaceId,
+          lastState.filePath,
+          true,
+          lastState.view,
+        );
+        if (restoredProvider) return;
       }
 
       let fsProvider: FileSystemProvider | null = null;
@@ -318,6 +405,21 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [openFromIds]);
+
+  // Track view mode changes (Editor/Raw/Play tabs) and persist to localStorage
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = (e.target as HTMLElement).closest?.('[data-view]');
+      if (target) {
+        const view = target.getAttribute('data-view') as EditorView;
+        if (view && activeWorkspaceId && selectedFile) {
+          saveLastState({ workspaceId: activeWorkspaceId, filePath: selectedFile, view });
+        }
+      }
+    };
+    window.addEventListener('click', handler, true);
+    return () => window.removeEventListener('click', handler, true);
+  }, [activeWorkspaceId, selectedFile]);
 
   // Auto-save current file
   useAutoSave(provider, selectedFile, editorContent);
@@ -395,6 +497,7 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
         setInitialView('wysiwyg');
         setEditorKey((k) => k + 1);
         pushHash(activeWorkspaceId, path);
+        saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
         if (isMobile) setMobileShowEditor(true);
       }
     },
@@ -557,7 +660,11 @@ export function DocBlocksShell({ theme = 'auto', logoUrl }: DocBlocksShellProps)
         {(!isMobile || !mobileShowEditor) && (
           <div className="db-shell-sidebar">
             <div className="db-shell-sidebar-header">
-              <AppMenu logoUrl={logoUrl} />
+              <AppMenu
+                logoUrl={logoUrl}
+                themePreference={themePreference}
+                onThemeChange={handleThemeChange}
+              />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
                 onSelect={handleWorkspaceSelect}

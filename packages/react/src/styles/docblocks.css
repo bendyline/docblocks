@@ -719,6 +719,38 @@
   color: var(--db-text-placeholder);
 }
 
+/* ── Settings Dialog ─────────────────────────────────────────── */
+
+.db-settings-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.db-settings-legend {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--db-text-muted);
+  margin-bottom: 8px;
+}
+
+.db-settings-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
+.db-settings-radio input[type='radio'] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* ── Folder View ─────────────────────────────────────────────── */
 
 .db-folder-view {
