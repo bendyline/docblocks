@@ -100,17 +100,32 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
   private async checkCommand(command: string): Promise<string | null> {
     try {
       const { exec } = await import('child_process');
+      const isWin = process.platform === 'win32';
+      const extraPaths = isWin
+        ? ''
+        : '/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin';
+      const currentPath = process.env.PATH || '';
+      const env = {
+        ...process.env,
+        PATH: extraPaths ? `${extraPaths}:${currentPath}` : currentPath,
+      };
       return new Promise((resolve) => {
-        exec(command, { timeout: 15000 }, (err, stdout) => {
+        exec(command, { timeout: 15000, env }, (err, stdout, stderr) => {
           if (err) {
+            console.error(
+              `[DocBlocks] checkCommand failed: ${command}`,
+              err.message,
+              `PATH=${env.PATH}`,
+            );
             resolve(null);
           } else {
             resolve(stdout);
           }
         });
       });
-    } catch {
+    } catch (e) {
       // child_process not available in web context
+      console.error('[DocBlocks] child_process unavailable:', e);
       return null;
     }
   }
