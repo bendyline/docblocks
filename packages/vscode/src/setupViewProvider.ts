@@ -8,23 +8,42 @@ interface CheckResult {
   action?: string;
 }
 
-export class SetupViewProvider implements vscode.WebviewViewProvider {
+export class SetupViewProvider {
   public static readonly viewType = 'docblocks.setupView';
+  private static currentPanel: vscode.WebviewPanel | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  public resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
-  ): void {
-    webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = this.getHtml();
+  public static createOrShow(context: vscode.ExtensionContext): void {
+    const column = vscode.window.activeTextEditor?.viewColumn;
 
-    webviewView.webview.onDidReceiveMessage(async (msg) => {
+    if (SetupViewProvider.currentPanel) {
+      SetupViewProvider.currentPanel.reveal(column);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      SetupViewProvider.viewType,
+      'DocBlocks Setup',
+      column ?? vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+
+    SetupViewProvider.currentPanel = panel;
+    panel.onDidDispose(() => {
+      SetupViewProvider.currentPanel = undefined;
+    });
+
+    new SetupViewProvider(context).attach(panel.webview);
+  }
+
+  private attach(webview: vscode.Webview): void {
+    webview.html = this.getHtml();
+
+    webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'runChecks':
-          await this.runChecks(webviewView.webview);
+          await this.runChecks(webview);
           break;
 
         case 'openLink':
@@ -48,7 +67,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
         }
 
         case 'refreshChecks':
-          await this.runChecks(webviewView.webview);
+          await this.runChecks(webview);
           break;
       }
     });

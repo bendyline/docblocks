@@ -25,6 +25,10 @@
       {
         "command": "docblocks.openEditor",
         "title": "DocBlocks: Open Editor"
+      },
+      {
+        "command": "docblocks.openSetup",
+        "title": "DocBlocks: Open Setup"
       }
     ],
     "customEditors": [
@@ -33,30 +37,12 @@
         "displayName": "DocBlocks Editor",
         "selector": [
           {
-            "filenamePattern": "*.md"
+            "filenamePattern": "**/*.md"
           }
         ],
         "priority": "option"
       }
-    ],
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "docblocks",
-          "title": "DocBlocks",
-          "icon": "resources/docblocks-icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "docblocks": [
-        {
-          "type": "webview",
-          "id": "docblocks.setupView",
-          "name": "Setup"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "build": "npm run build:webview && tsup",

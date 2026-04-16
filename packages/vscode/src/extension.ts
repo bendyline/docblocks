@@ -14,14 +14,6 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  // Register the setup sidebar pane
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      SetupViewProvider.viewType,
-      new SetupViewProvider(context),
-    ),
-  );
-
   // Register the open editor command
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openEditor', async () => {
@@ -36,6 +28,13 @@ export function activate(context: vscode.ExtensionContext) {
           MarkdownEditorProvider.viewType,
         );
       }
+    }),
+  );
+
+  // Register the open setup command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('docblocks.openSetup', () => {
+      SetupViewProvider.createOrShow(context);
     }),
   );
 }
