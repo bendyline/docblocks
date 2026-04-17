@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'src/index.ts',
     'filesystem/index': 'src/filesystem/index.ts',
     'workspace/index': 'src/workspace/index.ts',
+    'host/index': 'src/host/index.ts',
   },
   format: ['esm'],
   dts: true,

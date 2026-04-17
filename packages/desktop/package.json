@@ -1,0 +1,60 @@
+{
+  "name": "docblocks-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
+  "author": "Bendyline",
+  "license": "MIT",
+  "main": "dist/main/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c \"blue,green\" \"vite --config vite.config.ts\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.config.ts --watch --onSuccess \"electron ./dist/main/main.cjs\"",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:main": "tsup --config tsup.config.ts",
+    "build:renderer": "tsc --noEmit -p tsconfig.json && vite build --config vite.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:snap": "npm run build && electron-builder --linux snap",
+    "dist:flatpak": "npm run build && electron-builder --linux flatpak",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "start": "electron ./dist/main/main.cjs",
+    "icons": "python3 scripts/generate-icons.py"
+  },
+  "dependencies": {
+    "@bendyline/docblocks": "*",
+    "@bendyline/docblocks-react": "*",
+    "@bendyline/squisq": "1.2.2",
+    "@bendyline/squisq-editor-react": "1.2.2",
+    "@bendyline/squisq-formats": "1.2.2",
+    "@bendyline/squisq-react": "1.1.2",
+    "@bendyline/squisq-video": "1.0.4",
+    "@bendyline/squisq-video-react": "1.0.4",
+    "chokidar": "3.6.0",
+    "electron-updater": "6.3.9",
+    "electron-window-state": "5.0.3",
+    "monaco-editor": "0.55.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "optionalDependencies": {
+    "ffmpeg-static": "5.2.0"
+  },
+  "devDependencies": {
+    "@electron/notarize": "2.5.0",
+    "@types/node": "22.10.2",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "concurrently": "9.1.0",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vite": "6.4.1",
+    "wait-on": "8.0.1"
+  }
+}

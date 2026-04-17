@@ -27,6 +27,24 @@
       ],
       "outFiles": ["${workspaceFolder}/packages/vscode/dist/**/*.js"],
       "preLaunchTask": "npm: build:vscode"
+    },
+    {
+      "name": "Run Desktop App (build + launch)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/packages/desktop",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
+      "runtimeArgs": ["."],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "outputCapture": "std",
+      "console": "integratedTerminal",
+      "preLaunchTask": "npm: build (all packages)",
+      "outFiles": [
+        "${workspaceFolder}/packages/desktop/dist/main/**/*.cjs",
+        "${workspaceFolder}/packages/desktop/dist/preload/**/*.cjs"
+      ]
     }
   ]
 }

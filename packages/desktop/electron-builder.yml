@@ -1,0 +1,121 @@
+appId: com.bendyline.docblocks
+productName: DocBlocks
+copyright: Copyright © 2026 Bendyline
+
+directories:
+  output: dist/artifacts
+  buildResources: resources
+
+files:
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
+  - package.json
+
+# Auto-update configuration — electron-updater checks this repo for releases.
+# The release workflow uploads installers + latest.yml to GitHub Releases.
+publish:
+  provider: github
+  owner: bendyline
+  repo: docblocks
+
+# Custom signing script for Azure Trusted Signing (Windows).
+# Skipped gracefully when TRUSTED_SIGNING_DLIB_PATH is not set (local dev).
+afterSign: scripts/notarize.cjs
+
+# Windows configuration
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  executableName: DocBlocks
+  publisherName: 'Bendyline LLC'
+  sign: scripts/sign.cjs
+  signingHashAlgorithms:
+    - sha256
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# macOS configuration
+# Signing uses the "Developer ID Application" certificate from the keychain.
+# Notarization is handled by afterSign (scripts/notarize.cjs).
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Linux configuration — ship AppImage (universal) and .deb (Debian/Ubuntu).
+# Snap and Flatpak are available on-demand via `--linux snap` / `--linux flatpak`;
+# they require extra host tooling (snapcraft / flatpak-builder) and are therefore
+# not in the default targets list.
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: resources/icon.png
+  category: Office
+  synopsis: Markdown document editor
+  description: DocBlocks — a browser-based markdown document editor for the desktop.
+
+snap:
+  grade: stable
+  confinement: strict
+  plugs:
+    - default
+    - home
+    - removable-media
+
+flatpak:
+  runtime: org.freedesktop.Platform
+  runtimeVersion: '23.08'
+  sdk: org.freedesktop.Sdk
+  finishArgs:
+    - --share=ipc
+    - --socket=x11
+    - --socket=wayland
+    - --device=dri
+    - --filesystem=home
+    - --share=network
+    - --talk-name=org.freedesktop.Notifications
+
+# Protocol handler for deep links (docblocks://open?path=/abs/path)
+protocols:
+  - name: DocBlocks
+    schemes:
+      - docblocks
+
+# Register .md as an openable file type so OS "Open With" routes here.
+fileAssociations:
+  - ext: md
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png

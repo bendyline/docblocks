@@ -42,6 +42,11 @@
       "types": "./dist/workspace/index.d.ts",
       "import": "./dist/workspace/index.js",
       "default": "./dist/workspace/index.js"
+    },
+    "./host": {
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js",
+      "default": "./dist/host/index.js"
     }
   },
   "scripts": {

@@ -16,10 +16,14 @@ import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/f
 import {
   IndexedDBFileSystemProvider,
   IndexedDBContentContainer,
+  ElectronFileSystemProvider,
+  FileSystemContentContainer,
   openNativeFolder,
   restoreNativeFolder,
   removeDirectoryHandle,
 } from '@bendyline/docblocks/filesystem';
+import type { ContentContainer } from '@bendyline/squisq/storage';
+import { isElectronHost, getDocblocksHost } from '@bendyline/docblocks/host';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
@@ -164,16 +168,22 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
 
-  /** Persistent media container backed by IndexedDB (survives page refresh). */
-  const mediaContainerRef = useRef<IndexedDBContentContainer | null>(null);
+  /** Persistent media container. IndexedDB on web; folder-backed on desktop. */
+  const mediaContainerRef = useRef<ContentContainer | null>(null);
   const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
 
   /** Set up persistent media container for a workspace. */
-  const setupMediaContainer = useCallback((workspaceId: string) => {
-    const mc = new IndexedDBContentContainer(workspaceId);
-    mediaContainerRef.current = mc;
-    setMediaProvider(createMediaProviderFromContainer(mc));
-  }, []);
+  const setupMediaContainer = useCallback(
+    (workspaceId: string, fsProvider?: FileSystemProvider | null) => {
+      const mc: ContentContainer =
+        fsProvider instanceof ElectronFileSystemProvider
+          ? new FileSystemContentContainer(fsProvider, '.docblocks/media')
+          : new IndexedDBContentContainer(workspaceId);
+      mediaContainerRef.current = mc;
+      setMediaProvider(createMediaProviderFromContainer(mc));
+    },
+    [],
+  );
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -198,7 +208,15 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       if (!ws) return null;
 
       let fsProvider: FileSystemProvider | null = null;
-      if (ws.type === 'native') {
+      if (ws.type === 'electron-native') {
+        if (!ws.rootPath) return null;
+        await getDocblocksHost().workspaces.register({
+          id: ws.id,
+          name: ws.name,
+          rootPath: ws.rootPath,
+        });
+        fsProvider = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+      } else if (ws.type === 'native') {
         const restored = await restoreNativeFolder(ws.id);
         if (!restored) return null;
         fsProvider = restored;
@@ -209,7 +227,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setProvider(fsProvider);
       setActiveWorkspaceId(ws.id);
 
-      setupMediaContainer(ws.id);
+      setupMediaContainer(ws.id, fsProvider);
 
       if (filePath) {
         const content = await fsProvider.readFile(filePath);
@@ -342,13 +360,33 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
 
       let fsProvider: FileSystemProvider | null = null;
 
+      const electron = isElectronHost();
       const workspaces = await listWorkspaces();
+      // On desktop, hide web-only workspaces (indexeddb/native) — only
+      // folder-based workspaces are valid.
+      const candidates = electron
+        ? workspaces.filter((w) => w.type === 'electron-native')
+        : workspaces.filter((w) => w.type !== 'electron-native');
       // Pick the most recently opened workspace
-      const sorted = [...workspaces].sort((a, b) =>
+      const sorted = [...candidates].sort((a, b) =>
         (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
       );
       for (const ws of sorted) {
-        if (ws.type === 'native') {
+        if (ws.type === 'electron-native') {
+          if (!ws.rootPath) continue;
+          await getDocblocksHost().workspaces.register({
+            id: ws.id,
+            name: ws.name,
+            rootPath: ws.rootPath,
+          });
+          const p = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+          await touchWorkspace(ws.id);
+          fsProvider = p;
+          setProvider(p);
+          setActiveWorkspaceId(ws.id);
+          setupMediaContainer(ws.id, p);
+          break;
+        } else if (ws.type === 'native') {
           const restored = await restoreNativeFolder(ws.id);
           if (restored) {
             await touchWorkspace(ws.id);
@@ -356,7 +394,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
             setProvider(restored);
             setActiveWorkspaceId(ws.id);
 
-            setupMediaContainer(ws.id);
+            setupMediaContainer(ws.id, restored);
             break;
           }
         } else {
@@ -366,20 +404,39 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           setProvider(p);
           setActiveWorkspaceId(ws.id);
 
-          setupMediaContainer(ws.id);
+          setupMediaContainer(ws.id, p);
           break;
         }
       }
 
       if (!fsProvider) {
-        // No workspaces yet — create default
-        const defaultWs = await ensureDefaultWorkspace();
-        const p = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
-        fsProvider = p;
-        setProvider(p);
-        setActiveWorkspaceId(defaultWs.id);
+        if (electron) {
+          // Desktop: ask the host for the default folder workspace
+          // (creates ~/Documents/DocBlocks on first launch).
+          const info = await getDocblocksHost().workspaces.getDefault();
+          const descriptor: WorkspaceDescriptor = {
+            id: info.id,
+            name: info.name,
+            type: 'electron-native',
+            rootPath: info.rootPath,
+            lastOpened: new Date().toISOString(),
+          };
+          await saveWorkspace(descriptor);
+          const p = new ElectronFileSystemProvider(info.id, info.name, info.rootPath);
+          fsProvider = p;
+          setProvider(p);
+          setActiveWorkspaceId(info.id);
+          setupMediaContainer(info.id, p);
+        } else {
+          // Web: create the IndexedDB default workspace
+          const defaultWs = await ensureDefaultWorkspace();
+          const p = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
+          fsProvider = p;
+          setProvider(p);
+          setActiveWorkspaceId(defaultWs.id);
 
-        setupMediaContainer(defaultWs.id);
+          setupMediaContainer(defaultWs.id, p);
+        }
       }
 
       // Set initial hash
@@ -424,20 +481,49 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
   // Auto-save current file
   useAutoSave(provider, selectedFile, editorContent);
 
+  // React to external file changes watched by the Electron host (chokidar).
+  useEffect(() => {
+    if (!isElectronHost()) return;
+    if (!provider || !(provider instanceof ElectronFileSystemProvider)) return;
+    const unwatch = provider.watch(() => {
+      setExplorerKey((k) => k + 1);
+      // If the open file's contents changed on disk, reload it (best-effort).
+      if (selectedFile) {
+        (async () => {
+          const content = await provider.readFile(selectedFile);
+          if (content !== null && content !== editorContent) {
+            setEditorContent(content);
+            setEditorKey((k) => k + 1);
+          }
+        })();
+      }
+    });
+    return unwatch;
+  }, [provider, selectedFile, editorContent]);
+
   const handleWorkspaceSelect = useCallback(
     async (ws: WorkspaceDescriptor) => {
       await touchWorkspace(ws.id);
-      if (ws.type === 'native') {
+      let nextProvider: FileSystemProvider | null = null;
+      if (ws.type === 'electron-native') {
+        if (!ws.rootPath) return;
+        await getDocblocksHost().workspaces.register({
+          id: ws.id,
+          name: ws.name,
+          rootPath: ws.rootPath,
+        });
+        nextProvider = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+      } else if (ws.type === 'native') {
         const restored = await restoreNativeFolder(ws.id);
-        if (restored) {
-          setProvider(restored);
-        } else {
+        if (!restored) {
           // Permission denied or handle lost — fall through without changing provider
           return;
         }
+        nextProvider = restored;
       } else {
-        setProvider(new IndexedDBFileSystemProvider(ws.id, ws.name));
+        nextProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
       }
+      setProvider(nextProvider);
       setActiveWorkspaceId(ws.id);
       setSelectedFile(null);
       setSelectedFolder(null);
@@ -446,13 +532,37 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setEditorKey((k) => k + 1);
       pushHash(ws.id, null);
 
-      setupMediaContainer(ws.id);
+      setupMediaContainer(ws.id, nextProvider);
     },
     [pushHash, setupMediaContainer],
   );
 
   const handleOpenFolder = useCallback(async () => {
     try {
+      if (isElectronHost()) {
+        const info = await getDocblocksHost().workspaces.pickFolder();
+        if (!info) return; // user cancelled
+        const descriptor: WorkspaceDescriptor = {
+          id: info.id,
+          name: info.name,
+          type: 'electron-native',
+          rootPath: info.rootPath,
+          lastOpened: new Date().toISOString(),
+        };
+        await saveWorkspace(descriptor);
+        const provider = new ElectronFileSystemProvider(info.id, info.name, info.rootPath);
+        setProvider(provider);
+        setActiveWorkspaceId(descriptor.id);
+        setSelectedFile(null);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+        setEditorContent('');
+        setEditorKey((k) => k + 1);
+        pushHash(descriptor.id, null);
+        setupMediaContainer(descriptor.id, provider);
+        return;
+      }
+
       const nativeProvider = await openNativeFolder();
       const descriptor: WorkspaceDescriptor = {
         id: nativeProvider.id,
@@ -470,11 +580,109 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setEditorKey((k) => k + 1);
       pushHash(descriptor.id, null);
 
-      setupMediaContainer(descriptor.id);
+      setupMediaContainer(descriptor.id, nativeProvider);
     } catch {
       // User cancelled or API not supported
     }
   }, [pushHash, setupMediaContainer]);
+
+  const handleNewFile = useCallback(async () => {
+    if (!provider) return;
+    const name = prompt('New document name:', 'Untitled.md');
+    if (!name) return;
+    const filename = /\.[a-zA-Z0-9]+$/.test(name) ? name : `${name}.md`;
+    await provider.writeFile(filename, '# ' + filename.replace(/\.[^.]+$/, '') + '\n');
+    setSelectedFile('/' + filename);
+    setEditorContent('# ' + filename.replace(/\.[^.]+$/, '') + '\n');
+    setInitialView('wysiwyg');
+    setEditorKey((k) => k + 1);
+    setExplorerKey((k) => k + 1);
+    if (activeWorkspaceId) {
+      pushHash(activeWorkspaceId, '/' + filename);
+    }
+  }, [provider, activeWorkspaceId, pushHash]);
+
+  const handleRevealWorkspace = useCallback(async () => {
+    if (!isElectronHost() || !activeWorkspaceId) return;
+    const ws = await getWorkspace(activeWorkspaceId);
+    if (ws?.type === 'electron-native' && ws.rootPath) {
+      await getDocblocksHost().shell.revealInFolder(ws.rootPath);
+    }
+  }, [activeWorkspaceId]);
+
+  // Subscribe to native menu commands (Electron host).
+  useEffect(() => {
+    if (!isElectronHost()) return;
+    const host = getDocblocksHost();
+    return host.onMenuCommand((cmd) => {
+      switch (cmd) {
+        case 'file:new':
+          handleNewFile();
+          break;
+        case 'file:openFolder':
+          handleOpenFolder();
+          break;
+        case 'file:revealWorkspace':
+          handleRevealWorkspace();
+          break;
+        case 'help:viewOnGitHub':
+          host.shell.openExternal('https://github.com/bendyline/docblocks');
+          break;
+        case 'help:checkForUpdates':
+          host.updater.checkForUpdates().catch(() => {
+            // errors surface via updater.onStatus
+          });
+          break;
+        case 'help:about':
+          (async () => {
+            const version = await host.updater.getVersion();
+            alert(`DocBlocks ${version}`);
+          })();
+          break;
+        default:
+          break;
+      }
+    });
+  }, [handleNewFile, handleOpenFolder, handleRevealWorkspace]);
+
+  // Subscribe to open-file / deep-link requests from the OS.
+  useEffect(() => {
+    if (!isElectronHost()) return;
+    const host = getDocblocksHost();
+    return host.onOpenRequest(async (req) => {
+      if (req.filePath) {
+        const workspaces = (await listWorkspaces()).filter(
+          (w) => w.type === 'electron-native' && w.rootPath,
+        );
+        const match = workspaces.find(
+          (w) => req.filePath!.startsWith((w.rootPath ?? '') + '/') || req.filePath === w.rootPath,
+        );
+        if (match && match.rootPath) {
+          const rel = '/' + req.filePath.slice(match.rootPath.length).replace(/^\/+/, '');
+          await openFromIds(match.id, rel, true);
+        }
+      } else if (req.url) {
+        try {
+          const u = new URL(req.url);
+          const path = u.searchParams.get('path');
+          if (path) {
+            const workspaces = (await listWorkspaces()).filter(
+              (w) => w.type === 'electron-native' && w.rootPath,
+            );
+            const match = workspaces.find(
+              (w) => path.startsWith((w.rootPath ?? '') + '/') || path === w.rootPath,
+            );
+            if (match && match.rootPath) {
+              const rel = '/' + path.slice(match.rootPath.length).replace(/^\/+/, '');
+              await openFromIds(match.id, rel, true);
+            }
+          }
+        } catch {
+          // bad URL, ignore
+        }
+      }
+    });
+  }, [openFromIds]);
 
   const handleSelect = useCallback(
     async (path: string, kind: 'file' | 'directory') => {
@@ -602,7 +810,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
     await saveWorkspace({ ...ws, name: newName });
     // Bump key to trigger re-render — workspace name is read from the descriptor, not the provider
     setEditorKey((k) => k + 1);
-  }, [activeWorkspaceId, provider]);
+  }, [activeWorkspaceId]);
 
   const handleDownloadWorkspace = useCallback(async () => {
     if (!provider) return;
@@ -629,14 +837,50 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
 
   const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspaceId) return;
-    if (!confirm('Remove this workspace? This cannot be undone.')) return;
-    await removeDirectoryHandle(activeWorkspaceId);
+    const confirmMsg = isElectronHost()
+      ? 'Remove this workspace from DocBlocks? The files on disk will not be deleted.'
+      : 'Remove this workspace? This cannot be undone.';
+    if (!confirm(confirmMsg)) return;
+
+    const ws = await getWorkspace(activeWorkspaceId);
+    if (ws?.type === 'electron-native') {
+      try {
+        await getDocblocksHost().workspaces.unregister(activeWorkspaceId);
+      } catch {
+        // ignore — host cleanup is best-effort
+      }
+    } else {
+      await removeDirectoryHandle(activeWorkspaceId);
+    }
     await removeWorkspace(activeWorkspaceId);
+
+    const electron = isElectronHost();
     // Switch to most recent remaining workspace or create default
-    const remaining = await listWorkspaces();
+    const remaining = (await listWorkspaces()).filter((w) =>
+      electron ? w.type === 'electron-native' : w.type !== 'electron-native',
+    );
     if (remaining.length > 0) {
       const next = remaining[0];
       await handleWorkspaceSelect(next);
+    } else if (electron) {
+      const info = await getDocblocksHost().workspaces.getDefault();
+      const descriptor: WorkspaceDescriptor = {
+        id: info.id,
+        name: info.name,
+        type: 'electron-native',
+        rootPath: info.rootPath,
+        lastOpened: new Date().toISOString(),
+      };
+      await saveWorkspace(descriptor);
+      const p = new ElectronFileSystemProvider(info.id, info.name, info.rootPath);
+      setProvider(p);
+      setActiveWorkspaceId(info.id);
+      setSelectedFile(null);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setEditorContent('');
+      setEditorKey((k) => k + 1);
+      setupMediaContainer(info.id, p);
     } else {
       const defaultWs = await ensureDefaultWorkspace();
       const fsProvider = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
@@ -648,7 +892,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setEditorContent('');
       setEditorKey((k) => k + 1);
 
-      setupMediaContainer(defaultWs.id);
+      setupMediaContainer(defaultWs.id, fsProvider);
     }
   }, [activeWorkspaceId, handleWorkspaceSelect, setupMediaContainer]);
 
