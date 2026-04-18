@@ -8,11 +8,17 @@ interface CheckResult {
   action?: string;
 }
 
-export class SetupViewProvider {
+export class SetupViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docblocks.setupView';
   private static currentPanel: vscode.WebviewPanel | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
+
+  /** WebviewViewProvider entry point — sidebar view lifecycle. */
+  public resolveWebviewView(webviewView: vscode.WebviewView): void {
+    webviewView.webview.options = { enableScripts: true };
+    this.attach(webviewView.webview);
+  }
 
   public static createOrShow(context: vscode.ExtensionContext): void {
     const column = vscode.window.activeTextEditor?.viewColumn;
@@ -37,7 +43,7 @@ export class SetupViewProvider {
     new SetupViewProvider(context).attach(panel.webview);
   }
 
-  private attach(webview: vscode.Webview): void {
+  public attach(webview: vscode.Webview): void {
     webview.html = this.getHtml();
 
     webview.onDidReceiveMessage(async (msg) => {

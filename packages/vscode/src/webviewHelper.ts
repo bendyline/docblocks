@@ -54,7 +54,12 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
 </head>
 <body>
   <div id="root"></div>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <!--
+    Loaded as an ES module so Monaco's lazy language loaders can use
+    import.meta.url. A plain <script> tag would parse-error on the
+    bundle's import.meta references.
+  -->
+  <script type="module" nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
 }

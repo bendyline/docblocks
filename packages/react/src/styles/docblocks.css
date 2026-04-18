@@ -8,7 +8,8 @@
   --db-bg-hover: #f3f4f6;
   --db-bg-selected: #dbeafe;
   --db-bg-selected-hover: #bfdbfe;
-  --db-border: #e5e7eb;
+  --db-border: #cbd5e1;
+  --db-border-strong: #94a3b8;
   --db-text: #1f2937;
   --db-text-secondary: #374151;
   --db-text-muted: #6b7280;
@@ -27,7 +28,8 @@
   --db-bg-hover: #334155;
   --db-bg-selected: #1e3a5f;
   --db-bg-selected-hover: #1e4a7f;
-  --db-border: #334155;
+  --db-border: #475569;
+  --db-border-strong: #64748b;
   --db-text: #e5e7eb;
   --db-text-secondary: #cbd5e1;
   --db-text-muted: #94a3b8;
@@ -47,7 +49,8 @@
     --db-bg-hover: #334155;
     --db-bg-selected: #1e3a5f;
     --db-bg-selected-hover: #1e4a7f;
-    --db-border: #334155;
+    --db-border: #475569;
+    --db-border-strong: #64748b;
     --db-text: #e5e7eb;
     --db-text-secondary: #cbd5e1;
     --db-text-muted: #94a3b8;
@@ -94,7 +97,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--db-border);
+  border-bottom: 1px solid var(--db-border-strong);
   flex-shrink: 0;
 }
 
@@ -218,8 +221,11 @@
   width: 16px;
   flex-shrink: 0;
   text-align: center;
-  font-size: 10px;
-  color: var(--db-text-placeholder);
+  font-size: 14px;
+  line-height: 1;
+  font-family:
+    ui-monospace, 'SF Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+  color: var(--db-text-secondary);
 }
 
 .db-tree-label {
@@ -552,7 +558,7 @@
 
 .db-shell-sidebar {
   width: 260px;
-  border-right: 1px solid var(--db-border);
+  border-right: 1px solid var(--db-border-strong);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -562,7 +568,7 @@
 .db-shell-sidebar-header {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--db-border);
+  border-bottom: 1px solid var(--db-border-strong);
   padding: 4px;
   gap: 4px;
   flex-shrink: 0;
@@ -571,7 +577,7 @@
 
 .db-shell-sidebar-footer {
   padding: 8px 12px;
-  border-top: 1px solid var(--db-border);
+  border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
 }
@@ -769,7 +775,14 @@
 }
 
 .db-folder-view-icon {
-  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--db-text-secondary);
+}
+
+.db-folder-view-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
 .db-folder-view-path {
@@ -805,8 +818,15 @@
 }
 
 .db-folder-view-item-icon {
-  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
+  color: var(--db-text-secondary);
+}
+
+.db-folder-view-item-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 /* ── Toolbar Image Button Override ─────────────────────────── */
@@ -990,4 +1010,33 @@
 .db-export-btn--primary:hover {
   background: var(--db-accent-hover);
   border-color: var(--db-accent-hover);
+}
+
+/* ── Squisq editor chrome separators ─────────────────────────── */
+/* Strengthen the dividers so the toolbar, tabs, and editor body
+   read as three distinct zones instead of near-identical whites.  */
+
+.db-shell .squisq-editor-header {
+  border-bottom-color: var(--db-border-strong);
+}
+
+.db-shell .squisq-toolbar-view-tabs {
+  border-right-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='light'] .squisq-toolbar {
+  background: #d8dee6;
+}
+
+.db-shell[data-theme='light'] .squisq-toolbar-view-tabs {
+  background: #ffffff;
+  box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
+}
+
+.db-shell[data-theme='dark'] .squisq-toolbar {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
+  background: #0b1220;
 }

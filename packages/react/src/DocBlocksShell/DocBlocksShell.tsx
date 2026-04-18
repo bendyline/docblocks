@@ -11,13 +11,12 @@ import type { EditorTheme, EditorView } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
-import { createMediaProviderFromContainer } from '@bendyline/squisq/storage';
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import {
   IndexedDBFileSystemProvider,
-  IndexedDBContentContainer,
   ElectronFileSystemProvider,
   FileSystemContentContainer,
+  createFileMediaProvider,
   openNativeFolder,
   restoreNativeFolder,
   removeDirectoryHandle,
@@ -129,6 +128,18 @@ function saveThemePreference(pref: ThemePreference): void {
   }
 }
 
+function dirnameOf(p: string): string {
+  const clean = p.replace(/^\/+/, '');
+  const idx = clean.lastIndexOf('/');
+  return idx === -1 ? '' : clean.slice(0, idx);
+}
+
+function basenameOf(p: string): string {
+  const clean = p.replace(/^\/+/, '');
+  const idx = clean.lastIndexOf('/');
+  return idx === -1 ? clean : clean.slice(idx + 1);
+}
+
 function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState(
     () =>
@@ -143,12 +154,44 @@ function useIsMobile(breakpoint = 768): boolean {
   return isMobile;
 }
 
-export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocksShellProps) {
+function FolderGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7z" />
+    </svg>
+  );
+}
+
+function FileGlyph() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <path d="M14 3v5h5" />
+    </svg>
+  );
+}
+
+export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
-  // User setting overrides the component prop
-  const effectiveTheme = themePreference !== 'auto' ? themePreference : themeProp;
-  const resolvedTheme: 'light' | 'dark' = effectiveTheme === 'auto' ? osTheme : effectiveTheme;
+  // "System default" (auto) always follows the OS — the host's theme prop
+  // is kept only for API back-compat and does not override OS detection.
+  const resolvedTheme: 'light' | 'dark' =
+    themePreference === 'light' || themePreference === 'dark' ? themePreference : osTheme;
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
     setThemePreference(pref);
@@ -168,22 +211,14 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
 
-  /** Persistent media container. IndexedDB on web; folder-backed on desktop. */
+  /**
+   * Per-file media container: for `notes.md`, images live in
+   * `notes_files/` next to the markdown. Created lazily on first write,
+   * picked up automatically if it already exists. Set up by the effect
+   * below whenever the selected file (or backing provider) changes.
+   */
   const mediaContainerRef = useRef<ContentContainer | null>(null);
   const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
-
-  /** Set up persistent media container for a workspace. */
-  const setupMediaContainer = useCallback(
-    (workspaceId: string, fsProvider?: FileSystemProvider | null) => {
-      const mc: ContentContainer =
-        fsProvider instanceof ElectronFileSystemProvider
-          ? new FileSystemContentContainer(fsProvider, '.docblocks/media')
-          : new IndexedDBContentContainer(workspaceId);
-      mediaContainerRef.current = mc;
-      setMediaProvider(createMediaProviderFromContainer(mc));
-    },
-    [],
-  );
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -227,8 +262,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setProvider(fsProvider);
       setActiveWorkspaceId(ws.id);
 
-      setupMediaContainer(ws.id, fsProvider);
-
       if (filePath) {
         const content = await fsProvider.readFile(filePath);
         if (content !== null) {
@@ -260,7 +293,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       }
       return fsProvider;
     },
-    [pushHash, setupMediaContainer],
+    [pushHash],
   );
 
   const seedWelcomeFile = useCallback(
@@ -384,7 +417,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           fsProvider = p;
           setProvider(p);
           setActiveWorkspaceId(ws.id);
-          setupMediaContainer(ws.id, p);
           break;
         } else if (ws.type === 'native') {
           const restored = await restoreNativeFolder(ws.id);
@@ -393,8 +425,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
             fsProvider = restored;
             setProvider(restored);
             setActiveWorkspaceId(ws.id);
-
-            setupMediaContainer(ws.id, restored);
             break;
           }
         } else {
@@ -403,8 +433,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           fsProvider = p;
           setProvider(p);
           setActiveWorkspaceId(ws.id);
-
-          setupMediaContainer(ws.id, p);
           break;
         }
       }
@@ -426,7 +454,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           fsProvider = p;
           setProvider(p);
           setActiveWorkspaceId(info.id);
-          setupMediaContainer(info.id, p);
         } else {
           // Web: create the IndexedDB default workspace
           const defaultWs = await ensureDefaultWorkspace();
@@ -434,8 +461,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           fsProvider = p;
           setProvider(p);
           setActiveWorkspaceId(defaultWs.id);
-
-          setupMediaContainer(defaultWs.id, p);
         }
       }
 
@@ -445,7 +470,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       // Seed welcome file if workspace is empty
       await seedWelcomeFile(fsProvider);
     })();
-  }, [openFromIds, pushHash, seedWelcomeFile, setupMediaContainer]);
+  }, [openFromIds, pushHash, seedWelcomeFile]);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -480,6 +505,25 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
 
   // Auto-save current file
   useAutoSave(provider, selectedFile, editorContent);
+
+  // Per-file media: for `notes.md` images live in `notes_files/` beside it.
+  // Rebuilds whenever the provider or selected file changes.
+  useEffect(() => {
+    if (!provider || !selectedFile) {
+      mediaContainerRef.current = null;
+      setMediaProvider(null);
+      return;
+    }
+    const parentDir = dirnameOf(selectedFile);
+    const base = basenameOf(selectedFile);
+    const container = new FileSystemContentContainer(provider, parentDir);
+    const mp = createFileMediaProvider(container, base);
+    mediaContainerRef.current = container;
+    setMediaProvider(mp);
+    return () => {
+      mp.dispose();
+    };
+  }, [provider, selectedFile]);
 
   // React to external file changes watched by the Electron host (chokidar).
   useEffect(() => {
@@ -531,10 +575,8 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setEditorContent('');
       setEditorKey((k) => k + 1);
       pushHash(ws.id, null);
-
-      setupMediaContainer(ws.id, nextProvider);
     },
-    [pushHash, setupMediaContainer],
+    [pushHash],
   );
 
   const handleOpenFolder = useCallback(async () => {
@@ -559,7 +601,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
         setEditorContent('');
         setEditorKey((k) => k + 1);
         pushHash(descriptor.id, null);
-        setupMediaContainer(descriptor.id, provider);
         return;
       }
 
@@ -579,12 +620,10 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setEditorContent('');
       setEditorKey((k) => k + 1);
       pushHash(descriptor.id, null);
-
-      setupMediaContainer(descriptor.id, nativeProvider);
     } catch {
       // User cancelled or API not supported
     }
-  }, [pushHash, setupMediaContainer]);
+  }, [pushHash]);
 
   const handleNewFile = useCallback(async () => {
     if (!provider) return;
@@ -730,21 +769,30 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
     }
   }, [provider, selectedFile, selectedFolder, activeWorkspaceId, pushHash]);
 
-  /** Copy non-markdown files from an imported container into persistent media storage. */
-  const persistContainerMedia = useCallback(
-    async (source: {
-      listFiles(): Promise<Array<{ path: string; mimeType: string }>>;
-      readFile(path: string): Promise<ArrayBuffer | null>;
-    }) => {
-      const mc = mediaContainerRef.current;
-      if (!mc) return;
+  /**
+   * Copy non-markdown files from an imported container into the target
+   * markdown file's `_files/` sibling folder, preserving the source's
+   * relative structure.
+   */
+  const persistImportedMedia = useCallback(
+    async (
+      source: {
+        listFiles(): Promise<Array<{ path: string; mimeType: string }>>;
+        readFile(path: string): Promise<ArrayBuffer | null>;
+      },
+      target: FileSystemProvider,
+      importedMarkdownPath: string,
+    ) => {
+      const parentDir = dirnameOf(importedMarkdownPath);
+      const folder = basenameOf(importedMarkdownPath).replace(/\.[^.]+$/, '') + '_files';
+      const mediaRoot = parentDir ? `${parentDir}/${folder}` : folder;
       const entries = await source.listFiles();
       for (const entry of entries) {
         if (entry.path.endsWith('.md')) continue;
         const data = await source.readFile(entry.path);
-        if (data) {
-          await mc.writeFile(entry.path, new Uint8Array(data), entry.mimeType);
-        }
+        if (!data) continue;
+        const cleanPath = entry.path.replace(/^\/+/, '');
+        await target.writeBinary(`${mediaRoot}/${cleanPath}`, new Uint8Array(data));
       }
     },
     [],
@@ -766,17 +814,17 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
             const { docxToContainer } = await import('@bendyline/squisq-formats/docx');
             const container = await docxToContainer(await file.arrayBuffer());
             markdown = (await container.readDocument()) ?? '';
-            await persistContainerMedia(container);
+            await persistImportedMedia(container, provider, destPath);
           } else if (ext === '.pdf') {
             const { pdfToContainer } = await import('@bendyline/squisq-formats/pdf');
             const container = await pdfToContainer(await file.arrayBuffer());
             markdown = (await container.readDocument()) ?? '';
-            await persistContainerMedia(container);
+            await persistImportedMedia(container, provider, destPath);
           } else if (ext === '.dbk' || ext === '.zip') {
             const { zipToContainer } = await import('@bendyline/squisq-formats/container');
             const container = await zipToContainer(await file.arrayBuffer());
             markdown = (await container.readDocument()) ?? '';
-            await persistContainerMedia(container);
+            await persistImportedMedia(container, provider, destPath);
           } else {
             continue;
           }
@@ -786,15 +834,10 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
           console.error(`Failed to import ${file.name}:`, err);
         }
       }
-      // Refresh media provider once after all imports (not per-file)
-      const mc = mediaContainerRef.current;
-      if (mc) {
-        setMediaProvider(createMediaProviderFromContainer(mc));
-      }
-      // Refresh file tree
+      // Refresh file tree so the new markdown files + _files folders show up.
       setExplorerKey((k) => k + 1);
     },
-    [provider, persistContainerMedia],
+    [provider, persistImportedMedia],
   );
 
   const handleEditorChange = useCallback((source: string) => {
@@ -880,7 +923,6 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setFolderEntries([]);
       setEditorContent('');
       setEditorKey((k) => k + 1);
-      setupMediaContainer(info.id, p);
     } else {
       const defaultWs = await ensureDefaultWorkspace();
       const fsProvider = new IndexedDBFileSystemProvider(defaultWs.id, defaultWs.name);
@@ -891,10 +933,8 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
       setFolderEntries([]);
       setEditorContent('');
       setEditorKey((k) => k + 1);
-
-      setupMediaContainer(defaultWs.id, fsProvider);
     }
-  }, [activeWorkspaceId, handleWorkspaceSelect, setupMediaContainer]);
+  }, [activeWorkspaceId, handleWorkspaceSelect]);
 
   return (
     <div className={`db-shell${isMobile ? ' db-shell--mobile' : ''}`} data-theme={resolvedTheme}>
@@ -978,7 +1018,9 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
                   </button>
                 )}
                 <div className="db-folder-view-header">
-                  <span className="db-folder-view-icon">📁</span>
+                  <span className="db-folder-view-icon">
+                    <FolderGlyph />
+                  </span>
                   <span className="db-folder-view-path">{selectedFolder}</span>
                 </div>
                 {folderEntries.length === 0 ? (
@@ -992,7 +1034,7 @@ export function DocBlocksShell({ theme: themeProp = 'auto', logoUrl }: DocBlocks
                         onClick={() => handleSelect(entry.path, entry.kind)}
                       >
                         <span className="db-folder-view-item-icon">
-                          {entry.kind === 'directory' ? '📁' : '📄'}
+                          {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
                         </span>
                         {entry.name}
                       </li>

@@ -16,6 +16,7 @@ export default defineConfig({
       '@bendyline/docblocks-react': path.resolve(__dirname, '../react/src/index.ts'),
       '@bendyline/docblocks/filesystem': path.resolve(__dirname, '../core/src/filesystem/index.ts'),
       '@bendyline/docblocks/workspace': path.resolve(__dirname, '../core/src/workspace/index.ts'),
+      '@bendyline/docblocks/host': path.resolve(__dirname, '../core/src/host/index.ts'),
       '@bendyline/docblocks': path.resolve(__dirname, '../core/src/index.ts'),
     },
   },

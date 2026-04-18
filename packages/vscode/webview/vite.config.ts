@@ -43,6 +43,10 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../../core/src/workspace/index.ts'),
       },
       {
+        find: '@bendyline/docblocks/host',
+        replacement: path.resolve(__dirname, '../../core/src/host/index.ts'),
+      },
+      {
         find: '@bendyline/docblocks',
         replacement: path.resolve(__dirname, '../../core/src/index.ts'),
       },

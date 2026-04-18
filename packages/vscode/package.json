@@ -24,11 +24,18 @@
     "commands": [
       {
         "command": "docblocks.openEditor",
-        "title": "DocBlocks: Open Editor"
+        "title": "DocBlocks: Open Editor",
+        "category": "DocBlocks"
+      },
+      {
+        "command": "docblocks.openInDocBlocks",
+        "title": "Open in DocBlocks",
+        "category": "DocBlocks"
       },
       {
         "command": "docblocks.openSetup",
-        "title": "DocBlocks: Open Setup"
+        "title": "DocBlocks: Open Setup",
+        "category": "DocBlocks"
       }
     ],
     "customEditors": [
@@ -40,12 +47,52 @@
             "filenamePattern": "**/*.md"
           }
         ],
-        "priority": "option"
+        "priority": "default"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "docblocks.openInDocBlocks",
+          "when": "resourceExtname == .md",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "docblocks.openInDocBlocks",
+          "when": "resourceExtname == .md",
+          "group": "1_open"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "docblocks.openInDocBlocks",
+          "when": "resourceExtname == .md"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "docblocks",
+          "title": "DocBlocks",
+          "icon": "resources/docblocks-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "docblocks": [
+        {
+          "id": "docblocks.setupView",
+          "name": "Setup",
+          "type": "webview"
+        }
+      ]
+    }
   },
   "scripts": {
-    "build": "npm run build:webview && tsup",
+    "build": "tsup && npm run build:webview",
     "build:webview": "vite build --config webview/vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test:web": "vscode-test-web --extensionDevelopmentPath=. --browser=none --port=3100",
