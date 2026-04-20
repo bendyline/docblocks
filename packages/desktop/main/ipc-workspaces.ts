@@ -31,6 +31,16 @@ export function registerWorkspaceIpc(): void {
   ipcMain.handle('workspaces:getDefault', async (event): Promise<ElectronWorkspaceInfo> => {
     const settings = await readSettings();
 
+    // E2E override — tests pass an isolated workspace dir so they don't
+    // touch the real ~/Documents/DocBlocks. Wins over saved defaults.
+    const e2eRoot = process.env.DOCBLOCKS_E2E_DEFAULT_ROOT;
+    if (e2eRoot) {
+      await ensureFolder(e2eRoot);
+      const id = deriveWorkspaceId(e2eRoot);
+      roots.register(id, e2eRoot);
+      return { id, name: path.basename(e2eRoot) || 'DocBlocks', rootPath: e2eRoot };
+    }
+
     // Honour a previously configured default.
     if (settings.defaultWorkspaceRoot) {
       const rootPath = settings.defaultWorkspaceRoot;

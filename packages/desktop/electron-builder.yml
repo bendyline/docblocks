@@ -6,11 +6,26 @@ directories:
   output: dist/artifacts
   buildResources: resources
 
+# Templated so release artifacts carry the version + platform in their
+# filename (e.g. DocBlocks-0.1.0-mac-arm64.dmg). Overrides the stock
+# "DocBlocks Setup 0.1.0.exe" naming.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
 files:
   - dist/main/**/*
   - dist/preload/**/*
   - dist/renderer/**/*
   - package.json
+
+# electron-builder auto-detects native modules with .node bindings and
+# unpacks them into app.asar.unpacked automatically. Adding an explicit
+# `asarUnpack` list here is only necessary for runtime resources that
+# the packager can't discover on its own (ffmpeg-static binaries, etc.).
+# Leave this block commented until that need arises — in a monorepo,
+# `**/node_modules/...` globs can match workspace symlinks and fail the
+# build with "must be under <app-dir>" errors.
+# asarUnpack:
+#   - 'node_modules/ffmpeg-static/bin/**/*'
 
 # Auto-update configuration — electron-updater checks this repo for releases.
 # The release workflow uploads installers + latest.yml to GitHub Releases.
@@ -43,6 +58,13 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  license: LICENSE.txt
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  installerSidebar: installer/sidebar.bmp
+  uninstallerSidebar: installer/sidebar.bmp
+  include: installer/nsis-hooks.nsh
 
 # macOS configuration
 # Signing uses the "Developer ID Application" certificate from the keychain.
@@ -61,6 +83,8 @@ mac:
   entitlementsInherit: entitlements.mac.plist
 
 dmg:
+  # Uncomment once a proper dmg background asset is designed.
+  # background: resources/dmg-background.png
   contents:
     - x: 130
       y: 220

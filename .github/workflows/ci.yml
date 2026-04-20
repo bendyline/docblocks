@@ -76,6 +76,50 @@ jobs:
           # Skip signing/notarization in CI smoke builds.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+  desktop-e2e:
+    name: Desktop E2E (${{ matrix.os }})
+    needs: desktop-build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Desktop E2E tests (Linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:desktop
+
+      - name: Run Desktop E2E tests (macOS)
+        if: runner.os == 'macOS'
+        run: npm run test:e2e:desktop
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: desktop-playwright-report-${{ matrix.os }}
+          path: packages/desktop/playwright-report/
+          retention-days: 14
+
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest

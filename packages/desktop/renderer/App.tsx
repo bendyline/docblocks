@@ -1,5 +1,12 @@
 import { DocBlocksShell } from '@bendyline/docblocks-react';
+import { UpdateStatusBanner } from './UpdateStatusBanner';
+import './update-banner.css';
 
 export function App() {
-  return <DocBlocksShell theme="auto" />;
+  return (
+    <div className="db-desktop-root">
+      <UpdateStatusBanner />
+      <DocBlocksShell theme="auto" />
+    </div>
+  );
 }

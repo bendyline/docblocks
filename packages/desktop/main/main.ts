@@ -6,7 +6,7 @@
  * stable across updates.
  */
 
-import { app, BrowserWindow, protocol, shell, net } from 'electron';
+import { app, BrowserWindow, protocol, screen, shell, net } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -18,7 +18,7 @@ import { registerShellIpc } from './ipc-shell.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerUpdaterIpc, initAutoUpdater } from './updater.js';
 import { buildMenu } from './menu.js';
-import { readSettings } from './settings.js';
+import { readSettings, flushSettings } from './settings.js';
 import { getWorkspaceRoots } from './workspace-roots.js';
 import { handleOpenFileArg } from './open-requests.js';
 import { registerTray } from './tray.js';
@@ -110,23 +110,54 @@ function registerAppProtocol() {
   });
 }
 
+/**
+ * Cross-check saved window bounds against the current display layout.
+ * If the monitor the user last docked against is gone (laptop unplugged
+ * from external display), fall back to centered defaults — otherwise
+ * `electron-window-state` happily restores a window positioned entirely
+ * off-screen where the user can't find it.
+ */
+function boundsAreVisible(bounds: {
+  x?: number;
+  y?: number;
+  width: number;
+  height: number;
+}): boolean {
+  if (bounds.x === undefined || bounds.y === undefined) return false;
+  const b = { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  return screen.getAllDisplays().some((display) => {
+    const d = display.workArea;
+    const overlap =
+      b.x < d.x + d.width && b.x + b.width > d.x && b.y < d.y + d.height && b.y + b.height > d.y;
+    return overlap;
+  });
+}
+
 async function createWindow(): Promise<BrowserWindow> {
   const winState = windowStateKeeper({
     defaultWidth: 1280,
     defaultHeight: 800,
   });
 
-  const preloadPath = path.join(__dirname, '..', 'preload', 'preload.cjs');
-
-  const win = new BrowserWindow({
+  const useSaved = boundsAreVisible({
     x: winState.x,
     y: winState.y,
     width: winState.width,
     height: winState.height,
+  });
+
+  const preloadPath = path.join(__dirname, '..', 'preload', 'preload.cjs');
+
+  const win = new BrowserWindow({
+    x: useSaved ? winState.x : undefined,
+    y: useSaved ? winState.y : undefined,
+    width: useSaved ? winState.width : 1280,
+    height: useSaved ? winState.height : 800,
     minWidth: 640,
     minHeight: 480,
     show: false,
     title: 'DocBlocks',
+    center: !useSaved,
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: preloadPath,
@@ -236,6 +267,21 @@ app.whenReady().then(async () => {
   if (!isDev) {
     initAutoUpdater();
   }
+});
+
+app.on('before-quit', async (event) => {
+  // Give the debounced settings writer a chance to flush pending changes
+  // before the process exits. If flush is still pending we briefly defer
+  // quit, commit, then retrigger. Guard against re-entry.
+  if ((app as unknown as { _flushedSettings?: boolean })._flushedSettings) return;
+  event.preventDefault();
+  try {
+    await flushSettings();
+  } catch {
+    // best-effort — never block shutdown on an I/O error
+  }
+  (app as unknown as { _flushedSettings?: boolean })._flushedSettings = true;
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

@@ -9,11 +9,11 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c \"blue,green\" \"vite --config vite.config.ts\" \"npm:dev:electron\"",
-    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.config.ts --watch --onSuccess \"electron ./dist/main/main.cjs\"",
+    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.config.ts --watch --onSuccess \"node scripts/run-electron.cjs\"",
     "build": "npm run build:renderer && npm run build:main",
     "build:main": "tsup --config tsup.config.ts",
-    "build:renderer": "tsc --noEmit -p tsconfig.json && vite build --config vite.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && vite build --config vite.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
@@ -21,8 +21,9 @@
     "dist:snap": "npm run build && electron-builder --linux snap",
     "dist:flatpak": "npm run build && electron-builder --linux flatpak",
     "dist:dir": "npm run build && electron-builder --dir",
-    "start": "electron ./dist/main/main.cjs",
-    "icons": "python3 scripts/generate-icons.py"
+    "start": "node scripts/run-electron.cjs",
+    "icons": "python3 scripts/generate-icons.py",
+    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {
     "@bendyline/docblocks": "*",
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
+    "@playwright/test": "1.58.2",
     "@types/node": "22.10.2",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",

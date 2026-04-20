@@ -89,6 +89,11 @@ export interface DocblocksHostUpdaterAPI {
   /** Current app version string. */
   getVersion(): Promise<string>;
   /**
+   * Quit the app and apply a downloaded update. Should only be called
+   * after an `UpdaterStatus` of kind `'downloaded'` has been observed.
+   */
+  quitAndInstall(): Promise<void>;
+  /**
    * Subscribe to updater status events. Returns an unsubscribe function.
    */
   onStatus(listener: (status: UpdaterStatus) => void): () => void;
@@ -96,10 +101,10 @@ export interface DocblocksHostUpdaterAPI {
 
 export type UpdaterStatus =
   | { kind: 'checking' }
-  | { kind: 'available'; version: string }
+  | { kind: 'available'; version: string; releaseNotes?: string; releaseUrl?: string }
   | { kind: 'not-available' }
   | { kind: 'downloading'; percent: number }
-  | { kind: 'downloaded'; version: string }
+  | { kind: 'downloaded'; version: string; releaseNotes?: string; releaseUrl?: string }
   | { kind: 'error'; message: string };
 
 /** Menu-command events pushed from the main process to the renderer. */

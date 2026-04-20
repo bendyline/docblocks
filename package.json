@@ -21,6 +21,7 @@
     "test": "mocha",
     "test:e2e": "playwright test",
     "test:e2e:vscode": "npm run test:e2e -w docblocks-vscode",
+    "test:e2e:desktop": "npm run test:e2e -w docblocks-desktop",
     "site": "npm run build && npm run dev -w docblocks-site",
     "dev": "npm run dev -w docblocks-site",
     "typecheck": "tsc -b packages/core packages/react packages/cli && npm run typecheck -w docblocks-desktop",

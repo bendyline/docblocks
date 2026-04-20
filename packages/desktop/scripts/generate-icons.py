@@ -7,6 +7,7 @@ Produces:
   resources/icon.iconset/…     — intermediate macOS iconset (removed at end)
   resources/icon.icns          — macOS (via iconutil)
   resources/icon.ico           — Windows multi-resolution
+  installer/sidebar.bmp        — 164×314 24-bit BMP for the NSIS welcome sidebar
 
 The source is 642×542 (non-square) with transparent background — we centre it
 on a transparent square canvas with ~10% margin for better rendering in OS
@@ -28,6 +29,7 @@ from PIL import Image
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPO_ROOT / "packages/site/public/_res/siteimages/docblk.webp"
 RESOURCES = REPO_ROOT / "packages/desktop/resources"
+INSTALLER = REPO_ROOT / "packages/desktop/installer"
 MARGIN_RATIO = 0.10  # 10% margin around the glyph
 
 
@@ -97,10 +99,35 @@ def main() -> int:
     )
     print(f"  wrote {ico_path.relative_to(REPO_ROOT)}")
 
-    # 4) Sanity: show produced file sizes.
-    for p in (master_path, icns_path, ico_path):
+    # 4) NSIS welcome sidebar — 164×314 24-bit BMP (no alpha, no transparency).
+    # electron-builder forwards this to the NSIS MUI_WELCOMEFINISHPAGE_BITMAP
+    # macro. Anything other than exactly 164×314 + 24-bit will be rejected at
+    # installer compile time.
+    INSTALLER.mkdir(parents=True, exist_ok=True)
+    sidebar_path = INSTALLER / "sidebar.bmp"
+    sidebar_w, sidebar_h = 164, 314
+    # Flatten onto solid white — NSIS doesn't honour transparency in this role.
+    sidebar_canvas = Image.new("RGB", (sidebar_w, sidebar_h), (255, 255, 255))
+    # Centre the glyph with generous top-and-bottom padding.
+    scale = min(
+        (sidebar_w * 0.80) / src.width,
+        (sidebar_h * 0.55) / src.height,
+    )
+    nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
+    resized = src.resize((nw, nh), Image.LANCZOS)
+    offset = ((sidebar_w - nw) // 2, (sidebar_h - nh) // 3)
+    # Composite RGBA over white to flatten alpha properly.
+    flattened = Image.alpha_composite(
+        Image.new("RGBA", (nw, nh), (255, 255, 255, 255)), resized
+    ).convert("RGB")
+    sidebar_canvas.paste(flattened, offset)
+    sidebar_canvas.save(sidebar_path, "BMP")
+    print(f"  wrote {sidebar_path.relative_to(REPO_ROOT)}")
+
+    # 5) Sanity: show produced file sizes.
+    for p in (master_path, icns_path, ico_path, sidebar_path):
         size_kb = os.path.getsize(p) / 1024
-        print(f"    {p.name:12s} {size_kb:7.1f} KB")
+        print(f"    {p.name:14s} {size_kb:7.1f} KB")
 
     return 0
 

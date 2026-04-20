@@ -78,8 +78,7 @@ export function createFileMediaProvider(
         URL.revokeObjectURL(cached);
         blobUrlCache.delete(key);
       }
-      const buffer =
-        data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data;
+      const buffer = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data;
       await container.writeFile(key, buffer, mimeType);
       return key;
     },

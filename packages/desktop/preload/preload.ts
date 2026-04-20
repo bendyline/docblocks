@@ -81,6 +81,7 @@ const ffmpegApi: DocblocksHostFfmpegAPI = {
 const updaterApi: DocblocksHostUpdaterAPI = {
   checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
   getVersion: () => ipcRenderer.invoke('updater:getVersion'),
+  quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
   onStatus(listener) {
     const fn = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) => listener(status);
     ipcRenderer.on('updater:status', fn);

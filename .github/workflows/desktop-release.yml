@@ -57,6 +57,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Stamp build version (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
+
       - name: Read version
         id: version
         run: |
@@ -130,6 +134,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Stamp build version (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
+
       - name: Build upstream packages
         run: npm run build
 
@@ -202,6 +210,10 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Stamp build version (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
 
       - name: Build upstream packages
         run: npm run build
