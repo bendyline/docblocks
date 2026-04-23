@@ -77,8 +77,15 @@ export const test = base.extend<DocblocksFixtures>({
     let running: ElectronApplication | undefined;
 
     async function launch(): Promise<{ app: ElectronApplication; window: Page }> {
+      const args = [appRoot, `--user-data-dir=${userDataDir}`];
+      // GitHub Actions Linux runners don't own chrome-sandbox with the
+      // setuid bit, so Electron's SUID sandbox aborts at launch. Disable
+      // sandboxing in CI — safe because the runner is an isolated VM.
+      if (process.env.CI) {
+        args.push('--no-sandbox');
+      }
       const app = await electron.launch({
-        args: [appRoot, `--user-data-dir=${userDataDir}`],
+        args,
         env: cleanEnv(workspaceDir),
         // Longer timeout to cope with cold launches on GitHub Actions runners.
         timeout: 30_000,
