@@ -18,9 +18,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run build && npm run dev -w docblocks-site',
+    // CI builds upstream packages as a separate step before e2e runs, so we
+    // can skip the build here and start the dev server directly. Locally the
+    // build keeps things self-contained so `npm run test:e2e` just works.
+    command: process.env.CI
+      ? 'npm run dev -w docblocks-site'
+      : 'npm run build && npm run dev -w docblocks-site',
     url: 'http://localhost:5220',
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 180_000,
   },
 });
