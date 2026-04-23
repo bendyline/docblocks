@@ -1,3 +1,20 @@
+## @bendyline/docblocks-react [1.1.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@1.0.0...@bendyline/docblocks-react@1.1.0) (2026-04-23)
+
+### Features
+
+* DocBlocks updates ([c71f890](https://github.com/bendyline/docblocks/commit/c71f8906c54177731925c3828c0b721659635788))
+
+### Bug Fixes
+
+* Add Electron apps ([00307fe](https://github.com/bendyline/docblocks/commit/00307feb5b67002d4b9d4fd827136e0b7924ee25))
+* More tests ([92570ab](https://github.com/bendyline/docblocks/commit/92570ab5017a2eeb5399515f08891ea4d536c12f))
+* VSCode debug fixes, file containers ([0ff72a9](https://github.com/bendyline/docblocks/commit/0ff72a943f9831d27690c66e585c386c46505694))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 1.1.0
+
 ## @bendyline/docblocks-react 1.0.0 (2026-04-04)
 
 ### Features
