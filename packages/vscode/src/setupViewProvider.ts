@@ -10,21 +10,46 @@ interface CheckResult {
 
 export class SetupViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'docblocks.setupView';
+  private static currentPanel: vscode.WebviewPanel | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  public resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken,
-  ): void {
+  /** WebviewViewProvider entry point — sidebar view lifecycle. */
+  public resolveWebviewView(webviewView: vscode.WebviewView): void {
     webviewView.webview.options = { enableScripts: true };
-    webviewView.webview.html = this.getHtml();
+    this.attach(webviewView.webview);
+  }
 
-    webviewView.webview.onDidReceiveMessage(async (msg) => {
+  public static createOrShow(context: vscode.ExtensionContext): void {
+    const column = vscode.window.activeTextEditor?.viewColumn;
+
+    if (SetupViewProvider.currentPanel) {
+      SetupViewProvider.currentPanel.reveal(column);
+      return;
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      SetupViewProvider.viewType,
+      'DocBlocks Setup',
+      column ?? vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+
+    SetupViewProvider.currentPanel = panel;
+    panel.onDidDispose(() => {
+      SetupViewProvider.currentPanel = undefined;
+    });
+
+    new SetupViewProvider(context).attach(panel.webview);
+  }
+
+  public attach(webview: vscode.Webview): void {
+    webview.html = this.getHtml();
+
+    webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'runChecks':
-          await this.runChecks(webviewView.webview);
+          await this.runChecks(webview);
           break;
 
         case 'openLink':
@@ -48,7 +73,7 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
         }
 
         case 'refreshChecks':
-          await this.runChecks(webviewView.webview);
+          await this.runChecks(webview);
           break;
       }
     });
@@ -100,17 +125,30 @@ export class SetupViewProvider implements vscode.WebviewViewProvider {
   private async checkCommand(command: string): Promise<string | null> {
     try {
       const { exec } = await import('child_process');
+      const isWin = process.platform === 'win32';
+      const extraPaths = isWin ? '' : '/usr/local/bin:/opt/homebrew/bin:/opt/homebrew/sbin';
+      const currentPath = process.env.PATH || '';
+      const env = {
+        ...process.env,
+        PATH: extraPaths ? `${extraPaths}:${currentPath}` : currentPath,
+      };
       return new Promise((resolve) => {
-        exec(command, { timeout: 15000 }, (err, stdout) => {
+        exec(command, { timeout: 15000, env }, (err, stdout) => {
           if (err) {
+            console.error(
+              `[DocBlocks] checkCommand failed: ${command}`,
+              err.message,
+              `PATH=${env.PATH}`,
+            );
             resolve(null);
           } else {
             resolve(stdout);
           }
         });
       });
-    } catch {
+    } catch (e) {
       // child_process not available in web context
+      console.error('[DocBlocks] child_process unavailable:', e);
       return null;
     }
   }

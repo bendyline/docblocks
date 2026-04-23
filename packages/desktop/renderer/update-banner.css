@@ -1,0 +1,74 @@
+.db-desktop-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.db-desktop-root > .db-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.db-update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.db-update-banner--info {
+  background: #eef4ff;
+  color: #1d3b74;
+}
+
+.db-update-banner--ready {
+  background: #1d3b74;
+  color: #ffffff;
+}
+
+.db-update-banner--error {
+  background: #fdecea;
+  color: #8a2a1e;
+}
+
+.db-update-banner-link {
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+}
+
+.db-update-banner-action {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.db-update-banner-action:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.db-update-banner-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}

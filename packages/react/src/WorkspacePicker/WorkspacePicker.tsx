@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
+import { isElectronHost } from '@bendyline/docblocks/host';
 
 export interface WorkspacePickerProps {
   /** Currently active workspace id. */
@@ -41,10 +42,16 @@ export function WorkspacePicker({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, [isOpen]);
 
+  const electron = isElectronHost();
+
   const refresh = useCallback(async () => {
     const list = await listWorkspaces();
-    setWorkspaces(list);
-  }, []);
+    // On desktop, hide web-only workspaces (indexeddb/native).
+    const filtered = electron
+      ? list.filter((w) => w.type === 'electron-native')
+      : list.filter((w) => w.type !== 'electron-native');
+    setWorkspaces(filtered);
+  }, [electron]);
 
   useEffect(() => {
     refresh();
@@ -98,17 +105,21 @@ export function WorkspacePicker({
               onClick={() => handleSelect(ws)}
             >
               {ws.name}
-              <span className="db-workspace-type">{ws.type === 'native' ? '(folder)' : ''}</span>
+              <span className="db-workspace-type">
+                {ws.type === 'native' || ws.type === 'electron-native' ? '(folder)' : ''}
+              </span>
             </button>
           ))}
 
           <div className="db-workspace-dropdown-divider" />
 
-          <button className="db-workspace-dropdown-item" onClick={handleCreateNew}>
-            + New Workspace
-          </button>
+          {!electron && (
+            <button className="db-workspace-dropdown-item" onClick={handleCreateNew}>
+              + New Workspace
+            </button>
+          )}
 
-          {isNativeFileSystemSupported() && (
+          {(electron || isNativeFileSystemSupported()) && (
             <button
               className="db-workspace-dropdown-item"
               onClick={() => {

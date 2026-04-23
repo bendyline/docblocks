@@ -46,6 +46,16 @@ export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function MoreIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...defaults} {...props}>
+      <circle cx="3.5" cy="8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="8" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function WorkspaceIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg {...defaults} {...props}>

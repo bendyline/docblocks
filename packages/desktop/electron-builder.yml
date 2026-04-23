@@ -1,0 +1,145 @@
+appId: com.bendyline.docblocks
+productName: DocBlocks
+copyright: Copyright © 2026 Bendyline
+
+directories:
+  output: dist/artifacts
+  buildResources: resources
+
+# Templated so release artifacts carry the version + platform in their
+# filename (e.g. DocBlocks-0.1.0-mac-arm64.dmg). Overrides the stock
+# "DocBlocks Setup 0.1.0.exe" naming.
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+files:
+  - dist/main/**/*
+  - dist/preload/**/*
+  - dist/renderer/**/*
+  - package.json
+
+# electron-builder auto-detects native modules with .node bindings and
+# unpacks them into app.asar.unpacked automatically. Adding an explicit
+# `asarUnpack` list here is only necessary for runtime resources that
+# the packager can't discover on its own (ffmpeg-static binaries, etc.).
+# Leave this block commented until that need arises — in a monorepo,
+# `**/node_modules/...` globs can match workspace symlinks and fail the
+# build with "must be under <app-dir>" errors.
+# asarUnpack:
+#   - 'node_modules/ffmpeg-static/bin/**/*'
+
+# Auto-update configuration — electron-updater checks this repo for releases.
+# The release workflow uploads installers + latest.yml to GitHub Releases.
+publish:
+  provider: github
+  owner: bendyline
+  repo: docblocks
+
+# Custom signing script for Azure Trusted Signing (Windows).
+# Skipped gracefully when TRUSTED_SIGNING_DLIB_PATH is not set (local dev).
+afterSign: scripts/notarize.cjs
+
+# Windows configuration
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  executableName: DocBlocks
+  publisherName: 'Bendyline LLC'
+  sign: scripts/sign.cjs
+  signingHashAlgorithms:
+    - sha256
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  license: LICENSE.txt
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  installerSidebar: installer/sidebar.bmp
+  uninstallerSidebar: installer/sidebar.bmp
+  include: installer/nsis-hooks.nsh
+
+# macOS configuration
+# Signing uses the "Developer ID Application" certificate from the keychain.
+# Notarization is handled by afterSign (scripts/notarize.cjs).
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: resources/icon.icns
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+
+dmg:
+  # Uncomment once a proper dmg background asset is designed.
+  # background: resources/dmg-background.png
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Linux configuration — ship AppImage (universal) and .deb (Debian/Ubuntu).
+# Snap and Flatpak are available on-demand via `--linux snap` / `--linux flatpak`;
+# they require extra host tooling (snapcraft / flatpak-builder) and are therefore
+# not in the default targets list.
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  icon: resources/icon.png
+  category: Office
+  synopsis: Markdown document editor
+  description: DocBlocks — a browser-based markdown document editor for the desktop.
+
+snap:
+  grade: stable
+  confinement: strict
+  plugs:
+    - default
+    - home
+    - removable-media
+
+flatpak:
+  runtime: org.freedesktop.Platform
+  runtimeVersion: '23.08'
+  sdk: org.freedesktop.Sdk
+  finishArgs:
+    - --share=ipc
+    - --socket=x11
+    - --socket=wayland
+    - --device=dri
+    - --filesystem=home
+    - --share=network
+    - --talk-name=org.freedesktop.Notifications
+
+# Protocol handler for deep links (docblocks://open?path=/abs/path)
+protocols:
+  - name: DocBlocks
+    schemes:
+      - docblocks
+
+# Register .md as an openable file type so OS "Open With" routes here.
+fileAssociations:
+  - ext: md
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png

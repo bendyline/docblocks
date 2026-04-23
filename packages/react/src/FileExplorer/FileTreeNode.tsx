@@ -2,8 +2,10 @@
  * FileTreeNode — recursive tree node for the file explorer.
  */
 
-import { useCallback, useState, useRef, useEffect } from 'react';
+import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import { MoreIcon } from '../icons.js';
 
 export interface FileTreeNodeProps {
   entry: FileSystemEntry;
@@ -50,11 +52,15 @@ export function FileTreeNode({
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const rect = nodeRef.current?.getBoundingClientRect();
-    setContextPos({
-      x: e.clientX - (rect?.left ?? 0),
-      y: e.clientY - (rect?.top ?? 0),
-    });
+    setContextPos({ x: e.clientX, y: e.clientY });
+    setShowContext(true);
+  }, []);
+
+  const handleMoreClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setContextPos({ x: rect.right, y: rect.bottom });
     setShowContext(true);
   }, []);
 
@@ -106,6 +112,26 @@ export function FileTreeNode({
     }
   }, [renaming]);
 
+  // Clamp menu inside viewport after it renders
+  useLayoutEffect(() => {
+    if (!showContext || !contextRef.current) return;
+    const menu = contextRef.current;
+    const rect = menu.getBoundingClientRect();
+    const margin = 4;
+    let left = contextPos.x;
+    let top = contextPos.y;
+    if (rect.right > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (rect.bottom > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - rect.height - margin);
+    }
+    if (left !== contextPos.x || top !== contextPos.y) {
+      menu.style.left = `${left}px`;
+      menu.style.top = `${top}px`;
+    }
+  }, [showContext, contextPos]);
+
   return (
     <div className="db-tree-node" ref={nodeRef}>
       <div
@@ -136,30 +162,46 @@ export function FileTreeNode({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="db-tree-label">
-            {entry.name.endsWith('.md') ? entry.name.slice(0, -3) : entry.name}
-          </span>
+          <>
+            <span className="db-tree-label">
+              {entry.name.endsWith('.md') ? entry.name.slice(0, -3) : entry.name}
+            </span>
+            <button
+              type="button"
+              className={`db-tree-more${showContext ? ' db-tree-more--active' : ''}`}
+              onClick={handleMoreClick}
+              onContextMenu={handleMoreClick}
+              aria-label="More actions"
+              aria-haspopup="menu"
+              aria-expanded={showContext}
+              tabIndex={-1}
+            >
+              <MoreIcon width={14} height={14} />
+            </button>
+          </>
         )}
       </div>
 
-      {/* Context menu */}
-      {showContext && (
-        <div
-          ref={contextRef}
-          className="db-tree-context"
-          style={{ left: contextPos.x, top: contextPos.y }}
-        >
-          <button className="db-tree-context-item" onClick={handleRenameStart}>
-            Rename
-          </button>
-          <button
-            className="db-tree-context-item db-tree-context-item--danger"
-            onClick={handleDeleteClick}
+      {/* Context menu — portaled so ancestor overflow:hidden doesn't clip it */}
+      {showContext &&
+        createPortal(
+          <div
+            ref={contextRef}
+            className="db-tree-context"
+            style={{ left: contextPos.x, top: contextPos.y }}
           >
-            Delete
-          </button>
-        </div>
-      )}
+            <button className="db-tree-context-item" onClick={handleRenameStart}>
+              Rename
+            </button>
+            <button
+              className="db-tree-context-item db-tree-context-item--danger"
+              onClick={handleDeleteClick}
+            >
+              Delete
+            </button>
+          </div>,
+          document.body,
+        )}
 
       {/* Render children if directory is expanded */}
       {isDir && expanded && renderChildren && (

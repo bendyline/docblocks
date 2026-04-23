@@ -142,3 +142,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Claude Code
+.claude/
+.DS_Store

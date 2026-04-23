@@ -1,5 +1,5 @@
 import { DocBlocksShell } from '@bendyline/docblocks-react';
 
 export function App() {
-  return <DocBlocksShell theme="light" logoUrl="/_res/siteimages/docblocks.webp" />;
+  return <DocBlocksShell theme="auto" logoUrl="/_res/siteimages/docblocks.webp" />;
 }

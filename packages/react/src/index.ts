@@ -19,7 +19,7 @@ export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 
 // AppMenu
 export { AppMenu } from './AppMenu/index.js';
-export type { AppMenuProps } from './AppMenu/index.js';
+export type { AppMenuProps, ThemePreference } from './AppMenu/index.js';
 
 // Export
 export { ExportToolbarControls } from './Export/index.js';
