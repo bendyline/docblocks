@@ -1,6 +1,6 @@
 {
   "name": "docblocks-desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
   "author": "Bendyline",
@@ -26,8 +26,8 @@
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@bendyline/docblocks": "*",
-    "@bendyline/docblocks-react": "*",
+    "@bendyline/docblocks": "1.1.0",
+    "@bendyline/docblocks-react": "1.1.0",
     "@bendyline/squisq": "1.3.0",
     "@bendyline/squisq-editor-react": "1.4.0",
     "@bendyline/squisq-formats": "1.2.3",
