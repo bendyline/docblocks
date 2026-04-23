@@ -10,8 +10,8 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { writeFile, readFile, stat, rm } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
+import { writeFile, readFile, stat, rm, rename } from 'node:fs/promises';
+import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 
@@ -122,13 +122,20 @@ export function createMcpServer(): McpServer {
         const { filePath, isTemp } = await resolveMarkdownInput(markdown);
         try {
           const { runConvert } = await import('../commands/convert.js');
+          const resolvedOutput = resolve(outputPath);
           const result = await runConvert(filePath, {
-            outputDir: resolve(outputPath, '..'),
+            outputDir: dirname(resolvedOutput),
             formats: format,
             theme,
             transform,
           });
           const file = result.outputFiles[0];
+          // runConvert names the output after the input basename; rename to
+          // honor the caller's requested outputPath.
+          if (file.path !== resolvedOutput) {
+            await rename(file.path, resolvedOutput);
+            file.path = resolvedOutput;
+          }
           return {
             content: [
               {
@@ -200,6 +207,63 @@ export function createMcpServer(): McpServer {
       }
     },
   );
+
+  // ── Reverse Conversion Tools ─────────────────────────────────────
+
+  const REVERSE_FORMATS: {
+    ext: 'docx' | 'pptx' | 'pdf';
+    description: string;
+    loader: () => Promise<(input: string | Buffer | Uint8Array) => Promise<string>>;
+  }[] = [
+    {
+      ext: 'docx',
+      description:
+        'Convert a Microsoft Word (.docx) file to Markdown. Preserves headings, paragraphs, emphasis, lists, and tables on a best-effort basis.',
+      loader: async () => (await import('../converters/docx-to-md.js')).docxToMarkdown,
+    },
+    {
+      ext: 'pptx',
+      description:
+        'Convert a PowerPoint (.pptx) file to Markdown. Each slide becomes a section; the first paragraph on each slide is treated as the slide title.',
+      loader: async () => (await import('../converters/pptx-to-md.js')).pptxToMarkdown,
+    },
+    {
+      ext: 'pdf',
+      description:
+        'Convert a PDF file to Markdown. Extracts text from each page; formatting and layout are not preserved. Each page becomes a section.',
+      loader: async () => (await import('../converters/pdf-to-md.js')).pdfToMarkdown,
+    },
+  ];
+
+  for (const { ext, description, loader } of REVERSE_FORMATS) {
+    server.tool(
+      `convert_${ext}_to_markdown`,
+      description,
+      {
+        inputPath: z.string().describe(`Path to the source .${ext} file`),
+        outputPath: z
+          .string()
+          .optional()
+          .describe('If provided, write the resulting markdown to this file path'),
+      },
+      async ({ inputPath, outputPath }) => {
+        const convert = await loader();
+        const resolvedInput = resolve(inputPath);
+        const markdown = await convert(resolvedInput);
+        if (outputPath) {
+          await writeFile(resolve(outputPath), markdown, 'utf-8');
+        }
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: markdown,
+            },
+          ],
+        };
+      },
+    );
+  }
 
   // ── Markdown Intelligence Tools ──────────────────────────────────
 
@@ -358,6 +422,21 @@ export function createMcpServer(): McpServer {
           { ext: '.md', description: 'Markdown file' },
           { ext: '.zip/.dbk', description: 'Container archive with embedded media' },
           { ext: 'folder', description: 'Directory with markdown and media files' },
+          {
+            ext: '.docx',
+            description: 'Microsoft Word document — via convert_docx_to_markdown',
+            tool: 'convert_docx_to_markdown',
+          },
+          {
+            ext: '.pptx',
+            description: 'PowerPoint presentation — via convert_pptx_to_markdown',
+            tool: 'convert_pptx_to_markdown',
+          },
+          {
+            ext: '.pdf',
+            description: 'PDF document — via convert_pdf_to_markdown',
+            tool: 'convert_pdf_to_markdown',
+          },
         ],
         output: [
           {
@@ -410,8 +489,8 @@ export function createMcpServer(): McpServer {
             {
               description:
                 'DocBlocks supports converting markdown documents to multiple professional output formats',
-              inputFormats: ['.md', '.zip', '.dbk', 'folder'],
-              outputFormats: ['docx', 'pptx', 'pdf', 'html', 'mp4', 'dbk'],
+              inputFormats: ['.md', '.zip', '.dbk', 'folder', '.docx', '.pptx', '.pdf'],
+              outputFormats: ['docx', 'pptx', 'pdf', 'html', 'mp4', 'dbk', 'markdown'],
             },
             null,
             2,

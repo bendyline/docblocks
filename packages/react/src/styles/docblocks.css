@@ -245,6 +245,40 @@
   outline: none;
 }
 
+.db-tree-more {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--db-text-secondary);
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.db-tree-row:hover .db-tree-more,
+.db-tree-row:focus-within .db-tree-more,
+.db-tree-more:focus-visible,
+.db-tree-more--active {
+  visibility: visible;
+}
+
+.db-tree-more:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-tree-more--active {
+  background: var(--db-bg-selected);
+  color: var(--db-text);
+}
+
 /* ── Context Menu ────────────────────────────────────────────── */
 
 .db-tree-node {
@@ -252,8 +286,8 @@
 }
 
 .db-tree-context {
-  position: absolute;
-  z-index: 50;
+  position: fixed;
+  z-index: 1000;
   background: var(--db-bg);
   border: 1px solid var(--db-border);
   border-radius: 4px;
