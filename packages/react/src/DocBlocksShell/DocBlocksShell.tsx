@@ -22,7 +22,7 @@ import {
   removeDirectoryHandle,
 } from '@bendyline/docblocks/filesystem';
 import type { ContentContainer } from '@bendyline/squisq/storage';
-import { isElectronHost, getDocblocksHost } from '@bendyline/docblocks/host';
+import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
@@ -245,7 +245,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
       let fsProvider: FileSystemProvider | null = null;
       if (ws.type === 'electron-native') {
         if (!ws.rootPath) return null;
-        await getDocblocksHost().workspaces.register({
+        await getDocBlocksHost().workspaces.register({
           id: ws.id,
           name: ws.name,
           rootPath: ws.rootPath,
@@ -300,11 +300,13 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
     async (fs: FileSystemProvider) => {
       const entries = await fs.readDirectory('/');
 
-      // If the only file is the welcome doc, auto-select it
+      // If the only file is the welcome doc, auto-select it.
+      // Match either casing so workspaces seeded before the rename
+      // (aboutDocblocks.md) keep working alongside new ones (aboutDocBlocks.md).
       if (
         entries.length === 1 &&
         entries[0].kind === 'file' &&
-        entries[0].path.replace(/^\//, '') === 'aboutDocblocks.md'
+        entries[0].path.replace(/^\//, '').toLowerCase() === 'aboutdocblocks.md'
       ) {
         const aboutPath = entries[0].path;
         const content = await fs.readFile(aboutPath);
@@ -322,20 +324,20 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
 
       if (entries.length > 0) return;
 
-      const welcomePath = '/aboutDocblocks.md';
+      const welcomePath = '/aboutDocBlocks.md';
       const welcomeContent = [
         '# Welcome to DocBlocks',
         '',
-        'DocBlocks is a browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser.',
+        'DocBlocks is a free browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser. What you write here can become a Word or PDF doc, a slide deck, an e-book, or a video.',
+        '',
+        'Simple to write. Beautiful wherever it goes.',
         '',
         '## Features',
         '',
-        '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime',
-        '- **Workspaces** — Organize your documents into separate workspaces',
+        '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime. Use section annotations to change the visualization for blocks of content.',
+        '- **Workspaces** — Organize your documents into separate workspaces in the browser or on your device.',
+        '- **Useful Everywhere** — Your content is usable across multiple formats — Microsoft Word .docx, PowerPoint, PDF, HTML, EPUB e-books, and Markdown.',
         '- **Playback & Video** — Preview your documents as rich visual presentations and export them as MP4 video',
-        '- **Export Anywhere** — Export documents to PDF, Word, PowerPoint, HTML, or Markdown with theme options',
-        '- **Local Storage** — Your documents are stored in your browser using temporary browser storage (backup often!)',
-        '- **Device Folders** — Create workspaces based on folders on your computer',
         '- **No BS** — Free, no ads, no accounts, no tracking - everything runs locally in your browser',
         '',
         '## Getting Started',
@@ -407,7 +409,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
       for (const ws of sorted) {
         if (ws.type === 'electron-native') {
           if (!ws.rootPath) continue;
-          await getDocblocksHost().workspaces.register({
+          await getDocBlocksHost().workspaces.register({
             id: ws.id,
             name: ws.name,
             rootPath: ws.rootPath,
@@ -441,7 +443,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
         if (electron) {
           // Desktop: ask the host for the default folder workspace
           // (creates ~/Documents/DocBlocks on first launch).
-          const info = await getDocblocksHost().workspaces.getDefault();
+          const info = await getDocBlocksHost().workspaces.getDefault();
           const descriptor: WorkspaceDescriptor = {
             id: info.id,
             name: info.name,
@@ -551,7 +553,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
       let nextProvider: FileSystemProvider | null = null;
       if (ws.type === 'electron-native') {
         if (!ws.rootPath) return;
-        await getDocblocksHost().workspaces.register({
+        await getDocBlocksHost().workspaces.register({
           id: ws.id,
           name: ws.name,
           rootPath: ws.rootPath,
@@ -582,7 +584,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
   const handleOpenFolder = useCallback(async () => {
     try {
       if (isElectronHost()) {
-        const info = await getDocblocksHost().workspaces.pickFolder();
+        const info = await getDocBlocksHost().workspaces.pickFolder();
         if (!info) return; // user cancelled
         const descriptor: WorkspaceDescriptor = {
           id: info.id,
@@ -645,14 +647,14 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
     if (!isElectronHost() || !activeWorkspaceId) return;
     const ws = await getWorkspace(activeWorkspaceId);
     if (ws?.type === 'electron-native' && ws.rootPath) {
-      await getDocblocksHost().shell.revealInFolder(ws.rootPath);
+      await getDocBlocksHost().shell.revealInFolder(ws.rootPath);
     }
   }, [activeWorkspaceId]);
 
   // Subscribe to native menu commands (Electron host).
   useEffect(() => {
     if (!isElectronHost()) return;
-    const host = getDocblocksHost();
+    const host = getDocBlocksHost();
     return host.onMenuCommand((cmd) => {
       switch (cmd) {
         case 'file:new':
@@ -687,7 +689,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
   // Subscribe to open-file / deep-link requests from the OS.
   useEffect(() => {
     if (!isElectronHost()) return;
-    const host = getDocblocksHost();
+    const host = getDocBlocksHost();
     return host.onOpenRequest(async (req) => {
       if (req.filePath) {
         const workspaces = (await listWorkspaces()).filter(
@@ -888,7 +890,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
     const ws = await getWorkspace(activeWorkspaceId);
     if (ws?.type === 'electron-native') {
       try {
-        await getDocblocksHost().workspaces.unregister(activeWorkspaceId);
+        await getDocBlocksHost().workspaces.unregister(activeWorkspaceId);
       } catch {
         // ignore — host cleanup is best-effort
       }
@@ -906,7 +908,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
       const next = remaining[0];
       await handleWorkspaceSelect(next);
     } else if (electron) {
-      const info = await getDocblocksHost().workspaces.getDefault();
+      const info = await getDocBlocksHost().workspaces.getDefault();
       const descriptor: WorkspaceDescriptor = {
         id: info.id,
         name: info.name,

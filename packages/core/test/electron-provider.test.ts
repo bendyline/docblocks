@@ -1,16 +1,16 @@
 /**
  * Unit tests for ElectronFileSystemProvider.
  *
- * The provider is a pure IPC client — we install a mock `docblocksHost`
+ * The provider is a pure IPC client — we install a mock `docBlocksHost`
  * on globalThis and assert that each method delegates correctly with the
  * right arguments.
  */
 
 import { expect } from 'chai';
 import { ElectronFileSystemProvider, isElectronHost } from '@bendyline/docblocks/filesystem';
-import type { DocblocksHostAPI } from '@bendyline/docblocks/host';
+import type { DocBlocksHostAPI } from '@bendyline/docblocks/host';
 
-function installMockHost(fsImpl: Partial<DocblocksHostAPI['fs']>): { calls: unknown[][] } {
+function installMockHost(fsImpl: Partial<DocBlocksHostAPI['fs']>): { calls: unknown[][] } {
   const calls: unknown[][] = [];
   const fs = new Proxy(fsImpl, {
     get(target, key: string) {
@@ -21,14 +21,14 @@ function installMockHost(fsImpl: Partial<DocblocksHostAPI['fs']>): { calls: unkn
       };
     },
   });
-  (globalThis as unknown as { docblocksHost: Partial<DocblocksHostAPI> }).docblocksHost = {
-    fs: fs as DocblocksHostAPI['fs'],
+  (globalThis as unknown as { docBlocksHost: Partial<DocBlocksHostAPI> }).docBlocksHost = {
+    fs: fs as DocBlocksHostAPI['fs'],
   };
   return { calls };
 }
 
 function clearHost(): void {
-  delete (globalThis as { docblocksHost?: unknown }).docblocksHost;
+  delete (globalThis as { docBlocksHost?: unknown }).docBlocksHost;
 }
 
 describe('ElectronFileSystemProvider', () => {
@@ -38,7 +38,7 @@ describe('ElectronFileSystemProvider', () => {
     expect(isElectronHost()).to.equal(false);
   });
 
-  it('isElectronHost() is true once docblocksHost is installed', () => {
+  it('isElectronHost() is true once docBlocksHost is installed', () => {
     installMockHost({});
     expect(isElectronHost()).to.equal(true);
   });
@@ -105,6 +105,6 @@ describe('ElectronFileSystemProvider', () => {
       err = e;
     }
     expect(err).to.be.an('error');
-    expect((err as Error).message).to.include('docblocksHost');
+    expect((err as Error).message).to.include('docBlocksHost');
   });
 });

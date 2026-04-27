@@ -1,16 +1,16 @@
 /**
  * Host bridge — shared types + runtime access for the Electron desktop
- * host. The renderer calls `getDocblocksHost()` to reach the preload
+ * host. The renderer calls `getDocBlocksHost()` to reach the preload
  * contextBridge; `isElectronHost()` gates desktop-only UI branches.
  */
 
 export type {
-  DocblocksHostAPI,
-  DocblocksHostFsAPI,
-  DocblocksHostWorkspacesAPI,
-  DocblocksHostShellAPI,
-  DocblocksHostFfmpegAPI,
-  DocblocksHostUpdaterAPI,
+  DocBlocksHostAPI,
+  DocBlocksHostFsAPI,
+  DocBlocksHostWorkspacesAPI,
+  DocBlocksHostShellAPI,
+  DocBlocksHostFfmpegAPI,
+  DocBlocksHostUpdaterAPI,
   ElectronWorkspaceInfo,
   HostEnvironment,
   MenuCommand,
@@ -18,12 +18,12 @@ export type {
   UpdaterStatus,
 } from './types.js';
 
-import type { DocblocksHostAPI } from './types.js';
+import type { DocBlocksHostAPI } from './types.js';
 
 /** True when running inside the Electron desktop shell. */
 export function isElectronHost(): boolean {
   if (typeof globalThis === 'undefined') return false;
-  const host = (globalThis as { docblocksHost?: unknown }).docblocksHost;
+  const host = (globalThis as { docBlocksHost?: unknown }).docBlocksHost;
   return (
     typeof host === 'object' &&
     host !== null &&
@@ -33,15 +33,15 @@ export function isElectronHost(): boolean {
 }
 
 /** Return the host API, or throw if not running under Electron. */
-export function getDocblocksHost(): DocblocksHostAPI {
-  const host = (globalThis as { docblocksHost?: DocblocksHostAPI }).docblocksHost;
+export function getDocBlocksHost(): DocBlocksHostAPI {
+  const host = (globalThis as { docBlocksHost?: DocBlocksHostAPI }).docBlocksHost;
   if (!host) {
-    throw new Error('docblocksHost is not available — not running under Electron?');
+    throw new Error('docBlocksHost is not available — not running under Electron?');
   }
   return host;
 }
 
 /** Return the host API, or null if not running under Electron. */
-export function maybeGetDocblocksHost(): DocblocksHostAPI | null {
-  return (globalThis as { docblocksHost?: DocblocksHostAPI }).docblocksHost ?? null;
+export function maybeGetDocBlocksHost(): DocBlocksHostAPI | null {
+  return (globalThis as { docBlocksHost?: DocBlocksHostAPI }).docBlocksHost ?? null;
 }

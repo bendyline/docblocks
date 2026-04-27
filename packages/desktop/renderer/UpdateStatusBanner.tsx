@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { UpdaterStatus } from '@bendyline/docblocks/host';
-import { getDocblocksHost, isElectronHost } from '@bendyline/docblocks/host';
+import { getDocBlocksHost, isElectronHost } from '@bendyline/docblocks/host';
 
 /**
  * Thin banner across the top of the shell that reflects auto-updater
@@ -18,7 +18,7 @@ export function UpdateStatusBanner() {
 
   useEffect(() => {
     if (!isElectronHost()) return;
-    return getDocblocksHost().updater.onStatus(setStatus);
+    return getDocBlocksHost().updater.onStatus(setStatus);
   }, []);
 
   if (!isElectronHost()) return null;
@@ -35,7 +35,7 @@ export function UpdateStatusBanner() {
               type="button"
               className="db-update-banner-link"
               onClick={() =>
-                status.releaseUrl && getDocblocksHost().shell.openExternal(status.releaseUrl)
+                status.releaseUrl && getDocBlocksHost().shell.openExternal(status.releaseUrl)
               }
             >
               What's new
@@ -60,7 +60,7 @@ export function UpdateStatusBanner() {
               type="button"
               className="db-update-banner-link"
               onClick={() =>
-                status.releaseUrl && getDocblocksHost().shell.openExternal(status.releaseUrl)
+                status.releaseUrl && getDocBlocksHost().shell.openExternal(status.releaseUrl)
               }
             >
               What's new
@@ -69,7 +69,7 @@ export function UpdateStatusBanner() {
           <button
             type="button"
             className="db-update-banner-action"
-            onClick={() => getDocblocksHost().updater.quitAndInstall()}
+            onClick={() => getDocBlocksHost().updater.quitAndInstall()}
           >
             Restart to install
           </button>
