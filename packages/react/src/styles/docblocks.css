@@ -4,39 +4,39 @@
 
 .db-shell {
   --db-bg: #ffffff;
-  --db-bg-subtle: #f9fafb;
-  --db-bg-hover: #f3f4f6;
-  --db-bg-selected: #dbeafe;
-  --db-bg-selected-hover: #bfdbfe;
-  --db-border: #cbd5e1;
-  --db-border-strong: #94a3b8;
+  --db-bg-subtle: #f5f7f4;
+  --db-bg-hover: #eaeee9;
+  --db-bg-selected: #059669;
+  --db-bg-selected-hover: #047857;
+  --db-border: #d4d8d2;
+  --db-border-strong: #9ea69a;
   --db-text: #1f2937;
   --db-text-secondary: #374151;
   --db-text-muted: #6b7280;
   --db-text-placeholder: #9ca3af;
-  --db-accent: #3b82f6;
-  --db-accent-hover: #2563eb;
-  --db-input-border: #93c5fd;
+  --db-accent: #16a34a;
+  --db-accent-hover: #15803d;
+  --db-input-border: #86efac;
   --db-danger: #dc2626;
   --db-danger-bg: #fef2f2;
   --db-shadow: rgba(0, 0, 0, 0.12);
 }
 
 .db-shell[data-theme='dark'] {
-  --db-bg: #0f172a;
-  --db-bg-subtle: #1e293b;
-  --db-bg-hover: #334155;
-  --db-bg-selected: #1e3a5f;
-  --db-bg-selected-hover: #1e4a7f;
-  --db-border: #475569;
-  --db-border-strong: #64748b;
+  --db-bg: #1c1f1c;
+  --db-bg-subtle: #262926;
+  --db-bg-hover: #3a3d3a;
+  --db-bg-selected: #2e312d;
+  --db-bg-selected-hover: #3b3f3a;
+  --db-border: #4d514b;
+  --db-border-strong: #6d716b;
   --db-text: #e5e7eb;
   --db-text-secondary: #cbd5e1;
   --db-text-muted: #94a3b8;
   --db-text-placeholder: #64748b;
-  --db-accent: #3b82f6;
-  --db-accent-hover: #60a5fa;
-  --db-input-border: #3b82f6;
+  --db-accent: #5fb077;
+  --db-accent-hover: #7cc89a;
+  --db-input-border: #5fb077;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
@@ -44,20 +44,20 @@
 
 @media (prefers-color-scheme: dark) {
   .db-shell:not([data-theme='light']) {
-    --db-bg: #0f172a;
-    --db-bg-subtle: #1e293b;
-    --db-bg-hover: #334155;
-    --db-bg-selected: #1e3a5f;
-    --db-bg-selected-hover: #1e4a7f;
-    --db-border: #475569;
-    --db-border-strong: #64748b;
+    --db-bg: #1c1f1c;
+    --db-bg-subtle: #262926;
+    --db-bg-hover: #3a3d3a;
+    --db-bg-selected: #2e312d;
+    --db-bg-selected-hover: #3b3f3a;
+    --db-border: #4d514b;
+    --db-border-strong: #6d716b;
     --db-text: #e5e7eb;
     --db-text-secondary: #cbd5e1;
     --db-text-muted: #94a3b8;
     --db-text-placeholder: #64748b;
-    --db-accent: #3b82f6;
-    --db-accent-hover: #60a5fa;
-    --db-input-border: #3b82f6;
+    --db-accent: #5fb077;
+    --db-accent-hover: #7cc89a;
+    --db-input-border: #5fb077;
     --db-danger: #f87171;
     --db-danger-bg: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
@@ -82,10 +82,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(37, 99, 235, 0.08);
-  border: 2px dashed #2563eb;
+  background: rgba(22, 163, 74, 0.08);
+  border: 2px dashed #16a34a;
   border-radius: 6px;
-  color: #2563eb;
+  color: #16a34a;
   font-size: 13px;
   font-weight: 600;
   z-index: 10;
@@ -211,10 +211,12 @@
 
 .db-tree-row--selected {
   background: var(--db-bg-selected);
+  color: #ffffff;
 }
 
 .db-tree-row--selected:hover {
   background: var(--db-bg-selected-hover);
+  color: #ffffff;
 }
 
 .db-tree-icon {
@@ -1072,5 +1074,260 @@
 }
 
 .db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
-  background: #0b1220;
+  background: #161816;
+}
+
+/* ── Squisq dark-theme override ──────────────────────────────── */
+/* Squisq has hardcoded slate-blue surfaces in its dark mode. We re-tone
+   them to a near-neutral dark gray (a subtle sage warmth) to match
+   docblocks' palette via the cascade. If squisq ever accepts a
+   theme-color prop, replace this block with that mechanism. */
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] {
+  --squisq-bg: #262926;
+  --squisq-border: #4d514b;
+  --squisq-input-bg: #2e312d;
+  background: #1c1f1c;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-editor-header {
+  background: #262926;
+  border-bottom-color: #3a3d3a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-view-tabs {
+  background: #1c1f1c;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-container {
+  background: #161816;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor {
+  background: #1c1f1c;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor pre {
+  background: #161816;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor code {
+  background: #2e312d;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor blockquote {
+  border-left-color: #4d514b;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-preview-player {
+  background: #1c1f1c;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-preview-codeblock {
+  background: #161816;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-status-bar {
+  background: #262926;
+  border-top-color: #3a3d3a;
+}
+
+.db-shell[data-theme='dark'] .squisq-image-viewer--dark,
+.db-shell[data-theme='dark'] .squisq-image-viewer--dark .squisq-image-viewer-stage {
+  background: #1c1f1c;
+}
+
+/* ── Squisq accent override (blue → thematic green) ──────────── */
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-view-tab--active {
+  color: #7cc89a;
+  border-bottom-color: #7cc89a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-view-tab--active {
+  color: #a8d9b6;
+  border-bottom-color: #7cc89a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-button--active {
+  background: #2d4a35;
+  color: #7cc89a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-button--active:hover {
+  background: #345a3e;
+  color: #a8d9b6;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-overflow-item--active {
+  color: #7cc89a;
+  background: #2d4a35;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor a {
+  color: #7cc89a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor .column-resize-handle {
+  background: #7cc89a;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-wysiwyg-editor .selectedCell::after {
+  background: rgba(124, 200, 154, 0.15);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-picker-select {
+  background: #2e312d;
+  border-color: #4d514b;
+  color: #d1d5db;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-picker-select:focus {
+  outline-color: #5fb077;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-button:disabled,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-toolbar-button:disabled:hover {
+  color: #5f7068;
+  background: transparent;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ── Template badge: inherit OS font, amber palette ──────────── */
+
+.db-shell .squisq-template-badge {
+  font-family: inherit;
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge {
+  color: #fbbf24;
+  background: #2a1e08;
+  border-color: #92400e;
+}
+
+/* Light mode squisq surfaces (toolbar, header, status bar) */
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-editor-header {
+  background: #f5f7f4;
+  border-bottom-color: #d4d8d2;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-toolbar {
+  background: #eaeee9;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-toolbar-view-tabs {
+  background: #ffffff;
+  border-right-color: #d4d8d2;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-status-bar {
+  background: #f5f7f4;
+  border-top-color: #d4d8d2;
+}
+
+/* Light mode squisq accents */
+.db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-view-tab--active,
+.db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar-view-tab--active {
+  color: #15803d;
+  border-bottom-color: #16a34a;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-toolbar-button--active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-toolbar-button--active:hover {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-toolbar-overflow-item--active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-wysiwyg-editor a {
+  color: #15803d;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-wysiwyg-editor .column-resize-handle {
+  background: #16a34a;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-wysiwyg-editor .selectedCell::after {
+  background: rgba(22, 163, 74, 0.12);
 }

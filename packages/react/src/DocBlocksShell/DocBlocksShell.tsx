@@ -11,6 +11,11 @@ import type { EditorTheme, EditorView } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
+import {
+  DocumentVersionManager,
+  type PrunePolicy,
+  type SaveVersionResult,
+} from '@bendyline/squisq/versions';
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import {
   IndexedDBFileSystemProvider,
@@ -44,6 +49,25 @@ export interface DocBlocksShellProps {
   theme?: EditorTheme | 'auto';
   /** Optional logo image URL for the app menu. */
   logoUrl?: string;
+  /**
+   * Enable document version history. Snapshots are written under
+   * `<basename>_files/.versions/` next to each markdown file (i.e., the
+   * per-document container). Defaults to `true`.
+   */
+  allowVersioning?: boolean;
+  /**
+   * Override the document basename used in version filenames. Defaults
+   * to the basename of the currently selected file.
+   */
+  versionBasename?: string;
+  /** Prune policy applied after each successful save. Default: keep last 50. */
+  versioningPrunePolicy?: PrunePolicy;
+  /** Idle delay (ms) before the editor auto-saves a version. `0` disables. Default 5000. */
+  versioningAutoSaveIdleMs?: number;
+  /** Notified after each `saveVersion` attempt (saved=true and saved=false). */
+  onSaveVersion?: (result: SaveVersionResult) => void;
+  /** Optional escape hatch for hosts that want imperative access to the version manager. */
+  versioningRef?: React.Ref<DocumentVersionManager | null>;
 }
 
 function useOsTheme(): 'light' | 'dark' {
@@ -185,7 +209,16 @@ function FileGlyph() {
   );
 }
 
-export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlocksShellProps) {
+export function DocBlocksShell({
+  theme: _themeProp = 'auto',
+  logoUrl,
+  allowVersioning = true,
+  versionBasename,
+  versioningPrunePolicy,
+  versioningAutoSaveIdleMs,
+  onSaveVersion,
+  versioningRef,
+}: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   // "System default" (auto) always follows the OS — the host's theme prop
@@ -219,6 +252,16 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
    */
   const mediaContainerRef = useRef<ContentContainer | null>(null);
   const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
+  /**
+   * Per-document container scoped to `<basename>_files/`. This is what
+   * the editor uses for version history (`.versions/` lives here) and
+   * for audio mapping (MP3 / timing.json discovery). Distinct from
+   * `mediaContainerRef` which is scoped to the parent directory so the
+   * media provider can write `notes_files/image.png` paths that stay
+   * portable in the markdown.
+   */
+  const versionsContainerRef = useRef<ContentContainer | null>(null);
+  const [versionsContainer, setVersionsContainer] = useState<ContentContainer | null>(null);
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -346,7 +389,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
         '2. Start writing in markdown — the editor supports headings, lists, links, images, and more',
         '3. Your work is saved automatically',
         '',
-        'Built with [Squiggly Square](https://github.com/nicoth-in/squisq) by [Bendyline](https://bendyline.com).',
+        'Built with [Squiggly Square](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
       ].join('\n');
 
       await fs.writeFile(welcomePath, welcomeContent);
@@ -513,19 +556,46 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
   useEffect(() => {
     if (!provider || !selectedFile) {
       mediaContainerRef.current = null;
+      versionsContainerRef.current = null;
       setMediaProvider(null);
+      setVersionsContainer(null);
       return;
     }
     const parentDir = dirnameOf(selectedFile);
     const base = basenameOf(selectedFile);
+    const baseNoExt = base.replace(/\.[^.]+$/, '');
     const container = new FileSystemContentContainer(provider, parentDir);
+    const vPrefix = parentDir ? `${parentDir}/${baseNoExt}_files` : `${baseNoExt}_files`;
+    const vContainer = new FileSystemContentContainer(provider, vPrefix);
     const mp = createFileMediaProvider(container, base);
     mediaContainerRef.current = container;
+    versionsContainerRef.current = vContainer;
     setMediaProvider(mp);
+    setVersionsContainer(vContainer);
     return () => {
       mp.dispose();
     };
   }, [provider, selectedFile]);
+
+  // Expose a DocumentVersionManager via versioningRef when requested.
+  useEffect(() => {
+    const ref = versioningRef;
+    if (!ref) return;
+    const assign = (mgr: DocumentVersionManager | null) => {
+      if (typeof ref === 'function') ref(mgr);
+      else (ref as React.MutableRefObject<DocumentVersionManager | null>).current = mgr;
+    };
+    if (!allowVersioning || !versionsContainer || !selectedFile) {
+      assign(null);
+      return;
+    }
+    const base = basenameOf(selectedFile);
+    const mgr = new DocumentVersionManager(versionsContainer, {
+      basename: versionBasename ?? base,
+    });
+    assign(mgr);
+    return () => assign(null);
+  }, [versioningRef, allowVersioning, versionBasename, selectedFile, versionsContainer]);
 
   // React to external file changes watched by the Electron host (chokidar).
   useEffect(() => {
@@ -857,28 +927,164 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
     setEditorKey((k) => k + 1);
   }, [activeWorkspaceId]);
 
+  /**
+   * Walk a FileSystemProvider and copy every file into `container` under
+   * `pathPrefix` (no leading slash; empty string for the root). Used by
+   * both single- and all-workspace downloads.
+   */
+  const copyProviderToContainer = useCallback(
+    async (
+      src: FileSystemProvider,
+      container: { writeFile: (path: string, data: ArrayBuffer | Uint8Array) => Promise<void> },
+      pathPrefix: string,
+    ): Promise<void> => {
+      const encoder = new TextEncoder();
+      const stack: string[] = ['/'];
+      while (stack.length > 0) {
+        const dir = stack.pop()!;
+        const entries = await src.readDirectory(dir);
+        for (const entry of entries) {
+          if (entry.kind === 'directory') {
+            stack.push(entry.path);
+            continue;
+          }
+          const rel = entry.path.replace(/^\/+/, '');
+          const zipPath = pathPrefix ? `${pathPrefix}/${rel}` : rel;
+          // Files may be stored as text (writeFile) or binary (writeBinary);
+          // try binary first, fall back to text and encode as UTF-8.
+          const binary = await src.readBinary(entry.path);
+          if (binary) {
+            await container.writeFile(zipPath, binary);
+            continue;
+          }
+          const text = await src.readFile(entry.path);
+          if (text !== null) {
+            await container.writeFile(zipPath, encoder.encode(text));
+          }
+        }
+      }
+    },
+    [],
+  );
+
   const handleDownloadWorkspace = useCallback(async () => {
     if (!provider) return;
     try {
-      const entries = await provider.readDirectory('/');
-      const lines: string[] = [];
-      for (const entry of entries) {
-        if (entry.kind === 'file') {
-          const content = await provider.readFile(entry.path);
-          lines.push(`--- ${entry.path} ---\n${content ?? ''}\n`);
-        }
-      }
-      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+        import('@bendyline/squisq/storage'),
+        import('@bendyline/squisq-formats/container'),
+      ]);
+
+      const container = new MemoryContentContainer();
+      await copyProviderToContainer(provider, container, '');
+
+      const blob = await containerToZip(container);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'workspace.txt';
+      const safeName =
+        (provider.label || 'workspace').replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'workspace';
+      a.download = `${safeName}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('Failed to download workspace', err);
+      alert('Failed to download workspace. See console for details.');
     }
-  }, [provider]);
+  }, [provider, copyProviderToContainer]);
+
+  /**
+   * Bundle every workspace the host can open without further prompting
+   * into a single zip, with each workspace nested under its own folder.
+   * Native (browser-picked) workspaces whose handle hasn't been re-granted
+   * for this session are skipped — restoring them would require a user
+   * gesture per workspace.
+   */
+  const handleDownloadAllWorkspaces = useCallback(async () => {
+    try {
+      const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+        import('@bendyline/squisq/storage'),
+        import('@bendyline/squisq-formats/container'),
+      ]);
+
+      const electron = isElectronHost();
+      const all = await listWorkspaces();
+      const candidates = all.filter((w) =>
+        electron ? w.type === 'electron-native' : w.type !== 'electron-native',
+      );
+      if (candidates.length === 0) {
+        alert('No workspaces to download.');
+        return;
+      }
+
+      const container = new MemoryContentContainer();
+      const usedFolders = new Set<string>();
+      const skipped: string[] = [];
+
+      for (const ws of candidates) {
+        let p: FileSystemProvider | null = null;
+        try {
+          if (ws.type === 'electron-native') {
+            if (!ws.rootPath) continue;
+            await getDocBlocksHost().workspaces.register({
+              id: ws.id,
+              name: ws.name,
+              rootPath: ws.rootPath,
+            });
+            p = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+          } else if (ws.type === 'native') {
+            // Restore without prompting — only succeeds when the browser
+            // still remembers the granted handle for this origin/session.
+            p = await restoreNativeFolder(ws.id);
+          } else {
+            p = new IndexedDBFileSystemProvider(ws.id, ws.name);
+          }
+        } catch (err) {
+          console.warn(`Skipping workspace ${ws.name}:`, err);
+        }
+
+        if (!p) {
+          skipped.push(ws.name);
+          continue;
+        }
+
+        // Pick a unique, filesystem-safe folder name per workspace.
+        const base =
+          (ws.name || 'workspace').replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'workspace';
+        let folder = base;
+        let suffix = 2;
+        while (usedFolders.has(folder)) {
+          folder = `${base} (${suffix++})`;
+        }
+        usedFolders.add(folder);
+
+        await copyProviderToContainer(p, container, folder);
+      }
+
+      if (usedFolders.size === 0) {
+        alert('No workspaces could be opened for download.');
+        return;
+      }
+
+      const blob = await containerToZip(container);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.download = `docblocks-workspaces-${stamp}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      if (skipped.length > 0) {
+        alert(
+          `Downloaded ${usedFolders.size} workspace(s). Skipped ${skipped.length} that require re-granting access: ${skipped.join(', ')}.`,
+        );
+      }
+    } catch (err) {
+      console.error('Failed to download all workspaces', err);
+      alert('Failed to download all workspaces. See console for details.');
+    }
+  }, [copyProviderToContainer]);
 
   const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspaceId) return;
@@ -950,6 +1156,7 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
                 logoUrl={logoUrl}
                 themePreference={themePreference}
                 onThemeChange={handleThemeChange}
+                onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -995,7 +1202,12 @@ export function DocBlocksShell({ theme: _themeProp = 'auto', logoUrl }: DocBlock
                   theme={resolvedTheme}
                   height="100%"
                   mediaProvider={mediaProvider}
-                  container={mediaContainerRef.current ?? undefined}
+                  container={versionsContainer ?? undefined}
+                  allowVersioning={allowVersioning}
+                  versionBasename={versionBasename ?? basenameOf(selectedFile)}
+                  versioningPrunePolicy={versioningPrunePolicy}
+                  versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                  onSaveVersion={onSaveVersion}
                   toolbarSlotLeft={
                     isMobile ? (
                       <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>

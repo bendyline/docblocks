@@ -15,6 +15,11 @@ export interface AppMenuProps {
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
   onThemeChange?: (theme: ThemePreference) => void;
+  /**
+   * Called when the user clicks "Download all workspaces". When omitted,
+   * the menu item is hidden.
+   */
+  onDownloadAllWorkspaces?: () => void | Promise<void>;
 }
 
 export function AppMenu({
@@ -22,6 +27,7 @@ export function AppMenu({
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
+  onDownloadAllWorkspaces,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -72,6 +78,15 @@ export function AppMenu({
             >
               Settings
             </button>
+            {onDownloadAllWorkspaces && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+              >
+                Download all workspaces
+              </button>
+            )}
             <div className="db-app-menu-divider" />
             <button
               className="db-app-menu-item"
@@ -167,7 +182,7 @@ export function AppMenu({
               <p>
                 Built on{' '}
                 <a
-                  href="https://github.com/nicoth-in/squisq"
+                  href="https://github.com/bendyline/squisq"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
