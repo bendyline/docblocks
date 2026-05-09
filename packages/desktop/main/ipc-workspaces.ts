@@ -21,6 +21,11 @@ function deriveWorkspaceId(rootPath: string): string {
   return `electron-${safeBase}-${Buffer.from(rootPath).toString('hex').slice(0, 12)}`;
 }
 
+function normaliseTrustPath(rootPath: string): string {
+  const resolved = path.resolve(rootPath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
 async function ensureFolder(absPath: string): Promise<void> {
   await fs.mkdir(absPath, { recursive: true });
 }
@@ -119,16 +124,31 @@ export function registerWorkspaceIpc(): void {
   });
 
   ipcMain.handle('workspaces:register', async (_e, info: ElectronWorkspaceInfo) => {
-    roots.register(info.id, info.rootPath);
-    await updateSettings((s) => {
-      const idx = s.workspaces.findIndex((w) => w.id === info.id);
-      if (idx >= 0) {
-        s.workspaces[idx] = info;
-      } else {
-        s.workspaces.push(info);
-      }
-      return s;
-    });
+    const settings = await readSettings();
+    const persisted = settings.workspaces.find((w) => w.id === info.id);
+    if (
+      !persisted ||
+      normaliseTrustPath(persisted.rootPath) !== normaliseTrustPath(info.rootPath)
+    ) {
+      throw new Error(
+        'Workspace root is not trusted. Open the folder with the native picker first.',
+      );
+    }
+
+    roots.register(persisted.id, persisted.rootPath);
+
+    if (persisted.name !== info.name) {
+      await updateSettings((s) => {
+        const existing = s.workspaces.find((w) => w.id === info.id);
+        if (
+          existing &&
+          normaliseTrustPath(existing.rootPath) === normaliseTrustPath(info.rootPath)
+        ) {
+          existing.name = info.name;
+        }
+        return s;
+      });
+    }
   });
 
   ipcMain.handle('workspaces:unregister', async (_e, id: string) => {

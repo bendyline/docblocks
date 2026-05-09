@@ -153,6 +153,28 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     this.root = root;
   }
 
+  private async copyDirectory(oldDirPath: string, newDirPath: string): Promise<boolean> {
+    const source = await resolveDir(this.root, oldDirPath);
+    if (!source) return false;
+    await resolveDirCreate(this.root, newDirPath);
+
+    for await (const [name, handle] of source as unknown as AsyncIterable<
+      [string, FileSystemHandle]
+    >) {
+      const oldChild = oldDirPath ? `${oldDirPath}/${name}` : name;
+      const newChild = newDirPath ? `${newDirPath}/${name}` : name;
+      if (handle.kind === 'directory') {
+        await this.copyDirectory(oldChild, newChild);
+      } else {
+        const fileHandle = await source.getFileHandle(name);
+        const file = await fileHandle.getFile();
+        await this.writeBinary(newChild, await file.arrayBuffer());
+      }
+    }
+
+    return true;
+  }
+
   async readFile(path: string): Promise<string | null> {
     const p = normalisePath(path);
     const dir = await resolveDir(this.root, parentDir(p));
@@ -187,20 +209,31 @@ export class NativeFileSystemProvider implements FileSystemProvider {
   async rename(oldPath: string, newPath: string): Promise<void> {
     const op = normalisePath(oldPath);
     const np = normalisePath(newPath);
-
-    // The File System Access API doesn't have a native rename.
-    // Read → write → delete.
-    const content = await this.readFile(op);
-    if (content !== null) {
-      await this.writeFile(np, content);
-      await this.delete(op);
-      return;
+    if (op === np) return;
+    if (!op || !np) {
+      throw new Error('Cannot rename the filesystem root');
+    }
+    if (np.startsWith(op + '/')) {
+      throw new Error('Cannot move a directory into itself');
     }
 
-    // Try binary
-    const binary = await this.readBinary(op);
-    if (binary !== null) {
-      await this.writeBinary(np, binary);
+    // The File System Access API doesn't have a native rename.
+    // Copy → delete.
+    const oldParent = await resolveDir(this.root, parentDir(op));
+    if (!oldParent) return;
+
+    try {
+      const fileHandle = await oldParent.getFileHandle(baseName(op));
+      const file = await fileHandle.getFile();
+      await this.writeBinary(np, await file.arrayBuffer());
+      await this.delete(op);
+      return;
+    } catch {
+      // Not a file; try directory below.
+    }
+
+    const copied = await this.copyDirectory(op, np);
+    if (copied) {
       await this.delete(op);
     }
   }

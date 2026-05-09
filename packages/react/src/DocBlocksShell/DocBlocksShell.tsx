@@ -164,6 +164,30 @@ function basenameOf(p: string): string {
   return idx === -1 ? clean : clean.slice(idx + 1);
 }
 
+function normaliseProviderPath(p: string): string {
+  return '/' + p.replace(/^\/+/, '');
+}
+
+function sameProviderPath(a: string, b: string): boolean {
+  return normaliseProviderPath(a) === normaliseProviderPath(b);
+}
+
+async function createElectronProviderFromWorkspace(
+  ws: WorkspaceDescriptor,
+): Promise<ElectronFileSystemProvider | null> {
+  if (!ws.rootPath) return null;
+  try {
+    await getDocBlocksHost().workspaces.register({
+      id: ws.id,
+      name: ws.name,
+      rootPath: ws.rootPath,
+    });
+  } catch {
+    return null;
+  }
+  return new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+}
+
 function useIsMobile(breakpoint = 768): boolean {
   const [isMobile, setIsMobile] = useState(
     () =>
@@ -243,6 +267,11 @@ export function DocBlocksShell({
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
+  const lastLocalSaveRef = useRef<{
+    filePath: string;
+    content: string;
+    savedAt: number;
+  } | null>(null);
 
   /**
    * Per-file media container: for `notes.md`, images live in
@@ -287,13 +316,8 @@ export function DocBlocksShell({
 
       let fsProvider: FileSystemProvider | null = null;
       if (ws.type === 'electron-native') {
-        if (!ws.rootPath) return null;
-        await getDocBlocksHost().workspaces.register({
-          id: ws.id,
-          name: ws.name,
-          rootPath: ws.rootPath,
-        });
-        fsProvider = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+        fsProvider = await createElectronProviderFromWorkspace(ws);
+        if (!fsProvider) return null;
       } else if (ws.type === 'native') {
         const restored = await restoreNativeFolder(ws.id);
         if (!restored) return null;
@@ -451,13 +475,8 @@ export function DocBlocksShell({
       );
       for (const ws of sorted) {
         if (ws.type === 'electron-native') {
-          if (!ws.rootPath) continue;
-          await getDocBlocksHost().workspaces.register({
-            id: ws.id,
-            name: ws.name,
-            rootPath: ws.rootPath,
-          });
-          const p = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+          const p = await createElectronProviderFromWorkspace(ws);
+          if (!p) continue;
           await touchWorkspace(ws.id);
           fsProvider = p;
           setProvider(p);
@@ -548,8 +567,16 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile]);
 
+  const handleAutoSaved = useCallback((filePath: string, savedContent: string) => {
+    lastLocalSaveRef.current = {
+      filePath: normaliseProviderPath(filePath),
+      content: savedContent,
+      savedAt: Date.now(),
+    };
+  }, []);
+
   // Auto-save current file
-  useAutoSave(provider, selectedFile, editorContent);
+  useAutoSave(provider, selectedFile, editorContent, 500, handleAutoSaved);
 
   // Per-file media: for `notes.md` images live in `notes_files/` beside it.
   // Rebuilds whenever the provider or selected file changes.
@@ -601,18 +628,28 @@ export function DocBlocksShell({
   useEffect(() => {
     if (!isElectronHost()) return;
     if (!provider || !(provider instanceof ElectronFileSystemProvider)) return;
-    const unwatch = provider.watch(() => {
+    const unwatch = provider.watch((changedPath) => {
       setExplorerKey((k) => k + 1);
+      if (!selectedFile || !sameProviderPath(changedPath, selectedFile)) return;
+
       // If the open file's contents changed on disk, reload it (best-effort).
-      if (selectedFile) {
-        (async () => {
-          const content = await provider.readFile(selectedFile);
-          if (content !== null && content !== editorContent) {
-            setEditorContent(content);
-            setEditorKey((k) => k + 1);
-          }
-        })();
-      }
+      (async () => {
+        const content = await provider.readFile(selectedFile);
+        if (content === null || content === editorContent) return;
+
+        const localSave = lastLocalSaveRef.current;
+        if (
+          localSave &&
+          sameProviderPath(localSave.filePath, selectedFile) &&
+          localSave.content === content &&
+          Date.now() - localSave.savedAt < 5000
+        ) {
+          return;
+        }
+
+        setEditorContent(content);
+        setEditorKey((k) => k + 1);
+      })();
     });
     return unwatch;
   }, [provider, selectedFile, editorContent]);
@@ -622,13 +659,8 @@ export function DocBlocksShell({
       await touchWorkspace(ws.id);
       let nextProvider: FileSystemProvider | null = null;
       if (ws.type === 'electron-native') {
-        if (!ws.rootPath) return;
-        await getDocBlocksHost().workspaces.register({
-          id: ws.id,
-          name: ws.name,
-          rootPath: ws.rootPath,
-        });
-        nextProvider = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+        nextProvider = await createElectronProviderFromWorkspace(ws);
+        if (!nextProvider) return;
       } else if (ws.type === 'native') {
         const restored = await restoreNativeFolder(ws.id);
         if (!restored) {
@@ -1025,13 +1057,7 @@ export function DocBlocksShell({
         let p: FileSystemProvider | null = null;
         try {
           if (ws.type === 'electron-native') {
-            if (!ws.rootPath) continue;
-            await getDocBlocksHost().workspaces.register({
-              id: ws.id,
-              name: ws.name,
-              rootPath: ws.rootPath,
-            });
-            p = new ElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+            p = await createElectronProviderFromWorkspace(ws);
           } else if (ws.type === 'native') {
             // Restore without prompting — only succeeds when the browser
             // still remembers the granted handle for this origin/session.
@@ -1049,8 +1075,7 @@ export function DocBlocksShell({
         }
 
         // Pick a unique, filesystem-safe folder name per workspace.
-        const base =
-          (ws.name || 'workspace').replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'workspace';
+        const base = (ws.name || 'workspace').replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'workspace';
         let folder = base;
         let suffix = 2;
         while (usedFolders.has(folder)) {
@@ -1204,6 +1229,7 @@ export function DocBlocksShell({
                   mediaProvider={mediaProvider}
                   container={versionsContainer ?? undefined}
                   allowVersioning={allowVersioning}
+                  inlinePreview
                   versionBasename={versionBasename ?? basenameOf(selectedFile)}
                   versioningPrunePolicy={versioningPrunePolicy}
                   versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}

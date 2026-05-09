@@ -9,7 +9,7 @@
     "node": ">=22.14.0"
   },
   "scripts": {
-    "all": "npm install && npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
+    "all": "npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
     "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop",
     "build:core": "npm run build -w @bendyline/docblocks",
     "build:react": "npm run build -w @bendyline/docblocks-react",
@@ -31,6 +31,7 @@
     "prettierfix": "prettier --write .",
     "format:check": "prettier --check .",
     "link:squisq": "tsx scripts/link-squisq.ts",
+    "dev:squisq": "tsx scripts/watch-squisq.ts",
     "unlink:squisq": "npm unlink --no-save @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react && npm install",
     "release": "multi-semantic-release"
   },

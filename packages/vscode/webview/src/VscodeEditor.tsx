@@ -9,22 +9,18 @@ const vscode = getVscodeApi();
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-
-  // Flag set after we post an edit, cleared when we receive the echo back.
-  // Prevents re-setting markdown from our own change.
-  const awaitingEchoRef = useRef(false);
+  const [editorKey, setEditorKey] = useState(0);
+  const markdownRef = useRef<string | null>(null);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
       const msg = event.data;
       switch (msg.type) {
         case 'setContent':
-          if (awaitingEchoRef.current) {
-            // This is the echo from our own edit — ignore it
-            awaitingEchoRef.current = false;
-            return;
-          }
+          if (msg.content === markdownRef.current) return;
+          markdownRef.current = msg.content;
           setMarkdown(msg.content);
+          setEditorKey((key) => key + 1);
           break;
         case 'themeChange':
           setTheme(msg.theme);
@@ -44,6 +40,7 @@ export function VscodeEditor() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const handleChange = useCallback((source: string) => {
+    markdownRef.current = source;
     setMarkdown(source);
 
     // Debounce edits to avoid flooding the extension host
@@ -51,7 +48,6 @@ export function VscodeEditor() {
       clearTimeout(debounceTimerRef.current);
     }
     debounceTimerRef.current = setTimeout(() => {
-      awaitingEchoRef.current = true;
       vscode.postMessage({ type: 'edit', content: source });
     }, 300);
   }, []);
@@ -74,6 +70,12 @@ export function VscodeEditor() {
   }
 
   return (
-    <EditorShell initialMarkdown={markdown} onChange={handleChange} theme={theme} height="100%" />
+    <EditorShell
+      key={editorKey}
+      initialMarkdown={markdown}
+      onChange={handleChange}
+      theme={theme}
+      height="100%"
+    />
   );
 }

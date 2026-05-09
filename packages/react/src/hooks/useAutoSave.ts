@@ -13,46 +13,88 @@ export function useAutoSave(
   filePath: string | null,
   content: string,
   delayMs = 500,
+  onSaved?: (filePath: string, content: string) => void,
 ): void {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef<string>(content);
+  const contentRef = useRef(content);
+  const onSavedRef = useRef(onSaved);
+  const targetRef = useRef<{
+    provider: FileSystemProvider;
+    filePath: string;
+    lastSaved: string;
+  } | null>(null);
 
-  const save = useCallback(async () => {
-    if (!provider || !filePath) return;
-    if (content === lastSavedRef.current) return;
-    lastSavedRef.current = content;
-    await provider.writeFile(filePath, content);
-  }, [provider, filePath, content]);
-
-  useEffect(() => {
-    if (!provider || !filePath) return;
-
+  const clearTimer = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const flushTarget = useCallback(
+    async (
+      target: {
+        provider: FileSystemProvider;
+        filePath: string;
+        lastSaved: string;
+      },
+      nextContent: string,
+    ) => {
+      if (nextContent === target.lastSaved) return;
+      const previous = target.lastSaved;
+      target.lastSaved = nextContent;
+      try {
+        await target.provider.writeFile(target.filePath, nextContent);
+        onSavedRef.current?.(target.filePath, nextContent);
+      } catch (err) {
+        target.lastSaved = previous;
+        throw err;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
+
+  useEffect(() => {
+    contentRef.current = content;
+  }, [content]);
+
+  useEffect(() => {
+    clearTimer();
+    targetRef.current = provider && filePath ? { provider, filePath, lastSaved: content } : null;
+    contentRef.current = content;
+
+    return () => {
+      clearTimer();
+      const target = targetRef.current;
+      if (target) {
+        void flushTarget(target, contentRef.current).catch(() => undefined);
+      }
+      targetRef.current = null;
+    };
+    // `content` is intentionally captured only when the save target changes.
+    // Content edits are handled by the debounced effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, filePath, clearTimer, flushTarget]);
+
+  useEffect(() => {
+    const target = targetRef.current;
+    if (!target) return;
+    clearTimer();
+
+    if (content !== target.lastSaved) {
+      timerRef.current = setTimeout(() => {
+        const currentTarget = targetRef.current;
+        if (!currentTarget) return;
+        void flushTarget(currentTarget, contentRef.current).catch(() => undefined);
+      }, delayMs);
     }
 
-    timerRef.current = setTimeout(() => {
-      save();
-    }, delayMs);
-
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
+      clearTimer();
     };
-  }, [content, delayMs, save, provider, filePath]);
-
-  // Flush on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-      // Sync save on unmount is best-effort
-      if (provider && filePath && content !== lastSavedRef.current) {
-        provider.writeFile(filePath, content);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [content, delayMs, clearTimer, flushTarget]);
 }

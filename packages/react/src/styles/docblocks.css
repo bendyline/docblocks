@@ -31,9 +31,9 @@
   --db-border: #4d514b;
   --db-border-strong: #6d716b;
   --db-text: #e5e7eb;
-  --db-text-secondary: #cbd5e1;
-  --db-text-muted: #94a3b8;
-  --db-text-placeholder: #64748b;
+  --db-text-secondary: #d4d8d0;
+  --db-text-muted: #9aa39a;
+  --db-text-placeholder: #6c726a;
   --db-accent: #5fb077;
   --db-accent-hover: #7cc89a;
   --db-input-border: #5fb077;
@@ -52,9 +52,9 @@
     --db-border: #4d514b;
     --db-border-strong: #6d716b;
     --db-text: #e5e7eb;
-    --db-text-secondary: #cbd5e1;
-    --db-text-muted: #94a3b8;
-    --db-text-placeholder: #64748b;
+    --db-text-secondary: #d4d8d0;
+    --db-text-muted: #9aa39a;
+    --db-text-placeholder: #6c726a;
     --db-accent: #5fb077;
     --db-accent-hover: #7cc89a;
     --db-input-border: #5fb077;
@@ -872,6 +872,15 @@
   max-width: none;
 }
 
+/* …unless the inline preview gutter is present. The gutter is absolutely
+   positioned to the right of the centered editor "page", so a full-bleed
+   editor pushes it offscreen. Restore squisq's 800px page width when the
+   gutter wrapper is active. The container query at 720px in editor.css
+   auto-hides the gutter on narrow viewports. */
+.squisq-wysiwyg-with-gutter .squisq-wysiwyg-editor {
+  max-width: 800px;
+}
+
 .squisq-toolbar {
   min-height: 48px;
 }
@@ -1061,11 +1070,11 @@
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar {
-  background: #d8dee6;
+  background: #d6e6d9;
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar-view-tabs {
-  background: #ffffff;
+  background: #f4faf5;
   box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
 }
 
@@ -1236,6 +1245,165 @@
   background: transparent;
   cursor: not-allowed;
   opacity: 0.6;
+  /* Desaturate colored emoji glyphs (e.g. 🖼) so they don't read as blue
+     against the green-tinted dark surface when disabled. */
+  filter: grayscale(1);
+}
+
+/* Closed-state template trigger: neutralize squisq's slate-navy bg ── */
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-picker-trigger {
+  background: #262926;
+  border-color: #4d514b;
+  color: #e5e7eb;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-picker-trigger:hover {
+  background: #2e312d;
+  border-color: #5f7068;
+}
+
+/* ── Template picker accents (dark): indigo → thematic green ─── */
+/* The gallery popover renders into document.body via createPortal, so
+   neither .db-shell nor .squisq-editor-shell are ancestors. We use
+   `html:has(.db-shell[data-theme='dark'])` to detect docblocks' dark
+   theme from outside the shell, then style the portaled gallery (its
+   root has id="squisq-template-gallery-portal"). */
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-picker-trigger--open {
+  border-color: #7cc89a;
+  outline-color: rgba(124, 200, 154, 0.25);
+}
+
+html:has(.db-shell[data-theme='dark']) #squisq-template-gallery-portal {
+  background: #1f221f;
+  border-color: #3a3d3a;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-none {
+  background: transparent;
+  border-color: #3a3d3a;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-none:hover {
+  background: #262926;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-none.squisq-template-gallery-card--selected {
+  background: #1e3a26;
+  border-color: #2d6a3f;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-none-label {
+  color: #d1d5db;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-none-desc {
+  color: #9ca3af;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card {
+  background: transparent;
+  border-color: #3a3d3a;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card:hover {
+  background: #262926;
+  border-color: #5fb077;
+  box-shadow: 0 1px 4px rgba(124, 200, 154, 0.15);
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card--selected {
+  background: #1e3a26;
+  border-color: #7cc89a;
+  box-shadow: 0 0 0 2px rgba(124, 200, 154, 0.2);
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card-icon {
+  background: #161816;
+  border-color: #3a3d3a;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card-name {
+  color: #f3f4f6;
+}
+
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-gallery-card-desc {
+  color: #9ca3af;
+}
+
+/* Recolor the indigo accent fills inside template thumbnail SVGs */
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-portal
+  .squisq-template-picker-icon [fill='#818cf8'] {
+  fill: #7cc89a;
+}
+
+/* ── Template picker accents (light): indigo → thematic green ── */
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-template-picker-trigger--open {
+  border-color: #16a34a;
+  outline-color: rgba(22, 163, 74, 0.25);
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-template-gallery-card:hover {
+  border-color: #86efac;
+  box-shadow: 0 1px 4px rgba(22, 163, 74, 0.1);
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-template-gallery-card--selected {
+  background: #f0fdf4;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-template-gallery-none.squisq-template-gallery-card--selected {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.db-shell[data-theme='light']
+  .squisq-editor-shell[data-theme='light']
+  .squisq-template-picker-icon [fill='#818cf8'] {
+  fill: #16a34a;
 }
 
 /* ── Template badge: inherit OS font, amber palette ──────────── */
@@ -1262,28 +1430,28 @@
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-editor-header {
-  background: #f5f7f4;
-  border-bottom-color: #d4d8d2;
+  background: #eaf3ec;
+  border-bottom-color: #c8d8cc;
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar {
-  background: #eaeee9;
+  background: #d6e6d9;
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-view-tabs {
-  background: #ffffff;
-  border-right-color: #d4d8d2;
+  background: #f4faf5;
+  border-right-color: #c8d8cc;
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-status-bar {
-  background: #f5f7f4;
-  border-top-color: #d4d8d2;
+  background: #d6e6d9;
+  border-top-color: #c8d8cc;
 }
 
 /* Light mode squisq accents */

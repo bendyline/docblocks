@@ -153,6 +153,66 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
   async rename(oldPath: string, newPath: string): Promise<void> {
     const op = normalisePath(oldPath);
     const np = normalisePath(newPath);
+    if (op === np) return;
+    if (!op || !np) {
+      throw new Error('Cannot rename the filesystem root');
+    }
+    if (np.startsWith(op + '/')) {
+      throw new Error('Cannot move a directory into itself');
+    }
+
+    const dirs = await this.getDirs();
+
+    // Handle directory rename by moving every tracked child directory and
+    // every file record keyed under the old directory prefix.
+    if (dirs.has(op)) {
+      const newParent = parentDir(np);
+      if (newParent) {
+        await this.ensureDir(newParent);
+      }
+
+      const allKeys = await this.store.keys();
+      const oldKeyPrefix = `fs:${op}/`;
+      const newKeyPrefix = `fs:${np}/`;
+      const metaSuffix = ':meta';
+      const keysToMove = allKeys.filter((k) => k.startsWith(oldKeyPrefix));
+
+      await Promise.all(
+        keysToMove.map(async (oldKey) => {
+          const newKey = newKeyPrefix + oldKey.slice(oldKeyPrefix.length);
+          if (oldKey.endsWith(metaSuffix)) {
+            const meta = await this.store.get<FileMeta>(oldKey);
+            if (meta) {
+              const newFilePath = newKey.slice(3, -metaSuffix.length);
+              await this.store.set(metaKey(newFilePath), {
+                ...meta,
+                name: baseName(newFilePath),
+                path: newFilePath,
+              });
+            }
+          } else {
+            const value = await this.store.get<unknown>(oldKey);
+            if (value !== null) {
+              await this.store.set(newKey, value);
+            }
+          }
+          await this.store.remove(oldKey);
+        }),
+      );
+
+      dirs.delete(op);
+      dirs.add(np);
+      const oldPrefix = op + '/';
+      const newPrefix = np + '/';
+      for (const d of [...dirs]) {
+        if (d.startsWith(oldPrefix)) {
+          dirs.delete(d);
+          dirs.add(newPrefix + d.slice(oldPrefix.length));
+        }
+      }
+      await this.saveDirs(dirs);
+      return;
+    }
 
     // Read existing data
     const content = await this.store.get<string>(contentKey(op));
@@ -167,9 +227,11 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
       await this.store.set(binaryKey(np), binary);
     }
     if (meta) {
-      meta.name = baseName(np);
-      meta.path = np;
-      await this.store.set(metaKey(np), meta);
+      await this.store.set(metaKey(np), {
+        ...meta,
+        name: baseName(np),
+        path: np,
+      });
     }
 
     // Ensure parent dir of new path exists
@@ -182,22 +244,6 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
     await this.store.remove(contentKey(op));
     await this.store.remove(binaryKey(op));
     await this.store.remove(metaKey(op));
-
-    // Handle directory rename
-    const dirs = await this.getDirs();
-    if (dirs.has(op)) {
-      dirs.delete(op);
-      dirs.add(np);
-      const oldPrefix = op + '/';
-      const newPrefix = np + '/';
-      for (const d of [...dirs]) {
-        if (d.startsWith(oldPrefix)) {
-          dirs.delete(d);
-          dirs.add(newPrefix + d.slice(oldPrefix.length));
-        }
-      }
-      await this.saveDirs(dirs);
-    }
   }
 
   async readDirectory(path: string): Promise<FileSystemEntry[]> {
