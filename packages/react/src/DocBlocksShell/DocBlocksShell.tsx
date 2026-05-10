@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
-import type { EditorTheme, EditorView } from '@bendyline/squisq-editor-react';
+import type { EditorTheme, EditorView, ViewPreferences } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
@@ -152,6 +152,43 @@ function saveThemePreference(pref: ThemePreference): void {
   }
 }
 
+const VIEW_PREFS_KEY = 'docblocks:viewPreferences';
+
+const DEFAULT_VIEW_PREFS: ViewPreferences = {
+  outline: false,
+  inlinePreview: true,
+  showStatusBar: true,
+};
+
+function loadViewPreferences(): ViewPreferences {
+  try {
+    const raw = localStorage.getItem(VIEW_PREFS_KEY);
+    if (!raw) return DEFAULT_VIEW_PREFS;
+    const parsed = JSON.parse(raw) as Partial<ViewPreferences>;
+    return {
+      outline: typeof parsed.outline === 'boolean' ? parsed.outline : DEFAULT_VIEW_PREFS.outline,
+      inlinePreview:
+        typeof parsed.inlinePreview === 'boolean'
+          ? parsed.inlinePreview
+          : DEFAULT_VIEW_PREFS.inlinePreview,
+      showStatusBar:
+        typeof parsed.showStatusBar === 'boolean'
+          ? parsed.showStatusBar
+          : DEFAULT_VIEW_PREFS.showStatusBar,
+    };
+  } catch {
+    return DEFAULT_VIEW_PREFS;
+  }
+}
+
+function saveViewPreferences(prefs: ViewPreferences): void {
+  try {
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 function dirnameOf(p: string): string {
   const clean = p.replace(/^\/+/, '');
   const idx = clean.lastIndexOf('/');
@@ -253,6 +290,12 @@ export function DocBlocksShell({
   const handleThemeChange = useCallback((pref: ThemePreference) => {
     setThemePreference(pref);
     saveThemePreference(pref);
+  }, []);
+
+  const [viewPreferences, setViewPreferences] = useState<ViewPreferences>(loadViewPreferences);
+  const handleViewPreferencesChange = useCallback((prefs: ViewPreferences) => {
+    setViewPreferences(prefs);
+    saveViewPreferences(prefs);
   }, []);
   const isMobile = useIsMobile();
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
@@ -1229,7 +1272,8 @@ export function DocBlocksShell({
                   mediaProvider={mediaProvider}
                   container={versionsContainer ?? undefined}
                   allowVersioning={allowVersioning}
-                  inlinePreview
+                  viewPreferences={viewPreferences}
+                  onViewPreferencesChange={handleViewPreferencesChange}
                   versionBasename={versionBasename ?? basenameOf(selectedFile)}
                   versioningPrunePolicy={versioningPrunePolicy}
                   versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
