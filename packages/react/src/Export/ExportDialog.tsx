@@ -5,7 +5,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { getTransformStyleSummaries } from '@bendyline/squisq/transform';
-import type { ExportFormat, ExportOptions } from './export-options.js';
+import type {
+  ExportFormat,
+  ExportOptions,
+  HtmlBundle,
+  HtmlStyle,
+} from './export-options.js';
 import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
 
 export interface ExportDialogProps {
@@ -21,25 +26,115 @@ export interface ExportDialogProps {
 
 const FORMATS: ExportFormat[] = ['pdf', 'docx', 'pptx', 'html', 'md'];
 
+/** Short labels for the Format chip row. The fuller `FORMAT_LABELS` list
+ *  is still used as a tooltip so users can confirm the file extension. */
+const FORMAT_CHIP_LABELS: Record<ExportFormat, string> = {
+  pdf: 'PDF',
+  docx: 'Word',
+  pptx: 'PowerPoint',
+  html: 'HTML',
+  md: 'Markdown',
+};
+
+const HTML_STYLE_CHIPS: { key: HtmlStyle; label: string; hint: string }[] = [
+  {
+    key: 'plain',
+    label: 'Plain',
+    hint: 'A lightweight static HTML document.',
+  },
+  {
+    key: 'rendered',
+    label: 'Rendered',
+    hint: 'Renders via SquisqPlayer with themes and playback support.',
+  },
+];
+
+const HTML_BUNDLE_CHIPS: { key: HtmlBundle; label: string; hint: string }[] = [
+  {
+    key: 'single',
+    label: 'Single file',
+    hint: 'One .html file with images embedded as base64 data URIs.',
+  },
+  {
+    key: 'zip',
+    label: 'ZIP archive',
+    hint: 'A .zip with index.html plus separate image (and JS) files.',
+  },
+];
+
+interface ChipOption<T extends string> {
+  key: T;
+  label: string;
+  title?: string;
+}
+
+function ChipRadioGroup<T extends string>({
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  name: string;
+  value: T;
+  options: ChipOption<T>[];
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div className="db-export-chips" role="radiogroup" aria-label={name}>
+      {options.map((opt) => {
+        const active = opt.key === value;
+        return (
+          <button
+            key={opt.key}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            className={`db-export-chip${active ? ' db-export-chip--active' : ''}`}
+            onClick={() => onChange(opt.key)}
+            title={opt.title}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDialogProps) {
   const [format, setFormat] = useState<ExportFormat>(initial.format);
   const [themeId, setThemeId] = useState(initial.themeId);
   const [transformStyle, setTransformStyle] = useState(initial.transformStyle);
   const [pageSize, setPageSize] = useState(initial.pageSize);
+  const [htmlStyle, setHtmlStyle] = useState<HtmlStyle>(initial.htmlStyle);
+  const [htmlBundle, setHtmlBundle] = useState<HtmlBundle>(initial.htmlBundle);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const themes = getThemeSummaries();
   const transforms = getTransformStyleSummaries();
 
-  const showTheme = format === 'docx' || format === 'pdf' || format === 'pptx';
+  // Theme only meaningful when the renderer applies it (rendered HTML uses SquisqPlayer themes).
+  const showTheme =
+    format === 'docx' ||
+    format === 'pdf' ||
+    format === 'pptx' ||
+    (format === 'html' && htmlStyle === 'rendered');
   const showTransform = format === 'pptx';
   const showPageSize = format === 'pdf';
+  const showHtmlOptions = format === 'html';
 
   const handleExport = useCallback(() => {
-    const opts: ExportOptions = { format, themeId, transformStyle, pageSize };
+    const opts: ExportOptions = {
+      format,
+      themeId,
+      transformStyle,
+      pageSize,
+      htmlStyle,
+      htmlBundle,
+    };
     saveExportOptions(opts);
     onExport(opts);
-  }, [format, themeId, transformStyle, pageSize, onExport]);
+  }, [format, themeId, transformStyle, pageSize, htmlStyle, htmlBundle, onExport]);
 
   // Close on Escape
   useEffect(() => {
@@ -69,24 +164,50 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
         </div>
 
         <div className="db-dialog-body">
-          {/* Format */}
+          {/* Format — chip radio row for fast switching */}
           <div className="db-export-field">
-            <label className="db-export-label" htmlFor="db-export-format">
-              Format
-            </label>
-            <select
-              id="db-export-format"
-              className="db-export-select"
+            <span className="db-export-label">Format</span>
+            <ChipRadioGroup
+              name="Format"
               value={format}
-              onChange={(e) => setFormat(e.target.value as ExportFormat)}
-            >
-              {FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {FORMAT_LABELS[f]}
-                </option>
-              ))}
-            </select>
+              options={FORMATS.map((f) => ({
+                key: f,
+                label: FORMAT_CHIP_LABELS[f],
+                title: FORMAT_LABELS[f],
+              }))}
+              onChange={setFormat}
+            />
           </div>
+
+          {/* HTML style + bundle (HTML only) — also chip rows */}
+          {showHtmlOptions && (
+            <>
+              <div className="db-export-field">
+                <span className="db-export-label">Style</span>
+                <ChipRadioGroup
+                  name="Style"
+                  value={htmlStyle}
+                  options={HTML_STYLE_CHIPS}
+                  onChange={setHtmlStyle}
+                />
+                <span className="db-export-hint">
+                  {HTML_STYLE_CHIPS.find((c) => c.key === htmlStyle)?.hint}
+                </span>
+              </div>
+              <div className="db-export-field">
+                <span className="db-export-label">Bundle</span>
+                <ChipRadioGroup
+                  name="Bundle"
+                  value={htmlBundle}
+                  options={HTML_BUNDLE_CHIPS}
+                  onChange={setHtmlBundle}
+                />
+                <span className="db-export-hint">
+                  {HTML_BUNDLE_CHIPS.find((c) => c.key === htmlBundle)?.hint}
+                </span>
+              </div>
+            </>
+          )}
 
           {/* Theme */}
           {showTheme && (

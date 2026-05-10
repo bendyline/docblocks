@@ -2,11 +2,18 @@
  * useAutoSave — debounced auto-save hook.
  *
  * Writes content to the FileSystemProvider after a delay
- * whenever the content changes.
+ * whenever the content changes. Returns a `flush` function so callers
+ * (e.g. an explicit Ctrl/Cmd+S handler) can force an immediate write
+ * and await its completion.
  */
 
 import { useEffect, useRef, useCallback } from 'react';
 import type { FileSystemProvider } from '@bendyline/docblocks/filesystem';
+
+export interface UseAutoSaveResult {
+  /** Cancel any pending debounce and write the current content immediately. */
+  flush: () => Promise<void>;
+}
 
 export function useAutoSave(
   provider: FileSystemProvider | null,
@@ -14,7 +21,7 @@ export function useAutoSave(
   content: string,
   delayMs = 500,
   onSaved?: (filePath: string, content: string) => void,
-): void {
+): UseAutoSaveResult {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentRef = useRef(content);
   const onSavedRef = useRef(onSaved);
@@ -97,4 +104,13 @@ export function useAutoSave(
       clearTimer();
     };
   }, [content, delayMs, clearTimer, flushTarget]);
+
+  const flush = useCallback(async () => {
+    clearTimer();
+    const target = targetRef.current;
+    if (!target) return;
+    await flushTarget(target, contentRef.current);
+  }, [clearTimer, flushTarget]);
+
+  return { flush };
 }

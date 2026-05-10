@@ -13,6 +13,22 @@ import { NewFileIcon, NewFolderIcon, RefreshIcon } from '../icons.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 
+/**
+ * Hide auto-generated `<basename>_files/` companion folders from the
+ * tree. They hold per-document images and version snapshots — useful
+ * to the editor, noisy in the user-facing file list. The folders still
+ * exist on disk; we just don't surface them in the explorer.
+ */
+function isHiddenEntry(entry: FileSystemEntry): boolean {
+  if (entry.kind !== 'directory') return false;
+  const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
+  return name.endsWith('_files');
+}
+
+function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
+  return entries.filter((e) => !isHiddenEntry(e));
+}
+
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
@@ -154,7 +170,7 @@ export function FileExplorer({
 
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
-      return entries.map((entry) => (
+      return filterVisible(entries).map((entry) => (
         <FileTreeNode
           key={entry.path}
           entry={entry}
@@ -249,7 +265,7 @@ export function FileExplorer({
       <div className="db-tree" role="tree">
         {tree.loading ? (
           <div className="db-tree-loading">Loading...</div>
-        ) : tree.entries.length === 0 ? (
+        ) : filterVisible(tree.entries).length === 0 ? (
           <div className="db-tree-empty">No files yet</div>
         ) : (
           renderEntries(tree.entries, 0)

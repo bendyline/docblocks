@@ -4,6 +4,20 @@
 
 export type ExportFormat = 'docx' | 'pdf' | 'pptx' | 'md' | 'html';
 
+/** Visual style for HTML export. */
+export type HtmlStyle =
+  /** Render via SquisqPlayer (themed, embeds player bundle). */
+  | 'rendered'
+  /** Plain semantic HTML — small, no JS, no playback. */
+  | 'plain';
+
+/** Packaging for HTML export. */
+export type HtmlBundle =
+  /** Single self-contained .html file (images base64-embedded). */
+  | 'single'
+  /** ZIP containing index.html + asset files. */
+  | 'zip';
+
 export interface ExportOptions {
   format: ExportFormat;
   themeId: string;
@@ -11,6 +25,10 @@ export interface ExportOptions {
   transformStyle: string;
   /** Only applies to PDF */
   pageSize: 'letter' | 'a4';
+  /** HTML rendering style. Only applies to format=html. */
+  htmlStyle: HtmlStyle;
+  /** HTML bundle layout. Only applies to format=html. */
+  htmlBundle: HtmlBundle;
 }
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -36,13 +54,16 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   themeId: 'standard',
   transformStyle: 'documentary',
   pageSize: 'letter',
+  htmlStyle: 'plain',
+  htmlBundle: 'single',
 };
 
 export function loadLastExportOptions(): ExportOptions | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ExportOptions;
+    const parsed = JSON.parse(raw) as Partial<ExportOptions>;
+    return { ...DEFAULT_OPTIONS, ...parsed };
   } catch {
     return null;
   }

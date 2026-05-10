@@ -41,8 +41,18 @@ import { AppMenu, type ThemePreference } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
+import {
+  WorkspaceSettingsDialog,
+  type WorkspaceVersioningOverride,
+} from '../WorkspacePicker/WorkspaceSettingsDialog.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
 import { ExportToolbarControls } from '../Export/ExportToolbarControls.js';
+import {
+  loadVersioningPreference,
+  resolveVersioningEnabled,
+  saveVersioningPreference,
+  type VersioningPreference,
+} from '../preferences/versioning.js';
 
 export interface DocBlocksShellProps {
   /** Optional theme override. Omit or pass 'auto' to follow OS preference. */
@@ -152,6 +162,31 @@ function saveThemePreference(pref: ThemePreference): void {
   }
 }
 
+const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
+const SIDEBAR_WIDTH_DEFAULT = 260;
+const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_MAX = 600;
+
+function loadSidebarWidth(): number {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (raw === null) return SIDEBAR_WIDTH_DEFAULT;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return SIDEBAR_WIDTH_DEFAULT;
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n));
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
+
+function saveSidebarWidth(px: number): void {
+  try {
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(px)));
+  } catch {
+    // ignore quota errors
+  }
+}
+
 const VIEW_PREFS_KEY = 'docblocks:viewPreferences';
 
 const DEFAULT_VIEW_PREFS: ViewPreferences = {
@@ -199,6 +234,13 @@ function basenameOf(p: string): string {
   const clean = p.replace(/^\/+/, '');
   const idx = clean.lastIndexOf('/');
   return idx === -1 ? clean : clean.slice(idx + 1);
+}
+
+/** Strip the extension from a filename (`notes.md` -> `notes`). Matches
+ *  squisq's `getDocBasename` convention so version snapshot filenames
+ *  stay readable (`<basename>.<timestamp>.md`). */
+function stripExtension(name: string): string {
+  return name.replace(/\.[^.]+$/, '');
 }
 
 function normaliseProviderPath(p: string): string {
@@ -299,8 +341,104 @@ export function DocBlocksShell({
   }, []);
   const isMobile = useIsMobile();
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
+  // Sidebar width — persisted across sessions, dragged via the resizer
+  // between sidebar and editor area. We track the "live" width during a
+  // drag in a ref so each mousemove doesn't trigger a state update; only
+  // setState on commit so React doesn't churn through every pixel.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const handleResizerPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      dragStateRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+      e.preventDefault();
+      // Disable text selection + flip the body cursor for the duration
+      // of the drag so the col-resize cursor stays visible even when the
+      // pointer slips off the 7px hit area. The custom cursor lives in
+      // the CSS class so Windows' white-cursor preference doesn't make
+      // the dragging cursor invisible against the light chrome.
+      document.body.style.userSelect = 'none';
+      document.body.classList.add('db-resizing-sidebar');
+      const onMove = (ev: PointerEvent) => {
+        const drag = dragStateRef.current;
+        if (!drag) return;
+        const next = drag.startWidth + (ev.clientX - drag.startX);
+        const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, next));
+        if (sidebarRef.current) {
+          // Update the DOM directly during the drag for jank-free
+          // dragging; React state syncs on release.
+          sidebarRef.current.style.width = `${clamped}px`;
+        }
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.body.style.userSelect = '';
+        document.body.classList.remove('db-resizing-sidebar');
+        const finalWidth = sidebarRef.current?.getBoundingClientRect().width;
+        if (finalWidth) {
+          const clamped = Math.min(
+            SIDEBAR_WIDTH_MAX,
+            Math.max(SIDEBAR_WIDTH_MIN, Math.round(finalWidth)),
+          );
+          setSidebarWidth(clamped);
+          saveSidebarWidth(clamped);
+        }
+        dragStateRef.current = null;
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    },
+    [sidebarWidth],
+  );
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
+    useState<WorkspaceDescriptor | null>(null);
+  // Re-fetch the descriptor whenever the active id (or its versioning
+  // override) changes. `descriptorRefreshKey` is bumped after writes so
+  // the resolver picks up the updated override without remounting.
+  const [descriptorRefreshKey, setDescriptorRefreshKey] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeWorkspaceId) {
+      setActiveWorkspaceDescriptor(null);
+      return;
+    }
+    void getWorkspace(activeWorkspaceId).then((ws) => {
+      if (!cancelled) setActiveWorkspaceDescriptor(ws);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, descriptorRefreshKey]);
+
+  const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
+  const [versioningPreference, setVersioningPreference] = useState<VersioningPreference>(
+    loadVersioningPreference,
+  );
+  const handleVersioningPreferenceChange = useCallback((pref: VersioningPreference) => {
+    setVersioningPreference(pref);
+    saveVersioningPreference(pref);
+  }, []);
+  const effectiveVersioning =
+    allowVersioning && resolveVersioningEnabled(activeWorkspaceDescriptor, versioningPreference);
+
+  const handleOpenWorkspaceSettings = useCallback(() => {
+    if (!activeWorkspaceDescriptor) return;
+    setWorkspaceSettingsOpen(true);
+  }, [activeWorkspaceDescriptor]);
+
+  const handleWorkspaceVersioningOverrideChange = useCallback(
+    async (override: WorkspaceVersioningOverride) => {
+      if (!activeWorkspaceDescriptor) return;
+      await saveWorkspace({ ...activeWorkspaceDescriptor, versioningOverride: override });
+      setDescriptorRefreshKey((k) => k + 1);
+      setWorkspaceSettingsOpen(false);
+    },
+    [activeWorkspaceDescriptor],
+  );
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
@@ -618,8 +756,42 @@ export function DocBlocksShell({
     };
   }, []);
 
-  // Auto-save current file
-  useAutoSave(provider, selectedFile, editorContent, 500, handleAutoSaved);
+  // Auto-save current file. The returned `flush` is called from the
+  // Ctrl/Cmd+S handler below so the user gets immediate confirmation.
+  const { flush: flushAutoSave } = useAutoSave(
+    provider,
+    selectedFile,
+    editorContent,
+    500,
+    handleAutoSaved,
+  );
+
+  // Comfort-blanket Ctrl/Cmd+S: flushes any pending autosave and pops a
+  // small "auto-save confirmed" toast. Files are already saved on every
+  // keystroke (debounced) — this is purely UX reassurance for users who
+  // muscle-memory hit Save.
+  const [saveToastVisible, setSaveToastVisible] = useState(false);
+  const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const sKey = e.key === 's' || e.key === 'S';
+      const accel = e.ctrlKey || e.metaKey;
+      if (!sKey || !accel || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void flushAutoSave().catch(() => undefined);
+      setSaveToastVisible(true);
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+      saveToastTimerRef.current = setTimeout(() => setSaveToastVisible(false), 1800);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [flushAutoSave]);
+  useEffect(() => {
+    return () => {
+      if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    };
+  }, []);
 
   // Per-file media: for `notes.md` images live in `notes_files/` beside it.
   // Rebuilds whenever the provider or selected file changes.
@@ -655,17 +827,17 @@ export function DocBlocksShell({
       if (typeof ref === 'function') ref(mgr);
       else (ref as React.MutableRefObject<DocumentVersionManager | null>).current = mgr;
     };
-    if (!allowVersioning || !versionsContainer || !selectedFile) {
+    if (!effectiveVersioning || !versionsContainer || !selectedFile) {
       assign(null);
       return;
     }
-    const base = basenameOf(selectedFile);
+    const base = stripExtension(basenameOf(selectedFile));
     const mgr = new DocumentVersionManager(versionsContainer, {
       basename: versionBasename ?? base,
     });
     assign(mgr);
     return () => assign(null);
-  }, [versioningRef, allowVersioning, versionBasename, selectedFile, versionsContainer]);
+  }, [versioningRef, effectiveVersioning, versionBasename, selectedFile, versionsContainer]);
 
   // React to external file changes watched by the Electron host (chokidar).
   useEffect(() => {
@@ -1214,16 +1386,35 @@ export function DocBlocksShell({
 
   return (
     <div className={`db-shell${isMobile ? ' db-shell--mobile' : ''}`} data-theme={resolvedTheme}>
+      {saveToastVisible && (
+        <div className="db-save-toast" role="status" aria-live="polite">
+          Autosaved. You're all set.
+        </div>
+      )}
+      {workspaceSettingsOpen && activeWorkspaceDescriptor && (
+        <WorkspaceSettingsDialog
+          workspace={activeWorkspaceDescriptor}
+          globalVersioningPreference={versioningPreference}
+          onChange={handleWorkspaceVersioningOverrideChange}
+          onClose={() => setWorkspaceSettingsOpen(false)}
+        />
+      )}
       {/* Main area */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Left sidebar — hidden on mobile when editor is shown */}
         {(!isMobile || !mobileShowEditor) && (
-          <div className="db-shell-sidebar">
+          <div
+            ref={sidebarRef}
+            className="db-shell-sidebar"
+            style={isMobile ? undefined : { width: `${sidebarWidth}px` }}
+          >
             <div className="db-shell-sidebar-header">
               <AppMenu
                 logoUrl={logoUrl}
                 themePreference={themePreference}
                 onThemeChange={handleThemeChange}
+                versioningPreference={versioningPreference}
+                onVersioningPreferenceChange={handleVersioningPreferenceChange}
                 onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
               />
               <WorkspacePicker
@@ -1232,6 +1423,7 @@ export function DocBlocksShell({
                 onOpenFolder={handleOpenFolder}
               />
               <WorkspaceSettingsButton
+                onSettings={handleOpenWorkspaceSettings}
                 onRename={handleRenameWorkspace}
                 onDownload={handleDownloadWorkspace}
                 onRemove={handleRemoveWorkspace}
@@ -1256,6 +1448,20 @@ export function DocBlocksShell({
           </div>
         )}
 
+        {/* Resize handle between sidebar and editor — hidden on mobile,
+            where the sidebar uses full-width and toggles with the editor.
+            The hit area is wider than the visible 1px line so it's easy
+            to grab; the visible accent only paints on hover/active. */}
+        {!isMobile && (!isMobile || !mobileShowEditor) && (
+          <div
+            className="db-shell-sidebar-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onPointerDown={handleResizerPointerDown}
+          />
+        )}
+
         {/* Editor area — hidden on mobile when sidebar is shown */}
         {(!isMobile || mobileShowEditor) && (
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -1266,15 +1472,16 @@ export function DocBlocksShell({
                   initialMarkdown={editorContent}
                   initialView={initialView}
                   articleId={selectedFile}
+                  fileName={selectedFile}
                   onChange={handleEditorChange}
                   theme={resolvedTheme}
                   height="100%"
                   mediaProvider={mediaProvider}
                   container={versionsContainer ?? undefined}
-                  allowVersioning={allowVersioning}
+                  allowVersioning={effectiveVersioning}
                   viewPreferences={viewPreferences}
                   onViewPreferencesChange={handleViewPreferencesChange}
-                  versionBasename={versionBasename ?? basenameOf(selectedFile)}
+                  versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
                   versioningPrunePolicy={versioningPrunePolicy}
                   versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
                   onSaveVersion={onSaveVersion}

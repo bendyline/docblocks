@@ -9,10 +9,15 @@ import type {
 } from '@bendyline/squisq/markdown';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownToDoc } from '@bendyline/squisq/doc';
+import type { Doc } from '@bendyline/squisq/schemas';
 import { applyTransform } from '@bendyline/squisq/transform';
 import { markdownDocToDocx } from '@bendyline/squisq-formats/docx';
 import { markdownDocToPdf } from '@bendyline/squisq-formats/pdf';
 import { docToPptx } from '@bendyline/squisq-formats/pptx';
+import { docToHtml, docToHtmlZip, collectImagePaths } from '@bendyline/squisq-formats/html';
+import { containerToZip } from '@bendyline/squisq-formats/container';
+import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
@@ -57,8 +62,7 @@ export async function runExport(
   }
 
   if (options.format === 'html') {
-    const html = wrapMarkdownAsHtml(markdown);
-    downloadBlob(new Blob([html], { type: MIME_TYPES.html }), filename);
+    await runHtmlExport(markdown, filename, options, mediaContainer);
     return;
   }
 
@@ -94,22 +98,94 @@ export async function runExport(
   }
 }
 
-/** Wrap raw markdown in a basic styled HTML page. */
-function wrapMarkdownAsHtml(markdown: string): string {
-  // Convert markdown to simple HTML via the parser
-  const doc = parseMarkdown(markdown);
-  // Build a minimal representation from the parsed nodes
-  const lines: string[] = [];
-  for (const node of doc.children) {
-    lines.push(nodeToHtml(node));
+/** Run the HTML export branch — handles all four htmlStyle × htmlBundle combinations. */
+async function runHtmlExport(
+  markdown: string,
+  htmlFilename: string,
+  options: ExportOptions,
+  mediaContainer?: ContentContainer | null,
+): Promise<void> {
+  const baseName = htmlFilename.replace(/\.html$/, '');
+  const zipName = `${baseName}.zip`;
+  const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
+
+  if (options.htmlStyle === 'rendered') {
+    const mdDoc = parseMarkdown(markdown);
+    const baseDoc = markdownToDoc(mdDoc);
+    if (themeId) baseDoc.themeId = themeId;
+
+    const images = mediaContainer
+      ? await resolveDocImages(baseDoc, mediaContainer)
+      : undefined;
+
+    if (options.htmlBundle === 'zip') {
+      const blob = await docToHtmlZip(baseDoc, {
+        playerScript: PLAYER_BUNDLE,
+        images,
+        mode: 'static',
+        title: baseName,
+      });
+      downloadBlob(blob, zipName);
+      return;
+    }
+
+    const html = docToHtml(baseDoc, {
+      playerScript: PLAYER_BUNDLE,
+      images,
+      mode: 'static',
+      title: baseName,
+    });
+    downloadBlob(new Blob([html], { type: MIME_TYPES.html }), htmlFilename);
+    return;
   }
-  const body = lines.join('\n');
+
+  // Plain semantic HTML
+  const mdDoc = parseMarkdown(markdown);
+  const referencedImages = collectMarkdownImageUrls(mdDoc);
+  const localImages = referencedImages.filter((u) => !isExternalUrl(u));
+
+  if (options.htmlBundle === 'zip' && mediaContainer && localImages.length > 0) {
+    // Mirror the markdown's relative paths inside the zip so <img src="..."> still resolves.
+    const html = renderPlainHtml(mdDoc, baseName, null);
+    const container = new MemoryContentContainer();
+    await container.writeFile('index.html', new TextEncoder().encode(html));
+    for (const url of localImages) {
+      const data = await mediaContainer.readFile(url);
+      if (!data) continue;
+      const cleanPath = url.replace(/^\/+/, '');
+      await container.writeFile(cleanPath, new Uint8Array(data));
+    }
+    const blob = await containerToZip(container);
+    downloadBlob(blob, zipName);
+    return;
+  }
+
+  // Single-file plain HTML — embed local images as base64 data URIs.
+  const inlineMap = new Map<string, string>();
+  if (mediaContainer) {
+    for (const url of localImages) {
+      const data = await mediaContainer.readFile(url);
+      if (!data) continue;
+      inlineMap.set(url, arrayBufferToDataUrl(data, url));
+    }
+  }
+  const html = renderPlainHtml(mdDoc, baseName, inlineMap);
+  downloadBlob(new Blob([html], { type: MIME_TYPES.html }), htmlFilename);
+}
+
+/** Render a parsed markdown document as plain semantic HTML. */
+function renderPlainHtml(
+  doc: MarkdownDocument,
+  title: string,
+  imageMap: Map<string, string> | null,
+): string {
+  const body = doc.children.map((node) => nodeToHtml(node, imageMap)).join('\n');
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Document</title>
+<title>${escapeHtml(title)}</title>
 <style>
   body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 2em auto; padding: 0 1em; line-height: 1.6; color: #1f2937; }
   h1, h2, h3, h4, h5, h6 { margin-top: 1.5em; margin-bottom: 0.5em; }
@@ -129,51 +205,54 @@ ${body}
 
 /** Convert a markdown AST node to HTML (basic). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function nodeToHtml(node: any): string {
+function nodeToHtml(node: any, imageMap: Map<string, string> | null): string {
   if (!node) return '';
   switch (node.type) {
     case 'heading': {
       const tag = `h${node.depth ?? 1}`;
-      return `<${tag}>${childrenToHtml(node)}</${tag}>`;
+      return `<${tag}>${childrenToHtml(node, imageMap)}</${tag}>`;
     }
     case 'paragraph':
-      return `<p>${childrenToHtml(node)}</p>`;
+      return `<p>${childrenToHtml(node, imageMap)}</p>`;
     case 'text':
       return escapeHtml(node.value ?? '');
     case 'strong':
-      return `<strong>${childrenToHtml(node)}</strong>`;
+      return `<strong>${childrenToHtml(node, imageMap)}</strong>`;
     case 'emphasis':
-      return `<em>${childrenToHtml(node)}</em>`;
+      return `<em>${childrenToHtml(node, imageMap)}</em>`;
     case 'delete':
-      return `<del>${childrenToHtml(node)}</del>`;
+      return `<del>${childrenToHtml(node, imageMap)}</del>`;
     case 'inlineCode':
       return `<code>${escapeHtml(node.value ?? '')}</code>`;
     case 'code':
       return `<pre><code>${escapeHtml(node.value ?? '')}</code></pre>`;
     case 'blockquote':
-      return `<blockquote>${childrenToHtml(node)}</blockquote>`;
+      return `<blockquote>${childrenToHtml(node, imageMap)}</blockquote>`;
     case 'list': {
       const tag = node.ordered ? 'ol' : 'ul';
-      return `<${tag}>${childrenToHtml(node)}</${tag}>`;
+      return `<${tag}>${childrenToHtml(node, imageMap)}</${tag}>`;
     }
     case 'listItem':
-      return `<li>${childrenToHtml(node)}</li>`;
+      return `<li>${childrenToHtml(node, imageMap)}</li>`;
     case 'link':
-      return `<a href="${escapeAttr(node.url ?? '')}">${childrenToHtml(node)}</a>`;
-    case 'image':
-      return `<img src="${escapeAttr(node.url ?? '')}" alt="${escapeAttr(node.alt ?? '')}" />`;
+      return `<a href="${escapeAttr(node.url ?? '')}">${childrenToHtml(node, imageMap)}</a>`;
+    case 'image': {
+      const url = node.url ?? '';
+      const resolved = imageMap?.get(url) ?? url;
+      return `<img src="${escapeAttr(resolved)}" alt="${escapeAttr(node.alt ?? '')}" />`;
+    }
     case 'thematicBreak':
       return '<hr />';
     default:
-      return node.children ? childrenToHtml(node) : escapeHtml(node.value ?? '');
+      return node.children ? childrenToHtml(node, imageMap) : escapeHtml(node.value ?? '');
   }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function childrenToHtml(node: any): string {
+function childrenToHtml(node: any, imageMap: Map<string, string> | null): string {
   if (!node.children) return node.value ? escapeHtml(node.value) : '';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return node.children.map((c: any) => nodeToHtml(c)).join('');
+  return node.children.map((c: any) => nodeToHtml(c, imageMap)).join('');
 }
 
 function escapeHtml(s: string): string {
@@ -191,15 +270,37 @@ const IMAGE_MIME: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
   bmp: 'image/bmp',
+  svg: 'image/svg+xml',
 };
 
+function isExternalUrl(url: string): boolean {
+  return (
+    url.startsWith('http://') ||
+    url.startsWith('https://') ||
+    url.startsWith('data:') ||
+    url.startsWith('blob:')
+  );
+}
+
+function arrayBufferToDataUrl(data: ArrayBuffer, url: string): string {
+  const ext = url.slice(url.lastIndexOf('.') + 1).toLowerCase();
+  const mime = IMAGE_MIME[ext] ?? 'application/octet-stream';
+  // btoa requires a binary string; chunk to avoid call-stack issues on large files.
+  const bytes = new Uint8Array(data);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
 /** Walk the markdown AST and collect all image URLs. */
-function collectImageUrls(doc: MarkdownDocument): string[] {
+function collectMarkdownImageUrls(doc: MarkdownDocument): string[] {
   const urls: string[] = [];
   function walkBlocks(nodes: MarkdownBlockNode[]): void {
     for (const node of nodes) {
       if ('children' in node && Array.isArray(node.children)) {
-        // Check if children are inline or block nodes
         for (const child of node.children as (MarkdownBlockNode | MarkdownInlineNode)[]) {
           if (child.type === 'image') {
             urls.push((child as { url: string }).url);
@@ -211,22 +312,20 @@ function collectImageUrls(doc: MarkdownDocument): string[] {
     }
   }
   walkBlocks(doc.children);
-  return urls;
+  return Array.from(new Set(urls));
 }
 
-/** Resolve image URLs to binary data from a ContentContainer. */
+/** Resolve image URLs (markdown → docx) to binary data from a ContentContainer. */
 async function resolveImages(
   doc: MarkdownDocument,
   container: ContentContainer,
 ): Promise<Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>> {
-  const urls = collectImageUrls(doc);
+  const urls = collectMarkdownImageUrls(doc);
   const map = new Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>();
 
   for (const url of urls) {
     if (map.has(url)) continue;
-    // Skip external URLs
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:'))
-      continue;
+    if (isExternalUrl(url)) continue;
     const data = await container.readFile(url);
     if (!data) continue;
     const ext = url.slice(url.lastIndexOf('.') + 1).toLowerCase();
@@ -234,5 +333,20 @@ async function resolveImages(
     map.set(url, { data, contentType });
   }
 
+  return map;
+}
+
+/** Resolve image paths referenced by a squisq Doc to ArrayBuffers for HTML export. */
+async function resolveDocImages(
+  doc: Doc,
+  container: ContentContainer,
+): Promise<Map<string, ArrayBuffer>> {
+  const paths = collectImagePaths(doc);
+  const map = new Map<string, ArrayBuffer>();
+  for (const path of paths) {
+    const data = await container.readFile(path);
+    if (!data) continue;
+    map.set(path, data);
+  }
   return map;
 }

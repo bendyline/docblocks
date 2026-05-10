@@ -6,12 +6,14 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { WorkspaceIcon } from '../icons.js';
 
 export interface WorkspaceSettingsButtonProps {
+  onSettings: () => void;
   onRename: () => void;
   onDownload: () => void;
   onRemove: () => void;
 }
 
 export function WorkspaceSettingsButton({
+  onSettings,
   onRename,
   onDownload,
   onRemove,
@@ -50,6 +52,13 @@ export function WorkspaceSettingsButton({
 
       {isOpen && (
         <div className="db-ws-settings-dropdown" role="menu">
+          <button
+            className="db-ws-settings-item"
+            role="menuitem"
+            onClick={() => handleAction(onSettings)}
+          >
+            Workspace settings…
+          </button>
           <button
             className="db-ws-settings-item"
             role="menuitem"

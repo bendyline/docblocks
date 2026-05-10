@@ -2,65 +2,104 @@
 
 /* ── Theme Tokens ────────────────────────────────────────────── */
 
+/* DocBlocks accent palette — warm brown on a canvas/parchment base.
+   Think paper on a wooden desk: the editor itself stays white (paper),
+   the chrome around it (sidebar, gutters, panes) reads as cream
+   canvas, and the accent picks up a saturated dark brown for CTAs.
+   Dark mode inverts the metaphor into espresso wood with light tan
+   highlights. Derived shades (`--db-accent-soft-*`, `--db-accent-tint`,
+   `--db-accent-deep`) are defined alongside so every place that needs
+   a tinted background or a readable-on-tint text color pulls from the
+   same source of truth. */
 .db-shell {
   --db-bg: #ffffff;
-  --db-bg-subtle: #f5f7f4;
-  --db-bg-hover: #eaeee9;
-  --db-bg-selected: #059669;
-  --db-bg-selected-hover: #047857;
-  --db-border: #d4d8d2;
-  --db-border-strong: #9ea69a;
-  --db-text: #1f2937;
-  --db-text-secondary: #374151;
-  --db-text-muted: #6b7280;
-  --db-text-placeholder: #9ca3af;
-  --db-accent: #16a34a;
-  --db-accent-hover: #15803d;
-  --db-input-border: #86efac;
-  --db-danger: #dc2626;
-  --db-danger-bg: #fef2f2;
-  --db-shadow: rgba(0, 0, 0, 0.12);
+  --db-bg-subtle: #f3eede;
+  --db-bg-hover: #e9e2cb;
+  --db-bg-selected: #a18b65;
+  --db-bg-selected-hover: #7d6948;
+  --db-border: #d6cdb0;
+  --db-border-strong: #b5a985;
+  --db-text: #2a2419;
+  --db-text-secondary: #3d3528;
+  --db-text-muted: #6b614a;
+  --db-text-placeholder: #9a9077;
+  --db-accent: #a18b65;
+  --db-accent-hover: #7d6948;
+  --db-accent-soft-08: rgba(161, 139, 101, 0.08);
+  --db-accent-soft-12: rgba(161, 139, 101, 0.12);
+  --db-accent-soft-15: rgba(161, 139, 101, 0.15);
+  --db-accent-soft-25: rgba(161, 139, 101, 0.25);
+  --db-accent-tint: #f3eede;
+  --db-accent-tint-strong: #d8d0b5;
+  --db-accent-deep: #3d3220;
+  /* Outline pane + inline-preview gutter background. Sits one step
+     lighter than the toolbar (`--db-accent-tint-strong`) so the chrome
+     panes read as distinct from the action bar above the canvas. */
+  --db-gutter-bg: #efe8d4;
+  --db-input-border: #c4b693;
+  --db-danger: #b22b1b;
+  --db-danger-bg: #fdf0ee;
+  --db-shadow: rgba(40, 30, 15, 0.12);
 }
 
 .db-shell[data-theme='dark'] {
-  --db-bg: #1c1f1c;
-  --db-bg-subtle: #262926;
-  --db-bg-hover: #3a3d3a;
-  --db-bg-selected: #2e312d;
-  --db-bg-selected-hover: #3b3f3a;
-  --db-border: #4d514b;
-  --db-border-strong: #6d716b;
-  --db-text: #e5e7eb;
-  --db-text-secondary: #d4d8d0;
-  --db-text-muted: #9aa39a;
-  --db-text-placeholder: #6c726a;
-  --db-accent: #5fb077;
-  --db-accent-hover: #7cc89a;
-  --db-input-border: #5fb077;
+  --db-bg: #1a1812;
+  --db-bg-subtle: #262219;
+  --db-bg-hover: #3a3528;
+  --db-bg-selected: #3a3528;
+  --db-bg-selected-hover: #4d4636;
+  --db-border: #4d4636;
+  --db-border-strong: #6b6448;
+  --db-text: #e8e2d0;
+  --db-text-secondary: #d4ccb0;
+  --db-text-muted: #a89a7c;
+  --db-text-placeholder: #6b614a;
+  --db-accent: #c8b48f;
+  --db-accent-hover: #dec79d;
+  --db-accent-soft-08: rgba(200, 180, 143, 0.08);
+  --db-accent-soft-12: rgba(200, 180, 143, 0.12);
+  --db-accent-soft-15: rgba(200, 180, 143, 0.18);
+  --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+  --db-accent-tint: #262219;
+  --db-accent-tint-strong: #3a382e;
+  --db-accent-deep: #e6dcc0;
+  --db-input-border: #c8b48f;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
+  /* In dark mode, "lighter than the toolbar" means brighter — so this
+     sits a step above `--db-accent-tint-strong` instead of between it
+     and tint. */
+  --db-gutter-bg: #4a4538;
 }
 
 @media (prefers-color-scheme: dark) {
   .db-shell:not([data-theme='light']) {
-    --db-bg: #1c1f1c;
-    --db-bg-subtle: #262926;
-    --db-bg-hover: #3a3d3a;
-    --db-bg-selected: #2e312d;
-    --db-bg-selected-hover: #3b3f3a;
-    --db-border: #4d514b;
-    --db-border-strong: #6d716b;
-    --db-text: #e5e7eb;
-    --db-text-secondary: #d4d8d0;
-    --db-text-muted: #9aa39a;
-    --db-text-placeholder: #6c726a;
-    --db-accent: #5fb077;
-    --db-accent-hover: #7cc89a;
-    --db-input-border: #5fb077;
+    --db-bg: #1a1812;
+    --db-bg-subtle: #262219;
+    --db-bg-hover: #3a3528;
+    --db-bg-selected: #3a3528;
+    --db-bg-selected-hover: #4d4636;
+    --db-border: #4d4636;
+    --db-border-strong: #6b6448;
+    --db-text: #e8e2d0;
+    --db-text-secondary: #d4ccb0;
+    --db-text-muted: #a89a7c;
+    --db-text-placeholder: #6b614a;
+    --db-accent: #c8b48f;
+    --db-accent-hover: #dec79d;
+    --db-accent-soft-08: rgba(200, 180, 143, 0.08);
+    --db-accent-soft-12: rgba(200, 180, 143, 0.12);
+    --db-accent-soft-15: rgba(200, 180, 143, 0.18);
+    --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+    --db-accent-tint: #262219;
+    --db-accent-tint-strong: #3a382e;
+    --db-accent-deep: #e6dcc0;
+    --db-input-border: #c8b48f;
     --db-danger: #f87171;
     --db-danger-bg: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
+    --db-gutter-bg: #4a4538;
   }
 }
 
@@ -82,10 +121,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 163, 74, 0.08);
-  border: 2px dashed #16a34a;
+  background: var(--db-accent-soft-08);
+  border: 2px dashed var(--db-accent);
   border-radius: 6px;
-  color: #16a34a;
+  color: var(--db-accent);
   font-size: 13px;
   font-weight: 600;
   z-index: 10;
@@ -357,9 +396,10 @@
 .db-workspace-dropdown {
   position: absolute;
   left: 8px;
-  right: 8px;
   top: 100%;
   z-index: 60;
+  min-width: calc(100% - 16px);
+  max-width: min(320px, 90vw);
   background: var(--db-bg);
   border: 1px solid var(--db-border);
   border-radius: 4px;
@@ -371,6 +411,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   width: 100%;
   padding: 6px 12px;
   font-size: 13px;
@@ -379,6 +420,7 @@
   border: none;
   cursor: pointer;
   color: var(--db-text-secondary);
+  white-space: nowrap;
 }
 
 .db-workspace-dropdown-item:hover {
@@ -594,11 +636,65 @@
 
 .db-shell-sidebar {
   width: 260px;
-  border-right: 1px solid var(--db-border-strong);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+}
+
+/* Drag handle between sidebar and editor. The visible line is the
+   hairline divider itself — 1px wide, in --db-border-strong so it
+   matches the toolbar's bottom border. The hit area extends 3px to
+   either side via an absolutely-positioned ::before so the cursor
+   can grab it without being pixel-perfect. The sidebar no longer
+   carries its own `border-right`; this 1px IS that border. */
+.db-shell-sidebar-resizer {
+  flex: 0 0 1px;
+  width: 1px;
+  /* Custom col-resize cursor — a dark double-arrow with a white halo
+     so it stays visible against any background. Windows' custom-color
+     cursor setting can render the system col-resize in white, which
+     disappears against the light chrome on either side of our 1px
+     line; a CSS `url()` cursor always wins over the OS preference.
+     Hotspot is the center (11, 8). */
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M3 8 L19 8 M3 8 L7 4 M3 8 L7 12 M19 8 L15 4 M19 8 L15 12' stroke='white' stroke-width='3.5'/><path d='M3 8 L19 8 M3 8 L7 4 M3 8 L7 12 M19 8 L15 4 M19 8 L15 12' stroke='%231f2937' stroke-width='1.4'/></g></svg>")
+      11 8,
+    col-resize;
+  background: var(--db-border-strong);
+  position: relative;
+  z-index: 5;
+  user-select: none;
+  touch-action: none;
+  transition: background-color 0.12s ease;
+}
+
+.db-shell-sidebar-resizer::before {
+  /* Invisible hit-extension so the 1px line isn't fiddly to grab. */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+
+.db-shell-sidebar-resizer:hover,
+.db-shell-sidebar-resizer:active {
+  background: var(--db-accent);
+}
+
+/* Drag-state body cursor — set via JS while a sidebar resize is in
+   progress so the col-resize cursor stays painted even when the
+   pointer briefly slips off the 7px hit area. Uses the same custom
+   SVG as the resizer itself so Windows' white-cursor setting doesn't
+   make it invisible against light chrome. */
+body.db-resizing-sidebar,
+body.db-resizing-sidebar * {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'><g fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M3 8 L19 8 M3 8 L7 4 M3 8 L7 12 M19 8 L15 4 M19 8 L15 12' stroke='white' stroke-width='3.5'/><path d='M3 8 L19 8 M3 8 L7 4 M3 8 L7 12 M19 8 L15 4 M19 8 L15 12' stroke='%231f2937' stroke-width='1.4'/></g></svg>")
+      11 8,
+    col-resize !important;
 }
 
 .db-shell-sidebar-header {
@@ -769,6 +865,10 @@
   padding: 0;
 }
 
+.db-settings-fieldset + .db-settings-fieldset {
+  margin-top: 20px;
+}
+
 .db-settings-legend {
   font-size: 12px;
   font-weight: 600;
@@ -776,6 +876,20 @@
   letter-spacing: 0.03em;
   color: var(--db-text-muted);
   margin-bottom: 8px;
+}
+
+.db-settings-hint {
+  font-size: 12px;
+  color: var(--db-text-muted);
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.db-settings-hint code {
+  font-size: 11px;
+  background: var(--db-bg-subtle);
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 .db-settings-radio {
@@ -1014,6 +1128,51 @@
   color: var(--db-text-placeholder);
 }
 
+/* Chip radio group — used by the Export dialog for the top three
+   options (Format / Style / Bundle). Wraps to multiple lines on narrow
+   widths so the format row doesn't truncate. */
+.db-export-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.db-export-chip {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--db-text);
+  background: var(--db-bg-subtle);
+  border: 1px solid var(--db-border);
+  border-radius: 3px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.db-export-chip:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-export-chip--active {
+  background: var(--db-accent);
+  border-color: var(--db-accent);
+  color: #ffffff;
+}
+
+.db-export-chip--active:hover {
+  background: var(--db-accent-hover);
+  border-color: var(--db-accent-hover);
+}
+
+.db-export-chip:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
 .db-export-footer {
   display: flex;
   justify-content: flex-end;
@@ -1070,11 +1229,11 @@
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar {
-  background: #d6e6d9;
+  background: var(--db-accent-tint);
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar-view-tabs {
-  background: #f4faf5;
+  background: var(--db-gutter-bg);
   box-shadow: 1px 0 0 rgba(0, 0, 0, 0.04);
 }
 
@@ -1083,7 +1242,7 @@
 }
 
 .db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
-  background: #161816;
+  background: #16110b;
 }
 
 /* ── Inline preview gutter: thematic green ──────────────────── */
@@ -1094,163 +1253,163 @@
    The preview-block renderer's own theme is unaffected — that's a
    document-level concern, not chrome. */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] {
-  --squisq-preview-accent: #16a34a;
-  --squisq-preview-accent-muted: #94a39a;
-  --squisq-preview-gutter-bg: #d6e6d9;
+  --squisq-preview-accent: var(--db-accent);
+  --squisq-preview-accent-muted: var(--db-text-muted);
+  --squisq-preview-gutter-bg: var(--db-gutter-bg);
   --squisq-preview-card-bg: #ffffff;
-  --squisq-preview-card-border: #c8d8cc;
-  --squisq-preview-card-shadow: 0 1px 2px rgba(20, 50, 30, 0.08);
-  --squisq-preview-card-title: #14532d;
-  --squisq-preview-card-svg-bg: #f0fdf4;
-  --squisq-preview-dot-halo: #d6e6d9;
+  --squisq-preview-card-border: var(--db-border);
+  --squisq-preview-card-shadow: 0 1px 2px rgba(40, 30, 15, 0.08);
+  --squisq-preview-card-title: var(--db-accent-deep);
+  --squisq-preview-card-svg-bg: var(--db-accent-tint);
+  --squisq-preview-dot-halo: var(--db-gutter-bg);
   --squisq-preview-empty-bg: #ffffff;
-  --squisq-preview-empty-border: #bbf7d0;
-  --squisq-preview-empty-text: #4d6b54;
+  --squisq-preview-empty-border: var(--db-border);
+  --squisq-preview-empty-text: var(--db-accent-deep);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] {
-  --squisq-preview-accent: #7cc89a;
-  --squisq-preview-accent-muted: #5f7068;
-  --squisq-preview-gutter-bg: #161816;
-  --squisq-preview-card-bg: #1c1f1c;
-  --squisq-preview-card-border: #3a3d3a;
+  --squisq-preview-accent: var(--db-accent-hover);
+  --squisq-preview-accent-muted: var(--db-text-muted);
+  --squisq-preview-gutter-bg: var(--db-gutter-bg);
+  --squisq-preview-card-bg: var(--db-bg);
+  --squisq-preview-card-border: var(--db-border);
   --squisq-preview-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --squisq-preview-card-title: #e5e7eb;
-  --squisq-preview-card-svg-bg: #262926;
-  --squisq-preview-dot-halo: #161816;
-  --squisq-preview-empty-bg: #1c1f1c;
-  --squisq-preview-empty-border: #3a3d3a;
-  --squisq-preview-empty-text: #9aa39a;
+  --squisq-preview-card-title: var(--db-text);
+  --squisq-preview-card-svg-bg: var(--db-bg-subtle);
+  --squisq-preview-dot-halo: var(--db-gutter-bg);
+  --squisq-preview-empty-bg: var(--db-bg);
+  --squisq-preview-empty-border: var(--db-border);
+  --squisq-preview-empty-text: var(--db-text-muted);
 }
 
 /* ── Squisq dark-theme override ──────────────────────────────── */
 /* Squisq has hardcoded slate-blue surfaces in its dark mode. We re-tone
-   them to a near-neutral dark gray (a subtle sage warmth) to match
-   docblocks' palette via the cascade. If squisq ever accepts a
-   theme-color prop, replace this block with that mechanism. */
+   them via the DocBlocks dark palette so the editor reads as warm dark
+   wood instead of cold slate. If squisq ever accepts a theme-color
+   prop, replace this block with that mechanism. */
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] {
-  --squisq-bg: #262926;
-  --squisq-border: #4d514b;
-  --squisq-input-bg: #2e312d;
-  background: #1c1f1c;
+  --squisq-bg: var(--db-bg-subtle);
+  --squisq-border: var(--db-border);
+  --squisq-input-bg: var(--db-bg-hover);
+  background: var(--db-bg);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-editor-header {
-  background: #262926;
-  border-bottom-color: #3a3d3a;
+  background: var(--db-bg-subtle);
+  border-bottom-color: var(--db-border-strong);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
-  background: #1c1f1c;
+  background: var(--db-bg);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-container {
-  background: #161816;
+  background: #16110b;
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor {
-  background: #1c1f1c;
+  background: var(--db-bg);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor pre {
-  background: #161816;
+  background: #16110b;
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor code {
-  background: #2e312d;
+  background: var(--db-bg-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-wysiwyg-editor
   blockquote {
-  border-left-color: #4d514b;
+  border-left-color: var(--db-border);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-preview-player {
-  background: #1c1f1c;
+  background: var(--db-bg);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-preview-codeblock {
-  background: #161816;
+  background: #16110b;
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-status-bar {
-  background: #262926;
-  border-top-color: #3a3d3a;
+  background: var(--db-bg-subtle);
+  border-top-color: var(--db-border);
 }
 
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark,
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark .squisq-image-viewer-stage {
-  background: #1c1f1c;
+  background: var(--db-bg);
 }
 
 /* ── Squisq accent override (blue → thematic green) ──────────── */
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-view-tab--active {
-  color: #7cc89a;
-  border-bottom-color: #7cc89a;
+  color: var(--db-accent-hover);
+  border-bottom-color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-toolbar-view-tab--active {
-  color: #a8d9b6;
-  border-bottom-color: #7cc89a;
+  color: var(--db-accent-deep);
+  border-bottom-color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-toolbar-button--active {
-  background: #2d4a35;
-  color: #7cc89a;
+  background: var(--db-accent-tint-strong);
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-toolbar-button--active:hover {
-  background: #345a3e;
-  color: #a8d9b6;
+  background: var(--db-accent-tint-strong);
+  color: var(--db-accent-deep);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-toolbar-overflow-item--active {
-  color: #7cc89a;
-  background: #2d4a35;
+  color: var(--db-accent-hover);
+  background: var(--db-accent-tint-strong);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor a {
-  color: #7cc89a;
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-wysiwyg-editor
   .column-resize-handle {
-  background: #7cc89a;
+  background: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-wysiwyg-editor
   .selectedCell::after {
-  background: rgba(124, 200, 154, 0.15);
+  background: var(--db-accent-soft-15);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-picker-select {
-  background: #2e312d;
-  border-color: #4d514b;
-  color: #d1d5db;
+  background: var(--db-bg-hover);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-picker-select:focus {
-  outline-color: #5fb077;
+  outline-color: var(--db-accent);
 }
 
 .db-shell[data-theme='dark']
@@ -1259,12 +1418,12 @@
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-toolbar-button:disabled:hover {
-  color: #5f7068;
+  color: var(--db-text-muted);
   background: transparent;
   cursor: not-allowed;
   opacity: 0.6;
   /* Desaturate colored emoji glyphs (e.g. 🖼) so they don't read as blue
-     against the green-tinted dark surface when disabled. */
+     against the warm-brown dark surface when disabled. */
   filter: grayscale(1);
 }
 
@@ -1272,16 +1431,16 @@
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-picker-trigger {
-  background: #262926;
-  border-color: #4d514b;
-  color: #e5e7eb;
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border);
+  color: var(--db-text);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-picker-trigger:hover {
-  background: #2e312d;
-  border-color: #5f7068;
+  background: var(--db-bg-hover);
+  border-color: var(--db-border-strong);
 }
 
 /* ── Tooltips (portal): sans-serif + thematic green ──────────── */
@@ -1300,14 +1459,14 @@ html:has(.db-shell) .squisq-tooltip {
     'Helvetica Neue',
     Arial,
     sans-serif;
-  background: #2d4a35;
-  color: #ecfdf5;
+  background: var(--db-accent-tint-strong);
+  color: var(--db-accent-deep);
   box-shadow: 0 2px 8px rgba(15, 30, 20, 0.35);
 }
 
 html:has(.db-shell[data-theme='light']) .squisq-tooltip {
-  background: #166534;
-  color: #f0fdf4;
+  background: var(--db-accent-deep);
+  color: var(--db-accent-tint);
 }
 
 /* ── Template picker accents (dark): indigo → thematic green ─── */
@@ -1320,13 +1479,49 @@ html:has(.db-shell[data-theme='light']) .squisq-tooltip {
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-picker-trigger--open {
-  border-color: #7cc89a;
-  outline-color: rgba(124, 200, 154, 0.25);
+  border-color: var(--db-accent-hover);
+  outline-color: var(--db-accent-soft-25);
+}
+
+/* The template gallery is rendered into document.body via createPortal,
+   so it lives outside `.db-shell`. Hoist the same brown/canvas tokens
+   onto the html element (gated by `:has(.db-shell[data-theme=…])`) so
+   the portal rules below can pull from the same source of truth. */
+html:has(.db-shell[data-theme='dark']) {
+  --db-bg: #1a1812;
+  --db-bg-subtle: #262219;
+  --db-bg-hover: #3a3528;
+  --db-border: #4d4636;
+  --db-border-strong: #6b6448;
+  --db-text: #e8e2d0;
+  --db-text-muted: #a89a7c;
+  --db-accent: #c8b48f;
+  --db-accent-hover: #dec79d;
+  --db-accent-soft-15: rgba(200, 180, 143, 0.18);
+  --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+  --db-accent-tint-strong: #3a382e;
+  --db-gutter-bg: #4a4538;
+}
+
+html:has(.db-shell[data-theme='light']) {
+  --db-bg: #ffffff;
+  --db-bg-subtle: #f3eede;
+  --db-bg-hover: #e9e2cb;
+  --db-border: #d6cdb0;
+  --db-border-strong: #b5a985;
+  --db-text: #2a2419;
+  --db-text-muted: #6b614a;
+  --db-accent: #a18b65;
+  --db-accent-hover: #7d6948;
+  --db-accent-soft-15: rgba(161, 139, 101, 0.15);
+  --db-accent-soft-25: rgba(161, 139, 101, 0.25);
+  --db-accent-tint-strong: #d8d0b5;
+  --db-gutter-bg: #efe8d4;
 }
 
 html:has(.db-shell[data-theme='dark']) #squisq-template-gallery-portal {
-  background: #1f221f;
-  border-color: #3a3d3a;
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border);
   box-shadow:
     0 8px 24px rgba(0, 0, 0, 0.5),
     0 2px 6px rgba(0, 0, 0, 0.3);
@@ -1336,74 +1531,74 @@ html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-none {
   background: transparent;
-  border-color: #3a3d3a;
+  border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-none:hover {
-  background: #262926;
+  background: var(--db-bg-hover);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-none.squisq-template-gallery-card--selected {
-  background: #1e3a26;
-  border-color: #2d6a3f;
+  background: var(--db-accent-tint-strong);
+  border-color: var(--db-accent);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-none-label {
-  color: #d1d5db;
+  color: var(--db-text);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-none-desc {
-  color: #9ca3af;
+  color: var(--db-text-muted);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card {
   background: transparent;
-  border-color: #3a3d3a;
+  border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card:hover {
-  background: #262926;
-  border-color: #5fb077;
-  box-shadow: 0 1px 4px rgba(124, 200, 154, 0.15);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  box-shadow: 0 1px 4px var(--db-accent-soft-15);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card--selected {
-  background: #1e3a26;
-  border-color: #7cc89a;
-  box-shadow: 0 0 0 2px rgba(124, 200, 154, 0.2);
+  background: var(--db-accent-tint-strong);
+  border-color: var(--db-accent-hover);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card-icon {
-  background: #161816;
-  border-color: #3a3d3a;
+  background: var(--db-bg);
+  border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card-name {
-  color: #f3f4f6;
+  color: var(--db-text);
 }
 
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-gallery-card-desc {
-  color: #9ca3af;
+  color: var(--db-text-muted);
 }
 
 /* Recolor the indigo accent fills inside template thumbnail SVGs */
@@ -1411,7 +1606,7 @@ html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-portal
   .squisq-template-picker-icon
   [fill='#818cf8'] {
-  fill: #7cc89a;
+  fill: var(--db-accent-hover);
 }
 
 /* ── Template picker accents (light): indigo → thematic green ── */
@@ -1419,37 +1614,37 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-picker-trigger--open {
-  border-color: #16a34a;
-  outline-color: rgba(22, 163, 74, 0.25);
+  border-color: var(--db-accent);
+  outline-color: var(--db-accent-soft-25);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-gallery-card:hover {
-  border-color: #86efac;
-  box-shadow: 0 1px 4px rgba(22, 163, 74, 0.1);
+  border-color: var(--db-input-border);
+  box-shadow: 0 1px 4px var(--db-accent-soft-08);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-gallery-card--selected {
-  background: #f0fdf4;
-  border-color: #16a34a;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+  background: var(--db-accent-tint);
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-gallery-none.squisq-template-gallery-card--selected {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  background: var(--db-accent-tint);
+  border-color: var(--db-accent-tint-strong);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-picker-icon
   [fill='#818cf8'] {
-  fill: #16a34a;
+  fill: var(--db-accent);
 }
 
 /* ── Template badge: inherit OS font, amber palette ──────────── */
@@ -1472,22 +1667,88 @@ html:has(.db-shell[data-theme='dark'])
 
 /* Light mode squisq surfaces (toolbar, header, status bar) */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-editor-header {
-  background: #eaf3ec;
-  border-bottom-color: #c8d8cc;
+  background: var(--db-accent-tint);
+  border-bottom-color: var(--db-border-strong);
 }
 
+/* Toolbar / view-tabs: the formatting area sits LIGHTER than the
+   mode-switcher tabs on its left, so the cluster of buttons fades
+   into the canvas while the mode switcher reads as the anchor. */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar {
-  background: #d6e6d9;
+  background: var(--db-accent-tint);
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar-view-tabs {
-  background: #f4faf5;
-  border-right-color: #c8d8cc;
+  background: var(--db-gutter-bg);
+  border-right-color: var(--db-border);
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-status-bar {
-  background: #d6e6d9;
-  border-top-color: #c8d8cc;
+  background: var(--db-accent-tint-strong);
+  border-top-color: var(--db-border);
+}
+
+/* Status bar "✓ OK" indicator — squisq paints this in saturated emerald
+   (#059669 light, #34d399 dark). Re-tone to the sage accent so the
+   parse-status indicator harmonizes with the rest of the chrome. */
+.db-shell .squisq-status-ok {
+  color: var(--db-accent);
+}
+
+.db-shell[data-theme='dark'] .squisq-status-ok {
+  color: var(--db-accent-hover);
+}
+
+/* Outline pane (left of the editor) — squisq paints a warm beige
+   (#dcd8d0 light / dark slate in dark mode). Re-tone to `--db-gutter-bg`
+   so it matches the inline-preview gutter on the right and reads as
+   one step lighter than the toolbar above. */
+.db-shell[data-theme='light'] .squisq-outline {
+  background: var(--db-gutter-bg);
+  color: var(--db-text);
+}
+
+.db-shell[data-theme='light'] .squisq-outline-row:hover {
+  background: var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='dark'] .squisq-outline {
+  background: var(--db-gutter-bg);
+  color: var(--db-text);
+}
+
+.db-shell[data-theme='dark'] .squisq-outline-row:hover {
+  background: var(--db-accent-soft-15);
+}
+
+/* Explicit borders on the canvas side of each chrome pane so the
+   white editor area reads as a clearly-edged "page" rather than
+   blending into the cream gutters. Uses --db-border-strong to match
+   the hairline under the toolbar. */
+.db-shell .squisq-outline {
+  border-right: 1px solid var(--db-border-strong);
+}
+
+.db-shell .squisq-inline-preview-gutter {
+  border-left: 1px solid var(--db-border-strong);
+}
+
+/* Monaco's line-number gutter ("editorGutter.background") is set via
+   squisq's JS-side theme registration — those colors can't be CSS
+   variables. To make the gutter blend with the outline/preview chrome
+   on either side, we override the painted bg on `.margin` and its
+   `.margin-view-overlays` child with our --db-gutter-bg. `!important`
+   is required because Monaco inlines the color via the style attribute.
+   The right-edge seam pseudo-element (`.margin::after`) also retones
+   to --db-border so it's a single hairline matching the toolbar's
+   bottom border, not a contrast stripe of its own. */
+.db-shell .squisq-raw-editor-container .monaco-editor .margin,
+.db-shell .squisq-raw-editor-container .monaco-editor .margin-view-overlays {
+  background-color: var(--db-gutter-bg) !important;
+}
+
+.db-shell .squisq-raw-editor-container .monaco-editor .margin::after {
+  background: var(--db-border);
 }
 
 /* Light mode squisq accents */
@@ -1495,45 +1756,122 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-view-tab--active {
-  color: #15803d;
-  border-bottom-color: #16a34a;
+  color: var(--db-accent-hover);
+  border-bottom-color: var(--db-accent);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-button--active {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--db-accent-tint);
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-button--active:hover {
-  background: #bbf7d0;
-  color: #166534;
+  background: var(--db-accent-tint-strong);
+  color: var(--db-accent-deep);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-overflow-item--active {
-  background: #dcfce7;
-  color: #15803d;
+  background: var(--db-accent-tint);
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-wysiwyg-editor a {
-  color: #15803d;
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-wysiwyg-editor
   .column-resize-handle {
-  background: #16a34a;
+  background: var(--db-accent);
 }
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-wysiwyg-editor
   .selectedCell::after {
-  background: rgba(22, 163, 74, 0.12);
+  background: var(--db-accent-soft-12);
+}
+
+/* Version history popover — DocBlocks-specific overrides.
+   The upstream squisq popover uses Tailwind's slate-blue palette
+   (#1f2937 bg, #374151 border, #2563eb selection). Inside DocBlocks we
+   want the same dark surface used by the rest of the shell (--db-bg /
+   --db-border). Selected rows pick up the sage accent at low alpha. */
+.db-shell .squisq-version-history-row--selected {
+  background: var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='dark'] .squisq-version-history-row--selected {
+  background: var(--db-accent-soft-25);
+}
+
+.db-shell[data-theme='dark'] .squisq-version-history-popover {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  color: var(--db-text);
+}
+
+.db-shell[data-theme='dark'] .squisq-version-history-header,
+.db-shell[data-theme='dark'] .squisq-version-history-diff-header,
+.db-shell[data-theme='dark']
+  .squisq-version-history-popover--with-diff
+  .squisq-version-history-list-pane,
+.db-shell[data-theme='dark'] .squisq-version-history-row--current {
+  border-color: var(--db-border);
+}
+
+.db-shell[data-theme='dark'] .squisq-version-history-row:hover {
+  background: var(--db-bg-hover);
+}
+
+/* ── Save toast ──────────────────────────────────────────────
+   Comfort-blanket flyover triggered by Ctrl/Cmd+S. Files are
+   already autosaved on every keystroke; this just confirms it
+   so muscle-memory savers feel at ease. */
+
+.db-save-toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 8px 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #fff;
+  background: rgba(31, 41, 55, 0.92);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: db-save-toast-fade 1.8s ease-out forwards;
+}
+
+.db-shell[data-theme='light'] .db-save-toast {
+  background: rgba(17, 24, 39, 0.88);
+}
+
+@keyframes db-save-toast-fade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -4px);
+  }
 }
