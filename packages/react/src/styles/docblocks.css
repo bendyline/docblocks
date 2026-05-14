@@ -771,6 +771,28 @@ body.db-resizing-sidebar * {
   background: var(--db-bg-subtle);
 }
 
+/* "Restore split view" button — appears on the editor toolbar when
+   compact layout was triggered manually on a wide viewport. Lets the
+   user pop the sidebar back open alongside the editor. Iconic only,
+   no label, so it stays compact in the toolbar's right-slot. */
+.db-restore-split {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin-right: 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-secondary);
+  cursor: pointer;
+}
+
+.db-restore-split:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
 /* ── Dialog ───────────────────────────────────────────────────── */
 
 .db-dialog-overlay {

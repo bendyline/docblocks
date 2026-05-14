@@ -42,10 +42,7 @@ function quickLabel(opts: ExportOptions): string {
   if (opts.format === 'html' && opts.htmlStyle === 'rendered') {
     parts.push('rendered');
   }
-  if (
-    opts.themeId !== 'standard' &&
-    (opts.format !== 'html' || opts.htmlStyle === 'rendered')
-  ) {
+  if (opts.themeId !== 'standard' && (opts.format !== 'html' || opts.htmlStyle === 'rendered')) {
     const theme = getThemeSummaries().find((t) => t.id === opts.themeId);
     if (theme) parts.push(theme.name);
   }

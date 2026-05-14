@@ -114,9 +114,7 @@ async function runHtmlExport(
     const baseDoc = markdownToDoc(mdDoc);
     if (themeId) baseDoc.themeId = themeId;
 
-    const images = mediaContainer
-      ? await resolveDocImages(baseDoc, mediaContainer)
-      : undefined;
+    const images = mediaContainer ? await resolveDocImages(baseDoc, mediaContainer) : undefined;
 
     if (options.htmlBundle === 'zip') {
       const blob = await docToHtmlZip(baseDoc, {

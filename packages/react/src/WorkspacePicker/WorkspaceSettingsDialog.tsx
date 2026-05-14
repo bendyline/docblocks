@@ -14,9 +14,7 @@ import {
   type VersioningPreference,
 } from '../preferences/versioning.js';
 
-export type WorkspaceVersioningOverride = NonNullable<
-  WorkspaceDescriptor['versioningOverride']
->;
+export type WorkspaceVersioningOverride = NonNullable<WorkspaceDescriptor['versioningOverride']>;
 
 export interface WorkspaceSettingsDialogProps {
   workspace: WorkspaceDescriptor;
@@ -69,12 +67,7 @@ export function WorkspaceSettingsDialog({
       <div className="db-dialog" role="dialog" aria-label="Workspace settings">
         <div className="db-dialog-header">
           <h2 className="db-dialog-title">Workspace settings</h2>
-          <button
-            type="button"
-            className="db-dialog-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
+          <button type="button" className="db-dialog-close" onClick={onClose} aria-label="Close">
             &times;
           </button>
         </div>

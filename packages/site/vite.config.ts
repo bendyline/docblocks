@@ -24,6 +24,14 @@ export default defineConfig({
     port: 5220,
     strictPort: true,
     open: true,
+    fs: {
+      // Allow serving files from the symlinked squisq workspace —
+      // its CSS @imports `@fortawesome/fontawesome-free/css/all.min.css`,
+      // which then references woff2 webfonts via relative url(). With
+      // preserveSymlinks: false those resolve through squisq's realpath,
+      // so we need to whitelist it for Vite to serve the font assets.
+      allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
+    },
   },
   optimizeDeps: {
     include: [

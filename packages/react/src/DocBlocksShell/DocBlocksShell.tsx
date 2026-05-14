@@ -166,6 +166,11 @@ const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
 const SIDEBAR_WIDTH_DEFAULT = 260;
 const SIDEBAR_WIDTH_MIN = 180;
 const SIDEBAR_WIDTH_MAX = 600;
+/** Drag below this many pixels and the sidebar collapses entirely —
+ *  the editor takes the full width and a back-arrow appears in the
+ *  toolbar so the user can pop the sidebar back open. Same UX as
+ *  the existing mobile narrow-viewport flow. */
+const SIDEBAR_COLLAPSE_THRESHOLD = 120;
 
 function loadSidebarWidth(): number {
   try {
@@ -346,6 +351,16 @@ export function DocBlocksShell({
   // drag in a ref so each mousemove doesn't trigger a state update; only
   // setState on commit so React doesn't churn through every pixel.
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
+  // When the user drags the resizer below SIDEBAR_COLLAPSE_THRESHOLD,
+  // we switch the layout into single-pane "compact" mode — same UX as
+  // the mobile narrow-viewport flow, where only the sidebar OR the
+  // editor is visible at a time and a back-arrow in the toolbar pops
+  // between them. A "Restore split view" button on the editor toolbar
+  // exits compact mode; on real mobile that button is suppressed
+  // because there's not enough viewport for side-by-side. Not
+  // persisted across reloads. */
+  const [compactLayout, setCompactLayout] = useState(false);
+  const effectiveCompact = isMobile || compactLayout;
   const sidebarRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const handleResizerPointerDown = useCallback(
@@ -360,15 +375,25 @@ export function DocBlocksShell({
       // the dragging cursor invisible against the light chrome.
       document.body.style.userSelect = 'none';
       document.body.classList.add('db-resizing-sidebar');
+      let lastRaw = sidebarWidth;
       const onMove = (ev: PointerEvent) => {
         const drag = dragStateRef.current;
         if (!drag) return;
-        const next = drag.startWidth + (ev.clientX - drag.startX);
-        const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, next));
+        lastRaw = drag.startWidth + (ev.clientX - drag.startX);
+        if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD && sidebarRef.current) {
+          // Below threshold — preview the collapse by snapping to the
+          // minimum width and fading the sidebar, so the user can see
+          // they've crossed into "release to collapse" territory.
+          sidebarRef.current.style.width = `${SIDEBAR_WIDTH_MIN}px`;
+          sidebarRef.current.style.opacity = '0.45';
+          return;
+        }
+        const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, lastRaw));
         if (sidebarRef.current) {
           // Update the DOM directly during the drag for jank-free
           // dragging; React state syncs on release.
           sidebarRef.current.style.width = `${clamped}px`;
+          sidebarRef.current.style.opacity = '';
         }
       };
       const onUp = () => {
@@ -376,14 +401,25 @@ export function DocBlocksShell({
         document.removeEventListener('pointerup', onUp);
         document.body.style.userSelect = '';
         document.body.classList.remove('db-resizing-sidebar');
-        const finalWidth = sidebarRef.current?.getBoundingClientRect().width;
-        if (finalWidth) {
-          const clamped = Math.min(
-            SIDEBAR_WIDTH_MAX,
-            Math.max(SIDEBAR_WIDTH_MIN, Math.round(finalWidth)),
-          );
-          setSidebarWidth(clamped);
-          saveSidebarWidth(clamped);
+        if (sidebarRef.current) {
+          sidebarRef.current.style.opacity = '';
+        }
+        if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD) {
+          // Released below threshold — switch to compact (single-pane)
+          // layout focused on the editor. Keep the persisted
+          // sidebarWidth so exiting compact mode restores it.
+          setCompactLayout(true);
+          setMobileShowEditor(true);
+        } else {
+          const finalWidth = sidebarRef.current?.getBoundingClientRect().width;
+          if (finalWidth) {
+            const clamped = Math.min(
+              SIDEBAR_WIDTH_MAX,
+              Math.max(SIDEBAR_WIDTH_MIN, Math.round(finalWidth)),
+            );
+            setSidebarWidth(clamped);
+            saveSidebarWidth(clamped);
+          }
         }
         dragStateRef.current = null;
       };
@@ -415,9 +451,8 @@ export function DocBlocksShell({
   }, [activeWorkspaceId, descriptorRefreshKey]);
 
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
-  const [versioningPreference, setVersioningPreference] = useState<VersioningPreference>(
-    loadVersioningPreference,
-  );
+  const [versioningPreference, setVersioningPreference] =
+    useState<VersioningPreference>(loadVersioningPreference);
   const handleVersioningPreferenceChange = useCallback((pref: VersioningPreference) => {
     setVersioningPreference(pref);
     saveVersioningPreference(pref);
@@ -1064,10 +1099,10 @@ export function DocBlocksShell({
         setEditorKey((k) => k + 1);
         pushHash(activeWorkspaceId, path);
         saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
-        if (isMobile) setMobileShowEditor(true);
+        if (effectiveCompact) setMobileShowEditor(true);
       }
     },
-    [provider, activeWorkspaceId, pushHash, isMobile],
+    [provider, activeWorkspaceId, pushHash, effectiveCompact],
   );
 
   const handleTreeChange = useCallback(async () => {
@@ -1385,7 +1420,10 @@ export function DocBlocksShell({
   }, [activeWorkspaceId, handleWorkspaceSelect]);
 
   return (
-    <div className={`db-shell${isMobile ? ' db-shell--mobile' : ''}`} data-theme={resolvedTheme}>
+    <div
+      className={`db-shell${effectiveCompact ? ' db-shell--mobile' : ''}`}
+      data-theme={resolvedTheme}
+    >
       {saveToastVisible && (
         <div className="db-save-toast" role="status" aria-live="polite">
           Autosaved. You're all set.
@@ -1401,12 +1439,14 @@ export function DocBlocksShell({
       )}
       {/* Main area */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left sidebar — hidden on mobile when editor is shown */}
-        {(!isMobile || !mobileShowEditor) && (
+        {/* Left sidebar — hidden in compact layout when the editor is
+            showing (compact = real mobile narrow viewport OR the user
+            dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
+        {(!effectiveCompact || !mobileShowEditor) && (
           <div
             ref={sidebarRef}
             className="db-shell-sidebar"
-            style={isMobile ? undefined : { width: `${sidebarWidth}px` }}
+            style={effectiveCompact ? undefined : { width: `${sidebarWidth}px` }}
           >
             <div className="db-shell-sidebar-header">
               <AppMenu
@@ -1448,11 +1488,9 @@ export function DocBlocksShell({
           </div>
         )}
 
-        {/* Resize handle between sidebar and editor — hidden on mobile,
-            where the sidebar uses full-width and toggles with the editor.
-            The hit area is wider than the visible 1px line so it's easy
-            to grab; the visible accent only paints on hover/active. */}
-        {!isMobile && (!isMobile || !mobileShowEditor) && (
+        {/* Resize handle between sidebar and editor — hidden whenever
+            the layout is compact (no sidebar to resize). */}
+        {!effectiveCompact && (
           <div
             className="db-shell-sidebar-resizer"
             role="separator"
@@ -1462,8 +1500,8 @@ export function DocBlocksShell({
           />
         )}
 
-        {/* Editor area — hidden on mobile when sidebar is shown */}
-        {(!isMobile || mobileShowEditor) && (
+        {/* Editor area — hidden in compact layout when the sidebar is showing. */}
+        {(!effectiveCompact || mobileShowEditor) && (
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {selectedFile && mediaProvider ? (
               <MediaContext.Provider value={mediaProvider}>
@@ -1486,23 +1524,55 @@ export function DocBlocksShell({
                   versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
                   onSaveVersion={onSaveVersion}
                   toolbarSlotLeft={
-                    isMobile ? (
-                      <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                    effectiveCompact ? (
+                      <button
+                        className="db-mobile-back"
+                        onClick={() => setMobileShowEditor(false)}
+                        aria-label="Show file list"
+                      >
                         <span className="db-mobile-back-arrow">&larr;</span>
                       </button>
                     ) : undefined
                   }
                   toolbarSlotRight={
-                    <ExportToolbarControls
-                      selectedFile={selectedFile}
-                      mediaContainer={mediaContainerRef.current}
-                    />
+                    <>
+                      {/* Restore split view — only relevant when compact
+                          layout was manually triggered on a wide viewport.
+                          On real mobile, side-by-side doesn't fit so the
+                          button is suppressed. */}
+                      {compactLayout && !isMobile && (
+                        <button
+                          className="db-restore-split"
+                          onClick={() => setCompactLayout(false)}
+                          aria-label="Restore split view"
+                          title="Restore split view"
+                        >
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+                            <line x1="6" y1="2.5" x2="6" y2="13.5" />
+                          </svg>
+                        </button>
+                      )}
+                      <ExportToolbarControls
+                        selectedFile={selectedFile}
+                        mediaContainer={mediaContainerRef.current}
+                      />
+                    </>
                   }
                 />
               </MediaContext.Provider>
             ) : selectedFolder ? (
               <div className="db-folder-view">
-                {isMobile && (
+                {effectiveCompact && (
                   <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
                     <span className="db-mobile-back-arrow">&larr;</span>
                     Back to files
@@ -1535,6 +1605,12 @@ export function DocBlocksShell({
               </div>
             ) : (
               <div className="db-shell-empty">
+                {effectiveCompact && (
+                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                    <span className="db-mobile-back-arrow">&larr;</span>
+                    Back to files
+                  </button>
+                )}
                 <p>Select a file to start editing, or create a new one.</p>
               </div>
             )}

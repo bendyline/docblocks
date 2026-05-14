@@ -5,12 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { getTransformStyleSummaries } from '@bendyline/squisq/transform';
-import type {
-  ExportFormat,
-  ExportOptions,
-  HtmlBundle,
-  HtmlStyle,
-} from './export-options.js';
+import type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
 import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
 
 export interface ExportDialogProps {
