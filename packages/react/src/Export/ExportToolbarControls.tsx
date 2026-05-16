@@ -36,11 +36,19 @@ export interface ExportToolbarControlsProps {
 /** Build the quick-export label from saved options. */
 function quickLabel(opts: ExportOptions): string {
   const baseExt = FORMAT_EXTENSIONS[opts.format].toUpperCase().replace('.', '');
-  const ext = opts.format === 'html' && opts.htmlBundle === 'zip' ? 'ZIP' : baseExt;
+  // Recursive HTML always emits a ZIP (multi-doc tree), regardless of
+  // the saved `htmlBundle` value. Applies to both plain and rendered
+  // styles since both now ship recursive bundle helpers.
+  const isRecursiveHtml = opts.format === 'html' && opts.includeLinkedDocs;
+  const ext =
+    opts.format === 'html' && (opts.htmlBundle === 'zip' || isRecursiveHtml) ? 'ZIP' : baseExt;
   const parts: string[] = [];
 
   if (opts.format === 'html' && opts.htmlStyle === 'rendered') {
     parts.push('rendered');
+  }
+  if (isRecursiveHtml) {
+    parts.push('linked docs');
   }
   if (opts.themeId !== 'standard' && (opts.format !== 'html' || opts.htmlStyle === 'rendered')) {
     const theme = getThemeSummaries().find((t) => t.id === opts.themeId);

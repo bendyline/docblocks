@@ -103,6 +103,7 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   const [pageSize, setPageSize] = useState(initial.pageSize);
   const [htmlStyle, setHtmlStyle] = useState<HtmlStyle>(initial.htmlStyle);
   const [htmlBundle, setHtmlBundle] = useState<HtmlBundle>(initial.htmlBundle);
+  const [includeLinkedDocs, setIncludeLinkedDocs] = useState<boolean>(initial.includeLinkedDocs);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const themes = getThemeSummaries();
@@ -117,6 +118,16 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   const showTransform = format === 'pptx';
   const showPageSize = format === 'pdf';
   const showHtmlOptions = format === 'html';
+  // Both HTML styles now have a recursive bundle: plain via
+  // `markdownDocsToPlainHtmlBundle`, rendered via
+  // `markdownDocsToHtmlBundle` (which rewrites Doc-tree links to
+  // `.html` before SquisqPlayer serialization). So the option applies
+  // to any HTML export.
+  const showIncludeLinked = format === 'html';
+  // Multi-doc output is inherently a directory tree, so when recursion
+  // is on the Bundle row would only confuse — ZIP is the only valid
+  // packaging. Hide the chip row and surface the implication in a hint.
+  const showHtmlBundle = showHtmlOptions && !includeLinkedDocs;
 
   const handleExport = useCallback(() => {
     const opts: ExportOptions = {
@@ -126,10 +137,21 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
       pageSize,
       htmlStyle,
       htmlBundle,
+      includeLinkedDocs: showIncludeLinked && includeLinkedDocs,
     };
     saveExportOptions(opts);
     onExport(opts);
-  }, [format, themeId, transformStyle, pageSize, htmlStyle, htmlBundle, onExport]);
+  }, [
+    format,
+    themeId,
+    transformStyle,
+    pageSize,
+    htmlStyle,
+    htmlBundle,
+    includeLinkedDocs,
+    showIncludeLinked,
+    onExport,
+  ]);
 
   // Close on Escape
   useEffect(() => {
@@ -189,18 +211,37 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
                   {HTML_STYLE_CHIPS.find((c) => c.key === htmlStyle)?.hint}
                 </span>
               </div>
-              <div className="db-export-field">
-                <span className="db-export-label">Bundle</span>
-                <ChipRadioGroup
-                  name="Bundle"
-                  value={htmlBundle}
-                  options={HTML_BUNDLE_CHIPS}
-                  onChange={setHtmlBundle}
-                />
-                <span className="db-export-hint">
-                  {HTML_BUNDLE_CHIPS.find((c) => c.key === htmlBundle)?.hint}
-                </span>
-              </div>
+              {showHtmlBundle && (
+                <div className="db-export-field">
+                  <span className="db-export-label">Bundle</span>
+                  <ChipRadioGroup
+                    name="Bundle"
+                    value={htmlBundle}
+                    options={HTML_BUNDLE_CHIPS}
+                    onChange={setHtmlBundle}
+                  />
+                  <span className="db-export-hint">
+                    {HTML_BUNDLE_CHIPS.find((c) => c.key === htmlBundle)?.hint}
+                  </span>
+                </div>
+              )}
+              {showIncludeLinked && (
+                <div className="db-export-field">
+                  <label className="db-export-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={includeLinkedDocs}
+                      onChange={(e) => setIncludeLinkedDocs(e.target.checked)}
+                    />
+                    <span>Include linked-to documents</span>
+                  </label>
+                  <span className="db-export-hint">
+                    {includeLinkedDocs
+                      ? 'Follows relative .md links from this page and bundles every reachable document as its own .html in a ZIP. Cross-doc links rewrite from .md to .html.'
+                      : 'Only this document is exported.'}
+                  </span>
+                </div>
+              )}
             </>
           )}
 

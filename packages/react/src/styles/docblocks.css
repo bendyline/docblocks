@@ -1150,6 +1150,21 @@ body.db-resizing-sidebar * {
   color: var(--db-text-placeholder);
 }
 
+.db-export-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-export-checkbox input[type='checkbox'] {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* Chip radio group — used by the Export dialog for the top three
    options (Format / Style / Bundle). Wraps to multiple lines on narrow
    widths so the format row doesn't truncate. */
@@ -1465,12 +1480,13 @@ body.db-resizing-sidebar * {
   border-color: var(--db-border-strong);
 }
 
-/* ── Tooltips (portal): sans-serif + thematic green ──────────── */
-/* Tooltips render via portal into document.body, so we reach them
-   from outside the shell with `html:has(.db-shell)` (same pattern
-   as the template gallery portal). The font-family override matters
-   most — squisq's default leaves it unset, so the tooltip inherits
-   the editor's serif-leaning content font in markdown contexts. */
+/* ── Tooltips (portal): sans-serif + thematic chip ───────────── */
+/* Tooltips render via portal into document.body, OUTSIDE `.db-shell`
+   — so the `--db-accent-*` variables (scoped to `.db-shell`) don't
+   cascade into them. We reach the portaled element with
+   `html:has(.db-shell)` and emit explicit colors per theme; using
+   `var(--db-accent-…)` here drops to the squisq fallback (dark slate
+   bg + near-white text) because the vars never resolve. */
 html:has(.db-shell) .squisq-tooltip {
   font-family:
     ui-sans-serif,
@@ -1481,14 +1497,29 @@ html:has(.db-shell) .squisq-tooltip {
     'Helvetica Neue',
     Arial,
     sans-serif;
-  background: var(--db-accent-tint-strong);
-  color: var(--db-accent-deep);
   box-shadow: 0 2px 8px rgba(15, 30, 20, 0.35);
+  /* Default (light mode + system-light): dark espresso chip, cream
+     text — an inverted floating chip against the cream UI. */
+  background: #3d3220;
+  color: #f3eede;
 }
 
-html:has(.db-shell[data-theme='light']) .squisq-tooltip {
-  background: var(--db-accent-deep);
-  color: var(--db-accent-tint);
+html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
+  /* Dark mode: cream chip, dark text — an inverted floating chip
+     against the espresso UI. Contrast ratio ~12:1 between
+     `#e6dcc0` and `#1f1a10`. */
+  background: #e6dcc0;
+  color: #1f1a10;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* Shell defaults to system theme when `data-theme` is unset —
+     mirror the dark-mode override so the tooltip stays readable
+     without an explicit user choice. */
+  html:has(.db-shell:not([data-theme='light'])) .squisq-tooltip {
+    background: #e6dcc0;
+    color: #1f1a10;
+  }
 }
 
 /* ── Template picker accents (dark): indigo → thematic green ─── */

@@ -7,7 +7,13 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
-import type { EditorTheme, EditorView, ViewPreferences } from '@bendyline/squisq-editor-react';
+import type {
+  EditorTheme,
+  EditorView,
+  ViewPreferences,
+  DocumentLinkProvider,
+  DocumentLinkCandidate,
+} from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
@@ -254,6 +260,68 @@ function normaliseProviderPath(p: string): string {
 
 function sameProviderPath(a: string, b: string): boolean {
   return normaliseProviderPath(a) === normaliseProviderPath(b);
+}
+
+/** Portable relative link from one workspace file to another. Walks up
+ *  from the source's directory and back down to the target so the link
+ *  survives folder reshuffles (`../sibling.md`, `subfolder/child.md`,
+ *  `resume.md` for siblings at the workspace root). */
+function relativeMarkdownLink(fromFile: string, toFile: string): string {
+  const fromParts = fromFile
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean);
+  const toParts = toFile
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean);
+  const fromDir = fromParts.slice(0, -1);
+  const toDir = toParts.slice(0, -1);
+  const toBase = toParts[toParts.length - 1] ?? '';
+  let common = 0;
+  while (common < fromDir.length && common < toDir.length && fromDir[common] === toDir[common]) {
+    common++;
+  }
+  const ups = fromDir.length - common;
+  const downs = [...toDir.slice(common), toBase];
+  const parts = [...Array(ups).fill('..'), ...downs];
+  return parts.length === 0 ? toBase : parts.join('/');
+}
+
+/** Recursively collect all `.md` files reachable from `root`. Skips
+ *  Word-style `*_files/` asset companions, dotfiles, and `node_modules`
+ *  so the candidate list stays workspace-meaningful. */
+async function collectMarkdownFiles(
+  fs: FileSystemProvider,
+  root: string,
+): Promise<FileSystemEntry[]> {
+  const out: FileSystemEntry[] = [];
+  const visited = new Set<string>();
+
+  async function walk(dir: string): Promise<void> {
+    if (visited.has(dir)) return;
+    visited.add(dir);
+    let entries: FileSystemEntry[];
+    try {
+      entries = await fs.readDirectory(dir);
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.kind === 'directory') {
+        const lower = entry.name.toLowerCase();
+        if (lower.startsWith('.')) continue;
+        if (lower === 'node_modules') continue;
+        if (lower.endsWith('_files')) continue;
+        await walk(entry.path);
+      } else if (entry.kind === 'file') {
+        if (entry.name.toLowerCase().endsWith('.md')) out.push(entry);
+      }
+    }
+  }
+
+  await walk(root);
+  return out;
 }
 
 async function createElectronProviderFromWorkspace(
@@ -507,6 +575,13 @@ export function DocBlocksShell({
    */
   const versionsContainerRef = useRef<ContentContainer | null>(null);
   const [versionsContainer, setVersionsContainer] = useState<ContentContainer | null>(null);
+
+  /** Cache of .md files in the active workspace, used to power the
+   *  squisq link-dialog's document picker. Lazily populated on first
+   *  provider call; cleared whenever the backing filesystem changes so
+   *  workspace switches don't surface stale neighbours. A pending Promise
+   *  during in-flight walks lets concurrent calls share the same scan. */
+  const mdFileCacheRef = useRef<Promise<FileSystemEntry[]> | null>(null);
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -853,6 +928,44 @@ export function DocBlocksShell({
       mp.dispose();
     };
   }, [provider, selectedFile]);
+
+  // Invalidate the document-link candidate cache when the backing
+  // workspace changes — otherwise the link dialog would surface
+  // neighbours from a previously-open workspace.
+  useEffect(() => {
+    mdFileCacheRef.current = null;
+  }, [provider]);
+
+  /** Powers the squisq link dialog's "Browse documents" picker. Returns
+   *  workspace `.md` neighbours filtered by `query`, with paths expressed
+   *  relative to the currently-open document so the link survives folder
+   *  moves. The first call seeds an in-memory cache; subsequent calls
+   *  filter against it. */
+  const documentLinkProvider = useCallback<DocumentLinkProvider>(
+    async (query: string): Promise<DocumentLinkCandidate[]> => {
+      if (!provider || !selectedFile) return [];
+      if (!mdFileCacheRef.current) {
+        mdFileCacheRef.current = collectMarkdownFiles(provider, '').catch(() => []);
+      }
+      const entries = await mdFileCacheRef.current;
+      const q = query.trim().toLowerCase();
+      const candidates: DocumentLinkCandidate[] = [];
+      for (const entry of entries) {
+        if (entry.kind !== 'file') continue;
+        if (sameProviderPath(entry.path, selectedFile)) continue;
+        const label = entry.name.replace(/\.md$/i, '');
+        const path = relativeMarkdownLink(selectedFile, entry.path);
+        if (q && !label.toLowerCase().includes(q) && !path.toLowerCase().includes(q)) continue;
+        const dir = dirnameOf(entry.path);
+        candidates.push(dir ? { path, label, description: dir } : { path, label });
+      }
+      // Stable alphabetical order keeps the picker predictable across
+      // re-opens; the dialog can re-sort or rank on its own if needed.
+      candidates.sort((a, b) => a.label.localeCompare(b.label));
+      return candidates;
+    },
+    [provider, selectedFile],
+  );
 
   // Expose a DocumentVersionManager via versioningRef when requested.
   useEffect(() => {
@@ -1515,6 +1628,7 @@ export function DocBlocksShell({
                   theme={resolvedTheme}
                   height="100%"
                   mediaProvider={mediaProvider}
+                  documentLinkProvider={documentLinkProvider}
                   container={versionsContainer ?? undefined}
                   allowVersioning={effectiveVersioning}
                   viewPreferences={viewPreferences}

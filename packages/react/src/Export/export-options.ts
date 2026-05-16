@@ -29,6 +29,15 @@ export interface ExportOptions {
   htmlStyle: HtmlStyle;
   /** HTML bundle layout. Only applies to format=html. */
   htmlBundle: HtmlBundle;
+  /**
+   * Recursive plain-HTML bundle: walk relative `.md` links from the
+   * entry document, render every reachable sibling/child page, and
+   * rewrite cross-doc links from `.md` → `.html`. The output is a ZIP
+   * regardless of `htmlBundle` because multi-doc output needs a
+   * directory tree. Only meaningful when `format === 'html'` and
+   * `htmlStyle === 'plain'`.
+   */
+  includeLinkedDocs: boolean;
 }
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -56,6 +65,7 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   pageSize: 'letter',
   htmlStyle: 'plain',
   htmlBundle: 'single',
+  includeLinkedDocs: false,
 };
 
 export function loadLastExportOptions(): ExportOptions | null {
