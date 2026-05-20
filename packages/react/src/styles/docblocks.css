@@ -15,20 +15,20 @@
   --db-bg: #ffffff;
   --db-bg-subtle: #f3eede;
   --db-bg-hover: #e9e2cb;
-  --db-bg-selected: #a18b65;
-  --db-bg-selected-hover: #7d6948;
+  --db-bg-selected: #7d6948;
+  --db-bg-selected-hover: #5e4f37;
   --db-border: #d6cdb0;
   --db-border-strong: #b5a985;
   --db-text: #2a2419;
   --db-text-secondary: #3d3528;
   --db-text-muted: #6b614a;
-  --db-text-placeholder: #9a9077;
-  --db-accent: #a18b65;
-  --db-accent-hover: #7d6948;
-  --db-accent-soft-08: rgba(161, 139, 101, 0.08);
-  --db-accent-soft-12: rgba(161, 139, 101, 0.12);
-  --db-accent-soft-15: rgba(161, 139, 101, 0.15);
-  --db-accent-soft-25: rgba(161, 139, 101, 0.25);
+  --db-text-placeholder: #766c54;
+  --db-accent: #7d6948;
+  --db-accent-hover: #5e4f37;
+  --db-accent-soft-08: rgba(125, 105, 72, 0.08);
+  --db-accent-soft-12: rgba(125, 105, 72, 0.12);
+  --db-accent-soft-15: rgba(125, 105, 72, 0.15);
+  --db-accent-soft-25: rgba(125, 105, 72, 0.25);
   --db-accent-tint: #f3eede;
   --db-accent-tint-strong: #d8d0b5;
   --db-accent-deep: #3d3220;
@@ -317,7 +317,7 @@
 
 .db-tree-more--active {
   background: var(--db-bg-selected);
-  color: var(--db-text);
+  color: #ffffff;
 }
 
 /* ── Context Menu ────────────────────────────────────────────── */
@@ -429,6 +429,7 @@
 
 .db-workspace-dropdown-item--active {
   background: var(--db-bg-selected);
+  color: #ffffff;
   font-weight: 500;
 }
 
@@ -1576,10 +1577,10 @@ html:has(.db-shell[data-theme='light']) {
   --db-border-strong: #b5a985;
   --db-text: #2a2419;
   --db-text-muted: #6b614a;
-  --db-accent: #a18b65;
-  --db-accent-hover: #7d6948;
-  --db-accent-soft-15: rgba(161, 139, 101, 0.15);
-  --db-accent-soft-25: rgba(161, 139, 101, 0.25);
+  --db-accent: #7d6948;
+  --db-accent-hover: #5e4f37;
+  --db-accent-soft-15: rgba(125, 105, 72, 0.15);
+  --db-accent-soft-25: rgba(125, 105, 72, 0.25);
   --db-accent-tint-strong: #d8d0b5;
   --db-gutter-bg: #efe8d4;
 }

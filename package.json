@@ -20,6 +20,7 @@
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",
     "test:e2e": "playwright test",
+    "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:vscode": "npm run test:e2e -w docblocks-vscode",
     "test:e2e:desktop": "npm run test:e2e -w docblocks-desktop",
     "site": "npm run build:core && npm run build:react && npm run dev -w docblocks-site",
@@ -36,6 +37,7 @@
     "release": "multi-semantic-release"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.3",
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
     "@eslint/js": "9.39.4",

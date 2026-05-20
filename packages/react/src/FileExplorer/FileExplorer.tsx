@@ -261,16 +261,22 @@ export function FileExplorer({
         </div>
       )}
 
-      {/* Tree */}
-      <div className="db-tree" role="tree">
-        {tree.loading ? (
+      {/* Tree — role="tree" only when there are real treeitem children; the
+          loading/empty states get a status role so axe doesn't flag the
+          tree as missing required children. */}
+      {tree.loading ? (
+        <div className="db-tree" role="status" aria-live="polite">
           <div className="db-tree-loading">Loading...</div>
-        ) : filterVisible(tree.entries).length === 0 ? (
+        </div>
+      ) : filterVisible(tree.entries).length === 0 ? (
+        <div className="db-tree">
           <div className="db-tree-empty">No files yet</div>
-        ) : (
-          renderEntries(tree.entries, 0)
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="db-tree" role="tree">
+          {renderEntries(tree.entries, 0)}
+        </div>
+      )}
     </div>
   );
 }

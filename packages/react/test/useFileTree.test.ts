@@ -1,0 +1,310 @@
+/**
+ * Tests for useFileTree — the state machine behind the FileExplorer
+ * component. Covers:
+ *
+ *   • Initial root load when a provider is attached
+ *   • Selection (select / clear-on-delete / move-on-rename)
+ *   • Expand/collapse + lazy child load
+ *   • CRUD actions delegate to the provider and refresh the tree
+ *   • Null-provider path: actions are no-ops, root is empty
+ */
+import { expect } from 'chai';
+import type {
+  FileSystemProvider,
+  FileSystemEntry,
+  FileMeta,
+} from '@bendyline/docblocks/filesystem';
+import { useFileTree } from '../src/FileExplorer/useFileTree.js';
+import { act, advanceTime, renderHook } from './helpers/renderHook.js';
+
+interface InMemoryTree {
+  [absPath: string]: FileSystemEntry[];
+}
+
+interface MemoryProvider extends FileSystemProvider {
+  readDirCalls: string[];
+  writeCalls: { path: string; content: string }[];
+  deleteCalls: string[];
+  renameCalls: { from: string; to: string }[];
+  createDirCalls: string[];
+  tree: InMemoryTree;
+}
+
+function file(name: string, parent = ''): FileSystemEntry {
+  return { kind: 'file', name, path: parent ? `${parent}/${name}` : `/${name}` };
+}
+function dir(name: string, parent = ''): FileSystemEntry {
+  return { kind: 'directory', name, path: parent ? `${parent}/${name}` : `/${name}` };
+}
+
+function makeProvider(initial: InMemoryTree): MemoryProvider {
+  const readDirCalls: string[] = [];
+  const writeCalls: { path: string; content: string }[] = [];
+  const deleteCalls: string[] = [];
+  const renameCalls: { from: string; to: string }[] = [];
+  const createDirCalls: string[] = [];
+  const tree: InMemoryTree = JSON.parse(JSON.stringify(initial));
+
+  const p: MemoryProvider = {
+    id: 'mem',
+    label: 'Memory',
+    tree,
+    readDirCalls,
+    writeCalls,
+    deleteCalls,
+    renameCalls,
+    createDirCalls,
+    async readFile() {
+      return null;
+    },
+    async writeFile(path: string, content: string) {
+      writeCalls.push({ path, content });
+    },
+    async delete(path: string) {
+      deleteCalls.push(path);
+    },
+    async rename(from: string, to: string) {
+      renameCalls.push({ from, to });
+    },
+    async readDirectory(path: string) {
+      readDirCalls.push(path);
+      return tree[path] ?? [];
+    },
+    async exists() {
+      return true;
+    },
+    async createDirectory(path: string) {
+      createDirCalls.push(path);
+    },
+    async stat(): Promise<FileMeta | null> {
+      return null;
+    },
+    async readBinary() {
+      return null;
+    },
+    async writeBinary() {},
+  };
+  return p;
+}
+
+const SETTLE = 30;
+
+describe('useFileTree', () => {
+  it('starts empty with a null provider', async () => {
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider: null,
+      },
+    );
+    expect(handle.result.current.entries).to.deep.equal([]);
+    expect(handle.result.current.selectedPath).to.equal(null);
+    expect(handle.result.current.loading).to.equal(false);
+    await handle.unmount();
+  });
+
+  it('loads the root directory when a provider is attached', async () => {
+    const provider = makeProvider({
+      '': [file('readme.md'), dir('docs')],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    expect(provider.readDirCalls).to.include('');
+    expect(handle.result.current.entries).to.have.length(2);
+    expect(handle.result.current.entries[0].name).to.equal('readme.md');
+    await handle.unmount();
+  });
+
+  it('select() updates selectedPath + selectedKind', async () => {
+    const provider = makeProvider({ '': [file('a.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => {
+      handle.result.current.select('/a.md', 'file');
+    });
+    expect(handle.result.current.selectedPath).to.equal('/a.md');
+    expect(handle.result.current.selectedKind).to.equal('file');
+    await handle.unmount();
+  });
+
+  it('toggleExpand() adds + removes from the expanded set and triggers lazy load', async () => {
+    const provider = makeProvider({
+      '': [dir('docs')],
+      '/docs': [file('intro.md', '/docs')],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+
+    await act(async () => {
+      handle.result.current.toggleExpand('/docs');
+    });
+    await advanceTime(SETTLE);
+    expect(handle.result.current.expanded.has('/docs')).to.equal(true);
+    expect(provider.readDirCalls).to.include('/docs');
+
+    await act(async () => {
+      handle.result.current.toggleExpand('/docs');
+    });
+    expect(handle.result.current.expanded.has('/docs')).to.equal(false);
+    await handle.unmount();
+  });
+
+  it('createFile() delegates to provider and refreshes the tree', async () => {
+    const provider = makeProvider({ '': [] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    provider.readDirCalls.length = 0;
+
+    await act(async () => {
+      await handle.result.current.createFile('/new.md', '# hi');
+    });
+    expect(provider.writeCalls).to.deep.equal([{ path: '/new.md', content: '# hi' }]);
+    // Refresh re-reads the root after the write.
+    expect(provider.readDirCalls).to.include('');
+    await handle.unmount();
+  });
+
+  it('createDirectory() delegates to provider and refreshes', async () => {
+    const provider = makeProvider({ '': [] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    provider.readDirCalls.length = 0;
+
+    await act(async () => {
+      await handle.result.current.createDirectory('/inbox');
+    });
+    expect(provider.createDirCalls).to.deep.equal(['/inbox']);
+    expect(provider.readDirCalls).to.include('');
+    await handle.unmount();
+  });
+
+  it('deleteEntry() clears selection if the deleted entry was selected', async () => {
+    const provider = makeProvider({ '': [file('a.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => {
+      handle.result.current.select('/a.md', 'file');
+    });
+    expect(handle.result.current.selectedPath).to.equal('/a.md');
+
+    await act(async () => {
+      await handle.result.current.deleteEntry('/a.md');
+    });
+    expect(provider.deleteCalls).to.deep.equal(['/a.md']);
+    expect(handle.result.current.selectedPath).to.equal(null);
+    expect(handle.result.current.selectedKind).to.equal(null);
+    await handle.unmount();
+  });
+
+  it('deleteEntry() leaves an unrelated selection alone', async () => {
+    const provider = makeProvider({ '': [file('a.md'), file('b.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => {
+      handle.result.current.select('/b.md', 'file');
+    });
+
+    await act(async () => {
+      await handle.result.current.deleteEntry('/a.md');
+    });
+    expect(handle.result.current.selectedPath).to.equal('/b.md');
+    await handle.unmount();
+  });
+
+  it('renameEntry() moves selection from oldPath to newPath', async () => {
+    const provider = makeProvider({ '': [file('a.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider,
+      },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => {
+      handle.result.current.select('/a.md', 'file');
+    });
+
+    await act(async () => {
+      await handle.result.current.renameEntry('/a.md', '/b.md');
+    });
+    expect(provider.renameCalls).to.deep.equal([{ from: '/a.md', to: '/b.md' }]);
+    expect(handle.result.current.selectedPath).to.equal('/b.md');
+    await handle.unmount();
+  });
+
+  it('CRUD actions are no-ops when the provider is null', async () => {
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      {
+        provider: null,
+      },
+    );
+    // Each of these should resolve without throwing.
+    await handle.result.current.createFile('/x.md');
+    await handle.result.current.createDirectory('/x');
+    await handle.result.current.deleteEntry('/x');
+    await handle.result.current.renameEntry('/x', '/y');
+    expect(handle.result.current.entries).to.deep.equal([]);
+    await handle.unmount();
+  });
+
+  it('switching to a new provider reloads the root and clears state', async () => {
+    const first = makeProvider({ '': [file('a.md')] });
+    const second = makeProvider({ '': [file('b.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: first as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => {
+      handle.result.current.select('/a.md', 'file');
+      handle.result.current.toggleExpand('/a.md');
+    });
+    await advanceTime(SETTLE);
+
+    await handle.rerender({ provider: second as FileSystemProvider });
+    await advanceTime(SETTLE);
+
+    expect(second.readDirCalls).to.include('');
+    expect(handle.result.current.selectedPath).to.equal(null);
+    expect(handle.result.current.selectedKind).to.equal(null);
+    expect(handle.result.current.expanded.size).to.equal(0);
+    expect(handle.result.current.entries[0]?.name).to.equal('b.md');
+    await handle.unmount();
+  });
+});

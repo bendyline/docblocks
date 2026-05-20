@@ -67,8 +67,13 @@ export function registerFsIpc(): void {
     const abs = roots.resolve(rootPath, p);
     try {
       await fs.rm(abs, { recursive: true, force: true });
-    } catch {
-      // best-effort
+    } catch (err: unknown) {
+      // Already-gone is fine (matches `force: true` intent). Anything else
+      // — permission denied, file locked on Windows, etc. — must surface so
+      // the renderer can show an error instead of marking the file deleted.
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === 'ENOENT') return;
+      throw err;
     }
   });
 

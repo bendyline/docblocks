@@ -55,8 +55,10 @@
     "monaco-editor": "0.55.1"
   },
   "devDependencies": {
+    "@happy-dom/global-registrator": "20.9.0",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
+    "happy-dom": "20.9.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tsup": "8.5.1",
