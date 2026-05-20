@@ -31,7 +31,7 @@ test('default workspace folder exists on disk after first launch', async ({
   expect(fs.statSync(workspaceDir).isDirectory()).toBe(true);
 });
 
-test('seeds aboutDocblocks.md on first launch', async ({ launchApp, workspaceDir }) => {
+test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   // The shell seeds the welcome doc asynchronously; give it a moment to
@@ -44,7 +44,7 @@ test('seeds aboutDocblocks.md on first launch', async ({ launchApp, workspaceDir
     undefined,
     { timeout: 15_000 },
   );
-  const welcome = path.join(workspaceDir, 'aboutDocblocks.md');
+  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
   expect(fs.existsSync(welcome)).toBe(true);
   expect(fs.readFileSync(welcome, 'utf8')).toContain('Welcome to DocBlocks');
 });
@@ -77,13 +77,13 @@ test('renderer cannot read files outside the workspace root', async ({
   const result = await window.evaluate(async (root: string) => {
     const host = (
       window as unknown as {
-        docblocksHost?: {
+        docBlocksHost?: {
           fs: {
             readFile(rootPath: string, p: string): Promise<string | null>;
           };
         };
       }
-    ).docblocksHost;
+    ).docBlocksHost;
     if (!host) return { ok: false, reason: 'no-host' };
     try {
       await host.fs.readFile(root, '/../../etc/passwd');

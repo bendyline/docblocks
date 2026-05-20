@@ -9,7 +9,7 @@
     "node": ">=22.14.0"
   },
   "scripts": {
-    "all": "npm install && npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
+    "all": "npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
     "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop",
     "build:core": "npm run build -w @bendyline/docblocks",
     "build:react": "npm run build -w @bendyline/docblocks-react",
@@ -20,9 +20,10 @@
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",
     "test:e2e": "playwright test",
+    "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:vscode": "npm run test:e2e -w docblocks-vscode",
     "test:e2e:desktop": "npm run test:e2e -w docblocks-desktop",
-    "site": "npm run build && npm run dev -w docblocks-site",
+    "site": "npm run build:core && npm run build:react && npm run dev -w docblocks-site",
     "dev": "npm run dev -w docblocks-site",
     "typecheck": "tsc -b packages/core packages/react packages/cli && npm run typecheck -w docblocks-desktop",
     "clean": "rimraf packages/*/dist",
@@ -31,10 +32,12 @@
     "prettierfix": "prettier --write .",
     "format:check": "prettier --check .",
     "link:squisq": "tsx scripts/link-squisq.ts",
+    "dev:squisq": "tsx scripts/watch-squisq.ts",
     "unlink:squisq": "npm unlink --no-save @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react && npm install",
     "release": "multi-semantic-release"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.3",
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
     "@eslint/js": "9.39.4",

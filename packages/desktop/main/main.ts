@@ -19,7 +19,7 @@ import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerUpdaterIpc, initAutoUpdater } from './updater.js';
 import { buildMenu } from './menu.js';
 import { readSettings, flushSettings } from './settings.js';
-import { getWorkspaceRoots } from './workspace-roots.js';
+import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { handleOpenFileArg } from './open-requests.js';
 import { registerTray } from './tray.js';
 
@@ -100,7 +100,7 @@ function registerAppProtocol() {
     const target = path.join(rendererRoot, rel);
     // Prevent traversal outside the renderer root.
     const resolved = path.resolve(target);
-    if (!resolved.startsWith(path.resolve(rendererRoot))) {
+    if (!isPathInside(rendererRoot, resolved)) {
       return new Response('Forbidden', { status: 403 });
     }
     if (!fs.existsSync(resolved)) {

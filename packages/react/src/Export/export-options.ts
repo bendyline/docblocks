@@ -4,6 +4,20 @@
 
 export type ExportFormat = 'docx' | 'pdf' | 'pptx' | 'md' | 'html';
 
+/** Visual style for HTML export. */
+export type HtmlStyle =
+  /** Render via SquisqPlayer (themed, embeds player bundle). */
+  | 'rendered'
+  /** Plain semantic HTML — small, no JS, no playback. */
+  | 'plain';
+
+/** Packaging for HTML export. */
+export type HtmlBundle =
+  /** Single self-contained .html file (images base64-embedded). */
+  | 'single'
+  /** ZIP containing index.html + asset files. */
+  | 'zip';
+
 export interface ExportOptions {
   format: ExportFormat;
   themeId: string;
@@ -11,6 +25,29 @@ export interface ExportOptions {
   transformStyle: string;
   /** Only applies to PDF */
   pageSize: 'letter' | 'a4';
+  /** HTML rendering style. Only applies to format=html. */
+  htmlStyle: HtmlStyle;
+  /** HTML bundle layout. Only applies to format=html. */
+  htmlBundle: HtmlBundle;
+  /**
+   * Recursive HTML bundle: walk relative `.md` links from the entry
+   * document, render every reachable sibling/child page, and rewrite
+   * cross-doc links from `.md` → `.html`. The output is a ZIP
+   * regardless of `htmlBundle` because multi-doc output needs a
+   * directory tree. Supported for both plain (`markdownDocsToPlainHtmlBundle`)
+   * and rendered (`markdownDocsToHtmlBundle`) HTML styles. Only
+   * meaningful when `format === 'html'`.
+   */
+  includeLinkedDocs: boolean;
+  /**
+   * Rename the entry page from `<basename>.html` to `index.html` so the
+   * export drops straight into a static-site host that expects an
+   * `index.html` landing page. For recursive bundles, cross-doc links
+   * targeting the entry also rewrite to `index.html` so siblings don't
+   * 404. For a single-doc HTML download, this just renames the file.
+   * Only meaningful when `format === 'html'`.
+   */
+  entryAsIndex: boolean;
 }
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -36,13 +73,18 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   themeId: 'standard',
   transformStyle: 'documentary',
   pageSize: 'letter',
+  htmlStyle: 'plain',
+  htmlBundle: 'single',
+  includeLinkedDocs: false,
+  entryAsIndex: false,
 };
 
 export function loadLastExportOptions(): ExportOptions | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as ExportOptions;
+    const parsed = JSON.parse(raw) as Partial<ExportOptions>;
+    return { ...DEFAULT_OPTIONS, ...parsed };
   } catch {
     return null;
   }

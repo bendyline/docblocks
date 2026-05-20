@@ -19,8 +19,6 @@ const { autoUpdater } = pkg;
 
 const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
 
-let lastStatus: UpdaterStatus = { kind: 'not-available' };
-
 function releaseUrlFor(version: string): string {
   return `${RELEASE_URL_BASE}/v${version}`;
 }
@@ -34,7 +32,6 @@ function releaseNotesOf(info: UpdateInfo): string | undefined {
 }
 
 function broadcast(status: UpdaterStatus): void {
-  lastStatus = status;
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('updater:status', status);
   }
@@ -88,10 +85,6 @@ export function registerUpdaterIpc(): void {
 
   ipcMain.handle('updater:getVersion', async (): Promise<string> => {
     return app.getVersion();
-  });
-
-  ipcMain.handle('updater:getStatus', async (): Promise<UpdaterStatus> => {
-    return lastStatus;
   });
 
   ipcMain.handle('updater:quitAndInstall', async (): Promise<void> => {

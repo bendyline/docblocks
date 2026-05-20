@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import type { VersioningPreference } from '../preferences/versioning.js';
 
 export type ThemePreference = 'auto' | 'light' | 'dark';
 
@@ -15,6 +16,15 @@ export interface AppMenuProps {
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
   onThemeChange?: (theme: ThemePreference) => void;
+  /** Current global versioning preference. */
+  versioningPreference?: VersioningPreference;
+  /** Called when the user changes the global versioning preference. */
+  onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
+  /**
+   * Called when the user clicks "Download all workspaces". When omitted,
+   * the menu item is hidden.
+   */
+  onDownloadAllWorkspaces?: () => void | Promise<void>;
 }
 
 export function AppMenu({
@@ -22,6 +32,9 @@ export function AppMenu({
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
+  versioningPreference = 'browser-only',
+  onVersioningPreferenceChange,
+  onDownloadAllWorkspaces,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -72,6 +85,15 @@ export function AppMenu({
             >
               Settings
             </button>
+            {onDownloadAllWorkspaces && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+              >
+                Download all workspaces
+              </button>
+            )}
             <div className="db-app-menu-divider" />
             <button
               className="db-app-menu-item"
@@ -136,6 +158,47 @@ export function AppMenu({
                   Dark
                 </label>
               </fieldset>
+
+              {onVersioningPreferenceChange && (
+                <fieldset className="db-settings-fieldset">
+                  <legend className="db-settings-legend">Version history</legend>
+                  <p className="db-settings-hint">
+                    When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
+                    <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
+                    override this default in their own settings.
+                  </p>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="on"
+                      checked={versioningPreference === 'on'}
+                      onChange={() => onVersioningPreferenceChange('on')}
+                    />
+                    On for all workspaces
+                  </label>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="browser-only"
+                      checked={versioningPreference === 'browser-only'}
+                      onChange={() => onVersioningPreferenceChange('browser-only')}
+                    />
+                    On in browser workspaces, off for local folders
+                  </label>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="off"
+                      checked={versioningPreference === 'off'}
+                      onChange={() => onVersioningPreferenceChange('off')}
+                    />
+                    Off for all workspaces
+                  </label>
+                </fieldset>
+              )}
             </div>
           </div>
         </div>
@@ -167,7 +230,7 @@ export function AppMenu({
               <p>
                 Built on{' '}
                 <a
-                  href="https://github.com/nicoth-in/squisq"
+                  href="https://github.com/bendyline/squisq"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

@@ -19,4 +19,11 @@ export interface WorkspaceDescriptor {
   lastOpened: string;
   /** Absolute filesystem path for 'electron-native' workspaces. */
   rootPath?: string;
+  /**
+   * Per-workspace override for the global versioning preference. When
+   * `'inherit'` (or absent), the global preference applies. `'on'` /
+   * `'off'` force the corresponding behavior regardless of the global
+   * setting. See `resolveVersioningEnabled` in the preferences module.
+   */
+  versioningOverride?: 'inherit' | 'on' | 'off';
 }

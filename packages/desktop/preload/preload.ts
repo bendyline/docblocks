@@ -1,16 +1,16 @@
 /**
- * Preload script — exposes the typed DocblocksHost API to the renderer
+ * Preload script — exposes the typed DocBlocksHost API to the renderer
  * via contextBridge. No raw ipcRenderer leaks to the renderer.
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
-  DocblocksHostAPI,
-  DocblocksHostFsAPI,
-  DocblocksHostShellAPI,
-  DocblocksHostWorkspacesAPI,
-  DocblocksHostFfmpegAPI,
-  DocblocksHostUpdaterAPI,
+  DocBlocksHostAPI,
+  DocBlocksHostFsAPI,
+  DocBlocksHostShellAPI,
+  DocBlocksHostWorkspacesAPI,
+  DocBlocksHostFfmpegAPI,
+  DocBlocksHostUpdaterAPI,
   ElectronWorkspaceInfo,
   HostEnvironment,
   MenuCommand,
@@ -21,7 +21,7 @@ import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem'
 
 // ── fs ──────────────────────────────────────────────────────────────
 
-const fsApi: DocblocksHostFsAPI = {
+const fsApi: DocBlocksHostFsAPI = {
   readFile: (rootPath, p) => ipcRenderer.invoke('fs:readFile', rootPath, p),
   writeFile: (rootPath, p, content) => ipcRenderer.invoke('fs:writeFile', rootPath, p, content),
   delete: (rootPath, p) => ipcRenderer.invoke('fs:delete', rootPath, p),
@@ -53,7 +53,7 @@ const fsApi: DocblocksHostFsAPI = {
 
 // ── workspaces ──────────────────────────────────────────────────────
 
-const workspacesApi: DocblocksHostWorkspacesAPI = {
+const workspacesApi: DocBlocksHostWorkspacesAPI = {
   getDefault: () => ipcRenderer.invoke('workspaces:getDefault') as Promise<ElectronWorkspaceInfo>,
   pickFolder: () =>
     ipcRenderer.invoke('workspaces:pickFolder') as Promise<ElectronWorkspaceInfo | null>,
@@ -63,14 +63,14 @@ const workspacesApi: DocblocksHostWorkspacesAPI = {
 
 // ── shell ───────────────────────────────────────────────────────────
 
-const shellApi: DocblocksHostShellAPI = {
+const shellApi: DocBlocksHostShellAPI = {
   revealInFolder: (p) => ipcRenderer.invoke('shell:revealInFolder', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 };
 
 // ── ffmpeg ──────────────────────────────────────────────────────────
 
-const ffmpegApi: DocblocksHostFfmpegAPI = {
+const ffmpegApi: DocBlocksHostFfmpegAPI = {
   available: () => ipcRenderer.invoke('ffmpeg:available'),
   version: () => ipcRenderer.invoke('ffmpeg:version'),
   renderVideo: (p, opts) => ipcRenderer.invoke('ffmpeg:renderVideo', p, opts),
@@ -78,7 +78,7 @@ const ffmpegApi: DocblocksHostFfmpegAPI = {
 
 // ── updater ─────────────────────────────────────────────────────────
 
-const updaterApi: DocblocksHostUpdaterAPI = {
+const updaterApi: DocBlocksHostUpdaterAPI = {
   checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
   getVersion: () => ipcRenderer.invoke('updater:getVersion'),
   quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
@@ -113,7 +113,7 @@ const env: HostEnvironment = {
 
 // ── expose ──────────────────────────────────────────────────────────
 
-const host: DocblocksHostAPI = {
+const host: DocBlocksHostAPI = {
   env,
   fs: fsApi,
   workspaces: workspacesApi,
@@ -124,4 +124,4 @@ const host: DocblocksHostAPI = {
   onOpenRequest,
 };
 
-contextBridge.exposeInMainWorld('docblocksHost', host);
+contextBridge.exposeInMainWorld('docBlocksHost', host);

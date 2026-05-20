@@ -52,7 +52,18 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async readFile(path: string): Promise<ArrayBuffer | null> {
-    return this.provider.readBinary(joinPrefix(this.prefix, path));
+    const full = joinPrefix(this.prefix, path);
+    const binary = await this.provider.readBinary(full);
+    if (binary) return binary;
+    // IndexedDB-backed workspaces store text via `writeFile(string)` and
+    // binary via `writeBinary(ArrayBuffer)` under separate keys, so a
+    // markdown file written through the text API is invisible to
+    // `readBinary`. Fall back to text-then-UTF-8 so consumers like the
+    // recursive HTML export can resolve sibling `.md` links uniformly
+    // across browser and native workspaces.
+    const text = await this.provider.readFile(full);
+    if (text === null) return null;
+    return new TextEncoder().encode(text).buffer as ArrayBuffer;
   }
 
   async writeFile(path: string, data: ArrayBuffer | Uint8Array, _mimeType?: string): Promise<void> {

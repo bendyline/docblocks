@@ -1,10 +1,32 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+// Strips //# sourceMappingURL pragmas from upstream packages whose published
+// tarballs reference sourcemaps or sources that aren't actually shipped, so
+// Vite stops logging "missing source files" warnings on every dev request.
+const stripBrokenSourcemapPragmas = (): Plugin => ({
+  name: 'strip-broken-sourcemap-pragmas',
+  enforce: 'pre',
+  transform(code, id) {
+    if (
+      id.includes('/@bendyline/squisq-video/dist/') ||
+      id.includes('\\@bendyline\\squisq-video\\dist\\') ||
+      id.includes('/genson-js/dist/') ||
+      id.includes('\\genson-js\\dist\\')
+    ) {
+      return {
+        code: code.replace(/\n?\/\/# sourceMappingURL=.*$/m, ''),
+        map: null,
+      };
+    }
+    return null;
+  },
+});
+
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
-  plugins: [react()],
+  plugins: [stripBrokenSourcemapPragmas(), react()],
   resolve: {
     preserveSymlinks: false,
     dedupe: ['react', 'react-dom'],
@@ -20,10 +42,21 @@ export default defineConfig({
       '@bendyline/docblocks': path.resolve(__dirname, '../core/src/index.ts'),
     },
   },
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5220,
     strictPort: true,
     open: true,
+    fs: {
+      // Allow serving files from the symlinked squisq workspace —
+      // its CSS @imports `@fortawesome/fontawesome-free/css/all.min.css`,
+      // which then references woff2 webfonts via relative url(). With
+      // preserveSymlinks: false those resolve through squisq's realpath,
+      // so we need to whitelist it for Vite to serve the font assets.
+      allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
+    },
   },
   optimizeDeps: {
     include: [
@@ -35,6 +68,7 @@ export default defineConfig({
       'extend',
       'debug',
       'format',
+      'genson-js',
       'jszip',
       'ngeohash',
       'pako',

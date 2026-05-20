@@ -143,6 +143,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Claude Code
-.claude/
+# Claude Code — track .claude/skills/ and .claude/settings.json, ignore per-user state
+.claude/settings.local.json
+
+# Skill output (architecture / quality / a11y / ux reviews) — kept local by default
+reports/
 .DS_Store

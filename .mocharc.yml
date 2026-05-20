@@ -1,3 +1,5 @@
 spec: 'packages/*/test/**/*.test.ts'
-require: 'tsx'
+require:
+  - 'tsx'
+  - './packages/react/test/setup.ts'
 timeout: 10000

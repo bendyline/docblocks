@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export interface DocblocksFixtures {
+export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
   launchApp: () => Promise<{ app: ElectronApplication; window: Page }>;
@@ -49,7 +49,7 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   return env;
 }
 
-export const test = base.extend<DocblocksFixtures>({
+export const test = base.extend<DocBlocksFixtures>({
   // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
   userDataDir: async ({}, use) => {
     const dir = makeTmpDir('docblocks-e2e-userdata-');

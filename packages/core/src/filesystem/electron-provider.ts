@@ -5,20 +5,20 @@
  * whitelist of registered workspace roots.
  *
  * This file has no Electron dependency — it is a pure IPC client that
- * relies on the `docblocksHost` global installed by the preload script.
+ * relies on the `docBlocksHost` global installed by the preload script.
  */
 
 import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
-import { maybeGetDocblocksHost } from '../host/index.js';
-import type { DocblocksHostFsAPI } from '../host/types.js';
+import { maybeGetDocBlocksHost } from '../host/index.js';
+import type { DocBlocksHostFsAPI } from '../host/types.js';
 
 export { isElectronHost } from '../host/index.js';
 
-function getHostFs(): DocblocksHostFsAPI {
-  const host = maybeGetDocblocksHost();
+function getHostFs(): DocBlocksHostFsAPI {
+  const host = maybeGetDocBlocksHost();
   if (!host) {
     throw new Error(
-      'ElectronFileSystemProvider: docblocksHost is not available — not running under Electron?',
+      'ElectronFileSystemProvider: docBlocksHost is not available — not running under Electron?',
     );
   }
   return host.fs;

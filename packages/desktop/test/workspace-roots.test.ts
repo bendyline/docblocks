@@ -9,7 +9,7 @@
 
 import { expect } from 'chai';
 import path from 'node:path';
-import { getWorkspaceRoots } from '../main/workspace-roots.js';
+import { getWorkspaceRoots, isPathInside } from '../main/workspace-roots.js';
 
 describe('WorkspaceRoots path-traversal guard', () => {
   const roots = getWorkspaceRoots();
@@ -38,6 +38,17 @@ describe('WorkspaceRoots path-traversal guard', () => {
   it('accepts nested paths deep inside the root', () => {
     const resolved = roots.resolve(ROOT, '/a/b/c/d/e.md');
     expect(resolved.startsWith(path.resolve(ROOT))).to.equal(true);
+  });
+
+  it('does not reject legitimate child names that start with two dots', () => {
+    const resolved = roots.resolve(ROOT, '/..notes/today.md');
+    expect(resolved).to.equal(path.resolve(ROOT, '..notes/today.md'));
+  });
+
+  it('does not treat sibling paths with the same string prefix as inside', () => {
+    const root = path.resolve('/tmp/docblocks');
+    const sibling = path.resolve('/tmp/docblocks-other/index.html');
+    expect(isPathInside(root, sibling)).to.equal(false);
   });
 
   it('unregister removes the root from the whitelist', () => {

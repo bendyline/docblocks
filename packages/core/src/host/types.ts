@@ -1,16 +1,16 @@
 /**
- * DocblocksHostAPI — the contract exposed by the Electron desktop shell
+ * DocBlocksHostAPI — the contract exposed by the Electron desktop shell
  * to its renderer process via contextBridge.
  *
  * This file is the single source of truth for the host ↔ renderer
  * bridge. The Electron preload script exposes an implementation matching
- * this shape; the React renderer calls it through `window.docblocksHost`.
+ * this shape; the React renderer calls it through `window.docBlocksHost`.
  */
 
 import type { FileSystemEntry, FileMeta } from '../filesystem/types.js';
 
 /** Filesystem operations scoped to a registered absolute root path. */
-export interface DocblocksHostFsAPI {
+export interface DocBlocksHostFsAPI {
   readFile(rootPath: string, path: string): Promise<string | null>;
   writeFile(rootPath: string, path: string, content: string): Promise<void>;
   delete(rootPath: string, path: string): Promise<void>;
@@ -36,7 +36,7 @@ export interface ElectronWorkspaceInfo {
 }
 
 /** Workspace-management operations exposed to the renderer. */
-export interface DocblocksHostWorkspacesAPI {
+export interface DocBlocksHostWorkspacesAPI {
   /**
    * Return the default workspace (creating ~/Documents/DocBlocks on first
    * call, or the user's configured default).
@@ -58,7 +58,7 @@ export interface DocblocksHostWorkspacesAPI {
 }
 
 /** Shell operations — reveal in Finder/Explorer, open external URLs. */
-export interface DocblocksHostShellAPI {
+export interface DocBlocksHostShellAPI {
   /** Reveal a file (by absolute path) in the OS file manager. */
   revealInFolder(absolutePath: string): Promise<void>;
   /** Open a URL in the default browser. */
@@ -66,7 +66,7 @@ export interface DocblocksHostShellAPI {
 }
 
 /** System ffmpeg detection and invocation. */
-export interface DocblocksHostFfmpegAPI {
+export interface DocBlocksHostFfmpegAPI {
   /** True if `ffmpeg` is available on PATH (or bundled). */
   available(): Promise<boolean>;
   /** Version string from `ffmpeg -version`, or null if unavailable. */
@@ -83,7 +83,7 @@ export interface DocblocksHostFfmpegAPI {
 }
 
 /** Auto-updater control. */
-export interface DocblocksHostUpdaterAPI {
+export interface DocBlocksHostUpdaterAPI {
   /** Kick off a check; resolves to true if an update is available. */
   checkForUpdates(): Promise<boolean>;
   /** Current app version string. */
@@ -133,13 +133,13 @@ export interface HostEnvironment {
 }
 
 /** The full DocBlocks desktop host API. */
-export interface DocblocksHostAPI {
+export interface DocBlocksHostAPI {
   env: HostEnvironment;
-  fs: DocblocksHostFsAPI;
-  workspaces: DocblocksHostWorkspacesAPI;
-  shell: DocblocksHostShellAPI;
-  ffmpeg: DocblocksHostFfmpegAPI;
-  updater: DocblocksHostUpdaterAPI;
+  fs: DocBlocksHostFsAPI;
+  workspaces: DocBlocksHostWorkspacesAPI;
+  shell: DocBlocksHostShellAPI;
+  ffmpeg: DocBlocksHostFfmpegAPI;
+  updater: DocBlocksHostUpdaterAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

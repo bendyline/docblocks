@@ -16,6 +16,11 @@ export interface WorkspaceRootEntry {
 
 let roots = new Map<string, string>();
 
+export function isPathInside(rootAbs: string, candidateAbs: string): boolean {
+  const rel = path.relative(path.resolve(rootAbs), path.resolve(candidateAbs));
+  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+}
+
 export function getWorkspaceRoots() {
   return {
     register(id: string, rootPath: string) {
@@ -39,8 +44,7 @@ export function getWorkspaceRoots() {
       }
       const normalized = relPath.replace(/^\/+/, '');
       const candidate = path.resolve(abs, normalized);
-      const rel = path.relative(abs, candidate);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      if (!isPathInside(abs, candidate)) {
         throw new Error(`Path escapes workspace root: ${relPath}`);
       }
       return candidate;
