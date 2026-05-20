@@ -1,3 +1,14 @@
+## @bendyline/docblocks [1.1.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.1.0...@bendyline/docblocks@1.1.1) (2026-05-20)
+
+### Bug Fixes
+
+* Address Copilot PR review feedback ([c58aa63](https://github.com/bendyline/docblocks/commit/c58aa63d197ecee780f4e88e00cda2808a405398))
+* Change theme colors, many stability fixes ([95660c9](https://github.com/bendyline/docblocks/commit/95660c9abaca372f2c60494f868e1a10d11a211d))
+* More UX fixes ([acea481](https://github.com/bendyline/docblocks/commit/acea481941e96c8fcc883ac8e055037b3fa34d47))
+* Update dependencxies ([9322341](https://github.com/bendyline/docblocks/commit/9322341e494f772cb580bddddb19820beca1b8be))
+* Update description, fix capitalization ([82dfee3](https://github.com/bendyline/docblocks/commit/82dfee33570679b43f5c065c7806c3435db446bd))
+* Update skills & tests ([9dbc6df](https://github.com/bendyline/docblocks/commit/9dbc6dfacfe5b61bceb9e52804530f9bb7621b46))
+
 ## @bendyline/docblocks [1.1.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.0.0...@bendyline/docblocks@1.1.0) (2026-04-23)
 
 ### Features
