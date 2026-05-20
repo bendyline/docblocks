@@ -159,44 +159,46 @@ export function AppMenu({
                 </label>
               </fieldset>
 
-              <fieldset className="db-settings-fieldset">
-                <legend className="db-settings-legend">Version history</legend>
-                <p className="db-settings-hint">
-                  When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
-                  <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
-                  override this default in their own settings.
-                </p>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="versioning"
-                    value="on"
-                    checked={versioningPreference === 'on'}
-                    onChange={() => onVersioningPreferenceChange?.('on')}
-                  />
-                  On for all workspaces
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="versioning"
-                    value="browser-only"
-                    checked={versioningPreference === 'browser-only'}
-                    onChange={() => onVersioningPreferenceChange?.('browser-only')}
-                  />
-                  On in browser workspaces, off for local folders
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="versioning"
-                    value="off"
-                    checked={versioningPreference === 'off'}
-                    onChange={() => onVersioningPreferenceChange?.('off')}
-                  />
-                  Off for all workspaces
-                </label>
-              </fieldset>
+              {onVersioningPreferenceChange && (
+                <fieldset className="db-settings-fieldset">
+                  <legend className="db-settings-legend">Version history</legend>
+                  <p className="db-settings-hint">
+                    When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
+                    <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
+                    override this default in their own settings.
+                  </p>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="on"
+                      checked={versioningPreference === 'on'}
+                      onChange={() => onVersioningPreferenceChange('on')}
+                    />
+                    On for all workspaces
+                  </label>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="browser-only"
+                      checked={versioningPreference === 'browser-only'}
+                      onChange={() => onVersioningPreferenceChange('browser-only')}
+                    />
+                    On in browser workspaces, off for local folders
+                  </label>
+                  <label className="db-settings-radio">
+                    <input
+                      type="radio"
+                      name="versioning"
+                      value="off"
+                      checked={versioningPreference === 'off'}
+                      onChange={() => onVersioningPreferenceChange('off')}
+                    />
+                    Off for all workspaces
+                  </label>
+                </fieldset>
+              )}
             </div>
           </div>
         </div>

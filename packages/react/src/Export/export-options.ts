@@ -30,12 +30,13 @@ export interface ExportOptions {
   /** HTML bundle layout. Only applies to format=html. */
   htmlBundle: HtmlBundle;
   /**
-   * Recursive plain-HTML bundle: walk relative `.md` links from the
-   * entry document, render every reachable sibling/child page, and
-   * rewrite cross-doc links from `.md` → `.html`. The output is a ZIP
+   * Recursive HTML bundle: walk relative `.md` links from the entry
+   * document, render every reachable sibling/child page, and rewrite
+   * cross-doc links from `.md` → `.html`. The output is a ZIP
    * regardless of `htmlBundle` because multi-doc output needs a
-   * directory tree. Only meaningful when `format === 'html'` and
-   * `htmlStyle === 'plain'`.
+   * directory tree. Supported for both plain (`markdownDocsToPlainHtmlBundle`)
+   * and rendered (`markdownDocsToHtmlBundle`) HTML styles. Only
+   * meaningful when `format === 'html'`.
    */
   includeLinkedDocs: boolean;
   /**

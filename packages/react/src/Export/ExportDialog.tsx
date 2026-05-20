@@ -129,6 +129,15 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   // is on the Bundle row would only confuse — ZIP is the only valid
   // packaging. Hide the chip row and surface the implication in a hint.
   const showHtmlBundle = showHtmlOptions && !includeLinkedDocs;
+  // `entryAsIndex` is only honored in pipelines where we control the
+  // output filename ourselves:
+  //   • single-file HTML downloads → renames `<doc>.html` → `index.html`
+  //   • recursive bundles → passed through to squisq's bundle helpers
+  // In the single-doc ZIP path, squisq's `docToHtmlZip` and our plain-
+  // HTML zip writer always emit `index.html` inside the archive, so the
+  // checkbox has no observable effect — hide it to avoid surfacing an
+  // inert control.
+  const showEntryAsIndex = showHtmlOptions && (htmlBundle === 'single' || includeLinkedDocs);
 
   const handleExport = useCallback(() => {
     const opts: ExportOptions = {
@@ -139,7 +148,7 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
       htmlStyle,
       htmlBundle,
       includeLinkedDocs: showIncludeLinked && includeLinkedDocs,
-      entryAsIndex: format === 'html' && entryAsIndex,
+      entryAsIndex: showEntryAsIndex && entryAsIndex,
     };
     saveExportOptions(opts);
     onExport(opts);
@@ -153,6 +162,7 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
     includeLinkedDocs,
     entryAsIndex,
     showIncludeLinked,
+    showEntryAsIndex,
     onExport,
   ]);
 
@@ -245,23 +255,25 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
                   </span>
                 </div>
               )}
-              <div className="db-export-field">
-                <label className="db-export-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={entryAsIndex}
-                    onChange={(e) => setEntryAsIndex(e.target.checked)}
-                  />
-                  <span>Name entry page index.html</span>
-                </label>
-                <span className="db-export-hint">
-                  {entryAsIndex
-                    ? includeLinkedDocs
-                      ? 'Renames this page to index.html in the ZIP and rewrites any cross-doc links pointing back at it. Drops straight into a static-site host.'
-                      : 'Downloads as index.html instead of the document name. Drops straight into a static-site host.'
-                    : 'Exports under the document name.'}
-                </span>
-              </div>
+              {showEntryAsIndex && (
+                <div className="db-export-field">
+                  <label className="db-export-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={entryAsIndex}
+                      onChange={(e) => setEntryAsIndex(e.target.checked)}
+                    />
+                    <span>Name entry page index.html</span>
+                  </label>
+                  <span className="db-export-hint">
+                    {entryAsIndex
+                      ? includeLinkedDocs
+                        ? 'Renames this page to index.html in the ZIP and rewrites any cross-doc links pointing back at it. Drops straight into a static-site host.'
+                        : 'Downloads as index.html instead of the document name. Drops straight into a static-site host.'
+                      : 'Exports under the document name.'}
+                  </span>
+                </div>
+              )}
             </>
           )}
 
