@@ -1021,6 +1021,18 @@ body.db-resizing-sidebar * {
   min-height: 48px;
 }
 
+/* Squisq's view-tab section is bottom-aligned in the toolbar (so the
+   active-tab underline sits flush with the toolbar's lower edge),
+   with `padding: 8px 14px 4px` calibrated for squisq's natural ~36px
+   toolbar height. We force the toolbar to 48px for breathing room,
+   which drops the label too far down relative to the centered B/I/S
+   buttons. Lift the label ~6px by growing bottom padding — the
+   underline stays anchored to the section's bottom edge, only the
+   text moves up. */
+.db-shell .squisq-toolbar-view-tab {
+  padding-bottom: 10px;
+}
+
 .squisq-toolbar-button[aria-label='Insert image'] {
   font-size: 0;
   background: no-repeat center / 18px

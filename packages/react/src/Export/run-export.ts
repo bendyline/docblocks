@@ -115,6 +115,11 @@ async function runHtmlExport(
 ): Promise<void> {
   const baseName = htmlFilename.replace(/\.html$/, '');
   const zipName = `${baseName}.zip`;
+  // When `entryAsIndex` is on, a single-doc HTML download lands on
+  // disk as `index.html` so it drops straight into a static host. The
+  // recursive ZIP path doesn't care — squisq's bundle helpers handle
+  // the inside-zip rename and the cross-doc link rewrite themselves.
+  const singleHtmlFilename = options.entryAsIndex ? 'index.html' : htmlFilename;
   const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
 
   // Recursive HTML bundle: when the user opted in, ask squisq to walk
@@ -139,6 +144,7 @@ async function runHtmlExport(
         title: baseName,
         themeId,
         mode: 'static',
+        entryAsIndex: options.entryAsIndex,
       });
       downloadBlob(blob, zipName);
       return;
@@ -149,6 +155,7 @@ async function runHtmlExport(
       readBinary: (path) => mediaContainer.readFile(path),
       title: baseName,
       themeId,
+      entryAsIndex: options.entryAsIndex,
     });
     downloadBlob(blob, zipName);
     return;
@@ -178,7 +185,7 @@ async function runHtmlExport(
       mode: 'static',
       title: baseName,
     });
-    downloadBlob(new Blob([html], { type: MIME_TYPES.html }), htmlFilename);
+    downloadBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename);
     return;
   }
 
@@ -217,7 +224,7 @@ async function runHtmlExport(
     images: inlineMap.size > 0 ? inlineMap : undefined,
     themeId,
   });
-  downloadBlob(new Blob([html], { type: MIME_TYPES.html }), htmlFilename);
+  downloadBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename);
 }
 
 const IMAGE_MIME: Record<string, string> = {

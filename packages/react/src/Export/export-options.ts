@@ -38,6 +38,15 @@ export interface ExportOptions {
    * `htmlStyle === 'plain'`.
    */
   includeLinkedDocs: boolean;
+  /**
+   * Rename the entry page from `<basename>.html` to `index.html` so the
+   * export drops straight into a static-site host that expects an
+   * `index.html` landing page. For recursive bundles, cross-doc links
+   * targeting the entry also rewrite to `index.html` so siblings don't
+   * 404. For a single-doc HTML download, this just renames the file.
+   * Only meaningful when `format === 'html'`.
+   */
+  entryAsIndex: boolean;
 }
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = {
@@ -66,6 +75,7 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   htmlStyle: 'plain',
   htmlBundle: 'single',
   includeLinkedDocs: false,
+  entryAsIndex: false,
 };
 
 export function loadLastExportOptions(): ExportOptions | null {

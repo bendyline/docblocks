@@ -1,6 +1,27 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+
+// Mirror of the same helper in packages/site/vite.config.ts — see there for
+// the rationale.
+const stripBrokenSourcemapPragmas = (): Plugin => ({
+  name: 'strip-broken-sourcemap-pragmas',
+  enforce: 'pre',
+  transform(code, id) {
+    if (
+      id.includes('/@bendyline/squisq-video/dist/') ||
+      id.includes('\\@bendyline\\squisq-video\\dist\\') ||
+      id.includes('/genson-js/dist/') ||
+      id.includes('\\genson-js\\dist\\')
+    ) {
+      return {
+        code: code.replace(/\n?\/\/# sourceMappingURL=.*$/m, ''),
+        map: null,
+      };
+    }
+    return null;
+  },
+});
 
 /**
  * Renderer Vite config. Mirrors packages/site/vite.config.ts but with:
@@ -12,7 +33,7 @@ export default defineConfig({
   root: path.resolve(__dirname, 'renderer'),
   base: './',
   publicDir: path.resolve(__dirname, 'renderer/public'),
-  plugins: [react()],
+  plugins: [stripBrokenSourcemapPragmas(), react()],
   resolve: {
     preserveSymlinks: false,
     dedupe: ['react', 'react-dom'],
@@ -33,6 +54,9 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
   },
+  worker: {
+    format: 'es',
+  },
   server: {
     port: 5221,
     strictPort: true,
@@ -45,6 +69,7 @@ export default defineConfig({
       'extend',
       'debug',
       'format',
+      'genson-js',
       'jszip',
       'ngeohash',
       'pako',

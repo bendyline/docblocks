@@ -50,7 +50,10 @@ function quickLabel(opts: ExportOptions): string {
   if (isRecursiveHtml) {
     parts.push('linked docs');
   }
-  if (opts.themeId !== 'standard' && (opts.format !== 'html' || opts.htmlStyle === 'rendered')) {
+  // Plain HTML also applies themes now (squisq's `markdownDocToPlainHtml`
+  // emits theme-driven CSS), so include the theme name in the quick-
+  // export label for every HTML style — not just rendered.
+  if (opts.themeId !== 'standard') {
     const theme = getThemeSummaries().find((t) => t.id === opts.themeId);
     if (theme) parts.push(theme.name);
   }
@@ -69,7 +72,7 @@ export function ExportToolbarControls({
   selectedFile,
   mediaContainer,
 }: ExportToolbarControlsProps) {
-  const { markdownSource } = useEditorContext();
+  const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
@@ -77,6 +80,33 @@ export function ExportToolbarControls({
   const menuRef = useRef<HTMLDivElement>(null);
 
   const lastOptions = loadLastExportOptions();
+
+  /** Doc's currently-set squisq theme, pulled from the markdown
+   *  frontmatter. The Document Settings dialog and Theme Customizer
+   *  write the theme under `squisq-theme` (canonical) or `theme`
+   *  (legacy); some older docs persist it as `themeId`. We honor all
+   *  three so an author who set their theme anywhere upstream sees it
+   *  pre-selected in the export dialog. */
+  const docThemeId = useMemo(() => {
+    const fm = markdownDoc?.frontmatter as Record<string, unknown> | undefined;
+    if (!fm) return null;
+    const candidates = [fm['squisq-theme'], fm['theme'], fm['themeId']];
+    for (const v of candidates) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  }, [markdownDoc]);
+
+  /** Options used to populate the export dialog. Layered: built-in
+   *  defaults → user's last-chosen export options (if any) → doc's
+   *  current frontmatter theme (wins). The frontmatter override
+   *  guarantees that "set theme in the editor, then export" pre-selects
+   *  the right theme instead of resurrecting whatever the user picked
+   *  for some unrelated previous doc. */
+  const dialogInitial = useMemo(() => {
+    const base = lastOptions ?? DEFAULT_OPTIONS;
+    return docThemeId ? { ...base, themeId: docThemeId } : base;
+  }, [lastOptions, docThemeId]);
 
   /** Build a Doc from the current markdown for video export. */
   const doc = useMemo(() => {
@@ -180,7 +210,7 @@ export function ExportToolbarControls({
 
       {dialogOpen && (
         <ExportDialog
-          initial={lastOptions ?? DEFAULT_OPTIONS}
+          initial={dialogInitial}
           exporting={exporting}
           onExport={handleExport}
           onClose={handleCloseDialog}

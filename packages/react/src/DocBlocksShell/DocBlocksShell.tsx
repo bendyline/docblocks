@@ -267,14 +267,8 @@ function sameProviderPath(a: string, b: string): boolean {
  *  survives folder reshuffles (`../sibling.md`, `subfolder/child.md`,
  *  `resume.md` for siblings at the workspace root). */
 function relativeMarkdownLink(fromFile: string, toFile: string): string {
-  const fromParts = fromFile
-    .replace(/^\/+/, '')
-    .split('/')
-    .filter(Boolean);
-  const toParts = toFile
-    .replace(/^\/+/, '')
-    .split('/')
-    .filter(Boolean);
+  const fromParts = fromFile.replace(/^\/+/, '').split('/').filter(Boolean);
+  const toParts = toFile.replace(/^\/+/, '').split('/').filter(Boolean);
   const fromDir = fromParts.slice(0, -1);
   const toDir = toParts.slice(0, -1);
   const toBase = toParts[toParts.length - 1] ?? '';
@@ -1627,6 +1621,7 @@ export function DocBlocksShell({
                   onChange={handleEditorChange}
                   theme={resolvedTheme}
                   height="100%"
+                  outlineWidth={280}
                   mediaProvider={mediaProvider}
                   documentLinkProvider={documentLinkProvider}
                   container={versionsContainer ?? undefined}

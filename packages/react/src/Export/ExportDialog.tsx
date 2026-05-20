@@ -104,17 +104,18 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   const [htmlStyle, setHtmlStyle] = useState<HtmlStyle>(initial.htmlStyle);
   const [htmlBundle, setHtmlBundle] = useState<HtmlBundle>(initial.htmlBundle);
   const [includeLinkedDocs, setIncludeLinkedDocs] = useState<boolean>(initial.includeLinkedDocs);
+  const [entryAsIndex, setEntryAsIndex] = useState<boolean>(initial.entryAsIndex);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const themes = getThemeSummaries();
   const transforms = getTransformStyleSummaries();
 
-  // Theme only meaningful when the renderer applies it (rendered HTML uses SquisqPlayer themes).
-  const showTheme =
-    format === 'docx' ||
-    format === 'pdf' ||
-    format === 'pptx' ||
-    (format === 'html' && htmlStyle === 'rendered');
+  // Both HTML styles honor themes now: rendered HTML through the
+  // SquisqPlayer's theme system, plain HTML through squisq's
+  // `markdownDocToPlainHtml` which emits theme-driven CSS variables
+  // and Google Fonts links. Show the dropdown for any export format
+  // whose pipeline actually applies the picked theme.
+  const showTheme = format === 'docx' || format === 'pdf' || format === 'pptx' || format === 'html';
   const showTransform = format === 'pptx';
   const showPageSize = format === 'pdf';
   const showHtmlOptions = format === 'html';
@@ -138,6 +139,7 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
       htmlStyle,
       htmlBundle,
       includeLinkedDocs: showIncludeLinked && includeLinkedDocs,
+      entryAsIndex: format === 'html' && entryAsIndex,
     };
     saveExportOptions(opts);
     onExport(opts);
@@ -149,6 +151,7 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
     htmlStyle,
     htmlBundle,
     includeLinkedDocs,
+    entryAsIndex,
     showIncludeLinked,
     onExport,
   ]);
@@ -242,6 +245,23 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
                   </span>
                 </div>
               )}
+              <div className="db-export-field">
+                <label className="db-export-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={entryAsIndex}
+                    onChange={(e) => setEntryAsIndex(e.target.checked)}
+                  />
+                  <span>Name entry page index.html</span>
+                </label>
+                <span className="db-export-hint">
+                  {entryAsIndex
+                    ? includeLinkedDocs
+                      ? 'Renames this page to index.html in the ZIP and rewrites any cross-doc links pointing back at it. Drops straight into a static-site host.'
+                      : 'Downloads as index.html instead of the document name. Drops straight into a static-site host.'
+                    : 'Exports under the document name.'}
+                </span>
+              </div>
             </>
           )}
 
