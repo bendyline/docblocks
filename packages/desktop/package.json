@@ -37,7 +37,8 @@
     "chokidar": "3.6.0",
     "electron-updater": "6.3.9",
     "electron-window-state": "5.0.3",
-    "monaco-editor": "0.55.1",
+    "mocha": "11.3.0",
+    "monaco-editor": "0.53.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -52,11 +53,11 @@
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
     "concurrently": "9.1.0",
-    "electron": "33.2.1",
-    "electron-builder": "25.1.8",
+    "electron": "42.2.0",
+    "electron-builder": "26.8.1",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "6.4.1",
+    "vite": "6.4.2",
     "wait-on": "8.0.1"
   }
 }
