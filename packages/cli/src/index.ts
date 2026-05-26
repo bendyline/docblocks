@@ -8,13 +8,14 @@ import { mcpCommand } from './commands/mcp.js';
 import { themesCommand } from './commands/themes.js';
 import { transformsCommand } from './commands/transforms.js';
 import { parseCommand } from './commands/parse.js';
+import { getPackageVersion } from './version.js';
 
 const program = new Command();
 
 program
   .name('docblocks')
   .description('DocBlocks CLI — build, serve, and manage markdown document projects')
-  .version('0.1.0');
+  .version(getPackageVersion());
 
 program.addCommand(initCommand);
 program.addCommand(buildCommand);

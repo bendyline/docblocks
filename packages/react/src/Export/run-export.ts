@@ -8,23 +8,7 @@ import type {
   MarkdownInlineNode,
 } from '@bendyline/squisq/markdown';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
-import { markdownToDoc } from '@bendyline/squisq/doc';
 import type { Doc } from '@bendyline/squisq/schemas';
-import { applyTransform } from '@bendyline/squisq/transform';
-import { markdownDocToDocx } from '@bendyline/squisq-formats/docx';
-import { markdownDocToPdf } from '@bendyline/squisq-formats/pdf';
-import { docToPptx } from '@bendyline/squisq-formats/pptx';
-import {
-  docToHtml,
-  docToHtmlZip,
-  collectImagePaths,
-  markdownDocsToPlainHtmlBundle,
-  markdownDocsToHtmlBundle,
-  markdownDocToPlainHtml,
-} from '@bendyline/squisq-formats/html';
-import { containerToZip } from '@bendyline/squisq-formats/container';
-import { MemoryContentContainer } from '@bendyline/squisq/storage';
-import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
@@ -76,6 +60,7 @@ export async function runExport(
   const doc = parseMarkdown(markdown);
 
   if (options.format === 'docx') {
+    const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
     const images = mediaContainer ? await resolveImages(doc, mediaContainer) : undefined;
     const buf = await markdownDocToDocx(doc, { themeId, images });
     downloadBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename);
@@ -83,6 +68,7 @@ export async function runExport(
   }
 
   if (options.format === 'pdf') {
+    const { markdownDocToPdf } = await import('@bendyline/squisq-formats/pdf');
     const buf = await markdownDocToPdf(doc, {
       themeId,
       pageSize: options.pageSize,
@@ -92,7 +78,12 @@ export async function runExport(
   }
 
   if (options.format === 'pptx') {
-    // Use the full transform pipeline: markdown → Doc → transform → PPTX
+    const [{ markdownToDoc }, { applyTransform }, { docToPptx }] = await Promise.all([
+      import('@bendyline/squisq/doc'),
+      import('@bendyline/squisq/transform'),
+      import('@bendyline/squisq-formats/pptx'),
+    ]);
+    // Use the full transform pipeline: markdown -> Doc -> transform -> PPTX
     const baseDoc = markdownToDoc(doc);
     const transformed = applyTransform(baseDoc, options.transformStyle);
     const enrichedDoc = transformed.doc;
@@ -136,6 +127,10 @@ async function runHtmlExport(
   if (options.includeLinkedDocs && mediaContainer && selectedFile) {
     const entryPath = basenameForBundle(selectedFile);
     if (options.htmlStyle === 'rendered') {
+      const [{ markdownDocsToHtmlBundle }, { PLAYER_BUNDLE }] = await Promise.all([
+        import('@bendyline/squisq-formats/html'),
+        import('@bendyline/squisq-react/standalone-source'),
+      ]);
       const blob = await markdownDocsToHtmlBundle({
         entryPath,
         readDocument: (path) => readDocumentFromContainer(mediaContainer, path),
@@ -149,6 +144,7 @@ async function runHtmlExport(
       downloadBlob(blob, zipName);
       return;
     }
+    const { markdownDocsToPlainHtmlBundle } = await import('@bendyline/squisq-formats/html');
     const blob = await markdownDocsToPlainHtmlBundle({
       entryPath,
       readDocument: (path) => readDocumentFromContainer(mediaContainer, path),
@@ -162,11 +158,19 @@ async function runHtmlExport(
   }
 
   if (options.htmlStyle === 'rendered') {
+    const [{ markdownToDoc }, { docToHtml, docToHtmlZip, collectImagePaths }, { PLAYER_BUNDLE }] =
+      await Promise.all([
+        import('@bendyline/squisq/doc'),
+        import('@bendyline/squisq-formats/html'),
+        import('@bendyline/squisq-react/standalone-source'),
+      ]);
     const mdDoc = parseMarkdown(markdown);
     const baseDoc = markdownToDoc(mdDoc);
     if (themeId) baseDoc.themeId = themeId;
 
-    const images = mediaContainer ? await resolveDocImages(baseDoc, mediaContainer) : undefined;
+    const images = mediaContainer
+      ? await resolveDocImages(baseDoc, mediaContainer, collectImagePaths)
+      : undefined;
 
     if (options.htmlBundle === 'zip') {
       const blob = await docToHtmlZip(baseDoc, {
@@ -195,6 +199,12 @@ async function runHtmlExport(
   const localImages = referencedImages.filter((u) => !isExternalUrl(u));
 
   if (options.htmlBundle === 'zip' && mediaContainer && localImages.length > 0) {
+    const [{ markdownDocToPlainHtml }, { MemoryContentContainer }, { containerToZip }] =
+      await Promise.all([
+        import('@bendyline/squisq-formats/html'),
+        import('@bendyline/squisq/storage'),
+        import('@bendyline/squisq-formats/container'),
+      ]);
     // Mirror the markdown's relative paths inside the zip so <img src="..."> still resolves.
     const html = markdownDocToPlainHtml(mdDoc, { title: baseName, themeId });
     const container = new MemoryContentContainer();
@@ -210,6 +220,7 @@ async function runHtmlExport(
     return;
   }
 
+  const { markdownDocToPlainHtml } = await import('@bendyline/squisq-formats/html');
   // Single-file plain HTML — embed local images as base64 data URIs.
   const inlineMap = new Map<string, string>();
   if (mediaContainer) {
@@ -325,6 +336,7 @@ async function readDocumentFromContainer(
 async function resolveDocImages(
   doc: Doc,
   container: ContentContainer,
+  collectImagePaths: (doc: Doc) => Iterable<string>,
 ): Promise<Map<string, ArrayBuffer>> {
   const paths = collectImagePaths(doc);
   const map = new Map<string, ArrayBuffer>();

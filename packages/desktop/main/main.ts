@@ -20,7 +20,7 @@ import { registerUpdaterIpc, initAutoUpdater } from './updater.js';
 import { buildMenu } from './menu.js';
 import { readSettings, flushSettings } from './settings.js';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
-import { handleOpenFileArg } from './open-requests.js';
+import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { registerTray } from './tray.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
@@ -57,7 +57,7 @@ app.on('open-file', (event, filePath) => {
 app.on('open-url', (event, url) => {
   event.preventDefault();
   if (mainWindow) {
-    mainWindow.webContents.send('open-request', { url });
+    handleOpenUrl(mainWindow, url);
   } else {
     pendingOpenUrls.push(url);
   }
@@ -193,7 +193,7 @@ async function createWindow(): Promise<BrowserWindow> {
     }
     while (pendingOpenUrls.length) {
       const u = pendingOpenUrls.shift()!;
-      win.webContents.send('open-request', { url: u });
+      handleOpenUrl(win, u);
     }
     handleOpenFileArg(win, process.argv);
   });

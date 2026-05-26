@@ -23,6 +23,17 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
   },
 });
 
+const monacoSlimEntry = path.resolve(__dirname, '../react/src/monaco-slim.ts');
+
+function isDeferredFeatureAsset(fileName: string): boolean {
+  const baseName = fileName.replace(/\\/g, '/').split('/').pop() ?? fileName;
+  return baseName.startsWith('export-') || baseName.startsWith('monaco-slim');
+}
+
+function resolveModulePreloadDependencies(_filename: string, deps: string[]): string[] {
+  return deps.filter((dep) => !isDeferredFeatureAsset(dep));
+}
+
 /**
  * Renderer Vite config. Mirrors packages/site/vite.config.ts but with:
  *   - base: './' so asset URLs resolve under the custom app:// protocol
@@ -37,22 +48,45 @@ export default defineConfig({
   resolve: {
     preserveSymlinks: false,
     dedupe: ['react', 'react-dom'],
-    alias: {
-      '@bendyline/docblocks-react/styles': path.resolve(
-        __dirname,
-        '../react/src/styles/docblocks.css',
-      ),
-      '@bendyline/docblocks-react': path.resolve(__dirname, '../react/src/index.ts'),
-      '@bendyline/docblocks/filesystem': path.resolve(__dirname, '../core/src/filesystem/index.ts'),
-      '@bendyline/docblocks/workspace': path.resolve(__dirname, '../core/src/workspace/index.ts'),
-      '@bendyline/docblocks/host': path.resolve(__dirname, '../core/src/host/index.ts'),
-      '@bendyline/docblocks': path.resolve(__dirname, '../core/src/index.ts'),
-    },
+    alias: [
+      { find: /^monaco-editor$/, replacement: monacoSlimEntry },
+      {
+        find: /^monaco-editor\/esm\/vs\/editor\/editor\.main\.js$/,
+        replacement: monacoSlimEntry,
+      },
+      {
+        find: '@bendyline/docblocks-react/styles',
+        replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
+      },
+      {
+        find: '@bendyline/docblocks-react',
+        replacement: path.resolve(__dirname, '../react/src/index.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/index.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/workspace',
+        replacement: path.resolve(__dirname, '../core/src/workspace/index.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/host',
+        replacement: path.resolve(__dirname, '../core/src/host/index.ts'),
+      },
+      {
+        find: '@bendyline/docblocks',
+        replacement: path.resolve(__dirname, '../core/src/index.ts'),
+      },
+    ],
   },
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
     sourcemap: true,
+    modulePreload: {
+      resolveDependencies: resolveModulePreloadDependencies,
+    },
   },
   worker: {
     format: 'es',

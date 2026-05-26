@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import type { ExtensionToWebviewMessage } from '../../src/messages.js';
+import { createDebouncedEditPoster, type DebouncedEditPoster } from './debouncedEditPoster.js';
 import { getVscodeApi } from './vscodeApi.js';
 
 const vscode = getVscodeApi();
@@ -11,6 +12,7 @@ export function VscodeEditor() {
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [editorKey, setEditorKey] = useState(0);
   const markdownRef = useRef<string | null>(null);
+  const editPosterRef = useRef<DebouncedEditPoster | null>(null);
 
   useEffect(() => {
     function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
@@ -36,20 +38,21 @@ export function VscodeEditor() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  // Debounced change handler — sends edits back to extension
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    const editPoster = createDebouncedEditPoster((message) => vscode.postMessage(message), 300);
+    editPosterRef.current = editPoster;
 
+    return () => {
+      editPoster.dispose();
+      editPosterRef.current = null;
+    };
+  }, []);
+
+  // Debounced change handler — sends edits back to extension
   const handleChange = useCallback((source: string) => {
     markdownRef.current = source;
     setMarkdown(source);
-
-    // Debounce edits to avoid flooding the extension host
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      vscode.postMessage({ type: 'edit', content: source });
-    }, 300);
+    editPosterRef.current?.schedule(source);
   }, []);
 
   if (markdown === null) {

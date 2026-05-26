@@ -1150,37 +1150,7 @@ export function DocBlocksShell({
     if (!isElectronHost()) return;
     const host = getDocBlocksHost();
     return host.onOpenRequest(async (req) => {
-      if (req.filePath) {
-        const workspaces = (await listWorkspaces()).filter(
-          (w) => w.type === 'electron-native' && w.rootPath,
-        );
-        const match = workspaces.find(
-          (w) => req.filePath!.startsWith((w.rootPath ?? '') + '/') || req.filePath === w.rootPath,
-        );
-        if (match && match.rootPath) {
-          const rel = '/' + req.filePath.slice(match.rootPath.length).replace(/^\/+/, '');
-          await openFromIds(match.id, rel, true);
-        }
-      } else if (req.url) {
-        try {
-          const u = new URL(req.url);
-          const path = u.searchParams.get('path');
-          if (path) {
-            const workspaces = (await listWorkspaces()).filter(
-              (w) => w.type === 'electron-native' && w.rootPath,
-            );
-            const match = workspaces.find(
-              (w) => path.startsWith((w.rootPath ?? '') + '/') || path === w.rootPath,
-            );
-            if (match && match.rootPath) {
-              const rel = '/' + path.slice(match.rootPath.length).replace(/^\/+/, '');
-              await openFromIds(match.id, rel, true);
-            }
-          }
-        } catch {
-          // bad URL, ignore
-        }
-      }
+      await openFromIds(req.workspaceId, req.path, true);
     });
   }, [openFromIds]);
 

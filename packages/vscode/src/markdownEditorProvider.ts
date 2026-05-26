@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getEditorHtml, getVscodeTheme } from './webviewHelper.js';
 import type { WebviewToExtensionMessage } from './messages.js';
+import { withApplyingEditFlag } from './editSync.js';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'docblocks.markdownEditor';
@@ -53,7 +54,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           case 'edit': {
             if (document.getText() === msg.content) return;
 
-            isApplyingEdit = true;
             const edit = new vscode.WorkspaceEdit();
             edit.replace(
               document.uri,
@@ -63,8 +63,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               ),
               msg.content,
             );
-            await vscode.workspace.applyEdit(edit);
-            isApplyingEdit = false;
+            await withApplyingEditFlag(
+              (nextIsApplyingEdit) => {
+                isApplyingEdit = nextIsApplyingEdit;
+              },
+              async () => {
+                await vscode.workspace.applyEdit(edit);
+              },
+            );
             break;
           }
         }

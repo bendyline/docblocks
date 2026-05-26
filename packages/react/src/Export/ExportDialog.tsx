@@ -4,9 +4,9 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
-import { getTransformStyleSummaries } from '@bendyline/squisq/transform';
 import type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
 import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
+import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 
 export interface ExportDialogProps {
   /** Initial options (pre-populated from last export). */
@@ -105,10 +105,10 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   const [htmlBundle, setHtmlBundle] = useState<HtmlBundle>(initial.htmlBundle);
   const [includeLinkedDocs, setIncludeLinkedDocs] = useState<boolean>(initial.includeLinkedDocs);
   const [entryAsIndex, setEntryAsIndex] = useState<boolean>(initial.entryAsIndex);
+  const [transforms, setTransforms] = useState<ExportSummaryOption[]>([]);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const themes = getThemeSummaries();
-  const transforms = getTransformStyleSummaries();
 
   // Both HTML styles honor themes now: rendered HTML through the
   // SquisqPlayer's theme system, plain HTML through squisq's
@@ -138,6 +138,23 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
   // checkbox has no observable effect — hide it to avoid surfacing an
   // inert control.
   const showEntryAsIndex = showHtmlOptions && (htmlBundle === 'single' || includeLinkedDocs);
+
+  useEffect(() => {
+    if (!showTransform) return;
+    let cancelled = false;
+
+    loadTransformStyleSummaries()
+      .then((nextTransforms) => {
+        if (!cancelled) setTransforms(nextTransforms);
+      })
+      .catch(() => {
+        if (!cancelled) setTransforms([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showTransform]);
 
   const handleExport = useCallback(() => {
     const opts: ExportOptions = {
@@ -313,11 +330,15 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
                 value={transformStyle}
                 onChange={(e) => setTransformStyle(e.target.value)}
               >
-                {transforms.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
+                {transforms.length === 0 ? (
+                  <option value={transformStyle}>Loading...</option>
+                ) : (
+                  transforms.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))
+                )}
               </select>
               <span className="db-export-hint">
                 {transforms.find((t) => t.id === transformStyle)?.description}

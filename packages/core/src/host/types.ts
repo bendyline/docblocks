@@ -117,12 +117,12 @@ export type MenuCommand =
   | 'help:checkForUpdates'
   | 'help:viewOnGitHub';
 
-/** Deep-link event: the user opened a docblocks:// URL or dropped a file. */
+/** Deep-link event resolved by the host into a trusted workspace file. */
 export interface OpenRequest {
-  /** For docblocks:// URLs — the full URL string. */
-  url?: string;
-  /** For file drops / open-with — absolute path to the file. */
-  filePath?: string;
+  kind: 'workspace-file';
+  workspaceId: string;
+  /** Slash-prefixed path relative to the workspace root. */
+  path: string;
 }
 
 /** Environment metadata provided by the host. */
