@@ -8,7 +8,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
 import type {
-  EditorTheme,
+  EditorColorScheme,
   EditorView,
   ViewPreferences,
   DocumentLinkProvider,
@@ -62,7 +62,7 @@ import {
 
 export interface DocBlocksShellProps {
   /** Optional theme override. Omit or pass 'auto' to follow OS preference. */
-  theme?: EditorTheme | 'auto';
+  theme?: EditorColorScheme | 'auto';
   /** Optional logo image URL for the app menu. */
   logoUrl?: string;
   /**
@@ -145,6 +145,27 @@ function loadLastState(): LastState | null {
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+/** One-time first-run callout shown over the welcome doc's Play view.
+ *  Once the user starts writing, switches views themselves, or dismisses
+ *  it, it never comes back — on any workspace. */
+const WELCOME_GATEWAY_KEY = 'docblocks:welcomeGatewayDismissed';
+
+function isWelcomeGatewayDismissed(): boolean {
+  try {
+    return localStorage.getItem(WELCOME_GATEWAY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markWelcomeGatewayDismissed(): void {
+  try {
+    localStorage.setItem(WELCOME_GATEWAY_KEY, '1');
+  } catch {
+    // ignore quota errors
   }
 }
 
@@ -543,6 +564,8 @@ export function DocBlocksShell({
   const [editorKey, setEditorKey] = useState(0);
   const [explorerKey, setExplorerKey] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
+  // First-run gateway over the welcome doc's Play view — see WELCOME_GATEWAY_KEY.
+  const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   /** Suppress popstate handling during programmatic navigation. */
   const skipPopState = useRef(false);
   const lastLocalSaveRef = useRef<{
@@ -670,6 +693,7 @@ export function DocBlocksShell({
           setExplorerKey((k) => k + 1);
           pushHash(fs.id, aboutPath);
           saveLastState({ workspaceId: fs.id, filePath: aboutPath, view: 'preview' });
+          if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
         }
         return;
       }
@@ -709,9 +733,29 @@ export function DocBlocksShell({
       setExplorerKey((k) => k + 1);
       pushHash(fs.id, welcomePath);
       saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'preview' });
+      if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
     },
     [pushHash],
   );
+
+  /** Hide the welcome gateway and never show it again. Safe to call from
+   *  paths where it may not be showing — only persists when it was. */
+  const closeWelcomeGateway = useCallback(() => {
+    setShowWelcomeGateway((showing) => {
+      if (showing) markWelcomeGatewayDismissed();
+      return false;
+    });
+  }, []);
+
+  /** Gateway CTA — flip the welcome doc from Play into the editor. */
+  const handleStartWriting = useCallback(() => {
+    closeWelcomeGateway();
+    setInitialView('wysiwyg');
+    setEditorKey((k) => k + 1);
+    if (activeWorkspaceId && selectedFile) {
+      saveLastState({ workspaceId: activeWorkspaceId, filePath: selectedFile, view: 'wysiwyg' });
+    }
+  }, [closeWelcomeGateway, activeWorkspaceId, selectedFile]);
 
   // Initialise workspace on mount — restore from hash or last-used
   useEffect(() => {
@@ -843,6 +887,10 @@ export function DocBlocksShell({
       const target = (e.target as HTMLElement).closest?.('[data-view]');
       if (target) {
         const view = target.getAttribute('data-view') as EditorView;
+        if (view) {
+          // The user found the view tabs on their own — the gateway's job is done.
+          closeWelcomeGateway();
+        }
         if (view && activeWorkspaceId && selectedFile) {
           saveLastState({ workspaceId: activeWorkspaceId, filePath: selectedFile, view });
         }
@@ -850,7 +898,7 @@ export function DocBlocksShell({
     };
     window.addEventListener('click', handler, true);
     return () => window.removeEventListener('click', handler, true);
-  }, [activeWorkspaceId, selectedFile]);
+  }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
   const handleAutoSaved = useCallback((filePath: string, savedContent: string) => {
     lastLocalSaveRef.current = {
@@ -1097,10 +1145,11 @@ export function DocBlocksShell({
     setInitialView('wysiwyg');
     setEditorKey((k) => k + 1);
     setExplorerKey((k) => k + 1);
+    closeWelcomeGateway();
     if (activeWorkspaceId) {
       pushHash(activeWorkspaceId, '/' + filename);
     }
-  }, [provider, activeWorkspaceId, pushHash]);
+  }, [provider, activeWorkspaceId, pushHash, closeWelcomeGateway]);
 
   const handleRevealWorkspace = useCallback(async () => {
     if (!isElectronHost() || !activeWorkspaceId) return;
@@ -1150,37 +1199,7 @@ export function DocBlocksShell({
     if (!isElectronHost()) return;
     const host = getDocBlocksHost();
     return host.onOpenRequest(async (req) => {
-      if (req.filePath) {
-        const workspaces = (await listWorkspaces()).filter(
-          (w) => w.type === 'electron-native' && w.rootPath,
-        );
-        const match = workspaces.find(
-          (w) => req.filePath!.startsWith((w.rootPath ?? '') + '/') || req.filePath === w.rootPath,
-        );
-        if (match && match.rootPath) {
-          const rel = '/' + req.filePath.slice(match.rootPath.length).replace(/^\/+/, '');
-          await openFromIds(match.id, rel, true);
-        }
-      } else if (req.url) {
-        try {
-          const u = new URL(req.url);
-          const path = u.searchParams.get('path');
-          if (path) {
-            const workspaces = (await listWorkspaces()).filter(
-              (w) => w.type === 'electron-native' && w.rootPath,
-            );
-            const match = workspaces.find(
-              (w) => path.startsWith((w.rootPath ?? '') + '/') || path === w.rootPath,
-            );
-            if (match && match.rootPath) {
-              const rel = '/' + path.slice(match.rootPath.length).replace(/^\/+/, '');
-              await openFromIds(match.id, rel, true);
-            }
-          }
-        } catch {
-          // bad URL, ignore
-        }
-      }
+      await openFromIds(req.workspaceId, req.path, true);
     });
   }, [openFromIds]);
 
@@ -1204,12 +1223,13 @@ export function DocBlocksShell({
         setEditorContent(content ?? '');
         setInitialView('wysiwyg');
         setEditorKey((k) => k + 1);
+        closeWelcomeGateway();
         pushHash(activeWorkspaceId, path);
         saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
         if (effectiveCompact) setMobileShowEditor(true);
       }
     },
-    [provider, activeWorkspaceId, pushHash, effectiveCompact],
+    [provider, activeWorkspaceId, pushHash, effectiveCompact, closeWelcomeGateway],
   );
 
   const handleTreeChange = useCallback(async () => {
@@ -1609,7 +1629,15 @@ export function DocBlocksShell({
 
         {/* Editor area — hidden in compact layout when the sidebar is showing. */}
         {(!effectiveCompact || mobileShowEditor) && (
-          <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div
+            style={{
+              flex: 1,
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative',
+            }}
+          >
             {selectedFile && mediaProvider ? (
               <MediaContext.Provider value={mediaProvider}>
                 <EditorShell
@@ -1619,7 +1647,7 @@ export function DocBlocksShell({
                   articleId={selectedFile}
                   fileName={selectedFile}
                   onChange={handleEditorChange}
-                  theme={resolvedTheme}
+                  colorScheme={resolvedTheme}
                   height="100%"
                   outlineWidth={280}
                   mediaProvider={mediaProvider}
@@ -1678,6 +1706,25 @@ export function DocBlocksShell({
                     </>
                   }
                 />
+                {showWelcomeGateway && (
+                  <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
+                    <span className="db-welcome-gateway-text">
+                      You&rsquo;re watching this welcome doc in <strong>Play</strong> view —
+                      it&rsquo;s a regular markdown file, and so is everything you&rsquo;ll write.
+                    </span>
+                    <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
+                      Start writing
+                    </button>
+                    <button
+                      className="db-welcome-gateway-dismiss"
+                      onClick={closeWelcomeGateway}
+                      aria-label="Dismiss welcome tip"
+                      title="Dismiss"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
               </MediaContext.Provider>
             ) : selectedFolder ? (
               <div className="db-folder-view">

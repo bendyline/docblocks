@@ -1,66 +1,98 @@
 import { Command } from 'commander';
-import fs from 'node:fs';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { parseMarkdown, stringifyMarkdown } from '@bendyline/squisq/markdown';
+import { renderMarkdownHtml } from '../render-html.js';
+
+export interface BuildOptions {
+  input: string;
+  output: string;
+  theme?: string;
+}
+
+export interface BuildResult {
+  inputDir: string;
+  outputDir: string;
+  builtFiles: string[];
+}
+
+export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
+  const inputDir = path.resolve(opts.input);
+  const outputDir = path.resolve(opts.output);
+  const inputStat = await stat(inputDir).catch(() => null);
+
+  if (!inputStat?.isDirectory()) {
+    throw new Error(`Input directory not found: ${inputDir}`);
+  }
+
+  const markdownFiles = await listMarkdownFiles(inputDir);
+  if (markdownFiles.length === 0) {
+    throw new Error(`No markdown files found in ${inputDir}.`);
+  }
+
+  await mkdir(outputDir, { recursive: true });
+  const builtFiles: string[] = [];
+
+  for (const sourcePath of markdownFiles) {
+    const relativePath = path.relative(inputDir, sourcePath);
+    const outputPath = path.join(outputDir, replaceMarkdownExtension(relativePath));
+    const source = await readFile(sourcePath, 'utf-8');
+    const html = await renderMarkdownHtml(source, {
+      title: titleFromPath(relativePath),
+      sourcePath,
+      assetRoot: inputDir,
+      themeId: opts.theme,
+      mode: 'static',
+    });
+
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, html, 'utf-8');
+    builtFiles.push(outputPath);
+  }
+
+  return { inputDir, outputDir, builtFiles };
+}
 
 export const buildCommand = new Command('build')
   .description('Build markdown files into HTML output')
   .option('-i, --input <dir>', 'input directory', '.')
   .option('-o, --output <dir>', 'output directory', 'dist')
-  .action(async (opts: { input: string; output: string }) => {
-    const inputDir = path.resolve(opts.input);
-    const outputDir = path.resolve(opts.output);
-
-    if (!fs.existsSync(inputDir)) {
-      console.error(`Input directory not found: ${inputDir}`);
+  .option('-t, --theme <id>', 'Squisq theme ID to apply')
+  .action(async (opts: BuildOptions) => {
+    try {
+      const result = await runBuild(opts);
+      for (const outFile of result.builtFiles) {
+        console.error(`Built: ${outFile}`);
+      }
+      console.error(`Done. ${result.builtFiles.length} file(s) built to ${result.outputDir}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Error: ${message}`);
       process.exitCode = 1;
-      return;
     }
-
-    fs.mkdirSync(outputDir, { recursive: true });
-
-    const files = fs.readdirSync(inputDir).filter((f) => f.endsWith('.md'));
-
-    if (files.length === 0) {
-      console.error('No markdown files found.');
-      return;
-    }
-
-    for (const file of files) {
-      const source = fs.readFileSync(path.join(inputDir, file), 'utf-8');
-      const doc = parseMarkdown(source);
-      const html = wrapHtml(file.replace(/\.md$/, ''), stringifyMarkdown(doc));
-      const outFile = path.join(outputDir, file.replace(/\.md$/, '.html'));
-      fs.writeFileSync(outFile, html);
-      console.error(`Built: ${outFile}`);
-    }
-
-    console.error(`Done. ${files.length} file(s) built to ${outputDir}`);
   });
 
-function wrapHtml(title: string, markdownContent: string): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title)}</title>
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
-    pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; border-radius: 4px; }
-    code { font-family: 'SF Mono', Menlo, monospace; }
-  </style>
-</head>
-<body>
-  <pre>${escapeHtml(markdownContent)}</pre>
-</body>
-</html>`;
+async function listMarkdownFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const absolutePath = path.join(root, entry.name);
+      if (entry.isDirectory()) return listMarkdownFiles(absolutePath);
+      return isMarkdownFile(entry.name) ? [absolutePath] : [];
+    }),
+  );
+
+  return files.flat().sort((a, b) => a.localeCompare(b));
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function isMarkdownFile(fileName: string): boolean {
+  return /\.(md|markdown)$/i.test(fileName);
+}
+
+function replaceMarkdownExtension(filePath: string): string {
+  return filePath.replace(/\.(md|markdown)$/i, '.html');
+}
+
+function titleFromPath(filePath: string): string {
+  const baseName = path.basename(filePath).replace(/\.(md|markdown)$/i, '');
+  return baseName || 'DocBlocks Document';
 }

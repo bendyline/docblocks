@@ -2,6 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const monacoSlimEntry = path.resolve(__dirname, 'src/monaco-slim.ts');
+
 export default defineConfig({
   base: './',
   plugins: [react()],
@@ -24,7 +26,11 @@ export default defineConfig({
       // Exact match on bare 'monaco-editor' (not subpath imports like 'monaco-editor/esm/...')
       {
         find: /^monaco-editor$/,
-        replacement: path.resolve(__dirname, 'src/monaco-slim.ts'),
+        replacement: monacoSlimEntry,
+      },
+      {
+        find: /^monaco-editor\/esm\/vs\/editor\/editor\.main\.js$/,
+        replacement: monacoSlimEntry,
       },
       {
         find: '@bendyline/docblocks-react/styles',

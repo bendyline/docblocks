@@ -9,13 +9,17 @@
     "node": ">=22.14.0"
   },
   "scripts": {
-    "all": "npm run build && npm run lint && npm run format:check && npm run typecheck && npm test",
-    "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop",
+    "all": "npm run build && npm run bundle:size && npm run check:desktop-config && npm run lint && npm run format:check && npm run typecheck && npm test",
+    "prebuild": "tsx scripts/check-squisq-links.ts",
+    "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop && npm run build:site",
     "build:core": "npm run build -w @bendyline/docblocks",
     "build:react": "npm run build -w @bendyline/docblocks-react",
     "build:cli": "npm run build -w @bendyline/docblocks-cli",
     "build:vscode": "npm run build -w docblocks-vscode",
     "build:desktop": "npm run build -w docblocks-desktop",
+    "build:site": "npm run build -w docblocks-site",
+    "bundle:size": "tsx scripts/check-bundle-size.ts",
+    "check:desktop-config": "tsx scripts/check-electron-builder-config.ts",
     "dev:desktop": "npm run dev -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",
@@ -25,7 +29,7 @@
     "test:e2e:desktop": "npm run test:e2e -w docblocks-desktop",
     "site": "npm run build:core && npm run build:react && npm run dev -w docblocks-site",
     "dev": "npm run dev -w docblocks-site",
-    "typecheck": "tsc -b packages/core packages/react packages/cli && npm run typecheck -w docblocks-desktop",
+    "typecheck": "tsc -b packages/core packages/react packages/cli && npm run typecheck -w docblocks-vscode && npm run typecheck -w docblocks-site && npm run typecheck -w docblocks-desktop",
     "clean": "rimraf packages/*/dist",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -45,7 +49,9 @@
     "@semantic-release/changelog": "6.0.3",
     "@semantic-release/git": "10.0.1",
     "@types/chai": "5.2.3",
+    "@types/js-yaml": "4.0.9",
     "@types/mocha": "10.0.10",
+    "ajv": "8.20.0",
     "chai": "6.2.2",
     "conventional-changelog-conventionalcommits": "8.0.0",
     "eslint": "9.39.4",
@@ -53,7 +59,8 @@
     "eslint-plugin-react-hooks": "5.2.0",
     "eslint-plugin-react-refresh": "0.4.26",
     "globals": "15.15.0",
-    "mocha": "11.7.5",
+    "js-yaml": "4.3.0",
+    "mocha": "11.3.0",
     "multi-semantic-release": "3.1.0",
     "prettier": "3.8.1",
     "rimraf": "5.0.10",
@@ -62,5 +69,9 @@
     "tsx": "4.21.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.57.1"
+  },
+  "dependencies": {
+    "electron": "42.2.0",
+    "vite": "6.4.2"
   }
 }

@@ -14,6 +14,7 @@ import { writeFile, readFile, stat, rm, rename } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { getPackageVersion } from '../version.js';
 
 /**
  * Resolve markdown input: either raw text or a file path.
@@ -73,7 +74,7 @@ async function resolveMarkdownText(markdown: string): Promise<string> {
 export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: 'docblocks',
-    version: '0.1.0',
+    version: getPackageVersion(),
   });
 
   // ── Export Tools ─────────────────────────────────────────────────

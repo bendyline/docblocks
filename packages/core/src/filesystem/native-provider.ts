@@ -139,6 +139,13 @@ function baseName(p: string): string {
   return idx === -1 ? p : p.slice(idx + 1);
 }
 
+function toWritableBinary(data: ArrayBuffer | Uint8Array): ArrayBuffer {
+  if (data instanceof ArrayBuffer) return data;
+  const copy = new Uint8Array(data.byteLength);
+  copy.set(data);
+  return copy.buffer;
+}
+
 // ── Implementation ─────────────────────────────────────────────────
 
 export class NativeFileSystemProvider implements FileSystemProvider {
@@ -326,11 +333,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     const dir = await resolveDirCreate(this.root, parentDir(p));
     const fileHandle = await dir.getFileHandle(baseName(p), { create: true });
     const writable = await fileHandle.createWritable();
-    if (data instanceof ArrayBuffer) {
-      await writable.write(data);
-    } else {
-      await writable.write(data.buffer as ArrayBuffer);
-    }
+    await writable.write(toWritableBinary(data));
     await writable.close();
   }
 }

@@ -1,6 +1,6 @@
 # @bendyline/docblocks-react
 
-React components for DocBlocks — file explorer, workspace picker, editor shell, and export controls.
+React components for DocBlocks — the complete editor shell (file explorer, workspace picker, app menu, export pipeline) plus the individual components and hooks it's built from. This is the package the DocBlocks web app and desktop renderer both mount.
 
 ## Installation
 
@@ -8,7 +8,7 @@ React components for DocBlocks — file explorer, workspace picker, editor shell
 npm install @bendyline/docblocks-react
 ```
 
-**Peer dependencies:** React 18 or 19, plus `@bendyline/docblocks` (core) and `@bendyline/squisq-editor-react`.
+**Peer dependencies:** React 18 or 19. The DocBlocks core (`@bendyline/docblocks`) and the Squisq editor packages are regular dependencies and install automatically.
 
 ## Usage
 
@@ -17,7 +17,7 @@ import { DocBlocksShell } from '@bendyline/docblocks-react';
 import '@bendyline/docblocks-react/styles';
 
 function App() {
-  return <DocBlocksShell theme="light" />;
+  return <DocBlocksShell theme="auto" />;
 }
 ```
 
@@ -25,45 +25,54 @@ function App() {
 
 ### DocBlocksShell
 
-The main application shell — combines the file explorer, workspace picker, and squisq editor into a complete document editing experience.
+The canonical DocBlocks experience in one component — file explorer, workspace picker, app menu, the Squisq editor with its Editor / Markdown / Play views, and the export pipeline.
 
 ```tsx
-<DocBlocksShell theme="light" logoUrl="/logo.png" />
+<DocBlocksShell theme="auto" logoUrl="/logo.png" />
 ```
 
-### FileExplorer
+- `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
+- `logoUrl` — brand mark for the app menu button
 
-File tree browser with create, rename, delete, and drag-and-drop support.
+Storage is abstracted behind `FileSystemProvider` from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), or the Electron host.
+
+### FileExplorer / FileTreeNode
+
+File tree browser with inline create (file + folder), rename, delete, and refresh. Long names truncate gracefully.
 
 ### WorkspacePicker
 
-Dropdown for switching between workspaces (IndexedDB or native filesystem handles).
+Dropdown for switching between workspaces, creating new ones, and opening local folders, plus the per-workspace settings dialog (rename, download, remove, version-history overrides).
 
 ### AppMenu
 
-Top menu bar with branding and about dialog.
+Top-left brand menu with the app-wide **Settings** dialog (theme preference, global version-history default), optional "Download all workspaces," and the **About** dialog.
 
 ### ExportToolbarControls / ExportDialog
 
-Export functionality supporting DOCX, PDF, PPTX, HTML, and Markdown output formats with theme and transform options.
+The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, HTML, Markdown), visual theme, and page size.
 
 ## Hooks
 
 ### `useAutoSave(content, save, delay?)`
 
-Debounced auto-save hook (default 500ms delay).
+Debounced auto-save (default 500ms).
 
 ### `useFileTree(provider)`
 
-File tree state management — returns the tree structure, selected file, and mutation functions.
+File tree state management over any `FileSystemProvider` — returns the tree, selection, and mutation functions.
 
 ## Styles
-
-Import the stylesheet to get the default DocBlocks styling:
 
 ```ts
 import '@bendyline/docblocks-react/styles';
 ```
+
+One stylesheet (`docblocks.css`) covers all components in both themes. The package also bundles the self-hosted woff2 fonts used by document themes (see `NOTICE.md` at the repo root for licenses).
+
+## Where new UI belongs
+
+Cross-surface UI that lives inside the shell chrome (file tree, workspace picker, app menu, export dialog) belongs here. The VS Code extension is the deliberate exception — its webview mounts Squisq's `EditorShell` directly because VS Code provides the file explorer, workspace, and theme itself.
 
 ## License
 

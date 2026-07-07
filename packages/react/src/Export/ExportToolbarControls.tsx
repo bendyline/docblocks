@@ -7,15 +7,12 @@
  * Must be rendered inside <EditorProvider> so useEditorContext() works.
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, type ComponentType } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
-import { getTransformStyleSummaries } from '@bendyline/squisq/transform';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
-import { markdownToDoc } from '@bendyline/squisq/doc';
-import { VideoExportModal } from '@bendyline/squisq-video-react';
-import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
 import type { ExportOptions } from './export-options.js';
 import {
   DEFAULT_OPTIONS,
@@ -25,6 +22,7 @@ import {
 } from './export-options.js';
 import { ExportDialog } from './ExportDialog.js';
 import { runExport } from './run-export.js';
+import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 
 export interface ExportToolbarControlsProps {
   /** Currently selected file path — used to derive the download filename. */
@@ -33,8 +31,31 @@ export interface ExportToolbarControlsProps {
   mediaContainer?: ContentContainer | null;
 }
 
+type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
+
+interface VideoExportModules {
+  Modal: ComponentType<VideoExportModalProps>;
+  markdownToDoc: (doc: ParsedMarkdown) => VideoExportModalProps['doc'];
+  playerScript: string;
+}
+
+let videoExportModulesPromise: Promise<VideoExportModules> | null = null;
+
+function loadVideoExportModules(): Promise<VideoExportModules> {
+  videoExportModulesPromise ??= Promise.all([
+    import('@bendyline/squisq/doc'),
+    import('@bendyline/squisq-video-react'),
+    import('@bendyline/squisq-react/standalone-source'),
+  ]).then(([docModule, videoModule, playerModule]) => ({
+    Modal: videoModule.VideoExportModal,
+    markdownToDoc: docModule.markdownToDoc,
+    playerScript: playerModule.PLAYER_BUNDLE,
+  }));
+  return videoExportModulesPromise;
+}
+
 /** Build the quick-export label from saved options. */
-function quickLabel(opts: ExportOptions): string {
+function quickLabel(opts: ExportOptions, transformSummaries: ExportSummaryOption[]): string {
   const baseExt = FORMAT_EXTENSIONS[opts.format].toUpperCase().replace('.', '');
   // Recursive HTML always emits a ZIP (multi-doc tree), regardless of
   // the saved `htmlBundle` value. Applies to both plain and rendered
@@ -58,7 +79,7 @@ function quickLabel(opts: ExportOptions): string {
     if (theme) parts.push(theme.name);
   }
   if (opts.format === 'pptx' && opts.transformStyle) {
-    const transform = getTransformStyleSummaries().find((t) => t.id === opts.transformStyle);
+    const transform = transformSummaries.find((t) => t.id === opts.transformStyle);
     if (transform) parts.push(transform.name);
   }
 
@@ -76,6 +97,11 @@ export function ExportToolbarControls({
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
+  const [videoModules, setVideoModules] = useState<VideoExportModules | null>(null);
+  const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
+  const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -108,13 +134,6 @@ export function ExportToolbarControls({
     return docThemeId ? { ...base, themeId: docThemeId } : base;
   }, [lastOptions, docThemeId]);
 
-  /** Build a Doc from the current markdown for video export. */
-  const doc = useMemo(() => {
-    if (!videoModalOpen) return null;
-    const mdDoc = parseMarkdown(markdownSource);
-    return markdownToDoc(mdDoc);
-  }, [videoModalOpen, markdownSource]);
-
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
@@ -126,6 +145,30 @@ export function ExportToolbarControls({
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (
+      !menuOpen ||
+      lastOptions?.format !== 'pptx' ||
+      !lastOptions.transformStyle ||
+      transformSummaries.length > 0
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    loadTransformStyleSummaries()
+      .then((nextSummaries) => {
+        if (!cancelled) setTransformSummaries(nextSummaries);
+      })
+      .catch(() => {
+        if (!cancelled) setTransformSummaries([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastOptions?.format, lastOptions?.transformStyle, menuOpen, transformSummaries.length]);
 
   const handleToggleMenu = useCallback(() => {
     setMenuOpen((prev) => !prev);
@@ -140,13 +183,27 @@ export function ExportToolbarControls({
     setDialogOpen(false);
   }, []);
 
-  const handleOpenVideoModal = useCallback(() => {
+  const handleOpenVideoModal = useCallback(async () => {
     setMenuOpen(false);
     setVideoModalOpen(true);
-  }, []);
+    setVideoLoading(true);
+    setVideoLoadError(null);
+
+    try {
+      const modules = videoModules ?? (await loadVideoExportModules());
+      setVideoModules(modules);
+      setVideoDoc(modules.markdownToDoc(parseMarkdown(markdownSource)));
+    } catch {
+      setVideoLoadError('Video export could not be loaded.');
+    } finally {
+      setVideoLoading(false);
+    }
+  }, [markdownSource, videoModules]);
 
   const handleCloseVideoModal = useCallback(() => {
     setVideoModalOpen(false);
+    setVideoDoc(null);
+    setVideoLoadError(null);
   }, []);
 
   const handleExport = useCallback(
@@ -174,6 +231,8 @@ export function ExportToolbarControls({
     }
   }, [lastOptions, markdownSource, selectedFile, mediaContainer]);
 
+  const LoadedVideoExportModal = videoModules?.Modal;
+
   return (
     <>
       <div className="db-toolbar-menu" ref={menuRef}>
@@ -194,7 +253,7 @@ export function ExportToolbarControls({
                 onClick={handleQuickExport}
                 disabled={exporting}
               >
-                {quickLabel(lastOptions)}
+                {quickLabel(lastOptions, transformSummaries)}
               </button>
             )}
             <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
@@ -217,9 +276,38 @@ export function ExportToolbarControls({
         />
       )}
 
-      {videoModalOpen && doc && (
-        <VideoExportModal doc={doc} playerScript={PLAYER_BUNDLE} onClose={handleCloseVideoModal} />
+      {videoModalOpen && (videoLoading || videoLoadError) && (
+        <div className="db-dialog-overlay">
+          <div className="db-dialog">
+            <div className="db-dialog-header">
+              <h2 className="db-dialog-title">Export Video</h2>
+              <button
+                className="db-dialog-close"
+                onClick={handleCloseVideoModal}
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="db-dialog-body">
+              <p className="db-export-hint">{videoLoadError ?? 'Loading...'}</p>
+            </div>
+          </div>
+        </div>
       )}
+
+      {videoModalOpen &&
+        videoModules &&
+        LoadedVideoExportModal &&
+        videoDoc &&
+        !videoLoading &&
+        !videoLoadError && (
+          <LoadedVideoExportModal
+            doc={videoDoc}
+            playerScript={videoModules.playerScript}
+            onClose={handleCloseVideoModal}
+          />
+        )}
     </>
   );
 }

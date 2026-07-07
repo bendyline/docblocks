@@ -37,9 +37,9 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline';
-      script-src 'nonce-${nonce}';
+      script-src ${webview.cspSource} 'nonce-${nonce}';
       font-src ${webview.cspSource};
-      img-src ${webview.cspSource} blob: data:;
+      img-src ${webview.cspSource} https: blob: data:;
       worker-src blob:;">
   <link rel="stylesheet" href="${styleUri}">
   <style>

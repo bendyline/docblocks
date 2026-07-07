@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { getEditorHtml, getVscodeTheme } from './webviewHelper.js';
 import type { WebviewToExtensionMessage } from './messages.js';
+import { withApplyingEditFlag } from './editSync.js';
+import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'docblocks.markdownEditor';
@@ -14,7 +16,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
   ): Promise<void> {
     webviewPanel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
+      localResourceRoots: getEditorLocalResourceRoots(this.context.extensionUri, document.uri),
     };
 
     webviewPanel.webview.html = getEditorHtml(webviewPanel.webview, this.context.extensionUri);
@@ -44,6 +46,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     // Listen for webview messages
     const messageDisposable = webviewPanel.webview.onDidReceiveMessage(
       async (msg: WebviewToExtensionMessage) => {
+        if (await handleMediaMessage(msg, document, webviewPanel.webview)) return;
+
         switch (msg.type) {
           case 'ready':
             sendContent();
@@ -53,7 +57,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
           case 'edit': {
             if (document.getText() === msg.content) return;
 
-            isApplyingEdit = true;
             const edit = new vscode.WorkspaceEdit();
             edit.replace(
               document.uri,
@@ -63,8 +66,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
               ),
               msg.content,
             );
-            await vscode.workspace.applyEdit(edit);
-            isApplyingEdit = false;
+            await withApplyingEditFlag(
+              (nextIsApplyingEdit) => {
+                isApplyingEdit = nextIsApplyingEdit;
+              },
+              async () => {
+                await vscode.workspace.applyEdit(edit);
+              },
+            );
             break;
           }
         }
