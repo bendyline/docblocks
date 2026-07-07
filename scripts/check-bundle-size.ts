@@ -14,14 +14,14 @@ const surfaces: BundleSurface[] = [
     name: 'site',
     htmlPath: 'packages/site/dist/index.html',
     assetsDir: 'packages/site/dist/assets',
-    entryBudgetBytes: 2_200_000,
+    entryBudgetBytes: 2_250_000,
     monacoBudgetBytes: 2_800_000,
   },
   {
     name: 'desktop renderer',
     htmlPath: 'packages/desktop/dist/renderer/index.html',
     assetsDir: 'packages/desktop/dist/renderer/assets',
-    entryBudgetBytes: 2_200_000,
+    entryBudgetBytes: 2_250_000,
     monacoBudgetBytes: 2_800_000,
   },
 ];

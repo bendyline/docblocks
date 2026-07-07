@@ -123,6 +123,42 @@ test.describe('File operations', () => {
   });
 });
 
+test.describe('Welcome gateway', () => {
+  test('first run shows the gateway and Start writing opens the editor', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+
+    // Fresh storage → the welcome doc auto-opens in Play view with the gateway
+    const gateway = page.locator('.db-welcome-gateway');
+    await expect(gateway).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('.db-welcome-gateway-cta').click();
+    await expect(gateway).not.toBeVisible();
+
+    // The same document is now editable
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+  });
+
+  test('dismissal persists across reload', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+
+    const gateway = page.locator('.db-welcome-gateway');
+    await expect(gateway).toBeVisible({ timeout: 10_000 });
+    await page.locator('.db-welcome-gateway-dismiss').click();
+    await expect(gateway).not.toBeVisible();
+
+    await page.reload();
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    // Give the shell a moment to auto-select the welcome doc, then confirm
+    // the gateway stayed dismissed.
+    await page.waitForTimeout(1_500);
+    await expect(gateway).not.toBeVisible();
+  });
+});
+
 test.describe('Workspace picker', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');

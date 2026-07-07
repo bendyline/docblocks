@@ -145,7 +145,7 @@ Examine every package and every cross-cutting concern. Recommended quarterly or 
 | "FileSystem providers" | The 3 implementations — interface conformance, error handling, identity (workspace IDs), media handling                                                                     |
 | "Squisq integration"   | Which surfaces import which squisq subpackages, externals in tsup/Vite, link:squisq script health                                                                           |
 | "Testing"              | Mocha density (only core + cli today), Playwright e2e across root / desktop / vscode                                                                                        |
-| "Codex skills"        | This skill set in `.Codex/skills/`, plus whether a AGENTS.md exists and is current                                                                                         |
+| "Codex skills"         | This skill set in `.Codex/skills/`, plus whether a AGENTS.md exists and is current                                                                                          |
 
 ---
 

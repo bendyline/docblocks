@@ -22,13 +22,25 @@ Build markdown files into HTML output.
 docblocks build -i ./docs -o ./dist
 ```
 
+**Options:**
+
+- `-i, --input <dir>` — Input directory (default: `.`)
+- `-o, --output <dir>` — Output directory (default: `dist`)
+- `-t, --theme <id>` — Visual theme to apply
+
 ### `docblocks serve`
 
 Start a local development server for previewing documents.
 
+**Options:**
+
+- `-p, --port <port>` — Port to listen on (default: `3000`)
+- `-d, --dir <dir>` — Directory to serve (default: `.`)
+- `-t, --theme <id>` — Visual theme to apply
+
 ### `docblocks convert <input>`
 
-Convert a markdown document to DOCX, PPTX, PDF, HTML, or DBK container format.
+Convert a markdown document to DOCX, PPTX, PDF, HTML, or DBK container format. `<input>` can be a `.md` file, a `.zip`/`.dbk` container, or a folder.
 
 ```bash
 # Convert to all formats
@@ -50,7 +62,7 @@ docblocks convert story.md --transform documentary -o ./output
 
 ### `docblocks video <input> [output]`
 
-Render a document to MP4 video with synced animations. Requires ffmpeg and Playwright.
+Render a document to MP4 video with synced animations. Requires ffmpeg and Playwright. `<input>` can be a `.md` file, a `.zip`/`.dbk` container, or a folder.
 
 ```bash
 docblocks video story.md --quality high --orientation portrait

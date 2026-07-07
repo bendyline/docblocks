@@ -106,6 +106,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/vscode/src/messages.ts` (discriminated unions) over `postMessage`.
 - **Wire types live in `packages/core`.** Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in `core` — usually under `host/types.ts` or `filesystem/types.ts`. Surface packages should not define their own copy.
 - **Conventional Commits.** commitlint runs on every commit.
+- **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
 ## Gotchas worth knowing
 

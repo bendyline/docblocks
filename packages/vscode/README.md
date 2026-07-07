@@ -1,30 +1,47 @@
 # DocBlocks for VS Code
 
-VS Code extension providing a rich markdown editor powered by Squisq, plus a setup pane for onboarding.
+VS Code extension that turns `*.md` files into rich DocBlocks documents — a custom editor powered by Squisq, plus a Setup pane for getting the full DocBlocks toolchain running.
 
 ## Features
 
-### Custom Markdown Editor
+### Custom markdown editor
 
-Open any `.md` file with the DocBlocks editor: right-click a file and choose **Open With...** > **DocBlocks Editor**.
+Open any `.md` file with the DocBlocks editor: right-click a file and choose **Open With...** → **DocBlocks Editor**, or run **DocBlocks: Open Editor** from the command palette.
 
-The editor provides three views:
+The editor gives you the same three views as every other DocBlocks surface:
 
-- **Raw** — Monaco-based markdown editing with syntax highlighting
-- **WYSIWYG** — Rich text editing via Tiptap
-- **Preview** — Live slideshow preview
+- **Editor** — rich WYSIWYG editing (Squisq)
+- **Markdown** — the raw markdown source
+- **Play** — presents the document as a Video, Slideshow, Document, or Page
 
-The editor syncs with VS Code's built-in undo/redo, dirty state, and save. Theme (light/dark) follows your VS Code color theme.
+The editor syncs with VS Code's built-in undo/redo, dirty state, and save. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
 
-### Setup Pane
+### Setup pane
 
-Click the DocBlocks icon in the Activity Bar to open the setup pane. It checks your environment and guides installation:
+Click the DocBlocks icon in the Activity Bar (or run **DocBlocks: Open Setup**) to open the Setup view. It checks your environment and guides installation of the optional toolchain:
 
-- **Node.js** — Detects installation, links to nodejs.org if missing
-- **npm** — Verifies package manager availability
-- **DocBlocks CLI** — Checks for `@bendyline/docblocks-cli` and offers one-click install
+- **Node.js** — detects installation, links to nodejs.org if missing
+- **npm** — verifies package manager availability
+- **DocBlocks CLI** — checks for `@bendyline/docblocks-cli` and offers a one-click install
 
-This sets up a productive experience for AI-assisted document creation with GitHub Copilot.
+The editor works without any of these; the CLI unlocks conversion, video rendering, and the MCP server for AI-assisted document workflows.
+
+### Commands
+
+| Command                  | What it does                                          |
+| ------------------------ | ----------------------------------------------------- |
+| `DocBlocks: Open Editor` | Open the active markdown file in the DocBlocks editor |
+| `Open in DocBlocks`      | Context-menu entry on markdown files                  |
+| `DocBlocks: Open Setup`  | Reveal the Setup pane                                 |
+
+## Dual build (desktop VS Code + vscode.dev)
+
+The extension host ships two bundles from one source:
+
+- `dist/extension.js` — the Node-backed host (desktop VS Code); can spawn processes for environment checks
+- `dist/extension.web.js` — the web host (vscode.dev / VS Code for the Web); no Node APIs allowed
+
+Don't let Node-only imports (`fs`, `child_process`, Node-semantics `path`) sneak into code shared with the web bundle. The webview itself (`webview/`) is a Vite-built React app bundled into `dist/webview/`; it never imports `vscode` — the host ↔ webview boundary is the discriminated-union message types in `src/messages.ts`.
 
 ## Development
 
@@ -32,53 +49,36 @@ This sets up a productive experience for AI-assisted document creation with GitH
 # From the monorepo root
 npm run build:vscode
 
-# Or press F5 in VS Code with this package open to launch Extension Development Host
+# Or press F5 in VS Code with this package open to launch the Extension Development Host
 ```
 
-The extension has two build steps:
-
-1. **Webview** — Vite bundles the React editor app into `dist/webview/`
-2. **Extension host** — tsup bundles the VS Code extension into `dist/extension.js`
+`npm run build` here runs tsup (extension host bundles) then Vite (webview).
 
 ## Testing
 
 ### Run VS Code for the Web (manual testing)
 
-Launch a local instance of VS Code for the Web with the extension loaded:
-
 ```bash
-# Build first, then start the server
 npm run build -w docblocks-vscode
 npm run test:web -w docblocks-vscode
 ```
 
-This starts a server at `http://localhost:3100` with the extension pre-loaded and `test-fixtures/` mounted as the workspace. Open your browser to interact with it manually.
+This starts VS Code for the Web at `http://localhost:3100` with the extension pre-loaded. Point it at `test-fixtures/` for sample content.
 
-### Run E2E tests (automated)
-
-Automated Playwright tests drive VS Code for the Web to verify the extension:
+### Run e2e tests (automated)
 
 ```bash
-# Run the full e2e test suite
 npm run test:e2e -w docblocks-vscode
 ```
 
-This will:
-
-1. Build the extension (webview + host)
-2. Start `@vscode/test-web` on port 3100
-3. Run Playwright tests against the running instance
-
-The tests verify:
+This builds the extension, starts `@vscode/test-web` on port 3100 with `test-fixtures/` mounted as the workspace, and runs the Playwright suites:
 
 - Extension activation and activity bar icon
-- Setup pane with environment checks (Node.js, npm, CLI)
-- Custom markdown editor opening and loading content
+- Setup pane environment checks and re-check button
+- Custom markdown editor opening and rendering fixture content
 - Command palette registration
 
-### Test fixtures
-
-Test data lives in `test-fixtures/`. Files placed here are mounted as the virtual workspace when running tests.
+Test data lives in `test-fixtures/`.
 
 ## License
 

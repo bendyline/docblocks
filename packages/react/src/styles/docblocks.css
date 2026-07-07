@@ -1902,6 +1902,81 @@ html:has(.db-shell[data-theme='dark'])
    already autosaved on every keystroke; this just confirms it
    so muscle-memory savers feel at ease. */
 
+/* ── Welcome gateway ─────────────────────────────────────────── */
+/* One-time first-run callout floated over the welcome doc's Play
+   view. Names the mode the user landed in and offers a one-click
+   path into the editor. Dismissed forever via localStorage. */
+
+.db-welcome-gateway {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(640px, calc(100% - 32px));
+  padding: 10px 10px 10px 16px;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px var(--db-shadow);
+  color: var(--db-text);
+  font-size: 13px;
+  line-height: 1.45;
+  animation: db-welcome-gateway-in 0.4s ease-out;
+}
+
+.db-welcome-gateway-cta {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--db-accent);
+  color: var(--db-bg);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.db-welcome-gateway-cta:hover {
+  background: var(--db-accent-hover);
+}
+
+.db-welcome-gateway-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+  line-height: 1;
+  background: transparent;
+  color: var(--db-text-muted);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.db-welcome-gateway-dismiss:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+@keyframes db-welcome-gateway-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .db-save-toast {
   position: fixed;
   bottom: 32px;
