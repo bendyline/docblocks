@@ -1,3 +1,10 @@
+## @bendyline/docblocks [1.1.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.1.1...@bendyline/docblocks@1.1.2) (2026-07-07)
+
+### Bug Fixes
+
+* Code review work ([c842f61](https://github.com/bendyline/docblocks/commit/c842f6159cc96bc9728fc34c54e7c8e39db3c4e9))
+* DocBlock updates, newest squisq ([d7e90a2](https://github.com/bendyline/docblocks/commit/d7e90a2c9e77b947d405857e40c63ad0ea71033a))
+
 ## @bendyline/docblocks [1.1.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.1.0...@bendyline/docblocks@1.1.1) (2026-05-20)
 
 ### Bug Fixes
