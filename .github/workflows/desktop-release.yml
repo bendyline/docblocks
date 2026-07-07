@@ -103,6 +103,22 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
+      - name: Verify Windows signature (fail if unsigned)
+        if: env.SIGNING_ENDPOINT != ''
+        shell: pwsh
+        run: |
+          # Only enforced when Trusted Signing is configured. Catches the case
+          # where signing silently no-op'd and we'd otherwise ship an unsigned exe.
+          $exe = Get-ChildItem packages/desktop/dist/artifacts/*.exe | Select-Object -First 1
+          if (-not $exe) { throw "No .exe produced to verify" }
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "Signature status for $($exe.Name): $($sig.Status)"
+          if ($sig.Status -ne 'Valid') {
+            throw "Expected a valid Authenticode signature but got '$($sig.Status)'"
+          }
+        env:
+          SIGNING_ENDPOINT: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT }}
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -174,6 +190,21 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
 
+      - name: Verify macOS signing (fail if unsigned)
+        if: env.APPLE_CERT != ''
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+        run: |
+          # Only enforced when a signing cert is configured. codesign --verify is
+          # the deterministic gate (fails on an unsigned app); the staple check is
+          # informational since stapling depends on the notarize hook.
+          APP=$(find packages/desktop/dist/artifacts -maxdepth 2 -name 'DocBlocks.app' | head -n1)
+          if [ -z "$APP" ]; then echo "No DocBlocks.app produced to verify"; exit 1; fi
+          echo "Verifying code signature on $APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          echo "Notarization staple (informational):"
+          xcrun stapler validate "$APP" || echo "::warning::app not stapled — Gatekeeper will fall back to an online notarization check"
+
       - name: Clean up keychain
         if: always()
         run: |
@@ -187,6 +218,8 @@ jobs:
           path: |
             packages/desktop/dist/artifacts/*.dmg
             packages/desktop/dist/artifacts/*.dmg.blockmap
+            packages/desktop/dist/artifacts/*.zip
+            packages/desktop/dist/artifacts/*.zip.blockmap
             packages/desktop/dist/artifacts/latest-mac.yml
           retention-days: 14
 
@@ -249,6 +282,16 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f | sort
 
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          find windows-artifacts macos-artifacts linux-artifacts -type f \
+            \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) \
+            -print0 | while IFS= read -r -d '' f; do
+              printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")"
+            done | sort -k2 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -260,5 +303,6 @@ jobs:
             artifacts/windows-artifacts/*
             artifacts/macos-artifacts/*
             artifacts/linux-artifacts/*
+            artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

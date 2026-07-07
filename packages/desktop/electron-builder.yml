@@ -7,8 +7,8 @@ directories:
   buildResources: resources
 
 # Templated so release artifacts carry the version + platform in their
-# filename (e.g. DocBlocks-0.1.0-mac-arm64.dmg). Overrides the stock
-# "DocBlocks Setup 0.1.0.exe" naming.
+# filename (e.g. DocBlocks-<version>-mac-arm64.dmg). Overrides the stock
+# "DocBlocks Setup <version>.exe" naming.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
 files:
@@ -68,12 +68,36 @@ nsis:
   uninstallerSidebar: installer/sidebar.bmp
   include: installer/nsis-hooks.nsh
 
+# Microsoft Store build variant — built with `electron-builder --win appx`.
+# The Store re-signs the package, so it is left unsigned here (the Azure
+# Trusted Signing hook only applies to the nsis target's signtoolOptions).
+# Auto-update is disabled at runtime via process.windowsStore. The identity
+# values below MUST match the app reservation in Partner Center exactly —
+# see RELEASING.md. Tile assets are read from resources/appx/ if present,
+# otherwise electron-builder generates them from resources/icon.png.
+appx:
+  identityName: BendylineLLC.DocBlocks
+  publisher: CN=791A4319-B5A9-4402-928A-D644A8E3351D
+  publisherDisplayName: Bendyline, LLC
+  applicationId: DocBlocks
+  displayName: DocBlocks
+  backgroundColor: '#1e1e1e'
+  languages:
+    - en-US
+
 # macOS configuration
 # Signing uses the "Developer ID Application" certificate from the keychain.
 # Notarization is handled by afterSign (scripts/notarize.cjs).
 mac:
   target:
+    # dmg is the human-facing download; zip is what electron-updater installs
+    # from on macOS (it cannot auto-install from a .dmg). latest-mac.yml points
+    # at the zip — omitting it silently breaks macOS auto-update.
     - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
       arch:
         - x64
         - arm64
@@ -83,6 +107,20 @@ mac:
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
+
+# Mac App Store build variant — built with `electron-builder --mac mas`.
+# Runs inside the App Sandbox (distinct from the Developer ID `mac` block
+# above, which notarizes for direct download). Auto-update is disabled at
+# runtime via process.mas. Requires an "Apple Distribution" + "Mac Installer
+# Distribution" cert and a Mac App Store provisioning profile — see RELEASING.md.
+mas:
+  entitlements: entitlements.mas.plist
+  entitlementsInherit: entitlements.mas.inherit.plist
+  # Provisioning profile for com.bendyline.docblocks, downloaded from the
+  # Apple Developer portal. Injected at build time in CI; not committed.
+  provisioningProfile: embedded.provisionprofile
+  # The sandbox replaces the hardened runtime for MAS.
+  hardenedRuntime: false
 
 dmg:
   # Uncomment once a proper dmg background asset is designed.

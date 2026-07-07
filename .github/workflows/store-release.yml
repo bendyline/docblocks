@@ -1,0 +1,165 @@
+##
+# App Store Release Workflow
+#
+# Builds the store-submission variants of the DocBlocks desktop app:
+#   - Windows: MSIX/APPX for the Microsoft Store (Partner Center)
+#   - macOS:   signed .pkg for the Mac App Store (App Store Connect)
+#
+# These are DIFFERENT from the public installers built by desktop-release.yml:
+#   - Auto-update is disabled at runtime (process.windowsStore / process.mas);
+#     the stores deliver updates.
+#   - They are NOT attached to a GitHub Release. The artifacts here are meant
+#     to be downloaded and uploaded manually to Partner Center / App Store
+#     Connect (or via their CLIs). See packages/desktop/RELEASING.md.
+#   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
+#     a clean x.y.z version.
+#
+# Prerequisites (one-time setup) — see RELEASING.md:
+#   Microsoft Store:  reserve the app in Partner Center, fill the appx: identity
+#                     values in electron-builder.yml. No signing cert needed
+#                     (the Store re-signs).
+#   Mac App Store:    "Apple Distribution" + "Mac Installer Distribution" certs
+#                     and a Mac App Store provisioning profile for
+#                     com.bendyline.docblocks.
+##
+
+name: Release Store Builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which store build(s) to produce'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - both
+          - windows
+          - macos
+
+permissions:
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Windows — Microsoft Store MSIX (unsigned; the Store re-signs on ingestion)
+  # ──────────────────────────────────────────────────────────────────────────
+  build-msix:
+    if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # NB: no version stamping — the Store wants a clean x.y.z version.
+
+      - name: Build upstream packages
+        run: npm run build
+
+      - name: Build MSIX package
+        run: npm run dist:appx -w docblocks-desktop -- --publish never
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: microsoft-store-msix
+          path: |
+            packages/desktop/dist/artifacts/*.appx
+            packages/desktop/dist/artifacts/*.msix
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # macOS — Mac App Store .pkg (sandboxed; signed with MAS distribution certs)
+  # ──────────────────────────────────────────────────────────────────────────
+  build-mas:
+    if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # NB: no version stamping — the App Store wants a clean x.y.z version.
+
+      - name: Build upstream packages
+        run: npm run build
+
+      - name: Import MAS certificates
+        env:
+          MAS_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_MAS_CERTIFICATE_P12_BASE64 }}
+          MAS_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$MAS_CERTIFICATE_P12_BASE64" ]; then
+            echo "::error::APPLE_MAS_CERTIFICATE_P12_BASE64 is required for a Mac App Store build"
+            exit 1
+          fi
+          # The .p12 must contain BOTH "Apple Distribution" and
+          # "Mac Installer Distribution" identities for the mas target.
+          KEYCHAIN_PATH=$RUNNER_TEMP/mas-signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$MAS_CERTIFICATE_P12_BASE64" | base64 --decode > $RUNNER_TEMP/mas-certificate.p12
+          security import $RUNNER_TEMP/mas-certificate.p12 \
+            -P "$MAS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
+
+      - name: Install provisioning profile
+        env:
+          MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$MAS_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "::error::MAS_PROVISIONING_PROFILE_BASE64 is required for a Mac App Store build"
+            exit 1
+          fi
+          echo "$MAS_PROVISIONING_PROFILE_BASE64" | base64 --decode > packages/desktop/embedded.provisionprofile
+
+      - name: Build MAS package
+        run: |
+          sudo launchctl limit maxfiles 524288 524288
+          ulimit -n 524288
+          npm run dist:mas -w docblocks-desktop -- --publish never
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          UV_THREADPOOL_SIZE: 16
+
+      - name: Clean up
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/mas-signing.keychain-db" 2>/dev/null || true
+          rm -f packages/desktop/embedded.provisionprofile
+
+      - name: Upload MAS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-app-store-pkg
+          path: packages/desktop/dist/artifacts/*.pkg
+          retention-days: 14
