@@ -46,10 +46,12 @@ win:
         - x64
   icon: resources/icon.png
   executableName: DocBlocks
-  publisherName: 'Bendyline LLC'
-  sign: scripts/sign.cjs
-  signingHashAlgorithms:
-    - sha256
+  # electron-builder 26 moved signtool options under `signtoolOptions`.
+  signtoolOptions:
+    publisherName: 'Bendyline LLC'
+    sign: scripts/sign.cjs
+    signingHashAlgorithms:
+      - sha256
 
 nsis:
   oneClick: false
