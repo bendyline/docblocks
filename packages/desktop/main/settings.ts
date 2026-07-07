@@ -24,6 +24,12 @@ export interface PersistedWorkspace {
   id: string;
   name: string;
   rootPath: string;
+  /**
+   * Base64 security-scoped bookmark. Only populated in Mac App Store builds,
+   * where the sandbox otherwise loses access to user-picked folders across
+   * launches. Ignored (and never written) in non-sandboxed builds.
+   */
+  bookmark?: string;
 }
 
 export interface Settings {

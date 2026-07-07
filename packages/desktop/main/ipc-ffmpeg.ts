@@ -65,11 +65,19 @@ async function detectFfmpeg(): Promise<string | null> {
 }
 
 export function registerFfmpegIpc(): void {
+  // The Mac App Store sandbox forbids spawning external binaries, so both the
+  // `ffmpeg` probe and the `docblocks` CLI delegation below are unavailable.
+  // Report ffmpeg as absent so the renderer falls back to the in-browser
+  // exporter instead of surfacing spawn errors.
+  const sandboxed = process.mas === true;
+
   ipcMain.handle('ffmpeg:available', async () => {
+    if (sandboxed) return false;
     return (await detectFfmpeg()) !== null;
   });
 
   ipcMain.handle('ffmpeg:version', async () => {
+    if (sandboxed) return null;
     return detectFfmpeg();
   });
 
@@ -87,6 +95,9 @@ export function registerFfmpegIpc(): void {
       markdownAbsolutePath: string,
       options: { fps?: number; quality?: 'draft' | 'normal' | 'high' },
     ) => {
+      if (sandboxed) {
+        throw new Error('Video rendering is unavailable in the Mac App Store build');
+      }
       const roots = getWorkspaceRoots();
       // Validate the path is inside a registered workspace root.
       const known = roots.list().some((r) => {

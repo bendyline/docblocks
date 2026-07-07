@@ -7,6 +7,7 @@
 
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { MenuCommand } from '@bendyline/docblocks/host';
+import { isStoreBuild } from './updater.js';
 
 function send(win: BrowserWindow, cmd: MenuCommand): void {
   win.webContents.send('menu:command', cmd);
@@ -14,6 +15,9 @@ function send(win: BrowserWindow, cmd: MenuCommand): void {
 
 export function buildMenu(win: BrowserWindow): void {
   const isMac = process.platform === 'darwin';
+  // Store-distributed builds update through the store, so the manual
+  // "Check for Updates" affordance would be misleading — omit it.
+  const showUpdateCheck = !isStoreBuild();
 
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
@@ -22,8 +26,15 @@ export function buildMenu(win: BrowserWindow): void {
             label: app.name,
             submenu: [
               { role: 'about' },
-              { type: 'separator' },
-              { label: 'Check for Updates...', click: () => send(win, 'help:checkForUpdates') },
+              ...(showUpdateCheck
+                ? ([
+                    { type: 'separator' },
+                    {
+                      label: 'Check for Updates...',
+                      click: () => send(win, 'help:checkForUpdates'),
+                    },
+                  ] as MenuItemConstructorOptions[])
+                : []),
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -89,14 +100,14 @@ export function buildMenu(win: BrowserWindow): void {
       submenu: [
         { label: 'About DocBlocks', click: () => send(win, 'help:about') },
         { label: 'View on GitHub', click: () => send(win, 'help:viewOnGitHub') },
-        ...(isMac
-          ? []
-          : [
+        ...(!isMac && showUpdateCheck
+          ? [
               {
                 label: 'Check for Updates...',
                 click: () => send(win, 'help:checkForUpdates'),
               } as MenuItemConstructorOptions,
-            ]),
+            ]
+          : []),
       ],
     },
   ];

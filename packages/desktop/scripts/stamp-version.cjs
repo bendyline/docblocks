@@ -6,16 +6,17 @@
  * Usage:
  *   node scripts/stamp-version.cjs --run 123
  *
- * Effect:
- *   "version": "0.1.0"  →  "0.1.0-build.123"
+ * Effect (base version read from package.json):
+ *   "version": "1.0.1"  →  "1.0.1-build.123"
  *
  * electron-updater compares versions via SemVer, so a plain build
  * metadata suffix (`+build.N`) would be treated as equal to the base
  * version and never trigger an upgrade. A prerelease suffix is ordered
  * and detected as "newer" when the build number increments.
  *
- * When a proper `0.1.1` or `0.2.0` tag is cut, the tag itself wins — do
- * not stamp on tag-triggered runs.
+ * When a proper `1.0.2` or `1.1.0` tag is cut, the tag itself wins — do
+ * not stamp on tag-triggered runs. Store builds (MSIX / MAS) must NOT be
+ * stamped: they need a clean x.y.z version, not a prerelease suffix.
  */
 
 const fs = require('node:fs');

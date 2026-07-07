@@ -2,13 +2,14 @@
  * IPC handlers for workspace management — default folder, picker, register.
  */
 
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { app, ipcMain, dialog, BrowserWindow } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ElectronWorkspaceInfo } from '@bendyline/docblocks/host';
 
 import { getWorkspaceRoots } from './workspace-roots.js';
 import { updateSettings, readSettings } from './settings.js';
+import { isSandboxed } from './security-scoped.js';
 import {
   isMacOSDocumentsICloudManaged,
   suggestedDefaultRoot,
@@ -61,6 +62,27 @@ export function registerWorkspaceIpc(): void {
       return { id, name: path.basename(rootPath) || 'DocBlocks', rootPath };
     }
 
+    // Mac App Store sandbox: the app can only freely write inside its own
+    // container. `app.getPath('documents')` is redirected there by the sandbox,
+    // so it's the one default that needs no user grant. Other folders are
+    // reached via the picker, which mints a security-scoped bookmark. (The
+    // iCloud nudge below is irrelevant inside the container.)
+    if (isSandboxed()) {
+      const root = path.join(app.getPath('documents'), 'DocBlocks');
+      await ensureFolder(root);
+      const id = deriveWorkspaceId(root);
+      const name = path.basename(root) || 'DocBlocks';
+      roots.register(id, root);
+      await updateSettings((s) => {
+        const next = { ...s, defaultWorkspaceRoot: root };
+        if (!next.workspaces.some((w) => w.id === id)) {
+          next.workspaces.push({ id, name, rootPath: root });
+        }
+        return next;
+      });
+      return { id, name, rootPath: root };
+    }
+
     // First launch — consider iCloud on macOS and give the user one prompt.
     let chosenRoot = suggestedDefaultRoot();
     if (
@@ -105,17 +127,27 @@ export function registerWorkspaceIpc(): void {
     const result = await dialog.showOpenDialog(win!, {
       title: 'Open folder',
       properties: ['openDirectory', 'createDirectory'],
+      // MAS only: mint a security-scoped bookmark so we can regain access to
+      // this folder after a relaunch. Empty/undefined in non-sandboxed builds.
+      securityScopedBookmarks: isSandboxed(),
     });
     if (result.canceled || result.filePaths.length === 0) return null;
 
     const rootPath = result.filePaths[0];
+    // The dialog already grants access for this session; the bookmark is what
+    // restores it next launch (consumed in main.ts on startup).
+    const bookmark = result.bookmarks?.[0];
     const id = deriveWorkspaceId(rootPath);
     const name = path.basename(rootPath) || 'Folder';
     roots.register(id, rootPath);
 
     await updateSettings((s) => {
-      if (!s.workspaces.some((w) => w.id === id)) {
-        s.workspaces.push({ id, name, rootPath });
+      const existing = s.workspaces.find((w) => w.id === id);
+      if (existing) {
+        // Refresh the bookmark — they can go stale, and re-picking renews it.
+        if (bookmark) existing.bookmark = bookmark;
+      } else {
+        s.workspaces.push({ id, name, rootPath, ...(bookmark ? { bookmark } : {}) });
       }
       return s;
     });

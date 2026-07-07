@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac App Store entitlements (parent / main app).
+
+  MAS builds run inside the App Sandbox, so unlike the Developer ID
+  entitlements.mac.plist this file grants sandbox capabilities rather than
+  hardened-runtime exceptions:
+
+    - app-sandbox               required for the Mac App Store
+    - files.user-selected.*     read/write folders the user picks via a dialog
+    - files.bookmarks.app-scope persist that access across launches via
+                                security-scoped bookmarks (see ipc-workspaces)
+    - network.client            outbound network for any fetch the app makes
+
+  Do NOT copy the allow-jit / allow-unsigned-executable-memory keys from the
+  Developer ID entitlements here — those are hardened-runtime concepts and are
+  rejected by App Store review.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.bookmarks.app-scope</key>
+  <true/>
+  <key>com.apple.security.network.client</key>
+  <true/>
+</dict>
+</plist>

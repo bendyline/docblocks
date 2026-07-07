@@ -16,12 +16,13 @@ import { registerFsIpc } from './ipc-fs.js';
 import { registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
-import { registerUpdaterIpc, initAutoUpdater } from './updater.js';
+import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
 import { buildMenu } from './menu.js';
 import { readSettings, flushSettings } from './settings.js';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { registerTray } from './tray.js';
+import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
@@ -246,9 +247,13 @@ app.whenReady().then(async () => {
   registerAppProtocol();
 
   // Pre-populate the whitelist with any previously trusted roots from settings.
+  // In a MAS build, re-open security-scoped access from the saved bookmark
+  // BEFORE registering — otherwise the sandbox denies node:fs on that path.
+  // startAccessingBookmark is a no-op outside MAS, so this is inert elsewhere.
   const settings = await readSettings();
   const roots = getWorkspaceRoots();
   for (const info of settings.workspaces) {
+    startAccessingBookmark(info.bookmark);
     roots.register(info.id, info.rootPath);
   }
 
@@ -264,7 +269,9 @@ app.whenReady().then(async () => {
 
   registerTray(() => mainWindow);
 
-  if (!isDev) {
+  // Store builds (Mac App Store / Microsoft Store) must not self-update — the
+  // store delivers updates. Only run the GitHub updater for direct-download builds.
+  if (!isDev && !isStoreBuild()) {
     initAutoUpdater();
   }
 });
@@ -281,6 +288,8 @@ app.on('before-quit', async (event) => {
     // best-effort — never block shutdown on an I/O error
   }
   (app as unknown as { _flushedSettings?: boolean })._flushedSettings = true;
+  // Release any MAS security-scoped resource handles (no-op elsewhere).
+  releaseAllScopedResources();
   app.quit();
 });
 

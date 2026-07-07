@@ -19,6 +19,16 @@ const { autoUpdater } = pkg;
 
 const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
 
+/**
+ * True in store-distributed builds (Mac App Store / Microsoft Store), where
+ * the store delivers updates and the app must not self-update. Electron sets
+ * `process.mas` / `process.windowsStore` only in those packaged variants, so
+ * this is safe to call from any process.
+ */
+export function isStoreBuild(): boolean {
+  return process.mas === true || process.windowsStore === true;
+}
+
 function releaseUrlFor(version: string): string {
   return `${RELEASE_URL_BASE}/v${version}`;
 }
@@ -38,6 +48,10 @@ function broadcast(status: UpdaterStatus): void {
 }
 
 export function initAutoUpdater(): void {
+  // Defensive: the store delivers updates for these builds. main.ts already
+  // guards this call, but never let the GitHub updater run in a store build.
+  if (isStoreBuild()) return;
+
   autoUpdater.autoDownload = true;
   // Let the renderer drive installation — no silent quit-and-install on
   // app quit, since the renderer banner gives the user an explicit CTA.
@@ -75,6 +89,8 @@ export function initAutoUpdater(): void {
 
 export function registerUpdaterIpc(): void {
   ipcMain.handle('updater:checkForUpdates', async (): Promise<boolean> => {
+    // Store builds are updated by the store, not by electron-updater.
+    if (isStoreBuild()) return false;
     try {
       const res = await autoUpdater.checkForUpdates();
       return !!res?.updateInfo && res.updateInfo.version !== app.getVersion();
@@ -88,6 +104,7 @@ export function registerUpdaterIpc(): void {
   });
 
   ipcMain.handle('updater:quitAndInstall', async (): Promise<void> => {
+    if (isStoreBuild()) return;
     // Must fire on the next tick so the IPC round-trip completes before
     // the process exits; otherwise the renderer gets a connection error.
     setImmediate(() => autoUpdater.quitAndInstall());
