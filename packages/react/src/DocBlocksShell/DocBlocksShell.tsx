@@ -25,6 +25,7 @@ import {
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import {
   IndexedDBFileSystemProvider,
+  MemoryFileSystemProvider,
   ElectronFileSystemProvider,
   FileSystemContentContainer,
   createFileMediaProvider,
@@ -34,6 +35,7 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
+import type { OpenRequest } from '@bendyline/docblocks/host';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
@@ -42,6 +44,8 @@ import {
   removeWorkspace,
   saveWorkspace,
   touchWorkspace,
+  registerTransientWorkspace,
+  getTransientWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu, type ThemePreference } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
@@ -618,21 +622,30 @@ export function DocBlocksShell({
       push: boolean,
       view?: EditorView,
     ): Promise<FileSystemProvider | null> => {
-      const workspaces = await listWorkspaces();
-      const ws = workspaces.find((w) => w.id === wsId);
-      if (!ws) return null;
-
+      // Transient (session-only) workspaces — a loose file or `.dbk` opened
+      // from the OS — carry a pre-built in-memory provider in the registry.
+      const transient = getTransientWorkspace(wsId);
+      let ws: WorkspaceDescriptor | undefined;
       let fsProvider: FileSystemProvider | null = null;
-      if (ws.type === 'electron-native') {
-        fsProvider = await createElectronProviderFromWorkspace(ws);
-        if (!fsProvider) return null;
-      } else if (ws.type === 'native') {
-        const restored = await restoreNativeFolder(ws.id);
-        if (!restored) return null;
-        fsProvider = restored;
+      if (transient) {
+        ws = transient.descriptor;
+        fsProvider = transient.provider;
       } else {
-        fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
+        const workspaces = await listWorkspaces();
+        ws = workspaces.find((w) => w.id === wsId);
+        if (!ws) return null;
+        if (ws.type === 'electron-native') {
+          fsProvider = await createElectronProviderFromWorkspace(ws);
+          if (!fsProvider) return null;
+        } else if (ws.type === 'native') {
+          const restored = await restoreNativeFolder(ws.id);
+          if (!restored) return null;
+          fsProvider = restored;
+        } else {
+          fsProvider = new IndexedDBFileSystemProvider(ws.id, ws.name);
+        }
       }
+      if (!ws || !fsProvider) return null;
       await touchWorkspace(ws.id);
       setProvider(fsProvider);
       setActiveWorkspaceId(ws.id);
@@ -647,7 +660,11 @@ export function DocBlocksShell({
           const effectiveView = view ?? 'wysiwyg';
           setInitialView(effectiveView);
           setEditorKey((k) => k + 1);
-          saveLastState({ workspaceId: wsId, filePath, view: effectiveView });
+          // Transient workspaces are session-only; don't persist them as the
+          // "last opened" state (the id won't exist after a reload).
+          if (!transient) {
+            saveLastState({ workspaceId: wsId, filePath, view: effectiveView });
+          }
         } else {
           setSelectedFile(null);
           setSelectedFolder(null);
@@ -1063,7 +1080,10 @@ export function DocBlocksShell({
     async (ws: WorkspaceDescriptor) => {
       await touchWorkspace(ws.id);
       let nextProvider: FileSystemProvider | null = null;
-      if (ws.type === 'electron-native') {
+      const transient = getTransientWorkspace(ws.id);
+      if (transient) {
+        nextProvider = transient.provider;
+      } else if (ws.type === 'electron-native') {
         nextProvider = await createElectronProviderFromWorkspace(ws);
         if (!nextProvider) return;
       } else if (ws.type === 'native') {
@@ -1194,14 +1214,8 @@ export function DocBlocksShell({
     });
   }, [handleNewFile, handleOpenFolder, handleRevealWorkspace]);
 
-  // Subscribe to open-file / deep-link requests from the OS.
-  useEffect(() => {
-    if (!isElectronHost()) return;
-    const host = getDocBlocksHost();
-    return host.onOpenRequest(async (req) => {
-      await openFromIds(req.workspaceId, req.path, true);
-    });
-  }, [openFromIds]);
+  // OS open-file / deep-link handling lives after the container helpers it
+  // depends on — see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
     async (path: string, kind: 'file' | 'directory') => {
@@ -1375,6 +1389,99 @@ export function DocBlocksShell({
     },
     [],
   );
+
+  /**
+   * Open a loose file or `.dbk` bundle delivered by the OS into a session-only
+   * *transient* workspace backed by an in-memory provider. Loose files save
+   * straight back to disk; bundles are re-zipped (see the save-back effect).
+   */
+  const openTransient = useCallback(
+    async (req: Extract<OpenRequest, { kind: 'external-file' | 'external-bundle' }>) => {
+      const host = getDocBlocksHost();
+      const id = `transient-${req.kind}-${req.path}`;
+      const mem = new MemoryFileSystemProvider(id, req.name);
+      let primaryFile: string;
+      let origin: WorkspaceDescriptor['origin'];
+
+      if (req.kind === 'external-file') {
+        const content = (await host.external.readText(req.path)) ?? '';
+        primaryFile = req.name; // e.g. "notes.md"
+        mem.seedText(primaryFile, content);
+        origin = { kind: 'loose-file', path: req.path };
+      } else {
+        const bytes = await host.external.readBinary(req.path);
+        if (!bytes) return;
+        const { zipToContainer } = await import('@bendyline/squisq-formats/container');
+        const container = await zipToContainer(bytes);
+        const markdown = (await container.readDocument()) ?? '';
+        const base = req.name.replace(/\.[^.]+$/, '');
+        primaryFile = `${base}.md`;
+        mem.seedText(primaryFile, markdown);
+        await persistImportedMedia(container, mem, primaryFile);
+        origin = { kind: 'dbk', path: req.path };
+      }
+
+      const descriptor: WorkspaceDescriptor = {
+        id,
+        name: req.name,
+        type: 'transient',
+        lastOpened: new Date().toISOString(),
+        origin,
+      };
+      registerTransientWorkspace(descriptor, mem);
+      await openFromIds(id, `/${primaryFile}`, true);
+    },
+    [openFromIds, persistImportedMedia],
+  );
+
+  // Subscribe to OS open-file / deep-link requests.
+  useEffect(() => {
+    if (!isElectronHost()) return;
+    const host = getDocBlocksHost();
+    return host.onOpenRequest(async (req) => {
+      if (req.kind === 'workspace-file') {
+        await openFromIds(req.workspaceId, req.path, true);
+      } else {
+        await openTransient(req);
+      }
+    });
+  }, [openFromIds, openTransient]);
+
+  // Debounced save-back for transient workspaces. Loose files write straight to
+  // disk; `.dbk` bundles are re-zipped from the in-memory provider. Both go
+  // through the session-allowlisted `external` IPC. No-op for normal workspaces.
+  useEffect(() => {
+    if (!isElectronHost() || !activeWorkspaceId || !provider || !selectedFile) return;
+    const t = getTransientWorkspace(activeWorkspaceId);
+    const origin = t?.descriptor.origin;
+    if (!t || !origin) return;
+
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const host = getDocBlocksHost();
+          if (origin.kind === 'loose-file') {
+            await host.external.writeText(origin.path, editorContent);
+          } else {
+            if (selectedFile.endsWith('.md')) {
+              await t.provider.writeFile(selectedFile, editorContent);
+            }
+            const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+              import('@bendyline/squisq/storage'),
+              import('@bendyline/squisq-formats/container'),
+            ]);
+            const container = new MemoryContentContainer();
+            await copyProviderToContainer(t.provider, container, '');
+            const blob = await containerToZip(container);
+            await host.external.writeBinary(origin.path, await blob.arrayBuffer());
+          }
+        } catch (err) {
+          console.error('Failed to save transient workspace back to origin:', err);
+        }
+      })();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [editorContent, activeWorkspaceId, provider, selectedFile, copyProviderToContainer]);
 
   const handleDownloadWorkspace = useCallback(async () => {
     if (!provider) return;

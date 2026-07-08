@@ -34,10 +34,6 @@ publish:
   owner: bendyline
   repo: docblocks
 
-# Custom signing script for Azure Trusted Signing (Windows).
-# Skipped gracefully when TRUSTED_SIGNING_DLIB_PATH is not set (local dev).
-afterSign: scripts/notarize.cjs
-
 # Windows configuration
 win:
   target:
@@ -87,7 +83,9 @@ appx:
 
 # macOS configuration
 # Signing uses the "Developer ID Application" certificate from the keychain.
-# Notarization is handled by afterSign (scripts/notarize.cjs).
+# Notarization is electron-builder's built-in notarytool step, auto-enabled
+# when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are in the env
+# (CI only) — it also staples the ticket. No custom afterSign hook needed.
 mac:
   target:
     # dmg is the human-facing download; zip is what electron-updater installs
@@ -147,6 +145,10 @@ linux:
         - x64
   icon: resources/icon.png
   category: Office
+  # Required by the .deb (fpm) target. Kept here rather than as an author email
+  # in package.json so the package author field stays consistent with the other
+  # workspace packages.
+  maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
   description: DocBlocks — a browser-based markdown document editor for the desktop.
 
@@ -177,9 +179,31 @@ protocols:
     schemes:
       - docblocks
 
-# Register .md as an openable file type so OS "Open With" routes here.
+# Register markdown extensions + the DocBlocks bundle (.dbk) so OS "Open With"
+# routes here. `role: Editor` marks DocBlocks as an editor (not just a viewer),
+# so it can be set as the default handler.
 fileAssociations:
   - ext: md
     name: Markdown Document
+    role: Editor
+    icon: resources/icon.png
+  - ext: markdown
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png
+  - ext: mdown
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png
+  - ext: mkd
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png
+  - ext: mdx
+    name: Markdown Document
+    role: Editor
+    icon: resources/icon.png
+  - ext: dbk
+    name: DocBlocks Bundle
     role: Editor
     icon: resources/icon.png

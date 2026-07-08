@@ -5,6 +5,12 @@
   "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
   "author": "Bendyline",
   "license": "MIT",
+  "homepage": "https://github.com/bendyline/docblocks",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bendyline/docblocks.git",
+    "directory": "packages/desktop"
+  },
   "main": "dist/main/main.cjs",
   "type": "module",
   "scripts": {

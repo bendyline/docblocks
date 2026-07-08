@@ -69,8 +69,13 @@ jobs:
       - name: Build upstream packages
         run: npm run build
 
+      # Invoke electron-builder directly — on Windows, npm/cmd swallows the
+      # `--publish` flag when forwarded through `npm run … -- --publish never`.
       - name: Build MSIX package
-        run: npm run dist:appx -w docblocks-desktop -- --publish never
+        working-directory: packages/desktop
+        run: |
+          npm run build
+          npx --no-install electron-builder --win appx --publish never
 
       - name: Upload MSIX artifact
         uses: actions/upload-artifact@v4

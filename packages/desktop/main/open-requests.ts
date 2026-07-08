@@ -8,15 +8,23 @@ import path from 'node:path';
 import type { OpenRequest } from '@bendyline/docblocks/host';
 import type { BrowserWindow } from 'electron';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
+import { allowExternalPath } from './external-files.js';
 
-function isLikelyMarkdownFile(candidate: string): boolean {
-  if (!candidate) return false;
-  if (!candidate.match(/\.(md|markdown|txt)$/i)) return false;
+const MARKDOWN_EXT = /\.(md|markdown|mdown|mkd|mdx|txt)$/i;
+const BUNDLE_EXT = /\.(dbk|zip)$/i;
+
+function isExistingFile(candidate: string): boolean {
   try {
     return fs.statSync(candidate).isFile();
   } catch {
     return false;
   }
+}
+
+function isLikelyMarkdownFile(candidate: string): boolean {
+  if (!candidate) return false;
+  if (!candidate.match(MARKDOWN_EXT)) return false;
+  return isExistingFile(candidate);
 }
 
 function toWorkspaceFileRequest(candidate: string): OpenRequest | null {
@@ -50,15 +58,41 @@ export function resolveOpenUrl(url: string): OpenRequest | null {
   }
 }
 
+/**
+ * Resolve a plain file path (from argv or the macOS open-file event) into an
+ * OpenRequest:
+ *   - `.dbk`/`.zip` bundle          → external-bundle (unpacked transiently)
+ *   - markdown file inside a workspace → workspace-file
+ *   - markdown file elsewhere        → external-file (transient, saved in place)
+ * External kinds are added to the session allowlist so the renderer can read
+ * their bytes and save back.
+ */
+function resolveFilePath(candidate: string): OpenRequest | null {
+  const absolute = path.isAbsolute(candidate) ? candidate : path.resolve(candidate);
+  if (!isExistingFile(absolute)) return null;
+  const name = path.basename(absolute);
+
+  if (BUNDLE_EXT.test(absolute)) {
+    allowExternalPath(absolute);
+    return { kind: 'external-bundle', path: absolute, name };
+  }
+
+  if (!MARKDOWN_EXT.test(absolute)) return null;
+
+  const inWorkspace = toWorkspaceFileRequest(absolute);
+  if (inWorkspace) return inWorkspace;
+
+  allowExternalPath(absolute);
+  return { kind: 'external-file', path: absolute, name };
+}
+
 export function resolveOpenRequests(argv: readonly string[]): OpenRequest[] {
   const requests: OpenRequest[] = [];
 
   for (const arg of argv) {
     if (!arg || typeof arg !== 'string') continue;
 
-    const request = arg.startsWith('docblocks://')
-      ? resolveOpenUrl(arg)
-      : toWorkspaceFileRequest(arg);
+    const request = arg.startsWith('docblocks://') ? resolveOpenUrl(arg) : resolveFilePath(arg);
     if (request) requests.push(request);
   }
 

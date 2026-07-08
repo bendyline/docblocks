@@ -1,4 +1,4 @@
-export type { WorkspaceDescriptor } from './types.js';
+export type { WorkspaceDescriptor, TransientOrigin } from './types.js';
 
 export {
   listWorkspaces,
@@ -7,4 +7,7 @@ export {
   removeWorkspace,
   touchWorkspace,
   ensureDefaultWorkspace,
+  registerTransientWorkspace,
+  getTransientWorkspace,
+  unregisterTransientWorkspace,
 } from './workspace-manager.js';

@@ -1,4 +1,14 @@
 /**
+ * Origin of a transient workspace — records where its contents came from and
+ * how to save them back. Set only on `type: 'transient'` workspaces.
+ * - 'loose-file' — a single markdown file opened from the OS; edits write
+ *   straight back to `path`.
+ * - 'dbk' — a `.dbk`/zip bundle unpacked into memory; edits are re-zipped and
+ *   written back to `path`.
+ */
+export type TransientOrigin = { kind: 'loose-file'; path: string } | { kind: 'dbk'; path: string };
+
+/**
  * Workspace — a named binding to a FileSystemProvider, representing
  * the user's current working context (a folder of markdown files).
  */
@@ -13,12 +23,17 @@ export interface WorkspaceDescriptor {
    * - 'indexeddb' — browser-local storage (web only)
    * - 'native' — File System Access API (web Chrome/Edge only)
    * - 'electron-native' — Electron main-process native filesystem
+   * - 'transient' — session-only, in-memory (a loose file or `.dbk` opened
+   *   from the OS). Never persisted; its provider lives in an in-memory
+   *   registry (see workspace-manager) and it saves back to `origin`.
    */
-  type: 'indexeddb' | 'native' | 'electron-native';
+  type: 'indexeddb' | 'native' | 'electron-native' | 'transient';
   /** ISO timestamp of last access. */
   lastOpened: string;
   /** Absolute filesystem path for 'electron-native' workspaces. */
   rootPath?: string;
+  /** For 'transient' workspaces: where the contents came from / save back to. */
+  origin?: TransientOrigin;
   /**
    * Per-workspace override for the global versioning preference. When
    * `'inherit'` (or absent), the global preference applies. `'on'` /

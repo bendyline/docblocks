@@ -117,12 +117,34 @@ export type MenuCommand =
   | 'help:checkForUpdates'
   | 'help:viewOnGitHub';
 
-/** Deep-link event resolved by the host into a trusted workspace file. */
-export interface OpenRequest {
-  kind: 'workspace-file';
-  workspaceId: string;
-  /** Slash-prefixed path relative to the workspace root. */
-  path: string;
+/**
+ * OS open-file / deep-link event resolved by the host.
+ * - 'workspace-file': a file inside an already-registered workspace.
+ * - 'external-file': a loose markdown file outside any workspace — opened in a
+ *   transient workspace and saved straight back to `path`.
+ * - 'external-bundle': a `.dbk`/zip bundle — unpacked into a transient
+ *   workspace and re-zipped back to `path` on save.
+ */
+export type OpenRequest =
+  | {
+      kind: 'workspace-file';
+      workspaceId: string;
+      /** Slash-prefixed path relative to the workspace root. */
+      path: string;
+    }
+  | { kind: 'external-file'; path: string; name: string }
+  | { kind: 'external-bundle'; path: string; name: string };
+
+/**
+ * Read/write access to individual OS files the user has explicitly opened
+ * (via "Open With" / deep link), outside the workspace-root whitelist. The
+ * main process gates these to a session allowlist of opened paths.
+ */
+export interface DocBlocksHostExternalAPI {
+  readText(path: string): Promise<string | null>;
+  readBinary(path: string): Promise<ArrayBuffer | null>;
+  writeText(path: string, content: string): Promise<void>;
+  writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
 }
 
 /** Environment metadata provided by the host. */
@@ -136,6 +158,7 @@ export interface HostEnvironment {
 export interface DocBlocksHostAPI {
   env: HostEnvironment;
   fs: DocBlocksHostFsAPI;
+  external: DocBlocksHostExternalAPI;
   workspaces: DocBlocksHostWorkspacesAPI;
   shell: DocBlocksHostShellAPI;
   ffmpeg: DocBlocksHostFfmpegAPI;

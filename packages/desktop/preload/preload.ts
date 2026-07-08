@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
+  DocBlocksHostExternalAPI,
   DocBlocksHostShellAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostFfmpegAPI,
@@ -49,6 +50,15 @@ const fsApi: DocBlocksHostFsAPI = {
       ipcRenderer.invoke('fs:watch:unsubscribe', rootPath, subscriptionId).catch(() => undefined);
     };
   },
+};
+
+// ── external (single OS-opened files) ───────────────────────────────
+
+const externalApi: DocBlocksHostExternalAPI = {
+  readText: (p) => ipcRenderer.invoke('external:readText', p) as Promise<string | null>,
+  readBinary: (p) => ipcRenderer.invoke('external:readBinary', p) as Promise<ArrayBuffer | null>,
+  writeText: (p, content) => ipcRenderer.invoke('external:writeText', p, content),
+  writeBinary: (p, data) => ipcRenderer.invoke('external:writeBinary', p, data),
 };
 
 // ── workspaces ──────────────────────────────────────────────────────
@@ -116,6 +126,7 @@ const env: HostEnvironment = {
 const host: DocBlocksHostAPI = {
   env,
   fs: fsApi,
+  external: externalApi,
   workspaces: workspacesApi,
   shell: shellApi,
   ffmpeg: ffmpegApi,

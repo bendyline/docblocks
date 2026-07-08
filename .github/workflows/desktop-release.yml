@@ -13,7 +13,7 @@
 # Prerequisites (one-time setup):
 #   Windows signing:  Azure Trusted Signing resource + GitHub secrets
 #   macOS signing:    Apple Developer certificate + GitHub secrets
-#   See packages/desktop/scripts/notarize.cjs + sign.cjs for env vars.
+#   See packages/desktop/scripts/sign.cjs and RELEASING.md for env vars.
 ##
 
 name: Release Desktop App
@@ -94,8 +94,15 @@ jobs:
           SIGNING_ACCOUNT: ${{ secrets.AZURE_CODE_SIGNING_ACCOUNT }}
           SIGNING_PROFILE: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
 
+      # Invoke electron-builder directly rather than via `npm run dist:win --
+      # --publish never`: on Windows, npm/cmd swallows `--publish` (treats it as
+      # an npm config) and passes only `never`, which electron-builder then reads
+      # as an unknown build target. Passing the flag straight through avoids that.
       - name: Build + package desktop (Windows)
-        run: npm run dist:win -w docblocks-desktop -- --publish never
+        working-directory: packages/desktop
+        run: |
+          npm run build
+          npx --no-install electron-builder --win --publish never
         env:
           TRUSTED_SIGNING_DLIB_PATH: ${{ env.TRUSTED_SIGNING_DLIB_PATH }}
           TRUSTED_SIGNING_METADATA_PATH: ${{ env.TRUSTED_SIGNING_METADATA_PATH }}
@@ -186,7 +193,9 @@ jobs:
           npm run dist:mac -w docblocks-desktop -- --publish never
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          # electron-builder's built-in notarytool reads APPLE_APP_SPECIFIC_PASSWORD.
+          # The APPLE_ID_PASSWORD secret already holds an app-specific password.
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
 
@@ -197,7 +206,7 @@ jobs:
         run: |
           # Only enforced when a signing cert is configured. codesign --verify is
           # the deterministic gate (fails on an unsigned app); the staple check is
-          # informational since stapling depends on the notarize hook.
+          # informational (electron-builder's notarize step staples on success).
           APP=$(find packages/desktop/dist/artifacts -maxdepth 2 -name 'DocBlocks.app' | head -n1)
           if [ -z "$APP" ]; then echo "No DocBlocks.app produced to verify"; exit 1; fi
           echo "Verifying code signature on $APP"
