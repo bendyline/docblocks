@@ -50,6 +50,9 @@ npm run all
 # Build everything (core → react → cli → vscode → desktop → site)
 npm run build
 
+# Package the VS Code extension as a VSIX
+npm run package:vscode
+
 # Run a surface
 npm run dev            # site on http://localhost:5220
 npm run dev:desktop    # Electron + Vite dev server on port 5221
@@ -69,7 +72,7 @@ npm run test:a11y         # Accessibility checks against the site
 ### Conventions
 
 - **Conventional Commits** — enforced by commitlint on every commit.
-- Releases are per-package via `multi-semantic-release` (`npm run release`, CI-driven).
+- Releases are per-package via `multi-semantic-release` (`npm run release`, CI-driven); release workflows also package the VS Code extension as a `.vsix` artifact.
 - Architecture conventions (the seams between packages, hard lint rules, gotchas) live in [CLAUDE.md](CLAUDE.md) — read it before making cross-package changes.
 
 ## License

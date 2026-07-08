@@ -8,17 +8,11 @@ interface CheckResult {
   action?: string;
 }
 
-export class SetupViewProvider implements vscode.WebviewViewProvider {
+export class SetupViewProvider {
   public static readonly viewType = 'docblocks.setupView';
   private static currentPanel: vscode.WebviewPanel | undefined;
 
   constructor(private readonly context: vscode.ExtensionContext) {}
-
-  /** WebviewViewProvider entry point — sidebar view lifecycle. */
-  public resolveWebviewView(webviewView: vscode.WebviewView): void {
-    webviewView.webview.options = { enableScripts: true };
-    this.attach(webviewView.webview);
-  }
 
   public static createOrShow(context: vscode.ExtensionContext): void {
     const column = vscode.window.activeTextEditor?.viewColumn;

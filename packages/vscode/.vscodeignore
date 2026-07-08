@@ -1,0 +1,16 @@
+**/*.map
+**/*.tsbuildinfo
+*.vsix
+
+.vscode-test-web/**
+e2e/**
+test/**
+test-fixtures/**
+playwright-report/**
+test-results/**
+
+src/**
+webview/**
+
+tsconfig.json
+tsup.config.ts

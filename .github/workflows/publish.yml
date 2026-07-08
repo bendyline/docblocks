@@ -65,6 +65,20 @@ jobs:
           mkdir -p release-assets
           mv *.tgz release-assets/
 
+      - name: Package VS Code extension
+        if: inputs.publish_release
+        run: |
+          npm run package:vscode
+          mv packages/vscode/*.vsix release-assets/
+
+      - name: Upload release assets
+        if: inputs.publish_release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/*
+          retention-days: 14
+
       - name: Semantic Release
         if: inputs.publish_release
         env:

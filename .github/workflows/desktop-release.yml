@@ -274,10 +274,41 @@ jobs:
           retention-days: 14
 
   # ──────────────────────────────────────────────────────────────────────────
+  # VS Code — Build VSIX package
+  # ──────────────────────────────────────────────────────────────────────────
+  build-vscode-vsix:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package VS Code extension
+        run: npm run package:vscode
+
+      - name: Upload VS Code artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-artifacts
+          path: packages/vscode/*.vsix
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
   # Release — Collect all artifacts and create GitHub Release
   # ──────────────────────────────────────────────────────────────────────────
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs: [build-windows, build-macos, build-linux, build-vscode-vsix]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -294,8 +325,8 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd artifacts
-          find windows-artifacts macos-artifacts linux-artifacts -type f \
-            \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' \) \
+          find windows-artifacts macos-artifacts linux-artifacts vscode-artifacts -type f \
+            \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.vsix' \) \
             -print0 | while IFS= read -r -d '' f; do
               printf '%s  %s\n' "$(sha256sum "$f" | cut -d' ' -f1)" "$(basename "$f")"
             done | sort -k2 > SHA256SUMS.txt
@@ -312,6 +343,7 @@ jobs:
             artifacts/windows-artifacts/*
             artifacts/macos-artifacts/*
             artifacts/linux-artifacts/*
+            artifacts/vscode-artifacts/*
             artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

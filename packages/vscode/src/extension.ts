@@ -46,21 +46,11 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  // Register the open setup command (opens the panel form — kept for
-  // users invoking the explicit "DocBlocks: Open Setup" command).
+  // Register the open setup command.
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openSetup', () => {
       SetupViewProvider.createOrShow(context);
     }),
-  );
-
-  // Register the sidebar setup view (activity bar → DocBlocks pane).
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      SetupViewProvider.viewType,
-      new SetupViewProvider(context),
-      { webviewOptions: { retainContextWhenHidden: true } },
-    ),
   );
 }
 

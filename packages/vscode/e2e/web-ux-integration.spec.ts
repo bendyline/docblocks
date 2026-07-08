@@ -24,13 +24,11 @@ async function getLatestWebviewContent(page: Page): Promise<FrameLocator> {
 }
 
 async function runCommand(page: Page, command: string): Promise<void> {
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
-  const quickInput = page.locator('.quick-input-widget:visible');
-  const input = quickInput.locator('input').first();
-  await expect(input).toBeVisible({ timeout: 10_000 });
+  await page.keyboard.press('F1');
+  const quickInput = page.locator('.quick-input-widget');
+  await expect(quickInput).toBeVisible({ timeout: 10_000 });
 
-  await input.fill(`>${command}`);
-
+  await page.keyboard.type(command);
   const option = quickInput.getByText(command).first();
   await expect(option).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press('Enter');
