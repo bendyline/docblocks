@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { withApplyingEditFlag } from './editSync.js';
+import { handleExportMessage } from './exportBridge.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 import type { WebviewToExtensionMessage } from './messages.js';
 import { getEditorHtml, getVscodeTheme } from './webviewHelper.js';
@@ -99,7 +100,9 @@ export class MarkdownEditorPanel {
   }
 
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
-    if (await handleMediaMessage(message, await this.ensureDocument(), this.panel.webview)) return;
+    const document = await this.ensureDocument();
+    if (await handleMediaMessage(message, document, this.panel.webview)) return;
+    if (await handleExportMessage(message, document, this.panel.webview, this.context)) return;
 
     switch (message.type) {
       case 'ready':
@@ -204,6 +207,7 @@ export class MarkdownEditorPanel {
       type: 'setContent',
       content: this.document.getText(),
       version: this.document.version,
+      fileName: getUriBasename(this.uri),
     });
   }
 

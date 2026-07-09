@@ -2,7 +2,7 @@
  * ExportDialog — modal for choosing export format and options.
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
 import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
@@ -13,10 +13,21 @@ export interface ExportDialogProps {
   initial: ExportOptions;
   /** Whether the export is currently running. */
   exporting: boolean;
+  /** Optional host-provided destination path control. */
+  destination?: ExportDestinationControl;
   /** Called when the user confirms the export. */
   onExport: (options: ExportOptions) => void;
+  /** Called whenever the currently selected options change. */
+  onOptionsChange?: (options: ExportOptions) => void;
   /** Called when the dialog is dismissed. */
   onClose: () => void;
+}
+
+export interface ExportDestinationControl {
+  value: string;
+  onChange: (path: string) => void;
+  onPick: (options: ExportOptions) => void | Promise<void>;
+  hint?: string;
 }
 
 const FORMATS: ExportFormat[] = ['pdf', 'docx', 'pptx', 'html', 'md'];
@@ -96,7 +107,14 @@ function ChipRadioGroup<T extends string>({
   );
 }
 
-export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDialogProps) {
+export function ExportDialog({
+  initial,
+  exporting,
+  destination,
+  onExport,
+  onOptionsChange,
+  onClose,
+}: ExportDialogProps) {
   const [format, setFormat] = useState<ExportFormat>(initial.format);
   const [themeId, setThemeId] = useState(initial.themeId);
   const [transformStyle, setTransformStyle] = useState(initial.transformStyle);
@@ -156,8 +174,8 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
     };
   }, [showTransform]);
 
-  const handleExport = useCallback(() => {
-    const opts: ExportOptions = {
+  const currentOptions = useMemo<ExportOptions>(
+    () => ({
       format,
       themeId,
       transformStyle,
@@ -166,22 +184,29 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
       htmlBundle,
       includeLinkedDocs: showIncludeLinked && includeLinkedDocs,
       entryAsIndex: showEntryAsIndex && entryAsIndex,
-    };
-    saveExportOptions(opts);
-    onExport(opts);
-  }, [
-    format,
-    themeId,
-    transformStyle,
-    pageSize,
-    htmlStyle,
-    htmlBundle,
-    includeLinkedDocs,
-    entryAsIndex,
-    showIncludeLinked,
-    showEntryAsIndex,
-    onExport,
-  ]);
+    }),
+    [
+      format,
+      themeId,
+      transformStyle,
+      pageSize,
+      htmlStyle,
+      htmlBundle,
+      includeLinkedDocs,
+      entryAsIndex,
+      showIncludeLinked,
+      showEntryAsIndex,
+    ],
+  );
+
+  useEffect(() => {
+    onOptionsChange?.(currentOptions);
+  }, [currentOptions, onOptionsChange]);
+
+  const handleExport = useCallback(() => {
+    saveExportOptions(currentOptions);
+    onExport(currentOptions);
+  }, [currentOptions, onExport]);
 
   // Close on Escape
   useEffect(() => {
@@ -225,6 +250,36 @@ export function ExportDialog({ initial, exporting, onExport, onClose }: ExportDi
               onChange={setFormat}
             />
           </div>
+
+          {destination && (
+            <div className="db-export-field">
+              <label className="db-export-label" htmlFor="db-export-path">
+                Export to
+              </label>
+              <div className="db-export-path-row">
+                <input
+                  id="db-export-path"
+                  className="db-export-path-input"
+                  value={destination.value}
+                  onChange={(e) => destination.onChange(e.target.value)}
+                  disabled={exporting}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="db-export-path-pick"
+                  onClick={() => void destination.onPick(currentOptions)}
+                  disabled={exporting}
+                  aria-label="Choose export location"
+                  title="Choose export location"
+                >
+                  ...
+                </button>
+              </div>
+              {destination.hint && <span className="db-export-hint">{destination.hint}</span>}
+            </div>
+          )}
 
           {/* HTML style + bundle (HTML only) — also chip rows */}
           {showHtmlOptions && (

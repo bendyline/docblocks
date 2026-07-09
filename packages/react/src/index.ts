@@ -22,8 +22,14 @@ export { AppMenu } from './AppMenu/index.js';
 export type { AppMenuProps, ThemePreference } from './AppMenu/index.js';
 
 // Export
-export { ExportToolbarControls } from './Export/index.js';
-export type { ExportToolbarControlsProps, ExportFormat, ExportOptions } from './Export/index.js';
+export { buildExportFilename, ExportToolbarControls } from './Export/index.js';
+export type {
+  ExportDestinationControl,
+  ExportToolbarControlsProps,
+  ExportFormat,
+  ExportOptions,
+  ExportBlobSaver,
+} from './Export/index.js';
 export { ExportDialog } from './Export/index.js';
 export type { ExportDialogProps } from './Export/index.js';
 

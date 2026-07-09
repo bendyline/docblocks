@@ -132,15 +132,16 @@ test.describe('VS Code web and UX integration', () => {
 
     const editor = await getLatestWebviewContent(page);
     await expect(editor.getByRole('toolbar', { name: /formatting toolbar/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /editor/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /markdown/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /play/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /write/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /use/i })).toBeVisible();
+    await expect(editor.getByRole('button', { name: /export document/i })).toBeVisible();
     await expect(editor.locator('body')).toContainText('Test Document');
 
-    await editor.getByRole('tab', { name: /markdown/i }).click();
+    await editor.getByRole('tab', { name: /source/i }).click();
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
 
-    await editor.getByRole('tab', { name: /play/i }).click();
+    await editor.getByRole('tab', { name: /use/i }).click();
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 

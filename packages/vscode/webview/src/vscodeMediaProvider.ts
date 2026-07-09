@@ -7,6 +7,12 @@ type MediaResponse =
   | { type: 'mediaAdded'; path: string }
   | { type: 'mediaRemoved' };
 
+type MediaBridgeRequest =
+  | { type: 'resolveMedia'; ref: string }
+  | { type: 'listMedia' }
+  | { type: 'addMedia'; name: string; dataBase64: string; mimeType: string }
+  | { type: 'removeMedia'; ref: string };
+
 interface PendingRequest {
   resolve: (response: MediaResponse) => void;
   reject: (error: Error) => void;
@@ -24,9 +30,7 @@ export function createVscodeMediaBridge(
   let disposed = false;
   const pending = new Map<number, PendingRequest>();
 
-  function request<T extends MediaResponse>(
-    message: Omit<WebviewToExtensionMessage, 'requestId'>,
-  ): Promise<T> {
+  function request<T extends MediaResponse>(message: MediaBridgeRequest): Promise<T> {
     const requestId = nextRequestId;
     nextRequestId += 1;
 

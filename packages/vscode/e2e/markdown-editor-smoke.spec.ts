@@ -96,6 +96,15 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
       rendered,
       `Webview rendered but no fixture content found. Console errors:\n${consoleErrors.join('\n')}`,
     ).toContain('Test Document');
+
+    const exportButton = content.getByRole('button', { name: 'Export document' });
+    await expect(exportButton).toBeVisible({ timeout: 10_000 });
+    await exportButton.click();
+
+    const exportPath = content.getByLabel('Export to');
+    await expect(exportPath).toBeVisible();
+    await expect(exportPath).toHaveValue(/test-doc\.pdf$/);
+    await expect(content.getByRole('button', { name: 'Choose export location' })).toBeVisible();
   });
 
   test.afterEach(async ({ page }, testInfo) => {
