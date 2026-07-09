@@ -723,7 +723,7 @@ export function DocBlocksShell({
       const welcomeContent = [
         '# Welcome to DocBlocks',
         '',
-        'your docs as exquisite blocks',
+        'Your docs as exquisite blocks',
         '',
         'DocBlocks is a free browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser. What you write here can become a Word or PDF doc, a slide deck, an e-book, or a video.',
         '',
