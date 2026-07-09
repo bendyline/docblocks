@@ -1,12 +1,12 @@
 # DocBlocks for VS Code
 
-VS Code extension that turns `*.md` files into rich DocBlocks documents — a custom editor powered by Squisq, plus a Setup tab for getting the full DocBlocks toolchain running.
+VS Code extension that turns `*.md` files into rich DocBlocks documents — a default markdown editor powered by Squisq, plus a Setup tab for getting the full DocBlocks toolchain running.
 
 ## Features
 
-### Custom markdown editor
+### Markdown editor
 
-Open any `.md` file with the DocBlocks editor: right-click a file and choose **Open With...** → **DocBlocks Editor**, or run **DocBlocks: Open Editor** from the command palette.
+Open any `.md` file and VS Code routes it into the DocBlocks editor by default. You can also right-click a markdown file and choose **Open in DocBlocks**, or run **DocBlocks: Open Editor** from the command palette.
 
 The editor gives you the same three views as every other DocBlocks surface:
 
@@ -14,7 +14,7 @@ The editor gives you the same three views as every other DocBlocks surface:
 - **Markdown** — the raw markdown source
 - **Play** — presents the document as a Video, Slideshow, Document, or Page
 
-The editor syncs with VS Code's built-in undo/redo, dirty state, and save. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
+The editor autosaves markdown changes back to the backing file and resolves media through the sibling `<name>_files/` folder. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
 
 ### Setup tab
 
@@ -83,7 +83,7 @@ This builds the extension, starts `@vscode/test-web` on port 3100 with `test-fix
 
 - Extension activation and command registration
 - Setup tab environment checks and re-check button
-- Custom markdown editor opening and rendering fixture content
+- Default markdown editor opening and rendering fixture content
 - Command palette registration
 
 Test data lives in `test-fixtures/`.

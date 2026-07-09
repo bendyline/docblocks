@@ -16,6 +16,7 @@ export type ExtensionToWebviewMessage =
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
   | { type: 'edit'; content: string }
+  | { type: 'save'; content: string }
   | { type: 'resolveMedia'; requestId: number; ref: string }
   | { type: 'listMedia'; requestId: number }
   | { type: 'addMedia'; requestId: number; name: string; dataBase64: string; mimeType: string }

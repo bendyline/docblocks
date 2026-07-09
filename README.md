@@ -12,7 +12,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 | ----------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | **Web**     | Full editor in the browser — files persist locally (IndexedDB) or in folders you grant via the File System Access API | `npm run dev` → http://localhost:5220, or the GitHub Pages deployment                                      |
 | **Desktop** | Electron app for macOS / Windows / Linux with real folders, native menus, tray, and auto-update                       | Installers on [GitHub Releases](https://github.com/bendyline/docblocks/releases), or `npm run dev:desktop` |
-| **VS Code** | A custom editor for `*.md` files plus a Setup pane — works in desktop VS Code and VS Code for the Web                 | Open `packages/vscode` in VS Code and press F5, or `npm run test:web -w docblocks-vscode`                  |
+| **VS Code** | A default DocBlocks editor for `*.md` files plus a Setup pane — works in desktop VS Code and VS Code for the Web      | Open `packages/vscode` in VS Code and press F5, or `npm run test:web -w docblocks-vscode`                  |
 | **CLI**     | `docblocks` — init, build, serve, convert, video rendering, and an MCP server for AI agents                           | `npm install -g @bendyline/docblocks-cli`                                                                  |
 
 ## What it does
@@ -28,14 +28,14 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 npm-workspaces monorepo, Node ≥ 22.14:
 
-| Package                                          | npm name                     | Purpose                                                                                                |
-| ------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [`packages/core`](packages/core/README.md)       | `@bendyline/docblocks`       | Shared types and seams: filesystem providers, workspace management, host API contract                  |
-| [`packages/react`](packages/react/README.md)     | `@bendyline/docblocks-react` | `<DocBlocksShell>` and the UI component library (file explorer, workspace picker, export dialog, …)    |
-| [`packages/cli`](packages/cli/README.md)         | `@bendyline/docblocks-cli`   | The `docblocks` binary: init / build / serve / convert / video / mcp / parse / themes / transforms     |
-| [`packages/vscode`](packages/vscode/README.md)   | `docblocks-vscode`           | VS Code extension: custom markdown editor + Setup pane (dual build for desktop VS Code and vscode.dev) |
-| [`packages/desktop`](packages/desktop/README.md) | `docblocks-desktop`          | Electron app (main / preload / renderer), packaged with electron-builder                               |
-| [`packages/site`](packages/site/README.md)       | `docblocks-site`             | The web app — a Vite/React site that mounts `<DocBlocksShell>`                                         |
+| Package                                          | npm name                     | Purpose                                                                                                           |
+| ------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [`packages/core`](packages/core/README.md)       | `@bendyline/docblocks`       | Shared types and seams: filesystem providers, workspace management, host API contract                             |
+| [`packages/react`](packages/react/README.md)     | `@bendyline/docblocks-react` | `<DocBlocksShell>` and the UI component library (file explorer, workspace picker, export dialog, …)               |
+| [`packages/cli`](packages/cli/README.md)         | `@bendyline/docblocks-cli`   | The `docblocks` binary: init / build / serve / convert / video / mcp / parse / themes / transforms                |
+| [`packages/vscode`](packages/vscode/README.md)   | `docblocks-vscode`           | VS Code extension: default DocBlocks markdown editor + Setup pane (dual build for desktop VS Code and vscode.dev) |
+| [`packages/desktop`](packages/desktop/README.md) | `docblocks-desktop`          | Electron app (main / preload / renderer), packaged with electron-builder                                          |
+| [`packages/site`](packages/site/README.md)       | `docblocks-site`             | The web app — a Vite/React site that mounts `<DocBlocksShell>`                                                    |
 
 The rich-text editor itself is **Squisq**, a sister project that ships as `@bendyline/squisq*` packages. DocBlocks consumes it as a dependency (see `npm run link:squisq` for parallel development).
 

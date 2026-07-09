@@ -25,6 +25,11 @@ export interface AppMenuProps {
    * the menu item is hidden.
    */
   onDownloadAllWorkspaces?: () => void | Promise<void>;
+  /**
+   * Called when the user asks the browser to keep origin storage persistent.
+   * When omitted, the menu item is hidden.
+   */
+  onKeepBrowserData?: () => void | Promise<void>;
 }
 
 export function AppMenu({
@@ -35,6 +40,7 @@ export function AppMenu({
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
+  onKeepBrowserData,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -85,6 +91,15 @@ export function AppMenu({
             >
               Settings
             </button>
+            {onKeepBrowserData && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                onClick={() => handleAction(() => void onKeepBrowserData())}
+              >
+                Keep data in browser for longer
+              </button>
+            )}
             {onDownloadAllWorkspaces && (
               <button
                 className="db-app-menu-item"

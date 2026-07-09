@@ -52,6 +52,19 @@ export function VscodeEditor() {
   }, []);
 
   useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 's' || (!event.metaKey && !event.ctrlKey)) return;
+      event.preventDefault();
+      editPosterRef.current?.flush();
+      const content = markdownRef.current;
+      if (content !== null) vscode.postMessage({ type: 'save', content });
+    }
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, []);
+
+  useEffect(() => {
     const bridge = createVscodeMediaBridge((message) => vscode.postMessage(message));
     setMediaBridge(bridge);
     return () => bridge.dispose();

@@ -35,27 +35,28 @@ async function openDocBlocksSetupTab(page: Page) {
 }
 
 /**
- * Right-click a file in the explorer and select "Open With..." > editor.
+ * Right-click a file in the explorer and select "Open in DocBlocks".
  */
-async function openFileWithEditor(page: Page, fileName: string, editorName: string) {
+async function openFileInDocBlocks(page: Page, fileName: string) {
   const explorer = page.locator('.explorer-folders-view');
   const file = explorer.getByText(fileName);
   await expect(file).toBeVisible({ timeout: 10_000 });
 
-  // Select the file first, then right-click
-  await file.click();
-  await page.waitForTimeout(300);
   await file.click({ button: 'right' });
   await page.waitForTimeout(1_000);
 
-  // Click "Open With..."
-  const openWith = page.locator('.context-view .action-label').filter({ hasText: 'Open With...' });
-  await openWith.click();
-  await page.waitForTimeout(1_000);
+  const openInDocBlocks = page
+    .locator('.context-view .action-label')
+    .filter({ hasText: 'Open in DocBlocks' });
+  await openInDocBlocks.click();
+  await page.waitForTimeout(3_000);
+}
 
-  // Select the editor from the quick pick
-  const quickInput = page.locator('.quick-input-widget');
-  await quickInput.getByText(editorName).click();
+async function openFileByDefault(page: Page, fileName: string) {
+  const explorer = page.locator('.explorer-folders-view');
+  const file = explorer.getByText(fileName);
+  await expect(file).toBeVisible({ timeout: 10_000 });
+  await file.click();
   await page.waitForTimeout(3_000);
 }
 
@@ -128,9 +129,9 @@ test.describe('Setup tab', () => {
   });
 });
 
-// ── Custom markdown editor ────────────────────────────────────────
+// ── Markdown editor panel ─────────────────────────────────────────
 
-test.describe('Custom markdown editor', () => {
+test.describe('Markdown editor panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await waitForVSCode(page);
@@ -144,32 +145,36 @@ test.describe('Custom markdown editor', () => {
     await expect(testFile).toBeVisible({ timeout: 10_000 });
   });
 
-  test('can open markdown file with Open With context menu', async ({ page }) => {
+  test('can open markdown file with DocBlocks context menu', async ({ page }) => {
     const explorer = page.locator('.explorer-folders-view');
     const testFile = explorer.getByText('test-doc.md');
     await expect(testFile).toBeVisible({ timeout: 10_000 });
 
-    // Select and right-click
-    await testFile.click();
-    await page.waitForTimeout(300);
     await testFile.click({ button: 'right' });
     await page.waitForTimeout(1_000);
 
-    const openWith = page
+    const openInDocBlocks = page
       .locator('.context-view .action-label')
-      .filter({ hasText: 'Open With...' });
-    await expect(openWith).toBeVisible({ timeout: 5_000 });
-    await openWith.click();
-    await page.waitForTimeout(1_000);
+      .filter({ hasText: 'Open in DocBlocks' });
+    await expect(openInDocBlocks).toBeVisible({ timeout: 5_000 });
+    await openInDocBlocks.click();
 
-    // DocBlocks Editor should be listed in the quick pick
-    const quickInput = page.locator('.quick-input-widget');
-    const docblocksOption = quickInput.getByText('DocBlocks Editor');
-    await expect(docblocksOption).toBeVisible({ timeout: 5_000 });
+    const webviews = page.locator('iframe.webview');
+    await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('selecting markdown file opens DocBlocks by default', async ({ page }) => {
+    await openFileByDefault(page, 'test-doc.md');
+
+    const webviews = page.locator('iframe.webview');
+    await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
+      timeout: 10_000,
+    });
   });
 
   test('DocBlocks editor opens and shows webview', async ({ page }) => {
-    await openFileWithEditor(page, 'test-doc.md', 'DocBlocks Editor');
+    await openFileInDocBlocks(page, 'test-doc.md');
 
     // A new webview iframe should have appeared
     const webviews = page.locator('iframe.webview');
@@ -181,6 +186,14 @@ test.describe('Custom markdown editor', () => {
     // The React root should be rendered
     const root = content.locator('#root');
     await expect(root).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('DocBlocks editor does not show VS Code breadcrumbs', async ({ page }) => {
+    await openFileInDocBlocks(page, 'test-doc.md');
+
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
+      timeout: 10_000,
+    });
   });
 });
 

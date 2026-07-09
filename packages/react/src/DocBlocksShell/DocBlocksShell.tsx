@@ -448,6 +448,8 @@ export function DocBlocksShell({
   // persisted across reloads. */
   const [compactLayout, setCompactLayout] = useState(false);
   const effectiveCompact = isMobile || compactLayout;
+  const showBrowserStorageWarning = !isElectronHost();
+  const [browserStoragePersistent, setBrowserStoragePersistent] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const handleResizerPointerDown = useCallback(
@@ -721,6 +723,8 @@ export function DocBlocksShell({
       const welcomeContent = [
         '# Welcome to DocBlocks',
         '',
+        'your docs as exquisite blocks',
+        '',
         'DocBlocks is a free browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser. What you write here can become a Word or PDF doc, a slide deck, an e-book, or a video.',
         '',
         'Simple to write. Beautiful wherever it goes.',
@@ -897,6 +901,26 @@ export function DocBlocksShell({
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, [openFromIds]);
+
+  useEffect(() => {
+    if (!showBrowserStorageWarning || typeof navigator === 'undefined') return;
+    const storage = navigator.storage;
+    if (!storage || typeof storage.persisted !== 'function') return;
+
+    let cancelled = false;
+    void storage
+      .persisted()
+      .then((persistent) => {
+        if (!cancelled) setBrowserStoragePersistent(persistent);
+      })
+      .catch(() => {
+        // Ignore unsupported/denied checks; the menu action can still try persist().
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showBrowserStorageWarning]);
 
   // Track view mode changes (Editor/Raw/Play tabs) and persist to localStorage
   useEffect(() => {
@@ -1595,6 +1619,44 @@ export function DocBlocksShell({
     }
   }, [copyProviderToContainer]);
 
+  const handleKeepBrowserData = useCallback(async () => {
+    if (typeof navigator === 'undefined') return;
+
+    const storage = navigator.storage;
+    if (!storage || typeof storage.persist !== 'function') {
+      alert(
+        'This browser does not support persistent storage requests. Please back up browser docs frequently.',
+      );
+      return;
+    }
+
+    try {
+      const alreadyPersistent =
+        typeof storage.persisted === 'function' ? await storage.persisted() : false;
+      if (alreadyPersistent) {
+        setBrowserStoragePersistent(true);
+        alert('DocBlocks browser data is already marked as persistent by this browser.');
+        return;
+      }
+
+      const granted = await storage.persist();
+      if (granted) {
+        setBrowserStoragePersistent(true);
+        alert(
+          'This browser will try to keep DocBlocks data for longer. Please still back up browser docs frequently.',
+        );
+      } else {
+        alert(
+          'This browser did not grant persistent storage for DocBlocks. Please back up browser docs frequently.',
+        );
+      }
+    } catch {
+      alert(
+        'DocBlocks could not request persistent browser storage. Please back up browser docs frequently.',
+      );
+    }
+  }, []);
+
   const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspaceId) return;
     const confirmMsg = isElectronHost()
@@ -1690,6 +1752,11 @@ export function DocBlocksShell({
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
                 onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                onKeepBrowserData={
+                  showBrowserStorageWarning && !browserStoragePersistent
+                    ? handleKeepBrowserData
+                    : undefined
+                }
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -1718,6 +1785,21 @@ export function DocBlocksShell({
               >
                 Terms of Use
               </a>
+              {showBrowserStorageWarning && (
+                <>
+                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                    &bull;
+                  </span>
+                  <button
+                    type="button"
+                    className="db-shell-sidebar-footer-action"
+                    onClick={() => void handleDownloadAllWorkspaces()}
+                    title="Browser docs can get auto-removed. Download all workspaces."
+                  >
+                    Backup browser docs frequently
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

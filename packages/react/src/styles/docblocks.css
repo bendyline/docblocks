@@ -709,13 +709,20 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-footer {
-  padding: 8px 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  padding: 0 12px 0 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
+  line-height: 1;
 }
 
 .db-shell-sidebar-footer a {
+  flex-shrink: 0;
   color: var(--db-text-muted);
   text-decoration: none;
 }
@@ -723,6 +730,34 @@ body.db-resizing-sidebar * {
 .db-shell-sidebar-footer a:hover {
   color: var(--db-text-secondary);
   text-decoration: underline;
+}
+
+.db-shell-sidebar-footer-separator,
+.db-shell-sidebar-footer-action {
+  color: var(--db-text-muted);
+}
+
+.db-shell-sidebar-footer-separator {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+.db-shell-sidebar-footer-action {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-shell-sidebar-footer-action:hover {
+  color: var(--db-text-secondary);
 }
 
 .db-shell-empty {
@@ -1713,22 +1748,180 @@ html:has(.db-shell[data-theme='dark'])
   fill: var(--db-accent);
 }
 
-/* ── Template badge: inherit OS font, amber palette ──────────── */
+/* ── Squisq block tags: high-contrast DocBlocks palette ─────── */
 
-.db-shell .squisq-template-badge {
+.db-shell .squisq-template-badge,
+.db-shell .squisq-props-badge {
   font-family: inherit;
+  opacity: 1;
+}
+
+.db-shell .squisq-template-badge-core::after {
+  opacity: 0.82;
+}
+
+.db-shell .squisq-template-badge::before,
+.db-shell .squisq-template-badge::after {
+  min-height: 20px;
+  font-size: 20px;
+  font-weight: 400;
+  opacity: 0.42;
 }
 
 .db-shell[data-theme='light'] .squisq-template-badge {
-  color: #92400e;
-  background: #fef3c7;
-  border-color: #fcd34d;
+  color: var(--db-accent-hover);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge::before,
+.db-shell[data-theme='light'] .squisq-template-badge::after {
+  color: var(--db-text-muted);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge-core {
+  color: var(--db-accent-deep);
+  background: var(--db-accent-tint);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge:hover .squisq-template-badge-core,
+.db-shell[data-theme='light'] .squisq-template-badge:focus-visible .squisq-template-badge-core {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge.squisq-template-badge--empty {
+  color: var(--db-text-muted);
+  opacity: 1;
+}
+
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty
+  .squisq-template-badge-core {
+  color: var(--db-accent-hover);
+  background: var(--db-accent-soft-08);
+  border-color: var(--db-border-strong);
+  border-style: dashed;
+}
+
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty:focus-visible
+  .squisq-template-badge-core {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge {
+  color: var(--db-accent-hover);
+  background: var(--db-accent-soft-08);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge[data-props-summary] {
+  color: var(--db-accent-deep);
+  background: var(--db-accent-tint);
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge:hover,
+.db-shell[data-theme='light'] .squisq-props-badge:focus-visible {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge {
-  color: #fbbf24;
-  background: #2a1e08;
-  border-color: #92400e;
+  color: var(--db-accent-hover);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge::before,
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge::after {
+  color: var(--db-text-muted);
+  opacity: 0.48;
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge-core {
+  color: #fff4d6;
+  background: #3a2f1f;
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge:focus-visible
+  .squisq-template-badge-core {
+  color: #fff8e6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent-hover);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty {
+  color: var(--db-text-secondary);
+  opacity: 1;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty
+  .squisq-template-badge-core {
+  color: var(--db-text-secondary);
+  background: rgba(200, 180, 143, 0.1);
+  border-color: var(--db-border-strong);
+  border-style: dashed;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty:focus-visible
+  .squisq-template-badge-core {
+  color: #fff8e6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent-hover);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-props-badge {
+  color: var(--db-text-secondary);
+  background: rgba(200, 180, 143, 0.1);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-props-badge[data-props-summary] {
+  color: #fff4d6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-props-badge:hover,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-props-badge:focus-visible {
+  color: #fff8e6;
+  background: var(--db-bg-selected-hover);
+  border-color: var(--db-accent-hover);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
 }
 
 /* Light mode squisq surfaces (toolbar, header, status bar) */
