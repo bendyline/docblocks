@@ -19,6 +19,26 @@ export type {
   UpdaterStatus,
 } from './types.js';
 
+export type {
+  DocBlocksHostGitAPI,
+  GitBranchInfo,
+  GitCapabilities,
+  GitCloneHandle,
+  GitCloneProgress,
+  GitError,
+  GitErrorCode,
+  GitFileAtRevision,
+  GitFileChange,
+  GitFileStatusCode,
+  GitLogEntry,
+  GitLogOptions,
+  GitRemoteInfo,
+  GitRepoDetection,
+  GitResult,
+  GitRevision,
+  GitStatus,
+} from './git.js';
+
 import type { DocBlocksHostAPI } from './types.js';
 
 /** True when running inside the Electron desktop shell. */

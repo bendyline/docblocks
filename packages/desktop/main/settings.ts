@@ -39,6 +39,8 @@ export interface Settings {
   workspaces: PersistedWorkspace[];
   /** Whether the user has been shown the iCloud mitigation dialog. */
   iCloudPromptShown?: boolean;
+  /** Parent directory of the most recent "Clone repository" destination. */
+  lastCloneParentDir?: string;
 }
 
 const DEFAULT_SETTINGS: Settings = { workspaces: [] };

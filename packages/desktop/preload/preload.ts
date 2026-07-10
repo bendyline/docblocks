@@ -8,11 +8,15 @@ import type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
   DocBlocksHostExternalAPI,
+  DocBlocksHostGitAPI,
   DocBlocksHostShellAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,
   ElectronWorkspaceInfo,
+  GitCloneProgress,
+  GitResult,
+  GitStatus,
   HostEnvironment,
   MenuCommand,
   OpenRequest,
@@ -86,6 +90,74 @@ const ffmpegApi: DocBlocksHostFfmpegAPI = {
   renderVideo: (p, opts) => ipcRenderer.invoke('ffmpeg:renderVideo', p, opts),
 };
 
+// ── git ─────────────────────────────────────────────────────────────
+
+function mintId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+const gitApi: DocBlocksHostGitAPI = {
+  capabilities: () => ipcRenderer.invoke('git:capabilities'),
+  detectRepo: (rootPath) => ipcRenderer.invoke('git:detectRepo', rootPath),
+  init: (rootPath) => ipcRenderer.invoke('git:init', rootPath),
+  status: (rootPath) => ipcRenderer.invoke('git:status', rootPath),
+  stage: (rootPath, paths) => ipcRenderer.invoke('git:stage', rootPath, paths),
+  unstage: (rootPath, paths) => ipcRenderer.invoke('git:unstage', rootPath, paths),
+  discard: (rootPath, paths) => ipcRenderer.invoke('git:discard', rootPath, paths),
+  commit: (rootPath, message, paths) => ipcRenderer.invoke('git:commit', rootPath, message, paths),
+  push: (rootPath, opts) => ipcRenderer.invoke('git:push', rootPath, opts),
+  pull: (rootPath) => ipcRenderer.invoke('git:pull', rootPath),
+  fetch: (rootPath) => ipcRenderer.invoke('git:fetch', rootPath),
+  listBranches: (rootPath) => ipcRenderer.invoke('git:listBranches', rootPath),
+  createBranch: (rootPath, name, opts) =>
+    ipcRenderer.invoke('git:createBranch', rootPath, name, opts),
+  checkoutBranch: (rootPath, name) => ipcRenderer.invoke('git:checkoutBranch', rootPath, name),
+  log: (rootPath, opts) => ipcRenderer.invoke('git:log', rootPath, opts),
+  commitFiles: (rootPath, sha) => ipcRenderer.invoke('git:commitFiles', rootPath, sha),
+  readFileAtRevision: (rootPath, p, revision) =>
+    ipcRenderer.invoke('git:readFileAtRevision', rootPath, p, revision),
+  listRemotes: (rootPath) => ipcRenderer.invoke('git:listRemotes', rootPath),
+  clone(url, onProgress) {
+    const operationId = mintId('clone');
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: GitCloneProgress & { operationId: string },
+    ) => {
+      if (payload.operationId === operationId && onProgress) {
+        onProgress({ phase: payload.phase, percent: payload.percent, detail: payload.detail });
+      }
+    };
+    ipcRenderer.on('git:clone:progress', listener);
+    const result = (
+      ipcRenderer.invoke('git:clone', url, operationId) as Promise<
+        GitResult<ElectronWorkspaceInfo | null>
+      >
+    ).finally(() => ipcRenderer.removeListener('git:clone:progress', listener));
+    return {
+      result,
+      cancel: () => {
+        ipcRenderer.invoke('git:clone:cancel', operationId).catch(() => undefined);
+      },
+    };
+  },
+  createPullRequest: (rootPath) => ipcRenderer.invoke('git:createPullRequest', rootPath),
+  onStatusChanged(rootPath, listener) {
+    const subscriptionId = mintId('git-status');
+    const fn = (
+      _event: Electron.IpcRendererEvent,
+      payload: { subscriptionId: string; status: GitStatus },
+    ) => {
+      if (payload.subscriptionId === subscriptionId) listener(payload.status);
+    };
+    ipcRenderer.on('git:status:event', fn);
+    ipcRenderer.invoke('git:status:subscribe', rootPath, subscriptionId).catch(() => undefined);
+    return () => {
+      ipcRenderer.removeListener('git:status:event', fn);
+      ipcRenderer.invoke('git:status:unsubscribe', rootPath, subscriptionId).catch(() => undefined);
+    };
+  },
+};
+
 // ── updater ─────────────────────────────────────────────────────────
 
 const updaterApi: DocBlocksHostUpdaterAPI = {
@@ -130,6 +202,7 @@ const host: DocBlocksHostAPI = {
   workspaces: workspacesApi,
   shell: shellApi,
   ffmpeg: ffmpegApi,
+  git: gitApi,
   updater: updaterApi,
   onMenuCommand,
   onOpenRequest,

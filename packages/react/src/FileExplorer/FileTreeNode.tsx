@@ -7,11 +7,27 @@ import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { MoreIcon } from '../icons.js';
 
+/** Git decoration for a row — precomputed by FileExplorer so this node stays context-free. */
+export interface FileTreeNodeBadge {
+  kind: string;
+  glyph: string;
+  label: string;
+}
+
+/** Git context-menu actions, prebound to this entry's path. */
+export interface FileTreeNodeGitActions {
+  viewChanges?: () => void;
+  fileHistory?: () => void;
+  openOnRemote?: () => void;
+}
+
 export interface FileTreeNodeProps {
   entry: FileSystemEntry;
   depth: number;
   expanded: boolean;
   selected: boolean;
+  badge?: FileTreeNodeBadge;
+  gitActions?: FileTreeNodeGitActions;
   children?: FileSystemEntry[];
   onToggle: (path: string) => void;
   onSelect: (path: string) => void;
@@ -25,6 +41,8 @@ export function FileTreeNode({
   depth,
   expanded,
   selected,
+  badge,
+  gitActions,
   onToggle,
   onSelect,
   onDelete,
@@ -142,6 +160,7 @@ export function FileTreeNode({
         role="treeitem"
         aria-expanded={isDir ? expanded : undefined}
         aria-selected={selected}
+        aria-label={badge ? `${entry.name}, ${badge.label}` : undefined}
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === 'Enter') handleClick();
@@ -166,6 +185,11 @@ export function FileTreeNode({
             <span className="db-tree-label">
               {entry.name.endsWith('.md') ? entry.name.slice(0, -3) : entry.name}
             </span>
+            {badge && (
+              <span className={`db-git-badge db-git-badge--${badge.kind}`} aria-hidden="true">
+                {badge.glyph}
+              </span>
+            )}
             <button
               type="button"
               className={`db-tree-more${showContext ? ' db-tree-more--active' : ''}`}
@@ -193,6 +217,45 @@ export function FileTreeNode({
             <button className="db-tree-context-item" onClick={handleRenameStart}>
               Rename
             </button>
+            {gitActions && (gitActions.viewChanges || gitActions.fileHistory) && (
+              <>
+                <div className="db-tree-context-divider" role="separator" />
+                {gitActions.viewChanges && (
+                  <button
+                    className="db-tree-context-item"
+                    onClick={() => {
+                      setShowContext(false);
+                      gitActions.viewChanges?.();
+                    }}
+                  >
+                    View changes
+                  </button>
+                )}
+                {gitActions.fileHistory && (
+                  <button
+                    className="db-tree-context-item"
+                    onClick={() => {
+                      setShowContext(false);
+                      gitActions.fileHistory?.();
+                    }}
+                  >
+                    File history…
+                  </button>
+                )}
+                {gitActions.openOnRemote && (
+                  <button
+                    className="db-tree-context-item"
+                    onClick={() => {
+                      setShowContext(false);
+                      gitActions.openOnRemote?.();
+                    }}
+                  >
+                    Open on remote
+                  </button>
+                )}
+                <div className="db-tree-context-divider" role="separator" />
+              </>
+            )}
             <button
               className="db-tree-context-item db-tree-context-item--danger"
               onClick={handleDeleteClick}

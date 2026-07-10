@@ -8,6 +8,7 @@
  */
 
 import type { FileSystemEntry, FileMeta } from '../filesystem/types.js';
+import type { DocBlocksHostGitAPI } from './git.js';
 
 /** Filesystem operations scoped to a registered absolute root path. */
 export interface DocBlocksHostFsAPI {
@@ -113,6 +114,16 @@ export type MenuCommand =
   | 'file:openFolder'
   | 'file:revealWorkspace'
   | 'file:settings'
+  | 'git:commit'
+  | 'git:push'
+  | 'git:pull'
+  | 'git:fetch'
+  | 'git:newBranch'
+  | 'git:switchBranch'
+  | 'git:history'
+  | 'git:clone'
+  | 'git:openOnRemote'
+  | 'git:createPullRequest'
   | 'help:about'
   | 'help:checkForUpdates'
   | 'help:viewOnGitHub';
@@ -162,6 +173,7 @@ export interface DocBlocksHostAPI {
   workspaces: DocBlocksHostWorkspacesAPI;
   shell: DocBlocksHostShellAPI;
   ffmpeg: DocBlocksHostFfmpegAPI;
+  git: DocBlocksHostGitAPI;
   updater: DocBlocksHostUpdaterAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.

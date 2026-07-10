@@ -31,6 +31,33 @@ async function ensureFolder(absPath: string): Promise<void> {
   await fs.mkdir(absPath, { recursive: true });
 }
 
+/**
+ * Trust + persist a folder as a workspace root: register it in the fs
+ * whitelist and upsert it into settings so it survives relaunch. Shared by
+ * the folder picker and the git clone flow.
+ */
+export async function registerAndPersistWorkspace(
+  rootPath: string,
+  bookmark?: string,
+): Promise<ElectronWorkspaceInfo> {
+  const id = deriveWorkspaceId(rootPath);
+  const name = path.basename(rootPath) || 'Folder';
+  getWorkspaceRoots().register(id, rootPath);
+
+  await updateSettings((s) => {
+    const existing = s.workspaces.find((w) => w.id === id);
+    if (existing) {
+      // Refresh the bookmark — they can go stale, and re-picking renews it.
+      if (bookmark) existing.bookmark = bookmark;
+    } else {
+      s.workspaces.push({ id, name, rootPath, ...(bookmark ? { bookmark } : {}) });
+    }
+    return s;
+  });
+
+  return { id, name, rootPath };
+}
+
 export function registerWorkspaceIpc(): void {
   const roots = getWorkspaceRoots();
 
@@ -136,23 +163,7 @@ export function registerWorkspaceIpc(): void {
     const rootPath = result.filePaths[0];
     // The dialog already grants access for this session; the bookmark is what
     // restores it next launch (consumed in main.ts on startup).
-    const bookmark = result.bookmarks?.[0];
-    const id = deriveWorkspaceId(rootPath);
-    const name = path.basename(rootPath) || 'Folder';
-    roots.register(id, rootPath);
-
-    await updateSettings((s) => {
-      const existing = s.workspaces.find((w) => w.id === id);
-      if (existing) {
-        // Refresh the bookmark — they can go stale, and re-picking renews it.
-        if (bookmark) existing.bookmark = bookmark;
-      } else {
-        s.workspaces.push({ id, name, rootPath, ...(bookmark ? { bookmark } : {}) });
-      }
-      return s;
-    });
-
-    return { id, name, rootPath };
+    return registerAndPersistWorkspace(rootPath, result.bookmarks?.[0]);
   });
 
   ipcMain.handle('workspaces:register', async (_e, info: ElectronWorkspaceInfo) => {

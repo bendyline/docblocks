@@ -10,10 +10,10 @@ import { ipcMain, BrowserWindow } from 'electron';
 import fs from 'node:fs/promises';
 import fss from 'node:fs';
 import path from 'node:path';
-import chokidar from 'chokidar';
 import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem';
 
 import { getWorkspaceRoots } from './workspace-roots.js';
+import { acquireWorkspaceWatcher, type WorkspaceWatcherHandle } from './workspace-watchers.js';
 
 function toRelative(absolutePath: string, rootAbs: string): string {
   const rel = path.relative(rootAbs, absolutePath).replace(/\\/g, '/');
@@ -161,10 +161,11 @@ export function registerFsIpc(): void {
   );
 
   // ── Watch support ──────────────────────────────────────────────
-  // One watcher per workspace root; one subscription id per renderer watch() call.
-  // When the last subscription for a root unsubscribes, the watcher closes.
+  // One shared watcher per workspace root (see workspace-watchers.ts); one
+  // subscription id per renderer watch() call. When the last subscription
+  // for a root unsubscribes, this consumer's acquisition is released.
   interface WatchState {
-    watcher: chokidar.FSWatcher;
+    handle: WorkspaceWatcherHandle;
     subscriptions: Set<string>;
   }
   const watchersByRoot = new Map<string, WatchState>();
@@ -175,37 +176,28 @@ export function registerFsIpc(): void {
 
     let state = watchersByRoot.get(key);
     if (!state) {
-      const watcher = chokidar.watch(key, {
-        ignoreInitial: true,
-        ignored: /(^|[/\\])\../,
-        awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
-      });
-      state = { watcher, subscriptions: new Set() };
-      watchersByRoot.set(key, state);
-      const broadcast = (absPath: string) => {
-        const rel = '/' + toRelative(absPath, key);
-        for (const subId of state!.subscriptions) {
+      const handle = acquireWorkspaceWatcher(key);
+      const created: WatchState = { handle, subscriptions: new Set() };
+      handle.onChange((rel) => {
+        for (const subId of created.subscriptions) {
           // Send to all renderer windows; the preload filters by subId.
           for (const win of BrowserWindow.getAllWindows()) {
             win.webContents.send('fs:watch:event', { subscriptionId: subId, path: rel });
           }
         }
-      };
-      watcher.on('add', broadcast);
-      watcher.on('change', broadcast);
-      watcher.on('unlink', broadcast);
-      watcher.on('addDir', broadcast);
-      watcher.on('unlinkDir', broadcast);
+      });
+      watchersByRoot.set(key, created);
+      state = created;
     }
     state.subscriptions.add(subscriptionId);
 
-    // On renderer tear-down, close the watcher if no subs remain.
+    // On renderer tear-down, release the watcher if no subs remain.
     event.sender.once('destroyed', () => {
       const s = watchersByRoot.get(key);
       if (!s) return;
       s.subscriptions.delete(subscriptionId);
       if (s.subscriptions.size === 0) {
-        s.watcher.close().catch(() => undefined);
+        s.handle.release();
         watchersByRoot.delete(key);
       }
     });
@@ -217,7 +209,7 @@ export function registerFsIpc(): void {
     if (!state) return;
     state.subscriptions.delete(subscriptionId);
     if (state.subscriptions.size === 0) {
-      await state.watcher.close().catch(() => undefined);
+      state.handle.release();
       watchersByRoot.delete(key);
     }
   });

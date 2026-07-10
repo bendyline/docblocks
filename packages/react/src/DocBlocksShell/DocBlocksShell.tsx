@@ -5,7 +5,7 @@
  * the center editor area (squisq EditorShell).
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
 import type {
   EditorColorScheme,
@@ -35,7 +35,7 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
-import type { OpenRequest } from '@bendyline/docblocks/host';
+import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
@@ -57,6 +57,15 @@ import {
 } from '../WorkspacePicker/WorkspaceSettingsDialog.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
 import { ExportToolbarControls } from '../Export/ExportToolbarControls.js';
+import { GitContext } from '../Git/GitContext.js';
+import { useGit } from '../Git/useGit.js';
+// The git dialogs/status bar only ever render under the Electron host, so
+// they load as a split chunk — the site never pays for them (the entry
+// bundle budget is enforced by scripts/check-bundle-size.ts).
+const GitUI = lazy(() => import('../Git/GitUI.js').then((m) => ({ default: m.GitUI })));
+const GitToolbarControl = lazy(() =>
+  import('../Git/GitToolbarControl.js').then((m) => ({ default: m.GitToolbarControl })),
+);
 import {
   loadVersioningPreference,
   resolveVersioningEnabled,
@@ -539,6 +548,12 @@ export function DocBlocksShell({
     };
   }, [activeWorkspaceId, descriptorRefreshKey]);
 
+  // All git UI state/actions — null-renders on surfaces without git.
+  const git = useGit(provider, resolvedTheme);
+  const gitRef = useRef(git);
+  gitRef.current = git;
+  const { scheduleRefresh: gitScheduleRefresh } = git;
+
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [versioningPreference, setVersioningPreference] =
     useState<VersioningPreference>(loadVersioningPreference);
@@ -941,13 +956,19 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
-  const handleAutoSaved = useCallback((filePath: string, savedContent: string) => {
-    lastLocalSaveRef.current = {
-      filePath: normaliseProviderPath(filePath),
-      content: savedContent,
-      savedAt: Date.now(),
-    };
-  }, []);
+  const handleAutoSaved = useCallback(
+    (filePath: string, savedContent: string) => {
+      lastLocalSaveRef.current = {
+        filePath: normaliseProviderPath(filePath),
+        content: savedContent,
+        savedAt: Date.now(),
+      };
+      // Belt-and-braces over the host's repo watcher: nudge git status
+      // after our own writes settle.
+      gitScheduleRefresh();
+    },
+    [gitScheduleRefresh],
+  );
 
   // Auto-save current file. The returned `flush` is called from the
   // Ctrl/Cmd+S handler below so the user gets immediate confirmation.
@@ -1178,6 +1199,33 @@ export function DocBlocksShell({
     }
   }, [pushHash]);
 
+  // A clone finished: the host already registered + persisted the folder,
+  // so opening it mirrors the pickFolder success path exactly.
+  const handleWorkspaceCloned = useCallback(
+    (info: ElectronWorkspaceInfo) => {
+      void (async () => {
+        const descriptor: WorkspaceDescriptor = {
+          id: info.id,
+          name: info.name,
+          type: 'electron-native',
+          rootPath: info.rootPath,
+          lastOpened: new Date().toISOString(),
+        };
+        await saveWorkspace(descriptor);
+        const cloneProvider = new ElectronFileSystemProvider(info.id, info.name, info.rootPath);
+        setProvider(cloneProvider);
+        setActiveWorkspaceId(descriptor.id);
+        setSelectedFile(null);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+        setEditorContent('');
+        setEditorKey((k) => k + 1);
+        pushHash(descriptor.id, null);
+      })();
+    },
+    [pushHash],
+  );
+
   const handleNewFile = useCallback(async () => {
     if (!provider) return;
     const name = prompt('New document name:', 'Untitled.md');
@@ -1217,6 +1265,38 @@ export function DocBlocksShell({
           break;
         case 'file:revealWorkspace':
           handleRevealWorkspace();
+          break;
+        case 'git:commit':
+          if (gitRef.current.repo) gitRef.current.openDialog({ kind: 'commit' });
+          break;
+        case 'git:push':
+          if (gitRef.current.repo) void gitRef.current.push();
+          break;
+        case 'git:pull':
+          if (gitRef.current.repo) void gitRef.current.pull();
+          break;
+        case 'git:fetch':
+          if (gitRef.current.repo) void gitRef.current.fetchRemote();
+          break;
+        case 'git:newBranch':
+          if (gitRef.current.repo) {
+            gitRef.current.openDialog({ kind: 'branches', createFocus: true });
+          }
+          break;
+        case 'git:switchBranch':
+          if (gitRef.current.repo) gitRef.current.openDialog({ kind: 'branches' });
+          break;
+        case 'git:history':
+          if (gitRef.current.repo) gitRef.current.openDialog({ kind: 'history' });
+          break;
+        case 'git:clone':
+          if (gitRef.current.available) gitRef.current.openDialog({ kind: 'clone' });
+          break;
+        case 'git:openOnRemote':
+          gitRef.current.openOnRemote();
+          break;
+        case 'git:createPullRequest':
+          if (gitRef.current.repo) void gitRef.current.createPullRequest();
           break;
         case 'help:viewOnGitHub':
           host.shell.openExternal('https://github.com/bendyline/docblocks');
@@ -1720,248 +1800,266 @@ export function DocBlocksShell({
       className={`db-shell${effectiveCompact ? ' db-shell--mobile' : ''}`}
       data-theme={resolvedTheme}
     >
-      {saveToastVisible && (
-        <div className="db-save-toast" role="status" aria-live="polite">
-          Autosaved. You're all set.
-        </div>
-      )}
-      {workspaceSettingsOpen && activeWorkspaceDescriptor && (
-        <WorkspaceSettingsDialog
-          workspace={activeWorkspaceDescriptor}
-          globalVersioningPreference={versioningPreference}
-          onChange={handleWorkspaceVersioningOverrideChange}
-          onClose={() => setWorkspaceSettingsOpen(false)}
-        />
-      )}
-      {/* Main area */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left sidebar — hidden in compact layout when the editor is
-            showing (compact = real mobile narrow viewport OR the user
-            dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
-        {(!effectiveCompact || !mobileShowEditor) && (
-          <div
-            ref={sidebarRef}
-            className="db-shell-sidebar"
-            style={effectiveCompact ? undefined : { width: `${sidebarWidth}px` }}
-          >
-            <div className="db-shell-sidebar-header">
-              <AppMenu
-                logoUrl={logoUrl}
-                themePreference={themePreference}
-                onThemeChange={handleThemeChange}
-                versioningPreference={versioningPreference}
-                onVersioningPreferenceChange={handleVersioningPreferenceChange}
-                onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
-                onKeepBrowserData={
-                  showBrowserStorageWarning && !browserStoragePersistent
-                    ? handleKeepBrowserData
-                    : undefined
-                }
-              />
-              <WorkspacePicker
-                activeWorkspaceId={activeWorkspaceId}
-                onSelect={handleWorkspaceSelect}
-                onOpenFolder={handleOpenFolder}
-              />
-              <WorkspaceSettingsButton
-                onSettings={handleOpenWorkspaceSettings}
-                onRename={handleRenameWorkspace}
-                onDownload={handleDownloadWorkspace}
-                onRemove={handleRemoveWorkspace}
-              />
-            </div>
-            <FileExplorer
-              key={explorerKey}
-              provider={provider}
-              onSelect={handleSelect}
-              onTreeChange={handleTreeChange}
-              onImportFiles={handleImportFiles}
-            />
-            <div className="db-shell-sidebar-footer">
-              <a
-                href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Terms of Use
-              </a>
-              {showBrowserStorageWarning && (
-                <>
-                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                    &bull;
-                  </span>
-                  <button
-                    type="button"
-                    className="db-shell-sidebar-footer-action"
-                    onClick={() => void handleDownloadAllWorkspaces()}
-                    title="Browser docs can get auto-removed. Download all workspaces."
-                  >
-                    Backup browser docs frequently
-                  </button>
-                </>
-              )}
-            </div>
+      <GitContext.Provider value={git}>
+        {saveToastVisible && (
+          <div className="db-save-toast" role="status" aria-live="polite">
+            Autosaved. You're all set.
           </div>
         )}
-
-        {/* Resize handle between sidebar and editor — hidden whenever
-            the layout is compact (no sidebar to resize). */}
-        {!effectiveCompact && (
-          <div
-            className="db-shell-sidebar-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize sidebar"
-            onPointerDown={handleResizerPointerDown}
+        {workspaceSettingsOpen && activeWorkspaceDescriptor && (
+          <WorkspaceSettingsDialog
+            workspace={activeWorkspaceDescriptor}
+            globalVersioningPreference={versioningPreference}
+            onChange={handleWorkspaceVersioningOverrideChange}
+            onClose={() => setWorkspaceSettingsOpen(false)}
           />
         )}
-
-        {/* Editor area — hidden in compact layout when the sidebar is showing. */}
-        {(!effectiveCompact || mobileShowEditor) && (
-          <div
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              position: 'relative',
-            }}
-          >
-            {selectedFile && mediaProvider ? (
-              <MediaContext.Provider value={mediaProvider}>
-                <EditorShell
-                  key={`${selectedFile}-${editorKey}`}
-                  initialMarkdown={editorContent}
-                  initialView={initialView}
-                  articleId={selectedFile}
-                  fileName={selectedFile}
-                  onChange={handleEditorChange}
-                  colorScheme={resolvedTheme}
-                  height="100%"
-                  outlineWidth={280}
-                  mediaProvider={mediaProvider}
-                  documentLinkProvider={documentLinkProvider}
-                  container={versionsContainer ?? undefined}
-                  allowVersioning={effectiveVersioning}
-                  viewPreferences={viewPreferences}
-                  onViewPreferencesChange={handleViewPreferencesChange}
-                  versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
-                  versioningPrunePolicy={versioningPrunePolicy}
-                  versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                  onSaveVersion={onSaveVersion}
-                  toolbarSlotLeft={
-                    effectiveCompact ? (
-                      <button
-                        className="db-mobile-back"
-                        onClick={() => setMobileShowEditor(false)}
-                        aria-label="Show file list"
-                      >
-                        <span className="db-mobile-back-arrow">&larr;</span>
-                      </button>
-                    ) : undefined
+        {/* Main area */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Left sidebar — hidden in compact layout when the editor is
+            showing (compact = real mobile narrow viewport OR the user
+            dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
+          {(!effectiveCompact || !mobileShowEditor) && (
+            <div
+              ref={sidebarRef}
+              className="db-shell-sidebar"
+              style={effectiveCompact ? undefined : { width: `${sidebarWidth}px` }}
+            >
+              <div className="db-shell-sidebar-header">
+                <AppMenu
+                  logoUrl={logoUrl}
+                  themePreference={themePreference}
+                  onThemeChange={handleThemeChange}
+                  versioningPreference={versioningPreference}
+                  onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                  onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                  onKeepBrowserData={
+                    showBrowserStorageWarning && !browserStoragePersistent
+                      ? handleKeepBrowserData
+                      : undefined
                   }
-                  toolbarSlotRight={
-                    <>
-                      {/* Restore split view — only relevant when compact
+                />
+                <WorkspacePicker
+                  activeWorkspaceId={activeWorkspaceId}
+                  onSelect={handleWorkspaceSelect}
+                  onOpenFolder={handleOpenFolder}
+                  onCloneRepository={
+                    git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
+                  }
+                />
+                <WorkspaceSettingsButton
+                  onSettings={handleOpenWorkspaceSettings}
+                  onRename={handleRenameWorkspace}
+                  onDownload={handleDownloadWorkspace}
+                  onRemove={handleRemoveWorkspace}
+                />
+              </div>
+              {git.available && (
+                <Suspense fallback={null}>
+                  <GitUI
+                    onOpenFile={(path) => void handleSelect(path, 'file')}
+                    onWorkspaceCloned={handleWorkspaceCloned}
+                  />
+                </Suspense>
+              )}
+              <FileExplorer
+                key={explorerKey}
+                provider={provider}
+                onSelect={handleSelect}
+                onTreeChange={handleTreeChange}
+                onImportFiles={handleImportFiles}
+              />
+              <div className="db-shell-sidebar-footer">
+                <a
+                  href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Terms of Use
+                </a>
+                {showBrowserStorageWarning && (
+                  <>
+                    <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                      &bull;
+                    </span>
+                    <button
+                      type="button"
+                      className="db-shell-sidebar-footer-action"
+                      onClick={() => void handleDownloadAllWorkspaces()}
+                      title="Browser docs can get auto-removed. Download all workspaces."
+                    >
+                      Backup browser docs frequently
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Resize handle between sidebar and editor — hidden whenever
+            the layout is compact (no sidebar to resize). */}
+          {!effectiveCompact && (
+            <div
+              className="db-shell-sidebar-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize sidebar"
+              onPointerDown={handleResizerPointerDown}
+            />
+          )}
+
+          {/* Editor area — hidden in compact layout when the sidebar is showing. */}
+          {(!effectiveCompact || mobileShowEditor) && (
+            <div
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                position: 'relative',
+              }}
+            >
+              {selectedFile && mediaProvider ? (
+                <MediaContext.Provider value={mediaProvider}>
+                  <EditorShell
+                    key={`${selectedFile}-${editorKey}`}
+                    initialMarkdown={editorContent}
+                    initialView={initialView}
+                    articleId={selectedFile}
+                    fileName={selectedFile}
+                    onChange={handleEditorChange}
+                    colorScheme={resolvedTheme}
+                    height="100%"
+                    outlineWidth={280}
+                    mediaProvider={mediaProvider}
+                    documentLinkProvider={documentLinkProvider}
+                    container={versionsContainer ?? undefined}
+                    allowVersioning={effectiveVersioning}
+                    viewPreferences={viewPreferences}
+                    onViewPreferencesChange={handleViewPreferencesChange}
+                    versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
+                    versioningPrunePolicy={versioningPrunePolicy}
+                    versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                    onSaveVersion={onSaveVersion}
+                    toolbarSlotLeft={
+                      effectiveCompact ? (
+                        <button
+                          className="db-mobile-back"
+                          onClick={() => setMobileShowEditor(false)}
+                          aria-label="Show file list"
+                        >
+                          <span className="db-mobile-back-arrow">&larr;</span>
+                        </button>
+                      ) : undefined
+                    }
+                    toolbarSlotRight={
+                      <>
+                        {/* Restore split view — only relevant when compact
                           layout was manually triggered on a wide viewport.
                           On real mobile, side-by-side doesn't fit so the
                           button is suppressed. */}
-                      {compactLayout && !isMobile && (
-                        <button
-                          className="db-restore-split"
-                          onClick={() => setCompactLayout(false)}
-                          aria-label="Restore split view"
-                          title="Restore split view"
-                        >
-                          <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
+                        {compactLayout && !isMobile && (
+                          <button
+                            className="db-restore-split"
+                            onClick={() => setCompactLayout(false)}
+                            aria-label="Restore split view"
+                            title="Restore split view"
                           >
-                            <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-                            <line x1="6" y1="2.5" x2="6" y2="13.5" />
-                          </svg>
-                        </button>
-                      )}
-                      <ExportToolbarControls
-                        selectedFile={selectedFile}
-                        mediaContainer={mediaContainerRef.current}
-                      />
-                    </>
-                  }
-                />
-                {showWelcomeGateway && (
-                  <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
-                    <span className="db-welcome-gateway-text">
-                      You&rsquo;re watching this welcome doc in <strong>Play</strong> view —
-                      it&rsquo;s a regular markdown file, and so is everything you&rsquo;ll write.
-                    </span>
-                    <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
-                      Start writing
-                    </button>
-                    <button
-                      className="db-welcome-gateway-dismiss"
-                      onClick={closeWelcomeGateway}
-                      aria-label="Dismiss welcome tip"
-                      title="Dismiss"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                )}
-              </MediaContext.Provider>
-            ) : selectedFolder ? (
-              <div className="db-folder-view">
-                {effectiveCompact && (
-                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                    <span className="db-mobile-back-arrow">&larr;</span>
-                    Back to files
-                  </button>
-                )}
-                <div className="db-folder-view-header">
-                  <span className="db-folder-view-icon">
-                    <FolderGlyph />
-                  </span>
-                  <span className="db-folder-view-path">{selectedFolder}</span>
-                </div>
-                {folderEntries.length === 0 ? (
-                  <p className="db-folder-view-empty">This folder is empty.</p>
-                ) : (
-                  <ul className="db-folder-view-list">
-                    {folderEntries.map((entry) => (
-                      <li
-                        key={entry.path}
-                        className="db-folder-view-item"
-                        onClick={() => handleSelect(entry.path, entry.kind)}
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+                              <line x1="6" y1="2.5" x2="6" y2="13.5" />
+                            </svg>
+                          </button>
+                        )}
+                        {git.repo && (
+                          <Suspense fallback={null}>
+                            <GitToolbarControl selectedFile={selectedFile} />
+                          </Suspense>
+                        )}
+                        <ExportToolbarControls
+                          selectedFile={selectedFile}
+                          mediaContainer={mediaContainerRef.current}
+                        />
+                      </>
+                    }
+                  />
+                  {showWelcomeGateway && (
+                    <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
+                      <span className="db-welcome-gateway-text">
+                        You&rsquo;re watching this welcome doc in <strong>Play</strong> view —
+                        it&rsquo;s a regular markdown file, and so is everything you&rsquo;ll write.
+                      </span>
+                      <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
+                        Start writing
+                      </button>
+                      <button
+                        className="db-welcome-gateway-dismiss"
+                        onClick={closeWelcomeGateway}
+                        aria-label="Dismiss welcome tip"
+                        title="Dismiss"
                       >
-                        <span className="db-folder-view-item-icon">
-                          {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
-                        </span>
-                        {entry.name}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <div className="db-shell-empty">
-                {effectiveCompact && (
-                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                    <span className="db-mobile-back-arrow">&larr;</span>
-                    Back to files
-                  </button>
-                )}
-                <p>Select a file to start editing, or create a new one.</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+                        &times;
+                      </button>
+                    </div>
+                  )}
+                </MediaContext.Provider>
+              ) : selectedFolder ? (
+                <div className="db-folder-view">
+                  {effectiveCompact && (
+                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                      <span className="db-mobile-back-arrow">&larr;</span>
+                      Back to files
+                    </button>
+                  )}
+                  <div className="db-folder-view-header">
+                    <span className="db-folder-view-icon">
+                      <FolderGlyph />
+                    </span>
+                    <span className="db-folder-view-path">{selectedFolder}</span>
+                  </div>
+                  {folderEntries.length === 0 ? (
+                    <p className="db-folder-view-empty">This folder is empty.</p>
+                  ) : (
+                    <ul className="db-folder-view-list">
+                      {folderEntries.map((entry) => (
+                        <li
+                          key={entry.path}
+                          className="db-folder-view-item"
+                          onClick={() => handleSelect(entry.path, entry.kind)}
+                        >
+                          <span className="db-folder-view-item-icon">
+                            {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
+                          </span>
+                          {entry.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <div className="db-shell-empty">
+                  {effectiveCompact && (
+                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                      <span className="db-mobile-back-arrow">&larr;</span>
+                      Back to files
+                    </button>
+                  )}
+                  <p>Select a file to start editing, or create a new one.</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </GitContext.Provider>
     </div>
   );
 }

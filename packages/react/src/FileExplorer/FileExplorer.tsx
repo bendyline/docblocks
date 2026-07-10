@@ -8,21 +8,28 @@
 import { useCallback, useState } from 'react';
 import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { useFileTree } from './useFileTree.js';
-import { FileTreeNode } from './FileTreeNode.js';
+import {
+  FileTreeNode,
+  type FileTreeNodeBadge,
+  type FileTreeNodeGitActions,
+} from './FileTreeNode.js';
 import { NewFileIcon, NewFolderIcon, RefreshIcon } from '../icons.js';
+import { useGitContext } from '../Git/GitContext.js';
+import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 
 /**
- * Hide auto-generated `<basename>_files/` companion folders from the
- * tree. They hold per-document images and version snapshots — useful
- * to the editor, noisy in the user-facing file list. The folders still
- * exist on disk; we just don't surface them in the explorer.
+ * Hide dot-entries (`.git`, `.gitignore`, `.DS_Store`, …) — never user
+ * documents — and auto-generated `<basename>_files/` companion folders,
+ * which hold per-document images and version snapshots (useful to the
+ * editor, noisy in the user-facing file list). Everything still exists on
+ * disk; we just don't surface it in the explorer.
  */
 function isHiddenEntry(entry: FileSystemEntry): boolean {
-  if (entry.kind !== 'directory') return false;
   const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
-  return name.endsWith('_files');
+  if (name.startsWith('.')) return true;
+  return entry.kind === 'directory' && name.endsWith('_files');
 }
 
 function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
@@ -53,6 +60,8 @@ export function FileExplorer({
   const { childEntries } = tree as typeof tree & {
     childEntries: Map<string, FileSystemEntry[]>;
   };
+  // Null on surfaces without git (site, tests) — everything degrades.
+  const git = useGitContext();
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
@@ -168,6 +177,32 @@ export function FileExplorer({
     [tree, onTreeChange],
   );
 
+  const badgeFor = useCallback(
+    (entry: FileSystemEntry): FileTreeNodeBadge | undefined => {
+      if (!git?.repo) return undefined;
+      const key = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+      const kind = git.badges.get(key);
+      if (!kind) return undefined;
+      return { kind, glyph: BADGE_GLYPHS[kind], label: BADGE_LABELS[kind] };
+    },
+    [git],
+  );
+
+  const gitActionsFor = useCallback(
+    (entry: FileSystemEntry): FileTreeNodeGitActions | undefined => {
+      if (!git?.repo || entry.kind !== 'file') return undefined;
+      const path = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+      return {
+        viewChanges: isFileDirty(git.status, path)
+          ? () => git.openDialog({ kind: 'diff', path })
+          : undefined,
+        fileHistory: () => git.openDialog({ kind: 'history', path }),
+        openOnRemote: git.remoteWeb ? () => git.openOnRemote(path) : undefined,
+      };
+    },
+    [git],
+  );
+
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
       return filterVisible(entries).map((entry) => (
@@ -177,6 +212,8 @@ export function FileExplorer({
           depth={depth}
           expanded={tree.expanded.has(entry.path)}
           selected={tree.selectedPath === entry.path}
+          badge={badgeFor(entry)}
+          gitActions={gitActionsFor(entry)}
           onToggle={tree.toggleExpand}
           onSelect={handleSelect}
           onDelete={handleDelete}
@@ -188,7 +225,7 @@ export function FileExplorer({
         />
       ));
     },
-    [tree, handleSelect, handleDelete, handleRename, childEntries],
+    [tree, handleSelect, handleDelete, handleRename, childEntries, badgeFor, gitActionsFor],
   );
 
   return (

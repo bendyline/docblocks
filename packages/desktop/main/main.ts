@@ -17,6 +17,8 @@ import { registerExternalIpc } from './ipc-external.js';
 import { registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
+import { registerGitIpc } from './ipc-git.js';
+import { killAllGitChildren } from './git/exec.js';
 import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
 import { buildMenu } from './menu.js';
 import { readSettings, flushSettings } from './settings.js';
@@ -274,6 +276,7 @@ app.whenReady().then(async () => {
   registerWorkspaceIpc();
   registerShellIpc();
   registerFfmpegIpc();
+  registerGitIpc();
   registerUpdaterIpc();
 
   mainWindow = await createWindow();
@@ -302,6 +305,8 @@ app.on('before-quit', async (event) => {
     // best-effort — never block shutdown on an I/O error
   }
   (app as unknown as { _flushedSettings?: boolean })._flushedSettings = true;
+  // Stop any in-flight git children so nothing outlives the app.
+  killAllGitChildren();
   // Release any MAS security-scoped resource handles (no-op elsewhere).
   releaseAllScopedResources();
   app.quit();

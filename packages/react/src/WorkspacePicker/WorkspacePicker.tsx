@@ -16,6 +16,11 @@ export interface WorkspacePickerProps {
   onSelect: (descriptor: WorkspaceDescriptor) => void;
   /** Called when the user chooses "Open Folder" (native FS). */
   onOpenFolder: () => void;
+  /**
+   * Called when the user chooses "Clone Git repository". Only provided on
+   * the desktop when git is available — omitted, the item is hidden.
+   */
+  onCloneRepository?: () => void;
   /** Optional className. */
   className?: string;
 }
@@ -24,6 +29,7 @@ export function WorkspacePicker({
   activeWorkspaceId,
   onSelect,
   onOpenFolder,
+  onCloneRepository,
   className,
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
@@ -128,6 +134,18 @@ export function WorkspacePicker({
               }}
             >
               Open Folder...
+            </button>
+          )}
+
+          {onCloneRepository && (
+            <button
+              className="db-workspace-dropdown-item"
+              onClick={() => {
+                setIsOpen(false);
+                onCloneRepository();
+              }}
+            >
+              Clone Git Repository...
             </button>
           )}
         </div>
