@@ -20,6 +20,38 @@ test('boots and renders the shell', async ({ launchApp }) => {
   await expect(window.locator('.db-shell')).toBeVisible();
 });
 
+test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {
+  const { app, window } = await launchApp();
+  const toolbar = window.locator('.squisq-toolbar');
+  await expect(toolbar).toBeVisible({ timeout: 30_000 });
+
+  const chrome = await toolbar.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      height: element.getBoundingClientRect().height,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+    };
+  });
+  expect(chrome.height).toBe(48);
+  expect(chrome.appRegion).toBe('drag');
+
+  // Interactive controls inside the drag region must remain clickable.
+  const sourceTab = toolbar.getByRole('tab', { name: 'Source' });
+  await sourceTab.click();
+  await expect(sourceTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+
+  // macOS owns its global application menu outside the BrowserWindow;
+  // Windows/Linux should have no in-window File/Edit/View menu row.
+  if (process.platform !== 'darwin') {
+    const browserWindow = await app.browserWindow(window);
+    const menuBarVisible = await browserWindow.evaluate((nativeWindow) =>
+      nativeWindow.isMenuBarVisible(),
+    );
+    expect(menuBarVisible).toBe(false);
+  }
+});
+
 test('default workspace folder exists on disk after first launch', async ({
   launchApp,
   workspaceDir,

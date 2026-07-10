@@ -1,6 +1,7 @@
 import { DocBlocksShell } from '@bendyline/docblocks-react';
 import { UpdateStatusBanner } from './UpdateStatusBanner';
 import './update-banner.css';
+import './titlebar.css';
 
 export function App() {
   return (

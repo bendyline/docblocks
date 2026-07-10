@@ -26,6 +26,7 @@ import { registerTray } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
+const TITLE_BAR_HEIGHT = 48;
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
 let mainWindow: BrowserWindow | null = null;
@@ -159,6 +160,16 @@ async function createWindow(): Promise<BrowserWindow> {
     minHeight: 480,
     show: false,
     title: 'DocBlocks',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay:
+      process.platform === 'darwin'
+        ? true
+        : {
+            color: '#00000000',
+            symbolColor: '#6b7280',
+            height: TITLE_BAR_HEIGHT,
+          },
     center: !useSaved,
     backgroundColor: '#1e1e1e',
     webPreferences: {
@@ -268,6 +279,7 @@ app.whenReady().then(async () => {
   mainWindow = await createWindow();
 
   buildMenu(mainWindow);
+  mainWindow.setMenuBarVisibility(false);
 
   registerTray(() => mainWindow);
 
@@ -305,6 +317,7 @@ app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     mainWindow = await createWindow();
     buildMenu(mainWindow);
+    mainWindow.setMenuBarVisibility(false);
   }
 });
 
