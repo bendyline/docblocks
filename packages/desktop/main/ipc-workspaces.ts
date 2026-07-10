@@ -65,7 +65,7 @@ export function registerWorkspaceIpc(): void {
     const settings = await readSettings();
 
     // E2E override — tests pass an isolated workspace dir so they don't
-    // touch the real ~/Documents/DocBlocks. Wins over saved defaults.
+    // touch DocBlocks inside the real OS Documents folder. Wins over saved defaults.
     const e2eRoot = process.env.DOCBLOCKS_E2E_DEFAULT_ROOT;
     if (e2eRoot) {
       await ensureFolder(e2eRoot);
@@ -89,13 +89,18 @@ export function registerWorkspaceIpc(): void {
       return { id, name: path.basename(rootPath) || 'DocBlocks', rootPath };
     }
 
+    // Ask the operating system for its Documents known folder instead of
+    // constructing ~/Documents. This honors redirected locations such as
+    // OneDrive Documents on Windows.
+    const documentsPath = app.getPath('documents');
+
     // Mac App Store sandbox: the app can only freely write inside its own
     // container. `app.getPath('documents')` is redirected there by the sandbox,
     // so it's the one default that needs no user grant. Other folders are
     // reached via the picker, which mints a security-scoped bookmark. (The
     // iCloud nudge below is irrelevant inside the container.)
     if (isSandboxed()) {
-      const root = path.join(app.getPath('documents'), 'DocBlocks');
+      const root = suggestedDefaultRoot(documentsPath);
       await ensureFolder(root);
       const id = deriveWorkspaceId(root);
       const name = path.basename(root) || 'DocBlocks';
@@ -111,10 +116,10 @@ export function registerWorkspaceIpc(): void {
     }
 
     // First launch — consider iCloud on macOS and give the user one prompt.
-    let chosenRoot = suggestedDefaultRoot();
+    let chosenRoot = suggestedDefaultRoot(documentsPath);
     if (
       process.platform === 'darwin' &&
-      isMacOSDocumentsICloudManaged() &&
+      isMacOSDocumentsICloudManaged(documentsPath) &&
       !settings.iCloudPromptShown
     ) {
       const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;

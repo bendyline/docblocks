@@ -10,6 +10,7 @@ import type {
   DocBlocksHostExternalAPI,
   DocBlocksHostGitAPI,
   DocBlocksHostShellAPI,
+  DocBlocksHostExportAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,
@@ -80,6 +81,17 @@ const workspacesApi: DocBlocksHostWorkspacesAPI = {
 const shellApi: DocBlocksHostShellAPI = {
   revealInFolder: (p) => ipcRenderer.invoke('shell:revealInFolder', p),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+};
+
+// â”€â”€ exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const exportApi: DocBlocksHostExportAPI = {
+  resolveTarget: (documentId, filename) =>
+    ipcRenderer.invoke('exports:resolveTarget', documentId, filename),
+  pickTarget: (documentId, filename, currentPath) =>
+    ipcRenderer.invoke('exports:pickTarget', documentId, filename, currentPath),
+  save: (documentId, filename, targetPath, data) =>
+    ipcRenderer.invoke('exports:save', documentId, filename, targetPath, data),
 };
 
 // ── ffmpeg ──────────────────────────────────────────────────────────
@@ -201,6 +213,7 @@ const host: DocBlocksHostAPI = {
   external: externalApi,
   workspaces: workspacesApi,
   shell: shellApi,
+  exports: exportApi,
   ffmpeg: ffmpegApi,
   git: gitApi,
   updater: updaterApi,

@@ -19,6 +19,31 @@
 
 .db-desktop-root .db-shell-sidebar-header {
   padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
+  cursor: grab;
+}
+
+/* Make the draggable header space discoverable without turning it into a
+   control. This desktop-only pseudo-element lands immediately after the
+   workspace gear and leaves pointer handling to the header's drag region. */
+.db-desktop-root .db-shell-sidebar-header::after {
+  content: '';
+  width: 12px;
+  height: 20px;
+  flex: 0 0 12px;
+  background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+  background-position: center;
+  background-size: 4px 4px;
+  opacity: 0.72;
+  pointer-events: none;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+/* The sidebar clips overflow, so keep the workspace menu inside its right
+   edge and let long filesystem paths wrap within the available width. */
+.db-desktop-root .db-workspace-dropdown {
+  box-sizing: border-box;
+  width: min(320px, calc(100% + 44px));
 }
 
 /* On Windows/Linux the caption buttons normally occupy the right edge.

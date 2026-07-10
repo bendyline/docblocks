@@ -22,9 +22,14 @@ export { AppMenu } from './AppMenu/index.js';
 export type { AppMenuProps, ThemePreference } from './AppMenu/index.js';
 
 // Export
-export { buildExportFilename, ExportToolbarControls } from './Export/index.js';
+export {
+  buildExportFilename,
+  updateExportTargetExtension,
+  ExportToolbarControls,
+} from './Export/index.js';
 export type {
   ExportDestinationControl,
+  ExportDestinationAdapter,
   ExportToolbarControlsProps,
   ExportFormat,
   ExportOptions,

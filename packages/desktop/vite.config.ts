@@ -90,6 +90,9 @@ export default defineConfig({
     outDir: path.resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
     sourcemap: true,
+    // Known large chunks have surface-specific limits in
+    // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
+    chunkSizeWarningLimit: 4_000,
     modulePreload: {
       resolveDependencies: resolveModulePreloadDependencies,
     },

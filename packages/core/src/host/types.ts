@@ -39,8 +39,8 @@ export interface ElectronWorkspaceInfo {
 /** Workspace-management operations exposed to the renderer. */
 export interface DocBlocksHostWorkspacesAPI {
   /**
-   * Return the default workspace (creating ~/Documents/DocBlocks on first
-   * call, or the user's configured default).
+   * Return the default workspace (creating DocBlocks inside the operating
+   * system's Documents folder on first call, or the user's configured default).
    */
   getDefault(): Promise<ElectronWorkspaceInfo>;
   /**
@@ -64,6 +64,25 @@ export interface DocBlocksHostShellAPI {
   revealInFolder(absolutePath: string): Promise<void>;
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>;
+}
+
+/** Native export target selection and binary file writing. */
+export interface DocBlocksHostExportAPI {
+  /** Resolve the remembered target for this document and output filename. */
+  resolveTarget(documentId: string, filename: string): Promise<string>;
+  /** Open the native Save dialog and remember the selected target. */
+  pickTarget(
+    documentId: string,
+    filename: string,
+    currentPath?: string | null,
+  ): Promise<string | null>;
+  /** Write an exported blob to a remembered or user-confirmed target. */
+  save(
+    documentId: string,
+    filename: string,
+    targetPath: string | null,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<string | null>;
 }
 
 /** System ffmpeg detection and invocation. */
@@ -172,6 +191,7 @@ export interface DocBlocksHostAPI {
   external: DocBlocksHostExternalAPI;
   workspaces: DocBlocksHostWorkspacesAPI;
   shell: DocBlocksHostShellAPI;
+  exports: DocBlocksHostExportAPI;
   ffmpeg: DocBlocksHostFfmpegAPI;
   git: DocBlocksHostGitAPI;
   updater: DocBlocksHostUpdaterAPI;

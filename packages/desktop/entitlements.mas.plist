@@ -23,6 +23,10 @@
   <true/>
   <key>com.apple.security.files.user-selected.read-write</key>
   <true/>
+  <!-- The export textbox defaults to Downloads and writes there without
+       opening a redundant Save dialog. Other locations remain user-selected. -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
   <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
   <key>com.apple.security.network.client</key>

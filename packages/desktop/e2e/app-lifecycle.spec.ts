@@ -36,7 +36,30 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(chrome.height).toBe(48);
   expect(chrome.appRegion).toBe('drag');
 
+  // The sidebar titlebar ends with a desktop-only dotted grip so the
+  // draggable space beside the workspace gear is visually discoverable.
+  const sidebarHeader = window.locator('.db-shell-sidebar-header');
+  const grip = await sidebarHeader.evaluate((element) => {
+    const headerStyle = getComputedStyle(element);
+    const style = getComputedStyle(element, '::after');
+    return {
+      hasContent: style.content !== 'none' && style.content !== 'normal',
+      width: style.width,
+      backgroundImage: style.backgroundImage,
+      cursor: headerStyle.cursor,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+    };
+  });
+  expect(grip.hasContent).toBe(true);
+  expect(grip.width).toBe('12px');
+  expect(grip.backgroundImage).toContain('radial-gradient');
+  expect(grip.cursor).toBe('grab');
+  expect(grip.appRegion).toBe('drag');
+
   // Interactive controls inside the drag region must remain clickable.
+  await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
+  await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
   const sourceTab = toolbar.getByRole('tab', { name: 'Source' });
   await sourceTab.click();
   await expect(sourceTab).toHaveClass(/squisq-toolbar-view-tab--active/);
@@ -63,6 +86,19 @@ test('default workspace folder exists on disk after first launch', async ({
   expect(fs.statSync(workspaceDir).isDirectory()).toBe(true);
 });
 
+test('workspace dropdown shows the full folder path', async ({ launchApp, workspaceDir }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  await window.locator('.db-workspace-picker-btn').click();
+  const activeWorkspace = window.locator('.db-workspace-dropdown-item--active');
+  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveText(workspaceDir);
+  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveAttribute(
+    'title',
+    workspaceDir,
+  );
+});
+
 test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
@@ -79,6 +115,18 @@ test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir
   const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
   expect(fs.existsSync(welcome)).toBe(true);
   expect(fs.readFileSync(welcome, 'utf8')).toContain('Welcome to DocBlocks');
+});
+
+test('export dialog exposes a remembered native target control', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await window.getByRole('button', { name: 'More actions' }).click();
+  await window.getByRole('button', { name: 'Export...' }).click();
+
+  const exportTarget = window.getByLabel('Export to');
+  await expect(exportTarget).toBeVisible();
+  await expect(exportTarget).toHaveValue(/aboutDocBlocks\.pdf$/);
+  await expect(window.getByRole('button', { name: 'Choose export location' })).toBeVisible();
 });
 
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {

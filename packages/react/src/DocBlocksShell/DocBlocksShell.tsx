@@ -5,7 +5,7 @@
  * the center editor area (squisq EditorShell).
  */
 
-import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { EditorShell } from '@bendyline/squisq-editor-react';
 import type {
   EditorColorScheme,
@@ -56,7 +56,10 @@ import {
   type WorkspaceVersioningOverride,
 } from '../WorkspacePicker/WorkspaceSettingsDialog.js';
 import { useAutoSave } from '../hooks/useAutoSave.js';
-import { ExportToolbarControls } from '../Export/ExportToolbarControls.js';
+import {
+  ExportToolbarControls,
+  type ExportDestinationAdapter,
+} from '../Export/ExportToolbarControls.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
 // The git dialogs/status bar only ever render under the Electron host, so
@@ -579,6 +582,17 @@ export function DocBlocksShell({
     [activeWorkspaceDescriptor],
   );
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
+    if (!isElectronHost() || !activeWorkspaceId || !selectedFile) return undefined;
+    const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
+    const host = getDocBlocksHost().exports;
+    return {
+      resolveTarget: (filename) => host.resolveTarget(documentId, filename),
+      pickTarget: (filename, currentPath) => host.pickTarget(documentId, filename, currentPath),
+      saveBlob: async (blob, filename, targetPath) =>
+        host.save(documentId, filename, targetPath ?? null, await blob.arrayBuffer()),
+    };
+  }, [activeWorkspaceId, selectedFile]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
   const [editorContent, setEditorContent] = useState('');
@@ -869,7 +883,7 @@ export function DocBlocksShell({
       if (!fsProvider) {
         if (electron) {
           // Desktop: ask the host for the default folder workspace
-          // (creates ~/Documents/DocBlocks on first launch).
+          // (creates DocBlocks in the OS-resolved Documents folder on first launch).
           const info = await getDocBlocksHost().workspaces.getDefault();
           const descriptor: WorkspaceDescriptor = {
             id: info.id,
@@ -1988,6 +2002,7 @@ export function DocBlocksShell({
                         <ExportToolbarControls
                           selectedFile={selectedFile}
                           mediaContainer={mediaContainerRef.current}
+                          destinationAdapter={exportDestinationAdapter}
                         />
                       </>
                     }

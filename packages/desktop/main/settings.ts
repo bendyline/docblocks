@@ -32,6 +32,18 @@ export interface PersistedWorkspace {
   bookmark?: string;
 }
 
+/** A user-approved native export path and its optional macOS sandbox bookmark. */
+export interface PersistedExportTargetAccess {
+  path: string;
+  bookmark?: string;
+}
+
+/** Last export targets for one document, retained separately by file extension. */
+export interface PersistedExportTarget {
+  last?: PersistedExportTargetAccess;
+  byExtension?: Record<string, PersistedExportTargetAccess>;
+}
+
 export interface Settings {
   /** Absolute path the first-launch bootstrap should use. */
   defaultWorkspaceRoot?: string;
@@ -41,6 +53,8 @@ export interface Settings {
   iCloudPromptShown?: boolean;
   /** Parent directory of the most recent "Clone repository" destination. */
   lastCloneParentDir?: string;
+  /** Native export targets keyed by a stable hash of workspace + document path. */
+  exportTargets?: Record<string, PersistedExportTarget>;
 }
 
 const DEFAULT_SETTINGS: Settings = { workspaces: [] };

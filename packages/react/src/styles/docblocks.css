@@ -437,7 +437,7 @@
 
 .db-workspace-dropdown-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
@@ -448,7 +448,6 @@
   border: none;
   cursor: pointer;
   color: var(--db-text-secondary);
-  white-space: nowrap;
 }
 
 .db-workspace-dropdown-item:hover {
@@ -464,6 +463,35 @@
 .db-workspace-type {
   font-size: 11px;
   color: var(--db-text-placeholder);
+}
+
+.db-workspace-details {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.db-workspace-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.db-workspace-path {
+  margin-top: 2px;
+  color: var(--db-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.db-workspace-dropdown-item--active :is(.db-workspace-type, .db-workspace-path) {
+  color: var(--db-text-on-selected);
+  opacity: 0.75;
 }
 
 .db-workspace-dropdown-divider {

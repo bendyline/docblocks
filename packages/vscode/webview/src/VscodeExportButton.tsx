@@ -8,6 +8,7 @@ import {
   type ExportOptions,
 } from '../../../react/src/Export/export-options.js';
 import { buildExportFilename, runExport } from '../../../react/src/Export/run-export.js';
+import { updateExportTargetExtension } from '../../../react/src/Export/export-destination.js';
 
 export interface VscodeExportButtonProps {
   selectedFile: string | null;
@@ -48,7 +49,11 @@ export function VscodeExportButton({
 
   const refreshDestination = useCallback(
     async (options: ExportOptions, force = false) => {
-      if (!force && destinationLockedRef.current) return;
+      if (!force && destinationLockedRef.current) {
+        const filename = buildExportFilename(selectedFile, options);
+        setDestinationPath((current) => updateExportTargetExtension(current, filename));
+        return;
+      }
 
       const requestId = destinationRequestRef.current + 1;
       destinationRequestRef.current = requestId;

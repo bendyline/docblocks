@@ -15,11 +15,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export function isMacOSDocumentsICloudManaged(): boolean {
+export function isMacOSDocumentsICloudManaged(
+  documentsPath = path.join(os.homedir(), 'Documents'),
+): boolean {
   if (process.platform !== 'darwin') return false;
 
   const home = os.homedir();
-  const documentsPath = path.join(home, 'Documents');
   const cloudDocsPath = path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
 
   if (!fs.existsSync(cloudDocsPath)) {
@@ -48,12 +49,12 @@ export function isMacOSDocumentsICloudManaged(): boolean {
 }
 
 /**
- * Suggested default workspace root taking iCloud into account.
- * Returns ~/Documents/DocBlocks unless we detect iCloud + haven't asked yet,
- * in which case the caller should prompt the user.
+ * Suggested default workspace root under the Documents directory resolved by
+ * Electron from the operating system. Accepting that path from the caller is
+ * important on Windows, where Documents may be redirected into OneDrive.
  */
-export function suggestedDefaultRoot(): string {
-  return path.join(os.homedir(), 'Documents', 'DocBlocks');
+export function suggestedDefaultRoot(documentsPath: string): string {
+  return path.join(documentsPath, 'DocBlocks');
 }
 
 export function iCloudAlternativeRoot(): string {

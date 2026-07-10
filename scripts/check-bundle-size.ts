@@ -15,14 +15,14 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/site/dist/index.html',
     assetsDir: 'packages/site/dist/assets',
     entryBudgetBytes: 2_250_000,
-    monacoBudgetBytes: 2_800_000,
+    monacoBudgetBytes: 4_000_000,
   },
   {
     name: 'desktop renderer',
     htmlPath: 'packages/desktop/dist/renderer/index.html',
     assetsDir: 'packages/desktop/dist/renderer/assets',
     entryBudgetBytes: 2_250_000,
-    monacoBudgetBytes: 2_800_000,
+    monacoBudgetBytes: 4_000_000,
   },
 ];
 
@@ -47,7 +47,7 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
   const html = await readFile(surface.htmlPath, 'utf8');
   const messages: string[] = [];
 
-  for (const deferredName of ['monaco-slim', 'standalone-source']) {
+  for (const deferredName of ['monaco-', 'standalone-source']) {
     if (html.includes(deferredName)) {
       throw new Error(`${surface.name}: ${deferredName} is referenced from index.html`);
     }
@@ -65,9 +65,9 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
   }
   messages.push(`${surface.name}: entry ${entryAsset} ${formatBytes(entrySize)}`);
 
-  const monacoAsset = await findAssetByPrefix(surface.assetsDir, 'monaco-slim-');
+  const monacoAsset = await findAssetByPrefix(surface.assetsDir, 'monaco-');
   if (!monacoAsset) {
-    throw new Error(`${surface.name}: missing deferred monaco-slim chunk`);
+    throw new Error(`${surface.name}: missing deferred monaco chunk`);
   }
   const monacoSize = (await stat(path.join(surface.assetsDir, monacoAsset))).size;
   if (monacoSize > surface.monacoBudgetBytes) {

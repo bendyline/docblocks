@@ -54,7 +54,7 @@ electron-builder config is in `electron-builder.yml` (appId `com.bendyline.docbl
 npm run test:e2e       # builds, then Playwright launches the packaged main process
 ```
 
-The e2e fixture (`e2e/fixtures.ts`) launches the app with a throwaway `--user-data-dir` and an isolated workspace root passed via `DOCBLOCKS_E2E_DEFAULT_ROOT`, so tests never touch your real `~/Documents/DocBlocks`. Tests cover boot, first-launch workspace bootstrap (including the seeded `aboutDocBlocks.md` welcome doc), persistence across relaunch, and the IPC path-traversal guard.
+The e2e fixture (`e2e/fixtures.ts`) launches the app with a throwaway `--user-data-dir` and an isolated workspace root passed via `DOCBLOCKS_E2E_DEFAULT_ROOT`, so tests never touch `DocBlocks` inside your real operating-system Documents folder. Tests cover boot, first-launch workspace bootstrap (including the seeded `aboutDocBlocks.md` welcome doc), persistence across relaunch, and the IPC path-traversal guard.
 
 ## License
 

@@ -5,7 +5,7 @@
  * Every test gets:
  *   • a throwaway `userDataDir` so saved settings never pollute dev state
  *   • an explicit `workspaceDir` the first-launch bootstrap is told to
- *     use (avoids real ~/Documents/DocBlocks)
+ *     use (avoids DocBlocks inside the real OS Documents folder)
  *   • an env with ELECTRON_RUN_AS_NODE / ELECTRON_NO_ATTACH_CONSOLE
  *     stripped (matches scripts/run-electron.cjs)
  *   • NODE_ENV=production so the main process boots through the app://
@@ -44,7 +44,7 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   env.NODE_ENV = 'production';
   // Tell the main process to use this workspace root instead of
-  // ~/Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
+  // OS Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
   return env;
 }

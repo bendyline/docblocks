@@ -16,6 +16,7 @@ import { registerFsIpc } from './ipc-fs.js';
 import { registerExternalIpc } from './ipc-external.js';
 import { registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
+import { registerExportIpc } from './ipc-export.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerGitIpc } from './ipc-git.js';
 import { killAllGitChildren } from './git/exec.js';
@@ -275,6 +276,7 @@ app.whenReady().then(async () => {
   registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();
+  registerExportIpc();
   registerFfmpegIpc();
   registerGitIpc();
   registerUpdaterIpc();

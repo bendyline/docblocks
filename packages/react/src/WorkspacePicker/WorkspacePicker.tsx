@@ -3,7 +3,7 @@
  * (IndexedDB-based or native folder via File System Access API).
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
@@ -23,6 +23,15 @@ export interface WorkspacePickerProps {
   onCloneRepository?: () => void;
   /** Optional className. */
   className?: string;
+}
+
+function WorkspacePath({ path }: { path: string }) {
+  return path.split(/([\\/])/).map((segment, index) => (
+    <Fragment key={index}>
+      {segment}
+      {(segment === '\\' || segment === '/') && <wbr />}
+    </Fragment>
+  ));
 }
 
 export function WorkspacePicker({
@@ -110,9 +119,18 @@ export function WorkspacePicker({
               }`}
               onClick={() => handleSelect(ws)}
             >
-              {ws.name}
-              <span className="db-workspace-type">
-                {ws.type === 'native' || ws.type === 'electron-native' ? '(folder)' : ''}
+              <span className="db-workspace-details">
+                <span className="db-workspace-heading">
+                  <span>{ws.name}</span>
+                  {(ws.type === 'native' || ws.type === 'electron-native') && (
+                    <span className="db-workspace-type">(folder)</span>
+                  )}
+                </span>
+                {ws.rootPath && (
+                  <span className="db-workspace-path" title={ws.rootPath}>
+                    <WorkspacePath path={ws.rootPath} />
+                  </span>
+                )}
               </span>
             </button>
           ))}
