@@ -168,7 +168,7 @@ function parseContainerPath(value: string): string[] | null {
 }
 
 function isSafeSegment(segment: string): boolean {
-  return segment !== '' && segment !== '.' && !/[\\/\0]/.test(segment);
+  return segment !== '' && segment !== '.' && segment !== '..' && !/[\\/\0]/.test(segment);
 }
 
 function decodeSegment(segment: string): string {
