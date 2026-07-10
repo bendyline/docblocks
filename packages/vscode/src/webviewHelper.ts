@@ -40,7 +40,7 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
       script-src ${webview.cspSource} 'nonce-${nonce}';
       font-src ${webview.cspSource};
       img-src ${webview.cspSource} https: blob: data:;
-      worker-src blob:;">
+      worker-src ${webview.cspSource} blob:;">
   <link rel="stylesheet" href="${styleUri}">
   <style>
     html, body, #root {

@@ -200,7 +200,7 @@ export function FileTreeNode({
               aria-expanded={showContext}
               tabIndex={-1}
             >
-              <MoreIcon width={14} height={14} />
+              <MoreIcon />
             </button>
           </>
         )}

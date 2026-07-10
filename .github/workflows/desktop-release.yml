@@ -10,6 +10,10 @@
 #   - Manual dispatch
 #   - Git tag matching `desktop-v*` (e.g., desktop-v0.1.0)
 #
+# Versioning:
+#   packages/desktop/package.json is the release version source of truth.
+#   Bump it before releasing; artifacts and release tags use that clean x.y.z.
+#
 # Prerequisites (one-time setup):
 #   Windows signing:  Azure Trusted Signing resource + GitHub secrets
 #   macOS signing:    Apple Developer certificate + GitHub secrets
@@ -39,6 +43,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-windows:
     runs-on: windows-latest
+    # Job-level so step `if:` conditionals can read it — a step's own `env:`
+    # block is NOT visible to that same step's `if:`.
+    env:
+      SIGNING_CONFIGURED: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT != '' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -56,10 +64,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Stamp build version (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
 
       - name: Read version
         id: version
@@ -111,7 +115,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
       - name: Verify Windows signature (fail if unsigned)
-        if: env.SIGNING_ENDPOINT != ''
+        if: env.SIGNING_CONFIGURED == 'true'
         shell: pwsh
         run: |
           # Only enforced when Trusted Signing is configured. Catches the case
@@ -123,8 +127,6 @@ jobs:
           if ($sig.Status -ne 'Valid') {
             throw "Expected a valid Authenticode signature but got '$($sig.Status)'"
           }
-        env:
-          SIGNING_ENDPOINT: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT }}
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -141,6 +143,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-macos:
     runs-on: macos-latest
+    # Job-level so step `if:` conditionals can read it — a step's own `env:`
+    # block is NOT visible to that same step's `if:`.
+    env:
+      SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' }}
 
     steps:
       - name: Checkout
@@ -156,10 +162,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Stamp build version (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
 
       - name: Build upstream packages
         run: npm run build
@@ -200,9 +202,7 @@ jobs:
           UV_THREADPOOL_SIZE: 16
 
       - name: Verify macOS signing (fail if unsigned)
-        if: env.APPLE_CERT != ''
-        env:
-          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+        if: env.SIGNING_CONFIGURED == 'true'
         run: |
           # Only enforced when a signing cert is configured. codesign --verify is
           # the deterministic gate (fails on an unsigned app); the staple check is
@@ -252,10 +252,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Stamp build version (workflow_dispatch only)
-        if: github.event_name == 'workflow_dispatch'
-        run: node packages/desktop/scripts/stamp-version.cjs --run ${{ github.run_number }}
 
       - name: Build upstream packages
         run: npm run build

@@ -2,8 +2,6 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-const monacoSlimEntry = path.resolve(__dirname, 'src/monaco-slim.ts');
-
 export default defineConfig({
   base: './',
   plugins: [react()],
@@ -20,18 +18,15 @@ export default defineConfig({
   },
   resolve: {
     preserveSymlinks: false,
-    dedupe: ['react', 'react-dom'],
+    // Force a single monaco-editor copy — see packages/site/vite.config.ts for
+    // the rationale (the editor comes from linked squisq, the language-service
+    // `?worker` imports from this package's copy; they must be one version).
+    dedupe: ['react', 'react-dom', 'monaco-editor'],
     alias: [
-      // Slim Monaco — only markdown + common fenced-code-block languages.
-      // Exact match on bare 'monaco-editor' (not subpath imports like 'monaco-editor/esm/...')
-      {
-        find: /^monaco-editor$/,
-        replacement: monacoSlimEntry,
-      },
-      {
-        find: /^monaco-editor\/esm\/vs\/editor\/editor\.main\.js$/,
-        replacement: monacoSlimEntry,
-      },
+      // No monaco-editor alias: the webview gets Monaco straight from squisq's
+      // canonical entry (`@bendyline/squisq-editor-react/monaco`, via its
+      // useMonacoLoader). squisq owns which slice of Monaco ships — no local
+      // slim build to maintain (or to silently drop the suggest widget).
       {
         find: '@bendyline/docblocks-react/styles',
         replacement: path.resolve(__dirname, '../../react/src/styles/docblocks.css'),

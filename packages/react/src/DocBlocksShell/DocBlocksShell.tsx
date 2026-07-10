@@ -1727,7 +1727,7 @@ export function DocBlocksShell({
         );
       } else {
         alert(
-          'This browser did not grant persistent storage for DocBlocks. Please back up browser docs frequently.',
+          'The browser did not grant permanent storage for DocBlocks. Please try again in a day or two. Meanwhile, please back up browser documents frequently.',
         );
       }
     } catch {

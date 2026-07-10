@@ -54,6 +54,13 @@ test.describe('DocBlocks App', () => {
 
     const buttons = toolbar.locator('.db-explorer-btn');
     await expect(buttons).toHaveCount(3); // +F, +D, refresh
+    const newFileIcon = buttons.nth(0).locator('.fa-file-circle-plus');
+    await expect(newFileIcon).toBeVisible();
+    await expect(newFileIcon).toHaveCSS('font-family', /Font Awesome/);
+    await expect(buttons.nth(1).locator('.fa-folder-plus')).toBeVisible();
+    await expect(buttons.nth(2).locator('.fa-arrows-rotate')).toBeVisible();
+
+    await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
   });
 
   test('shows Terms of Use link in footer', async ({ page }) => {
@@ -66,6 +73,15 @@ test.describe('DocBlocks App', () => {
       'href',
       'https://github.com/bendyline/docblocks/blob/main/LICENSE',
     );
+
+    const statusItem = page.locator('.squisq-status-item').first();
+    await expect(statusItem).toBeVisible();
+    const [linkBox, statusBox] = await Promise.all([link.boundingBox(), statusItem.boundingBox()]);
+    if (!linkBox || !statusBox) throw new Error('Footer alignment elements not found');
+
+    const linkCenter = linkBox.y + linkBox.height / 2;
+    const statusCenter = statusBox.y + statusBox.height / 2;
+    expect(linkCenter).toBe(statusCenter);
   });
 });
 
@@ -123,6 +139,54 @@ test.describe('File operations', () => {
   });
 });
 
+test.describe('Folder context menu theming', () => {
+  test('uses DocBlocks colors when portaled outside the dark shell', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('docblocks:themePreference', 'dark');
+    });
+    await page.goto('/');
+    await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('.db-explorer-btn').nth(1).click();
+    await page.locator('.db-new-item-input').fill('menu-theme-folder');
+    await page.locator('.db-new-item-add').click();
+
+    const treeRow = page.locator('.db-tree-row', { hasText: 'menu-theme-folder' });
+    await expect(treeRow).toBeVisible({ timeout: 5_000 });
+    await treeRow.hover();
+    await treeRow.locator('.db-tree-more').click();
+
+    const menu = page.locator('.db-tree-context');
+    await expect(menu).toBeVisible();
+
+    const colors = await menu.evaluate((element) => {
+      const resolveColor = (property: string): string => {
+        const probe = document.createElement('span');
+        probe.style.color = `var(${property})`;
+        document.body.appendChild(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+
+      const normalItem = element.querySelector<HTMLElement>('.db-tree-context-item');
+      const dangerItem = element.querySelector<HTMLElement>('.db-tree-context-item--danger');
+      return {
+        background: getComputedStyle(element).backgroundColor,
+        normalText: normalItem ? getComputedStyle(normalItem).color : '',
+        dangerText: dangerItem ? getComputedStyle(dangerItem).color : '',
+        expectedBackground: resolveColor('--db-bg'),
+        expectedNormalText: resolveColor('--db-text-secondary'),
+        expectedDangerText: resolveColor('--db-danger'),
+      };
+    });
+
+    expect(colors.background).toBe(colors.expectedBackground);
+    expect(colors.normalText).toBe(colors.expectedNormalText);
+    expect(colors.dangerText).toBe(colors.expectedDangerText);
+  });
+});
+
 test.describe('Welcome gateway', () => {
   test('first run shows the gateway and Start writing opens the editor', async ({ page }) => {
     await page.goto('/');
@@ -156,6 +220,68 @@ test.describe('Welcome gateway', () => {
     // the gateway stayed dismissed.
     await page.waitForTimeout(1_500);
     await expect(gateway).not.toBeVisible();
+  });
+});
+
+test.describe('Squisq overflow menu theming', () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
+
+  test('uses DocBlocks dark-theme surfaces and text colors', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('docblocks:themePreference', 'dark');
+    });
+    await page.goto('/');
+    await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('.db-welcome-gateway-cta').click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    const trigger = page.locator('.squisq-toolbar-overflow-trigger');
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const menu = page.locator('.squisq-toolbar-overflow-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('.squisq-template-picker-trigger')).toBeVisible();
+
+    const colors = await menu.evaluate((element) => {
+      const shell = document.querySelector<HTMLElement>('.db-shell');
+      if (!shell) throw new Error('DocBlocks shell not found');
+
+      const probe = document.createElement('div');
+      probe.style.cssText = [
+        'position:absolute',
+        'visibility:hidden',
+        'background:var(--db-bg)',
+        'border:1px solid var(--db-border)',
+        'color:var(--db-text-secondary)',
+      ].join(';');
+      shell.appendChild(probe);
+
+      const menuStyle = getComputedStyle(element);
+      const probeStyle = getComputedStyle(probe);
+      const firstItem = element.querySelector<HTMLElement>('.squisq-toolbar-overflow-item');
+      const picker = element.querySelector<HTMLElement>('.squisq-template-picker-trigger');
+
+      const result = {
+        menuBackground: menuStyle.backgroundColor,
+        menuBorder: menuStyle.borderTopColor,
+        itemColor: firstItem ? getComputedStyle(firstItem).color : '',
+        pickerBorder: picker ? getComputedStyle(picker).borderTopColor : '',
+        expectedBackground: probeStyle.backgroundColor,
+        expectedBorder: probeStyle.borderTopColor,
+        expectedText: probeStyle.color,
+      };
+      probe.remove();
+      return result;
+    });
+
+    expect(colors.menuBackground).toBe(colors.expectedBackground);
+    expect(colors.menuBorder).toBe(colors.expectedBorder);
+    expect(colors.itemColor).toBe(colors.expectedText);
+    expect(colors.pickerBorder).toBe(colors.expectedBorder);
   });
 });
 

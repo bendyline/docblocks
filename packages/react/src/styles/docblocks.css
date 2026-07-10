@@ -177,12 +177,15 @@
 }
 
 .db-explorer-btn {
+  width: 24px;
+  height: 24px;
   background: none;
   border: 1px solid transparent;
   border-radius: 3px;
   cursor: pointer;
-  padding: 3px;
-  font-size: 12px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
   color: var(--db-text-muted);
   display: flex;
   align-items: center;
@@ -322,6 +325,8 @@
   border-radius: 3px;
   background: transparent;
   color: var(--db-text-secondary);
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   visibility: hidden;
 }
@@ -570,6 +575,8 @@
   border-radius: 4px;
   background: transparent;
   color: var(--db-text-muted);
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   transition:
     background 0.12s,
@@ -742,6 +749,10 @@ body.db-resizing-sidebar * {
   flex-shrink: 0;
   font-size: 11px;
   line-height: 1;
+}
+
+.db-shell-sidebar-footer > * {
+  transform: translateY(-1px);
 }
 
 .db-shell-sidebar-footer a {
@@ -1666,10 +1677,10 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
   outline-color: var(--db-accent-soft-25);
 }
 
-/* The template gallery is rendered into document.body via createPortal,
-   so it lives outside `.db-shell`. Hoist the same brown/canvas tokens
-   onto the html element (gated by `:has(.db-shell[data-theme=…])`) so
-   the portal rules below can pull from the same source of truth. */
+/* The template gallery and file-tree context menu render into document.body
+   via createPortal, so they live outside `.db-shell`. Hoist the same
+   brown/canvas tokens onto the html element (gated by the resolved shell
+   theme) so every portaled surface keeps the DocBlocks palette. */
 html:has(.db-shell[data-theme='dark']) {
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
@@ -1677,7 +1688,11 @@ html:has(.db-shell[data-theme='dark']) {
   --db-border: #4d4636;
   --db-border-strong: #6b6448;
   --db-text: #e8e2d0;
+  --db-text-secondary: #d4ccb0;
   --db-text-muted: #a89a7c;
+  --db-danger: #f87171;
+  --db-danger-bg: #1c1917;
+  --db-shadow: rgba(0, 0, 0, 0.4);
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
@@ -1693,7 +1708,11 @@ html:has(.db-shell[data-theme='light']) {
   --db-border: #d6cdb0;
   --db-border-strong: #b5a985;
   --db-text: #2a2419;
+  --db-text-secondary: #3d3528;
   --db-text-muted: #6b614a;
+  --db-danger: #b22b1b;
+  --db-danger-bg: #fdf0ee;
+  --db-shadow: rgba(40, 30, 15, 0.12);
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
@@ -2369,6 +2388,95 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell .squisq-inline-preview-gutter {
   border-left: 1px solid var(--db-border-strong);
+}
+
+/* Toolbar overflow menu. Squisq intentionally ships a neutral slate
+   palette; inside DocBlocks this popover should use the same surfaces,
+   borders, text, and interaction colors as our other shell menus. The
+   contextual template/transition controls need explicit treatment too,
+   since they bring their own Squisq surfaces into the popover. */
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow: 0 4px 12px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu--up {
+  box-shadow: 0 -4px 12px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-heading {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu > .squisq-toolbar-separator {
+  background: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger {
+  color: var(--db-danger);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger:hover {
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger) {
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  outline-color: var(--db-accent-soft-25);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-label, .squisq-transition-picker-trigger-label),
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-caret, .squisq-transition-picker-trigger svg) {
+  color: var(--db-text-muted);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-value, .squisq-transition-picker-trigger-value) {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu .squisq-template-picker-trigger-thumb {
+  background: var(--db-bg);
+  border-color: var(--db-border);
 }
 
 /* Monaco's line-number gutter ("editorGutter.background") is set via

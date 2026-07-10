@@ -23,11 +23,13 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
   },
 });
 
-const monacoSlimEntry = path.resolve(__dirname, '../react/src/monaco-slim.ts');
-
 function isDeferredFeatureAsset(fileName: string): boolean {
   const baseName = fileName.replace(/\\/g, '/').split('/').pop() ?? fileName;
-  return baseName.startsWith('export-') || baseName.startsWith('monaco-slim');
+  // Keep lazy chunks out of the initial modulePreload: the export pipeline
+  // and Monaco (loaded on first editor mount via squisq's canonical
+  // `@bendyline/squisq-editor-react/monaco` entry) should not be prefetched
+  // up front. Vite names the dynamic-import chunk after `monaco.js`.
+  return baseName.startsWith('export-') || baseName.startsWith('monaco');
 }
 
 function resolveModulePreloadDependencies(_filename: string, deps: string[]): string[] {
@@ -47,13 +49,17 @@ export default defineConfig({
   plugins: [stripBrokenSourcemapPragmas(), react()],
   resolve: {
     preserveSymlinks: false,
-    dedupe: ['react', 'react-dom'],
+    // Force a single monaco-editor copy — see packages/site/vite.config.ts for
+    // the full rationale (linked-dev squisq otherwise pulls a different
+    // monaco-editor version for the editor than this app's `?worker` imports
+    // use, and the language workers must match the editor's version).
+    dedupe: ['react', 'react-dom', 'monaco-editor'],
     alias: [
-      { find: /^monaco-editor$/, replacement: monacoSlimEntry },
-      {
-        find: /^monaco-editor\/esm\/vs\/editor\/editor\.main\.js$/,
-        replacement: monacoSlimEntry,
-      },
+      // No monaco-editor alias: DocBlocks gets Monaco straight from squisq's
+      // canonical entry (`@bendyline/squisq-editor-react/monaco`, loaded by its
+      // useMonacoLoader). squisq owns which slice of Monaco ships — DocBlocks no
+      // longer maintains its own slim build (an easy way to silently drop the
+      // suggest widget, as it did before).
       {
         find: '@bendyline/docblocks-react/styles',
         replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
