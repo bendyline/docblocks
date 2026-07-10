@@ -32,12 +32,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "1.5.1",
-    "@bendyline/squisq-cli": "1.2.1",
-    "@bendyline/squisq-editor-react": "1.6.1",
-    "@bendyline/squisq-formats": "1.4.1",
-    "@bendyline/squisq-react": "1.4.1",
-    "@bendyline/squisq-video": "1.2.1",
+    "@bendyline/squisq": "1.5.2",
+    "@bendyline/squisq-cli": "1.2.2",
+    "@bendyline/squisq-editor-react": "1.6.2",
+    "@bendyline/squisq-formats": "1.4.2",
+    "@bendyline/squisq-react": "1.4.2",
+    "@bendyline/squisq-video": "1.2.2",
     "@modelcontextprotocol/sdk": "1.28.0",
     "commander": "13.1.0",
     "jszip": "3.10.1",

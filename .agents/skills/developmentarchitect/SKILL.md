@@ -1,6 +1,7 @@
 ---
 name: developmentarchitect
 description: Audit the DocBlocks codebase end-to-end — the core (filesystem/workspace/host) library, React component library, CLI tool, VS Code extension, Electron desktop app, and site — and recommend (or implement) changes that improve correctness, reduce duplication, and keep the multi-package workspace coherent. Use when the user asks for an architecture review, code-quality audit, or refactoring plan.
+disable-model-invocation: true
 ---
 
 # Development Architect Skill

@@ -1,6 +1,7 @@
 ---
 name: a11yreview
 description: Run accessibility audits (WCAG 2.1 AA) against the DocBlocks UI surfaces — the site shell, the Electron desktop renderer, and the VS Code custom editor webview — covering DocBlocksShell, FileExplorer, WorkspacePicker, AppMenu, Export dialog, and Setup pane. Identify violations, fix common issues directly, and produce an accessibility report. Use when asked to review accessibility, audit for a11y, or check WCAG compliance.
+disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 ---
 

@@ -54,6 +54,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "1.5.1"
+    "@bendyline/squisq": "1.5.2"
   }
 }

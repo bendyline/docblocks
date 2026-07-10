@@ -46,12 +46,12 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "1.1.2",
-    "@bendyline/squisq": "1.5.1",
-    "@bendyline/squisq-editor-react": "1.6.1",
-    "@bendyline/squisq-formats": "1.4.1",
-    "@bendyline/squisq-react": "1.4.1",
-    "@bendyline/squisq-video": "1.2.1",
-    "@bendyline/squisq-video-react": "1.2.1",
+    "@bendyline/squisq": "1.5.2",
+    "@bendyline/squisq-editor-react": "1.6.2",
+    "@bendyline/squisq-formats": "1.4.2",
+    "@bendyline/squisq-react": "1.4.2",
+    "@bendyline/squisq-video": "1.2.2",
+    "@bendyline/squisq-video-react": "1.2.2",
     "monaco-editor": "0.53.0"
   },
   "devDependencies": {
