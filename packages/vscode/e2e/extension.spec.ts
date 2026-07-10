@@ -23,39 +23,40 @@ async function getWebviewContent(page: Page): Promise<FrameLocator> {
 }
 
 /**
- * Open the DocBlocks sidebar pane via command palette.
+ * Open the DocBlocks setup tab via command palette.
  */
-async function openDocBlocksPane(page: Page) {
+async function openDocBlocksSetupTab(page: Page) {
   await page.keyboard.press('F1');
   await page.waitForTimeout(500);
-  await page.keyboard.type('View: Show DocBlocks');
+  await page.keyboard.type('DocBlocks: Open Setup');
   await page.waitForTimeout(1_000);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3_000);
 }
 
 /**
- * Right-click a file in the explorer and select "Open With..." > editor.
+ * Right-click a file in the explorer and select "Open in DocBlocks".
  */
-async function openFileWithEditor(page: Page, fileName: string, editorName: string) {
+async function openFileInDocBlocks(page: Page, fileName: string) {
   const explorer = page.locator('.explorer-folders-view');
   const file = explorer.getByText(fileName);
   await expect(file).toBeVisible({ timeout: 10_000 });
 
-  // Select the file first, then right-click
-  await file.click();
-  await page.waitForTimeout(300);
   await file.click({ button: 'right' });
   await page.waitForTimeout(1_000);
 
-  // Click "Open With..."
-  const openWith = page.locator('.context-view .action-label').filter({ hasText: 'Open With...' });
-  await openWith.click();
-  await page.waitForTimeout(1_000);
+  const openInDocBlocks = page
+    .locator('.context-view .action-label')
+    .filter({ hasText: 'Open in DocBlocks' });
+  await openInDocBlocks.click();
+  await page.waitForTimeout(3_000);
+}
 
-  // Select the editor from the quick pick
-  const quickInput = page.locator('.quick-input-widget');
-  await quickInput.getByText(editorName).click();
+async function openFileByDefault(page: Page, fileName: string) {
+  const explorer = page.locator('.explorer-folders-view');
+  const file = explorer.getByText(fileName);
+  await expect(file).toBeVisible({ timeout: 10_000 });
+  await file.click();
   await page.waitForTimeout(3_000);
 }
 
@@ -71,30 +72,40 @@ test.describe('Extension activation', () => {
     await expect(page.locator('.monaco-workbench')).toBeVisible();
   });
 
-  test('activity bar has DocBlocks icon', async ({ page }) => {
-    const docblocksItem = page.locator('.activitybar a[aria-label="DocBlocks"]');
-    await expect(docblocksItem).toBeVisible({ timeout: 10_000 });
+  test('DocBlocks setup command is registered', async ({ page }) => {
+    await page.keyboard.press('F1');
+    const quickInput = page.locator('.quick-input-widget');
+    await expect(quickInput).toBeVisible({ timeout: 5_000 });
+
+    await page.keyboard.type('DocBlocks: Open Setup');
+    await page.waitForTimeout(1_000);
+
+    await expect(quickInput.getByText('DocBlocks: Open Setup')).toBeVisible({
+      timeout: 5_000,
+    });
   });
 });
 
-// ── Setup pane ────────────────────────────────────────────────────
+// ── Setup tab ─────────────────────────────────────────────────────
 
-test.describe('Setup pane', () => {
+test.describe('Setup tab', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await waitForVSCode(page);
   });
 
-  test('setup pane opens when clicking DocBlocks activity bar icon', async ({ page }) => {
-    await page.locator('.activitybar a[aria-label="DocBlocks"]').click();
-    await page.waitForTimeout(2_000);
+  test('setup tab opens from the command palette', async ({ page }) => {
+    await openDocBlocksSetupTab(page);
 
-    const sidebar = page.locator('.part.sidebar');
-    await expect(sidebar).toBeVisible({ timeout: 10_000 });
+    const setupTab = page.locator('.tabs-container .tab').filter({ hasText: 'DocBlocks Setup' });
+    await expect(setupTab).toBeVisible({ timeout: 10_000 });
+
+    const webviews = page.locator('iframe.webview');
+    await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
   });
 
-  test('setup pane shows environment check items', async ({ page }) => {
-    await openDocBlocksPane(page);
+  test('setup tab shows environment check items', async ({ page }) => {
+    await openDocBlocksSetupTab(page);
 
     const content = await getWebviewContent(page);
 
@@ -107,8 +118,8 @@ test.describe('Setup pane', () => {
     await expect(content.locator('#check-cli')).toBeVisible();
   });
 
-  test('setup pane has re-check button', async ({ page }) => {
-    await openDocBlocksPane(page);
+  test('setup tab has re-check button', async ({ page }) => {
+    await openDocBlocksSetupTab(page);
 
     const content = await getWebviewContent(page);
 
@@ -118,9 +129,9 @@ test.describe('Setup pane', () => {
   });
 });
 
-// ── Custom markdown editor ────────────────────────────────────────
+// ── Markdown editor panel ─────────────────────────────────────────
 
-test.describe('Custom markdown editor', () => {
+test.describe('Markdown editor panel', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await waitForVSCode(page);
@@ -134,32 +145,36 @@ test.describe('Custom markdown editor', () => {
     await expect(testFile).toBeVisible({ timeout: 10_000 });
   });
 
-  test('can open markdown file with Open With context menu', async ({ page }) => {
+  test('can open markdown file with DocBlocks context menu', async ({ page }) => {
     const explorer = page.locator('.explorer-folders-view');
     const testFile = explorer.getByText('test-doc.md');
     await expect(testFile).toBeVisible({ timeout: 10_000 });
 
-    // Select and right-click
-    await testFile.click();
-    await page.waitForTimeout(300);
     await testFile.click({ button: 'right' });
     await page.waitForTimeout(1_000);
 
-    const openWith = page
+    const openInDocBlocks = page
       .locator('.context-view .action-label')
-      .filter({ hasText: 'Open With...' });
-    await expect(openWith).toBeVisible({ timeout: 5_000 });
-    await openWith.click();
-    await page.waitForTimeout(1_000);
+      .filter({ hasText: 'Open in DocBlocks' });
+    await expect(openInDocBlocks).toBeVisible({ timeout: 5_000 });
+    await openInDocBlocks.click();
 
-    // DocBlocks Editor should be listed in the quick pick
-    const quickInput = page.locator('.quick-input-widget');
-    const docblocksOption = quickInput.getByText('DocBlocks Editor');
-    await expect(docblocksOption).toBeVisible({ timeout: 5_000 });
+    const webviews = page.locator('iframe.webview');
+    await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('selecting markdown file opens DocBlocks by default', async ({ page }) => {
+    await openFileByDefault(page, 'test-doc.md');
+
+    const webviews = page.locator('iframe.webview');
+    await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
+      timeout: 10_000,
+    });
   });
 
   test('DocBlocks editor opens and shows webview', async ({ page }) => {
-    await openFileWithEditor(page, 'test-doc.md', 'DocBlocks Editor');
+    await openFileInDocBlocks(page, 'test-doc.md');
 
     // A new webview iframe should have appeared
     const webviews = page.locator('iframe.webview');
@@ -171,6 +186,14 @@ test.describe('Custom markdown editor', () => {
     // The React root should be rendered
     const root = content.locator('#root');
     await expect(root).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('DocBlocks editor does not show VS Code breadcrumbs', async ({ page }) => {
+    await openFileInDocBlocks(page, 'test-doc.md');
+
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -194,15 +217,15 @@ test.describe('Commands', () => {
     await expect(openEditorCmd).toBeVisible({ timeout: 5_000 });
   });
 
-  test('View: Show DocBlocks command is available', async ({ page }) => {
+  test('DocBlocks setup command is available', async ({ page }) => {
     await page.keyboard.press('F1');
     const quickInput = page.locator('.quick-input-widget');
     await expect(quickInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.type('Show DocBlocks');
+    await page.keyboard.type('DocBlocks: Open Setup');
     await page.waitForTimeout(1_000);
 
-    const showCmd = quickInput.getByText('View: Show DocBlocks');
-    await expect(showCmd).toBeVisible({ timeout: 5_000 });
+    const setupCmd = quickInput.getByText('DocBlocks: Open Setup');
+    await expect(setupCmd).toBeVisible({ timeout: 5_000 });
   });
 });

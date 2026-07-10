@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import windowStateKeeper from 'electron-window-state';
 
 import { registerFsIpc } from './ipc-fs.js';
+import { registerExternalIpc } from './ipc-external.js';
 import { registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
@@ -258,6 +259,7 @@ app.whenReady().then(async () => {
   }
 
   registerFsIpc();
+  registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();
   registerFfmpegIpc();

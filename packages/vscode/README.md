@@ -1,12 +1,12 @@
 # DocBlocks for VS Code
 
-VS Code extension that turns `*.md` files into rich DocBlocks documents — a custom editor powered by Squisq, plus a Setup pane for getting the full DocBlocks toolchain running.
+VS Code extension that turns `*.md` files into rich DocBlocks documents — a default markdown editor powered by Squisq, plus a Setup tab for getting the full DocBlocks toolchain running.
 
 ## Features
 
-### Custom markdown editor
+### Markdown editor
 
-Open any `.md` file with the DocBlocks editor: right-click a file and choose **Open With...** → **DocBlocks Editor**, or run **DocBlocks: Open Editor** from the command palette.
+Open any `.md` file and VS Code routes it into the DocBlocks editor by default. You can also right-click a markdown file and choose **Open in DocBlocks**, or run **DocBlocks: Open Editor** from the command palette.
 
 The editor gives you the same three views as every other DocBlocks surface:
 
@@ -14,11 +14,11 @@ The editor gives you the same three views as every other DocBlocks surface:
 - **Markdown** — the raw markdown source
 - **Play** — presents the document as a Video, Slideshow, Document, or Page
 
-The editor syncs with VS Code's built-in undo/redo, dirty state, and save. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
+The editor autosaves markdown changes back to the backing file and resolves media through the sibling `<name>_files/` folder. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
 
-### Setup pane
+### Setup tab
 
-Click the DocBlocks icon in the Activity Bar (or run **DocBlocks: Open Setup**) to open the Setup view. It checks your environment and guides installation of the optional toolchain:
+Run **DocBlocks: Open Setup** from the command palette to open the Setup tab. It checks your environment and guides installation of the optional toolchain:
 
 - **Node.js** — detects installation, links to nodejs.org if missing
 - **npm** — verifies package manager availability
@@ -32,7 +32,7 @@ The editor works without any of these; the CLI unlocks conversion, video renderi
 | ------------------------ | ----------------------------------------------------- |
 | `DocBlocks: Open Editor` | Open the active markdown file in the DocBlocks editor |
 | `Open in DocBlocks`      | Context-menu entry on markdown files                  |
-| `DocBlocks: Open Setup`  | Reveal the Setup pane                                 |
+| `DocBlocks: Open Setup`  | Open the Setup tab                                    |
 
 ## Dual build (desktop VS Code + vscode.dev)
 
@@ -54,6 +54,14 @@ npm run build:vscode
 
 `npm run build` here runs tsup (extension host bundles) then Vite (webview).
 
+### Package VSIX
+
+```bash
+npm run package:vscode
+```
+
+This builds the extension and writes `packages/vscode/docblocks-vscode-<version>.vsix`.
+
 ## Testing
 
 ### Run VS Code for the Web (manual testing)
@@ -73,9 +81,9 @@ npm run test:e2e -w docblocks-vscode
 
 This builds the extension, starts `@vscode/test-web` on port 3100 with `test-fixtures/` mounted as the workspace, and runs the Playwright suites:
 
-- Extension activation and activity bar icon
-- Setup pane environment checks and re-check button
-- Custom markdown editor opening and rendering fixture content
+- Extension activation and command registration
+- Setup tab environment checks and re-check button
+- Default markdown editor opening and rendering fixture content
 - Command palette registration
 
 Test data lives in `test-fixtures/`.

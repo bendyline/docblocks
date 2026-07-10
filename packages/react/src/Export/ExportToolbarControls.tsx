@@ -21,7 +21,7 @@ import {
   saveExportOptions,
 } from './export-options.js';
 import { ExportDialog } from './ExportDialog.js';
-import { runExport } from './run-export.js';
+import { runExport, type ExportBlobSaver } from './run-export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 
 export interface ExportToolbarControlsProps {
@@ -29,6 +29,12 @@ export interface ExportToolbarControlsProps {
   selectedFile: string | null;
   /** Media container for resolving images during export. */
   mediaContainer?: ContentContainer | null;
+  /** Override the default browser download behavior for host-provided save flows. */
+  saveBlob?: ExportBlobSaver;
+  /** Render the trigger as a direct Export button instead of the overflow menu. */
+  trigger?: 'menu' | 'button';
+  /** Whether to show video export in the overflow menu. */
+  showVideoExport?: boolean;
 }
 
 type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
@@ -92,6 +98,9 @@ function quickLabel(opts: ExportOptions, transformSummaries: ExportSummaryOption
 export function ExportToolbarControls({
   selectedFile,
   mediaContainer,
+  saveBlob,
+  trigger = 'menu',
+  showVideoExport = true,
 }: ExportToolbarControlsProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -210,13 +219,13 @@ export function ExportToolbarControls({
     async (opts: ExportOptions) => {
       setExporting(true);
       try {
-        await runExport(markdownSource, selectedFile, opts, mediaContainer);
+        await runExport(markdownSource, selectedFile, opts, mediaContainer, saveBlob);
       } finally {
         setExporting(false);
         setDialogOpen(false);
       }
     },
-    [markdownSource, selectedFile, mediaContainer],
+    [markdownSource, selectedFile, mediaContainer, saveBlob],
   );
 
   const handleQuickExport = useCallback(async () => {
@@ -225,47 +234,64 @@ export function ExportToolbarControls({
     setExporting(true);
     try {
       saveExportOptions(lastOptions);
-      await runExport(markdownSource, selectedFile, lastOptions, mediaContainer);
+      await runExport(markdownSource, selectedFile, lastOptions, mediaContainer, saveBlob);
     } finally {
       setExporting(false);
     }
-  }, [lastOptions, markdownSource, selectedFile, mediaContainer]);
+  }, [lastOptions, markdownSource, selectedFile, mediaContainer, saveBlob]);
 
   const LoadedVideoExportModal = videoModules?.Modal;
 
   return (
     <>
-      <div className="db-toolbar-menu" ref={menuRef}>
+      {trigger === 'button' ? (
         <button
-          className="db-toolbar-menu-trigger"
-          onClick={handleToggleMenu}
-          aria-label="More actions"
-          title="More actions"
+          type="button"
+          className="squisq-toolbar-button db-toolbar-export-trigger"
+          onClick={handleOpenDialog}
+          disabled={exporting}
+          aria-label="Export document"
+          data-tooltip={exporting ? 'Exporting...' : 'Export document'}
         >
-          &middot;&middot;&middot;
+          <ExportGlyph />
         </button>
+      ) : (
+        <div className="db-toolbar-menu" ref={menuRef}>
+          <button
+            className="db-toolbar-menu-trigger"
+            onClick={handleToggleMenu}
+            aria-label="More actions"
+            title="More actions"
+          >
+            &middot;&middot;&middot;
+          </button>
 
-        {menuOpen && (
-          <div className="db-toolbar-menu-dropdown">
-            {lastOptions && (
-              <button
-                className="db-toolbar-menu-item"
-                onClick={handleQuickExport}
-                disabled={exporting}
-              >
-                {quickLabel(lastOptions, transformSummaries)}
+          {menuOpen && (
+            <div className="db-toolbar-menu-dropdown">
+              {lastOptions && (
+                <button
+                  className="db-toolbar-menu-item"
+                  onClick={handleQuickExport}
+                  disabled={exporting}
+                >
+                  {quickLabel(lastOptions, transformSummaries)}
+                </button>
+              )}
+              <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
+                Export...
               </button>
-            )}
-            <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
-              Export...
-            </button>
-            <div className="db-toolbar-menu-divider" />
-            <button className="db-toolbar-menu-item" onClick={handleOpenVideoModal}>
-              Export Video...
-            </button>
-          </div>
-        )}
-      </div>
+              {showVideoExport && (
+                <>
+                  <div className="db-toolbar-menu-divider" />
+                  <button className="db-toolbar-menu-item" onClick={handleOpenVideoModal}>
+                    Export Video...
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {dialogOpen && (
         <ExportDialog
@@ -309,5 +335,24 @@ export function ExportToolbarControls({
           />
         )}
     </>
+  );
+}
+
+function ExportGlyph() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4.5 1.75h4.25L12 5v7.25a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 3 12.25v-9a1.5 1.5 0 0 1 1.5-1.5z" />
+      <path d="M8.75 1.75V5h3.25" />
+      <path d="M6 8.75h4.5" />
+      <path d="M8.75 7 10.5 8.75 8.75 10.5" />
+    </svg>
   );
 }

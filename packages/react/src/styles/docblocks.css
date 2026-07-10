@@ -7,8 +7,8 @@
    the chrome around it (sidebar, gutters, panes) reads as cream
    canvas, and the accent picks up a saturated dark brown for CTAs.
    Dark mode inverts the metaphor into espresso wood with light tan
-   highlights. Derived shades (`--db-accent-soft-*`, `--db-accent-tint`,
-   `--db-accent-deep`) are defined alongside so every place that needs
+   highlights. Derived shades (`--db-accent-soft-*`,
+   `--db-accent-tint-strong`, `--db-accent-deep`) are defined alongside so every place that needs
    a tinted background or a readable-on-tint text color pulls from the
    same source of truth. */
 .db-shell {
@@ -25,11 +25,12 @@
   --db-text-placeholder: #766c54;
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
+  --db-text-on-accent: #ffffff;
+  --db-text-on-selected: #ffffff;
   --db-accent-soft-08: rgba(125, 105, 72, 0.08);
   --db-accent-soft-12: rgba(125, 105, 72, 0.12);
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
   --db-accent-soft-25: rgba(125, 105, 72, 0.25);
-  --db-accent-tint: #f3eede;
   --db-accent-tint-strong: #d8d0b5;
   --db-accent-deep: #3d3220;
   /* Outline pane + inline-preview gutter background. Sits one step
@@ -56,11 +57,12 @@
   --db-text-placeholder: #6b614a;
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
+  --db-text-on-accent: #1a1812;
+  --db-text-on-selected: #e8e2d0;
   --db-accent-soft-08: rgba(200, 180, 143, 0.08);
   --db-accent-soft-12: rgba(200, 180, 143, 0.12);
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
   --db-accent-soft-25: rgba(200, 180, 143, 0.28);
-  --db-accent-tint: #262219;
   --db-accent-tint-strong: #3a382e;
   --db-accent-deep: #e6dcc0;
   --db-input-border: #c8b48f;
@@ -88,11 +90,12 @@
     --db-text-placeholder: #6b614a;
     --db-accent: #c8b48f;
     --db-accent-hover: #dec79d;
+    --db-text-on-accent: #1a1812;
+    --db-text-on-selected: #e8e2d0;
     --db-accent-soft-08: rgba(200, 180, 143, 0.08);
     --db-accent-soft-12: rgba(200, 180, 143, 0.12);
     --db-accent-soft-15: rgba(200, 180, 143, 0.18);
     --db-accent-soft-25: rgba(200, 180, 143, 0.28);
-    --db-accent-tint: #262219;
     --db-accent-tint-strong: #3a382e;
     --db-accent-deep: #e6dcc0;
     --db-input-border: #c8b48f;
@@ -209,7 +212,7 @@
   padding: 3px 8px;
   font-size: 12px;
   background: var(--db-accent);
-  color: #fff;
+  color: var(--db-text-on-accent);
   border: none;
   border-radius: 3px;
   cursor: pointer;
@@ -250,12 +253,12 @@
 
 .db-tree-row--selected {
   background: var(--db-bg-selected);
-  color: #ffffff;
+  color: var(--db-text-on-selected);
 }
 
 .db-tree-row--selected:hover {
   background: var(--db-bg-selected-hover);
-  color: #ffffff;
+  color: var(--db-text-on-selected);
 }
 
 .db-tree-icon {
@@ -317,7 +320,7 @@
 
 .db-tree-more--active {
   background: var(--db-bg-selected);
-  color: #ffffff;
+  color: var(--db-text-on-selected);
 }
 
 /* ── Context Menu ────────────────────────────────────────────── */
@@ -429,7 +432,7 @@
 
 .db-workspace-dropdown-item--active {
   background: var(--db-bg-selected);
-  color: #ffffff;
+  color: var(--db-text-on-selected);
   font-weight: 500;
 }
 
@@ -709,13 +712,20 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-footer {
-  padding: 8px 12px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 23px;
+  padding: 0 12px 0 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
+  line-height: 1;
 }
 
 .db-shell-sidebar-footer a {
+  flex-shrink: 0;
   color: var(--db-text-muted);
   text-decoration: none;
 }
@@ -723,6 +733,34 @@ body.db-resizing-sidebar * {
 .db-shell-sidebar-footer a:hover {
   color: var(--db-text-secondary);
   text-decoration: underline;
+}
+
+.db-shell-sidebar-footer-separator,
+.db-shell-sidebar-footer-action {
+  color: var(--db-text-muted);
+}
+
+.db-shell-sidebar-footer-separator {
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+
+.db-shell-sidebar-footer-action {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-shell-sidebar-footer-action:hover {
+  color: var(--db-text-secondary);
 }
 
 .db-shell-empty {
@@ -799,7 +837,8 @@ body.db-resizing-sidebar * {
 .db-dialog-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  /* Keep DocBlocks modals above Squisq player controls and editor tooltips. */
+  z-index: 3000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1072,6 +1111,15 @@ body.db-resizing-sidebar * {
   color: var(--db-text-secondary);
 }
 
+.db-toolbar-export-trigger {
+  margin-left: 4px;
+}
+
+.db-toolbar-export-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+
 .db-toolbar-menu-dropdown {
   position: absolute;
   right: 0;
@@ -1156,6 +1204,53 @@ body.db-resizing-sidebar * {
   border-color: var(--db-accent);
 }
 
+.db-export-path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-export-path-input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.db-export-path-input:focus {
+  border-color: var(--db-accent);
+}
+
+.db-export-path-pick {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--db-text-secondary);
+  background: var(--db-bg-subtle);
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.db-export-path-pick:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-export-path-input:disabled,
+.db-export-path-pick:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .db-export-hint {
   display: block;
   margin-top: 3px;
@@ -1210,12 +1305,13 @@ body.db-resizing-sidebar * {
 .db-export-chip--active {
   background: var(--db-accent);
   border-color: var(--db-accent);
-  color: #ffffff;
+  color: var(--db-text-on-accent);
 }
 
 .db-export-chip--active:hover {
   background: var(--db-accent-hover);
   border-color: var(--db-accent-hover);
+  color: var(--db-text-on-accent);
 }
 
 .db-export-chip:focus-visible {
@@ -1257,13 +1353,14 @@ body.db-resizing-sidebar * {
 
 .db-export-btn--primary {
   background: var(--db-accent);
-  color: #fff;
+  color: var(--db-text-on-accent);
   border-color: var(--db-accent);
 }
 
 .db-export-btn--primary:hover {
   background: var(--db-accent-hover);
   border-color: var(--db-accent-hover);
+  color: var(--db-text-on-accent);
 }
 
 /* ── Squisq editor chrome separators ─────────────────────────── */
@@ -1279,7 +1376,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
 }
 
 .db-shell[data-theme='light'] .squisq-toolbar-view-tabs {
@@ -1310,7 +1407,7 @@ body.db-resizing-sidebar * {
   --squisq-preview-card-border: var(--db-border);
   --squisq-preview-card-shadow: 0 1px 2px rgba(40, 30, 15, 0.08);
   --squisq-preview-card-title: var(--db-accent-deep);
-  --squisq-preview-card-svg-bg: var(--db-accent-tint);
+  --squisq-preview-card-svg-bg: var(--db-bg-subtle);
   --squisq-preview-dot-halo: var(--db-gutter-bg);
   --squisq-preview-empty-bg: #ffffff;
   --squisq-preview-empty-border: var(--db-border);
@@ -1585,6 +1682,303 @@ html:has(.db-shell[data-theme='light']) {
   --db-gutter-bg: #efe8d4;
 }
 
+html:has(.db-shell[data-theme='dark'])
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='dark'] {
+  --squisq-template-gallery-backdrop: rgba(18, 14, 9, 0.58);
+  --squisq-template-gallery-panel-bg: var(--db-bg);
+  --squisq-template-gallery-panel-border: var(--db-border);
+  --squisq-template-gallery-header-bg: #17130d;
+  --squisq-template-gallery-header-border: var(--db-border);
+  --squisq-template-gallery-title: var(--db-text);
+  --squisq-template-gallery-close-color: var(--db-text-muted);
+  --squisq-template-gallery-close-bg: var(--db-bg-subtle);
+  --squisq-template-gallery-close-border: var(--db-border);
+  --squisq-template-gallery-close-hover-color: var(--db-text);
+  --squisq-template-gallery-close-hover-border: var(--db-accent);
+  --squisq-template-gallery-close-hover-shadow: 0 1px 6px var(--db-accent-soft-15);
+  --squisq-template-gallery-bg: var(--db-bg);
+  --squisq-template-gallery-text: var(--db-text);
+  --squisq-template-gallery-border: var(--db-border);
+  --squisq-template-gallery-search-bg: #17130d;
+  --squisq-template-gallery-search-border: var(--db-border);
+  --squisq-template-gallery-search-icon: var(--db-text-muted);
+  --squisq-template-gallery-search-input: var(--db-text);
+  --squisq-template-gallery-search-placeholder: #8f8267;
+  --squisq-template-gallery-empty: var(--db-text-muted);
+  --squisq-template-gallery-option-bg: var(--db-bg-subtle);
+  --squisq-template-gallery-option-border: var(--db-border);
+  --squisq-template-gallery-option-hover-bg: var(--db-bg-hover);
+  --squisq-template-gallery-option-hover-border: var(--db-accent);
+  --squisq-template-gallery-option-hover-shadow: 0 1px 5px var(--db-accent-soft-15);
+  --squisq-template-gallery-card-bg: transparent;
+  --squisq-template-gallery-card-border: var(--db-border);
+  --squisq-template-gallery-card-hover-bg: var(--db-bg-hover);
+  --squisq-template-gallery-card-hover-border: var(--db-accent);
+  --squisq-template-gallery-card-hover-shadow: 0 1px 5px var(--db-accent-soft-15);
+  --squisq-template-gallery-selected-bg: var(--db-accent-tint-strong);
+  --squisq-template-gallery-selected-border: var(--db-accent-hover);
+  --squisq-template-gallery-selected-shadow: 0 0 0 2px var(--db-accent-soft-25);
+  --squisq-template-gallery-card-icon-bg: #15120d;
+  --squisq-template-gallery-card-icon-border: var(--db-border);
+  --squisq-template-gallery-content-preview-bg: #15120d;
+  --squisq-template-gallery-name: var(--db-text);
+  --squisq-template-gallery-description: var(--db-text-muted);
+  --squisq-template-gallery-new-bg: #2b2418;
+  --squisq-template-gallery-new-border: var(--db-accent);
+  --squisq-template-gallery-new-hover-bg: var(--db-accent-tint-strong);
+  --squisq-template-gallery-new-hover-border: var(--db-accent-hover);
+  --squisq-template-gallery-new-plus-color: var(--db-accent-hover);
+  --squisq-template-gallery-new-plus-bg: #17130d;
+  --squisq-template-gallery-new-plus-border: var(--db-accent);
+  --squisq-template-gallery-new-label: var(--db-text);
+  --squisq-template-gallery-new-desc: var(--db-text-muted);
+  --squisq-template-gallery-section-border: var(--db-border);
+  --squisq-template-gallery-section-title: var(--db-text);
+}
+
+html:has(.db-shell[data-theme='light'])
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='light'] {
+  --squisq-template-gallery-backdrop: rgba(42, 36, 25, 0.24);
+  --squisq-template-gallery-panel-bg: #fffdf7;
+  --squisq-template-gallery-panel-border: var(--db-border);
+  --squisq-template-gallery-header-bg: var(--db-bg-subtle);
+  --squisq-template-gallery-header-border: var(--db-border);
+  --squisq-template-gallery-title: var(--db-text);
+  --squisq-template-gallery-close-color: var(--db-text-muted);
+  --squisq-template-gallery-close-bg: #fffaf0;
+  --squisq-template-gallery-close-border: var(--db-border);
+  --squisq-template-gallery-close-hover-color: var(--db-text);
+  --squisq-template-gallery-close-hover-border: var(--db-accent);
+  --squisq-template-gallery-close-hover-shadow: 0 1px 4px var(--db-accent-soft-15);
+  --squisq-template-gallery-bg: #fffdf7;
+  --squisq-template-gallery-text: var(--db-text);
+  --squisq-template-gallery-border: var(--db-border);
+  --squisq-template-gallery-search-bg: var(--db-bg-subtle);
+  --squisq-template-gallery-search-border: var(--db-border);
+  --squisq-template-gallery-search-icon: var(--db-text-muted);
+  --squisq-template-gallery-search-input: var(--db-text);
+  --squisq-template-gallery-search-placeholder: #8b8065;
+  --squisq-template-gallery-empty: var(--db-text-muted);
+  --squisq-template-gallery-option-bg: #fffaf0;
+  --squisq-template-gallery-option-border: var(--db-border);
+  --squisq-template-gallery-option-hover-bg: var(--db-bg-hover);
+  --squisq-template-gallery-option-hover-border: var(--db-accent);
+  --squisq-template-gallery-option-hover-shadow: 0 1px 3px var(--db-accent-soft-15);
+  --squisq-template-gallery-card-bg: transparent;
+  --squisq-template-gallery-card-border: var(--db-border);
+  --squisq-template-gallery-card-hover-bg: var(--db-bg-subtle);
+  --squisq-template-gallery-card-hover-border: var(--db-accent);
+  --squisq-template-gallery-card-hover-shadow: 0 1px 4px var(--db-accent-soft-15);
+  --squisq-template-gallery-selected-bg: var(--db-bg-hover);
+  --squisq-template-gallery-selected-border: var(--db-accent);
+  --squisq-template-gallery-selected-shadow: 0 0 0 2px var(--db-accent-soft-15);
+  --squisq-template-gallery-card-icon-bg: #f6f0df;
+  --squisq-template-gallery-card-icon-border: var(--db-border);
+  --squisq-template-gallery-content-preview-bg: #f6f0df;
+  --squisq-template-gallery-name: var(--db-text);
+  --squisq-template-gallery-description: var(--db-text-muted);
+  --squisq-template-gallery-new-bg: #f1ead6;
+  --squisq-template-gallery-new-border: var(--db-border-strong);
+  --squisq-template-gallery-new-hover-bg: var(--db-bg-hover);
+  --squisq-template-gallery-new-hover-border: var(--db-accent);
+  --squisq-template-gallery-new-plus-color: var(--db-accent-hover);
+  --squisq-template-gallery-new-plus-bg: #fffaf0;
+  --squisq-template-gallery-new-plus-border: var(--db-border-strong);
+  --squisq-template-gallery-new-label: var(--db-text);
+  --squisq-template-gallery-new-desc: var(--db-text-muted);
+  --squisq-template-gallery-section-border: var(--db-border);
+  --squisq-template-gallery-section-title: var(--db-text);
+}
+
+html:has(.db-shell) #squisq-template-gallery-dialog.squisq-template-gallery-dialog {
+  background: var(--squisq-template-gallery-backdrop);
+  backdrop-filter: blur(var(--squisq-template-gallery-backdrop-blur, 2px));
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-dialog-panel {
+  background: var(--squisq-template-gallery-panel-bg);
+  border-color: var(--squisq-template-gallery-panel-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-dialog-header {
+  background: var(--squisq-template-gallery-header-bg);
+  border-bottom-color: var(--squisq-template-gallery-header-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-dialog-title {
+  color: var(--squisq-template-gallery-title);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-dialog-close {
+  color: var(--squisq-template-gallery-close-color);
+  background: var(--squisq-template-gallery-close-bg);
+  border-color: var(--squisq-template-gallery-close-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-dialog-close:hover {
+  color: var(--squisq-template-gallery-close-hover-color);
+  border-color: var(--squisq-template-gallery-close-hover-border);
+  box-shadow: var(--squisq-template-gallery-close-hover-shadow);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery {
+  background: var(--squisq-template-gallery-bg);
+  color: var(--squisq-template-gallery-text);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-search {
+  background: var(--squisq-template-gallery-search-bg);
+  border-bottom-color: var(--squisq-template-gallery-search-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-search-icon {
+  color: var(--squisq-template-gallery-search-icon);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-search-input {
+  color: var(--squisq-template-gallery-search-input);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-search-input::placeholder {
+  color: var(--squisq-template-gallery-search-placeholder);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-none {
+  background: var(--squisq-template-gallery-option-bg);
+  border-color: var(--squisq-template-gallery-option-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-none:hover {
+  background: var(--squisq-template-gallery-option-hover-bg);
+  border-color: var(--squisq-template-gallery-option-hover-border);
+  box-shadow: var(--squisq-template-gallery-option-hover-shadow);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-none.squisq-template-gallery-card--selected,
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card--selected {
+  background: var(--squisq-template-gallery-selected-bg);
+  border-color: var(--squisq-template-gallery-selected-border);
+  box-shadow: var(--squisq-template-gallery-selected-shadow);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-none-label {
+  color: var(--squisq-template-gallery-section-title);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-none-desc,
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card-desc,
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-new-desc {
+  color: var(--squisq-template-gallery-description);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card {
+  background: var(--squisq-template-gallery-card-bg);
+  border-color: var(--squisq-template-gallery-card-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card:hover {
+  background: var(--squisq-template-gallery-card-hover-bg);
+  border-color: var(--squisq-template-gallery-card-hover-border);
+  box-shadow: var(--squisq-template-gallery-card-hover-shadow);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card-icon {
+  background: var(--squisq-template-gallery-card-icon-bg);
+  border-color: var(--squisq-template-gallery-card-icon-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-content-preview {
+  background: var(--squisq-template-gallery-content-preview-bg);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-card-name,
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-new-label {
+  color: var(--squisq-template-gallery-name);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-new {
+  background: var(--squisq-template-gallery-new-bg);
+  border-color: var(--squisq-template-gallery-new-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-new:hover {
+  background: var(--squisq-template-gallery-new-hover-bg);
+  border-color: var(--squisq-template-gallery-new-hover-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-new-plus {
+  color: var(--squisq-template-gallery-new-plus-color);
+  background: var(--squisq-template-gallery-new-plus-bg);
+  border-color: var(--squisq-template-gallery-new-plus-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-section
+  + .squisq-template-gallery-section {
+  border-top-color: var(--squisq-template-gallery-section-border);
+}
+
+html:has(.db-shell)
+  #squisq-template-gallery-dialog.squisq-template-gallery-dialog
+  .squisq-template-gallery-section-title {
+  color: var(--squisq-template-gallery-section-title);
+}
+
 html:has(.db-shell[data-theme='dark']) #squisq-template-gallery-portal {
   background: var(--db-bg-subtle);
   border-color: var(--db-border);
@@ -1694,7 +2088,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-gallery-card--selected {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
   border-color: var(--db-accent);
   box-shadow: 0 0 0 2px var(--db-accent-soft-15);
 }
@@ -1702,7 +2096,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-template-gallery-none.squisq-template-gallery-card--selected {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
   border-color: var(--db-accent-tint-strong);
 }
 
@@ -1713,27 +2107,185 @@ html:has(.db-shell[data-theme='dark'])
   fill: var(--db-accent);
 }
 
-/* ── Template badge: inherit OS font, amber palette ──────────── */
+/* ── Squisq block tags: high-contrast DocBlocks palette ─────── */
 
-.db-shell .squisq-template-badge {
+.db-shell .squisq-template-badge,
+.db-shell .squisq-props-badge {
   font-family: inherit;
+  opacity: 1;
+}
+
+.db-shell .squisq-template-badge-core::after {
+  opacity: 0.82;
+}
+
+.db-shell .squisq-template-badge::before,
+.db-shell .squisq-template-badge::after {
+  min-height: 20px;
+  font-size: 20px;
+  font-weight: 400;
+  opacity: 0.42;
 }
 
 .db-shell[data-theme='light'] .squisq-template-badge {
-  color: #92400e;
-  background: #fef3c7;
-  border-color: #fcd34d;
+  color: var(--db-accent-hover);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge::before,
+.db-shell[data-theme='light'] .squisq-template-badge::after {
+  color: var(--db-text-muted);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge-core {
+  color: var(--db-accent-deep);
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge:hover .squisq-template-badge-core,
+.db-shell[data-theme='light'] .squisq-template-badge:focus-visible .squisq-template-badge-core {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='light'] .squisq-template-badge.squisq-template-badge--empty {
+  color: var(--db-text-muted);
+  opacity: 1;
+}
+
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty
+  .squisq-template-badge-core {
+  color: var(--db-accent-hover);
+  background: var(--db-accent-soft-08);
+  border-color: var(--db-border-strong);
+  border-style: dashed;
+}
+
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='light']
+  .squisq-template-badge.squisq-template-badge--empty:focus-visible
+  .squisq-template-badge-core {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge {
+  color: var(--db-accent-hover);
+  background: var(--db-accent-soft-08);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge[data-props-summary] {
+  color: var(--db-accent-deep);
+  background: var(--db-bg-subtle);
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='light'] .squisq-props-badge:hover,
+.db-shell[data-theme='light'] .squisq-props-badge:focus-visible {
+  color: var(--db-text);
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-15);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge {
-  color: #fbbf24;
-  background: #2a1e08;
-  border-color: #92400e;
+  color: var(--db-accent-hover);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge::before,
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge::after {
+  color: var(--db-text-muted);
+  opacity: 0.48;
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge-core {
+  color: #fff4d6;
+  background: #3a2f1f;
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge:focus-visible
+  .squisq-template-badge-core {
+  color: #fff8e6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent-hover);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty {
+  color: var(--db-text-secondary);
+  opacity: 1;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty
+  .squisq-template-badge-core {
+  color: var(--db-text-secondary);
+  background: rgba(200, 180, 143, 0.1);
+  border-color: var(--db-border-strong);
+  border-style: dashed;
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty:hover
+  .squisq-template-badge-core,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-template-badge.squisq-template-badge--empty:focus-visible
+  .squisq-template-badge-core {
+  color: #fff8e6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent-hover);
+  border-style: solid;
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-props-badge {
+  color: var(--db-text-secondary);
+  background: rgba(200, 180, 143, 0.1);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-props-badge[data-props-summary] {
+  color: #fff4d6;
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+}
+
+.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-props-badge:hover,
+.db-shell[data-theme='dark']
+  .squisq-editor-shell[data-theme='dark']
+  .squisq-props-badge:focus-visible {
+  color: #fff8e6;
+  background: var(--db-bg-selected-hover);
+  border-color: var(--db-accent-hover);
+  box-shadow: 0 0 0 2px var(--db-accent-soft-25);
 }
 
 /* Light mode squisq surfaces (toolbar, header, status bar) */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-editor-header {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
   border-bottom-color: var(--db-border-strong);
 }
 
@@ -1741,7 +2293,7 @@ html:has(.db-shell[data-theme='dark'])
    mode-switcher tabs on its left, so the cluster of buttons fades
    into the canvas while the mode switcher reads as the anchor. */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar-view-tabs {
@@ -1829,7 +2381,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-button--active {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
   color: var(--db-accent-hover);
 }
 
@@ -1843,7 +2395,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
   .squisq-toolbar-overflow-item--active {
-  background: var(--db-accent-tint);
+  background: var(--db-bg-subtle);
   color: var(--db-accent-hover);
 }
 
@@ -1986,16 +2538,12 @@ html:has(.db-shell[data-theme='dark'])
   padding: 8px 16px;
   font-size: 13px;
   line-height: 1.4;
-  color: #fff;
-  background: rgba(31, 41, 55, 0.92);
+  color: var(--db-bg);
+  background: var(--db-accent-deep);
   border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 12px var(--db-shadow);
   pointer-events: none;
   animation: db-save-toast-fade 1.8s ease-out forwards;
-}
-
-.db-shell[data-theme='light'] .db-save-toast {
-  background: rgba(17, 24, 39, 0.88);
 }
 
 @keyframes db-save-toast-fade {

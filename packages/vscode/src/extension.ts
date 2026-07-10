@@ -1,33 +1,20 @@
 import * as vscode from 'vscode';
-import { MarkdownEditorProvider } from './markdownEditorProvider.js';
+import { MarkdownEditorLauncher } from './markdownEditorLauncher.js';
+import { MarkdownEditorPanel } from './markdownEditorPanel.js';
 import { SetupViewProvider } from './setupViewProvider.js';
 
 export function activate(context: vscode.ExtensionContext) {
-  // Register the custom markdown editor
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
-      MarkdownEditorProvider.viewType,
-      new MarkdownEditorProvider(context),
-      {
-        webviewOptions: { retainContextWhenHidden: true },
-      },
+      MarkdownEditorLauncher.viewType,
+      new MarkdownEditorLauncher(context),
     ),
   );
 
-  // Register the open editor command (shows picker dialog)
+  // Register the open editor command (shows picker dialog).
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openEditor', async () => {
-      const uris = await vscode.window.showOpenDialog({
-        filters: { 'Markdown Files': ['md'] },
-        canSelectMany: false,
-      });
-      if (uris && uris.length > 0) {
-        await vscode.commands.executeCommand(
-          'vscode.openWith',
-          uris[0],
-          MarkdownEditorProvider.viewType,
-        );
-      }
+      await MarkdownEditorPanel.pickAndOpen(context);
     }),
   );
 
@@ -37,30 +24,19 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openInDocBlocks', async (uri?: vscode.Uri) => {
       const target = uri ?? vscode.window.activeTextEditor?.document.uri;
-      if (!target) return;
-      await vscode.commands.executeCommand(
-        'vscode.openWith',
-        target,
-        MarkdownEditorProvider.viewType,
-      );
+      if (!target) {
+        await MarkdownEditorPanel.pickAndOpen(context);
+        return;
+      }
+      await MarkdownEditorPanel.open(context, target);
     }),
   );
 
-  // Register the open setup command (opens the panel form — kept for
-  // users invoking the explicit "DocBlocks: Open Setup" command).
+  // Register the open setup command.
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openSetup', () => {
       SetupViewProvider.createOrShow(context);
     }),
-  );
-
-  // Register the sidebar setup view (activity bar → DocBlocks pane).
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(
-      SetupViewProvider.viewType,
-      new SetupViewProvider(context),
-      { webviewOptions: { retainContextWhenHidden: true } },
-    ),
   );
 }
 

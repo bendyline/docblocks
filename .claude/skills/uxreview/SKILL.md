@@ -1,6 +1,7 @@
 ---
 name: uxreview
 description: Evaluate the DocBlocks UI's user experience — visual design, information architecture, interaction patterns across the site shell, Electron desktop renderer, and VS Code custom editor webview. Captures screenshots from existing Playwright runs (root e2e, desktop e2e, vscode e2e), reviews them, and produces an opinionated report with prioritized findings.
+disable-model-invocation: true
 ---
 
 # UX Review Skill

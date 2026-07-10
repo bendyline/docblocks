@@ -7,6 +7,7 @@
  */
 
 import { LocalForageAdapter } from '@bendyline/squisq/storage';
+import type { FileSystemProvider } from '../filesystem/types.js';
 import type { WorkspaceDescriptor } from './types.js';
 
 const DB_NAME = 'docblocks-workspaces';
@@ -20,27 +21,70 @@ const store = new LocalForageAdapter({
 });
 
 /**
- * Get the list of all known workspace descriptors.
+ * Session-only transient workspaces (a loose file or `.dbk` opened from the
+ * OS). Kept purely in memory — never written to the persisted list — with
+ * their pre-built provider registered alongside the descriptor. Lost on
+ * reload, which is the intended "transient for the app session" behaviour.
  */
-export async function listWorkspaces(): Promise<WorkspaceDescriptor[]> {
+interface TransientEntry {
+  descriptor: WorkspaceDescriptor;
+  provider: FileSystemProvider;
+}
+const transientWorkspaces = new Map<string, TransientEntry>();
+
+/** Register a transient workspace and its (already-built) provider. */
+export function registerTransientWorkspace(
+  descriptor: WorkspaceDescriptor,
+  provider: FileSystemProvider,
+): void {
+  transientWorkspaces.set(descriptor.id, { descriptor, provider });
+}
+
+/** Look up a transient workspace (descriptor + provider) by id, if any. */
+export function getTransientWorkspace(
+  id: string,
+): { descriptor: WorkspaceDescriptor; provider: FileSystemProvider } | null {
+  return transientWorkspaces.get(id) ?? null;
+}
+
+/** Forget a transient workspace (e.g. when it is closed). */
+export function unregisterTransientWorkspace(id: string): void {
+  transientWorkspaces.delete(id);
+}
+
+/** The persisted (on-disk) workspace list only — excludes transient ones. */
+async function listPersisted(): Promise<WorkspaceDescriptor[]> {
   const list = await store.get<WorkspaceDescriptor[]>(LIST_KEY);
   return list ?? [];
 }
 
 /**
- * Get a specific workspace descriptor by id.
+ * Get all known workspace descriptors — persisted plus any session-only
+ * transient ones (so they show in the picker and resolve for the session).
+ */
+export async function listWorkspaces(): Promise<WorkspaceDescriptor[]> {
+  const persisted = await listPersisted();
+  const transient = [...transientWorkspaces.values()].map((t) => t.descriptor);
+  return [...persisted, ...transient];
+}
+
+/**
+ * Get a specific workspace descriptor by id (transient or persisted).
  */
 export async function getWorkspace(id: string): Promise<WorkspaceDescriptor | null> {
-  const list = await listWorkspaces();
+  const transient = transientWorkspaces.get(id);
+  if (transient) return transient.descriptor;
+  const list = await listPersisted();
   return list.find((w) => w.id === id) ?? null;
 }
 
 /**
  * Add or update a workspace descriptor. If a workspace with the same id
- * already exists, it is replaced.
+ * already exists, it is replaced. Transient workspaces are never persisted.
  */
 export async function saveWorkspace(workspace: WorkspaceDescriptor): Promise<void> {
-  const list = await listWorkspaces();
+  if (workspace.type === 'transient') return;
+  const list = await listPersisted();
   const idx = list.findIndex((w) => w.id === workspace.id);
   if (idx >= 0) {
     list[idx] = workspace;
@@ -51,19 +95,26 @@ export async function saveWorkspace(workspace: WorkspaceDescriptor): Promise<voi
 }
 
 /**
- * Remove a workspace descriptor by id.
+ * Remove a workspace descriptor by id (transient or persisted).
  */
 export async function removeWorkspace(id: string): Promise<void> {
-  const list = await listWorkspaces();
+  if (transientWorkspaces.delete(id)) return;
+  const list = await listPersisted();
   const filtered = list.filter((w) => w.id !== id);
   await store.set(LIST_KEY, filtered);
 }
 
 /**
- * Touch the lastOpened timestamp on a workspace.
+ * Touch the lastOpened timestamp on a workspace. For transient workspaces this
+ * updates the in-memory descriptor only (nothing is persisted).
  */
 export async function touchWorkspace(id: string): Promise<void> {
-  const list = await listWorkspaces();
+  const transient = transientWorkspaces.get(id);
+  if (transient) {
+    transient.descriptor.lastOpened = new Date().toISOString();
+    return;
+  }
+  const list = await listPersisted();
   const workspace = list.find((w) => w.id === id);
   if (workspace) {
     workspace.lastOpened = new Date().toISOString();

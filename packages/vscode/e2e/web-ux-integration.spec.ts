@@ -24,42 +24,27 @@ async function getLatestWebviewContent(page: Page): Promise<FrameLocator> {
 }
 
 async function runCommand(page: Page, command: string): Promise<void> {
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+P' : 'Control+P');
-  const quickInput = page.locator('.quick-input-widget:visible');
-  const input = quickInput.locator('input').first();
-  await expect(input).toBeVisible({ timeout: 10_000 });
+  await page.keyboard.press('F1');
+  const quickInput = page.locator('.quick-input-widget');
+  await expect(quickInput).toBeVisible({ timeout: 10_000 });
 
-  await input.fill(`>${command}`);
-
+  await page.keyboard.type(command);
   const option = quickInput.getByText(command).first();
   await expect(option).toBeVisible({ timeout: 10_000 });
   await page.keyboard.press('Enter');
 }
 
-async function chooseFileEditor(
-  page: Page,
-  editorName: string,
-  { assertDocBlocksMenu = false, fileName = 'test-doc.md' } = {},
-): Promise<void> {
+async function openFileContextMenu(page: Page, fileName = 'test-doc.md') {
   const explorer = page.locator('.explorer-folders-view');
   const file = explorer.getByText(fileName);
   await expect(file).toBeVisible({ timeout: 10_000 });
 
-  async function openFileContextMenu() {
-    await file.click({ button: 'right' });
-    await expect(page.locator('.context-view')).toBeVisible({ timeout: 5_000 });
-  }
+  await file.click({ button: 'right' });
+  await expect(page.locator('.context-view')).toBeVisible({ timeout: 5_000 });
+}
 
-  await file.click();
-  await page.waitForTimeout(300);
-  await openFileContextMenu();
-
-  if (assertDocBlocksMenu) {
-    const openInDocBlocks = page
-      .locator('.context-view .action-label')
-      .filter({ hasText: 'Open in DocBlocks' });
-    await expect(openInDocBlocks).toBeVisible({ timeout: 5_000 });
-  }
+async function openTextEditorWithOpenWith(page: Page, fileName = 'test-doc.md'): Promise<void> {
+  await openFileContextMenu(page, fileName);
 
   const openWith = page.locator('.context-view .action-label').filter({ hasText: 'Open With...' });
   await expect(openWith).toBeVisible({ timeout: 5_000 });
@@ -67,18 +52,22 @@ async function chooseFileEditor(
   await page.waitForTimeout(500);
 
   const quickInput = page.locator('.quick-input-widget');
-  const editorOption = quickInput.getByText(editorName).first();
+  const textEditorOption = quickInput.getByText('Text Editor').first();
   try {
-    await expect(editorOption).toBeVisible({ timeout: 2_000 });
+    await expect(textEditorOption).toBeVisible({ timeout: 2_000 });
   } catch {
     await page.keyboard.press('Enter');
-    await expect(editorOption).toBeVisible({ timeout: 5_000 });
+    await expect(textEditorOption).toBeVisible({ timeout: 5_000 });
   }
-  await editorOption.click();
+  await textEditorOption.click();
+  await expect(page.locator('.monaco-editor .view-lines')).toBeVisible({ timeout: 15_000 });
 }
 
 async function openDocBlocksEditor(page: Page, fileName = 'test-doc.md'): Promise<void> {
-  await chooseFileEditor(page, 'DocBlocks Editor', { assertDocBlocksMenu: true, fileName });
+  const explorer = page.locator('.explorer-folders-view');
+  const file = explorer.getByText(fileName);
+  await expect(file).toBeVisible({ timeout: 10_000 });
+  await file.click();
 
   const webviews = page.locator('iframe.webview');
   await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
@@ -135,7 +124,7 @@ test.describe('VS Code web and UX integration', () => {
     });
   });
 
-  test('loads the custom editor with expected mode tabs and rendered fixture content', async ({
+  test('loads the default DocBlocks editor with expected mode tabs and rendered fixture content', async ({
     page,
   }) => {
     await bootVSCode(page);
@@ -143,15 +132,16 @@ test.describe('VS Code web and UX integration', () => {
 
     const editor = await getLatestWebviewContent(page);
     await expect(editor.getByRole('toolbar', { name: /formatting toolbar/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /editor/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /markdown/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /play/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /write/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
+    await expect(editor.getByRole('tab', { name: /use/i })).toBeVisible();
+    await expect(editor.getByRole('button', { name: /export document/i })).toBeVisible();
     await expect(editor.locator('body')).toContainText('Test Document');
 
-    await editor.getByRole('tab', { name: /markdown/i }).click();
+    await editor.getByRole('tab', { name: /source/i }).click();
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
 
-    await editor.getByRole('tab', { name: /play/i }).click();
+    await editor.getByRole('tab', { name: /use/i }).click();
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
@@ -170,7 +160,7 @@ test.describe('VS Code web and UX integration', () => {
     await page.waitForTimeout(600);
     await expect(editor.locator('body')).toContainText(editSentinel);
 
-    await chooseFileEditor(page, 'Text Editor');
+    await openTextEditorWithOpenWith(page);
 
     await expect(page.locator('.monaco-editor .view-lines')).toContainText(editSentinel, {
       timeout: 10_000,

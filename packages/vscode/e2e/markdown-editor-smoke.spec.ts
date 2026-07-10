@@ -1,5 +1,5 @@
 /**
- * Focused smoke test for the DocBlocks custom markdown editor.
+ * Focused smoke test for the DocBlocks markdown editor.
  *
  * Goes beyond "the webview root is visible" — verifies that the React app
  * actually bootstraps, receives the document content from the extension,
@@ -47,27 +47,14 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
     await waitForVSCode(page);
   });
 
-  test('opens test-doc.md via Open With and renders fixture content', async ({ page }) => {
+  test('opens test-doc.md by default and renders fixture content', async ({ page }) => {
     // Locate file in explorer
     const explorer = page.locator('.explorer-folders-view');
     const testFile = explorer.getByText('test-doc.md');
     await expect(testFile).toBeVisible({ timeout: 10_000 });
 
-    // Open With… → DocBlocks Editor
+    // Markdown files should default into DocBlocks.
     await testFile.click();
-    await page.waitForTimeout(300);
-    await testFile.click({ button: 'right' });
-    await page.waitForTimeout(800);
-
-    const openWith = page
-      .locator('.context-view .action-label')
-      .filter({ hasText: 'Open With...' });
-    await expect(openWith).toBeVisible({ timeout: 5_000 });
-    await openWith.click();
-    await page.waitForTimeout(500);
-
-    const quickInput = page.locator('.quick-input-widget');
-    await quickInput.getByText('DocBlocks Editor').click();
     await page.waitForTimeout(2_500);
 
     // Webview mount
@@ -109,6 +96,15 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
       rendered,
       `Webview rendered but no fixture content found. Console errors:\n${consoleErrors.join('\n')}`,
     ).toContain('Test Document');
+
+    const exportButton = content.getByRole('button', { name: 'Export document' });
+    await expect(exportButton).toBeVisible({ timeout: 10_000 });
+    await exportButton.click();
+
+    const exportPath = content.getByLabel('Export to');
+    await expect(exportPath).toBeVisible();
+    await expect(exportPath).toHaveValue(/test-doc\.pdf$/);
+    await expect(content.getByRole('button', { name: 'Choose export location' })).toBeVisible();
   });
 
   test.afterEach(async ({ page }, testInfo) => {

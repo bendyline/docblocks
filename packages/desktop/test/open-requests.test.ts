@@ -43,11 +43,22 @@ describe('desktop open request resolution', () => {
     });
   });
 
-  it('ignores markdown files outside registered workspaces', () => {
+  it('opens a markdown file outside registered workspaces as a transient external file', () => {
     const outsideFile = path.join(outsideRoot, 'private.md');
     fs.writeFileSync(outsideFile, '# Private');
 
-    expect(resolveOpenRequests([outsideFile])).to.deep.equal([]);
+    expect(resolveOpenRequests([outsideFile])).to.deep.equal([
+      { kind: 'external-file', path: outsideFile, name: 'private.md' },
+    ]);
+  });
+
+  it('opens a .dbk bundle as an external bundle request (even inside a workspace)', () => {
+    const bundle = path.join(workspaceRoot, 'notes', 'deck.dbk');
+    fs.writeFileSync(bundle, 'PK');
+
+    expect(resolveOpenRequests([bundle])).to.deep.equal([
+      { kind: 'external-bundle', path: bundle, name: 'deck.dbk' },
+    ]);
   });
 
   it('ignores invalid or unsupported URLs', () => {

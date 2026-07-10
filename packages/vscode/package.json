@@ -71,37 +71,21 @@
           "when": "resourceExtname == .md"
         }
       ]
-    },
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "docblocks",
-          "title": "DocBlocks",
-          "icon": "resources/docblocks-icon.svg"
-        }
-      ]
-    },
-    "views": {
-      "docblocks": [
-        {
-          "id": "docblocks.setupView",
-          "name": "Setup",
-          "type": "webview"
-        }
-      ]
     }
   },
   "scripts": {
     "build": "tsup && npm run build:webview",
     "build:webview": "vite build --config webview/vite.config.ts",
+    "package:vsix": "npm run build && vsce package --no-dependencies",
     "typecheck": "tsc --noEmit",
     "test:web": "vscode-test-web --extensionDevelopmentPath=. --browser=none --port=3100",
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
   },
   "devDependencies": {
-    "@types/vscode": "1.110.0",
+    "@types/vscode": "1.85.0",
     "@vitejs/plugin-react": "4.7.0",
     "@vscode/test-web": "0.0.80",
+    "@vscode/vsce": "3.9.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tsup": "8.5.1",

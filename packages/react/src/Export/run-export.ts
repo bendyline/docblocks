@@ -13,6 +13,8 @@ import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
 
+export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
+
 const MIME_TYPES: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   pdf: 'application/pdf',
@@ -31,10 +33,31 @@ function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+async function saveExportBlob(
+  blob: Blob,
+  filename: string,
+  saveBlob?: ExportBlobSaver,
+): Promise<void> {
+  if (saveBlob) {
+    await saveBlob(blob, filename);
+    return;
+  }
+  downloadBlob(blob, filename);
+}
+
 /** Derive a filename from the selected file path and export format. */
 function buildFilename(selectedFile: string | null, format: ExportFormat): string {
   const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
   return base + FORMAT_EXTENSIONS[format];
+}
+
+export function buildExportFilename(selectedFile: string | null, options: ExportOptions): string {
+  const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
+  if (options.format === 'html') {
+    if (options.includeLinkedDocs || options.htmlBundle === 'zip') return `${base}.zip`;
+    if (options.entryAsIndex) return 'index.html';
+  }
+  return base + FORMAT_EXTENSIONS[options.format];
 }
 
 /** Run the export and trigger a download. */
@@ -43,17 +66,18 @@ export async function runExport(
   selectedFile: string | null,
   options: ExportOptions,
   mediaContainer?: ContentContainer | null,
+  saveBlob?: ExportBlobSaver,
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
   const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
 
   if (options.format === 'md') {
-    downloadBlob(new Blob([markdown], { type: MIME_TYPES.md }), filename);
+    await saveExportBlob(new Blob([markdown], { type: MIME_TYPES.md }), filename, saveBlob);
     return;
   }
 
   if (options.format === 'html') {
-    await runHtmlExport(markdown, filename, options, mediaContainer, selectedFile);
+    await runHtmlExport(markdown, filename, options, mediaContainer, selectedFile, saveBlob);
     return;
   }
 
@@ -63,7 +87,7 @@ export async function runExport(
     const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
     const images = mediaContainer ? await resolveImages(doc, mediaContainer) : undefined;
     const buf = await markdownDocToDocx(doc, { themeId, images });
-    downloadBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename);
+    await saveExportBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename, saveBlob);
     return;
   }
 
@@ -73,7 +97,7 @@ export async function runExport(
       themeId,
       pageSize: options.pageSize,
     });
-    downloadBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename);
+    await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;
   }
 
@@ -91,7 +115,7 @@ export async function runExport(
       enrichedDoc.themeId = themeId;
     }
     const buf = await docToPptx(enrichedDoc, { themeId });
-    downloadBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename);
+    await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename, saveBlob);
     return;
   }
 }
@@ -103,6 +127,7 @@ async function runHtmlExport(
   options: ExportOptions,
   mediaContainer?: ContentContainer | null,
   selectedFile?: string | null,
+  saveBlob?: ExportBlobSaver,
 ): Promise<void> {
   const baseName = htmlFilename.replace(/\.html$/, '');
   const zipName = `${baseName}.zip`;
@@ -141,7 +166,7 @@ async function runHtmlExport(
         mode: 'static',
         entryAsIndex: options.entryAsIndex,
       });
-      downloadBlob(blob, zipName);
+      await saveExportBlob(blob, zipName, saveBlob);
       return;
     }
     const { markdownDocsToPlainHtmlBundle } = await import('@bendyline/squisq-formats/html');
@@ -153,7 +178,7 @@ async function runHtmlExport(
       themeId,
       entryAsIndex: options.entryAsIndex,
     });
-    downloadBlob(blob, zipName);
+    await saveExportBlob(blob, zipName, saveBlob);
     return;
   }
 
@@ -179,7 +204,7 @@ async function runHtmlExport(
         mode: 'static',
         title: baseName,
       });
-      downloadBlob(blob, zipName);
+      await saveExportBlob(blob, zipName, saveBlob);
       return;
     }
 
@@ -189,7 +214,7 @@ async function runHtmlExport(
       mode: 'static',
       title: baseName,
     });
-    downloadBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename);
+    await saveExportBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename, saveBlob);
     return;
   }
 
@@ -216,7 +241,7 @@ async function runHtmlExport(
       await container.writeFile(cleanPath, new Uint8Array(data));
     }
     const blob = await containerToZip(container);
-    downloadBlob(blob, zipName);
+    await saveExportBlob(blob, zipName, saveBlob);
     return;
   }
 
@@ -235,7 +260,7 @@ async function runHtmlExport(
     images: inlineMap.size > 0 ? inlineMap : undefined,
     themeId,
   });
-  downloadBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename);
+  await saveExportBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename, saveBlob);
 }
 
 const IMAGE_MIME: Record<string, string> = {

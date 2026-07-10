@@ -1,6 +1,7 @@
 ---
 name: qualitymanager
 description: Survey the DocBlocks test suite (Mocha unit tests in core + cli, Playwright e2e at root + desktop + vscode) and the production codebase to find gaps in coverage, flaky or low-value tests, untested features, and code that needs refactoring to be testable. Produces an actionable quality report with prioritized recommendations.
+disable-model-invocation: true
 ---
 
 # Quality Manager Skill

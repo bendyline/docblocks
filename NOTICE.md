@@ -62,9 +62,10 @@ not distributed with DocBlocks.
 | @types/mocha                               | 10.0.10 | MIT        |
 | @types/react                               | 18.3.28 | MIT        |
 | @types/react-dom                           | 18.3.7  | MIT        |
-| @types/vscode                              | 1.110.0 | MIT        |
+| @types/vscode                              | 1.85.0  | MIT        |
 | @vitejs/plugin-react                       | 4.7.0   | MIT        |
 | @vscode/test-web                           | 0.0.80  | MIT        |
+| @vscode/vsce                               | 3.9.2   | MIT        |
 | chai                                       | 6.2.2   | MIT        |
 | conventional-changelog-conventionalcommits | 8.0.0   | ISC        |
 | eslint                                     | 9.39.4  | MIT        |
