@@ -7,8 +7,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
+  DocBlocksHostFsV2API,
   DocBlocksHostExternalAPI,
   DocBlocksHostGitAPI,
+  DocBlocksHostLifecycleAPI,
   DocBlocksHostShellAPI,
   DocBlocksHostExportAPI,
   DocBlocksHostWorkspacesAPI,
@@ -18,7 +20,10 @@ import type {
   GitCloneProgress,
   GitResult,
   GitStatus,
+  HostPrepareCloseRequest,
+  HostPrepareCloseResult,
   HostEnvironment,
+  HostFileSystemV2WatchMessage,
   MenuCommand,
   OpenRequest,
   UpdaterStatus,
@@ -30,6 +35,8 @@ import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem'
 const fsApi: DocBlocksHostFsAPI = {
   readFile: (rootPath, p) => ipcRenderer.invoke('fs:readFile', rootPath, p),
   writeFile: (rootPath, p, content) => ipcRenderer.invoke('fs:writeFile', rootPath, p, content),
+  commitFile: (rootPath, p, content, expectedContent) =>
+    ipcRenderer.invoke('fs:commitFile', rootPath, p, content, expectedContent),
   delete: (rootPath, p) => ipcRenderer.invoke('fs:delete', rootPath, p),
   rename: (rootPath, o, n) => ipcRenderer.invoke('fs:rename', rootPath, o, n),
   readDirectory: (rootPath, p) =>
@@ -42,18 +49,53 @@ const fsApi: DocBlocksHostFsAPI = {
   writeBinary: (rootPath, p, data) => ipcRenderer.invoke('fs:writeBinary', rootPath, p, data),
   watch(rootPath, onChange) {
     const subscriptionId = `sub-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let listening = true;
     const listener = (
       _event: Electron.IpcRendererEvent,
       payload: { subscriptionId: string; path: string },
     ) => {
       if (payload.subscriptionId === subscriptionId) onChange(payload.path);
     };
-    ipcRenderer.on('fs:watch:event', listener);
-    ipcRenderer.invoke('fs:watch:subscribe', rootPath, subscriptionId).catch(() => undefined);
-    return () => {
+    const stopListening = () => {
+      if (!listening) return;
+      listening = false;
       ipcRenderer.removeListener('fs:watch:event', listener);
-      ipcRenderer.invoke('fs:watch:unsubscribe', rootPath, subscriptionId).catch(() => undefined);
     };
+    ipcRenderer.on('fs:watch:event', listener);
+    const subscribed = ipcRenderer.invoke('fs:watch:subscribe', rootPath, subscriptionId);
+    void subscribed.catch(stopListening);
+    return () => {
+      stopListening();
+      void subscribed
+        .then(() => ipcRenderer.invoke('fs:watch:unsubscribe', rootPath, subscriptionId))
+        .catch(() => undefined);
+    };
+  },
+};
+
+const fsV2Api: DocBlocksHostFsV2API = {
+  open: (request) => ipcRenderer.invoke('fs:v2:open', request),
+  stat: (instanceId, p) => ipcRenderer.invoke('fs:v2:stat', instanceId, p),
+  readFile: (instanceId, p) => ipcRenderer.invoke('fs:v2:readFile', instanceId, p),
+  readDirectory: (instanceId, p) => ipcRenderer.invoke('fs:v2:readDirectory', instanceId, p),
+  writeFile: (instanceId, p, data, options) =>
+    ipcRenderer.invoke('fs:v2:writeFile', instanceId, p, data, options),
+  createDirectory: (instanceId, p, options) =>
+    ipcRenderer.invoke('fs:v2:createDirectory', instanceId, p, options),
+  remove: (instanceId, p, options) => ipcRenderer.invoke('fs:v2:remove', instanceId, p, options),
+  move: (instanceId, oldPath, newPath, options) =>
+    ipcRenderer.invoke('fs:v2:move', instanceId, oldPath, newPath, options),
+  snapshot: (instanceId) => ipcRenderer.invoke('fs:v2:snapshot', instanceId),
+  watchSubscribe: (instanceId, subscriptionId) =>
+    ipcRenderer.invoke('fs:v2:watchSubscribe', instanceId, subscriptionId),
+  watchUnsubscribe: (instanceId, subscriptionId) =>
+    ipcRenderer.invoke('fs:v2:watchUnsubscribe', instanceId, subscriptionId),
+  dispose: (instanceId) => ipcRenderer.invoke('fs:v2:dispose', instanceId),
+  onWatchMessage(listener) {
+    const handler = (_event: Electron.IpcRendererEvent, message: HostFileSystemV2WatchMessage) =>
+      listener(message);
+    ipcRenderer.on('fs:v2:watchMessage', handler);
+    return () => ipcRenderer.removeListener('fs:v2:watchMessage', handler);
   },
 };
 
@@ -64,6 +106,10 @@ const externalApi: DocBlocksHostExternalAPI = {
   readBinary: (p) => ipcRenderer.invoke('external:readBinary', p) as Promise<ArrayBuffer | null>,
   writeText: (p, content) => ipcRenderer.invoke('external:writeText', p, content),
   writeBinary: (p, data) => ipcRenderer.invoke('external:writeBinary', p, data),
+  commitText: (p, content, expectedContent) =>
+    ipcRenderer.invoke('external:commitText', p, content, expectedContent),
+  commitBinary: (p, data, expectedVersion) =>
+    ipcRenderer.invoke('external:commitBinary', p, data, expectedVersion),
 };
 
 // ── workspaces ──────────────────────────────────────────────────────
@@ -185,6 +231,56 @@ const updaterApi: DocBlocksHostUpdaterAPI = {
 
 // ── event channels ──────────────────────────────────────────────────
 
+let prepareCloseListener:
+  | ((request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>)
+  | null = null;
+const cancelCloseListeners = new Set<(requestId: string) => void>();
+
+ipcRenderer.on(
+  'lifecycle:prepare-close',
+  async (_event: Electron.IpcRendererEvent, request: HostPrepareCloseRequest) => {
+    let result: HostPrepareCloseResult;
+    if (!prepareCloseListener) {
+      result = {
+        status: 'blocked',
+        code: 'not-ready',
+        message: 'The document session is not ready.',
+      };
+    } else {
+      try {
+        result = await prepareCloseListener(request);
+      } catch (error: unknown) {
+        result = {
+          status: 'blocked',
+          code: 'save-failed',
+          message: error instanceof Error ? error.message : 'Could not save the document.',
+        };
+      }
+    }
+    ipcRenderer.send('lifecycle:prepare-close-result', {
+      requestId: request.requestId,
+      result,
+    });
+  },
+);
+
+ipcRenderer.on('lifecycle:cancel-close', (_event: Electron.IpcRendererEvent, requestId: string) => {
+  for (const listener of [...cancelCloseListeners]) listener(requestId);
+});
+
+const lifecycleApi: DocBlocksHostLifecycleAPI = {
+  onPrepareClose(listener) {
+    prepareCloseListener = listener;
+    return () => {
+      if (prepareCloseListener === listener) prepareCloseListener = null;
+    };
+  },
+  onCancelClose(listener) {
+    cancelCloseListeners.add(listener);
+    return () => cancelCloseListeners.delete(listener);
+  },
+};
+
 function onMenuCommand(listener: (cmd: MenuCommand) => void): () => void {
   const fn = (_event: Electron.IpcRendererEvent, cmd: MenuCommand) => listener(cmd);
   ipcRenderer.on('menu:command', fn);
@@ -210,6 +306,7 @@ const env: HostEnvironment = {
 const host: DocBlocksHostAPI = {
   env,
   fs: fsApi,
+  fsV2: fsV2Api,
   external: externalApi,
   workspaces: workspacesApi,
   shell: shellApi,
@@ -217,6 +314,7 @@ const host: DocBlocksHostAPI = {
   ffmpeg: ffmpegApi,
   git: gitApi,
   updater: updaterApi,
+  lifecycle: lifecycleApi,
   onMenuCommand,
   onOpenRequest,
 };

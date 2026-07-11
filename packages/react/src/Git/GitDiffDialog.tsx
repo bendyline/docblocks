@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { getFileSystemProviderV2, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
 import { Dialog } from '../components/Dialog.js';
 import { useGitContext } from './GitContext.js';
 import { GitDiffView } from './GitDiffView.js';
@@ -78,9 +79,14 @@ export function GitDiffDialog({ path, revision, onClose }: GitDiffDialogProps) {
       if (!provider) {
         return { phase: 'error', message: 'Workspace files are not available.' };
       }
+      const providerV2 = getFileSystemProviderV2(provider);
       const [head, working] = await Promise.all([
         gitApi.readFileAtRevision(rootPath, path, { kind: 'head' }),
-        provider.readFile(path),
+        providerV2
+          ? providerV2
+              .readFile(parseWorkspacePath(path))
+              .then((file) => (file ? new TextDecoder().decode(file.data) : null))
+          : provider.readFile(path),
       ]);
       if (!head.ok) return { phase: 'error', message: head.error.message };
       if (head.value.content === null && head.value.binary) return { phase: 'binary' };

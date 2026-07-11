@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import windowStateKeeper from 'electron-window-state';
 
 import { registerFsIpc } from './ipc-fs.js';
+import { registerFsV2Ipc } from './ipc-fs-v2.js';
 import { registerExternalIpc } from './ipc-external.js';
 import { registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
@@ -27,12 +28,26 @@ import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { registerTray } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
+import {
+  attachWindowCloseGuard,
+  prepareWindowsForExit,
+  registerWindowLifecycleIpc,
+} from './window-lifecycle.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
 const TITLE_BAR_HEIGHT = 48;
 const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
+// Some headless/virtualized Windows environments cannot start Chromium's GPU
+// subprocess (0xC0000135). This must run before app.ready; E2E sets the flag so
+// a driver/runtime failure becomes a test failure instead of a native crash.
+if (process.env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION === '1') {
+  app.disableHardwareAcceleration();
+}
+
 let mainWindow: BrowserWindow | null = null;
+let appExitApproved = false;
+let appExitPreparing = false;
 
 // Single-instance lock — second launches forward their argv to the first
 // so Windows "Open With" and docblocks:// deep links route to the same window.
@@ -185,6 +200,11 @@ async function createWindow(): Promise<BrowserWindow> {
   });
 
   winState.manage(win);
+  attachWindowCloseGuard(win);
+
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
 
   // Block all non-app:// navigation; open external URLs in the default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -222,6 +242,26 @@ async function createWindow(): Promise<BrowserWindow> {
   }
 
   return win;
+}
+
+async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Promise<boolean> {
+  if (appExitApproved) return true;
+  const prepared = await prepareWindowsForExit(BrowserWindow.getAllWindows(), reason);
+  if (!prepared) return false;
+
+  // Settings are not part of the active document transaction, but they still
+  // need to reach disk before Electron tears down the process.
+  try {
+    await flushSettings();
+  } catch {
+    // Best effort: a settings failure must not strand a document that was
+    // already durably committed and acknowledged by every renderer.
+  }
+
+  killAllGitChildren();
+  releaseAllScopedResources();
+  appExitApproved = true;
+  return true;
 }
 
 app.whenReady().then(async () => {
@@ -273,13 +313,15 @@ app.whenReady().then(async () => {
   }
 
   registerFsIpc();
+  registerFsV2Ipc();
   registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();
   registerExportIpc();
   registerFfmpegIpc();
   registerGitIpc();
-  registerUpdaterIpc();
+  registerWindowLifecycleIpc();
+  registerUpdaterIpc(() => prepareApplicationExit('update-install'));
 
   mainWindow = await createWindow();
 
@@ -295,23 +337,20 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('before-quit', async (event) => {
-  // Give the debounced settings writer a chance to flush pending changes
-  // before the process exits. If flush is still pending we briefly defer
-  // quit, commit, then retrigger. Guard against re-entry.
-  if ((app as unknown as { _flushedSettings?: boolean })._flushedSettings) return;
+app.on('before-quit', (event) => {
+  if (appExitApproved) return;
   event.preventDefault();
-  try {
-    await flushSettings();
-  } catch {
-    // best-effort — never block shutdown on an I/O error
-  }
-  (app as unknown as { _flushedSettings?: boolean })._flushedSettings = true;
-  // Stop any in-flight git children so nothing outlives the app.
-  killAllGitChildren();
-  // Release any MAS security-scoped resource handles (no-op elsewhere).
-  releaseAllScopedResources();
-  app.quit();
+  if (appExitPreparing) return;
+  appExitPreparing = true;
+  void prepareApplicationExit('app-quit').then(
+    (prepared) => {
+      appExitPreparing = false;
+      if (prepared) app.quit();
+    },
+    () => {
+      appExitPreparing = false;
+    },
+  );
 });
 
 app.on('window-all-closed', () => {

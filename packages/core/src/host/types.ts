@@ -7,13 +7,20 @@
  * this shape; the React renderer calls it through `window.docBlocksHost`.
  */
 
-import type { FileSystemEntry, FileMeta } from '../filesystem/types.js';
+import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/types.js';
+import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
 
 /** Filesystem operations scoped to a registered absolute root path. */
 export interface DocBlocksHostFsAPI {
   readFile(rootPath: string, path: string): Promise<string | null>;
   writeFile(rootPath: string, path: string, content: string): Promise<void>;
+  commitFile(
+    rootPath: string,
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult>;
   delete(rootPath: string, path: string): Promise<void>;
   rename(rootPath: string, oldPath: string, newPath: string): Promise<void>;
   readDirectory(rootPath: string, path: string): Promise<FileSystemEntry[]>;
@@ -112,12 +119,14 @@ export interface DocBlocksHostUpdaterAPI {
    * Quit the app and apply a downloaded update. Should only be called
    * after an `UpdaterStatus` of kind `'downloaded'` has been observed.
    */
-  quitAndInstall(): Promise<void>;
+  quitAndInstall(): Promise<UpdateInstallResult>;
   /**
    * Subscribe to updater status events. Returns an unsubscribe function.
    */
   onStatus(listener: (status: UpdaterStatus) => void): () => void;
 }
+
+export type UpdateInstallResult = 'installing' | 'cancelled' | 'not-ready';
 
 export type UpdaterStatus =
   | { kind: 'checking' }
@@ -175,7 +184,21 @@ export interface DocBlocksHostExternalAPI {
   readBinary(path: string): Promise<ArrayBuffer | null>;
   writeText(path: string, content: string): Promise<void>;
   writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
+  commitText(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult>;
+  commitBinary(
+    path: string,
+    data: ArrayBuffer | Uint8Array,
+    expectedVersion: string | null,
+  ): Promise<ExternalBinaryCommitResult>;
 }
+
+export type ExternalBinaryCommitResult =
+  | { status: 'committed'; version: string }
+  | { status: 'conflict'; version: string | null; data: ArrayBuffer | null };
 
 /** Environment metadata provided by the host. */
 export interface HostEnvironment {
@@ -184,10 +207,44 @@ export interface HostEnvironment {
   isDev: boolean;
 }
 
+export type HostCloseReason =
+  | 'window-close'
+  | 'app-quit'
+  | 'update-install'
+  | 'reload'
+  | 'force-reload';
+
+export interface HostPrepareCloseRequest {
+  requestId: string;
+  reason: HostCloseReason;
+  /** Absolute epoch-millisecond deadline chosen by the main process. */
+  deadline: number;
+}
+
+export type HostPrepareCloseResult =
+  | { status: 'ready'; persistedRevision: number }
+  | {
+      status: 'blocked';
+      code: 'save-failed' | 'external-conflict' | 'not-ready';
+      message: string;
+    };
+
+/**
+ * Main-owned close handshake. Preload privately correlates replies; the
+ * renderer never chooses request or window identifiers.
+ */
+export interface DocBlocksHostLifecycleAPI {
+  onPrepareClose(
+    listener: (request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>,
+  ): () => void;
+  onCancelClose(listener: (requestId: string) => void): () => void;
+}
+
 /** The full DocBlocks desktop host API. */
 export interface DocBlocksHostAPI {
   env: HostEnvironment;
   fs: DocBlocksHostFsAPI;
+  fsV2: DocBlocksHostFsV2API;
   external: DocBlocksHostExternalAPI;
   workspaces: DocBlocksHostWorkspacesAPI;
   shell: DocBlocksHostShellAPI;
@@ -195,6 +252,7 @@ export interface DocBlocksHostAPI {
   ffmpeg: DocBlocksHostFfmpegAPI;
   git: DocBlocksHostGitAPI;
   updater: DocBlocksHostUpdaterAPI;
+  lifecycle: DocBlocksHostLifecycleAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

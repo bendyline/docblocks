@@ -1,11 +1,14 @@
 /**
  * FileSystemProvider — abstract interface for a virtual filesystem.
  *
- * Implementations back onto IndexedDB (for browser-local storage) or
- * the File System Access API (for native folder access).
+ * Legacy text-oriented facade retained while consumers migrate to
+ * FileSystemProviderV2. New persistence code must use the provider's `v2`
+ * contract so paths, errors, operation modes, and capabilities are explicit.
  */
 
 // ── Entry types ────────────────────────────────────────────────────
+
+import type { FileSystemProviderV2 } from './v2.js';
 
 export interface FileEntry {
   kind: 'file';
@@ -28,8 +31,17 @@ export interface FileMeta {
   lastModified: string;
 }
 
+export type FileCommitResult =
+  | { status: 'committed'; version: string | null }
+  | { status: 'conflict'; content: string | null; version: string | null };
+
 // ── Provider interface ─────────────────────────────────────────────
 
+/**
+ * @deprecated Compatibility facade for external providers and older callers.
+ * Implement new backends with `FileSystemProviderV2`; built-in facades expose
+ * their authoritative implementation through `v2`.
+ */
 export interface FileSystemProvider {
   /** Unique identifier for this provider instance. */
   readonly id: string;
@@ -37,16 +49,33 @@ export interface FileSystemProvider {
   /** Human-readable label (e.g., folder name or "Browser Storage"). */
   readonly label: string;
 
+  /** Optional correctness-first implementation exposed during the v1-to-v2 migration. */
+  readonly v2?: FileSystemProviderV2;
+
   /** Read the text content of a file. Returns null if the file doesn't exist. */
   readFile(path: string): Promise<string | null>;
 
   /** Write text content to a file, creating it (and parent dirs) if needed. */
   writeFile(path: string, content: string): Promise<void>;
 
-  /** Delete a file or empty directory. */
+  /**
+   * Conditionally replace a text file when it still matches the caller's
+   * persisted baseline. Production providers implement this at their
+   * strongest available serialization boundary.
+   */
+  commitFile?(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult>;
+
+  /**
+   * Legacy recursive removal of a file or directory subtree. Workspace root
+   * deletion is forbidden. Prefer v2 `remove({ recursive })`.
+   */
   delete(path: string): Promise<void>;
 
-  /** Rename or move an entry. */
+  /** Rename or move an entry. Rejects missing sources and existing destinations. */
   rename(oldPath: string, newPath: string): Promise<void>;
 
   /** List immediate children of a directory. */
@@ -66,4 +95,20 @@ export interface FileSystemProvider {
 
   /** Write raw binary content. */
   writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
+}
+
+export type FileSystemProviderWithV2 = FileSystemProvider & {
+  readonly v2: FileSystemProviderV2;
+};
+
+/** Discover a provider-owned v2 implementation without coupling consumers to a concrete class. */
+export function hasFileSystemProviderV2(
+  provider: FileSystemProvider,
+): provider is FileSystemProviderWithV2 {
+  return provider.v2 !== undefined && provider.v2 !== null;
+}
+
+/** Return the provider-owned v2 implementation when migration support is available. */
+export function getFileSystemProviderV2(provider: FileSystemProvider): FileSystemProviderV2 | null {
+  return provider.v2 ?? null;
 }

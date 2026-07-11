@@ -13,11 +13,12 @@
 
 import { app, BrowserWindow, ipcMain } from 'electron';
 import pkg, { type UpdateInfo } from 'electron-updater';
-import type { UpdaterStatus } from '@bendyline/docblocks/host';
+import type { UpdateInstallResult, UpdaterStatus } from '@bendyline/docblocks/host';
 
 const { autoUpdater } = pkg;
 
 const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
+let updateDownloaded = false;
 
 /**
  * True in store-distributed builds (Mac App Store / Microsoft Store), where
@@ -70,14 +71,15 @@ export function initAutoUpdater(): void {
   autoUpdater.on('download-progress', (info) =>
     broadcast({ kind: 'downloading', percent: info.percent }),
   );
-  autoUpdater.on('update-downloaded', (info: UpdateInfo) =>
+  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    updateDownloaded = true;
     broadcast({
       kind: 'downloaded',
       version: info.version,
       releaseNotes: releaseNotesOf(info),
       releaseUrl: releaseUrlFor(info.version),
-    }),
-  );
+    });
+  });
   autoUpdater.on('error', (err) =>
     broadcast({ kind: 'error', message: err?.message ?? 'Update error' }),
   );
@@ -87,7 +89,9 @@ export function initAutoUpdater(): void {
   });
 }
 
-export function registerUpdaterIpc(): void {
+export function registerUpdaterIpc(
+  prepareForInstall: () => Promise<boolean> = async () => true,
+): void {
   ipcMain.handle('updater:checkForUpdates', async (): Promise<boolean> => {
     // Store builds are updated by the store, not by electron-updater.
     if (isStoreBuild()) return false;
@@ -103,10 +107,12 @@ export function registerUpdaterIpc(): void {
     return app.getVersion();
   });
 
-  ipcMain.handle('updater:quitAndInstall', async (): Promise<void> => {
-    if (isStoreBuild()) return;
+  ipcMain.handle('updater:quitAndInstall', async (): Promise<UpdateInstallResult> => {
+    if (isStoreBuild() || !updateDownloaded) return 'not-ready';
+    if (!(await prepareForInstall())) return 'cancelled';
     // Must fire on the next tick so the IPC round-trip completes before
     // the process exits; otherwise the renderer gets a connection error.
     setImmediate(() => autoUpdater.quitAndInstall());
+    return 'installing';
   });
 }

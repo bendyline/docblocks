@@ -31,8 +31,15 @@ export interface FileTreeNodeProps {
   children?: FileSystemEntry[];
   onToggle: (path: string) => void;
   onSelect: (path: string) => void;
-  onDelete: (path: string) => Promise<void>;
-  onRename: (oldPath: string, newPath: string) => Promise<void>;
+  onDelete: (path: string, kind: 'file' | 'directory') => Promise<void>;
+  onRename: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+  draggable?: boolean;
+  dragging?: boolean;
+  dropTarget?: boolean;
+  onDragStart?: (event: React.DragEvent, entry: FileSystemEntry) => void;
+  onDragEnd?: () => void;
+  onDragOverEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
+  onDropEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
   renderChildren?: (dirPath: string) => React.ReactNode;
 }
 
@@ -47,6 +54,13 @@ export function FileTreeNode({
   onSelect,
   onDelete,
   onRename,
+  draggable = false,
+  dragging = false,
+  dropTarget = false,
+  onDragStart,
+  onDragEnd,
+  onDragOverEntry,
+  onDropEntry,
   renderChildren,
 }: FileTreeNodeProps) {
   const [renaming, setRenaming] = useState(false);
@@ -94,15 +108,15 @@ export function FileTreeNode({
         ? entry.path.slice(0, entry.path.lastIndexOf('/'))
         : '';
       const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
-      await onRename(entry.path, newPath);
+      await onRename(entry.path, newPath, entry.kind);
     }
     setRenaming(false);
-  }, [renameValue, entry.name, entry.path, onRename]);
+  }, [renameValue, entry.name, entry.path, entry.kind, onRename]);
 
   const handleDeleteClick = useCallback(async () => {
     setShowContext(false);
-    await onDelete(entry.path);
-  }, [entry.path, onDelete]);
+    await onDelete(entry.path, entry.kind);
+  }, [entry.path, entry.kind, onDelete]);
 
   // Close context menu on outside click or scroll
   useEffect(() => {
@@ -153,10 +167,15 @@ export function FileTreeNode({
   return (
     <div className="db-tree-node" ref={nodeRef}>
       <div
-        className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''}`}
+        className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
         style={{ paddingLeft: depth * 16 + 4 }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        draggable={draggable && !renaming}
+        onDragStart={(event) => onDragStart?.(event, entry)}
+        onDragEnd={onDragEnd}
+        onDragOver={(event) => onDragOverEntry?.(event, entry)}
+        onDrop={(event) => onDropEntry?.(event, entry)}
         role="treeitem"
         aria-expanded={isDir ? expanded : undefined}
         aria-selected={selected}

@@ -28,6 +28,11 @@ interface MemoryProvider extends FileSystemProvider {
   renameCalls: { from: string; to: string }[];
   createDirCalls: string[];
   tree: InMemoryTree;
+  existingPaths: Set<string>;
+}
+
+function normalisePath(path: string): string {
+  return path.replace(/^\/+|\/+$/g, '');
 }
 
 function file(name: string, parent = ''): FileSystemEntry {
@@ -44,6 +49,11 @@ function makeProvider(initial: InMemoryTree): MemoryProvider {
   const renameCalls: { from: string; to: string }[] = [];
   const createDirCalls: string[] = [];
   const tree: InMemoryTree = JSON.parse(JSON.stringify(initial));
+  const existingPaths = new Set<string>();
+  for (const [parent, entries] of Object.entries(tree)) {
+    if (parent) existingPaths.add(normalisePath(parent));
+    for (const entry of entries) existingPaths.add(normalisePath(entry.path));
+  }
 
   const p: MemoryProvider = {
     id: 'mem',
@@ -54,27 +64,33 @@ function makeProvider(initial: InMemoryTree): MemoryProvider {
     deleteCalls,
     renameCalls,
     createDirCalls,
+    existingPaths,
     async readFile() {
       return null;
     },
     async writeFile(path: string, content: string) {
       writeCalls.push({ path, content });
+      existingPaths.add(normalisePath(path));
     },
     async delete(path: string) {
       deleteCalls.push(path);
+      existingPaths.delete(normalisePath(path));
     },
     async rename(from: string, to: string) {
       renameCalls.push({ from, to });
+      existingPaths.delete(normalisePath(from));
+      existingPaths.add(normalisePath(to));
     },
     async readDirectory(path: string) {
       readDirCalls.push(path);
       return tree[path] ?? [];
     },
-    async exists() {
-      return true;
+    async exists(path: string) {
+      return existingPaths.has(normalisePath(path));
     },
     async createDirectory(path: string) {
       createDirCalls.push(path);
+      existingPaths.add(normalisePath(path));
     },
     async stat(): Promise<FileMeta | null> {
       return null;
@@ -264,6 +280,28 @@ describe('useFileTree', () => {
     });
     expect(provider.renameCalls).to.deep.equal([{ from: '/a.md', to: '/b.md' }]);
     expect(handle.result.current.selectedPath).to.equal('/b.md');
+    await handle.unmount();
+  });
+
+  it('renameEntry() moves a markdown companion directory', async () => {
+    const provider = makeProvider({
+      '': [file('a.md'), dir('a_files')],
+      '/a_files': [file('image.png', '/a_files')],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+
+    await act(async () => {
+      await handle.result.current.renameEntry('/a.md', '/b.md', 'file');
+    });
+
+    expect(provider.renameCalls).to.deep.equal([
+      { from: '/a.md', to: '/b.md' },
+      { from: '/a_files', to: '/b_files' },
+    ]);
     await handle.unmount();
   });
 

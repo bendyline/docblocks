@@ -4,8 +4,19 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VersioningPreference } from '../preferences/versioning.js';
+import { ACCENT_COLORS, type AccentColor, type ThemePreference } from '../preferences/theme.js';
 
-export type ThemePreference = 'auto' | 'light' | 'dark';
+export type { AccentColor, ThemePreference } from '../preferences/theme.js';
+
+const ACCENT_LABELS: Record<AccentColor, string> = {
+  brown: 'Brown',
+  green: 'Green',
+  blue: 'Blue',
+  purple: 'Purple',
+  maroon: 'Maroon',
+  orange: 'Orange',
+  gray: 'Gray',
+};
 
 export interface AppMenuProps {
   /** URL for the about page. */
@@ -16,6 +27,10 @@ export interface AppMenuProps {
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
   onThemeChange?: (theme: ThemePreference) => void;
+  /** Current accent color. */
+  accentColor?: AccentColor;
+  /** Called when the user changes the accent color. */
+  onAccentColorChange?: (color: AccentColor) => void;
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -37,6 +52,8 @@ export function AppMenu({
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
+  accentColor = 'brown',
+  onAccentColorChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
@@ -77,9 +94,10 @@ export function AppMenu({
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
-          <span className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}>
-            {'\u25BE'}
-          </span>
+          <span
+            className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}
+            aria-hidden="true"
+          />
         </button>
 
         {isOpen && (
@@ -172,6 +190,35 @@ export function AppMenu({
                   />
                   Dark
                 </label>
+              </fieldset>
+
+              <fieldset className="db-settings-fieldset">
+                <legend className="db-settings-legend">Accent color</legend>
+                <p className="db-settings-hint">Used in both light and dark appearances.</p>
+                <div className="db-settings-accent-grid">
+                  {ACCENT_COLORS.map((color) => (
+                    <label
+                      className={`db-settings-accent${
+                        accentColor === color ? ' db-settings-accent--selected' : ''
+                      }`}
+                      key={color}
+                    >
+                      <input
+                        className="db-settings-accent-input"
+                        type="radio"
+                        name="accent-color"
+                        value={color}
+                        checked={accentColor === color}
+                        onChange={() => onAccentColorChange?.(color)}
+                      />
+                      <span
+                        className={`db-settings-accent-swatch db-settings-accent-swatch--${color}`}
+                        aria-hidden="true"
+                      />
+                      <span>{ACCENT_LABELS[color]}</span>
+                    </label>
+                  ))}
+                </div>
               </fieldset>
 
               {onVersioningPreferenceChange && (

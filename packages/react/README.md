@@ -34,7 +34,7 @@ The canonical DocBlocks experience in one component — file explorer, workspace
 - `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
 - `logoUrl` — brand mark for the app menu button
 
-Storage is abstracted behind `FileSystemProvider` from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), or the Electron host.
+Storage is abstracted behind the byte-authoritative `FileSystemProviderV2` contract from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), transient memory workspaces, or the Electron host. Built-in compatibility facades expose it as `provider.v2`; first-party shell and file-tree operations are v2-first.
 
 ### FileExplorer / FileTreeNode
 
@@ -54,13 +54,15 @@ The export flow: quick re-export of the last configuration plus the full dialog 
 
 ## Hooks
 
-### `useAutoSave(content, save, delay?)`
+### `useDocumentSession(delay?)`
 
-Debounced auto-save (default 500ms).
+React binding for the revisioned `DocumentSession`. Active-document writes,
+transitions, conflicts, and close preparation must flow through this session;
+there is intentionally no independent autosave hook.
 
 ### `useFileTree(provider)`
 
-File tree state management over any `FileSystemProvider` — returns the tree, selection, and mutation functions.
+File tree state management over any v2-capable provider — returns the tree, selection, and explicit create/move/remove functions, with a temporary v1 fallback for external providers.
 
 ## Styles
 

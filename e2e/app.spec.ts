@@ -20,6 +20,28 @@ test.describe('DocBlocks App', () => {
     await expect(picker).toBeVisible();
   });
 
+  test('shows the document pane when the sidebar is dragged closed', async ({ page }) => {
+    const gateway = page.locator('.db-welcome-gateway');
+    await expect(gateway).toBeVisible({ timeout: 10_000 });
+    await page.locator('.db-welcome-gateway-cta').click();
+
+    const editor = page.locator('[contenteditable="true"]').first();
+    await expect(editor).toBeVisible({ timeout: 10_000 });
+
+    const resizer = page.getByRole('separator', { name: 'Resize sidebar' });
+    const box = await resizer.boundingBox();
+    if (!box) throw new Error('Sidebar resizer not found');
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(100, box.y + box.height / 2);
+    await page.mouse.up();
+
+    await expect(page.locator('.db-shell-sidebar')).not.toBeVisible();
+    await expect(editor).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show file list' })).toBeVisible();
+  });
+
   test('shows the app menu button', async ({ page }) => {
     const menuBtn = page.locator('.db-app-menu-btn');
     await expect(menuBtn).toBeVisible();
@@ -136,6 +158,40 @@ test.describe('File operations', () => {
 
     const treeRow = page.locator('.db-tree-row', { hasText: 'my-folder' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('can drag a file into a folder and back to the workspace root', async ({ page }) => {
+    const buttons = page.locator('.db-explorer-btn');
+
+    await buttons.nth(0).click();
+    await page.locator('.db-new-item-input').fill('drag-me');
+    await page.locator('.db-new-item-add').click();
+
+    await buttons.nth(1).click();
+    await page.locator('.db-new-item-input').fill('drop-here');
+    await page.locator('.db-new-item-add').click();
+
+    const fileRow = page.locator('.db-tree-row', { hasText: 'drag-me' });
+    const folderRow = page.locator('.db-tree-row', { hasText: 'drop-here' });
+    await fileRow.click();
+    await fileRow.dragTo(folderRow);
+
+    const folderNode = folderRow.locator('..');
+    await expect(
+      folderNode.locator('.db-tree-children .db-tree-row', { hasText: 'drag-me' }),
+    ).toBeVisible();
+    await expect
+      .poll(() => decodeURIComponent(new URL(page.url()).hash))
+      .toContain('/drop-here/drag-me.md');
+
+    await fileRow.dragTo(page.locator('.db-tree'), { targetPosition: { x: 8, y: 200 } });
+    await expect(
+      folderNode.locator('.db-tree-children .db-tree-row', { hasText: 'drag-me' }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('.db-tree > .db-tree-node > .db-tree-row', { hasText: 'drag-me' }),
+    ).toBeVisible();
+    await expect.poll(() => decodeURIComponent(new URL(page.url()).hash)).toMatch(/\/drag-me\.md$/);
   });
 });
 

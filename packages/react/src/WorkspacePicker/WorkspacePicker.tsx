@@ -6,9 +6,15 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
-import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
 import { isElectronHost } from '@bendyline/docblocks/host';
 import { FolderIcon } from '../icons.js';
+
+function isNativeFileSystemSupported(): boolean {
+  return (
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function'
+  );
+}
 
 export interface WorkspacePickerProps {
   /** Currently active workspace id. */
@@ -112,7 +118,10 @@ export function WorkspacePicker({
         <span className="db-workspace-picker-compact-icon">
           <FolderIcon />
         </span>
-        <span className="db-workspace-picker-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
+        <span
+          className={`db-workspace-picker-caret${isOpen ? ' db-workspace-picker-caret--open' : ''}`}
+          aria-hidden="true"
+        />
       </button>
 
       {isOpen && (

@@ -43,6 +43,7 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   env.NODE_ENV = 'production';
+  env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   // Tell the main process to use this workspace root instead of
   // OS Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
@@ -77,7 +78,15 @@ export const test = base.extend<DocBlocksFixtures>({
     let running: ElectronApplication | undefined;
 
     async function launch(): Promise<{ app: ElectronApplication; window: Page }> {
-      const args = [appRoot, `--user-data-dir=${userDataDir}`];
+      const args = [
+        appRoot,
+        `--user-data-dir=${userDataDir}`,
+        // Native crash dialogs block Playwright teardown and multiply across
+        // retries. Fail the process visibly in test output instead.
+        '--noerrdialogs',
+        '--disable-breakpad',
+        '--disable-gpu',
+      ];
       // GitHub Actions Linux runners don't own chrome-sandbox with the
       // setuid bit, so Electron's SUID sandbox aborts at launch. Disable
       // sandboxing in CI — safe because the runner is an isolated VM.

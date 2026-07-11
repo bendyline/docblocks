@@ -38,6 +38,31 @@
       "import": "./dist/filesystem/index.js",
       "default": "./dist/filesystem/index.js"
     },
+    "./filesystem/indexeddb": {
+      "types": "./dist/filesystem/indexeddb.d.ts",
+      "import": "./dist/filesystem/indexeddb.js",
+      "default": "./dist/filesystem/indexeddb.js"
+    },
+    "./filesystem/memory": {
+      "types": "./dist/filesystem/memory.d.ts",
+      "import": "./dist/filesystem/memory.js",
+      "default": "./dist/filesystem/memory.js"
+    },
+    "./filesystem/native": {
+      "types": "./dist/filesystem/native.d.ts",
+      "import": "./dist/filesystem/native.js",
+      "default": "./dist/filesystem/native.js"
+    },
+    "./filesystem/electron": {
+      "types": "./dist/filesystem/electron.d.ts",
+      "import": "./dist/filesystem/electron.js",
+      "default": "./dist/filesystem/electron.js"
+    },
+    "./document": {
+      "types": "./dist/document/index.d.ts",
+      "import": "./dist/document/index.js",
+      "default": "./dist/document/index.js"
+    },
     "./workspace": {
       "types": "./dist/workspace/index.d.ts",
       "import": "./dist/workspace/index.js",

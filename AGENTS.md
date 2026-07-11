@@ -68,15 +68,74 @@ Commits must follow Conventional Commits — commitlint enforces this.
 
 ## Architecture: the seams that matter
 
-### `FileSystemProvider` is the single seam for user-document storage
+### `DocumentSession` is the transaction boundary for active documents
 
-`packages/core/src/filesystem/types.ts` defines the interface. Three implementations:
+`packages/core/src/document/` owns the active document lifecycle across every
+surface: monotonic revisions, the single serialized commit drain, dirty/save/
+error/conflict state, target transitions, retarget/delete ordering, external
+observations, and close preparation. Editor instances must capture a
+`{ targetKey, generation }` scope and pass it to `session.edit()` so callbacks
+from an obsolete editor cannot write into a newer document.
 
-- `IndexedDBFileSystemProvider` — browser-local (site, vscode webview fallback)
-- `NativeFileSystemProvider` — File System Access API (browser, opt-in)
-- `ElectronFileSystemProvider` — IPC bridge to `desktop/main/ipc-fs.ts`
+Read the next document through `transitionWithLoad()` so the current revision
+is frozen and flushed before the read begins. Rename and delete the active
+document through `retarget()` / `delete()`; never change a save path from a
+React effect cleanup. Production filesystem providers expose conditional
+`commitFile()` semantics, and Electron close/reload/update flows must await the
+renderer lifecycle acknowledgement before destroying the renderer.
 
-UI code (in `packages/react`, `packages/site`, `packages/desktop/renderer`, `packages/vscode/webview`) **must not** call `indexedDB`, `node:fs`, or `electron` directly. Go through the provider. Adding a new storage backend means a new provider implementation — the rest of the app shouldn't need to change.
+Browser renderers attach a bounded synchronous `DocumentRecoveryJournal` to
+the session. A draft is removed only after its revision is acknowledged; on
+reopen, it is restored automatically only when the durable content still
+matches the recorded baseline, otherwise it becomes an external conflict.
+DBK conflicts stage the complete external bundle until the user chooses a
+branch: Keep mine preserves the complete local tree, while Reload external
+atomically replaces markdown and media together.
+
+### `FileSystemProviderV2` is the storage correctness boundary
+
+`packages/core/src/filesystem/v2.ts` defines the byte-authoritative contract.
+Every built-in provider exposes a direct v2 implementation through its
+temporary v1 facade:
+
+- `MemoryFileSystemProviderV2` — transient loose-file and DBK workspaces
+- `IndexedDBFileSystemProviderV2` — browser-local persistence
+- `NativeFileSystemProviderV2` — browser File System Access handles
+- `ElectronFileSystemProviderV2` — renderer client for the independently
+  tested `NodeWorkspaceFileSystemV2` backend
+
+`types.ts` is now only the deprecated text-oriented compatibility facade.
+New first-party storage code must call `getFileSystemProviderV2()` and may use
+v1 only as an explicit compatibility fallback.
+
+The v2 invariants are load-bearing:
+
+- `WorkspacePath` is a branded, root-relative, forward-slash path. `''` is the
+  root. Parse every user/wire value with `parseWorkspacePath()`; traversal,
+  control characters, and drive-qualified paths are rejected. Root can be
+  read/listed but never written, moved, or removed.
+- Each path has exactly one kind and one owned byte payload. Create, replace,
+  parent creation, recursive removal, missing behavior, and expected versions
+  are explicit options; destinations are never overwritten by move.
+- Missing `stat`/`readFile` returns `null`. Permission, quota, wrong-kind,
+  conflict, corruption, and I/O failures are typed `FsError`s and must never be
+  translated to absence or success. IPC sends serialized errors and rehydrates
+  them in the renderer.
+- Callers branch on `capabilities`, never concrete provider classes, for
+  atomicity, conditional-write strength, watch support, case behavior,
+  symlinks, and durability.
+- Watch subscriptions have a ready barrier, ordered typed events, overflow and
+  error channels, and awaitable idempotent disposal. Provider `dispose()` owns
+  all backend resources and permanently rejects new operations.
+- Every provider runs
+  `packages/core/test/helpers/filesystem-v2-conformance.ts`. A backend is not
+  complete until it passes that suite plus backend-specific permission,
+  containment, migration, watcher, and fault-injection tests.
+
+UI code (in `packages/react`, `packages/site`, `packages/desktop/renderer`, and
+`packages/vscode/webview`) **must not** call `indexedDB`, `node:fs`, or
+`electron` directly. Electron main must re-parse paths and prove physical
+workspace containment; renderer validation is not a security boundary.
 
 ### `DocBlocksHostAPI` is the single seam for Electron capabilities
 
@@ -105,6 +164,9 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **No renderer-side Electron / Node imports.** Renderer = `packages/desktop/renderer/` + `packages/site/src/` + `packages/vscode/webview/`. These run in a browser context; importing `electron` or `node:fs` breaks the build for some surfaces and the security model for others.
 - **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/vscode/src/messages.ts` (discriminated unions) over `postMessage`.
 - **Wire types live in `packages/core`.** Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in `core` — usually under `host/types.ts` or `filesystem/types.ts`. Surface packages should not define their own copy.
+- **Active-document writes go through `DocumentSession`.** UI effects and event handlers may create commit targets and observe session state, but must not run a second autosave timer or write the active document directly. All editor edits require the scope captured for that mounted document generation.
+- **First-party filesystem work is v2-first.** Use branded paths, typed errors, explicit mutation modes, and capabilities. Do not add a new direct v1 mutation or a concrete-provider behavior check.
+- **Filesystem absence is narrow.** Only typed `not-found` may become `null`, `false`, or an intentionally empty optional container. Never catch every storage failure and continue a backup, export, move, or save.
 - **Conventional Commits.** commitlint runs on every commit.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
@@ -113,10 +175,12 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **The `app://` custom protocol** in the Electron renderer is load-bearing. It gives IndexedDB a stable origin (so workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
 - **VS Code dual build.** `extension.js` runs in the Node-backed host; `extension.web.js` runs in vscode.dev. Don't let Node-only imports (`fs`, `path` with Node semantics, `child_process`) sneak into the web bundle.
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.
+- **Root mutation stays forbidden twice.** Core providers reject it semantically and Electron main rejects it again after physical root resolution. Never weaken either check.
+- **Provider lifetime is explicit.** Persisted providers are retained/released by the shell; transient providers are owned by the transient registry. React effect cleanup must use the Strict-Mode-safe lease helper rather than call `dispose()` directly.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
 - **Playwright runs from three configs.** Root (`playwright.config.ts`) drives the site dev server. `packages/desktop/e2e/playwright.config.ts` launches Electron. `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100. Each writes to its own `test-results/`.
-- **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Coverage today: `useAutoSave`, `useFileTree`, `export-options`, `versioning` — the components themselves still have no tests, which remains the next-biggest gap.
+- **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
 - **17 woff2 fonts** are bundled in `packages/react/src/fonts/`. Verify any addition is actually referenced before adding.
 
 ## Codex skills
@@ -132,12 +196,12 @@ Four skills live in `.Codex/skills/` — invoke with `/<name>`:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                     |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts` |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                     |
-| Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides             |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                        |
-| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)    |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes   |
+| Task                       | Start with                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`  |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                      |
+| Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides              |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                         |
+| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)     |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes    |

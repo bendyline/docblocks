@@ -10,28 +10,66 @@ npm install @bendyline/docblocks
 
 ## Exports
 
-Three subpath modules (also re-exported from the package root):
+Four subpath modules (also re-exported from the package root):
 
 ### Filesystem (`@bendyline/docblocks/filesystem`)
 
-Pluggable filesystem abstraction — **the single seam for user-document storage**. UI code never touches `indexedDB`, `node:fs`, or `electron` directly; it goes through a provider.
+Correctness-first, byte-authoritative filesystem abstraction — **the single seam for user-document storage**. UI code never touches `indexedDB`, `node:fs`, or `electron` directly; it goes through a provider.
 
-- **`FileSystemProvider`** — the interface (`readFile`, `writeFile`, `readDirectory`, `delete`, `rename`, `createDirectory`, `stat`)
+- **`FileSystemProviderV2`** — canonical branded paths, typed errors, explicit mutation modes, opaque versions, capabilities, snapshots, watches, and disposal
+- **`WorkspacePath` / `parseWorkspacePath()`** — the portable logical path representation (`''` is workspace root)
+- **`FsError`** — stable error codes that survive IPC/structured clone boundaries
 - **`IndexedDBFileSystemProvider`** — browser-local persistent storage (site, VS Code webview fallback)
 - **`NativeFileSystemProvider`** — real folders in the browser via the File System Access API
 - **`ElectronFileSystemProvider`** — bridges to the desktop main process over the host API
+- **`MemoryFileSystemProvider`** — authoritative in-memory v2 storage for transient loose-file and DBK workspaces
 - **`IndexedDBContentContainer`** / **`FileSystemContentContainer`** — content-container layer for media alongside documents
 - **`createFileMediaProvider`** — media provider wired to a filesystem provider
 
 ```ts
-import { IndexedDBFileSystemProvider } from '@bendyline/docblocks/filesystem';
+import { IndexedDBFileSystemProvider, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
 
-const fs = new IndexedDBFileSystemProvider('my-workspace');
-await fs.writeFile('/doc.md', '# Hello');
-const content = await fs.readFile('/doc.md');
+const fs = new IndexedDBFileSystemProvider('my-workspace', 'My workspace');
+const path = parseWorkspacePath('/doc.md');
+await fs.v2.writeFile(path, new TextEncoder().encode('# Hello'), {
+  mode: 'create',
+  createParents: true,
+});
+const content = await fs.v2.readFile(path);
 ```
 
-Adding a new storage backend means adding a new provider implementation — the rest of the app shouldn't need to change.
+`FileSystemProvider` remains as a deprecated text compatibility facade during the v2 migration. New code should discover `provider.v2` with `getFileSystemProviderV2()` and use v1 only as an explicit compatibility fallback. Every new backend must pass the shared v2 conformance suite.
+
+Mutation behavior is explicit: `writeFile` requires a `create`, `replace`, or
+`upsert` mode; `remove` distinguishes an empty-directory removal from a
+recursive tree removal; and `move` never overwrites its destination. Missing
+entries are returned as `null` only by `stat` and `readFile`. Permission,
+wrong-kind, conflict, quota, and I/O failures remain typed `FsError`s.
+
+Capability declarations are conservative promises, not marketing labels:
+
+| Provider                  | Write         | Move          | Snapshot      | Conditional write | Watch | Durability  |
+| ------------------------- | ------------- | ------------- | ------------- | ----------------- | ----- | ----------- |
+| Memory                    | process       | process       | process       | process           | yes   | volatile    |
+| IndexedDB                 | cross-context | cross-context | cross-context | storage-atomic    | no    | best-effort |
+| Native File System Access | none          | none          | none          | process           | no    | best-effort |
+| Electron workspace        | process       | process       | process       | process           | yes   | best-effort |
+
+Versions are opaque equality tokens scoped to their issuing provider. A
+consumer must never parse them or compare tokens from different providers.
+When a watch reports `overflow`, discard incremental assumptions and reload or
+snapshot the relevant state.
+
+IndexedDB workspaces migrate the legacy `fs:*` text/binary namespace in one
+transaction and then use v2 records as their sole authority. Divergent legacy
+or pre-release v2 data is retained as an explicit recovery candidate instead
+of being guessed away. If an obsolete tab recreates legacy keys, a bounded
+prefix probe quarantines that branch before the requested operation retries;
+ordinary operations do not scan or deserialize the complete workspace.
+
+### Document (`@bendyline/docblocks/document`)
+
+Framework-neutral document transaction/session primitives: serialized latest-write commits, monotonic revisions, explicit transitions/retarget/delete/close, conflict state, and crash-recovery journals.
 
 ### Workspace (`@bendyline/docblocks/workspace`)
 
@@ -50,7 +88,7 @@ const workspaces = await listWorkspaces();
 
 ### Host (`@bendyline/docblocks/host`)
 
-The canonical contract for what the Electron desktop shell exposes to its renderer (`fs`, `workspaces`, `shell`, `ffmpeg`, `updater`, `menu`, open-file requests).
+The canonical contract for what the Electron desktop shell exposes to its renderer (`fsV2`, legacy `fs`, `workspaces`, `shell`, `ffmpeg`, `updater`, `menu`, open-file requests).
 
 - **`DocBlocksHostAPI`** — the contract type (implemented by `desktop/main/ipc-*.ts`, exposed by `desktop/preload/preload.ts`)
 - **`isElectronHost()`** — feature-detect the desktop shell

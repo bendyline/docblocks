@@ -13,10 +13,16 @@ export type {
   DocBlocksHostExportAPI,
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,
+  DocBlocksHostLifecycleAPI,
   ElectronWorkspaceInfo,
+  ExternalBinaryCommitResult,
+  HostCloseReason,
   HostEnvironment,
+  HostPrepareCloseRequest,
+  HostPrepareCloseResult,
   MenuCommand,
   OpenRequest,
+  UpdateInstallResult,
   UpdaterStatus,
 } from './types.js';
 
@@ -39,6 +45,14 @@ export type {
   GitRevision,
   GitStatus,
 } from './git.js';
+
+export {
+  ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  type DocBlocksHostFsV2API,
+  type HostFileSystemV2OpenRequest,
+  type HostFileSystemV2Result,
+  type HostFileSystemV2WatchMessage,
+} from './filesystem-v2.js';
 
 import type { DocBlocksHostAPI } from './types.js';
 

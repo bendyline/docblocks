@@ -9,8 +9,17 @@
 
 import { ipcMain } from 'electron';
 import fs from 'node:fs/promises';
+import type { FileCommitResult } from '@bendyline/docblocks/filesystem';
+import type { ExternalBinaryCommitResult } from '@bendyline/docblocks/host';
 
 import { isExternalPathAllowed } from './external-files.js';
+import {
+  atomicWriteBinary,
+  atomicWriteText,
+  commitBinaryFile,
+  commitTextFile,
+  withFileMutationLocks,
+} from './file-commit.js';
 
 function assertAllowed(p: string): void {
   if (!isExternalPathAllowed(p)) {
@@ -44,16 +53,40 @@ export function registerExternalIpc(): void {
 
   ipcMain.handle('external:writeText', async (_e, p: string, content: string): Promise<void> => {
     assertAllowed(p);
-    await fs.writeFile(p, content, 'utf8');
+    await withFileMutationLocks([p], () => atomicWriteText(p, content));
   });
 
   ipcMain.handle(
     'external:writeBinary',
     async (_e, p: string, data: ArrayBuffer | Uint8Array): Promise<void> => {
       assertAllowed(p);
-      const buf =
-        data instanceof Uint8Array ? Buffer.from(data) : Buffer.from(new Uint8Array(data));
-      await fs.writeFile(p, buf);
+      await withFileMutationLocks([p], () => atomicWriteBinary(p, data));
+    },
+  );
+
+  ipcMain.handle(
+    'external:commitText',
+    async (
+      _e,
+      p: string,
+      content: string,
+      expectedContent: string | null,
+    ): Promise<FileCommitResult> => {
+      assertAllowed(p);
+      return commitTextFile(p, content, expectedContent);
+    },
+  );
+
+  ipcMain.handle(
+    'external:commitBinary',
+    async (
+      _e,
+      p: string,
+      data: ArrayBuffer | Uint8Array,
+      expectedVersion: string | null,
+    ): Promise<ExternalBinaryCommitResult> => {
+      assertAllowed(p);
+      return commitBinaryFile(p, data, expectedVersion);
     },
   );
 }

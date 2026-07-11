@@ -58,7 +58,7 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │ Export (Dialog +       │ │   themes / transforms │ │   ipc-workspaces.ts     │
 │   Toolbar +            │ │   / parse             │ │   ipc-shell.ts          │
 │   run-export)          │ │ converters/           │ │   ipc-ffmpeg.ts         │
-│ hooks/useAutoSave      │ │   docx-to-md /        │ │   menu / tray /         │
+│ hooks/useDocumentSession│ │   docx-to-md /       │ │   menu / tray /         │
 │ styles/docblocks.css   │ │   pdf-to-md /         │ │   updater / settings    │
 │ fonts/ (17 woff2)      │ │   pptx-to-md          │ │   workspace-roots       │
 │                        │ │ mcp/server.ts (MCP    │ │   icloud-detect         │
@@ -191,7 +191,7 @@ packages/react/src/FileExplorer/useFileTree.ts
 packages/react/src/WorkspacePicker/WorkspacePicker.tsx
 packages/react/src/Export/ExportDialog.tsx
 packages/react/src/Export/run-export.ts
-packages/react/src/hooks/useAutoSave.ts
+packages/react/src/hooks/useDocumentSession.ts
 packages/react/src/styles/docblocks.css  # the canonical stylesheet
 
 # CLI
@@ -343,21 +343,14 @@ For each, read both locations and diff mentally. Decide intentional vs accidenta
 - Monaco loading: is `monaco-slim.ts` in the vscode webview keeping the bundle small? Sourcemap of the webview bundle to confirm.
 - Font loading: 17 woff2 files in `packages/react/src/fonts/` — are they all referenced? Are they lazy-loaded via CSS `font-display: swap` or all blocking?
 - CLI `video` command: spawns Chromium + ffmpeg. Resource cleanup on `Ctrl+C`?
-- The autosave hook (`packages/react/src/hooks/useAutoSave.ts`): debounce strategy, double-write avoidance, error backoff?
+- The document session (`packages/core/src/document/`): scoped editor generations, serialized drain, conditional commit semantics, transition-before-load ordering, conflict handling, recovery journaling, and close acknowledgement? There must be no independent active-document autosave hook.
 
 ### 3.7 Testing Coverage & Quality
 
-Test density today (verify these numbers):
-
-- **core**: 2 Mocha test files (`exports.test.ts`, `electron-provider.test.ts`)
-- **cli**: 3 Mocha test files (`mcp-forward`, `mcp-reverse`, `mcp-helpers`)
-- **react**: 0 tests
-- **vscode**: 2 Playwright e2e specs (`extension.spec.ts`, `markdown-editor-smoke.spec.ts`)
-- **desktop**: 1 Playwright e2e spec (`app-lifecycle.spec.ts`)
-- **site**: 0 tests
-- **root**: 1 Playwright e2e spec (`e2e/app.spec.ts`) driving the site dev server
-
-The most glaring gap is `packages/react/` — zero coverage on the components that ship to all four surfaces. Flag this on every architecture review until it changes.
+Derive the current inventory with `rg --files packages | rg 'test|e2e'`; do not rely on
+hard-coded historical test counts. Pay special attention to integration coverage around
+`DocBlocksShell`: core session tests are necessary but do not prove React transition,
+rename/delete, watcher, transient-origin, or close-handshake wiring.
 
 ---
 
@@ -622,11 +615,23 @@ Imagine adding the next obvious feature. Trace the path:
 
 ### "Review FileSystem providers"
 
-- [ ] All 3 implement the same interface
-- [ ] All 3 throw the same shape of error for not-found / permission-denied
+- [ ] IndexedDB, native, Electron, and memory providers implement the same interface
+- [ ] Production providers implement conditional `commitFile()` semantics at their strongest available serialization boundary
+- [ ] All providers throw the same shape of error for not-found / permission-denied
 - [ ] Workspace IDs are consistent across providers
 - [ ] Media handling (FileMediaProvider) parity across providers
 - [ ] Tests exist for at least the Electron provider (electron-provider.test.ts is the only one today)
+
+### "Review document lifecycle"
+
+- [ ] Every editor edit carries the mounted session's target key + generation
+- [ ] File/workspace/hash/OS-open transitions freeze and flush before reading the next document
+- [ ] Rename/delete of the active document use `retarget()` / `delete()` before storage mutation
+- [ ] Watcher reads are sequenced and never replace dirty local content
+- [ ] Loose files and DBK origins are acknowledged by the same commit as their in-memory copy
+- [ ] Crash-recovery records clear only after persistence acknowledgement and reopen as conflicts when their baseline changed
+- [ ] DBK conflicts preserve both complete bundle branches until Keep mine / Reload external is chosen
+- [ ] Window close, quit, reload, update install, and VS Code panel disposal await a flush result
 
 ### "Review Codex skills"
 

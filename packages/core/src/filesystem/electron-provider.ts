@@ -8,9 +8,10 @@
  * relies on the `docBlocksHost` global installed by the preload script.
  */
 
-import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import type { FileCommitResult, FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
 import { maybeGetDocBlocksHost } from '../host/index.js';
 import type { DocBlocksHostFsAPI } from '../host/types.js';
+import { ElectronFileSystemProviderV2 } from './electron-provider-v2.js';
 
 export { isElectronHost } from '../host/index.js';
 
@@ -27,6 +28,7 @@ function getHostFs(): DocBlocksHostFsAPI {
 export class ElectronFileSystemProvider implements FileSystemProvider {
   readonly id: string;
   readonly label: string;
+  readonly v2: ElectronFileSystemProviderV2;
 
   private readonly rootPath: string;
 
@@ -34,6 +36,7 @@ export class ElectronFileSystemProvider implements FileSystemProvider {
     this.id = id;
     this.label = label;
     this.rootPath = rootPath;
+    this.v2 = new ElectronFileSystemProviderV2(id, label, rootPath);
   }
 
   /** Absolute path this provider is rooted at. */
@@ -47,6 +50,14 @@ export class ElectronFileSystemProvider implements FileSystemProvider {
 
   writeFile(path: string, content: string): Promise<void> {
     return getHostFs().writeFile(this.rootPath, path, content);
+  }
+
+  commitFile(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult> {
+    return getHostFs().commitFile(this.rootPath, path, content, expectedContent);
   }
 
   delete(path: string): Promise<void> {

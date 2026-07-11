@@ -61,7 +61,7 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
       },
       {
-        find: '@bendyline/docblocks-react',
+        find: /^@bendyline\/docblocks-react$/,
         replacement: path.resolve(__dirname, '../react/src/index.ts'),
       },
       {
@@ -77,7 +77,11 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../core/src/host/index.ts'),
       },
       {
-        find: '@bendyline/docblocks',
+        find: '@bendyline/docblocks/document',
+        replacement: path.resolve(__dirname, '../core/src/document/index.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks$/,
         replacement: path.resolve(__dirname, '../core/src/index.ts'),
       },
     ],

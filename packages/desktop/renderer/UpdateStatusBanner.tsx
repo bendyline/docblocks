@@ -15,6 +15,8 @@ import { getDocBlocksHost, isElectronHost } from '@bendyline/docblocks/host';
 export function UpdateStatusBanner() {
   const [status, setStatus] = useState<UpdaterStatus>({ kind: 'not-available' });
   const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isElectronHost()) return;
@@ -22,6 +24,24 @@ export function UpdateStatusBanner() {
   }, []);
 
   if (!isElectronHost()) return null;
+
+  const restartToInstall = async () => {
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const result = await getDocBlocksHost().updater.quitAndInstall();
+      if (result === 'installing') return;
+      setInstalling(false);
+      setInstallError(
+        result === 'cancelled'
+          ? 'Restart cancelled because the document was not ready to close.'
+          : 'The update is no longer ready to install.',
+      );
+    } catch (error) {
+      setInstalling(false);
+      setInstallError(error instanceof Error ? error.message : 'Could not start the update.');
+    }
+  };
 
   switch (status.kind) {
     case 'available':
@@ -53,8 +73,13 @@ export function UpdateStatusBanner() {
 
     case 'downloaded':
       return (
-        <div className="db-update-banner db-update-banner--ready">
-          <span>DocBlocks {status.version} is ready to install.</span>
+        <div className="db-update-banner db-update-banner--ready" aria-live="polite">
+          <span>
+            {installError ??
+              (installing
+                ? 'Saving documents before restart…'
+                : `DocBlocks ${status.version} is ready to install.`)}
+          </span>
           {status.releaseUrl && (
             <button
               type="button"
@@ -69,9 +94,10 @@ export function UpdateStatusBanner() {
           <button
             type="button"
             className="db-update-banner-action"
-            onClick={() => getDocBlocksHost().updater.quitAndInstall()}
+            onClick={() => void restartToInstall()}
+            disabled={installing}
           >
-            Restart to install
+            {installing ? 'Preparing restart…' : 'Restart to install'}
           </button>
         </div>
       );

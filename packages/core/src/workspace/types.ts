@@ -6,7 +6,14 @@
  * - 'dbk' — a `.dbk`/zip bundle unpacked into memory; edits are re-zipped and
  *   written back to `path`.
  */
-export type TransientOrigin = { kind: 'loose-file'; path: string } | { kind: 'dbk'; path: string };
+export type TransientOrigin =
+  | { kind: 'loose-file'; path: string }
+  | {
+      kind: 'dbk';
+      path: string;
+      /** SHA-256 of the last bundle version acknowledged by the host. */
+      version: string | null;
+    };
 
 /**
  * Workspace — a named binding to a FileSystemProvider, representing

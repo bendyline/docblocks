@@ -145,6 +145,30 @@ test('content persists across relaunch', async ({ launchApp, workspaceDir }) => 
   expect(fs.readFileSync(target, 'utf8')).toContain('Hello from e2e');
 });
 
+test('window close waits for the active document session to flush', async ({
+  launchApp,
+  workspaceDir,
+}) => {
+  const { app, window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 15_000 });
+  await window.locator('.db-welcome-gateway-cta').click();
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toBeVisible({ timeout: 15_000 });
+  const sentinel = `close-flush-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  await app.close();
+  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
+});
+
 test('renderer cannot read files outside the workspace root', async ({
   launchApp,
   workspaceDir,

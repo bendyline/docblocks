@@ -9,6 +9,7 @@ import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'elect
 import type { MenuCommand } from '@bendyline/docblocks/host';
 import { isStoreBuild } from './updater.js';
 import { gitFeaturesDisabled } from './git/detect.js';
+import { reloadWindowWithPreparation } from './window-lifecycle.js';
 
 function send(win: BrowserWindow, cmd: MenuCommand): void {
   win.webContents.send('menu:command', cmd);
@@ -113,8 +114,16 @@ export function buildMenu(win: BrowserWindow): void {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => void reloadWindowWithPreparation(win),
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => void reloadWindowWithPreparation(win, true),
+        },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },

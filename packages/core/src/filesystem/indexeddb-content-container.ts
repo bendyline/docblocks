@@ -7,7 +7,8 @@
 
 import type { ContentContainer, ContentEntry } from '@bendyline/squisq/storage';
 import { findDocumentPath } from '@bendyline/squisq/storage';
-import { IndexedDBFileSystemProvider } from './indexeddb-provider.js';
+import { IndexedDBFileSystemProviderV2 } from './indexeddb-provider-v2.js';
+import { parseWorkspacePath, WORKSPACE_ROOT } from './workspace-path.js';
 
 // ── MIME type guessing ─────────────────────────────────────────────
 
@@ -39,49 +40,51 @@ function guessMimeType(path: string): string {
 // ── Implementation ─────────────────────────────────────────────────
 
 export class IndexedDBContentContainer implements ContentContainer {
-  private provider: IndexedDBFileSystemProvider;
+  private readonly provider: IndexedDBFileSystemProviderV2;
 
   constructor(workspaceId: string) {
-    this.provider = new IndexedDBFileSystemProvider(`${workspaceId}-media`, 'Media Storage');
+    this.provider = new IndexedDBFileSystemProviderV2(`${workspaceId}-media`, 'Media Storage');
   }
 
   async readFile(path: string): Promise<ArrayBuffer | null> {
-    return this.provider.readBinary(path);
+    return (await this.provider.readFile(parseWorkspacePath(path)))?.data ?? null;
   }
 
   async writeFile(path: string, data: ArrayBuffer | Uint8Array, _mimeType?: string): Promise<void> {
-    await this.provider.writeBinary(path, data);
+    await this.provider.writeFile(parseWorkspacePath(path), data, {
+      mode: 'upsert',
+      createParents: true,
+    });
   }
 
   async removeFile(path: string): Promise<void> {
-    await this.provider.delete(path);
+    await this.provider.remove(parseWorkspacePath(path), { missing: 'ignore' });
   }
 
   async listFiles(prefix?: string): Promise<ContentEntry[]> {
     const entries: ContentEntry[] = [];
     const walk = async (dir: string) => {
-      const children = await this.provider.readDirectory(dir);
+      const children = await this.provider.readDirectory(parseWorkspacePath(dir));
       for (const child of children) {
         if (child.kind === 'directory') {
           await walk(child.path);
         } else {
-          const filePath = child.path.replace(/^\//, '');
+          const filePath = child.path;
           if (prefix && !filePath.startsWith(prefix)) continue;
-          const meta = await this.provider.stat(child.path);
           entries.push({
             path: filePath,
             mimeType: guessMimeType(filePath),
-            size: meta?.size ?? 0,
+            size: child.size,
           });
         }
       }
     };
-    await walk('/');
+    await walk(WORKSPACE_ROOT);
     return entries;
   }
 
   async exists(path: string): Promise<boolean> {
-    return this.provider.exists(path);
+    return (await this.provider.stat(parseWorkspacePath(path))) !== null;
   }
 
   async getDocumentPath(): Promise<string | null> {
@@ -100,5 +103,10 @@ export class IndexedDBContentContainer implements ContentContainer {
     const name = filename ?? 'index.md';
     const data = new TextEncoder().encode(markdown);
     await this.writeFile(name, data, 'text/markdown');
+  }
+
+  /** Release the IndexedDB connection when a long-lived container is retired. */
+  async dispose(): Promise<void> {
+    await this.provider.dispose();
   }
 }

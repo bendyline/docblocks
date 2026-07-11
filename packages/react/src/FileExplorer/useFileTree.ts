@@ -4,7 +4,35 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import {
+  getFileSystemProviderV2,
+  moveFileSystemEntry,
+  parseWorkspacePath,
+  type FileSystemProvider,
+  type FileSystemEntry,
+} from '@bendyline/docblocks/filesystem';
+
+function normalisePath(path: string): string {
+  return parseWorkspacePath(path);
+}
+
+function relocatePath(path: string, oldPath: string, newPath: string): string {
+  const current = normalisePath(path);
+  const oldNormalised = normalisePath(oldPath);
+  if (current !== oldNormalised && !current.startsWith(`${oldNormalised}/`)) return path;
+  const suffix = current.slice(oldNormalised.length);
+  return `${newPath.replace(/\/+$/, '')}${suffix}`;
+}
+
+async function readProviderDirectory(
+  provider: FileSystemProvider,
+  path: string,
+): Promise<FileSystemEntry[]> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  if (!providerV2) return provider.readDirectory(path);
+  const entries = await providerV2.readDirectory(parseWorkspacePath(path));
+  return entries.map((entry) => ({ kind: entry.kind, name: entry.name, path: entry.path }));
+}
 
 export interface FileTreeState {
   /** Flat list of entries for the current directory view. */
@@ -30,8 +58,8 @@ export interface FileTreeActions {
   createDirectory: (path: string) => Promise<void>;
   /** Delete a file or directory. */
   deleteEntry: (path: string) => Promise<void>;
-  /** Rename a file or directory. */
-  renameEntry: (oldPath: string, newPath: string) => Promise<void>;
+  /** Rename or move a file or directory, including a markdown companion folder. */
+  renameEntry: (oldPath: string, newPath: string, kind?: 'file' | 'directory') => Promise<void>;
   /** Force refresh the tree. */
   refresh: () => Promise<void>;
 }
@@ -56,7 +84,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     }
     setLoading(true);
     try {
-      const root = await providerRef.current.readDirectory('');
+      const root = await readProviderDirectory(providerRef.current, '');
       setEntries(root);
     } finally {
       setLoading(false);
@@ -65,7 +93,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
 
   const loadChildren = useCallback(async (dirPath: string) => {
     if (!providerRef.current) return;
-    const children = await providerRef.current.readDirectory(dirPath);
+    const children = await readProviderDirectory(providerRef.current, dirPath);
     setChildEntries((prev) => {
       const next = new Map(prev);
       next.set(dirPath, children);
@@ -116,7 +144,14 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const createFile = useCallback(
     async (path: string, content = '') => {
       if (!providerRef.current) return;
-      await providerRef.current.writeFile(path, content);
+      const providerV2 = getFileSystemProviderV2(providerRef.current);
+      if (providerV2) {
+        await providerV2.writeFile(parseWorkspacePath(path), new TextEncoder().encode(content), {
+          mode: 'create',
+        });
+      } else {
+        await providerRef.current.writeFile(path, content);
+      }
       await refresh();
     },
     [refresh],
@@ -125,7 +160,12 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const createDirectory = useCallback(
     async (path: string) => {
       if (!providerRef.current) return;
-      await providerRef.current.createDirectory(path);
+      const providerV2 = getFileSystemProviderV2(providerRef.current);
+      if (providerV2) {
+        await providerV2.createDirectory(parseWorkspacePath(path), { mode: 'create' });
+      } else {
+        await providerRef.current.createDirectory(path);
+      }
       await refresh();
     },
     [refresh],
@@ -134,7 +174,20 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const deleteEntry = useCallback(
     async (path: string) => {
       if (!providerRef.current) return;
-      await providerRef.current.delete(path);
+      const providerV2 = getFileSystemProviderV2(providerRef.current);
+      if (providerV2) {
+        const canonical = parseWorkspacePath(path);
+        const entry = await providerV2.stat(canonical);
+        if (entry) {
+          await providerV2.remove(canonical, {
+            recursive: entry.kind === 'directory',
+            missing: 'error',
+            expectedVersion: entry.version,
+          });
+        }
+      } else {
+        await providerRef.current.delete(path);
+      }
       if (selectedPath === path) {
         setSelectedPath(null);
         setSelectedKind(null);
@@ -145,15 +198,30 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   );
 
   const renameEntry = useCallback(
-    async (oldPath: string, newPath: string) => {
+    async (oldPath: string, newPath: string, kind?: 'file' | 'directory') => {
       if (!providerRef.current) return;
-      await providerRef.current.rename(oldPath, newPath);
-      if (selectedPath === oldPath) {
-        setSelectedPath(newPath);
+      const oldNormalised = normalisePath(oldPath);
+      const knownEntry = [...entries, ...childEntries.values()]
+        .flat()
+        .find((entry) => normalisePath(entry.path) === oldNormalised);
+      const entryKind = kind ?? knownEntry?.kind ?? 'file';
+      await moveFileSystemEntry(providerRef.current, oldPath, newPath, entryKind);
+
+      if (selectedPath) {
+        setSelectedPath(relocatePath(selectedPath, oldPath, newPath));
       }
-      await refresh();
+
+      const nextExpanded = new Set(
+        [...expanded].map((path) => relocatePath(path, oldPath, newPath)),
+      );
+      setExpanded(nextExpanded);
+      setChildEntries(new Map());
+      await loadRoot();
+      for (const dirPath of nextExpanded) {
+        await loadChildren(dirPath);
+      }
     },
-    [refresh, selectedPath],
+    [selectedPath, entries, childEntries, expanded, loadRoot, loadChildren],
   );
 
   // Merge root entries with child entries for a flat tree representation

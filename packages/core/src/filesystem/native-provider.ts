@@ -6,12 +6,18 @@
  * the API (Chrome, Edge). Feature-detect with `isNativeFileSystemSupported()`.
  */
 
-import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import type { FileCommitResult, FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import { withFileCommitLock } from './commit-lock.js';
+import { NativeFileSystemProviderV2 } from './native-provider-v2.js';
+import { parseWorkspacePath } from './workspace-path.js';
 
 // ── Feature detection ──────────────────────────────────────────────
 
 export function isNativeFileSystemSupported(): boolean {
-  return typeof globalThis !== 'undefined' && 'showDirectoryPicker' in globalThis;
+  return (
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function'
+  );
 }
 
 // ── Handle persistence (IndexedDB, structured clone) ───────────────
@@ -89,7 +95,33 @@ export async function removeDirectoryHandle(workspaceId: string): Promise<void> 
 // ── Helpers ────────────────────────────────────────────────────────
 
 function normalisePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
+  return parseWorkspacePath(p);
+}
+
+function errorName(error: unknown): string | undefined {
+  return typeof error === 'object' && error !== null && 'name' in error
+    ? String((error as { name?: unknown }).name)
+    : undefined;
+}
+
+function isMissingEntryError(error: unknown): boolean {
+  const name = errorName(error);
+  return name === 'NotFoundError' || name === 'TypeMismatchError';
+}
+
+function isPermissionError(error: unknown): boolean {
+  const name = errorName(error);
+  return name === 'NotAllowedError' || name === 'SecurityError';
+}
+
+class NativeMoveRecoveryError extends Error {
+  readonly causes: readonly unknown[];
+
+  constructor(message: string, causes: readonly unknown[]) {
+    super(message);
+    this.name = 'NativeMoveRecoveryError';
+    this.causes = causes;
+  }
 }
 
 /**
@@ -106,8 +138,9 @@ async function resolveDir(
   for (const part of parts) {
     try {
       current = await current.getDirectoryHandle(part);
-    } catch {
-      return null;
+    } catch (error: unknown) {
+      if (isMissingEntryError(error)) return null;
+      throw error;
     }
   }
   return current;
@@ -146,11 +179,25 @@ function toWritableBinary(data: ArrayBuffer | Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+async function writeAndClose(
+  writable: FileSystemWritableFileStream,
+  data: string | ArrayBuffer,
+): Promise<void> {
+  try {
+    await writable.write(data);
+    await writable.close();
+  } catch (error: unknown) {
+    await writable.abort(error).catch(() => undefined);
+    throw error;
+  }
+}
+
 // ── Implementation ─────────────────────────────────────────────────
 
 export class NativeFileSystemProvider implements FileSystemProvider {
   readonly id: string;
   readonly label: string;
+  readonly v2: NativeFileSystemProviderV2;
 
   private root: FileSystemDirectoryHandle;
 
@@ -158,11 +205,17 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     this.id = id;
     this.label = root.name;
     this.root = root;
+    this.v2 = new NativeFileSystemProviderV2(id, root);
   }
 
-  private async copyDirectory(oldDirPath: string, newDirPath: string): Promise<boolean> {
+  private withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+    return withFileCommitLock(`native:${this.id}:workspace`, operation);
+  }
+
+  private async copyDirectory(oldDirPath: string, newDirPath: string): Promise<void> {
     const source = await resolveDir(this.root, oldDirPath);
-    if (!source) return false;
+    if (!source)
+      throw new DOMException(`Source directory does not exist: ${oldDirPath}`, 'NotFoundError');
     await resolveDirCreate(this.root, newDirPath);
 
     for await (const [name, handle] of source as unknown as AsyncIterable<
@@ -175,11 +228,9 @@ export class NativeFileSystemProvider implements FileSystemProvider {
       } else {
         const fileHandle = await source.getFileHandle(name);
         const file = await fileHandle.getFile();
-        await this.writeBinary(newChild, await file.arrayBuffer());
+        await this.writeBinaryUnlocked(newChild, await file.arrayBuffer());
       }
     }
-
-    return true;
   }
 
   async readFile(path: string): Promise<string | null> {
@@ -190,30 +241,70 @@ export class NativeFileSystemProvider implements FileSystemProvider {
       const fileHandle = await dir.getFileHandle(baseName(p));
       const file = await fileHandle.getFile();
       return file.text();
-    } catch {
-      return null;
+    } catch (error: unknown) {
+      if (isMissingEntryError(error)) return null;
+      throw error;
     }
   }
 
   async writeFile(path: string, content: string): Promise<void> {
+    return this.withMutationLock(() => this.writeFileUnlocked(path, content));
+  }
+
+  private async writeFileUnlocked(path: string, content: string): Promise<void> {
     const p = normalisePath(path);
     const dir = await resolveDirCreate(this.root, parentDir(p));
     const fileHandle = await dir.getFileHandle(baseName(p), { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(content);
-    await writable.close();
+    await writeAndClose(writable, content);
+  }
+
+  async commitFile(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult> {
+    const p = normalisePath(path);
+    return this.withMutationLock(async () => {
+      const current = await this.readFile(p);
+      if (current !== expectedContent && current !== content) {
+        const meta = await this.stat(p);
+        return {
+          status: 'conflict',
+          content: current,
+          version: meta?.lastModified ?? null,
+        };
+      }
+      await this.writeFileUnlocked(p, content);
+      const meta = await this.stat(p);
+      return { status: 'committed', version: meta?.lastModified ?? null };
+    });
   }
 
   async delete(path: string): Promise<void> {
+    return this.withMutationLock(() => this.deleteUnlocked(path));
+  }
+
+  private async deleteUnlocked(path: string): Promise<void> {
     const p = normalisePath(path);
+    if (!p) throw new Error('Cannot delete the filesystem root');
     const parent = parentDir(p);
     const name = baseName(p);
     const dir = await resolveDir(this.root, parent);
     if (!dir) return;
-    await dir.removeEntry(name, { recursive: true });
+    try {
+      await dir.removeEntry(name, { recursive: true });
+    } catch (error: unknown) {
+      if (isMissingEntryError(error)) return;
+      throw error;
+    }
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
+    return this.withMutationLock(() => this.renameUnlocked(oldPath, newPath));
+  }
+
+  private async renameUnlocked(oldPath: string, newPath: string): Promise<void> {
     const op = normalisePath(oldPath);
     const np = normalisePath(newPath);
     if (op === np) return;
@@ -223,25 +314,72 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     if (np.startsWith(op + '/')) {
       throw new Error('Cannot move a directory into itself');
     }
+    if (!(await this.exists(op))) {
+      throw new Error(`Source does not exist: ${oldPath}`);
+    }
+    if (await this.exists(np)) {
+      throw new Error(`Destination exists: ${newPath}`);
+    }
 
     // The File System Access API doesn't have a native rename.
     // Copy → delete.
     const oldParent = await resolveDir(this.root, parentDir(op));
-    if (!oldParent) return;
-
-    try {
-      const fileHandle = await oldParent.getFileHandle(baseName(op));
-      const file = await fileHandle.getFile();
-      await this.writeBinary(np, await file.arrayBuffer());
-      await this.delete(op);
-      return;
-    } catch {
-      // Not a file; try directory below.
+    if (!oldParent) {
+      throw new DOMException(`Source does not exist: ${oldPath}`, 'NotFoundError');
     }
 
-    const copied = await this.copyDirectory(op, np);
-    if (copied) {
-      await this.delete(op);
+    let fileHandle: FileSystemFileHandle | null = null;
+    try {
+      fileHandle = await oldParent.getFileHandle(baseName(op));
+    } catch (error: unknown) {
+      if (!isMissingEntryError(error)) throw error;
+    }
+
+    if (fileHandle) {
+      const file = await fileHandle.getFile();
+      await this.writeBinaryUnlocked(np, await file.arrayBuffer());
+      try {
+        await this.deleteUnlocked(op);
+      } catch (error: unknown) {
+        try {
+          await this.deleteUnlocked(np);
+        } catch (rollbackError: unknown) {
+          throw new NativeMoveRecoveryError(
+            `Move partially completed and rollback failed: ${oldPath} -> ${newPath}`,
+            [error, rollbackError],
+          );
+        }
+        throw error;
+      }
+      return;
+    }
+
+    try {
+      await this.copyDirectory(op, np);
+    } catch (error: unknown) {
+      try {
+        await this.deleteUnlocked(np);
+      } catch (rollbackError: unknown) {
+        throw new NativeMoveRecoveryError(
+          `Move failed and destination cleanup failed: ${oldPath} -> ${newPath}`,
+          [error, rollbackError],
+        );
+      }
+      throw error;
+    }
+
+    try {
+      await this.deleteUnlocked(op);
+    } catch (error: unknown) {
+      try {
+        await this.deleteUnlocked(np);
+      } catch (rollbackError: unknown) {
+        throw new NativeMoveRecoveryError(
+          `Move partially completed and rollback failed: ${oldPath} -> ${newPath}`,
+          [error, rollbackError],
+        );
+      }
+      throw error;
     }
   }
 
@@ -281,19 +419,23 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     try {
       await dir.getFileHandle(name);
       return true;
-    } catch {
+    } catch (fileError: unknown) {
+      if (!isMissingEntryError(fileError)) throw fileError;
       try {
         await dir.getDirectoryHandle(name);
         return true;
-      } catch {
+      } catch (directoryError: unknown) {
+        if (!isMissingEntryError(directoryError)) throw directoryError;
         return false;
       }
     }
   }
 
   async createDirectory(path: string): Promise<void> {
-    const p = normalisePath(path);
-    await resolveDirCreate(this.root, p);
+    return this.withMutationLock(async () => {
+      const p = normalisePath(path);
+      await resolveDirCreate(this.root, p);
+    });
   }
 
   async stat(path: string): Promise<FileMeta | null> {
@@ -310,8 +452,9 @@ export class NativeFileSystemProvider implements FileSystemProvider {
         size: file.size,
         lastModified: new Date(file.lastModified).toISOString(),
       };
-    } catch {
-      return null;
+    } catch (error: unknown) {
+      if (isMissingEntryError(error)) return null;
+      throw error;
     }
   }
 
@@ -323,18 +466,22 @@ export class NativeFileSystemProvider implements FileSystemProvider {
       const fileHandle = await dir.getFileHandle(baseName(p));
       const file = await fileHandle.getFile();
       return file.arrayBuffer();
-    } catch {
-      return null;
+    } catch (error: unknown) {
+      if (isMissingEntryError(error)) return null;
+      throw error;
     }
   }
 
   async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+    return this.withMutationLock(() => this.writeBinaryUnlocked(path, data));
+  }
+
+  private async writeBinaryUnlocked(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
     const p = normalisePath(path);
     const dir = await resolveDirCreate(this.root, parentDir(p));
     const fileHandle = await dir.getFileHandle(baseName(p), { create: true });
     const writable = await fileHandle.createWritable();
-    await writable.write(toWritableBinary(data));
-    await writable.close();
+    await writeAndClose(writable, toWritableBinary(data));
   }
 }
 
@@ -349,8 +496,10 @@ export async function openNativeFolder(): Promise<NativeFileSystemProvider> {
   }
 
   const handle = await (
-    globalThis as unknown as { showDirectoryPicker: () => Promise<FileSystemDirectoryHandle> }
-  ).showDirectoryPicker();
+    globalThis as unknown as {
+      showDirectoryPicker: (options: { mode: 'readwrite' }) => Promise<FileSystemDirectoryHandle>;
+    }
+  ).showDirectoryPicker({ mode: 'readwrite' });
   const id = `native-${handle.name}-${Date.now()}`;
   await storeDirectoryHandle(id, handle);
   return new NativeFileSystemProvider(id, handle);
@@ -373,11 +522,15 @@ export async function restoreNativeFolder(
     queryPermission(desc: { mode: string }): Promise<string>;
     requestPermission(desc: { mode: string }): Promise<string>;
   };
-  if ((await h.queryPermission(opts)) === 'granted') {
-    return new NativeFileSystemProvider(workspaceId, handle);
-  }
-  if ((await h.requestPermission(opts)) === 'granted') {
-    return new NativeFileSystemProvider(workspaceId, handle);
+  try {
+    if ((await h.queryPermission(opts)) === 'granted') {
+      return new NativeFileSystemProvider(workspaceId, handle);
+    }
+    if ((await h.requestPermission(opts)) === 'granted') {
+      return new NativeFileSystemProvider(workspaceId, handle);
+    }
+  } catch (error: unknown) {
+    if (!isPermissionError(error)) throw error;
   }
 
   return null;

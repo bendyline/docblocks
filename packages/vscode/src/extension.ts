@@ -40,6 +40,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-export function deactivate() {
-  // cleanup
+export async function deactivate(): Promise<void> {
+  await MarkdownEditorPanel.disposeAll();
 }

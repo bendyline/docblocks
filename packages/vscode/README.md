@@ -16,6 +16,8 @@ The editor gives you the same three views as every other DocBlocks surface:
 
 The editor autosaves markdown changes back to the backing file and resolves media through the sibling `<name>_files/` folder. VS Code keeps its own file explorer, tabs, and theme — the DocBlocks webview is intentionally chrome-less.
 
+Document persistence is owned by the extension host. The webview posts each complete edit immediately with a session id, client revision, and base `TextDocument.version`; a host-side `DocumentSession` coalesces and serializes saves. Clean external edits reload the editor, while an external edit that overlaps a local draft enters an explicit conflict state instead of replacing local text. Closing a panel or deactivating the extension flushes the latest host-acknowledged revision.
+
 ### Setup tab
 
 Run **DocBlocks: Open Setup** from the command palette to open the Setup tab. It checks your environment and guides installation of the optional toolchain:
