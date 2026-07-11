@@ -44,7 +44,7 @@ The rich-text editor itself is **Squisq**, a sister project that ships as `@bend
 ```bash
 npm install
 
-# The big green button — build + bundle-size check + lint + format check + typecheck + test
+# Canonical local/CI gate — builds, shipped-artifact checks, packed consumers, guidance, static checks, and tests
 npm run all
 
 # Build everything (core → react → cli → vscode → desktop → site)
@@ -65,7 +65,8 @@ npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packag
 ```bash
 npm test                  # Mocha unit tests across all packages
 npm run test:e2e          # Playwright drives the site (port 5220)
-npm run test:e2e:desktop  # Playwright launches the built Electron app
+npm run test:e2e:desktop  # Playwright launches the source-built Electron app
+npm run test:e2e:desktop:packaged # Smoke the electron-builder artifact that ships
 npm run test:e2e:vscode   # Playwright drives VS Code for the Web (port 3100)
 npm run test:a11y         # Accessibility checks against the site
 ```
@@ -74,7 +75,7 @@ npm run test:a11y         # Accessibility checks against the site
 
 - **Conventional Commits** — enforced by commitlint on every commit.
 - Releases are per-package via `multi-semantic-release` (`npm run release`, CI-driven); release workflows also package the VS Code extension as a `.vsix` artifact.
-- Architecture conventions (the seams between packages, hard lint rules, gotchas) live in [CLAUDE.md](CLAUDE.md) — read it before making cross-package changes.
+- Architecture conventions, hard rules, assurance commands, and gotchas live in [AGENTS.md](AGENTS.md) — read it before making cross-package changes.
 
 ## License
 

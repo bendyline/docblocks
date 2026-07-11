@@ -2,51 +2,30 @@ import { expect } from 'chai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { gitEnv, LOCAL_TIMEOUT_MS, runGit, withRepoLock } from '../main/git/exec.js';
-import { detectGit } from '../main/git/detect.js';
+import {
+  createGitTestEnvironment,
+  type GitTestEnvironment,
+} from './helpers/git-test-environment.js';
 
 /** realpath: on macOS os.tmpdir() is a symlink (/var → /private/var). */
 function makeTempDir(): string {
   return fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'docblocks-git-'));
 }
 
-function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', args, {
-    cwd,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    stdio: 'ignore',
-  });
-}
-
-function initRepo(dir: string): void {
-  git(dir, 'init');
-  git(dir, 'config', 'user.email', 't@example.com');
-  git(dir, 'config', 'user.name', 'Test');
-  git(dir, 'config', 'commit.gpgsign', 'false');
-}
-
 describe('desktop git exec', function () {
   let gitBin = '';
+  let gitTestEnvironment: GitTestEnvironment | null = null;
   let tmp = '';
-  const savedConfigEnv: Record<string, string | undefined> = {};
 
   before(async function () {
-    // Keep the user's global/system git config out of the picture.
-    for (const key of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM']) {
-      savedConfigEnv[key] = process.env[key];
-      process.env[key] = os.devNull;
-    }
-    const tool = await detectGit();
-    if (tool === null) this.skip();
-    gitBin = tool.path;
+    gitTestEnvironment = await createGitTestEnvironment();
+    if (gitTestEnvironment === null) this.skip();
+    gitBin = gitTestEnvironment.bin;
   });
 
   after(() => {
-    for (const [key, value] of Object.entries(savedConfigEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    gitTestEnvironment?.dispose();
   });
 
   beforeEach(() => {
@@ -75,20 +54,15 @@ describe('desktop git exec', function () {
   });
 
   it('kills a blocked child after timeoutMs and reports timedOut', async function () {
-    this.timeout(15_000);
-    initRepo(tmp);
-    // A pre-commit hook that sleeps blocks `git commit`. It redirects its
-    // stdio to /dev/null first so the orphaned sleep cannot hold the pipes
-    // open after git itself is killed.
-    const hookPath = path.join(tmp, '.git', 'hooks', 'pre-commit');
-    fs.mkdirSync(path.dirname(hookPath), { recursive: true });
-    fs.writeFileSync(hookPath, '#!/bin/sh\nexec >/dev/null 2>&1\nsleep 30\n', { mode: 0o755 });
+    this.timeout(10_000);
 
     const started = Date.now();
     const res = await runGit({
-      bin: gitBin,
+      // A direct child avoids platform-specific shell-hook descendants that
+      // can inherit pipes or lock the fixture directory after git is killed.
+      bin: process.execPath,
       cwd: tmp,
-      args: ['commit', '--allow-empty', '-m', 'blocked'],
+      args: ['-e', 'setInterval(() => undefined, 1_000)'],
       timeoutMs: 500,
     });
 
@@ -108,6 +82,14 @@ describe('desktop git exec', function () {
 
   it('exports a positive default local timeout', () => {
     expect(LOCAL_TIMEOUT_MS).to.be.a('number').and.greaterThan(0);
+  });
+
+  it('isolates Git through portable regular config files', () => {
+    if (gitTestEnvironment === null) throw new Error('Git test environment was not initialized');
+    expect(fs.statSync(gitTestEnvironment.globalConfigPath).isFile()).to.equal(true);
+    expect(fs.statSync(gitTestEnvironment.systemConfigPath).isFile()).to.equal(true);
+    expect(process.env.GIT_CONFIG_GLOBAL).to.equal(gitTestEnvironment.globalConfigPath);
+    expect(process.env.GIT_CONFIG_SYSTEM).to.equal(gitTestEnvironment.systemConfigPath);
   });
 
   describe('withRepoLock', () => {

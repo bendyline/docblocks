@@ -21,6 +21,16 @@ function App() {
 }
 ```
 
+The video-export worker uses module chunks. Vite consumers must retain the
+same worker setting used by the DocBlocks site and desktop renderer:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({ worker: { format: 'es' } });
+```
+
 ## Components
 
 ### DocBlocksShell

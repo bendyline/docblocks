@@ -11,7 +11,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
 - **CLI** (`packages/cli`) — `docblocks` binary for init / build / serve / convert / video / mcp / parse / themes / transforms
 
-The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, a sister project that lives in `..\qualla` and ships as `@bendyline/squisq*` npm packages.
+The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
 
 ## Packages
 
@@ -29,16 +29,16 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 Node ≥22.14.0 required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
 
 ```bash
-# The big green button — build + lint + format:check + typecheck + test
+# The big green button — build, artifact/config checks, package consumers, guidance, static checks, and unit tests
 npm run all
 
 # Build
-npm run build               # all packages in order: core → react → cli → vscode → desktop
+npm run build               # all packages in order: core → react → cli → vscode → desktop → site
 npm run build:core          # one package (also :react, :cli, :vscode, :desktop)
 
 # Dev
-npm run dev                 # alias for npm run site — site on http://localhost:5220
-npm run site                # explicit form
+npm run dev                 # site workspace on http://localhost:5220 (expects upstream builds)
+npm run site                # build core + react, then start the site
 npm run dev:desktop         # Electron + Vite concurrently on 5221
 # VS Code extension: open packages/vscode in VS Code and hit F5
 
@@ -47,15 +47,16 @@ npm test                    # Mocha across all packages/*/test/**/*.test.ts (tsx
 npm test -w @bendyline/docblocks         # one package
 npm run test:e2e            # Playwright drives the site (root config, port 5220)
 npm run test:e2e:desktop    # Playwright + Electron launcher
+npm run test:e2e:desktop:packaged # smoke the electron-builder unpacked artifact
 npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
 
 # Quality gates
-npm run typecheck           # tsc -b core react cli + desktop
+npm run typecheck           # core, react, CLI, VS Code host + webview, site, and desktop
 npm run lint                # eslint flat config
 npm run format:check        # prettier
 npm run format              # prettier --write
 
-# Squisq parallel dev — symlinks @bendyline/squisq* from ..\qualla
+# Squisq parallel dev — symlinks @bendyline/squisq* from ..\squisq
 npm run link:squisq         # link
 npm run dev:squisq          # link + watch
 npm run unlink:squisq       # restore registry versions
@@ -159,7 +160,7 @@ Site and the desktop renderer both mount `<DocBlocksShell>`. The VS Code webview
 
 ### Squisq is a dependency, not a fork
 
-Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in `..\qualla` and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.
+Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in the optional `..\squisq` checkout and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.
 
 ## Hard rules (enforced by ESLint or convention)
 
@@ -176,6 +177,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Native authority is physical and revocable.** Resolve registered roots and targets with real-path containment, reject escaping symlinks/junctions and platform aliases, revalidate identity around reads, and revoke grants on navigation, renderer loss, or panel/document disposal.
 - **External navigation uses one policy.** Only canonical, credential-free HTTP(S) URLs accepted by `parseExternalHttpUrl` may reach an OS browser. BrowserWindow redirects, popups, webview messages, Git helpers, and CLI output must not bypass it.
 - **Privileged work is budgeted.** Bound strings, arrays, files, decoded payloads, child-process output, execution time, concurrency, and recursive traversal. A fixed argv is still unsafe if it can run forever or return unbounded data.
+- **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, and unit/integration tests.
 - **Conventional Commits.** commitlint runs on every commit.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
@@ -190,20 +192,29 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Provider lifetime is explicit.** Persisted providers are retained/released by the shell; transient providers are owned by the transient registry. React effect cleanup must use the Strict-Mode-safe lease helper rather than call `dispose()` directly.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
-- **Playwright runs from three configs.** Root (`playwright.config.ts`) drives the site dev server. `packages/desktop/e2e/playwright.config.ts` launches Electron. `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100. Each writes to its own `test-results/`.
+- **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
 - **17 woff2 fonts** are bundled in `packages/react/src/fonts/`. Verify any addition is actually referenced before adding.
 
-## Codex skills
+<!-- BEGIN GENERATED: assurance -->
+## Assurance and agent skills
 
-Four skills live in `.Codex/skills/` — invoke with `/<name>`:
+_This section is generated by `npm run generate:agent-guidance`; `npm run all` checks it for drift._
 
-- **`/developmentarchitect`** — full or focused architecture review (duplication, type safety, build system, error handling, etc.). Writes `reports/architecture-review-*.md`.
-- **`/qualitymanager`** — test-coverage and quality audit across Mocha + the three Playwright configs. Writes `reports/quality-review-*.md`.
-- **`/a11yreview`** — WCAG 2.1 AA audit across site / desktop renderer / vscode webview / Setup pane. Writes `reports/a11y-review-*.md` and fixes common issues directly.
-- **`/uxreview`** — visual / UX critique with explicit multi-surface parity assessment. Writes `reports/ux-review-report-*.md`.
+- Canonical local and CI gate: `npm run all`.
+- Packed public-package consumer check: `npm run check:packages`.
+- Site E2E: `npm run test:e2e` and `npm run test:e2e:offline`.
+- Desktop source E2E: `npm run test:e2e:desktop`.
+- Desktop packaged-artifact smoke: `npm run test:e2e:desktop:packaged`.
+- VS Code Web E2E: `npm run test:e2e:vscode`.
 
-`reports/` is gitignored — audits stay local unless the team decides otherwise.
+Tracked repository skills:
+
+- `/a11yreview` — source: `.agents/skills/a11yreview/SKILL.md`
+- `/developmentarchitect` — source: `.agents/skills/developmentarchitect/SKILL.md`
+
+`reports/` is gitignored; audit output stays local unless the team explicitly promotes it.
+<!-- END GENERATED: assurance -->
 
 ## Where to look first
 

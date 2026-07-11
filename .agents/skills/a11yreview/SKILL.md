@@ -41,8 +41,8 @@ DocBlocks doesn't currently bundle `@axe-core/playwright`. The audit can still p
 ls node_modules/@axe-core/playwright/dist/index.js 2>/dev/null && echo "axe present" || echo "axe NOT installed — propose adding it"
 
 # Confirm fresh builds — e2e requires them
-ls packages/react/dist 2>/dev/null && echo "react built" || echo "needs npm run build:react"
-ls packages/site/dist 2>/dev/null && echo "site built (optional for dev e2e)"
+npm run build:react
+npm run build:site
 ```
 
 If axe isn't installed, propose adding it before scanning:
@@ -53,7 +53,7 @@ npm install -D @axe-core/playwright
 
 The skill can run a manual review without axe (ARIA/semantic inspection + Playwright keyboard traversal) but axe automation is the gold-standard first pass.
 
-**Important note on Squisq**: the actual document editor is **Squisq** (sister project in `..\qualla`). Editor-internal a11y (caret rendering, selection announcements, toolbar focus traps, formatting menus inside the document) is Squisq's responsibility. File issues there rather than monkey-patching from DocBlocks. DocBlocks's responsibility is everything **around** the editor: file explorer, workspace picker, app menu, export dialog, setup pane, and the shell chrome.
+**Important note on Squisq**: the actual document editor is **Squisq** (published packages, with an optional sibling checkout at `..\squisq`). Editor-internal a11y (caret rendering, selection announcements, toolbar focus traps, formatting menus inside the document) is Squisq's responsibility. File issues there rather than monkey-patching from DocBlocks. DocBlocks's responsibility is everything **around** the editor: file explorer, workspace picker, app menu, export dialog, setup pane, and the shell chrome.
 
 ---
 
@@ -447,7 +447,7 @@ Write to `reports/a11y-review-YYYYMMDD-HHMM.md` (create `reports/` if missing).
 ## Gaps & Limitations
 
 - Screen-reader testing requires manual verification (NVDA on Windows, VoiceOver on macOS, JAWS for thorough coverage)
-- Squisq editor internals (caret, selection, formatting toolbar inside the document) are owned upstream — issues there require fixes in ..\qualla, not here
+- Squisq editor internals (caret, selection, formatting toolbar inside the document) are owned upstream — issues there require fixes in the optional `..\squisq` checkout, not here
 - VS Code webview a11y interacts with VS Code's own chrome — some assessments only meaningful inside a real VS Code instance, not the test webview
 - Electron native menus (packages/desktop/main/menu.ts) and tray are OS-rendered — a11y comes from OS-level conformance, not our code
 - Color contrast on transparency / glass effects (if any in the dark theme) needs visual judgment
@@ -482,7 +482,7 @@ Write to `reports/a11y-review-YYYYMMDD-HHMM.md` (create `reports/` if missing).
 ## Common Pitfalls
 
 1. **Don't just report — fix.** Documenting an issue without fixing it is the #1 failure mode.
-2. **Don't fight Squisq.** The editor itself lives in `..\qualla`. Editor-internal a11y is its responsibility; file issues upstream rather than monkey-patching from DocBlocks.
+2. **Don't fight Squisq.** The editor is supplied by published Squisq packages and can be developed in `..\squisq`. Editor-internal a11y is its responsibility; file issues upstream rather than monkey-patching from DocBlocks.
 3. **Don't add ARIA where native HTML suffices.** A `<button>` doesn't need `role="button"`. A `<label>` is better than `aria-label` on a form control.
 4. **Test after fixing.** Re-run the relevant e2e spec, Mocha tests, `npm run typecheck`, and `npm run lint`.
 5. **Don't over-specify.** Only the minimum ARIA needed — extra ARIA confuses screen readers.

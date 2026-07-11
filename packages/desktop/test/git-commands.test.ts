@@ -2,29 +2,18 @@ import { expect } from 'chai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import type { GitError, GitResult } from '@bendyline/docblocks/host';
-import { detectGit } from '../main/git/detect.js';
 import * as commands from '../main/git/commands.js';
 import type { RepoContext } from '../main/git/commands.js';
+import {
+  createGitTestEnvironment,
+  initializeFixtureRepository,
+  runFixtureGit,
+  type GitTestEnvironment,
+} from './helpers/git-test-environment.js';
 
 const SHA_RE = /^[0-9a-f]{40}$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-
-function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', args, {
-    cwd,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    stdio: 'ignore',
-  });
-}
-
-function initRepo(dir: string): void {
-  git(dir, 'init');
-  git(dir, 'config', 'user.email', 't@example.com');
-  git(dir, 'config', 'user.name', 'Test');
-  git(dir, 'config', 'commit.gpgsign', 'false');
-}
 
 function write(dir: string, rel: string, content: string | Buffer): void {
   const abs = path.join(dir, rel);
@@ -48,8 +37,8 @@ describe('desktop git commands', function () {
   this.timeout(30_000);
 
   let gitBin = '';
+  let gitTestEnvironment: GitTestEnvironment | null = null;
   let tmpBase = '';
-  const savedConfigEnv: Record<string, string | undefined> = {};
 
   interface Fixture {
     dir: string;
@@ -58,31 +47,22 @@ describe('desktop git commands', function () {
 
   async function makeRepo(): Promise<Fixture> {
     const dir = fs.mkdtempSync(path.join(tmpBase, 'repo-'));
-    initRepo(dir);
+    initializeFixtureRepository(gitBin, dir);
     const { context } = await commands.detectRepo(gitBin, dir);
     if (context === null) throw new Error('fixture repository was not detected');
     return { dir, ctx: context };
   }
 
   before(async function () {
-    // Keep the user's global/system git config out of the picture so branch
-    // names, hooks, and signing settings are what the fixtures set up.
-    for (const key of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM']) {
-      savedConfigEnv[key] = process.env[key];
-      process.env[key] = os.devNull;
-    }
-    const tool = await detectGit();
-    if (tool === null) this.skip();
-    gitBin = tool.path;
+    gitTestEnvironment = await createGitTestEnvironment();
+    if (gitTestEnvironment === null) this.skip();
+    gitBin = gitTestEnvironment.bin;
     // realpath: on macOS os.tmpdir() is a symlink (/var → /private/var).
     tmpBase = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'docblocks-git-'));
   });
 
   after(() => {
-    for (const [key, value] of Object.entries(savedConfigEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    gitTestEnvironment?.dispose();
     if (tmpBase !== '') fs.rmSync(tmpBase, { recursive: true, force: true });
   });
 
@@ -266,14 +246,14 @@ describe('desktop git commands', function () {
     });
 
     it('reports a detached HEAD', async () => {
-      git(repo.dir, 'checkout', '--detach', baseSha);
+      runFixtureGit(gitBin, repo.dir, 'checkout', '--detach', baseSha);
       try {
         const status = unwrap(await commands.status(repo.ctx));
         expect(status.detached).to.equal(true);
         expect(status.branch).to.equal(null);
         expect(status.head).to.equal(baseSha);
       } finally {
-        git(repo.dir, 'checkout', defaultBranch);
+        runFixtureGit(gitBin, repo.dir, 'checkout', defaultBranch);
       }
     });
   });
@@ -290,7 +270,7 @@ describe('desktop git commands', function () {
       sha1 = unwrap(await commands.commit(repo.ctx, 'first', ['/f1.md'])).sha;
       write(repo.dir, 'f1.md', 'v2\n');
       sha2 = unwrap(await commands.commit(repo.ctx, 'second', ['/f1.md'])).sha;
-      git(repo.dir, 'mv', 'f1.md', 'f2.md');
+      runFixtureGit(gitBin, repo.dir, 'mv', 'f1.md', 'f2.md');
       sha3 = unwrap(await commands.commit(repo.ctx, 'rename f1 to f2')).sha;
     });
 
@@ -422,7 +402,14 @@ describe('desktop git commands', function () {
     });
 
     it('returns a sanitized web location without remote credentials', async () => {
-      git(repo.dir, 'remote', 'add', 'origin', 'https://user:secret@github.com/foo/bar.git');
+      runFixtureGit(
+        gitBin,
+        repo.dir,
+        'remote',
+        'add',
+        'origin',
+        'https://user:secret@github.com/foo/bar.git',
+      );
       try {
         const remotes = unwrap(await commands.listRemotes(repo.ctx));
         expect(JSON.stringify(remotes)).not.to.contain('user');
@@ -439,17 +426,14 @@ describe('desktop git commands', function () {
           },
         ]);
       } finally {
-        git(repo.dir, 'remote', 'remove', 'origin');
+        runFixtureGit(gitBin, repo.dir, 'remote', 'remove', 'origin');
       }
     });
 
     it('pushes with setUpstream to a local file-path remote', async () => {
       const bare = path.join(tmpBase, `bare-${path.basename(repo.dir)}.git`);
-      execFileSync('git', ['init', '--bare', bare], {
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-        stdio: 'ignore',
-      });
-      git(repo.dir, 'remote', 'add', 'origin', bare);
+      runFixtureGit(gitBin, tmpBase, 'init', '--bare', bare);
+      runFixtureGit(gitBin, repo.dir, 'remote', 'add', 'origin', bare);
 
       unwrap(await commands.push(repo.ctx, { setUpstream: true }));
 
@@ -485,7 +469,7 @@ describe('desktop git commands', function () {
 
     it('reports an in-progress merge with conflicted entries', async () => {
       try {
-        git(repo.dir, 'merge', 'other');
+        runFixtureGit(gitBin, repo.dir, 'merge', 'other');
         throw new Error('expected the merge to conflict');
       } catch {
         // conflict expected

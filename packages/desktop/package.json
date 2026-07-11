@@ -20,7 +20,7 @@
     "build": "npm run build:renderer && npm run build:main",
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && vite build --config vite.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.e2e.json",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
@@ -32,7 +32,9 @@
     "dist:dir": "npm run build && electron-builder --dir",
     "start": "node scripts/run-electron.cjs",
     "icons": "python3 scripts/generate-icons.py",
-    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
+    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
+    "test:e2e:packaged": "npm run dist:dir && npm run test:e2e:packaged:only",
+    "test:e2e:packaged:only": "playwright test --config=e2e/playwright.packaged.config.ts"
   },
   "dependencies": {
     "@bendyline/docblocks": "1.1.2",

@@ -26,7 +26,7 @@ You are not here to bikeshed style preferences or propose theoretical refactors.
 
 ## DocBlocks System Architecture Map
 
-Before reviewing, internalize the full system. DocBlocks ships from a single npm workspaces monorepo into **four delivery surfaces** that share a React component library and a core types/filesystem package, all built on top of the **Squisq** rich-text editor framework (sister project in `..\qualla`).
+Before reviewing, internalize the full system. DocBlocks ships from a single npm workspaces monorepo into **four delivery surfaces** that share a React component library and a core types/filesystem package, all built on top of the **Squisq** rich-text editor framework (published packages, with an optional sibling checkout at `..\squisq`).
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -76,7 +76,7 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │   docblocks-vscode               │  │   docblocks-site                │
 │                                  │  │                                 │
 │ src/  (extension host, Node)     │  │ src/                            │
-│   markdownEditorProvider.ts      │  │   App.tsx — mounts              │
+│   markdownEditorPanel.ts         │  │   App.tsx — mounts              │
 │     (CustomTextEditorProvider    │  │     <DocBlocksShell             │
 │      for *.md)                   │  │      theme="auto">              │
 │   messages.ts (host↔webview      │  │   main.tsx (Vite + React)       │
@@ -88,7 +88,7 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │ Setup pane (Activity bar webview)│  │                                 │
 └──────────────────────────────────┘  └─────────────────────────────────┘
 
-  External:  Squisq family (sister project @ ..\qualla)
+  External:  Squisq family (optional sibling checkout @ ..\squisq)
              @bendyline/squisq, squisq-react, squisq-editor-react,
              squisq-formats, squisq-video, squisq-video-react,
              squisq-cli — the actual rich-text editor & format engine.
@@ -111,13 +111,13 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 
 ### Critical conventions baked in
 
-These are the load-bearing patterns. There is **no AGENTS.md** in the repo today — write one if it doesn't exist, and these should anchor it.
+These are the load-bearing patterns. The root **AGENTS.md** is canonical and its generated assurance section is freshness-checked by `npm run all`.
 
-- **`FileSystemProvider` is the single seam for storage.** Anything that reads or writes user documents goes through a provider implementation. Direct `node:fs` calls outside `packages/desktop/main/` or direct `indexedDB` calls outside `packages/core/src/filesystem/indexeddb-*.ts` are an architectural smell.
+- **`FileSystemProviderV2` is the storage correctness seam.** First-party document storage uses branded workspace paths, typed errors, explicit capabilities, conditional commits, and the shared provider conformance suite. The v1 interface is compatibility-only.
 - **`DocBlocksHostAPI` is the single seam for Electron capabilities.** Renderer code asks for capabilities via `getDocBlocksHost()` and degrades gracefully when `isElectronHost()` returns false (site / vscode webview). Renderer must never `require('electron')` or import `node:*`.
-- **`<DocBlocksShell>` is the canonical editor shell.** Site, desktop renderer, and the VS Code webview should mount it. If a surface needs custom chrome, prefer composing around the shell rather than forking it.
+- **`<DocBlocksShell>` is the site/desktop shell.** The VS Code webview intentionally mounts Squisq's `EditorShell` directly because VS Code supplies its own chrome; editor-area features must be wired into both seams or implemented upstream.
 - **`packages/core` is the only place wire types live.** If a type crosses an IPC, postMessage, or HTTP boundary, it belongs in `core` (probably under `host/types.ts` or a sibling).
-- **Squisq is a dependency, not a fork.** Issues with the editor itself belong upstream in `..\qualla`. Use `npm run link:squisq` for parallel development; never patch squisq from inside DocBlocks.
+- **Squisq is a dependency, not a fork.** Issues with the editor itself belong upstream in the optional `..\squisq` checkout. Use `npm run link:squisq` for parallel development; never patch Squisq from inside DocBlocks.
 - **No `console.log` in production code.** ESLint enforces this (`no-console: error`). Use proper logging or surface errors via the host API / VS Code's `OutputChannel` / CLI stderr.
 - **No `any`.** ESLint enforces this (`@typescript-eslint/no-explicit-any: error`). Test files are allowed `any` as a warning.
 - **VS Code webview state lives in the webview.** The extension host owns the document model (`TextDocument`); the webview owns editor UI state. Synchronize via `messages.ts` envelopes — don't smuggle React state through the document text.
@@ -141,12 +141,12 @@ Examine every package and every cross-cutting concern. Recommended quarterly or 
 | "Type safety"          | Schema coverage in `core/host/types.ts`, `any` at IPC/postMessage boundaries, untyped `JSON.parse`                                                                          |
 | "Build system"         | tsup configs across core/react/cli, Vite configs across site/desktop/vscode-webview, the `app://` protocol, tsconfig alignment                                              |
 | "Electron host"        | The IPC surface (`ipc-fs`, `ipc-workspaces`, `ipc-shell`, `ipc-ffmpeg`, `menu`, `tray`, `updater`, `settings`, `workspace-roots`), preload contextBridge, deep-link handler |
-| "VS Code extension"    | `markdownEditorProvider`, host↔webview messages, Setup pane, web extension parity (`extension.web.ts`)                                                                      |
+| "VS Code extension"    | `markdownEditorPanel`, host↔webview messages, Setup pane, web extension parity (`extension.web.js`)                                                                          |
 | "CLI"                  | 9 commands (init / build / serve / convert / video / mcp / themes / transforms / parse), converters, MCP server tool inventory                                              |
 | "FileSystem providers" | The 3 implementations — interface conformance, error handling, identity (workspace IDs), media handling                                                                     |
 | "Squisq integration"   | Which surfaces import which squisq subpackages, externals in tsup/Vite, link:squisq script health                                                                           |
-| "Testing"              | Mocha density (only core + cli today), Playwright e2e across root / desktop / vscode                                                                                        |
-| "Codex skills"         | This skill set in `.Codex/skills/`, plus whether a AGENTS.md exists and is current                                                                                          |
+| "Testing"              | Mocha unit/integration coverage across packages, site/desktop/VS Code Playwright suites, packed consumers, and packaged-desktop smoke                                      |
+| "Agent guidance"       | Tracked skills in `.agents/skills/`, generated assurance guidance, and whether AGENTS.md passes its freshness check                                                        |
 
 ---
 
@@ -162,7 +162,7 @@ AGENTS.md                                # if it exists; otherwise note its abse
 README.md                                # currently one line — flag for expansion
 
 # Root configuration
-package.json                             # 11 scripts, workspace list
+package.json                             # canonical scripts and workspace list
 tsconfig.base.json
 eslint.config.js                         # strict no-any / no-console rules
 .prettierrc
@@ -203,7 +203,7 @@ packages/cli/src/commands/mcp.ts
 packages/cli/src/mcp/server.ts           # MCP tool inventory
 
 # VS Code extension
-packages/vscode/src/markdownEditorProvider.ts
+packages/vscode/src/markdownEditorPanel.ts
 packages/vscode/src/messages.ts          # webview↔host envelope types
 packages/vscode/webview/src/main.tsx
 packages/vscode/webview/src/VscodeEditor.tsx
@@ -317,15 +317,15 @@ For each, read both locations and diff mentally. Decide intentional vs accidenta
 
 ### 3.4 Build System Health
 
-- **Build order**: root `build` runs core → react → cli → vscode → desktop, sequentially. Verify nothing has crept in that needs site to build first. Site is only built for deploy; consider whether it should join `npm run build`.
+- **Build order**: root `build` runs core → react → cli → vscode → desktop → site, sequentially. CI must invoke the canonical root `npm run all` rather than duplicate selected steps.
 - **tsup configs** (core / react / cli): consistent `target`, `format: ['esm']`, `dts: true`? Externals lists current — any new squisq subpackage that should be added?
 - **Vite configs** (site / desktop renderer / vscode webview): consistent React plugin version, consistent target, sourcemaps?
-- **Multi-entry exports**: `packages/core/package.json` `exports` field must match the tsup entries (`./filesystem`, `./workspace`, `./host`). Verify subpath imports work from a consumer (e.g., `import { FileSystemProvider } from '@bendyline/docblocks/filesystem'`).
+- **Published exports**: `packages/core/package.json` exports must match every tsup entry, including document and backend-specific filesystem subpaths. `npm run check:packages` must prove types and runtime imports from packed, isolated consumers.
 - **Electron `app://` protocol** registration in `desktop/main/main.ts` — still wired before window load? Vite renderer base URL still aligned with it?
 - **Sourcemap stripping plugin** in `packages/desktop/vite.config.ts` for `@bendyline/squisq-video` — still needed? Still working?
 - **`build:desktop` vs `dist:desktop`**: `dist` runs electron-builder; verify `electron-builder.yml` still references current paths.
 - **VS Code dual builds**: `extension.js` (Node host) + `extension.web.js` (web extension) — does the webview build for both? Is anything Node-only sneaking into the web bundle?
-- **Squisq linking**: `npm run link:squisq` symlinks 7 packages from `..\qualla`. The script should fail loudly if the source paths are missing. Verify graceful behavior.
+- **Squisq linking**: `npm run link:squisq` symlinks the configured packages from `..\squisq`. The script should fail loudly if the optional checkout is missing and must never be required for a registry-based build.
 
 ### 3.5 Error Handling & Resilience
 
@@ -371,14 +371,9 @@ If AGENTS.md is missing (rare — should only happen on a freshly forked repo), 
 
 ### 4.2 Skills inventory
 
-Read each `.Codex/skills/*/SKILL.md` and evaluate:
+Enumerate the currently tracked `.agents/skills/*/SKILL.md` files and evaluate each one. Never rely on a hard-coded skill count or list; `npm run check:agent-guidance` verifies the AGENTS.md inventory.
 
-| Skill                  | What to check                                                               |
-| ---------------------- | --------------------------------------------------------------------------- |
-| `developmentarchitect` | (this skill) Comprehensive and actionable? Reflects current package layout? |
-| `qualitymanager`       | Reflects current Mocha + Playwright setup? Test density numbers current?    |
-| `a11yreview`           | Tool actually works against the Electron / site / VS Code webview surfaces? |
-| `uxreview`             | Surface list current? Captures real screenshots from existing specs?        |
+For every tracked skill, check whether a fresh Codex session can follow it without external context, whether commands and file paths are accurate, and whether it produces the promised artifact. Report missing capabilities as recommendations rather than pretending deleted skills still exist.
 
 For each: would a fresh Codex session follow this skill correctly without external context? Are commands and file paths accurate? Does it produce expected artifacts?
 
@@ -469,12 +464,9 @@ Predictive, not speculative — ground recommendations in observed patterns.]
 
 ### Skills Assessment
 
-| Skill                | Health | Issues | Recommendations |
-| -------------------- | ------ | ------ | --------------- |
-| developmentarchitect | ...    | ...    | ...             |
-| qualitymanager       | ...    | ...    | ...             |
-| a11yreview           | ...    | ...    | ...             |
-| uxreview             | ...    | ...    | ...             |
+| Tracked skill | Health | Issues | Recommendations |
+| ------------- | ------ | ------ | --------------- |
+| ...           | ...    | ...    | ...             |
 
 ### Recommended new skills
 
@@ -598,11 +590,11 @@ Imagine adding the next obvious feature. Trace the path:
 
 ### "Review VS Code extension"
 
-- [ ] markdownEditorProvider correctly registers as customEditors[0] for \*.md
+- [ ] markdownEditorPanel correctly registers the custom editor for `*.md`
 - [ ] messages.ts envelopes use discriminated unions
 - [ ] Webview <-> host message handlers are exhaustive
 - [ ] Setup pane environment checks current (Node, npm, CLI install state)
-- [ ] extension.web.ts builds and activates in vscode.dev
+- [ ] the `extension.web.js` output builds from the shared extension entry and activates in vscode.dev
 - [ ] No `vscode` import sneaking into the webview bundle
 
 ### "Review CLI"
@@ -635,7 +627,7 @@ Imagine adding the next obvious feature. Trace the path:
 
 ### "Review Codex skills"
 
-- [ ] Every SKILL.md in `.Codex/skills/` reads accurately for current commands + paths
+- [ ] Every tracked `.agents/skills/*/SKILL.md` reads accurately for current commands + paths
 - [ ] AGENTS.md reflects current architecture (or doesn't exist yet — propose creating it)
 - [ ] Coverage gaps in skill set identified
 - [ ] Test one skill end-to-end if possible
@@ -656,6 +648,6 @@ Every architecture review MUST produce:
 
 If implementing fixes:
 
-8. Each fix in a separate commit with a clear message (Conventional Commits — commitlint enforces this)
-9. `npm run typecheck`, `npm test`, `npm run lint`, `npm run format:check` all green after each fix
-10. AGENTS.md or SKILL.md updated when documentation was stale
+8. Leave Git management to the user unless they explicitly request a commit
+9. `npm run all` green after the complete change, with focused checks during iteration
+10. AGENTS.md or SKILL.md updated when documentation was stale; regenerate checked guidance when its source inventory changes

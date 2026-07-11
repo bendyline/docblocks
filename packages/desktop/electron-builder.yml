@@ -26,7 +26,10 @@ electronFuses:
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
-  loadBrowserProcessSpecificV8Snapshot: true
+  # Only enable this when packaging a generated
+  # browser_v8_context_snapshot.bin. Electron's stock distribution does not
+  # contain one and exits fatally at startup when this fuse is enabled.
+  loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
 
 # electron-builder auto-detects native modules with .node bindings and

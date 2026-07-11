@@ -2,11 +2,15 @@ import { expect } from 'chai';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { detectGit } from '../main/git/detect.js';
 import { detectRepo } from '../main/git/commands.js';
 import type { RepoContext } from '../main/git/commands.js';
 import { createRepoWatcher, type RepoWatcher } from '../main/git/repo-watcher.js';
+import {
+  createGitTestEnvironment,
+  initializeFixtureRepository,
+  runFixtureGit,
+  type GitTestEnvironment,
+} from './helpers/git-test-environment.js';
 
 /** Time chokidar gets to finish its initial scan before we mutate the repo. */
 const WATCHER_WARMUP_MS = 1_000;
@@ -28,51 +32,33 @@ async function waitFor(predicate: () => boolean, timeoutMs: number): Promise<boo
   return predicate();
 }
 
-function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', args, {
-    cwd,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    stdio: 'ignore',
-  });
-}
-
 describe('desktop git repo watcher', function () {
   this.timeout(30_000);
 
   let gitBin = '';
+  let gitTestEnvironment: GitTestEnvironment | null = null;
   let tmp = '';
   let ctx: RepoContext;
   let watcher: RepoWatcher | null = null;
   let changeCount = 0;
-  const savedConfigEnv: Record<string, string | undefined> = {};
 
   before(async function () {
-    for (const key of ['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM']) {
-      savedConfigEnv[key] = process.env[key];
-      process.env[key] = os.devNull;
-    }
-    const tool = await detectGit();
-    if (tool === null) this.skip();
-    gitBin = tool.path;
+    gitTestEnvironment = await createGitTestEnvironment();
+    if (gitTestEnvironment === null) this.skip();
+    gitBin = gitTestEnvironment.bin;
   });
 
   after(() => {
-    for (const [key, value] of Object.entries(savedConfigEnv)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    gitTestEnvironment?.dispose();
   });
 
   beforeEach(async () => {
     // realpath: on macOS os.tmpdir() is a symlink (/var → /private/var).
     tmp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'docblocks-git-'));
-    git(tmp, 'init');
-    git(tmp, 'config', 'user.email', 't@example.com');
-    git(tmp, 'config', 'user.name', 'Test');
-    git(tmp, 'config', 'commit.gpgsign', 'false');
+    initializeFixtureRepository(gitBin, tmp);
     fs.writeFileSync(path.join(tmp, 'seed.md'), 'seed\n');
-    git(tmp, 'add', '-A');
-    git(tmp, 'commit', '-m', 'seed');
+    runFixtureGit(gitBin, tmp, 'add', '-A');
+    runFixtureGit(gitBin, tmp, 'commit', '-m', 'seed');
 
     const { context } = await detectRepo(gitBin, tmp);
     if (context === null) throw new Error('fixture repository was not detected');
@@ -99,8 +85,8 @@ describe('desktop git repo watcher', function () {
 
   it('fires onChange when a commit updates repository state', async () => {
     fs.writeFileSync(path.join(tmp, 'next.md'), 'next\n');
-    git(tmp, 'add', '-A');
-    git(tmp, 'commit', '-m', 'next');
+    runFixtureGit(gitBin, tmp, 'add', '-A');
+    runFixtureGit(gitBin, tmp, 'commit', '-m', 'next');
 
     const fired = await waitFor(() => changeCount > 0, CHANGE_WINDOW_MS);
     expect(fired, 'expected onChange after a commit').to.equal(true);
@@ -120,7 +106,7 @@ describe('desktop git repo watcher', function () {
     await (watcher as RepoWatcher).close();
     watcher = null;
 
-    git(tmp, 'commit', '--allow-empty', '-m', 'after close');
+    runFixtureGit(gitBin, tmp, 'commit', '--allow-empty', '-m', 'after close');
     await delay(QUIET_WINDOW_MS);
 
     expect(changeCount, 'closed watcher must not notify').to.equal(0);

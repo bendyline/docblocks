@@ -52,7 +52,7 @@
     "@bendyline/squisq-react": "1.4.2",
     "@bendyline/squisq-video": "1.2.2",
     "@bendyline/squisq-video-react": "1.2.2",
-    "monaco-editor": "0.53.0"
+    "monaco-editor": "0.50.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",

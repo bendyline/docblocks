@@ -14,8 +14,11 @@ export function bindOwnerGrantRevocation(owner: WebContents, callback: () => voi
     const revoke = () => {
       for (const current of revocationsByOwner.get(owner) ?? []) current();
     };
-    owner.on('did-start-navigation', (_event, _url, _isInPlace, isMainFrame) => {
-      if (isMainFrame) revoke();
+    owner.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      // Hash/history navigation keeps the same renderer document and therefore
+      // the same capability owner. Revoking on those in-place navigations
+      // strands live provider clients with main-side records that disappeared.
+      if (isMainFrame && !isInPlace) revoke();
     });
     owner.once('render-process-gone', revoke);
     owner.once('destroyed', revoke);
