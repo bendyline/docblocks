@@ -55,7 +55,8 @@ npm run package:vscode
 
 # Run a surface
 npm run dev            # site on http://localhost:5220
-npm run dev:desktop    # Electron + Vite dev server on port 5221
+npm run app            # Build shared packages, then launch Electron + Vite on port 5221
+npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5
 ```
 

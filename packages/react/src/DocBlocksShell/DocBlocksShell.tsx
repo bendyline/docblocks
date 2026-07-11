@@ -51,6 +51,7 @@ import { AppMenu, type ThemePreference } from '../AppMenu/AppMenu.js';
 import { FileExplorer } from '../FileExplorer/FileExplorer.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
+import { SplitViewIcon } from '../icons.js';
 import {
   WorkspaceSettingsDialog,
   type WorkspaceVersioningOverride,
@@ -206,14 +207,13 @@ function saveThemePreference(pref: ThemePreference): void {
 }
 
 const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
-const SIDEBAR_WIDTH_DEFAULT = 260;
-const SIDEBAR_WIDTH_MIN = 180;
+const SIDEBAR_WIDTH_DEFAULT = 320;
+const SIDEBAR_WIDTH_MIN = 320;
 const SIDEBAR_WIDTH_MAX = 600;
 /** Drag below this many pixels and the sidebar collapses entirely —
- *  the editor takes the full width and a back-arrow appears in the
- *  toolbar so the user can pop the sidebar back open. Same UX as
- *  the existing mobile narrow-viewport flow. */
-const SIDEBAR_COLLAPSE_THRESHOLD = 120;
+ *  the workspace pane takes the full width and offers a control to
+ *  restore the side-by-side layout. */
+const SIDEBAR_COLLAPSE_THRESHOLD = SIDEBAR_WIDTH_MIN;
 
 function loadSidebarWidth(): number {
   try {
@@ -454,7 +454,7 @@ export function DocBlocksShell({
   // we switch the layout into single-pane "compact" mode — same UX as
   // the mobile narrow-viewport flow, where only the sidebar OR the
   // editor is visible at a time and a back-arrow in the toolbar pops
-  // between them. A "Restore split view" button on the editor toolbar
+  // between them. A "Restore split view" button in either pane's header
   // exits compact mode; on real mobile that button is suppressed
   // because there's not enough viewport for side-by-side. Not
   // persisted across reloads. */
@@ -507,10 +507,10 @@ export function DocBlocksShell({
         }
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD) {
           // Released below threshold — switch to compact (single-pane)
-          // layout focused on the editor. Keep the persisted
+          // layout focused on the workspace pane. Keep the persisted
           // sidebarWidth so exiting compact mode restores it.
           setCompactLayout(true);
-          setMobileShowEditor(true);
+          setMobileShowEditor(false);
         } else {
           const finalWidth = sidebarRef.current?.getBoundingClientRect().width;
           if (finalWidth) {
@@ -1867,6 +1867,16 @@ export function DocBlocksShell({
                   onDownload={handleDownloadWorkspace}
                   onRemove={handleRemoveWorkspace}
                 />
+                {compactLayout && !isMobile && (
+                  <button
+                    className="db-restore-split"
+                    onClick={() => setCompactLayout(false)}
+                    aria-label="Restore split view"
+                    title="Restore split view"
+                  >
+                    <SplitViewIcon />
+                  </button>
+                )}
               </div>
               {git.available && (
                 <Suspense fallback={null}>
@@ -1979,19 +1989,7 @@ export function DocBlocksShell({
                             aria-label="Restore split view"
                             title="Restore split view"
                           >
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 16 16"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-                              <line x1="6" y1="2.5" x2="6" y2="13.5" />
-                            </svg>
+                            <SplitViewIcon />
                           </button>
                         )}
                         {git.repo && (

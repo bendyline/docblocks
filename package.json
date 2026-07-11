@@ -21,6 +21,7 @@
     "package:vscode": "npm run package:vsix -w docblocks-vscode",
     "bundle:size": "tsx scripts/check-bundle-size.ts",
     "check:desktop-config": "tsx scripts/check-electron-builder-config.ts",
+    "app": "npm run build:core && npm run build:react && npm run dev:desktop",
     "dev:desktop": "npm run dev -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",

@@ -8,6 +8,7 @@ import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
 import { isElectronHost } from '@bendyline/docblocks/host';
+import { FolderIcon } from '../icons.js';
 
 export interface WorkspacePickerProps {
   /** Currently active workspace id. */
@@ -97,6 +98,7 @@ export function WorkspacePicker({
   }, [workspaces.length, onSelect, refresh]);
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
+  const activeWorkspaceName = activeWs?.name ?? 'No workspace';
 
   return (
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>
@@ -104,8 +106,12 @@ export function WorkspacePicker({
         className="db-workspace-picker-btn"
         onClick={() => setIsOpen(!isOpen)}
         title="Switch workspace"
+        aria-label={`Switch workspace, current: ${activeWorkspaceName}`}
       >
-        {activeWs?.name ?? 'No workspace'}
+        <span className="db-workspace-picker-label">{activeWorkspaceName}</span>
+        <span className="db-workspace-picker-compact-icon">
+          <FolderIcon />
+        </span>
         <span className="db-workspace-picker-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
       </button>
 

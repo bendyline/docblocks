@@ -395,6 +395,7 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  max-width: 320px;
 }
 
 .db-workspace-picker-btn {
@@ -413,6 +414,19 @@
 
 .db-workspace-picker-btn:hover {
   background: var(--db-bg-hover);
+}
+
+.db-workspace-picker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-workspace-picker-compact-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 
 .db-workspace-picker-caret {
@@ -757,6 +771,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-header {
+  container: db-sidebar-header / inline-size;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--db-border-strong);
@@ -764,6 +779,25 @@ body.db-resizing-sidebar * {
   gap: 4px;
   flex-shrink: 0;
   min-height: 40px;
+}
+
+@container db-sidebar-header (max-width: 300px) {
+  .db-workspace-picker {
+    flex: 0 0 auto;
+  }
+
+  .db-workspace-picker-btn {
+    width: auto;
+    gap: 6px;
+  }
+
+  .db-workspace-picker-label {
+    display: none;
+  }
+
+  .db-workspace-picker-compact-icon {
+    display: inline-flex;
+  }
 }
 
 .db-shell-sidebar-footer {
@@ -869,10 +903,9 @@ body.db-resizing-sidebar * {
   background: var(--db-bg-subtle);
 }
 
-/* "Restore split view" button — appears on the editor toolbar when
-   compact layout was triggered manually on a wide viewport. Lets the
-   user pop the sidebar back open alongside the editor. Iconic only,
-   no label, so it stays compact in the toolbar's right-slot. */
+/* "Restore split view" button — appears in whichever pane is visible when
+   compact layout was triggered manually on a wide viewport. Iconic only,
+   no label, so it stays compact in either header. */
 .db-restore-split {
   display: inline-flex;
   align-items: center;
@@ -1633,10 +1666,17 @@ body.db-resizing-sidebar * {
   filter: grayscale(1);
 }
 
-/* Closed-state template trigger: neutralize squisq's slate-navy bg ── */
+/* Keep the block-type and transition triggers on the same DocBlocks surface.
+   The transition trigger has no thumbnail, so give it the block trigger's
+   natural rendered height explicitly. */
+.db-shell .squisq-editor-shell .squisq-transition-picker-trigger {
+  box-sizing: border-box;
+  height: 29px;
+}
+
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger) {
   background: var(--db-bg-subtle);
   border-color: var(--db-border);
   color: var(--db-text);
@@ -1644,7 +1684,7 @@ body.db-resizing-sidebar * {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger:hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -1700,7 +1740,7 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger--open {
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
   border-color: var(--db-accent-hover);
   outline-color: var(--db-accent-soft-25);
 }
@@ -2140,7 +2180,7 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
-  .squisq-template-picker-trigger--open {
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
   border-color: var(--db-accent);
   outline-color: var(--db-accent-soft-25);
 }
@@ -2180,6 +2220,10 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell .squisq-props-badge {
   font-family: inherit;
   opacity: 1;
+}
+
+.db-shell .squisq-props-badge {
+  transform: translateY(2px);
 }
 
 .db-shell .squisq-template-badge-core::after {

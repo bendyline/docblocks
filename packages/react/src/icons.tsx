@@ -16,6 +16,10 @@ export function NewFolderIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-folder-plus" />;
 }
 
+export function FolderIcon() {
+  return <FontAwesomeIcon icon="fa-solid fa-folder" />;
+}
+
 export function RefreshIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-arrows-rotate" />;
 }
@@ -26,4 +30,23 @@ export function MoreIcon() {
 
 export function WorkspaceIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-gear" />;
+}
+
+export function SplitViewIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
+      <line x1="6" y1="2.5" x2="6" y2="13.5" />
+    </svg>
+  );
 }

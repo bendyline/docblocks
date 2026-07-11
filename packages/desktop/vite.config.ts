@@ -104,6 +104,12 @@ export default defineConfig({
     port: 5221,
     strictPort: true,
     open: false,
+    fs: {
+      // Local Squisq development uses package symlinks into ../squisq.
+      // Its editor CSS imports Font Awesome, whose relative webfont URLs
+      // resolve through that real path and must be served by Vite.
+      allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
+    },
   },
   optimizeDeps: {
     include: [

@@ -14,8 +14,9 @@
   "main": "dist/main/main.cjs",
   "type": "module",
   "scripts": {
+    "predev": "npm run build:main",
     "dev": "concurrently -k -n vite,electron -c \"blue,green\" \"vite --config vite.config.ts\" \"npm:dev:electron\"",
-    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.config.ts --watch --onSuccess \"node scripts/run-electron.cjs\"",
+    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.config.ts --watch --no-clean --onSuccess \"node scripts/run-electron.cjs\"",
     "build": "npm run build:renderer && npm run build:main",
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && vite build --config vite.config.ts",

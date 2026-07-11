@@ -30,7 +30,7 @@ Key main-process modules:
 
 ```bash
 # From the monorepo root
-npm run dev:desktop
+npm run app
 
 # Or from this package
 npm run dev            # Vite dev server on port 5221 + Electron, concurrently
