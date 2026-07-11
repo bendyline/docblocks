@@ -10,36 +10,75 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { writeFile, readFile, stat, rm, rename } from 'node:fs/promises';
-import { resolve, dirname, join } from 'node:path';
+import { writeFile, rm, rename, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { getPackageVersion } from '../version.js';
+import { McpFileAuthority, type McpFileAuthorityOptions } from './authority.js';
+
+const MAX_MARKDOWN_CHARACTERS = 20 * 1024 * 1024;
+const MAX_PATH_CHARACTERS = 4_096;
+const MAX_ID_CHARACTERS = 256;
+const MAX_TOPIC_CHARACTERS = 10_000;
+const MAX_EXPORT_BYTES = 500 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_OPERATIONS = 2;
+
+const pathSchema = z.string().min(1).max(MAX_PATH_CHARACTERS);
+const legacyMarkdownSchema = z
+  .string()
+  .max(MAX_MARKDOWN_CHARACTERS)
+  .optional()
+  .describe('Deprecated raw markdown text. A value is never inferred as a file path.');
+const markdownSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('text'), text: z.string().max(MAX_MARKDOWN_CHARACTERS) }).strict(),
+  z.object({ kind: z.literal('file'), path: pathSchema }).strict(),
+]);
+
+type MarkdownSource = z.infer<typeof markdownSourceSchema>;
+
+export interface McpServerOptions extends McpFileAuthorityOptions {
+  maxConcurrentOperations?: number;
+}
+
+class OperationGuard {
+  private active = 0;
+
+  public constructor(private readonly maximum: number) {
+    if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 32) {
+      throw new Error('Invalid MCP operation concurrency limit');
+    }
+  }
+
+  public async run<T>(work: () => Promise<T>): Promise<T> {
+    if (this.active >= this.maximum) throw new Error('MCP server is busy; retry later');
+    this.active += 1;
+    try {
+      return await work();
+    } finally {
+      this.active -= 1;
+    }
+  }
+}
 
 /**
  * Resolve markdown input: either raw text or a file path.
  * Returns the resolved file path (writing to a temp file if given raw text).
  */
 async function resolveMarkdownInput(
-  markdown: string,
+  authority: McpFileAuthority,
+  source: MarkdownSource | undefined,
+  legacyMarkdown: string | undefined,
 ): Promise<{ filePath: string; isTemp: boolean }> {
-  // If it looks like a file path (no newlines, ends with known ext or exists on disk)
-  if (!markdown.includes('\n') && markdown.length < 500) {
-    try {
-      const resolved = resolve(markdown);
-      const info = await stat(resolved);
-      if (info.isFile() || info.isDirectory()) {
-        return { filePath: resolved, isTemp: false };
-      }
-    } catch {
-      // Not a valid path — treat as raw markdown
-    }
+  const selected = selectMarkdownSource(source, legacyMarkdown);
+  if (selected.kind === 'file') {
+    return { filePath: await authority.authorizeRead(selected.path), isTemp: false };
   }
 
   // Write raw markdown to a temp file
   const tmpId = randomBytes(8).toString('hex');
   const tmpPath = join(tmpdir(), `docblocks-mcp-${tmpId}.md`);
-  await writeFile(tmpPath, markdown, 'utf-8');
+  await writeFile(tmpPath, selected.text, 'utf-8');
   return { filePath: tmpPath, isTemp: true };
 }
 
@@ -57,21 +96,36 @@ async function cleanupTemp(filePath: string, isTemp: boolean): Promise<void> {
  * on the markdown string directly (analyze, restyle) rather than via file.
  */
 async function resolveMarkdownText(markdown: string): Promise<string> {
-  if (!markdown.includes('\n') && markdown.length < 500) {
-    try {
-      const resolved = resolve(markdown);
-      const info = await stat(resolved);
-      if (info.isFile()) {
-        return await readFile(resolved, 'utf-8');
-      }
-    } catch {
-      // Not a valid path — use as-is
-    }
-  }
   return markdown;
 }
 
-export function createMcpServer(): McpServer {
+async function resolveMarkdownSourceText(
+  authority: McpFileAuthority,
+  source: MarkdownSource | undefined,
+  legacyMarkdown: string | undefined,
+): Promise<string> {
+  const selected = selectMarkdownSource(source, legacyMarkdown);
+  if (selected.kind === 'text') return resolveMarkdownText(selected.text);
+  return authority.readText(selected.path);
+}
+
+function selectMarkdownSource(
+  source: MarkdownSource | undefined,
+  legacyMarkdown: string | undefined,
+): MarkdownSource {
+  if (source && legacyMarkdown !== undefined) {
+    throw new Error('Provide either source or markdown, not both');
+  }
+  if (source) return source;
+  if (legacyMarkdown !== undefined) return { kind: 'text', text: legacyMarkdown };
+  throw new Error('A markdown source is required');
+}
+
+export function createMcpServer(options: McpServerOptions = {}): McpServer {
+  const authority = McpFileAuthority.create(options);
+  const operations = new OperationGuard(
+    options.maxConcurrentOperations ?? DEFAULT_MAX_CONCURRENT_OPERATIONS,
+  );
   const server = new McpServer({
     name: 'docblocks',
     version: getPackageVersion(),
@@ -83,22 +137,22 @@ export function createMcpServer(): McpServer {
     {
       format: 'docx',
       description:
-        'Export a markdown document to a polished Microsoft Word (.docx) file with professional formatting and themes. Accepts raw markdown text or a file path.',
+        'Export markdown to a polished Microsoft Word (.docx) file. File sources require a configured read root.',
     },
     {
       format: 'pdf',
       description:
-        'Export a markdown document to a styled PDF file. Accepts raw markdown text or a file path.',
+        'Export markdown to a styled PDF file. File sources require a configured read root.',
     },
     {
       format: 'pptx',
       description:
-        'Export a markdown document to a PowerPoint presentation — each section becomes a slide. Accepts raw markdown text or a file path.',
+        'Export markdown to a PowerPoint presentation. File sources require a configured read root.',
     },
     {
       format: 'html',
       description:
-        'Export a markdown document to a self-contained interactive HTML page with an embedded player. Accepts raw markdown text or a file path.',
+        'Export markdown to a self-contained interactive HTML page. File sources require a configured read root.',
     },
   ];
 
@@ -107,62 +161,71 @@ export function createMcpServer(): McpServer {
       `export_markdown_to_${format}`,
       description,
       {
-        markdown: z
+        source: markdownSourceSchema.optional(),
+        markdown: legacyMarkdownSchema,
+        outputPath: pathSchema.describe(`Output .${format} file path`),
+        theme: z
           .string()
-          .describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-        outputPath: z.string().describe(`Output .${format} file path`),
-        theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
+          .max(MAX_ID_CHARACTERS)
+          .optional()
+          .describe('Visual theme ID (use list_themes to see options)'),
         transform: z
           .string()
+          .max(MAX_ID_CHARACTERS)
           .optional()
           .describe(
             'Transform style to apply before export (use list_transform_styles to see options)',
           ),
       },
-      async ({ markdown, outputPath, theme, transform }) => {
-        const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-        try {
-          const { runConvert } = await import('../commands/convert.js');
-          const resolvedOutput = resolve(outputPath);
-          const result = await runConvert(filePath, {
-            outputDir: dirname(resolvedOutput),
-            formats: format,
-            theme,
-            transform,
-          });
-          const file = result.outputFiles[0];
-          // runConvert names the output after the input basename; rename to
-          // honor the caller's requested outputPath.
-          if (file.path !== resolvedOutput) {
-            await rename(file.path, resolvedOutput);
-            file.path = resolvedOutput;
+      async ({ source, markdown, outputPath, theme, transform }) =>
+        operations.run(async () => {
+          const fileAuthority = await authority;
+          const { filePath, isTemp } = await resolveMarkdownInput(fileAuthority, source, markdown);
+          try {
+            const { runConvert } = await import('../commands/convert.js');
+            const resolvedOutput = await fileAuthority.authorizeWrite(outputPath);
+            const result = await runConvert(filePath, {
+              outputDir: dirname(resolvedOutput),
+              formats: format,
+              theme,
+              transform,
+            });
+            const file = result.outputFiles[0];
+            if (file.size > MAX_EXPORT_BYTES) {
+              await rm(file.path, { force: true });
+              throw new Error('MCP export exceeds the configured output limit');
+            }
+            if (file.path !== resolvedOutput) {
+              await rename(file.path, resolvedOutput);
+              file.path = resolvedOutput;
+            }
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    outputPath: file.path,
+                    fileSize: file.size,
+                    format,
+                  }),
+                },
+              ],
+            };
+          } finally {
+            await cleanupTemp(filePath, isTemp);
           }
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({
-                  outputPath: file.path,
-                  fileSize: file.size,
-                  format,
-                }),
-              },
-            ],
-          };
-        } finally {
-          await cleanupTemp(filePath, isTemp);
-        }
-      },
+        }),
     );
   }
 
   server.tool(
     'export_markdown_to_video',
-    'Render a markdown document as an MP4 video with narration-synced animations. Requires ffmpeg and Playwright. Accepts raw markdown text or a file path.',
+    'Render markdown as an MP4 video with narration-synced animations. File sources require a configured read root.',
     {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .mp4 file path'),
-      fps: z.number().min(1).max(120).optional().describe('Frames per second (default: 30)'),
+      source: markdownSourceSchema.optional(),
+      markdown: legacyMarkdownSchema,
+      outputPath: pathSchema.describe('Output .mp4 file path'),
+      fps: z.number().int().min(1).max(120).optional().describe('Frames per second (default: 30)'),
       quality: z
         .enum(['draft', 'normal', 'high'])
         .optional()
@@ -175,38 +238,46 @@ export function createMcpServer(): McpServer {
         .enum(['off', 'standard', 'social'])
         .optional()
         .describe('Caption style (default: off)'),
-      width: z.number().optional().describe('Override video width in pixels'),
-      height: z.number().optional().describe('Override video height in pixels'),
+      width: z.number().int().min(16).max(7680).optional().describe('Override video width'),
+      height: z.number().int().min(16).max(4320).optional().describe('Override video height'),
     },
-    async ({ markdown, outputPath, fps, quality, orientation, captions, width, height }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runVideo } = await import('../commands/video.js');
-        const result = await runVideo(filePath, {
-          output: outputPath,
-          fps,
-          quality,
-          orientation,
-          captions: captions as 'off' | 'standard' | 'social',
-          width,
-          height,
-        });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: result.outputPath,
-                duration: result.duration,
-                frameCount: result.frameCount,
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
-    },
+    async ({ source, markdown, outputPath, fps, quality, orientation, captions, width, height }) =>
+      operations.run(async () => {
+        const fileAuthority = await authority;
+        const { filePath, isTemp } = await resolveMarkdownInput(fileAuthority, source, markdown);
+        try {
+          const { runVideo } = await import('../commands/video.js');
+          const authorizedOutput = await fileAuthority.authorizeWrite(outputPath);
+          const result = await runVideo(filePath, {
+            output: authorizedOutput,
+            fps,
+            quality,
+            orientation,
+            captions,
+            width,
+            height,
+          });
+          const outputInfo = await stat(result.outputPath);
+          if (!outputInfo.isFile() || outputInfo.size > MAX_EXPORT_BYTES) {
+            await rm(result.outputPath, { force: true });
+            throw new Error('MCP video export exceeds the configured output limit');
+          }
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  outputPath: result.outputPath,
+                  duration: result.duration,
+                  frameCount: result.frameCount,
+                }),
+              },
+            ],
+          };
+        } finally {
+          await cleanupTemp(filePath, isTemp);
+        }
+      }),
   );
 
   // ── Reverse Conversion Tools ─────────────────────────────────────
@@ -241,28 +312,31 @@ export function createMcpServer(): McpServer {
       `convert_${ext}_to_markdown`,
       description,
       {
-        inputPath: z.string().describe(`Path to the source .${ext} file`),
-        outputPath: z
-          .string()
+        inputPath: pathSchema.describe(`Path to the source .${ext} file`),
+        outputPath: pathSchema
           .optional()
           .describe('If provided, write the resulting markdown to this file path'),
       },
-      async ({ inputPath, outputPath }) => {
-        const convert = await loader();
-        const resolvedInput = resolve(inputPath);
-        const markdown = await convert(resolvedInput);
-        if (outputPath) {
-          await writeFile(resolve(outputPath), markdown, 'utf-8');
-        }
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: markdown,
-            },
-          ],
-        };
-      },
+      async ({ inputPath, outputPath }) =>
+        operations.run(async () => {
+          const fileAuthority = await authority;
+          const convert = await loader();
+          const markdown = await convert(await fileAuthority.readFile(inputPath));
+          if (markdown.length > MAX_MARKDOWN_CHARACTERS) {
+            throw new Error('Converted markdown exceeds the configured output limit');
+          }
+          if (outputPath) {
+            await fileAuthority.writeText(outputPath, markdown, MAX_MARKDOWN_CHARACTERS);
+          }
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: markdown,
+              },
+            ],
+          };
+        }),
     );
   }
 
@@ -270,109 +344,120 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     'analyze_markdown',
-    "Analyze a markdown document's structure, extracting key content elements: statistics, quotes, dates, facts, comparisons, and lists. Use this to understand what a document contains before choosing a theme or transform. Accepts raw markdown text or a file path.",
+    "Analyze a markdown document's structure. File sources require a configured read root.",
     {
-      markdown: z.string().describe('Raw markdown text or path to a .md file'),
+      source: markdownSourceSchema.optional(),
+      markdown: legacyMarkdownSchema,
     },
-    async ({ markdown }) => {
-      const content = await resolveMarkdownText(markdown);
+    async ({ source, markdown }) =>
+      operations.run(async () => {
+        const content = await resolveMarkdownSourceText(await authority, source, markdown);
 
-      const { parseMarkdown } = await import('@bendyline/squisq/markdown');
-      const { extractContent } = await import('@bendyline/squisq/generate');
-      const { markdownToDoc } = await import('@bendyline/squisq/doc');
+        const { parseMarkdown } = await import('@bendyline/squisq/markdown');
+        const { extractContent } = await import('@bendyline/squisq/generate');
+        const { markdownToDoc } = await import('@bendyline/squisq/doc');
 
-      const markdownDoc = parseMarkdown(content);
-      const doc = markdownToDoc(markdownDoc);
+        const markdownDoc = parseMarkdown(content);
+        const doc = markdownToDoc(markdownDoc);
 
-      // Extract content elements
-      const extracted = extractContent(content);
+        // Extract content elements
+        const extracted = extractContent(content);
 
-      // Compute structure stats
-      const stats = {
-        blockCount: doc.blocks?.length ?? 0,
-        headingCount: 0,
-        paragraphCount: 0,
-        wordCount: content.split(/\s+/).filter(Boolean).length,
-        characterCount: content.length,
-      };
+        // Compute structure stats
+        const stats = {
+          blockCount: doc.blocks?.length ?? 0,
+          headingCount: 0,
+          paragraphCount: 0,
+          wordCount: content.split(/\s+/).filter(Boolean).length,
+          characterCount: content.length,
+        };
 
-      if (markdownDoc.children) {
-        for (const node of markdownDoc.children) {
-          if (node.type === 'heading') stats.headingCount++;
-          if (node.type === 'paragraph') stats.paragraphCount++;
+        if (markdownDoc.children) {
+          for (const node of markdownDoc.children) {
+            if (node.type === 'heading') stats.headingCount++;
+            if (node.type === 'paragraph') stats.paragraphCount++;
+          }
         }
-      }
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ stats, extracted }, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  server.tool(
-    'restyle_markdown',
-    'Restyle a markdown document by applying a visual transform — restructures content for a specific presentation style (documentary, magazine, data-driven, narrative, minimal). Returns the transformed markdown text. Use list_transform_styles to see available styles. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md file'),
-      style: z.string().describe('Transform style ID (use list_transform_styles to see options)'),
-      theme: z
-        .string()
-        .optional()
-        .describe('Visual theme ID to apply (use list_themes to see options)'),
-      outputPath: z
-        .string()
-        .optional()
-        .describe('If provided, write the transformed markdown to this file path'),
-    },
-    async ({ markdown, style, theme, outputPath }) => {
-      const content = await resolveMarkdownText(markdown);
-
-      const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
-      const validStyles = getTransformStyleIds();
-      if (!validStyles.includes(style)) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Unknown transform style "${style}". Available: ${validStyles.join(', ')}`,
+              text: JSON.stringify({ stats, extracted }, null, 2),
             },
           ],
-          isError: true,
         };
-      }
+      }),
+  );
 
-      const { parseMarkdown, stringifyMarkdown } = await import('@bendyline/squisq/markdown');
-      const { MemoryContentContainer } = await import('@bendyline/squisq/storage');
-      const { applyTransformToMarkdown } = await import('../commands/convert.js');
-
-      const markdownDoc = parseMarkdown(content);
-      const container = new MemoryContentContainer();
-      const transformedMarkdownDoc = await applyTransformToMarkdown(
-        markdownDoc,
-        container,
-        style,
-        theme,
-      );
-      const transformedText = stringifyMarkdown(transformedMarkdownDoc);
-
-      if (outputPath) {
-        await writeFile(resolve(outputPath), transformedText, 'utf-8');
-      }
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: transformedText,
-          },
-        ],
-      };
+  server.tool(
+    'restyle_markdown',
+    'Restyle markdown with a presentation transform. File sources require a configured read root.',
+    {
+      source: markdownSourceSchema.optional(),
+      markdown: legacyMarkdownSchema,
+      style: z
+        .string()
+        .max(MAX_ID_CHARACTERS)
+        .describe('Transform style ID (use list_transform_styles to see options)'),
+      theme: z
+        .string()
+        .max(MAX_ID_CHARACTERS)
+        .optional()
+        .describe('Visual theme ID to apply (use list_themes to see options)'),
+      outputPath: pathSchema
+        .optional()
+        .describe('If provided, write the transformed markdown to this file path'),
     },
+    async ({ source, markdown, style, theme, outputPath }) =>
+      operations.run(async () => {
+        const fileAuthority = await authority;
+        const content = await resolveMarkdownSourceText(fileAuthority, source, markdown);
+
+        const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
+        const validStyles = getTransformStyleIds();
+        if (!validStyles.includes(style)) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Unknown transform style "${style}". Available: ${validStyles.join(', ')}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const { parseMarkdown, stringifyMarkdown } = await import('@bendyline/squisq/markdown');
+        const { MemoryContentContainer } = await import('@bendyline/squisq/storage');
+        const { applyTransformToMarkdown } = await import('../commands/convert.js');
+
+        const markdownDoc = parseMarkdown(content);
+        const container = new MemoryContentContainer();
+        const transformedMarkdownDoc = await applyTransformToMarkdown(
+          markdownDoc,
+          container,
+          style,
+          theme,
+        );
+        const transformedText = stringifyMarkdown(transformedMarkdownDoc);
+        if (transformedText.length > MAX_MARKDOWN_CHARACTERS) {
+          throw new Error('Transformed markdown exceeds the configured output limit');
+        }
+
+        if (outputPath) {
+          await fileAuthority.writeText(outputPath, transformedText, MAX_MARKDOWN_CHARACTERS);
+        }
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: transformedText,
+            },
+          ],
+        };
+      }),
   );
 
   // ── Discovery Tools ──────────────────────────────────────────────
@@ -507,9 +592,13 @@ export function createMcpServer(): McpServer {
     'create-presentation',
     'Create a presentation-ready document from markdown. Guides you through writing content, choosing a theme, applying a transform style, and exporting to PPTX or PDF.',
     {
-      topic: z.string().describe('The topic or subject for the presentation'),
+      topic: z
+        .string()
+        .max(MAX_TOPIC_CHARACTERS)
+        .describe('The topic or subject for the presentation'),
       style: z
         .string()
+        .max(MAX_ID_CHARACTERS)
         .optional()
         .describe(
           'Transform style (documentary, magazine, data-driven, narrative, minimal). If omitted, you will be guided to choose.',
@@ -549,7 +638,7 @@ Tips for great presentations:
     'create-video',
     'Create a video from markdown content. Guides you through writing content optimized for video, choosing a theme, and rendering to MP4.',
     {
-      topic: z.string().describe('The topic or subject for the video'),
+      topic: z.string().max(MAX_TOPIC_CHARACTERS).describe('The topic or subject for the video'),
       orientation: z
         .enum(['landscape', 'portrait'])
         .optional()
@@ -588,7 +677,7 @@ Tips for great video content:
     'create-document',
     'Create a professional document from markdown. Guides you through writing content, choosing a theme, and exporting to DOCX or PDF.',
     {
-      topic: z.string().describe('The topic or subject for the document'),
+      topic: z.string().max(MAX_TOPIC_CHARACTERS).describe('The topic or subject for the document'),
       format: z.enum(['docx', 'pdf']).optional().describe('Output format (default: pdf)'),
     },
     async ({ topic, format }) => {

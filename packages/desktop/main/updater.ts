@@ -11,9 +11,10 @@
  * and can call `quitAndInstall` once a `'downloaded'` status arrives.
  */
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import pkg, { type UpdateInfo } from 'electron-updater';
 import type { UpdateInstallResult, UpdaterStatus } from '@bendyline/docblocks/host';
+import { registerTrustedIpcHandler } from './ipc-authority.js';
 
 const { autoUpdater } = pkg;
 
@@ -92,7 +93,7 @@ export function initAutoUpdater(): void {
 export function registerUpdaterIpc(
   prepareForInstall: () => Promise<boolean> = async () => true,
 ): void {
-  ipcMain.handle('updater:checkForUpdates', async (): Promise<boolean> => {
+  registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<boolean> => {
     // Store builds are updated by the store, not by electron-updater.
     if (isStoreBuild()) return false;
     try {
@@ -103,11 +104,11 @@ export function registerUpdaterIpc(
     }
   });
 
-  ipcMain.handle('updater:getVersion', async (): Promise<string> => {
+  registerTrustedIpcHandler('updater:getVersion', 0, async (): Promise<string> => {
     return app.getVersion();
   });
 
-  ipcMain.handle('updater:quitAndInstall', async (): Promise<UpdateInstallResult> => {
+  registerTrustedIpcHandler('updater:quitAndInstall', 0, async (): Promise<UpdateInstallResult> => {
     if (isStoreBuild() || !updateDownloaded) return 'not-ready';
     if (!(await prepareForInstall())) return 'cancelled';
     // Must fire on the next tick so the IPC round-trip completes before

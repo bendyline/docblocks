@@ -30,18 +30,10 @@ export function resolveExportTarget(
   const extension = getExportExtension(safeFilename);
   const exact = extension ? validAccess(stored?.byExtension?.[extension]) : null;
   if (exact) return path.resolve(exact.path);
-
-  const last = validAccess(stored?.last);
-  if (last) return path.join(path.dirname(path.resolve(last.path)), safeFilename);
-
+  // A file picker grants one exact target, not ambient write authority to its
+  // parent directory. New output types therefore return to the host-owned
+  // Downloads default until the user chooses another exact file.
   return path.join(path.resolve(downloadsDirectory), safeFilename);
-}
-
-export function resolveRequestedExportTarget(fallbackTarget: string, value: string | null): string {
-  const trimmed = value?.trim() ?? '';
-  if (!trimmed) return path.resolve(fallbackTarget);
-  if (path.isAbsolute(trimmed)) return path.resolve(trimmed);
-  return path.join(path.dirname(path.resolve(fallbackTarget)), sanitizeExportFilename(trimmed));
 }
 
 export function findExportTargetAccess(
@@ -50,22 +42,6 @@ export function findExportTargetAccess(
 ): PersistedExportTargetAccess | null {
   const target = comparisonPath(targetPath);
   return allAccesses(stored).find((access) => comparisonPath(access.path) === target) ?? null;
-}
-
-export function isInRememberedExportDirectory(
-  stored: PersistedExportTarget | undefined,
-  targetPath: string,
-): boolean {
-  return allAccesses(stored).some((access) =>
-    isInExportDirectory(path.dirname(access.path), targetPath),
-  );
-}
-
-export function isInExportDirectory(directory: string, targetPath: string): boolean {
-  return (
-    comparisonPath(path.dirname(path.resolve(targetPath))) ===
-    comparisonPath(path.resolve(directory))
-  );
 }
 
 function allAccesses(stored: PersistedExportTarget | undefined): PersistedExportTargetAccess[] {
@@ -82,7 +58,14 @@ function allAccesses(stored: PersistedExportTarget | undefined): PersistedExport
 function validAccess(
   value: PersistedExportTargetAccess | undefined,
 ): PersistedExportTargetAccess | null {
-  if (!value || typeof value.path !== 'string' || !path.isAbsolute(value.path)) return null;
+  if (
+    !value ||
+    value.confirmedByPicker !== true ||
+    typeof value.path !== 'string' ||
+    !path.isAbsolute(value.path)
+  ) {
+    return null;
+  }
   if (!value.path.trim() || value.path.includes('\0')) return null;
   return value;
 }

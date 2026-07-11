@@ -19,12 +19,14 @@ import { NodeWorkspaceFileSystemV2 } from './node-workspace-filesystem-v2.js';
 
 interface ProviderRecord {
   readonly request: HostFileSystemV2OpenRequest;
+  readonly rootPath: string;
   readonly provider: NodeWorkspaceFileSystemV2;
   readonly subscriptions: Map<string, FileSystemWatchSubscription>;
 }
 
 export type FileSystemV2ProviderFactory = (
   request: HostFileSystemV2OpenRequest,
+  rootPath: string,
 ) => NodeWorkspaceFileSystemV2;
 
 export type FileSystemV2WatchSender = (message: HostFileSystemV2WatchMessage) => void;
@@ -36,13 +38,14 @@ export class FileSystemV2IpcService {
   private readonly closedOwners = new Set<string>();
 
   public constructor(
-    private readonly providerFactory: FileSystemV2ProviderFactory = (request) =>
-      new NodeWorkspaceFileSystemV2(request.providerId, request.label, request.rootPath),
+    private readonly providerFactory: FileSystemV2ProviderFactory = (request, rootPath) =>
+      new NodeWorkspaceFileSystemV2(request.providerId, request.label, rootPath),
   ) {}
 
   public open(
     ownerId: string,
     request: HostFileSystemV2OpenRequest,
+    rootPath: string,
   ): Promise<HostFileSystemV2Result<NodeWorkspaceFileSystemV2['capabilities']>> {
     return this.result('stat', null, null, async () => {
       if (this.closedOwners.has(ownerId)) {
@@ -53,25 +56,25 @@ export class FileSystemV2IpcService {
       if (!request.label || request.label.length > 1024) {
         throw new FsError('invalid-path', 'Invalid provider label.', { operation: 'stat' });
       }
-      if (!request.rootPath || request.rootPath.includes('\0')) {
+      if (!rootPath || rootPath.includes('\0')) {
         throw new FsError('invalid-path', 'Invalid workspace root.', { operation: 'stat' });
       }
 
       const key = recordKey(ownerId, request.instanceId);
       const existing = this.records.get(key);
       if (existing) {
-        assertSameProvider(existing, request);
+        assertSameProvider(existing, request, rootPath);
         return existing.provider.capabilities;
       }
 
       let opening = this.openings.get(key);
       if (!opening) {
-        opening = this.openRecord(ownerId, key, request);
+        opening = this.openRecord(ownerId, key, request, rootPath);
         this.openings.set(key, opening);
       }
       try {
         const record = await opening;
-        assertSameProvider(record, request);
+        assertSameProvider(record, request, rootPath);
         return record.provider.capabilities;
       } finally {
         if (this.openings.get(key) === opening) this.openings.delete(key);
@@ -250,8 +253,9 @@ export class FileSystemV2IpcService {
     ownerId: string,
     key: string,
     request: HostFileSystemV2OpenRequest,
+    rootPath: string,
   ): Promise<ProviderRecord> {
-    const provider = this.providerFactory(request);
+    const provider = this.providerFactory(request, rootPath);
     try {
       await provider.initialize();
     } catch (error: unknown) {
@@ -264,7 +268,7 @@ export class FileSystemV2IpcService {
         operation: 'stat',
       });
     }
-    const record: ProviderRecord = { request, provider, subscriptions: new Map() };
+    const record: ProviderRecord = { request, rootPath, provider, subscriptions: new Map() };
     this.records.set(key, record);
     return record;
   }
@@ -310,11 +314,12 @@ function validateIdentifier(value: string, label: string): void {
   }
 }
 
-function assertSameProvider(record: ProviderRecord, request: HostFileSystemV2OpenRequest): void {
-  if (
-    record.request.providerId === request.providerId &&
-    record.request.rootPath === request.rootPath
-  ) {
+function assertSameProvider(
+  record: ProviderRecord,
+  request: HostFileSystemV2OpenRequest,
+  rootPath: string,
+): void {
+  if (record.request.providerId === request.providerId && record.rootPath === rootPath) {
     return;
   }
   throw new FsError('already-exists', 'Provider instance id is already in use.', {

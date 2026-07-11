@@ -113,13 +113,18 @@ import { isElectronHost, maybeGetDocBlocksHost } from '@bendyline/docblocks/host
 
 const host = maybeGetDocBlocksHost();
 if (host) {
-  await host.shell.revealInFolder(path);
+  await host.shell.revealInFolder(workspaceId, path);
 }
 ```
 
 ## Conventions
 
 Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in this package — surface packages must not define their own copies of wire types.
+
+Wire types document shape; they do not grant authority. Privileged hosts must
+parse runtime values as `unknown`, apply `HOST_WIRE_LIMITS`, use
+`parseExternalHttpUrl` for external navigation, and accept workspace IDs or
+owner-scoped opaque grants instead of renderer-provided absolute paths.
 
 ## License
 

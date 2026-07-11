@@ -1,17 +1,24 @@
 /**
  * IPC handlers for git operations.
  *
- * Thin Electron shim over main/git/commands.ts: every root-scoped channel
- * validates the workspace root against the whitelist first, resolves a
- * cached RepoContext, and delegates. Expected git failures travel back as
- * GitResult data; throwing is reserved for contract violations
- * (unregistered root, path escape).
+ * Thin Electron shim over main/git/commands.ts. Detection accepts only a
+ * registered workspace id, resolves physical Git metadata in main, prompts
+ * before expanding into a parent repository, and returns an owner-scoped
+ * opaque repository grant. Every later operation revalidates that grant.
  *
- * Also owns the throttled per-root status stream (repo watcher + shared
+ * Also owns the throttled per-repository status stream (repo watcher + shared
  * workspace watcher + post-mutation pokes) and the clone / gh helpers.
  */
 
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import {
+  BrowserWindow,
+  dialog,
+  shell,
+  type IpcMainInvokeEvent,
+  type MessageBoxOptions,
+  type OpenDialogOptions,
+  type WebContents,
+} from 'electron';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -24,8 +31,9 @@ import type {
   GitResult,
   GitRevision,
 } from '@bendyline/docblocks/host';
+import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from '@bendyline/docblocks/host';
 
-import { getWorkspaceRoots } from './workspace-roots.js';
+import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { acquireWorkspaceWatcher, type WorkspaceWatcherHandle } from './workspace-watchers.js';
 import { registerAndPersistWorkspace } from './ipc-workspaces.js';
 import { readSettings, updateSettings } from './settings.js';
@@ -37,9 +45,15 @@ import { createRepoWatcher, type RepoWatcher } from './git/repo-watcher.js';
 import { createCloneProgressParser } from './git/clone-progress.js';
 import { deriveRepoDirName } from './git/parse-remote-url.js';
 import { isValidCloneUrl } from './git/validate.js';
-import { makeGitError } from './git/errors.js';
+import { makeGitError, redactGitOutput } from './git/errors.js';
+import { registerTrustedIpcHandler } from './ipc-authority.js';
+import { OwnerGrantStore } from './owner-grants.js';
+import { bindOwnerGrantRevocation } from './owner-revocation.js';
 
 const STATUS_THROTTLE_MS = 400;
+const GH_TIMEOUT_MS = 120_000;
+const GH_OUTPUT_LIMIT = 1024 * 1024;
+const CLONE_TIMEOUT_MS = 10 * 60_000;
 
 function fail<T>(code: GitErrorCode, message: string): GitResult<T> {
   return { ok: false, error: { code, message } };
@@ -50,46 +64,169 @@ async function gitBinOrNull(): Promise<string | null> {
   return detected?.path ?? null;
 }
 
-/** Positive repo contexts cached per resolved root; cleared on repo errors. */
-const contexts = new Map<string, RepoContext>();
-
-async function getContext(rootPath: string): Promise<GitResult<RepoContext>> {
-  const abs = getWorkspaceRoots().resolve(rootPath, '');
-  const bin = await gitBinOrNull();
-  if (!bin) return fail('git-not-available', 'Git is not available');
-  const cached = contexts.get(abs);
-  if (cached) return { ok: true, value: cached };
-  const { context } = await git.detectRepo(bin, abs);
-  if (!context) return fail('not-a-repository', 'This folder is not a git repository');
-  contexts.set(abs, context);
-  return { ok: true, value: context };
+interface RepositoryGrant {
+  readonly workspaceId: string;
+  readonly workspaceRoot: string;
+  readonly toplevel: string;
+  readonly gitDir: string;
+  readonly commonDir: string;
+  readonly context: RepoContext;
 }
 
-async function withContext<T>(
-  rootPath: string,
+interface GrantedRepository extends RepositoryGrant {
+  readonly id: string;
+}
+
+const repositoryGrants = new OwnerGrantStore<RepositoryGrant>('repo');
+const registeredGrantOwners = new Set<number>();
+
+function samePath(left: string, right: string): boolean {
+  const normalize = (value: string) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  return normalize(left) === normalize(right);
+}
+
+function workspaceEntry(workspaceId: unknown): { id: string; rootPath: string } {
+  if (!isBoundedString(workspaceId, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    throw new Error('Invalid workspace capability');
+  }
+  const entry = getWorkspaceRoots().get(workspaceId);
+  if (!entry) throw new Error('Workspace capability is not registered');
+  return entry;
+}
+
+async function resolveWorkspace(workspaceId: unknown): Promise<{ id: string; rootPath: string }> {
+  const entry = workspaceEntry(workspaceId);
+  const physical = await getWorkspaceRoots().resolvePhysical(entry.rootPath, '');
+  return { id: entry.id, rootPath: await fs.realpath(physical) };
+}
+
+function requiresExpandedGrant(context: RepoContext): boolean {
+  return (
+    !samePath(context.workspaceRoot, context.toplevel) ||
+    !isPathInside(context.workspaceRoot, context.gitDir) ||
+    !isPathInside(context.workspaceRoot, context.commonDir)
+  );
+}
+
+async function confirmExpandedGrant(
+  event: IpcMainInvokeEvent,
+  context: RepoContext,
+): Promise<boolean> {
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const options: MessageBoxOptions = {
+    type: 'warning',
+    title: 'Allow access to the full Git repository?',
+    message: 'This workspace is part of a larger Git repository.',
+    detail:
+      `Git operations such as pull, branch switching, and commit can change files outside ` +
+      `the workspace. Repository: ${context.toplevel}`,
+    buttons: ['Allow Full Repository', 'Keep Git Disabled'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const result = owner
+    ? await dialog.showMessageBox(owner, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0;
+}
+
+function registerGrantOwner(sender: WebContents): void {
+  if (registeredGrantOwners.has(sender.id)) return;
+  registeredGrantOwners.add(sender.id);
+  bindOwnerGrantRevocation(sender, () => {
+    for (const repositoryId of repositoryGrants.revokeOwner(sender.id)) {
+      releaseAllStatusSubscriptions(repositoryId);
+    }
+  });
+  sender.once('destroyed', () => registeredGrantOwners.delete(sender.id));
+}
+
+function mintRepositoryGrant(
+  event: IpcMainInvokeEvent,
+  workspaceId: string,
+  context: RepoContext,
+): GrantedRepository {
+  registerGrantOwner(event.sender);
+  const grant: RepositoryGrant = {
+    workspaceId,
+    workspaceRoot: context.workspaceRoot,
+    toplevel: context.toplevel,
+    gitDir: context.gitDir,
+    commonDir: context.commonDir,
+    context,
+  };
+  const id = repositoryGrants.mint(event.sender.id, grant);
+  return { id, ...grant };
+}
+
+async function revalidateGrant(grant: RepositoryGrant): Promise<RepoContext> {
+  const workspace = await resolveWorkspace(grant.workspaceId);
+  if (!samePath(workspace.rootPath, grant.workspaceRoot)) {
+    throw new Error('Workspace physical identity changed');
+  }
+  const { context } = await git.detectRepo(grant.context.gitBin, workspace.rootPath);
+  if (
+    !context ||
+    !samePath(context.toplevel, grant.toplevel) ||
+    !samePath(context.gitDir, grant.gitDir) ||
+    !samePath(context.commonDir, grant.commonDir)
+  ) {
+    throw new Error('Repository physical identity changed');
+  }
+  return context;
+}
+
+async function getGrantedContext(
+  event: IpcMainInvokeEvent,
+  repositoryId: unknown,
+): Promise<GitResult<GrantedRepository>> {
+  if (!isBoundedString(repositoryId, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    return fail('permission-denied', 'Invalid repository capability');
+  }
+  const grant = repositoryGrants.get(event.sender.id, repositoryId);
+  if (!grant) {
+    return fail('permission-denied', 'Repository capability is unavailable');
+  }
+  try {
+    const context = await revalidateGrant(grant);
+    return { ok: true, value: { id: repositoryId, ...grant, context } };
+  } catch {
+    repositoryGrants.revoke(event.sender.id, repositoryId);
+    releaseAllStatusSubscriptions(repositoryId);
+    return fail('permission-denied', 'Repository capability is stale');
+  }
+}
+
+async function withRepository<T>(
+  event: IpcMainInvokeEvent,
+  repositoryId: unknown,
   fn: (ctx: RepoContext) => Promise<GitResult<T>>,
   opts?: { poke?: boolean },
 ): Promise<GitResult<T>> {
-  const ctx = await getContext(rootPath);
-  if (!ctx.ok) return ctx as GitResult<T>;
+  const granted = await getGrantedContext(event, repositoryId);
+  if (!granted.ok) return granted as GitResult<T>;
   try {
-    const result = await fn(ctx.value);
+    const result = await fn(granted.value.context);
     if (!result.ok && result.error.code === 'not-a-repository') {
-      contexts.delete(ctx.value.workspaceRoot);
+      repositoryGrants.revoke(event.sender.id, granted.value.id);
     }
     return result;
   } catch (err) {
     return fail('unknown', err instanceof Error ? err.message : 'git operation failed');
   } finally {
-    if (opts?.poke) pokeStatus(ctx.value.workspaceRoot);
+    if (opts?.poke) pokeStatus(granted.value.id);
   }
 }
 
 // ── Status stream ───────────────────────────────────────────────
 
 interface StatusState {
-  /** Resolved absolute root. */
-  rootPath: string;
+  repositoryId: string;
+  owner: WebContents;
   subscriptions: Set<string>;
   wsHandle: WorkspaceWatcherHandle;
   wsUnsubscribe: () => void;
@@ -101,8 +238,8 @@ interface StatusState {
 
 const statusStates = new Map<string, StatusState>();
 
-function pokeStatus(absRoot: string): void {
-  const state = statusStates.get(path.resolve(absRoot));
+function pokeStatus(repositoryId: string): void {
+  const state = statusStates.get(repositoryId);
   if (!state) return;
   if (state.timer) clearTimeout(state.timer);
   state.timer = setTimeout(() => {
@@ -121,7 +258,9 @@ async function recomputeStatus(state: StatusState): Promise<void> {
   try {
     let ctx: GitResult<RepoContext>;
     try {
-      ctx = await getContext(state.rootPath);
+      const grant = repositoryGrants.get(state.owner.id, state.repositoryId);
+      if (!grant) return;
+      ctx = { ok: true, value: await revalidateGrant(grant) };
     } catch {
       return; // root was unregistered while subscribed
     }
@@ -131,18 +270,18 @@ async function recomputeStatus(state: StatusState): Promise<void> {
       state.repoWatcher = createRepoWatcher({
         gitDir: ctx.value.gitDir,
         commonDir: ctx.value.commonDir,
-        onChange: () => pokeStatus(state.rootPath),
+        onChange: () => pokeStatus(state.repositoryId),
       });
     }
     const result = await git.status(ctx.value);
     if (result.ok) {
-      for (const subscriptionId of state.subscriptions) {
-        for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send('git:status:event', { subscriptionId, status: result.value });
+      if (!state.owner.isDestroyed()) {
+        for (const subscriptionId of state.subscriptions) {
+          state.owner.send('git:status:event', { subscriptionId, status: result.value });
         }
       }
     } else if (result.error.code === 'not-a-repository') {
-      contexts.delete(state.rootPath);
+      repositoryGrants.revoke(state.owner.id, state.repositoryId);
     }
   } finally {
     state.running = false;
@@ -153,8 +292,8 @@ async function recomputeStatus(state: StatusState): Promise<void> {
   }
 }
 
-function releaseStatusSubscription(absRoot: string, subscriptionId: string): void {
-  const state = statusStates.get(absRoot);
+function releaseStatusSubscription(repositoryId: string, subscriptionId: string): void {
+  const state = statusStates.get(repositoryId);
   if (!state) return;
   state.subscriptions.delete(subscriptionId);
   if (state.subscriptions.size === 0) {
@@ -162,8 +301,18 @@ function releaseStatusSubscription(absRoot: string, subscriptionId: string): voi
     state.wsUnsubscribe();
     state.wsHandle.release();
     void state.repoWatcher?.close();
-    statusStates.delete(absRoot);
+    statusStates.delete(repositoryId);
   }
+}
+
+function releaseAllStatusSubscriptions(repositoryId: string): void {
+  const state = statusStates.get(repositoryId);
+  if (!state) return;
+  if (state.timer) clearTimeout(state.timer);
+  state.wsUnsubscribe();
+  state.wsHandle.release();
+  void state.repoWatcher?.close();
+  statusStates.delete(repositoryId);
 }
 
 // ── Clone bookkeeping ───────────────────────────────────────────
@@ -171,11 +320,34 @@ function releaseStatusSubscription(absRoot: string, subscriptionId: string): voi
 interface CloneOperation {
   child: ReturnType<typeof spawn>;
   targetDir: string;
+  ownerId: number;
   cancelled: boolean;
+  timedOut: boolean;
   untrack: () => void;
 }
 
 const cloneOperations = new Map<string, CloneOperation>();
+const registeredCloneOwners = new Set<number>();
+
+function terminateClone(operationId: string, operation: CloneOperation): void {
+  operation.child.kill('SIGTERM');
+  setTimeout(() => {
+    if (cloneOperations.get(operationId) === operation) operation.child.kill('SIGKILL');
+  }, 5_000).unref();
+}
+
+function registerCloneOwner(sender: WebContents): void {
+  if (registeredCloneOwners.has(sender.id)) return;
+  registeredCloneOwners.add(sender.id);
+  bindOwnerGrantRevocation(sender, () => {
+    for (const [operationId, operation] of cloneOperations) {
+      if (operation.ownerId !== sender.id) continue;
+      operation.cancelled = true;
+      terminateClone(operationId, operation);
+    }
+  });
+  sender.once('destroyed', () => registeredCloneOwners.delete(sender.id));
+}
 
 async function isNonEmptyDir(candidate: string): Promise<boolean> {
   try {
@@ -193,27 +365,45 @@ function runTool(
   args: string[],
   cwd: string,
   extraEnv?: NodeJS.ProcessEnv,
-): Promise<{ code: number | null; stderr: string }> {
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(bin, args, {
       cwd,
       env: { ...gitEnv(), ...extraEnv },
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
     const untrack = trackGitChild(child);
+    let stdout = '';
     let stderr = '';
+    let settled = false;
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      untrack();
+      resolve({ code, stdout, stderr });
+    };
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (!settled) {
+          child.kill('SIGKILL');
+          finish(null);
+        }
+      }, 5_000).unref();
+    }, GH_TIMEOUT_MS);
+    timeout.unref();
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length >= GH_OUTPUT_LIMIT) return;
+      stdout += chunk.toString('utf8').slice(0, GH_OUTPUT_LIMIT - stdout.length);
+    });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
+      if (stderr.length >= GH_OUTPUT_LIMIT) return;
+      stderr += chunk.toString('utf8').slice(0, GH_OUTPUT_LIMIT - stderr.length);
     });
-    child.on('error', () => {
-      untrack();
-      resolve({ code: null, stderr });
-    });
-    child.on('close', (code) => {
-      untrack();
-      resolve({ code, stderr });
-    });
+    child.on('error', () => finish(null));
+    child.on('close', finish);
   });
 }
 
@@ -223,6 +413,15 @@ const GH_ENV: NodeJS.ProcessEnv = {
   NO_COLOR: '1',
 };
 
+function repositoryToolEnvironment(context: RepoContext): NodeJS.ProcessEnv {
+  return {
+    ...GH_ENV,
+    GIT_DIR: context.gitDir,
+    GIT_WORK_TREE: context.toplevel,
+    GIT_DISCOVERY_ACROSS_FILESYSTEM: '0',
+  };
+}
+
 function classifyGhError(stderr: string): GitErrorCode {
   if (/gh auth login|not logged in|authentication|HTTP 401/i.test(stderr)) return 'auth-failed';
   if (/already exists/i.test(stderr)) return 'pr-exists';
@@ -230,12 +429,97 @@ function classifyGhError(stderr: string): GitErrorCode {
   return 'unknown';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function parsePaths(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > HOST_WIRE_LIMITS.arrayEntries) {
+    return null;
+  }
+  return value.every((entry) => isBoundedString(entry, HOST_WIRE_LIMITS.pathCharacters, 1))
+    ? value
+    : null;
+}
+
+function withValidatedPaths<T>(
+  event: IpcMainInvokeEvent,
+  repositoryId: unknown,
+  value: unknown,
+  operation: (context: RepoContext, paths: string[]) => Promise<GitResult<T>>,
+  poke = true,
+): Promise<GitResult<T>> | GitResult<T> {
+  const paths = parsePaths(value);
+  if (!paths) return fail('unknown', 'Invalid repository paths');
+  return withRepository(event, repositoryId, (context) => operation(context, paths), { poke });
+}
+
+function parsePushOptions(value: unknown): { setUpstream?: boolean } | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !hasOnlyKeys(value, ['setUpstream'])) return null;
+  if (value.setUpstream !== undefined && typeof value.setUpstream !== 'boolean') return null;
+  return value.setUpstream === undefined ? {} : { setUpstream: value.setUpstream };
+}
+
+function parseCreateBranchOptions(value: unknown): { checkout?: boolean } | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !hasOnlyKeys(value, ['checkout'])) return null;
+  if (value.checkout !== undefined && typeof value.checkout !== 'boolean') return null;
+  return value.checkout === undefined ? {} : { checkout: value.checkout };
+}
+
+function parseLogOptions(value: unknown): GitLogOptions | undefined | null {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || !hasOnlyKeys(value, ['path', 'maxCount', 'skip'])) return null;
+  if (
+    value.path !== undefined &&
+    !isBoundedString(value.path, HOST_WIRE_LIMITS.pathCharacters, 1)
+  ) {
+    return null;
+  }
+  if (
+    value.maxCount !== undefined &&
+    (typeof value.maxCount !== 'number' ||
+      !Number.isSafeInteger(value.maxCount) ||
+      value.maxCount < 1 ||
+      value.maxCount > 1_000)
+  ) {
+    return null;
+  }
+  if (
+    value.skip !== undefined &&
+    (typeof value.skip !== 'number' ||
+      !Number.isSafeInteger(value.skip) ||
+      value.skip < 0 ||
+      value.skip > 1_000_000)
+  ) {
+    return null;
+  }
+  return {
+    ...(typeof value.path === 'string' ? { path: value.path } : {}),
+    ...(typeof value.maxCount === 'number' ? { maxCount: value.maxCount } : {}),
+    ...(typeof value.skip === 'number' ? { skip: value.skip } : {}),
+  };
+}
+
+function parseRevision(value: unknown): GitRevision | null {
+  if (!isRecord(value) || typeof value.kind !== 'string') return null;
+  if (value.kind === 'head' || value.kind === 'index') {
+    return hasOnlyKeys(value, ['kind']) ? { kind: value.kind } : null;
+  }
+  if (value.kind !== 'commit' && value.kind !== 'parent-of') return null;
+  if (!hasOnlyKeys(value, ['kind', 'sha']) || !isBoundedString(value.sha, 64, 4)) return null;
+  return { kind: value.kind, sha: value.sha };
+}
+
 // ── Registration ────────────────────────────────────────────────
 
 export function registerGitIpc(): void {
-  const roots = getWorkspaceRoots();
-
-  ipcMain.handle('git:capabilities', async (): Promise<GitCapabilities> => {
+  registerTrustedIpcHandler('git:capabilities', 0, async (): Promise<GitCapabilities> => {
     if (gitFeaturesDisabled()) {
       return { gitAvailable: false, gitVersion: null, ghAvailable: false, ghVersion: null };
     }
@@ -248,106 +532,217 @@ export function registerGitIpc(): void {
     };
   });
 
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:detectRepo',
-    async (_e, rootPath: string): Promise<GitResult<GitRepoDetection>> => {
-      const abs = roots.resolve(rootPath, '');
+    1,
+    async (event, workspaceId: unknown): Promise<GitResult<GitRepoDetection>> => {
       const bin = await gitBinOrNull();
       if (!bin) return fail('git-not-available', 'Git is not available');
-      const { detection, context } = await git.detectRepo(bin, abs);
-      if (context) contexts.set(abs, context);
-      else contexts.delete(abs);
-      return { ok: true, value: detection };
+      try {
+        const workspace = await resolveWorkspace(workspaceId);
+        const { detection, context } = await git.detectRepo(bin, workspace.rootPath);
+        if (!context || !detection.isRepo) return { ok: true, value: { isRepo: false } };
+        const expanded = requiresExpandedGrant(context);
+        const existing = repositoryGrants
+          .entries(event.sender.id)
+          .find(
+            ({ value: grant }) =>
+              grant.workspaceId === workspace.id &&
+              samePath(grant.workspaceRoot, context.workspaceRoot) &&
+              samePath(grant.toplevel, context.toplevel) &&
+              samePath(grant.gitDir, context.gitDir) &&
+              samePath(grant.commonDir, context.commonDir),
+          );
+        if (existing) {
+          await revalidateGrant(existing.value);
+          return {
+            ok: true,
+            value: {
+              isRepo: true,
+              rootIsToplevel: detection.rootIsToplevel,
+              repositoryId: existing.grantId,
+              requiresExpandedGrant: expanded,
+            },
+          };
+        }
+        if (expanded && !(await confirmExpandedGrant(event, context))) {
+          return {
+            ok: true,
+            value: {
+              isRepo: true,
+              rootIsToplevel: detection.rootIsToplevel,
+              requiresExpandedGrant: true,
+            },
+          };
+        }
+        const grant = mintRepositoryGrant(event, workspace.id, context);
+        return {
+          ok: true,
+          value: {
+            isRepo: true,
+            rootIsToplevel: detection.rootIsToplevel,
+            repositoryId: grant.id,
+            requiresExpandedGrant: expanded,
+          },
+        };
+      } catch (error: unknown) {
+        return fail(
+          'permission-denied',
+          error instanceof Error ? error.message : 'Workspace capability is unavailable',
+        );
+      }
     },
   );
 
-  ipcMain.handle('git:init', async (_e, rootPath: string): Promise<GitResult<void>> => {
-    const abs = roots.resolve(rootPath, '');
-    const bin = await gitBinOrNull();
-    if (!bin) return fail('git-not-available', 'Git is not available');
-    const result = await git.init(bin, abs);
-    if (result.ok) {
-      contexts.delete(abs);
-      pokeStatus(abs);
-    }
-    return result;
+  registerTrustedIpcHandler(
+    'git:init',
+    1,
+    async (_event, workspaceId: unknown): Promise<GitResult<void>> => {
+      const bin = await gitBinOrNull();
+      if (!bin) return fail('git-not-available', 'Git is not available');
+      try {
+        const workspace = await resolveWorkspace(workspaceId);
+        return git.init(bin, workspace.rootPath);
+      } catch (error: unknown) {
+        return fail(
+          'permission-denied',
+          error instanceof Error ? error.message : 'Workspace capability is unavailable',
+        );
+      }
+    },
+  );
+
+  registerTrustedIpcHandler('git:status', 1, (event, repositoryId: unknown) =>
+    withRepository(event, repositoryId, (ctx) => git.status(ctx)),
+  );
+
+  registerTrustedIpcHandler('git:stage', 2, (event, repositoryId: unknown, paths: unknown) =>
+    withValidatedPaths(event, repositoryId, paths, (ctx, validPaths) => git.stage(ctx, validPaths)),
+  );
+
+  registerTrustedIpcHandler('git:unstage', 2, (event, repositoryId: unknown, paths: unknown) =>
+    withValidatedPaths(event, repositoryId, paths, (ctx, validPaths) =>
+      git.unstage(ctx, validPaths),
+    ),
+  );
+
+  registerTrustedIpcHandler('git:discard', 2, (event, repositoryId: unknown, paths: unknown) =>
+    withValidatedPaths(event, repositoryId, paths, (ctx, validPaths) =>
+      git.discard(ctx, validPaths),
+    ),
+  );
+
+  registerTrustedIpcHandler(
+    'git:commit',
+    [2, 3],
+    (event, repositoryId: unknown, message: unknown, paths?: unknown) => {
+      if (!isBoundedString(message, 100 * 1024, 1)) {
+        return fail('unknown', 'Invalid commit message');
+      }
+      if (paths === undefined) {
+        return withRepository(event, repositoryId, (ctx) => git.commit(ctx, message), {
+          poke: true,
+        });
+      }
+      return withValidatedPaths(
+        event,
+        repositoryId,
+        paths,
+        (ctx, validPaths) => git.commit(ctx, message, validPaths),
+        true,
+      );
+    },
+  );
+
+  registerTrustedIpcHandler('git:push', [1, 2], (event, repositoryId: unknown, opts?: unknown) => {
+    const options = parsePushOptions(opts);
+    if (options === null) return fail('unknown', 'Invalid push options');
+    return withRepository(event, repositoryId, (ctx) => git.push(ctx, options), { poke: true });
   });
 
-  ipcMain.handle('git:status', (_e, rootPath: string) =>
-    withContext(rootPath, (ctx) => git.status(ctx)),
+  registerTrustedIpcHandler('git:pull', 1, (event, repositoryId: unknown) =>
+    withRepository(event, repositoryId, (ctx) => git.pull(ctx), { poke: true }),
   );
 
-  ipcMain.handle('git:stage', (_e, rootPath: string, paths: string[]) =>
-    withContext(rootPath, (ctx) => git.stage(ctx, paths), { poke: true }),
+  registerTrustedIpcHandler('git:fetch', 1, (event, repositoryId: unknown) =>
+    withRepository(event, repositoryId, (ctx) => git.fetch(ctx), { poke: true }),
   );
 
-  ipcMain.handle('git:unstage', (_e, rootPath: string, paths: string[]) =>
-    withContext(rootPath, (ctx) => git.unstage(ctx, paths), { poke: true }),
+  registerTrustedIpcHandler('git:listBranches', 1, (event, repositoryId: unknown) =>
+    withRepository(event, repositoryId, (ctx) => git.listBranches(ctx)),
   );
 
-  ipcMain.handle('git:discard', (_e, rootPath: string, paths: string[]) =>
-    withContext(rootPath, (ctx) => git.discard(ctx, paths), { poke: true }),
-  );
-
-  ipcMain.handle('git:commit', (_e, rootPath: string, message: string, paths?: string[]) =>
-    withContext(rootPath, (ctx) => git.commit(ctx, message, paths), { poke: true }),
-  );
-
-  ipcMain.handle('git:push', (_e, rootPath: string, opts?: { setUpstream?: boolean }) =>
-    withContext(rootPath, (ctx) => git.push(ctx, opts), { poke: true }),
-  );
-
-  ipcMain.handle('git:pull', (_e, rootPath: string) =>
-    withContext(rootPath, (ctx) => git.pull(ctx), { poke: true }),
-  );
-
-  ipcMain.handle('git:fetch', (_e, rootPath: string) =>
-    withContext(rootPath, (ctx) => git.fetch(ctx), { poke: true }),
-  );
-
-  ipcMain.handle('git:listBranches', (_e, rootPath: string) =>
-    withContext(rootPath, (ctx) => git.listBranches(ctx)),
-  );
-
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:createBranch',
-    (_e, rootPath: string, name: string, opts?: { checkout?: boolean }) =>
-      withContext(rootPath, (ctx) => git.createBranch(ctx, name, opts), { poke: true }),
+    [2, 3],
+    (event, repositoryId: unknown, name: unknown, opts?: unknown) => {
+      if (!isBoundedString(name, 255, 1)) return fail('invalid-ref-name', 'Invalid branch name');
+      const options = parseCreateBranchOptions(opts);
+      if (options === null) return fail('unknown', 'Invalid branch options');
+      return withRepository(event, repositoryId, (ctx) => git.createBranch(ctx, name, options), {
+        poke: true,
+      });
+    },
   );
 
-  ipcMain.handle('git:checkoutBranch', (_e, rootPath: string, name: string) =>
-    withContext(rootPath, (ctx) => git.checkoutBranch(ctx, name), { poke: true }),
+  registerTrustedIpcHandler(
+    'git:checkoutBranch',
+    2,
+    (event, repositoryId: unknown, name: unknown) => {
+      if (!isBoundedString(name, 255, 1)) return fail('invalid-ref-name', 'Invalid branch name');
+      return withRepository(event, repositoryId, (ctx) => git.checkoutBranch(ctx, name), {
+        poke: true,
+      });
+    },
   );
 
-  ipcMain.handle('git:log', (_e, rootPath: string, opts?: GitLogOptions) =>
-    withContext(rootPath, (ctx) => git.log(ctx, opts)),
-  );
+  registerTrustedIpcHandler('git:log', [1, 2], (event, repositoryId: unknown, opts?: unknown) => {
+    const options = parseLogOptions(opts);
+    if (options === null) return fail('unknown', 'Invalid log options');
+    return withRepository(event, repositoryId, (ctx) => git.log(ctx, options));
+  });
 
-  ipcMain.handle('git:commitFiles', (_e, rootPath: string, sha: string) =>
-    withContext(rootPath, (ctx) => git.commitFiles(ctx, sha)),
-  );
+  registerTrustedIpcHandler('git:commitFiles', 2, (event, repositoryId: unknown, sha: unknown) => {
+    if (!isBoundedString(sha, 64, 4)) return fail('unknown', 'Invalid commit id');
+    return withRepository(event, repositoryId, (ctx) => git.commitFiles(ctx, sha));
+  });
 
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:readFileAtRevision',
-    (_e, rootPath: string, filePath: string, revision: GitRevision) =>
-      withContext(rootPath, (ctx) => git.readFileAtRevision(ctx, filePath, revision)),
+    3,
+    (event, repositoryId: unknown, filePath: unknown, revision: unknown) => {
+      if (!isBoundedString(filePath, HOST_WIRE_LIMITS.pathCharacters, 1)) {
+        return fail('unknown', 'Invalid repository path');
+      }
+      const validRevision = parseRevision(revision);
+      if (!validRevision) return fail('unknown', 'Invalid revision selector');
+      return withRepository(event, repositoryId, (ctx) =>
+        git.readFileAtRevision(ctx, filePath, validRevision),
+      );
+    },
   );
 
-  ipcMain.handle('git:listRemotes', (_e, rootPath: string) =>
-    withContext(rootPath, (ctx) => git.listRemotes(ctx)),
+  registerTrustedIpcHandler('git:listRemotes', 1, (event, repositoryId: unknown) =>
+    withRepository(event, repositoryId, (ctx) => git.listRemotes(ctx)),
   );
 
   // ── Status subscription ───────────────────────────────────────
 
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:status:subscribe',
-    async (event, rootPath: string, subscriptionId: string) => {
-      const abs = roots.resolve(rootPath, '');
-      let state = statusStates.get(abs);
+    2,
+    async (event, repositoryId: unknown, subscriptionId: unknown) => {
+      if (!isBoundedString(subscriptionId, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+        return fail('unknown', 'Invalid subscription id');
+      }
+      const granted = await getGrantedContext(event, repositoryId);
+      if (!granted.ok) return granted;
+      let state = statusStates.get(granted.value.id);
       if (!state) {
-        const wsHandle = acquireWorkspaceWatcher(abs);
+        const wsHandle = acquireWorkspaceWatcher(granted.value.context.workspaceRoot);
         const created: StatusState = {
-          rootPath: abs,
+          repositoryId: granted.value.id,
+          owner: event.sender,
           subscriptions: new Set(),
           wsHandle,
           wsUnsubscribe: () => undefined,
@@ -356,37 +751,50 @@ export function registerGitIpc(): void {
           running: false,
           again: false,
         };
-        created.wsUnsubscribe = wsHandle.onChange(() => pokeStatus(abs));
-        const ctx = await getContext(abs);
-        if (ctx.ok) {
-          created.repoWatcher = createRepoWatcher({
-            gitDir: ctx.value.gitDir,
-            commonDir: ctx.value.commonDir,
-            onChange: () => pokeStatus(abs),
-          });
-        }
-        statusStates.set(abs, created);
+        created.wsUnsubscribe = wsHandle.onChange(() => pokeStatus(granted.value.id));
+        created.repoWatcher = createRepoWatcher({
+          gitDir: granted.value.context.gitDir,
+          commonDir: granted.value.context.commonDir,
+          onChange: () => pokeStatus(granted.value.id),
+        });
+        statusStates.set(granted.value.id, created);
         state = created;
       }
       state.subscriptions.add(subscriptionId);
-      event.sender.once('destroyed', () => releaseStatusSubscription(abs, subscriptionId));
+      event.sender.once('destroyed', () =>
+        releaseStatusSubscription(granted.value.id, subscriptionId),
+      );
 
       // Immediate first emission for this subscriber.
-      const first = await withContext(abs, (ctx) => git.status(ctx));
+      const first = await git.status(granted.value.context);
       if (first.ok) {
         event.sender.send('git:status:event', { subscriptionId, status: first.value });
       }
+      return { ok: true, value: undefined };
     },
   );
 
-  ipcMain.handle('git:status:unsubscribe', async (_e, rootPath: string, subscriptionId: string) => {
-    releaseStatusSubscription(path.resolve(rootPath), subscriptionId);
-  });
+  registerTrustedIpcHandler(
+    'git:status:unsubscribe',
+    2,
+    async (event, repositoryId: unknown, subscriptionId: unknown) => {
+      if (
+        !isBoundedString(repositoryId, HOST_WIRE_LIMITS.identifierCharacters, 1) ||
+        !isBoundedString(subscriptionId, HOST_WIRE_LIMITS.identifierCharacters, 1)
+      ) {
+        return;
+      }
+      const grant = repositoryGrants.get(event.sender.id, repositoryId);
+      if (!grant) return;
+      releaseStatusSubscription(repositoryId, subscriptionId);
+    },
+  );
 
   // ── Clone ─────────────────────────────────────────────────────
 
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:clone',
+    2,
     async (
       event,
       url: string,
@@ -394,21 +802,34 @@ export function registerGitIpc(): void {
     ): Promise<GitResult<ElectronWorkspaceInfo | null>> => {
       const bin = await gitBinOrNull();
       if (!bin) return fail('git-not-available', 'Git is not available');
-      if (typeof url !== 'string' || !isValidCloneUrl(url)) {
+      if (!isBoundedString(url, HOST_WIRE_LIMITS.urlCharacters, 1) || !isValidCloneUrl(url)) {
         return fail('invalid-url', 'That does not look like a clonable repository URL');
+      }
+      if (
+        !isBoundedString(operationId, HOST_WIRE_LIMITS.identifierCharacters, 1) ||
+        cloneOperations.has(operationId) ||
+        [...cloneOperations.values()].some((operation) => operation.ownerId === event.sender.id)
+      ) {
+        return fail('permission-denied', 'Clone operation capability is invalid');
       }
 
       const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
       const settings = await readSettings();
-      const picked = await dialog.showOpenDialog(win!, {
+      const pickerOptions: OpenDialogOptions = {
         title: 'Choose where to clone',
         properties: ['openDirectory', 'createDirectory'],
         defaultPath: settings.lastCloneParentDir,
-      });
+      };
+      const picked = win
+        ? await dialog.showOpenDialog(win, pickerOptions)
+        : await dialog.showOpenDialog(pickerOptions);
       if (picked.canceled || picked.filePaths.length === 0) {
         return { ok: true, value: null };
       }
-      const parentDir = picked.filePaths[0];
+      const parentDir = await fs.realpath(picked.filePaths[0]);
+      if (!(await fs.stat(parentDir)).isDirectory()) {
+        return fail('permission-denied', 'Clone parent is not a regular directory');
+      }
       const targetDir = path.join(parentDir, deriveRepoDirName(url));
       if (await isNonEmptyDir(targetDir)) {
         return fail('destination-exists', `${path.basename(targetDir)} already exists there`);
@@ -421,14 +842,27 @@ export function registerGitIpc(): void {
         windowsHide: true,
       });
       const untrack = trackGitChild(child);
-      const operation: CloneOperation = { child, targetDir, cancelled: false, untrack };
+      const operation: CloneOperation = {
+        child,
+        targetDir,
+        ownerId: event.sender.id,
+        cancelled: false,
+        timedOut: false,
+        untrack,
+      };
       cloneOperations.set(operationId, operation);
+      registerCloneOwner(event.sender);
 
       const parseProgress = createCloneProgressParser((progress) => {
         if (!event.sender.isDestroyed()) {
           event.sender.send('git:clone:progress', { operationId, ...progress });
         }
       });
+      const cloneTimeout = setTimeout(() => {
+        operation.timedOut = true;
+        terminateClone(operationId, operation);
+      }, CLONE_TIMEOUT_MS);
+      cloneTimeout.unref();
       let stderr = '';
       child.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8');
@@ -440,9 +874,14 @@ export function registerGitIpc(): void {
         child.on('error', () => resolve(null));
         child.on('close', (exitCode) => resolve(exitCode));
       });
+      clearTimeout(cloneTimeout);
       untrack();
       cloneOperations.delete(operationId);
 
+      if (operation.timedOut) {
+        await fs.rm(targetDir, { recursive: true, force: true });
+        return fail('timeout', 'Clone timed out');
+      }
       if (operation.cancelled) {
         await fs.rm(targetDir, { recursive: true, force: true });
         return fail('cancelled', 'Clone cancelled');
@@ -452,51 +891,82 @@ export function registerGitIpc(): void {
         return { ok: false, error: makeGitError(code, stderr, 'git clone failed') };
       }
 
-      const info = await registerAndPersistWorkspace(targetDir);
+      const physicalTargetDir = await fs.realpath(targetDir).catch(() => null);
+      const physicalTargetStat = physicalTargetDir ? await fs.stat(physicalTargetDir) : null;
+      if (
+        !physicalTargetDir ||
+        !isPathInside(parentDir, physicalTargetDir) ||
+        !physicalTargetStat?.isDirectory()
+      ) {
+        await fs.rm(targetDir, { recursive: true, force: true });
+        return fail('permission-denied', 'Clone target escaped the selected directory');
+      }
+      const info = await registerAndPersistWorkspace(physicalTargetDir);
       await updateSettings((s) => ({ ...s, lastCloneParentDir: parentDir }));
       return { ok: true, value: info };
     },
   );
 
-  ipcMain.handle('git:clone:cancel', async (_e, operationId: string) => {
+  registerTrustedIpcHandler('git:clone:cancel', 1, async (event, operationId: unknown) => {
+    if (!isBoundedString(operationId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return;
     const operation = cloneOperations.get(operationId);
-    if (!operation) return;
+    if (!operation || operation.ownerId !== event.sender.id) return;
     operation.cancelled = true;
-    operation.child.kill('SIGTERM');
+    terminateClone(operationId, operation);
   });
 
   // ── Pull request via gh ───────────────────────────────────────
 
-  ipcMain.handle(
+  registerTrustedIpcHandler(
     'git:createPullRequest',
-    async (_e, rootPath: string): Promise<GitResult<void>> => {
-      const ctx = await getContext(rootPath);
-      if (!ctx.ok) return ctx as GitResult<void>;
+    1,
+    async (event, repositoryId: unknown): Promise<GitResult<void>> => {
+      const granted = await getGrantedContext(event, repositoryId);
+      if (!granted.ok) return granted as GitResult<void>;
       const gh = await detectGh();
       if (!gh) return fail('gh-not-available', 'GitHub CLI (gh) is not installed');
 
-      const current = await git.status(ctx.value);
-      if (current.ok && current.value.upstream === null) {
+      const current = await git.status(granted.value.context);
+      if (!current.ok) return current as GitResult<void>;
+      if (current.value.upstream === null) {
         return fail('no-upstream', 'Publish the branch before creating a pull request');
       }
-
-      const created = await runTool(
-        gh.path,
-        ['pr', 'create', '--web'],
-        ctx.value.workspaceRoot,
-        GH_ENV,
-      );
-      if (created.code === 0) return { ok: true, value: undefined };
-      if (/already exists/i.test(created.stderr)) {
-        const viewed = await runTool(
-          gh.path,
-          ['pr', 'view', '--web'],
-          ctx.value.workspaceRoot,
-          GH_ENV,
-        );
-        if (viewed.code === 0) return { ok: true, value: undefined };
+      if (!current.value.branch) {
+        return fail('detached-head', 'Check out a branch before creating a pull request');
       }
-      const code = classifyGhError(created.stderr);
+
+      const environment = repositoryToolEnvironment(granted.value.context);
+      const viewed = await runTool(
+        gh.path,
+        ['pr', 'view', '--json', 'url', '--jq', '.url'],
+        granted.value.context.workspaceRoot,
+        environment,
+      );
+      const existingUrl = parseExternalHttpUrl(viewed.stdout.trim());
+      if (viewed.code === 0 && existingUrl) {
+        await shell.openExternal(existingUrl);
+        return { ok: true, value: undefined };
+      }
+
+      const repository = await runTool(
+        gh.path,
+        ['repo', 'view', '--json', 'url', '--jq', '.url'],
+        granted.value.context.workspaceRoot,
+        environment,
+      );
+      const repositoryUrl = parseExternalHttpUrl(repository.stdout.trim());
+      if (repository.code === 0 && repositoryUrl) {
+        const createUrl = parseExternalHttpUrl(
+          `${repositoryUrl.replace(/\/$/u, '')}/compare/${encodeURIComponent(current.value.branch)}?expand=1`,
+        );
+        if (createUrl) {
+          await shell.openExternal(createUrl);
+          return { ok: true, value: undefined };
+        }
+      }
+
+      const stderr = `${viewed.stderr}\n${repository.stderr}`.trim();
+      const code = classifyGhError(stderr);
       return {
         ok: false,
         error: {
@@ -505,8 +975,8 @@ export function registerGitIpc(): void {
             code === 'auth-failed'
               ? 'GitHub CLI is not signed in — run `gh auth login`'
               : 'Could not create the pull request',
-          stderr: created.stderr.slice(0, 8192) || undefined,
-          exitCode: created.code ?? undefined,
+          stderr: redactGitOutput(stderr).slice(0, 8192) || undefined,
+          exitCode: repository.code ?? viewed.code ?? undefined,
         },
       };
     },

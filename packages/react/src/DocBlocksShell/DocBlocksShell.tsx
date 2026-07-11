@@ -650,11 +650,7 @@ async function createElectronProviderFromWorkspace(
 ): Promise<ElectronFileSystemProvider | null> {
   if (!ws.rootPath) return null;
   try {
-    await getDocBlocksHost().workspaces.register({
-      id: ws.id,
-      name: ws.name,
-      rootPath: ws.rootPath,
-    });
+    await getDocBlocksHost().workspaces.register(ws.id);
   } catch {
     return null;
   }
@@ -876,14 +872,14 @@ export function DocBlocksShell({
   }, [activeWorkspaceId, descriptorRefreshKey]);
 
   // All git UI state/actions — null-renders on surfaces without git.
-  const gitRootPath =
+  const gitWorkspaceId =
     provider &&
     activeWorkspaceDescriptor?.id === activeWorkspaceId &&
     provider.id === activeWorkspaceId &&
     activeWorkspaceDescriptor.type === 'electron-native'
-      ? (activeWorkspaceDescriptor.rootPath ?? null)
+      ? activeWorkspaceDescriptor.id
       : null;
-  const git = useGit(provider, gitRootPath, resolvedTheme);
+  const git = useGit(provider, gitWorkspaceId, resolvedTheme);
   const gitRef = useRef(git);
   gitRef.current = git;
   const { scheduleRefresh: gitScheduleRefresh } = git;
@@ -919,9 +915,10 @@ export function DocBlocksShell({
     const host = getDocBlocksHost().exports;
     return {
       resolveTarget: (filename) => host.resolveTarget(documentId, filename),
-      pickTarget: (filename, currentPath) => host.pickTarget(documentId, filename, currentPath),
-      saveBlob: async (blob, filename, targetPath) =>
-        host.save(documentId, filename, targetPath ?? null, await blob.arrayBuffer()),
+      pickTarget: (filename, currentTarget) =>
+        host.pickTarget(documentId, filename, currentTarget?.grantId ?? null),
+      saveBlob: async (blob, filename, target) =>
+        host.save(documentId, filename, target?.grantId ?? null, await blob.arrayBuffer()),
     };
   }, [activeWorkspaceId, selectedFile]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -1069,7 +1066,7 @@ export function DocBlocksShell({
           const host = getDocBlocksHost();
           if (origin.kind === 'loose-file') {
             const result = await host.external.commitText(
-              origin.path,
+              origin.resourceId,
               request.content,
               request.persistedContent,
             );
@@ -1101,7 +1098,7 @@ export function DocBlocksShell({
             );
             const blob = await containerToZip(container);
             const result = await host.external.commitBinary(
-              origin.path,
+              origin.resourceId,
               await blob.arrayBuffer(),
               origin.version,
             );
@@ -2164,7 +2161,7 @@ export function DocBlocksShell({
     if (!isElectronHost() || !activeWorkspaceId) return;
     const ws = await getWorkspace(activeWorkspaceId);
     if (ws?.type === 'electron-native' && ws.rootPath) {
-      await getDocBlocksHost().shell.revealInFolder(ws.rootPath);
+      await getDocBlocksHost().shell.revealInFolder(ws.id);
     }
   }, [activeWorkspaceId]);
 
@@ -2476,18 +2473,18 @@ export function DocBlocksShell({
   const openTransient = useCallback(
     async (req: Extract<OpenRequest, { kind: 'external-file' | 'external-bundle' }>) => {
       const host = getDocBlocksHost();
-      const id = `transient-${req.kind}-${req.path}`;
+      const id = `transient-${req.kind}-${req.resourceId}`;
       const mem = await createMemoryFileSystemProvider(id, req.name);
       let primaryFile: string;
       let origin: WorkspaceDescriptor['origin'];
 
       if (req.kind === 'external-file') {
-        const content = (await host.external.readText(req.path)) ?? '';
+        const content = (await host.external.readText(req.resourceId)) ?? '';
         primaryFile = req.name; // e.g. "notes.md"
         mem.seedText(primaryFile, content);
-        origin = { kind: 'loose-file', path: req.path };
+        origin = { kind: 'loose-file', resourceId: req.resourceId };
       } else {
-        const bytes = await host.external.readBinary(req.path);
+        const bytes = await host.external.readBinary(req.resourceId);
         if (!bytes) return;
         const version = await sha256Hex(bytes);
         const { zipToContainer } = await import('@bendyline/squisq-formats/container');
@@ -2498,7 +2495,7 @@ export function DocBlocksShell({
           targetDocumentPath: primaryFile,
         });
         mem.replaceContents(snapshot);
-        origin = { kind: 'dbk', path: req.path, version };
+        origin = { kind: 'dbk', resourceId: req.resourceId, version };
       }
 
       const descriptor: WorkspaceDescriptor = {
@@ -2796,7 +2793,16 @@ export function DocBlocksShell({
       } catch {
         // ignore — host cleanup is best-effort
       }
-    } else {
+    } else if (ws?.type === 'transient') {
+      const origin = ws.origin;
+      if (isElectronHost() && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+        try {
+          await getDocBlocksHost().external.revoke(origin.resourceId);
+        } catch {
+          // Navigation/destruction also revokes the capability; removal is best effort.
+        }
+      }
+    } else if (ws?.type === 'native') {
       await (await loadNativeFileSystem()).removeDirectoryHandle(activeWorkspaceId);
     }
     await removeWorkspace(activeWorkspaceId);

@@ -36,6 +36,8 @@ export interface PersistedWorkspace {
 export interface PersistedExportTargetAccess {
   path: string;
   bookmark?: string;
+  /** Present only when the native picker explicitly approved this exact file. */
+  confirmedByPicker?: true;
 }
 
 /** Last export targets for one document, retained separately by file extension. */

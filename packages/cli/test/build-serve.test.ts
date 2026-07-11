@@ -1,7 +1,8 @@
 import { expect } from 'chai';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { get } from 'node:http';
 import { runBuild } from '../src/commands/build.js';
 import { resolveServeTarget, startPreviewServer } from '../src/commands/serve.js';
 import { getPackageVersion } from '../src/version.js';
@@ -42,11 +43,16 @@ describe('CLI build and serve commands', () => {
 
     const preview = await startPreviewServer({ dir: inputDir, port: 0 });
     try {
-      const response = await fetch(`${preview.url}index.md`);
-      const html = await response.text();
+      const address = preview.server.address();
+      expect(preview.host).to.equal('127.0.0.1');
+      expect(address).to.be.an('object');
+      if (!address || typeof address === 'string') throw new Error('Expected a TCP address');
+      expect(address.address).to.equal('127.0.0.1');
+      const response = await requestPreview(`${preview.url}index.md`);
+      const html = response.body.toString('utf8');
 
       expect(response.status).to.equal(200);
-      expect(response.headers.get('content-type')).to.contain('text/html');
+      expect(response.contentType).to.contain('text/html');
       expect(html).to.contain('Preview');
       expect(await resolveServeTarget(inputDir, '/%2e%2e/secret.md')).to.deep.equal({
         kind: 'forbidden',
@@ -61,8 +67,62 @@ describe('CLI build and serve commands', () => {
     }
   });
 
+  it('requires explicit network exposure and rejects physical symlink escapes', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    const outsideDir = path.join(tempRoot, 'outside');
+    await mkdir(inputDir, { recursive: true });
+    await mkdir(outsideDir, { recursive: true });
+    await writeFile(path.join(outsideDir, 'secret.txt'), 'secret', 'utf-8');
+    await symlink(
+      outsideDir,
+      path.join(inputDir, 'linked'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+
+    expect(await resolveServeTarget(inputDir, '/linked/secret.txt')).to.deep.equal({
+      kind: 'forbidden',
+    });
+
+    let error: unknown;
+    try {
+      await startPreviewServer({ dir: inputDir, port: 0, host: '0.0.0.0' });
+    } catch (caught: unknown) {
+      error = caught;
+    }
+    expect(error).to.be.instanceOf(Error);
+    expect((error as Error).message).to.contain('--allow-network');
+  });
+
+  it('rejects files beyond the configured request budget', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    await mkdir(inputDir, { recursive: true });
+    await writeFile(path.join(inputDir, 'large.md'), '12345', 'utf-8');
+    expect(await resolveServeTarget(inputDir, '/large.md', 4)).to.deep.equal({
+      kind: 'too-large',
+    });
+  });
+
   it('reads the CLI package version from package metadata', () => {
     expect(getPackageVersion()).to.match(/^\d+\.\d+\.\d+/);
     expect(getPackageVersion()).not.to.equal('0.1.0');
   });
 });
+
+function requestPreview(
+  url: string,
+): Promise<{ status: number; contentType: string; body: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const request = get(url, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () =>
+        resolve({
+          status: response.statusCode ?? 0,
+          contentType: String(response.headers['content-type'] ?? ''),
+          body: Buffer.concat(chunks),
+        }),
+      );
+    });
+    request.on('error', reject);
+  });
+}

@@ -102,7 +102,6 @@ describe('desktop git commands', function () {
       const { detection, context } = await commands.detectRepo(gitBin, dir);
       expect(detection.isRepo).to.equal(true);
       expect(detection.rootIsToplevel).to.equal(true);
-      expect(detection.toplevel).to.equal(dir);
       expect(context).to.not.equal(null);
       expect(context?.workspaceRoot).to.equal(dir);
       expect(context?.toplevel).to.equal(dir);
@@ -119,7 +118,6 @@ describe('desktop git commands', function () {
       const { detection, context } = await commands.detectRepo(gitBin, sub);
       expect(detection.isRepo).to.equal(true);
       expect(detection.rootIsToplevel).to.equal(false);
-      expect(detection.toplevel).to.equal(repo.dir);
       expect(context?.workspaceRoot).to.equal(sub);
 
       // Paths come back relative to the subdirectory workspace, and changes
@@ -423,15 +421,15 @@ describe('desktop git commands', function () {
       expect(unwrap(await commands.listRemotes(repo.ctx))).to.deep.equal([]);
     });
 
-    it('parses an https remote into a web location', async () => {
-      git(repo.dir, 'remote', 'add', 'origin', 'https://github.com/foo/bar.git');
+    it('returns a sanitized web location without remote credentials', async () => {
+      git(repo.dir, 'remote', 'add', 'origin', 'https://user:secret@github.com/foo/bar.git');
       try {
         const remotes = unwrap(await commands.listRemotes(repo.ctx));
+        expect(JSON.stringify(remotes)).not.to.contain('user');
+        expect(JSON.stringify(remotes)).not.to.contain('secret');
         expect(remotes).to.deep.equal([
           {
             name: 'origin',
-            fetchUrl: 'https://github.com/foo/bar.git',
-            pushUrl: 'https://github.com/foo/bar.git',
             web: {
               host: 'github.com',
               owner: 'foo',

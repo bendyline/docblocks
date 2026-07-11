@@ -12,12 +12,11 @@ export interface McpHarness {
 }
 
 export async function startMcpHarness(): Promise<McpHarness> {
-  const server = createMcpServer();
+  const tmpDir = await mkdtemp(join(tmpdir(), 'docblocks-mcp-test-'));
+  const server = createMcpServer({ readRoots: [tmpDir], writeRoots: [tmpDir] });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'docblocks-test', version: '0.0.0' });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
-
-  const tmpDir = await mkdtemp(join(tmpdir(), 'docblocks-mcp-test-'));
 
   return {
     client,

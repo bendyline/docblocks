@@ -34,7 +34,7 @@ import {
   type FsOperation,
   type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
-import { ELECTRON_FILE_SYSTEM_V2_CAPABILITIES } from '@bendyline/docblocks/host';
+import { ELECTRON_FILE_SYSTEM_V2_CAPABILITIES, HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 
 import { atomicWriteBinary, withFileMutationLocks } from './file-commit.js';
 import { WorkspaceRootError, getWorkspaceRoots, type WorkspaceRoots } from './workspace-roots.js';
@@ -51,6 +51,11 @@ interface ScannedEntry {
 
 interface ScannedFile extends ScannedEntry {
   readonly root: FileSystemSnapshotFile;
+}
+
+interface ScanBudget {
+  entries: number;
+  bytes: number;
 }
 
 interface NodeWatcher {
@@ -205,6 +210,14 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
 
       const abs = await this.resolveRead(canonical, 'list');
       const children = await fs.readdir(abs, { withFileTypes: true });
+      if (children.length > HOST_WIRE_LIMITS.arrayEntries) {
+        throw this.error(
+          'quota-exceeded',
+          'list',
+          canonical,
+          'Directory exceeds the host entry limit.',
+        );
+      }
       const snapshots: FileSystemEntrySnapshot[] = [];
       for (const child of children) {
         const childPath = workspacePathJoin(canonical, child.name);
@@ -682,6 +695,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private async readStableFile(
     itemPath: WorkspacePath,
     operation: FsOperation,
+    budget?: ScanBudget,
   ): Promise<ScannedFile> {
     for (let attempt = 1; attempt <= MAX_STABLE_READ_ATTEMPTS; attempt += 1) {
       const abs = await this.resolveRead(itemPath, operation);
@@ -697,15 +711,33 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
             'Expected a file, found a directory.',
           );
         }
+        if (before.size > BigInt(HOST_WIRE_LIMITS.binaryBytes)) {
+          throw this.error(
+            'quota-exceeded',
+            operation,
+            itemPath,
+            'File exceeds the host message size limit.',
+          );
+        }
+        if (budget && budget.bytes + Number(before.size) > HOST_WIRE_LIMITS.binaryBytes) {
+          throw this.error(
+            'quota-exceeded',
+            operation,
+            itemPath,
+            'Filesystem snapshot exceeds the host message size limit.',
+          );
+        }
         const data = copyBytes(await handle.readFile());
         const after = await handle.stat();
-        const pathAfter = await fs.stat(abs, { bigint: true });
+        const validatedAfter = await this.resolveRead(itemPath, operation);
+        const pathAfter = await fs.stat(validatedAfter, { bigint: true });
         if (
           sameFileMetadata(before, after) &&
           sameFileMetadata(after, pathAfter) &&
           after.size === BigInt(data.byteLength)
         ) {
           stable = scannedFile(itemPath, after, data, operation);
+          if (budget) budget.bytes += data.byteLength;
         }
       } finally {
         await handle.close();
@@ -720,12 +752,22 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     includeData: boolean,
     ancestors: ReadonlySet<string>,
     operation: FsOperation,
+    budget: ScanBudget = { entries: 0, bytes: 0 },
   ): Promise<ScannedEntry> {
+    budget.entries += 1;
+    if (budget.entries > HOST_WIRE_LIMITS.arrayEntries) {
+      throw this.error(
+        'quota-exceeded',
+        operation,
+        itemPath,
+        'Filesystem traversal exceeds the entry limit.',
+      );
+    }
     const abs = await this.resolveRead(itemPath, operation);
     const stat = await fs.stat(abs, { bigint: true });
     if (stat.isFile()) {
       return includeData
-        ? this.readStableFile(itemPath, operation)
+        ? this.readStableFile(itemPath, operation, budget)
         : scannedFile(itemPath, stat, null, operation);
     }
     if (!stat.isDirectory()) {
@@ -749,6 +791,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           includeData,
           nextAncestors,
           operation,
+          budget,
         ),
       );
     }

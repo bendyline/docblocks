@@ -18,6 +18,7 @@ export type {
   ExternalBinaryCommitResult,
   HostCloseReason,
   HostEnvironment,
+  HostExportTargetGrant,
   HostPrepareCloseRequest,
   HostPrepareCloseResult,
   MenuCommand,
@@ -53,6 +54,14 @@ export {
   type HostFileSystemV2Result,
   type HostFileSystemV2WatchMessage,
 } from './filesystem-v2.js';
+
+export {
+  HOST_WIRE_LIMITS,
+  isBoundedBytePayload,
+  isBoundedString,
+  isTrustedRendererUrl,
+  parseExternalHttpUrl,
+} from './wire-policy.js';
 
 import type { DocBlocksHostAPI } from './types.js';
 

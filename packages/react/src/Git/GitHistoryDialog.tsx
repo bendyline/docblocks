@@ -42,7 +42,7 @@ function formatDate(iso: string): string {
 export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
   const git = useGitContext();
   const gitApi = git?.gitApi ?? null;
-  const rootPath = git?.rootPath ?? null;
+  const repositoryId = git?.repositoryId ?? null;
 
   const [entries, setEntries] = useState<GitLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,11 +53,11 @@ export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
 
   const loadPage = useCallback(
     async (skip: number) => {
-      if (!gitApi || !rootPath) return;
+      if (!gitApi || !repositoryId) return;
       setLoading(true);
       setError(null);
       try {
-        const result = await gitApi.log(rootPath, { path, maxCount: PAGE_SIZE, skip });
+        const result = await gitApi.log(repositoryId, { path, maxCount: PAGE_SIZE, skip });
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -68,7 +68,7 @@ export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
         setLoading(false);
       }
     },
-    [gitApi, rootPath, path],
+    [gitApi, repositoryId, path],
   );
 
   useEffect(() => {
@@ -85,8 +85,8 @@ export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
       return;
     }
     setExpandedSha(sha);
-    if (!gitApi || !rootPath || details.has(sha)) return;
-    void gitApi.commitFiles(rootPath, sha).then((result) => {
+    if (!gitApi || !repositoryId || details.has(sha)) return;
+    void gitApi.commitFiles(repositoryId, sha).then((result) => {
       setDetails((prev) => {
         const next = new Map(prev);
         next.set(sha, result.ok ? result.value : { error: result.error.message });

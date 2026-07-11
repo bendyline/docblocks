@@ -37,12 +37,12 @@ function describeError(error: GitError): string {
 
 export function useGit(
   provider: FileSystemProvider | null,
-  requestedRootPath: string | null,
+  requestedWorkspaceId: string | null,
   theme: 'light' | 'dark',
 ): GitValue {
   const host = maybeGetDocBlocksHost();
   const gitApi = host?.git ?? null;
-  const rootPath = gitApi ? requestedRootPath : null;
+  const workspaceId = gitApi ? requestedWorkspaceId : null;
 
   const [capabilities, setCapabilities] = useState<GitCapabilities | null>(null);
   useEffect(() => {
@@ -63,12 +63,14 @@ export function useGit(
   useEffect(() => {
     setRepo(null);
     setRemoteWeb(null);
-    if (!gitApi || !rootPath || !available) return;
+    if (!gitApi || !workspaceId || !available) return;
     let cancelled = false;
-    void gitApi.detectRepo(rootPath).then((result) => {
-      if (cancelled || !result.ok || !result.value.isRepo) return;
+    void gitApi.detectRepo(workspaceId).then((result) => {
+      if (cancelled || !result.ok || !result.value.isRepo || !result.value.repositoryId) {
+        return;
+      }
       setRepo(result.value);
-      void gitApi.listRemotes(rootPath).then((remotes) => {
+      void gitApi.listRemotes(result.value.repositoryId).then((remotes) => {
         if (cancelled || !remotes.ok) return;
         const first: GitRemoteInfo | undefined = remotes.value[0];
         setRemoteWeb(first?.web ?? null);
@@ -77,10 +79,11 @@ export function useGit(
     return () => {
       cancelled = true;
     };
-  }, [gitApi, rootPath, available]);
+  }, [gitApi, workspaceId, available]);
 
-  const isRepo = repo !== null;
-  const { status, refresh, scheduleRefresh } = useGitStatus(gitApi, rootPath, isRepo);
+  const repositoryId = repo?.repositoryId ?? null;
+  const isRepo = repositoryId !== null;
+  const { status, refresh, scheduleRefresh } = useGitStatus(gitApi, repositoryId, isRepo);
   const badges = useMemo(() => buildBadgeMap(status?.changes ?? []), [status]);
 
   const [busy, setBusy] = useState<GitBusyKind>(null);
@@ -115,15 +118,15 @@ export function useGit(
       operation: 'push' | 'pull' | 'fetch' | 'commit' | 'branch' | 'pr',
       action: (
         api: DocBlocksHostGitAPI,
-        root: string,
+        repository: string,
       ) => Promise<{ ok: true; value: T } | { ok: false; error: GitError }>,
       successMessage?: string,
     ): Promise<boolean> => {
-      if (!gitApi || !rootPath) return false;
+      if (!gitApi || !repositoryId) return false;
       setBusy(kind);
       setLastResult(null);
       try {
-        const result = await action(gitApi, rootPath);
+        const result = await action(gitApi, repositoryId);
         if (result.ok) {
           if (successMessage) setLastResult({ tone: 'info', message: successMessage });
           refresh();
@@ -131,7 +134,7 @@ export function useGit(
         }
         if (operation === 'pull' && result.error.code === 'merge-conflict') {
           // Surface the conflicted files; the fresh status carries them.
-          const fresh = await gitApi.status(rootPath);
+          const fresh = await gitApi.status(repositoryId);
           const paths = fresh.ok ? conflictedPaths(fresh.value) : [];
           refresh();
           setDialog({ kind: 'conflicts', paths });
@@ -145,12 +148,17 @@ export function useGit(
         setBusy(null);
       }
     },
-    [gitApi, rootPath, refresh, routeError],
+    [gitApi, repositoryId, refresh, routeError],
   );
 
   const commit = useCallback(
     (message: string, paths: string[]) =>
-      runAction('commit', 'commit', (api, root) => api.commit(root, message, paths), 'Committed'),
+      runAction(
+        'commit',
+        'commit',
+        (api, repository) => api.commit(repository, message, paths),
+        'Committed',
+      ),
     [runAction],
   );
 
@@ -159,17 +167,17 @@ export function useGit(
     await runAction(
       'push',
       'push',
-      (api, root) => api.push(root, setUpstream ? { setUpstream: true } : undefined),
+      (api, repository) => api.push(repository, setUpstream ? { setUpstream: true } : undefined),
       setUpstream ? 'Branch published' : 'Pushed',
     );
   }, [runAction]);
 
   const pull = useCallback(async () => {
-    await runAction('pull', 'pull', (api, root) => api.pull(root), 'Pulled');
+    await runAction('pull', 'pull', (api, repository) => api.pull(repository), 'Pulled');
   }, [runAction]);
 
   const fetchRemote = useCallback(async () => {
-    await runAction('fetch', 'fetch', (api, root) => api.fetch(root), 'Fetched');
+    await runAction('fetch', 'fetch', (api, repository) => api.fetch(repository), 'Fetched');
   }, [runAction]);
 
   const createBranch = useCallback(
@@ -177,7 +185,7 @@ export function useGit(
       runAction(
         'branch',
         'branch',
-        (api, root) => api.createBranch(root, name, { checkout: true }),
+        (api, repository) => api.createBranch(repository, name, { checkout: true }),
         `Switched to new branch ${name}`,
       ),
     [runAction],
@@ -188,7 +196,7 @@ export function useGit(
       runAction(
         'branch',
         'branch',
-        (api, root) => api.checkoutBranch(root, name),
+        (api, repository) => api.checkoutBranch(repository, name),
         `Switched to ${name}`,
       ),
     [runAction],
@@ -212,11 +220,11 @@ export function useGit(
   );
 
   const createPullRequest = useCallback(async () => {
-    if (!gitApi || !rootPath) return;
+    if (!gitApi || !repositoryId) return;
     setBusy('pr');
     setLastResult(null);
     try {
-      const result = await gitApi.createPullRequest(rootPath);
+      const result = await gitApi.createPullRequest(repositoryId);
       if (result.ok) {
         setLastResult({ tone: 'info', message: 'Opening pull request in browser' });
         return;
@@ -239,13 +247,13 @@ export function useGit(
     } finally {
       setBusy(null);
     }
-  }, [gitApi, rootPath, routeError]);
+  }, [gitApi, repositoryId, routeError]);
 
   return {
     available,
     capabilities,
     repo,
-    rootPath,
+    repositoryId,
     remoteWeb,
     gitApi,
     provider,

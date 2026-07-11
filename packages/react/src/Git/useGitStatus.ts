@@ -1,5 +1,5 @@
 /**
- * useGitStatus — subscribes to the host's throttled per-root status stream.
+ * useGitStatus — subscribes to the host's owner-scoped repository stream.
  *
  * Dedupes identical payloads so a permanently-dirty working tree (normal
  * under the manual-commit model) doesn't repaint the tree on every push
@@ -25,7 +25,7 @@ export interface UseGitStatusResult {
 
 export function useGitStatus(
   gitApi: DocBlocksHostGitAPI | null,
-  rootPath: string | null,
+  repositoryId: string | null,
   enabled: boolean,
 ): UseGitStatusResult {
   const [status, setStatus] = useState<GitStatus | null>(null);
@@ -42,23 +42,23 @@ export function useGitStatus(
   useEffect(() => {
     lastKeyRef.current = null;
     setStatus(null);
-    if (!gitApi || !rootPath || !enabled) return;
+    if (!gitApi || !repositoryId || !enabled) return;
     let cancelled = false;
-    const unsubscribe = gitApi.onStatusChanged(rootPath, (next) => {
+    const unsubscribe = gitApi.onStatusChanged(repositoryId, (next) => {
       if (!cancelled) apply(next);
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [gitApi, rootPath, enabled, apply]);
+  }, [gitApi, repositoryId, enabled, apply]);
 
   const refresh = useCallback(() => {
-    if (!gitApi || !rootPath || !enabled) return;
-    void gitApi.status(rootPath).then((result) => {
+    if (!gitApi || !repositoryId || !enabled) return;
+    void gitApi.status(repositoryId).then((result) => {
       if (result.ok) apply(result.value);
     });
-  }, [gitApi, rootPath, enabled, apply]);
+  }, [gitApi, repositoryId, enabled, apply]);
 
   const scheduleRefresh = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);

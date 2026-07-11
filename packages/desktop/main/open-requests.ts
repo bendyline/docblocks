@@ -8,10 +8,16 @@ import path from 'node:path';
 import type { OpenRequest } from '@bendyline/docblocks/host';
 import type { BrowserWindow } from 'electron';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
-import { allowExternalPath } from './external-files.js';
+import { grantExternalPath, revokeExternalOwner } from './external-files.js';
+import { bindOwnerGrantRevocation } from './owner-revocation.js';
 
 const MARKDOWN_EXT = /\.(md|markdown|mdown|mkd|mdx|txt)$/i;
 const BUNDLE_EXT = /\.(dbk|zip)$/i;
+
+export type ResolvedOpenRequest =
+  | Extract<OpenRequest, { kind: 'workspace-file' }>
+  | { kind: 'external-file'; absolutePath: string; name: string }
+  | { kind: 'external-bundle'; absolutePath: string; name: string };
 
 function isExistingFile(candidate: string): boolean {
   try {
@@ -27,7 +33,9 @@ function isLikelyMarkdownFile(candidate: string): boolean {
   return isExistingFile(candidate);
 }
 
-function toWorkspaceFileRequest(candidate: string): OpenRequest | null {
+function toWorkspaceFileRequest(
+  candidate: string,
+): Extract<OpenRequest, { kind: 'workspace-file' }> | null {
   const absolute = path.isAbsolute(candidate) ? candidate : path.resolve(candidate);
   if (!isLikelyMarkdownFile(absolute)) return null;
 
@@ -47,7 +55,9 @@ function toWorkspaceFileRequest(candidate: string): OpenRequest | null {
   };
 }
 
-export function resolveOpenUrl(url: string): OpenRequest | null {
+export function resolveOpenUrl(
+  url: string,
+): Extract<OpenRequest, { kind: 'workspace-file' }> | null {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== 'docblocks:') return null;
@@ -67,14 +77,13 @@ export function resolveOpenUrl(url: string): OpenRequest | null {
  * External kinds are added to the session allowlist so the renderer can read
  * their bytes and save back.
  */
-function resolveFilePath(candidate: string): OpenRequest | null {
+function resolveFilePath(candidate: string): ResolvedOpenRequest | null {
   const absolute = path.isAbsolute(candidate) ? candidate : path.resolve(candidate);
   if (!isExistingFile(absolute)) return null;
   const name = path.basename(absolute);
 
   if (BUNDLE_EXT.test(absolute)) {
-    allowExternalPath(absolute);
-    return { kind: 'external-bundle', path: absolute, name };
+    return { kind: 'external-bundle', absolutePath: absolute, name };
   }
 
   if (!MARKDOWN_EXT.test(absolute)) return null;
@@ -82,12 +91,11 @@ function resolveFilePath(candidate: string): OpenRequest | null {
   const inWorkspace = toWorkspaceFileRequest(absolute);
   if (inWorkspace) return inWorkspace;
 
-  allowExternalPath(absolute);
-  return { kind: 'external-file', path: absolute, name };
+  return { kind: 'external-file', absolutePath: absolute, name };
 }
 
-export function resolveOpenRequests(argv: readonly string[]): OpenRequest[] {
-  const requests: OpenRequest[] = [];
+export function resolveOpenRequests(argv: readonly string[]): ResolvedOpenRequest[] {
+  const requests: ResolvedOpenRequest[] = [];
 
   for (const arg of argv) {
     if (!arg || typeof arg !== 'string') continue;
@@ -99,8 +107,20 @@ export function resolveOpenRequests(argv: readonly string[]): OpenRequest[] {
   return requests;
 }
 
-export function sendOpenRequest(win: BrowserWindow, request: OpenRequest): void {
-  win.webContents.send('open-request', request);
+export function sendOpenRequest(win: BrowserWindow, request: ResolvedOpenRequest): void {
+  if (request.kind === 'workspace-file') {
+    win.webContents.send('open-request', request satisfies OpenRequest);
+    return;
+  }
+
+  const ownerId = win.webContents.id;
+  bindOwnerGrantRevocation(win.webContents, () => revokeExternalOwner(ownerId));
+  const publicRequest: OpenRequest = {
+    kind: request.kind,
+    resourceId: grantExternalPath(ownerId, request.absolutePath),
+    name: request.name,
+  };
+  win.webContents.send('open-request', publicRequest);
 }
 
 /**

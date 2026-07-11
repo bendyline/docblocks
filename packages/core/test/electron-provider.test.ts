@@ -43,7 +43,7 @@ describe('ElectronFileSystemProvider', () => {
     expect(isElectronHost()).to.equal(true);
   });
 
-  it('delegates readFile with the root path and relative path', async () => {
+  it('delegates readFile with the workspace capability and relative path', async () => {
     const { calls } = installMockHost({
       readFile: async (root, p) => {
         return `content:${root}:${p}`;
@@ -51,7 +51,7 @@ describe('ElectronFileSystemProvider', () => {
     });
     const provider = new ElectronFileSystemProvider('ws-1', 'My Docs', '/tmp/docs');
     const result = await provider.readFile('/notes/today.md');
-    expect(result).to.equal('content:/tmp/docs:/notes/today.md');
+    expect(result).to.equal('content:ws-1:/notes/today.md');
     expect(calls).to.be.an('array');
   });
 
@@ -64,15 +64,15 @@ describe('ElectronFileSystemProvider', () => {
   });
 
   it('writeFile forwards content', async () => {
-    let captured: { root?: string; path?: string; content?: string } = {};
+    let captured: { workspaceId?: string; path?: string; content?: string } = {};
     installMockHost({
       writeFile: async (root, p, content) => {
-        captured = { root, path: p, content };
+        captured = { workspaceId: root, path: p, content };
       },
     });
     const provider = new ElectronFileSystemProvider('ws-3', 'w', '/r');
     await provider.writeFile('/a/b.md', 'hello');
-    expect(captured).to.deep.equal({ root: '/r', path: '/a/b.md', content: 'hello' });
+    expect(captured).to.deep.equal({ workspaceId: 'ws-3', path: '/a/b.md', content: 'hello' });
   });
 
   it('implements every FileSystemProvider method', () => {

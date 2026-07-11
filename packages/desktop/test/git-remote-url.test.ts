@@ -180,4 +180,12 @@ describe('deriveRepoDirName', () => {
     expect(deriveRepoDirName('   ')).to.equal('repository');
     expect(deriveRepoDirName('///')).to.equal('repository');
   });
+
+  it('cannot escape the selected clone parent or create Windows aliases', () => {
+    expect(deriveRepoDirName('https://example.com/owner/...git')).to.equal('repository');
+    expect(deriveRepoDirName('https://example.com/owner/CON.git')).to.equal('repository');
+    expect(deriveRepoDirName(`https://example.com/owner/${'x'.repeat(500)}.git`)).to.have.length(
+      120,
+    );
+  });
 });

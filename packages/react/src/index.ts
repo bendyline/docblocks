@@ -34,6 +34,7 @@ export {
 export type {
   ExportDestinationControl,
   ExportDestinationAdapter,
+  ExportDestinationTarget,
   ExportToolbarControlsProps,
   ExportFormat,
   ExportOptions,

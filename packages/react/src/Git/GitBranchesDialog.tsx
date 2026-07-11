@@ -21,7 +21,7 @@ export function GitBranchesDialog({
 }) {
   const git = useGitContext();
   const gitApi = git?.gitApi ?? null;
-  const rootPath = git?.rootPath ?? null;
+  const repositoryId = git?.repositoryId ?? null;
 
   const [branches, setBranches] = useState<GitBranchInfo[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -29,9 +29,9 @@ export function GitBranchesDialog({
   const createInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!gitApi || !rootPath) return;
+    if (!gitApi || !repositoryId) return;
     let cancelled = false;
-    void gitApi.listBranches(rootPath).then((result) => {
+    void gitApi.listBranches(repositoryId).then((result) => {
       if (cancelled) return;
       if (result.ok) setBranches(result.value);
       else setLoadError(result.error.message || 'Could not list branches');
@@ -39,7 +39,7 @@ export function GitBranchesDialog({
     return () => {
       cancelled = true;
     };
-  }, [gitApi, rootPath]);
+  }, [gitApi, repositoryId]);
 
   if (!git) return null;
 

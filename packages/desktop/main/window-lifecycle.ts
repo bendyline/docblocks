@@ -5,6 +5,7 @@ import type {
   HostPrepareCloseRequest,
   HostPrepareCloseResult,
 } from '@bendyline/docblocks/host';
+import { assertTrustedIpcSender } from './ipc-authority.js';
 
 const DEFAULT_PREPARE_TIMEOUT_MS = 15_000;
 
@@ -33,7 +34,11 @@ export function registerWindowLifecycleIpc(): void {
   if (ipcRegistered) return;
   ipcRegistered = true;
   ipcMain.on('lifecycle:prepare-close-result', (event, payload: unknown) => {
-    if (event.senderFrame !== event.sender.mainFrame) return;
+    try {
+      assertTrustedIpcSender(event);
+    } catch {
+      return;
+    }
     if (!isPrepareClosePayload(payload)) return;
     const pending = pendingByRequest.get(payload.requestId);
     if (!pending || pending.webContentsId !== event.sender.id) return;

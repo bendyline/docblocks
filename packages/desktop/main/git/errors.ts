@@ -11,6 +11,13 @@ import type { GitError, GitErrorCode } from '@bendyline/docblocks/host';
 /** Max raw stderr carried on a GitError (UI details disclosure). */
 const MAX_STDERR_BYTES = 8 * 1024;
 
+/** Remove credential-bearing URL components before data crosses into a renderer. */
+export function redactGitOutput(value: string): string {
+  return value
+    .replace(/(https?:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[redacted]@')
+    .replace(/([?&](?:access_token|token|password|auth)=)[^\s&#]*/gi, '$1[redacted]');
+}
+
 /**
  * Ordered classification table. Order is load-bearing: earlier rules win,
  * so specific remote/auth failures beat generic local ones.
@@ -88,9 +95,10 @@ export function makeGitError(
   fallbackMessage?: string,
 ): GitError {
   const code = classifyGitError(exitCode, stderr);
-  const message = firstMeaningfulLine(stderr) ?? fallbackMessage ?? 'git command failed';
+  const sanitizedStderr = redactGitOutput(stderr);
+  const message = firstMeaningfulLine(sanitizedStderr) ?? fallbackMessage ?? 'git command failed';
   const error: GitError = { code, message };
-  const trimmedStderr = stderr.trim();
+  const trimmedStderr = sanitizedStderr.trim();
   if (trimmedStderr.length > 0) {
     error.stderr =
       trimmedStderr.length > MAX_STDERR_BYTES

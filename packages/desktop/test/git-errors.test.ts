@@ -222,4 +222,16 @@ describe('makeGitError', () => {
     expect(err.exitCode).to.equal(undefined);
     expect(err.message).to.equal('boom');
   });
+
+  it('redacts credentials before returning renderer-visible error details', () => {
+    const err = makeGitError(
+      128,
+      'fatal: unable to access https://user:secret@example.com/repo.git?token=abc123',
+    );
+    expect(err.message).not.to.contain('secret');
+    expect(err.message).not.to.contain('abc123');
+    expect(err.stderr).not.to.contain('secret');
+    expect(err.stderr).not.to.contain('abc123');
+    expect(err.stderr).to.contain('[redacted]');
+  });
 });

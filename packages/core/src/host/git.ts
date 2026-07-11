@@ -2,8 +2,8 @@
  * Git host API — wire types for the desktop shell's git integration.
  *
  * The desktop app spawns the user's system git from the main process, so
- * credentials (helpers, SSH agent, signing config) are inherited and never
- * touch DocBlocks. Everything here is generic git; the only host-specific
+ * credentials (helpers, SSH agent, signing config and raw remote URLs) remain
+ * in the main process. Everything here is generic git; the only host-specific
  * conveniences are remote-URL parsing (`GitRemoteInfo.web`) and PR creation
  * via the GitHub CLI when installed.
  *
@@ -48,6 +48,7 @@ export type GitErrorCode =
   | 'gh-not-available'
   | 'timeout'
   | 'cancelled'
+  | 'permission-denied'
   | 'unknown';
 
 export interface GitCapabilities {
@@ -60,10 +61,12 @@ export interface GitCapabilities {
 
 export interface GitRepoDetection {
   isRepo: boolean;
-  /** Absolute repo work-tree top level. Equals the root path in the common case. */
-  toplevel?: string;
   /** False when the workspace root is a subdirectory of a larger repo. */
   rootIsToplevel?: boolean;
+  /** Main-owned repository authority; absent when expanded access was declined. */
+  repositoryId?: string;
+  /** True when Git metadata or the work tree extends beyond the workspace grant. */
+  requiresExpandedGrant?: boolean;
 }
 
 export type GitFileStatusCode =
@@ -157,9 +160,7 @@ export interface GitFileAtRevision {
 
 export interface GitRemoteInfo {
   name: string;
-  fetchUrl: string;
-  pushUrl?: string;
-  /** Parsed web location, host-agnostic; null when unparseable (file:// etc.). */
+  /** Sanitized web location. Raw fetch/push URLs never cross IPC. */
   web: { host: string; owner: string; repo: string; webUrl: string } | null;
 }
 
@@ -183,45 +184,50 @@ export interface GitCloneHandle {
 
 export interface DocBlocksHostGitAPI {
   capabilities(): Promise<GitCapabilities>;
-  detectRepo(rootPath: string): Promise<GitResult<GitRepoDetection>>;
-  init(rootPath: string): Promise<GitResult<void>>;
+  /** Detect a persisted workspace by opaque workspace id and mint repository authority. */
+  detectRepo(workspaceId: string): Promise<GitResult<GitRepoDetection>>;
+  init(workspaceId: string): Promise<GitResult<void>>;
 
-  status(rootPath: string): Promise<GitResult<GitStatus>>;
-  stage(rootPath: string, paths: string[]): Promise<GitResult<void>>;
-  unstage(rootPath: string, paths: string[]): Promise<GitResult<void>>;
+  status(repositoryId: string): Promise<GitResult<GitStatus>>;
+  stage(repositoryId: string, paths: string[]): Promise<GitResult<void>>;
+  unstage(repositoryId: string, paths: string[]): Promise<GitResult<void>>;
   /** Revert tracked files to HEAD; delete untracked ones. Destructive — the renderer confirms. */
-  discard(rootPath: string, paths: string[]): Promise<GitResult<void>>;
+  discard(repositoryId: string, paths: string[]): Promise<GitResult<void>>;
   /**
    * With `paths`: stages exactly those files (`add -A -- <paths>`) and commits
    * them, leaving other staged entries staged. Without: commits the index as-is.
    */
-  commit(rootPath: string, message: string, paths?: string[]): Promise<GitResult<{ sha: string }>>;
+  commit(
+    repositoryId: string,
+    message: string,
+    paths?: string[],
+  ): Promise<GitResult<{ sha: string }>>;
 
-  push(rootPath: string, opts?: { setUpstream?: boolean }): Promise<GitResult<void>>;
-  pull(rootPath: string): Promise<GitResult<void>>;
-  fetch(rootPath: string): Promise<GitResult<void>>;
+  push(repositoryId: string, opts?: { setUpstream?: boolean }): Promise<GitResult<void>>;
+  pull(repositoryId: string): Promise<GitResult<void>>;
+  fetch(repositoryId: string): Promise<GitResult<void>>;
 
-  listBranches(rootPath: string): Promise<GitResult<GitBranchInfo[]>>;
+  listBranches(repositoryId: string): Promise<GitResult<GitBranchInfo[]>>;
   createBranch(
-    rootPath: string,
+    repositoryId: string,
     name: string,
     opts?: { checkout?: boolean },
   ): Promise<GitResult<void>>;
-  checkoutBranch(rootPath: string, name: string): Promise<GitResult<void>>;
+  checkoutBranch(repositoryId: string, name: string): Promise<GitResult<void>>;
 
-  log(rootPath: string, opts?: GitLogOptions): Promise<GitResult<GitLogEntry[]>>;
+  log(repositoryId: string, opts?: GitLogOptions): Promise<GitResult<GitLogEntry[]>>;
   /** Files changed in one commit plus the full message body. */
   commitFiles(
-    rootPath: string,
+    repositoryId: string,
     sha: string,
   ): Promise<GitResult<{ body: string; files: GitFileChange[] }>>;
   readFileAtRevision(
-    rootPath: string,
+    repositoryId: string,
     path: string,
     revision: GitRevision,
   ): Promise<GitResult<GitFileAtRevision>>;
 
-  listRemotes(rootPath: string): Promise<GitResult<GitRemoteInfo[]>>;
+  listRemotes(repositoryId: string): Promise<GitResult<GitRemoteInfo[]>>;
 
   /**
    * Clone a remote repository. The main process shows a native picker for the
@@ -230,11 +236,11 @@ export interface DocBlocksHostGitAPI {
   clone(url: string, onProgress?: (p: GitCloneProgress) => void): GitCloneHandle;
 
   /** `gh pr create --web` (falls back to `gh pr view --web` if one exists). */
-  createPullRequest(rootPath: string): Promise<GitResult<void>>;
+  createPullRequest(repositoryId: string): Promise<GitResult<void>>;
 
   /**
    * Throttled status stream for a workspace root. Emits once immediately on
    * subscribe. Returns an unsubscribe function.
    */
-  onStatusChanged(rootPath: string, listener: (status: GitStatus) => void): () => void;
+  onStatusChanged(repositoryId: string, listener: (status: GitStatus) => void): () => void;
 }

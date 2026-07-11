@@ -30,7 +30,6 @@ import {
   saveExportOptions,
 } from './export-options.js';
 import type { ExportBlobSaver } from './run-export.js';
-import { updateExportTargetExtension } from './export-destination.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 
 const ExportDialog = lazy(() =>
@@ -60,10 +59,22 @@ export interface ExportToolbarControlsProps {
 }
 
 /** Host-specific operations behind the shared export destination control. */
+export interface ExportDestinationTarget {
+  grantId: string | null;
+  displayPath: string;
+}
+
 export interface ExportDestinationAdapter {
-  resolveTarget: (filename: string) => Promise<string>;
-  pickTarget: (filename: string, currentPath?: string | null) => Promise<string | null>;
-  saveBlob: (blob: Blob, filename: string, targetPath?: string | null) => Promise<string | null>;
+  resolveTarget: (filename: string) => Promise<ExportDestinationTarget>;
+  pickTarget: (
+    filename: string,
+    currentTarget?: ExportDestinationTarget | null,
+  ) => Promise<ExportDestinationTarget | null>;
+  saveBlob: (
+    blob: Blob,
+    filename: string,
+    target?: ExportDestinationTarget | null,
+  ) => Promise<ExportDestinationTarget | null>;
   hint?: string;
 }
 
@@ -143,8 +154,7 @@ export function ExportToolbarControls({
   const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
-  const [destinationPath, setDestinationPath] = useState('');
-  const destinationLockedRef = useRef(false);
+  const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const destinationRequestRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -218,7 +228,7 @@ export function ExportToolbarControls({
   }, []);
 
   const refreshDestination = useCallback(
-    async (options: ExportOptions, force = false) => {
+    async (options: ExportOptions) => {
       if (!destinationAdapter) return;
 
       const requestId = destinationRequestRef.current + 1;
@@ -227,14 +237,10 @@ export function ExportToolbarControls({
       try {
         const { buildExportFilename } = await loadRunExportModule();
         const filename = buildExportFilename(selectedFile, options);
-        if (!force && destinationLockedRef.current) {
-          setDestinationPath((current) => updateExportTargetExtension(current, filename));
-          return;
-        }
         const target = await destinationAdapter.resolveTarget(filename);
-        if (destinationRequestRef.current === requestId) setDestinationPath(target);
+        if (destinationRequestRef.current === requestId) setDestinationTarget(target);
       } catch {
-        if (destinationRequestRef.current === requestId) setDestinationPath('');
+        if (destinationRequestRef.current === requestId) setDestinationTarget(null);
       }
     },
     [destinationAdapter, selectedFile],
@@ -242,9 +248,8 @@ export function ExportToolbarControls({
 
   const handleOpenDialog = useCallback(() => {
     setMenuOpen(false);
-    destinationLockedRef.current = false;
     setDialogOpen(true);
-    void refreshDestination(dialogInitial, true);
+    void refreshDestination(dialogInitial);
   }, [dialogInitial, refreshDestination]);
 
   const handleCloseDialog = useCallback(() => {
@@ -274,11 +279,6 @@ export function ExportToolbarControls({
     setVideoLoadError(null);
   }, []);
 
-  const handleDestinationChange = useCallback((path: string) => {
-    destinationLockedRef.current = true;
-    setDestinationPath(path);
-  }, []);
-
   const handleOptionsChange = useCallback(
     (options: ExportOptions) => {
       void refreshDestination(options);
@@ -292,34 +292,30 @@ export function ExportToolbarControls({
       try {
         const { buildExportFilename } = await loadRunExportModule();
         const filename = buildExportFilename(selectedFile, options);
-        const pickedPath = await destinationAdapter.pickTarget(filename, destinationPath);
-        if (pickedPath === null) return;
-        destinationLockedRef.current = true;
-        setDestinationPath(pickedPath);
+        const pickedTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
+        if (pickedTarget === null) return;
+        setDestinationTarget(pickedTarget);
       } catch {
         // Native hosts surface picker failures through their own UI channel.
       }
     },
-    [destinationAdapter, destinationPath, selectedFile],
+    [destinationAdapter, destinationTarget, selectedFile],
   );
 
   const saveToDestination = useCallback(
-    async (blob: Blob, filename: string, targetPath: string | null) => {
+    async (blob: Blob, filename: string, target: ExportDestinationTarget | null) => {
       if (!destinationAdapter) return;
-      const savedPath = await destinationAdapter.saveBlob(blob, filename, targetPath);
-      if (savedPath) {
-        destinationLockedRef.current = true;
-        setDestinationPath(savedPath);
-      }
+      const savedTarget = await destinationAdapter.saveBlob(blob, filename, target);
+      if (savedTarget) setDestinationTarget(savedTarget);
     },
     [destinationAdapter],
   );
 
   const handleDestinationSaveBlob = useCallback(
     async (blob: Blob, filename: string) => {
-      await saveToDestination(blob, filename, destinationPath || null);
+      await saveToDestination(blob, filename, destinationTarget);
     },
-    [destinationPath, saveToDestination],
+    [destinationTarget, saveToDestination],
   );
 
   const handleExport = useCallback(
@@ -356,7 +352,7 @@ export function ExportToolbarControls({
     try {
       saveExportOptions(lastOptions);
       const { runExport } = await loadRunExportModule();
-      let quickTarget: string | null = null;
+      let quickTarget: ExportDestinationTarget | null = null;
       if (destinationAdapter) {
         const { buildExportFilename } = await loadRunExportModule();
         quickTarget = await destinationAdapter.resolveTarget(
@@ -446,8 +442,7 @@ export function ExportToolbarControls({
             destination={
               destinationAdapter
                 ? {
-                    value: destinationPath,
-                    onChange: handleDestinationChange,
+                    value: destinationTarget?.displayPath ?? '',
                     onPick: handlePickDestination,
                     hint: destinationAdapter.hint,
                   }

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import type {
   ExportDestinationAdapter,
+  ExportDestinationTarget,
   ExportToolbarControlsProps,
 } from './ExportToolbarControls.js';
 
@@ -19,4 +20,4 @@ export function ExportToolbarControls(props: ExportToolbarControlsProps) {
   );
 }
 
-export type { ExportDestinationAdapter, ExportToolbarControlsProps };
+export type { ExportDestinationAdapter, ExportDestinationTarget, ExportToolbarControlsProps };

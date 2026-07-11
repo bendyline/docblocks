@@ -37,6 +37,12 @@ Start a local development server for previewing documents.
 - `-p, --port <port>` — Port to listen on (default: `3000`)
 - `-d, --dir <dir>` — Directory to serve (default: `.`)
 - `-t, --theme <id>` — Visual theme to apply
+- `--host <host>` — Interface to bind (default: `127.0.0.1`)
+- `--allow-network` — Required before binding a non-loopback host
+
+The preview server resolves the served root and every requested file physically,
+rejects symlink/junction escapes, limits request concurrency and file size, and
+never returns native error details to HTTP clients.
 
 ### `docblocks convert <input>`
 
@@ -82,8 +88,19 @@ docblocks video story.md --quality high --orientation portrait
 Start an MCP (Model Context Protocol) server over stdio for AI-assisted document operations.
 
 ```bash
-docblocks mcp
+docblocks mcp --allow-write ./exports
+# Add file-backed inputs only when needed:
+docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
+
+MCP starts without filesystem authority by default. Raw Markdown remains
+available through `source: { "kind": "text", "text": "..." }` (or the
+deprecated `markdown` field). File sources use the explicit
+`source: { "kind": "file", "path": "..." }` form and must be physically
+contained by an `--allow-read` root. Every output must be contained by an
+`--allow-write` root. File payloads, generated output, recursive work, child
+processes, and concurrent expensive tools are bounded; use `--max-concurrency`
+to change the default of 2 (maximum 32).
 
 **MCP Tools exposed:**
 
@@ -99,7 +116,10 @@ All export tools accept raw markdown text directly — AI agents can write conte
 ```json
 {
   "mcpServers": {
-    "docblocks": { "command": "npx", "args": ["docblocks", "mcp"] }
+    "docblocks": {
+      "command": "npx",
+      "args": ["docblocks", "mcp", "--allow-write", "/path/to/exports"]
+    }
   }
 }
 ```

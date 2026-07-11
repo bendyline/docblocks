@@ -85,6 +85,17 @@ export function deriveRepoDirName(url: string): string {
     trimmed.lastIndexOf('\\'),
   );
   const segment = cut >= 0 ? trimmed.slice(cut + 1) : trimmed;
-  const name = segment.replace(/\.git$/i, '').replace(/[^A-Za-z0-9._-]/g, '-');
-  return name.length > 0 ? name : 'repository';
+  const name = segment
+    .replace(/\.git$/i, '')
+    .replace(/[^A-Za-z0-9._-]/g, '-')
+    .slice(0, 120);
+  if (
+    !name ||
+    /^\.+$/u.test(name) ||
+    /\.$/u.test(name) ||
+    /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(name)
+  ) {
+    return 'repository';
+  }
+  return name;
 }

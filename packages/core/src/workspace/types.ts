@@ -2,9 +2,9 @@
  * Origin of a transient workspace — records where its contents came from and
  * how to save them back. Set only on `type: 'transient'` workspaces.
  * - 'loose-file' — a single markdown file opened from the OS (Electron);
- *   edits write straight back to `path` via the host bridge.
+ *   edits write back through an owner-scoped `resourceId` grant.
  * - 'dbk' — a `.dbk`/zip bundle unpacked into memory (Electron); edits are
- *   re-zipped and written back to `path` via the host bridge.
+ *   re-zipped and written back through an owner-scoped resource grant.
  * - 'web-file' — a single markdown file launched into the installed web app
  *   (File Handling API); edits write back through `handle`.
  * - 'web-dbk' — a `.dbk`/zip bundle launched into the installed web app;
@@ -15,10 +15,10 @@
  * in-memory registry (see workspace-manager) for the current page session.
  */
 export type TransientOrigin =
-  | { kind: 'loose-file'; path: string }
+  | { kind: 'loose-file'; resourceId: string }
   | {
       kind: 'dbk';
-      path: string;
+      resourceId: string;
       /** SHA-256 of the last bundle version acknowledged by the host. */
       version: string | null;
     }

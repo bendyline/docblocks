@@ -40,6 +40,7 @@ interface RegisteredWorkspaceRoot extends WorkspaceRootEntry {
 export interface WorkspaceRoots {
   register(id: string, rootPath: string): void;
   unregister(id: string): void;
+  get(id: string): WorkspaceRootEntry | null;
   list(): WorkspaceRootEntry[];
   resolve(rootPath: string, relPath: string): string;
   resolvePhysical(rootPath: string, relPath: string): Promise<string>;
@@ -167,6 +168,10 @@ export function getWorkspaceRoots(): WorkspaceRoots {
     },
     unregister(id: string) {
       roots.delete(id);
+    },
+    get(id: string): WorkspaceRootEntry | null {
+      const entry = roots.get(id);
+      return entry ? { id: entry.id, rootPath: entry.rootPath } : null;
     },
     list(): WorkspaceRootEntry[] {
       return [...roots.values()].map(({ id, rootPath }) => ({ id, rootPath }));

@@ -48,7 +48,7 @@ describe('desktop open request resolution', () => {
     fs.writeFileSync(outsideFile, '# Private');
 
     expect(resolveOpenRequests([outsideFile])).to.deep.equal([
-      { kind: 'external-file', path: outsideFile, name: 'private.md' },
+      { kind: 'external-file', absolutePath: outsideFile, name: 'private.md' },
     ]);
   });
 
@@ -57,7 +57,7 @@ describe('desktop open request resolution', () => {
     fs.writeFileSync(bundle, 'PK');
 
     expect(resolveOpenRequests([bundle])).to.deep.equal([
-      { kind: 'external-bundle', path: bundle, name: 'deck.dbk' },
+      { kind: 'external-bundle', absolutePath: bundle, name: 'deck.dbk' },
     ]);
   });
 

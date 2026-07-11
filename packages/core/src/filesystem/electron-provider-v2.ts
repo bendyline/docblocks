@@ -296,7 +296,6 @@ export class ElectronFileSystemProviderV2 implements FileSystemProviderV2 {
           instanceId: this.instanceId,
           providerId: this.id,
           label: this.label,
-          rootPath: this.rootPath,
         })
         .then((result) => {
           if (isRecord(result) && result.ok === true) this.hostOpened = true;

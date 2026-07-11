@@ -37,13 +37,13 @@ export function GitDiffDialog({ path, revision, onClose }: GitDiffDialogProps) {
   const git = useGitContext();
   const gitApi = git?.gitApi ?? null;
   const provider = git?.provider ?? null;
-  const rootPath = git?.rootPath ?? null;
+  const repositoryId = git?.repositoryId ?? null;
   const sha = revision?.sha ?? null;
 
   const [state, setState] = useState<DiffLoadState>({ phase: 'loading' });
 
   useEffect(() => {
-    if (!gitApi || !rootPath) {
+    if (!gitApi || !repositoryId) {
       setState({ phase: 'error', message: 'Git is not available for this workspace.' });
       return;
     }
@@ -54,8 +54,8 @@ export function GitDiffDialog({ path, revision, onClose }: GitDiffDialogProps) {
       if (sha) {
         const short = sha.slice(0, 7);
         const [parent, at] = await Promise.all([
-          gitApi.readFileAtRevision(rootPath, path, { kind: 'parent-of', sha }),
-          gitApi.readFileAtRevision(rootPath, path, { kind: 'commit', sha }),
+          gitApi.readFileAtRevision(repositoryId, path, { kind: 'parent-of', sha }),
+          gitApi.readFileAtRevision(repositoryId, path, { kind: 'commit', sha }),
         ]);
         if (!parent.ok) return { phase: 'error', message: parent.error.message };
         if (!at.ok) return { phase: 'error', message: at.error.message };
@@ -81,7 +81,7 @@ export function GitDiffDialog({ path, revision, onClose }: GitDiffDialogProps) {
       }
       const providerV2 = getFileSystemProviderV2(provider);
       const [head, working] = await Promise.all([
-        gitApi.readFileAtRevision(rootPath, path, { kind: 'head' }),
+        gitApi.readFileAtRevision(repositoryId, path, { kind: 'head' }),
         providerV2
           ? providerV2
               .readFile(parseWorkspacePath(path))
@@ -114,7 +114,7 @@ export function GitDiffDialog({ path, revision, onClose }: GitDiffDialogProps) {
     return () => {
       cancelled = true;
     };
-  }, [gitApi, provider, rootPath, path, sha]);
+  }, [gitApi, provider, repositoryId, path, sha]);
 
   if (!git) return null;
 

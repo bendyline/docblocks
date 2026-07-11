@@ -33,21 +33,23 @@ import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem'
 // ── fs ──────────────────────────────────────────────────────────────
 
 const fsApi: DocBlocksHostFsAPI = {
-  readFile: (rootPath, p) => ipcRenderer.invoke('fs:readFile', rootPath, p),
-  writeFile: (rootPath, p, content) => ipcRenderer.invoke('fs:writeFile', rootPath, p, content),
-  commitFile: (rootPath, p, content, expectedContent) =>
-    ipcRenderer.invoke('fs:commitFile', rootPath, p, content, expectedContent),
-  delete: (rootPath, p) => ipcRenderer.invoke('fs:delete', rootPath, p),
-  rename: (rootPath, o, n) => ipcRenderer.invoke('fs:rename', rootPath, o, n),
-  readDirectory: (rootPath, p) =>
-    ipcRenderer.invoke('fs:readDirectory', rootPath, p) as Promise<FileSystemEntry[]>,
-  exists: (rootPath, p) => ipcRenderer.invoke('fs:exists', rootPath, p),
-  createDirectory: (rootPath, p) => ipcRenderer.invoke('fs:createDirectory', rootPath, p),
-  stat: (rootPath, p) => ipcRenderer.invoke('fs:stat', rootPath, p) as Promise<FileMeta | null>,
-  readBinary: (rootPath, p) =>
-    ipcRenderer.invoke('fs:readBinary', rootPath, p) as Promise<ArrayBuffer | null>,
-  writeBinary: (rootPath, p, data) => ipcRenderer.invoke('fs:writeBinary', rootPath, p, data),
-  watch(rootPath, onChange) {
+  readFile: (workspaceId, p) => ipcRenderer.invoke('fs:readFile', workspaceId, p),
+  writeFile: (workspaceId, p, content) =>
+    ipcRenderer.invoke('fs:writeFile', workspaceId, p, content),
+  commitFile: (workspaceId, p, content, expectedContent) =>
+    ipcRenderer.invoke('fs:commitFile', workspaceId, p, content, expectedContent),
+  delete: (workspaceId, p) => ipcRenderer.invoke('fs:delete', workspaceId, p),
+  rename: (workspaceId, o, n) => ipcRenderer.invoke('fs:rename', workspaceId, o, n),
+  readDirectory: (workspaceId, p) =>
+    ipcRenderer.invoke('fs:readDirectory', workspaceId, p) as Promise<FileSystemEntry[]>,
+  exists: (workspaceId, p) => ipcRenderer.invoke('fs:exists', workspaceId, p),
+  createDirectory: (workspaceId, p) => ipcRenderer.invoke('fs:createDirectory', workspaceId, p),
+  stat: (workspaceId, p) =>
+    ipcRenderer.invoke('fs:stat', workspaceId, p) as Promise<FileMeta | null>,
+  readBinary: (workspaceId, p) =>
+    ipcRenderer.invoke('fs:readBinary', workspaceId, p) as Promise<ArrayBuffer | null>,
+  writeBinary: (workspaceId, p, data) => ipcRenderer.invoke('fs:writeBinary', workspaceId, p, data),
+  watch(workspaceId, onChange) {
     const subscriptionId = `sub-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let listening = true;
     const listener = (
@@ -62,12 +64,12 @@ const fsApi: DocBlocksHostFsAPI = {
       ipcRenderer.removeListener('fs:watch:event', listener);
     };
     ipcRenderer.on('fs:watch:event', listener);
-    const subscribed = ipcRenderer.invoke('fs:watch:subscribe', rootPath, subscriptionId);
+    const subscribed = ipcRenderer.invoke('fs:watch:subscribe', workspaceId, subscriptionId);
     void subscribed.catch(stopListening);
     return () => {
       stopListening();
       void subscribed
-        .then(() => ipcRenderer.invoke('fs:watch:unsubscribe', rootPath, subscriptionId))
+        .then(() => ipcRenderer.invoke('fs:watch:unsubscribe', workspaceId, subscriptionId))
         .catch(() => undefined);
     };
   },
@@ -102,14 +104,17 @@ const fsV2Api: DocBlocksHostFsV2API = {
 // ── external (single OS-opened files) ───────────────────────────────
 
 const externalApi: DocBlocksHostExternalAPI = {
-  readText: (p) => ipcRenderer.invoke('external:readText', p) as Promise<string | null>,
-  readBinary: (p) => ipcRenderer.invoke('external:readBinary', p) as Promise<ArrayBuffer | null>,
-  writeText: (p, content) => ipcRenderer.invoke('external:writeText', p, content),
-  writeBinary: (p, data) => ipcRenderer.invoke('external:writeBinary', p, data),
-  commitText: (p, content, expectedContent) =>
-    ipcRenderer.invoke('external:commitText', p, content, expectedContent),
-  commitBinary: (p, data, expectedVersion) =>
-    ipcRenderer.invoke('external:commitBinary', p, data, expectedVersion),
+  readText: (resourceId) =>
+    ipcRenderer.invoke('external:readText', resourceId) as Promise<string | null>,
+  readBinary: (resourceId) =>
+    ipcRenderer.invoke('external:readBinary', resourceId) as Promise<ArrayBuffer | null>,
+  writeText: (resourceId, content) => ipcRenderer.invoke('external:writeText', resourceId, content),
+  writeBinary: (resourceId, data) => ipcRenderer.invoke('external:writeBinary', resourceId, data),
+  commitText: (resourceId, content, expectedContent) =>
+    ipcRenderer.invoke('external:commitText', resourceId, content, expectedContent),
+  commitBinary: (resourceId, data, expectedVersion) =>
+    ipcRenderer.invoke('external:commitBinary', resourceId, data, expectedVersion),
+  revoke: (resourceId) => ipcRenderer.invoke('external:revoke', resourceId),
 };
 
 // ── workspaces ──────────────────────────────────────────────────────
@@ -118,14 +123,15 @@ const workspacesApi: DocBlocksHostWorkspacesAPI = {
   getDefault: () => ipcRenderer.invoke('workspaces:getDefault') as Promise<ElectronWorkspaceInfo>,
   pickFolder: () =>
     ipcRenderer.invoke('workspaces:pickFolder') as Promise<ElectronWorkspaceInfo | null>,
-  register: (info) => ipcRenderer.invoke('workspaces:register', info),
+  register: (workspaceId) => ipcRenderer.invoke('workspaces:register', workspaceId),
   unregister: (id) => ipcRenderer.invoke('workspaces:unregister', id),
 };
 
 // ── shell ───────────────────────────────────────────────────────────
 
 const shellApi: DocBlocksHostShellAPI = {
-  revealInFolder: (p) => ipcRenderer.invoke('shell:revealInFolder', p),
+  revealInFolder: (workspaceId, workspacePath) =>
+    ipcRenderer.invoke('shell:revealInFolder', workspaceId, workspacePath ?? ''),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 };
 
@@ -134,10 +140,10 @@ const shellApi: DocBlocksHostShellAPI = {
 const exportApi: DocBlocksHostExportAPI = {
   resolveTarget: (documentId, filename) =>
     ipcRenderer.invoke('exports:resolveTarget', documentId, filename),
-  pickTarget: (documentId, filename, currentPath) =>
-    ipcRenderer.invoke('exports:pickTarget', documentId, filename, currentPath),
-  save: (documentId, filename, targetPath, data) =>
-    ipcRenderer.invoke('exports:save', documentId, filename, targetPath, data),
+  pickTarget: (documentId, filename, currentGrantId) =>
+    ipcRenderer.invoke('exports:pickTarget', documentId, filename, currentGrantId ?? null),
+  save: (documentId, filename, grantId, data) =>
+    ipcRenderer.invoke('exports:save', documentId, filename, grantId, data),
 };
 
 // ── ffmpeg ──────────────────────────────────────────────────────────
@@ -145,7 +151,8 @@ const exportApi: DocBlocksHostExportAPI = {
 const ffmpegApi: DocBlocksHostFfmpegAPI = {
   available: () => ipcRenderer.invoke('ffmpeg:available'),
   version: () => ipcRenderer.invoke('ffmpeg:version'),
-  renderVideo: (p, opts) => ipcRenderer.invoke('ffmpeg:renderVideo', p, opts),
+  renderVideo: (workspaceId, p, opts) =>
+    ipcRenderer.invoke('ffmpeg:renderVideo', workspaceId, p, opts),
 };
 
 // ── git ─────────────────────────────────────────────────────────────
@@ -156,25 +163,27 @@ function mintId(prefix: string): string {
 
 const gitApi: DocBlocksHostGitAPI = {
   capabilities: () => ipcRenderer.invoke('git:capabilities'),
-  detectRepo: (rootPath) => ipcRenderer.invoke('git:detectRepo', rootPath),
-  init: (rootPath) => ipcRenderer.invoke('git:init', rootPath),
-  status: (rootPath) => ipcRenderer.invoke('git:status', rootPath),
-  stage: (rootPath, paths) => ipcRenderer.invoke('git:stage', rootPath, paths),
-  unstage: (rootPath, paths) => ipcRenderer.invoke('git:unstage', rootPath, paths),
-  discard: (rootPath, paths) => ipcRenderer.invoke('git:discard', rootPath, paths),
-  commit: (rootPath, message, paths) => ipcRenderer.invoke('git:commit', rootPath, message, paths),
-  push: (rootPath, opts) => ipcRenderer.invoke('git:push', rootPath, opts),
-  pull: (rootPath) => ipcRenderer.invoke('git:pull', rootPath),
-  fetch: (rootPath) => ipcRenderer.invoke('git:fetch', rootPath),
-  listBranches: (rootPath) => ipcRenderer.invoke('git:listBranches', rootPath),
-  createBranch: (rootPath, name, opts) =>
-    ipcRenderer.invoke('git:createBranch', rootPath, name, opts),
-  checkoutBranch: (rootPath, name) => ipcRenderer.invoke('git:checkoutBranch', rootPath, name),
-  log: (rootPath, opts) => ipcRenderer.invoke('git:log', rootPath, opts),
-  commitFiles: (rootPath, sha) => ipcRenderer.invoke('git:commitFiles', rootPath, sha),
-  readFileAtRevision: (rootPath, p, revision) =>
-    ipcRenderer.invoke('git:readFileAtRevision', rootPath, p, revision),
-  listRemotes: (rootPath) => ipcRenderer.invoke('git:listRemotes', rootPath),
+  detectRepo: (workspaceId) => ipcRenderer.invoke('git:detectRepo', workspaceId),
+  init: (workspaceId) => ipcRenderer.invoke('git:init', workspaceId),
+  status: (repositoryId) => ipcRenderer.invoke('git:status', repositoryId),
+  stage: (repositoryId, paths) => ipcRenderer.invoke('git:stage', repositoryId, paths),
+  unstage: (repositoryId, paths) => ipcRenderer.invoke('git:unstage', repositoryId, paths),
+  discard: (repositoryId, paths) => ipcRenderer.invoke('git:discard', repositoryId, paths),
+  commit: (repositoryId, message, paths) =>
+    ipcRenderer.invoke('git:commit', repositoryId, message, paths),
+  push: (repositoryId, opts) => ipcRenderer.invoke('git:push', repositoryId, opts),
+  pull: (repositoryId) => ipcRenderer.invoke('git:pull', repositoryId),
+  fetch: (repositoryId) => ipcRenderer.invoke('git:fetch', repositoryId),
+  listBranches: (repositoryId) => ipcRenderer.invoke('git:listBranches', repositoryId),
+  createBranch: (repositoryId, name, opts) =>
+    ipcRenderer.invoke('git:createBranch', repositoryId, name, opts),
+  checkoutBranch: (repositoryId, name) =>
+    ipcRenderer.invoke('git:checkoutBranch', repositoryId, name),
+  log: (repositoryId, opts) => ipcRenderer.invoke('git:log', repositoryId, opts),
+  commitFiles: (repositoryId, sha) => ipcRenderer.invoke('git:commitFiles', repositoryId, sha),
+  readFileAtRevision: (repositoryId, p, revision) =>
+    ipcRenderer.invoke('git:readFileAtRevision', repositoryId, p, revision),
+  listRemotes: (repositoryId) => ipcRenderer.invoke('git:listRemotes', repositoryId),
   clone(url, onProgress) {
     const operationId = mintId('clone');
     const listener = (
@@ -198,8 +207,8 @@ const gitApi: DocBlocksHostGitAPI = {
       },
     };
   },
-  createPullRequest: (rootPath) => ipcRenderer.invoke('git:createPullRequest', rootPath),
-  onStatusChanged(rootPath, listener) {
+  createPullRequest: (repositoryId) => ipcRenderer.invoke('git:createPullRequest', repositoryId),
+  onStatusChanged(repositoryId, listener) {
     const subscriptionId = mintId('git-status');
     const fn = (
       _event: Electron.IpcRendererEvent,
@@ -208,10 +217,12 @@ const gitApi: DocBlocksHostGitAPI = {
       if (payload.subscriptionId === subscriptionId) listener(payload.status);
     };
     ipcRenderer.on('git:status:event', fn);
-    ipcRenderer.invoke('git:status:subscribe', rootPath, subscriptionId).catch(() => undefined);
+    ipcRenderer.invoke('git:status:subscribe', repositoryId, subscriptionId).catch(() => undefined);
     return () => {
       ipcRenderer.removeListener('git:status:event', fn);
-      ipcRenderer.invoke('git:status:unsubscribe', rootPath, subscriptionId).catch(() => undefined);
+      ipcRenderer
+        .invoke('git:status:unsubscribe', repositoryId, subscriptionId)
+        .catch(() => undefined);
     };
   },
 };

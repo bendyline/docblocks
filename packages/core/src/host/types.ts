@@ -11,35 +11,36 @@ import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/
 import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
 
-/** Filesystem operations scoped to a registered absolute root path. */
+/** Filesystem operations scoped to a main-owned registered workspace id. */
 export interface DocBlocksHostFsAPI {
-  readFile(rootPath: string, path: string): Promise<string | null>;
-  writeFile(rootPath: string, path: string, content: string): Promise<void>;
+  readFile(workspaceId: string, path: string): Promise<string | null>;
+  writeFile(workspaceId: string, path: string, content: string): Promise<void>;
   commitFile(
-    rootPath: string,
+    workspaceId: string,
     path: string,
     content: string,
     expectedContent: string | null,
   ): Promise<FileCommitResult>;
-  delete(rootPath: string, path: string): Promise<void>;
-  rename(rootPath: string, oldPath: string, newPath: string): Promise<void>;
-  readDirectory(rootPath: string, path: string): Promise<FileSystemEntry[]>;
-  exists(rootPath: string, path: string): Promise<boolean>;
-  createDirectory(rootPath: string, path: string): Promise<void>;
-  stat(rootPath: string, path: string): Promise<FileMeta | null>;
-  readBinary(rootPath: string, path: string): Promise<ArrayBuffer | null>;
-  writeBinary(rootPath: string, path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
+  delete(workspaceId: string, path: string): Promise<void>;
+  rename(workspaceId: string, oldPath: string, newPath: string): Promise<void>;
+  readDirectory(workspaceId: string, path: string): Promise<FileSystemEntry[]>;
+  exists(workspaceId: string, path: string): Promise<boolean>;
+  createDirectory(workspaceId: string, path: string): Promise<void>;
+  stat(workspaceId: string, path: string): Promise<FileMeta | null>;
+  readBinary(workspaceId: string, path: string): Promise<ArrayBuffer | null>;
+  writeBinary(workspaceId: string, path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
   /**
    * Subscribe to change notifications for a watched root. Returns an
    * unsubscribe function. The main process uses chokidar under the hood.
    */
-  watch(rootPath: string, onChange: (path: string) => void): () => void;
+  watch(workspaceId: string, onChange: (path: string) => void): () => void;
 }
 
 /** Descriptor returned for an Electron-managed workspace (backed by a folder). */
 export interface ElectronWorkspaceInfo {
   id: string;
   name: string;
+  /** Display/persistence metadata only. Privileged host calls accept `id`, never this path. */
   rootPath: string;
 }
 
@@ -56,40 +57,46 @@ export interface DocBlocksHostWorkspacesAPI {
    */
   pickFolder(): Promise<ElectronWorkspaceInfo | null>;
   /**
-   * Re-register a previously known workspace so its rootPath is trusted
-   * for subsequent fs calls. Called on app startup for persisted
-   * electron-native workspaces before any fs operation.
+   * Re-register a previously picker-approved workspace by main-owned id.
+   * Called on app startup before any filesystem operation.
    */
-  register(info: ElectronWorkspaceInfo): Promise<void>;
+  register(workspaceId: string): Promise<void>;
   /** Remove a workspace from the trusted whitelist. */
   unregister(id: string): Promise<void>;
 }
 
 /** Shell operations — reveal in Finder/Explorer, open external URLs. */
 export interface DocBlocksHostShellAPI {
-  /** Reveal a file (by absolute path) in the OS file manager. */
-  revealInFolder(absolutePath: string): Promise<void>;
+  /** Reveal a registered workspace root or one root-relative entry. */
+  revealInFolder(workspaceId: string, workspacePath?: string): Promise<void>;
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>;
 }
 
+/** Exact, main-owned export authority. The display path is never authority. */
+export interface HostExportTargetGrant {
+  /** Null means this is a display-only suggestion and save must show a picker. */
+  grantId: string | null;
+  displayPath: string;
+}
+
 /** Native export target selection and binary file writing. */
 export interface DocBlocksHostExportAPI {
-  /** Resolve the remembered target for this document and output filename. */
-  resolveTarget(documentId: string, filename: string): Promise<string>;
+  /** Resolve an exact remembered grant or a display-only host suggestion. */
+  resolveTarget(documentId: string, filename: string): Promise<HostExportTargetGrant>;
   /** Open the native Save dialog and remember the selected target. */
   pickTarget(
     documentId: string,
     filename: string,
-    currentPath?: string | null,
-  ): Promise<string | null>;
-  /** Write an exported blob to a remembered or user-confirmed target. */
+    currentGrantId?: string | null,
+  ): Promise<HostExportTargetGrant | null>;
+  /** Write only to an exact target granted by the main process. */
   save(
     documentId: string,
     filename: string,
-    targetPath: string | null,
+    grantId: string | null,
     data: ArrayBuffer | Uint8Array,
-  ): Promise<string | null>;
+  ): Promise<HostExportTargetGrant | null>;
 }
 
 /** System ffmpeg detection and invocation. */
@@ -98,13 +105,10 @@ export interface DocBlocksHostFfmpegAPI {
   available(): Promise<boolean>;
   /** Version string from `ffmpeg -version`, or null if unavailable. */
   version(): Promise<string | null>;
-  /**
-   * Render a markdown file at the given absolute path to MP4 using the
-   * existing squisq-video CLI pipeline. Returns the absolute path to the
-   * produced MP4 file, or throws on failure.
-   */
+  /** Render a physically contained workspace-relative Markdown file to MP4. */
   renderVideo(
-    markdownAbsolutePath: string,
+    workspaceId: string,
+    markdownPath: string,
     options: { fps?: number; quality?: 'draft' | 'normal' | 'high' },
   ): Promise<string>;
 }
@@ -160,9 +164,9 @@ export type MenuCommand =
  * OS open-file / deep-link event resolved by the host.
  * - 'workspace-file': a file inside an already-registered workspace.
  * - 'external-file': a loose markdown file outside any workspace — opened in a
- *   transient workspace and saved straight back to `path`.
+ *   transient workspace and saved through an opaque resource grant.
  * - 'external-bundle': a `.dbk`/zip bundle — unpacked into a transient
- *   workspace and re-zipped back to `path` on save.
+ *   workspace and re-zipped through an opaque resource grant on save.
  */
 export type OpenRequest =
   | {
@@ -171,29 +175,31 @@ export type OpenRequest =
       /** Slash-prefixed path relative to the workspace root. */
       path: string;
     }
-  | { kind: 'external-file'; path: string; name: string }
-  | { kind: 'external-bundle'; path: string; name: string };
+  | { kind: 'external-file'; resourceId: string; name: string }
+  | { kind: 'external-bundle'; resourceId: string; name: string };
 
 /**
  * Read/write access to individual OS files the user has explicitly opened
  * (via "Open With" / deep link), outside the workspace-root whitelist. The
- * main process gates these to a session allowlist of opened paths.
+ * main process gates these with owner-scoped, exact-file capabilities.
  */
 export interface DocBlocksHostExternalAPI {
-  readText(path: string): Promise<string | null>;
-  readBinary(path: string): Promise<ArrayBuffer | null>;
-  writeText(path: string, content: string): Promise<void>;
-  writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void>;
+  readText(resourceId: string): Promise<string | null>;
+  readBinary(resourceId: string): Promise<ArrayBuffer | null>;
+  writeText(resourceId: string, content: string): Promise<void>;
+  writeBinary(resourceId: string, data: ArrayBuffer | Uint8Array): Promise<void>;
   commitText(
-    path: string,
+    resourceId: string,
     content: string,
     expectedContent: string | null,
   ): Promise<FileCommitResult>;
   commitBinary(
-    path: string,
+    resourceId: string,
     data: ArrayBuffer | Uint8Array,
     expectedVersion: string | null,
   ): Promise<ExternalBinaryCommitResult>;
+  /** Revoke one external resource when its transient document is closed. */
+  revoke(resourceId: string): Promise<void>;
 }
 
 export type ExternalBinaryCommitResult =

@@ -26,7 +26,6 @@ describe('FileSystemV2IpcService transport', () => {
       instanceId: `instance-${Date.now()}`,
       providerId: `workspace-${Date.now()}`,
       label: 'IPC test',
-      rootPath,
     };
     roots.register(request.providerId, rootPath);
     service = new FileSystemV2IpcService();
@@ -40,7 +39,7 @@ describe('FileSystemV2IpcService transport', () => {
   });
 
   it('serializes typed failures and isolates provider instances by owner', async () => {
-    expect((await service.open('owner-a', request)).ok).to.equal(true);
+    expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
 
     const invalidRemove = await service.remove('owner-a', request.instanceId, WORKSPACE_ROOT);
     expect(invalidRemove.ok).to.equal(false);
@@ -60,7 +59,7 @@ describe('FileSystemV2IpcService transport', () => {
 
   it('delivers ordered watch messages and joins unsubscribe', async () => {
     const messages: HostFileSystemV2WatchMessage[] = [];
-    expect((await service.open('owner-a', request)).ok).to.equal(true);
+    expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
     const subscribed = await service.watchSubscribe(
       'owner-a',
       request.instanceId,

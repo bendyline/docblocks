@@ -19,6 +19,8 @@ export interface RunGitOptions {
   timeoutMs?: number;
   /** Abort if stdout exceeds this many bytes. Default 20 MB. */
   maxStdoutBytes?: number;
+  /** Fixed main-owned repository identity or other non-renderer environment overrides. */
+  extraEnv?: NodeJS.ProcessEnv;
 }
 
 export interface RunGitResult {
@@ -79,7 +81,7 @@ export function runGit(opts: RunGitOptions): Promise<RunGitResult> {
     try {
       child = spawn(opts.bin, opts.args, {
         cwd: opts.cwd,
-        env: gitEnv(),
+        env: { ...gitEnv(), ...opts.extraEnv },
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });

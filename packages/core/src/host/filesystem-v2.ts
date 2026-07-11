@@ -35,9 +35,9 @@ export type HostFileSystemV2Result<T> =
 
 export interface HostFileSystemV2OpenRequest {
   readonly instanceId: string;
+  /** Main-owned persisted workspace authority, never an absolute path. */
   readonly providerId: string;
   readonly label: string;
-  readonly rootPath: string;
 }
 
 export type HostFileSystemV2WatchMessage =

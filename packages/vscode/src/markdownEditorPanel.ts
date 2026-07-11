@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
   VscodeDocumentSync,
   withApplyingEditFlag,
@@ -6,6 +7,7 @@ import {
   type HostDocumentSnapshot,
 } from './editSync.js';
 import { handleExportMessage } from './exportBridge.js';
+import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 import {
   parseWebviewToExtensionMessage,
@@ -13,16 +15,19 @@ import {
   type ExtensionToWebviewMessage,
   type WebviewToExtensionMessage,
 } from './messages.js';
-import { getEditorHtml, getVscodeTheme } from './webviewHelper.js';
+import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
 const USE_EXTERNAL_CHOICE = 'Use External Changes';
+const MAX_PENDING_OPERATIONS = 128;
+const MAX_PENDING_WIRE_CHARACTERS = HOST_WIRE_LIMITS.base64Characters;
 
 export class MarkdownEditorPanel {
   public static readonly viewType = 'docblocks.markdownPanel';
 
   private static readonly panels = new Map<string, MarkdownEditorPanel>();
   private static readonly closingSessions = new Set<Promise<void>>();
+  private static readonly exportGrants = new ExportTargetGrantRegistry<vscode.Uri>();
 
   private readonly disposables: vscode.Disposable[] = [];
   private readonly syncReady: Promise<VscodeDocumentSync>;
@@ -32,6 +37,11 @@ export class MarkdownEditorPanel {
   private webviewReady = false;
   private disposeStarted = false;
   private operationQueue: Promise<void> = Promise.resolve();
+  private pendingOperationCount = 0;
+  private pendingWireCharacters = 0;
+  private invalidMessageWarningShown = false;
+  private panelDisposed = false;
+  private readonly exportGrantScope: ExportGrantScope;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -39,9 +49,10 @@ export class MarkdownEditorPanel {
     private document: vscode.TextDocument,
     private readonly panel: vscode.WebviewPanel,
   ) {
+    this.exportGrantScope = { panelId: getNonce(), documentUri: this.uri.toString() };
     this.panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: getEditorLocalResourceRoots(this.context.extensionUri, this.uri),
+      localResourceRoots: getEditorLocalResourceRoots(this.context.extensionUri),
     };
     this.panel.iconPath = vscode.Uri.joinPath(
       this.context.extensionUri,
@@ -69,7 +80,7 @@ export class MarkdownEditorPanel {
       vscode.ViewColumn.Active,
       {
         enableScripts: true,
-        localResourceRoots: getEditorLocalResourceRoots(context.extensionUri, uri),
+        localResourceRoots: getEditorLocalResourceRoots(context.extensionUri),
         retainContextWhenHidden: true,
       },
     );
@@ -123,16 +134,20 @@ export class MarkdownEditorPanel {
       this.panel.webview.onDidReceiveMessage((value: unknown) => {
         const message = parseWebviewToExtensionMessage(value);
         if (!message) {
-          void vscode.window.showErrorMessage('DocBlocks ignored an invalid editor message.');
+          this.warnInvalidMessageOnce();
           return;
         }
-        this.queueOperation(() => this.handleMessage(message));
+        if (
+          !this.queueOperation(() => this.handleMessage(message), estimateWireCharacters(message))
+        ) {
+          this.rejectBusyMessage(message);
+        }
       }),
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.uri.toString() !== this.uri.toString() || this.isApplyingEdit) return;
         this.document = event.document;
-        const external = toHostSnapshot(event.document);
         this.queueOperation(async () => {
+          const external = toHostSnapshot(event.document);
           const sync = await this.syncReady;
           const result = sync.observeExternal(external);
           if (result === 'applied') this.sendContent();
@@ -158,7 +173,9 @@ export class MarkdownEditorPanel {
         this.sendTheme();
       }),
       this.panel.onDidDispose(() => {
+        this.panelDisposed = true;
         MarkdownEditorPanel.panels.delete(this.uri.toString());
+        MarkdownEditorPanel.exportGrants.revokeScope(this.exportGrantScope);
         vscode.Disposable.from(...this.disposables).dispose();
         this.trackClose();
       }),
@@ -166,13 +183,28 @@ export class MarkdownEditorPanel {
   }
 
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
+    if (this.panelDisposed) return;
     const document = await this.ensureDocument();
-    if (await handleMediaMessage(message, document, this.panel.webview)) return;
-    if (await handleExportMessage(message, document, this.panel.webview, this.context)) return;
-
-    const sync = await this.syncReady;
     switch (message.type) {
+      case 'resolveMedia':
+      case 'listMedia':
+      case 'addMedia':
+      case 'removeMedia':
+        await handleMediaMessage(message, document, this.panel.webview);
+        return;
+
+      case 'saveExport':
+      case 'resolveExportTarget':
+      case 'pickExportTarget':
+      case 'readWorkspaceFile':
+        await handleExportMessage(message, document, this.panel.webview, this.context, {
+          grants: MarkdownEditorPanel.exportGrants,
+          scope: this.exportGrantScope,
+        });
+        return;
+
       case 'ready':
+        await this.syncReady;
         this.webviewReady = true;
         this.sendContent();
         this.sendSessionState();
@@ -180,6 +212,7 @@ export class MarkdownEditorPanel {
         break;
 
       case 'edit': {
+        const sync = await this.syncReady;
         const acknowledgement = sync.acceptEdit(message);
         this.postMessage({
           type: 'editAcknowledged',
@@ -194,12 +227,15 @@ export class MarkdownEditorPanel {
       }
 
       case 'save':
-        await this.handleSave(message, sync);
+        await this.handleSave(message, await this.syncReady);
         break;
 
       case 'resolveConflict':
-        await this.handleConflictChoice(message.sessionId, message.choice, sync);
+        await this.handleConflictChoice(message.sessionId, message.choice, await this.syncReady);
         break;
+
+      default:
+        assertNever(message);
     }
   }
 
@@ -222,7 +258,7 @@ export class MarkdownEditorPanel {
       });
     } catch (error: unknown) {
       const state = sync.getSnapshot();
-      const messageText = toError(error).message;
+      const messageText = boundedMessage(toError(error).message);
       this.postMessage({
         type: 'saveResult',
         sessionId: state.sessionId,
@@ -256,7 +292,15 @@ export class MarkdownEditorPanel {
     }
   }
 
-  private queueOperation(operation: () => Promise<void>): void {
+  private queueOperation(operation: () => Promise<void>, wireCharacters = 0): boolean {
+    if (
+      this.pendingOperationCount >= MAX_PENDING_OPERATIONS ||
+      wireCharacters > MAX_PENDING_WIRE_CHARACTERS - this.pendingWireCharacters
+    ) {
+      return false;
+    }
+    this.pendingOperationCount += 1;
+    this.pendingWireCharacters += wireCharacters;
     this.operationQueue = this.operationQueue
       .then(operation)
       .catch((error: unknown) =>
@@ -266,7 +310,56 @@ export class MarkdownEditorPanel {
             : `DocBlocks could not update ${getUriBasename(this.uri)}`,
         ),
       )
+      .finally(() => {
+        this.pendingOperationCount -= 1;
+        this.pendingWireCharacters -= wireCharacters;
+      })
       .then(() => undefined);
+    return true;
+  }
+
+  private warnInvalidMessageOnce(): void {
+    if (this.invalidMessageWarningShown) return;
+    this.invalidMessageWarningShown = true;
+    void vscode.window.showWarningMessage('DocBlocks ignored an invalid editor message.');
+  }
+
+  private rejectBusyMessage(message: WebviewToExtensionMessage): void {
+    if (!('requestId' in message)) return;
+    const responseMessage = 'DocBlocks rejected the request because the editor queue is full.';
+    switch (message.type) {
+      case 'resolveMedia':
+      case 'listMedia':
+      case 'addMedia':
+      case 'removeMedia':
+        this.postMessage({
+          type: 'mediaError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'readWorkspaceFile':
+        this.postMessage({
+          type: 'workspaceFileError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'saveExport':
+      case 'resolveExportTarget':
+      case 'pickExportTarget':
+        this.postMessage({
+          type: 'exportError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'save':
+        this.sendSessionState();
+        return;
+      default:
+        return;
+    }
   }
 
   private async readHostDocument(): Promise<HostDocumentSnapshot> {
@@ -347,7 +440,7 @@ export class MarkdownEditorPanel {
       persistedRevision: snapshot.session.persistedRevision,
       acknowledgedClientRevision: snapshot.acknowledgedClientRevision,
       documentVersion: snapshot.documentVersion,
-      error: snapshot.session.error?.message ?? null,
+      error: snapshot.session.error ? boundedMessage(snapshot.session.error.message) : null,
     });
   }
 
@@ -445,19 +538,43 @@ function getFullDocumentRange(document: vscode.TextDocument): vscode.Range {
 }
 
 function toHostSnapshot(document: vscode.TextDocument): HostDocumentSnapshot {
-  return { content: document.getText(), version: document.version };
+  const content = document.getText();
+  if (content.length > HOST_WIRE_LIMITS.documentCharacters) {
+    throw new Error('This document exceeds the DocBlocks editor size limit.');
+  }
+  return { content, version: document.version };
 }
 
 function getUriBasename(uri: vscode.Uri): string {
   const slash = uri.path.lastIndexOf('/');
   const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
   try {
-    return decodeURIComponent(raw);
+    return decodeURIComponent(raw).slice(0, 255);
   } catch {
-    return raw;
+    return raw.slice(0, 255);
   }
 }
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function boundedMessage(message: string): string {
+  return message.slice(0, HOST_WIRE_LIMITS.messageCharacters);
+}
+
+function estimateWireCharacters(message: WebviewToExtensionMessage): number {
+  switch (message.type) {
+    case 'edit':
+      return message.content.length;
+    case 'addMedia':
+    case 'saveExport':
+      return message.dataBase64.length;
+    default:
+      return 0;
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled editor message: ${String(value)}`);
 }

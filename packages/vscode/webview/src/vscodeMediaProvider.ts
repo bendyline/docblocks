@@ -1,5 +1,10 @@
+import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from '@bendyline/docblocks/host';
 import type { MediaEntry, MediaProvider } from '@bendyline/squisq/schemas';
 import type { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../../src/messages.js';
+import { isSafeMimeType } from '../../src/messages.js';
+import { encodeBoundedBase64 } from '../../src/wirePayload.js';
+
+const MAX_PENDING_REQUESTS = 64;
 
 type MediaResponse =
   | { type: 'mediaResolved'; url: string }
@@ -31,8 +36,12 @@ export function createVscodeMediaBridge(
   const pending = new Map<number, PendingRequest>();
 
   function request<T extends MediaResponse>(message: MediaBridgeRequest): Promise<T> {
+    if (disposed) return Promise.reject(new Error('VS Code media bridge disposed'));
+    if (pending.size >= MAX_PENDING_REQUESTS) {
+      return Promise.reject(new Error('Too many pending VS Code media requests'));
+    }
     const requestId = nextRequestId;
-    nextRequestId += 1;
+    nextRequestId = nextRequestId >= 2_147_483_647 ? 1 : nextRequestId + 1;
 
     return new Promise<T>((resolve, reject) => {
       pending.set(requestId, {
@@ -93,7 +102,8 @@ export function createVscodeMediaBridge(
   return {
     mediaProvider: {
       async resolveUrl(ref: string): Promise<string> {
-        if (isAlreadyDisplayableUrl(ref)) return ref;
+        const displayableUrl = parseDisplayableUrl(ref);
+        if (displayableUrl) return displayableUrl;
         const response = await request<{ type: 'mediaResolved'; url: string }>({
           type: 'resolveMedia',
           ref,
@@ -113,6 +123,12 @@ export function createVscodeMediaBridge(
         data: ArrayBuffer | Blob | Uint8Array,
         mimeType: string,
       ): Promise<string> {
+        if (!isBoundedString(name, HOST_WIRE_LIMITS.pathCharacters, 1)) {
+          throw new Error('The media name is invalid');
+        }
+        if (!isSafeMimeType(mimeType)) {
+          throw new Error('The media type is invalid');
+        }
         const response = await request<{ type: 'mediaAdded'; path: string }>({
           type: 'addMedia',
           name,
@@ -133,8 +149,11 @@ export function createVscodeMediaBridge(
   };
 }
 
-function isAlreadyDisplayableUrl(ref: string): boolean {
-  return /^(?:blob:|data:|https?:)/i.test(ref);
+function parseDisplayableUrl(ref: string): string | null {
+  if (!isBoundedString(ref, HOST_WIRE_LIMITS.urlCharacters, 1)) return null;
+  if (ref.startsWith('blob:') || ref.startsWith('data:')) return ref;
+  const external = parseExternalHttpUrl(ref);
+  return external?.startsWith('https:') ? external : null;
 }
 
 async function toBase64(data: ArrayBuffer | Blob | Uint8Array): Promise<string> {
@@ -145,11 +164,5 @@ async function toBase64(data: ArrayBuffer | Blob | Uint8Array): Promise<string> 
         ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         : data;
   const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
+  return encodeBoundedBase64(bytes);
 }

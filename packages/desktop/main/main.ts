@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import windowStateKeeper from 'electron-window-state';
+import { isTrustedRendererUrl, parseExternalHttpUrl } from '@bendyline/docblocks/host';
 
 import { registerFsIpc } from './ipc-fs.js';
 import { registerFsV2Ipc } from './ipc-fs-v2.js';
@@ -113,9 +114,23 @@ protocol.registerSchemesAsPrivileged([
 function registerAppProtocol() {
   const rendererRoot = path.join(__dirname, '..', 'renderer');
   protocol.handle('app', async (request) => {
+    // The protocol is registered by scheme, so Electron invokes this handler
+    // for app://<any-host>. Only the canonical renderer host is authoritative.
+    if (!isTrustedRendererUrl(request.url)) {
+      return new Response('Forbidden', { status: 403 });
+    }
+
     const url = new URL(request.url);
     // Strip the leading slash and resolve inside the renderer directory.
-    let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    let rel: string;
+    try {
+      rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    } catch {
+      return new Response('Bad request', { status: 400 });
+    }
+    if (rel.includes('\0')) {
+      return new Response('Bad request', { status: 400 });
+    }
     if (!rel || rel.endsWith('/')) rel = path.join(rel, 'index.html');
 
     const target = path.join(rendererRoot, rel);
@@ -194,7 +209,8 @@ async function createWindow(): Promise<BrowserWindow> {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // preload needs Node APIs; renderer stays isolated
+      // The preload uses only Electron's sandbox-supported bridge APIs.
+      sandbox: true,
       webSecurity: true,
     },
   });
@@ -206,18 +222,31 @@ async function createWindow(): Promise<BrowserWindow> {
     if (mainWindow === win) mainWindow = null;
   });
 
-  // Block all non-app:// navigation; open external URLs in the default browser.
+  // A popup never inherits renderer authority. Only canonical HTTP(S) URLs may
+  // leave the app, and they always open in the user's default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url).catch(() => undefined);
+    const externalUrl = parseExternalHttpUrl(url);
+    if (externalUrl) {
+      void shell.openExternal(externalUrl).catch(() => undefined);
+    }
     return { action: 'deny' };
   });
 
-  win.webContents.on('will-navigate', (event, url) => {
-    const target = new URL(url);
-    if (target.protocol !== 'app:' && url !== DEV_SERVER_URL) {
+  const developmentOrigin = isDev ? DEV_SERVER_URL : undefined;
+  const preventUntrustedNavigation = (event: { preventDefault(): void }, url: string) => {
+    if (!isTrustedRendererUrl(url, developmentOrigin)) {
       event.preventDefault();
-      shell.openExternal(url).catch(() => undefined);
     }
+  };
+
+  win.webContents.on('will-navigate', (event, url) => {
+    preventUntrustedNavigation(event, url);
+  });
+
+  // Server redirects are a distinct Electron event and otherwise bypass the
+  // initial navigation decision.
+  win.webContents.on('will-redirect', (event, url) => {
+    preventUntrustedNavigation(event, url);
   });
 
   win.once('ready-to-show', () => {
@@ -270,6 +299,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
     callback(false);
   });
+  session.defaultSession.setPermissionCheckHandler(() => false);
 
   // Strict CSP on the renderer.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -283,17 +313,17 @@ app.whenReady().then(async () => {
               "style-src 'self' app: http://localhost:5221 'unsafe-inline'; " +
               "img-src 'self' app: http://localhost:5221 data: blob:; " +
               "font-src 'self' app: http://localhost:5221 data:; " +
-              "connect-src 'self' app: http://localhost:5221 ws://localhost:5221 https:; " +
+              "connect-src 'self' app: http://localhost:5221 ws://localhost:5221; " +
               "worker-src 'self' app: http://localhost:5221 blob:; " +
-              "object-src 'none';"
+              "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';"
             : "default-src 'self' app:; " +
               "script-src 'self' app:; " +
               "style-src 'self' app: 'unsafe-inline'; " +
               "img-src 'self' app: data: blob:; " +
               "font-src 'self' app: data:; " +
-              "connect-src 'self' app: https:; " +
+              "connect-src 'self' app:; " +
               "worker-src 'self' app: blob:; " +
-              "object-src 'none';",
+              "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';",
         ],
       },
     });

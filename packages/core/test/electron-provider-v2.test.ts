@@ -101,6 +101,27 @@ function clearHost(): void {
 describe('ElectronFileSystemProviderV2', () => {
   afterEach(clearHost);
 
+  it('opens with a workspace capability and never sends an absolute root', async () => {
+    let request: Parameters<DocBlocksHostFsV2API['open']>[0] | null = null;
+    installHost({
+      open: async (value) => {
+        request = value;
+        return { ok: true, value: ELECTRON_FILE_SYSTEM_V2_CAPABILITIES };
+      },
+    });
+    const provider = new ElectronFileSystemProviderV2(
+      'workspace-capability',
+      'Workspace',
+      'C:\\private\\documents',
+    );
+
+    await provider.stat(parseWorkspacePath('/note.md'));
+
+    expect(request).to.include({ providerId: 'workspace-capability', label: 'Workspace' });
+    expect(request).not.to.have.property('rootPath');
+    await provider.dispose();
+  });
+
   it('rehydrates a serialized transport failure as FsError', async () => {
     installHost({
       stat: async () => ({

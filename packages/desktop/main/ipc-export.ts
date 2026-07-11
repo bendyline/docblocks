@@ -1,19 +1,26 @@
-/** Native save-target selection and export persistence for the desktop app. */
+/** Native save-target selection backed by exact owner-scoped grants. */
 
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
-import type { IpcMainInvokeEvent, SaveDialogOptions, SaveDialogReturnValue } from 'electron';
+import type {
+  IpcMainInvokeEvent,
+  SaveDialogOptions,
+  SaveDialogReturnValue,
+  WebContents,
+} from 'electron';
 import { createHash } from 'node:crypto';
-import fs from 'node:fs/promises';
 import path from 'node:path';
+import { HOST_WIRE_LIMITS, isBoundedBytePayload, isBoundedString } from '@bendyline/docblocks/host';
 
+import { mintExportGrant, resolveExportGrant, revokeExportOwner } from './export-grants.js';
 import {
   findExportTargetAccess,
   getExportExtension,
-  isInExportDirectory,
-  isInRememberedExportDirectory,
   resolveExportTarget,
-  resolveRequestedExportTarget,
+  sanitizeExportFilename,
 } from './export-targets.js';
+import { atomicWriteBinary, withFileMutationLocks } from './file-commit.js';
+import { assertIpcArgumentCount, assertTrustedIpcSender } from './ipc-authority.js';
+import { bindOwnerGrantRevocation } from './owner-revocation.js';
 import { isSandboxed, startAccessingBookmark } from './security-scoped.js';
 import {
   readSettings,
@@ -22,36 +29,63 @@ import {
   type PersistedExportTargetAccess,
 } from './settings.js';
 
-function storageKey(documentId: string): string {
-  const normalized = documentId.trim();
-  if (!normalized || normalized.length > 4096 || normalized.includes('\0')) {
-    throw new Error('Invalid export document identifier');
+const boundOwners = new WeakSet<WebContents>();
+
+function ownerFor(event: IpcMainInvokeEvent): WebContents {
+  const owner = assertTrustedIpcSender(event);
+  if (!boundOwners.has(owner)) {
+    boundOwners.add(owner);
+    const ownerId = owner.id;
+    bindOwnerGrantRevocation(owner, () => revokeExportOwner(ownerId));
   }
-  return createHash('sha256').update(normalized).digest('hex');
+  return owner;
 }
 
-async function readStoredTarget(documentId: string): Promise<PersistedExportTarget | undefined> {
+function storageKey(documentValue: unknown): string {
+  if (!isBoundedString(documentValue, HOST_WIRE_LIMITS.pathCharacters, 1)) {
+    throw new Error('Invalid export document identifier');
+  }
+  const documentId = documentValue.trim();
+  if (!documentId) throw new Error('Invalid export document identifier');
+  return createHash('sha256').update(documentId).digest('hex');
+}
+
+function requireFilename(value: unknown): string {
+  if (!isBoundedString(value, HOST_WIRE_LIMITS.labelCharacters, 1)) {
+    throw new Error('Invalid export filename');
+  }
+  return sanitizeExportFilename(value);
+}
+
+function requireOptionalGrant(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (!isBoundedString(value, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    throw new Error('Invalid export target grant');
+  }
+  return value;
+}
+
+async function readStoredTarget(documentKey: string): Promise<PersistedExportTarget | undefined> {
   const settings = await readSettings();
-  return settings.exportTargets?.[storageKey(documentId)];
+  return settings.exportTargets?.[documentKey];
 }
 
 async function rememberTarget(
-  documentId: string,
+  documentKey: string,
   targetPath: string,
   bookmark?: string,
 ): Promise<void> {
-  const key = storageKey(documentId);
   const access: PersistedExportTargetAccess = bookmark
-    ? { path: path.resolve(targetPath), bookmark }
-    : { path: path.resolve(targetPath) };
+    ? { path: path.resolve(targetPath), bookmark, confirmedByPicker: true }
+    : { path: path.resolve(targetPath), confirmedByPicker: true };
   const extension = getExportExtension(access.path);
 
   await updateSettings((settings) => {
     const exportTargets = { ...(settings.exportTargets ?? {}) };
-    const previous = exportTargets[key] ?? {};
+    const previous = exportTargets[documentKey] ?? {};
     const byExtension = { ...(previous.byExtension ?? {}) };
     if (extension) byExtension[extension] = access;
-    exportTargets[key] = { last: access, byExtension };
+    exportTargets[documentKey] = { last: access, byExtension };
     return { ...settings, exportTargets };
   });
 }
@@ -105,84 +139,101 @@ function beginAccess(access: PersistedExportTargetAccess | null): void {
   if (access?.bookmark) startAccessingBookmark(access.bookmark);
 }
 
-function toBuffer(data: ArrayBuffer | Uint8Array): Buffer {
-  return data instanceof Uint8Array ? Buffer.from(data) : Buffer.from(new Uint8Array(data));
+async function mintResolvedTarget(
+  ownerId: number,
+  documentKey: string,
+  filename: string,
+): Promise<{ grantId: string | null; displayPath: string }> {
+  const stored = await readStoredTarget(documentKey);
+  const targetPath = resolveExportTarget(app.getPath('downloads'), stored, filename);
+  const access = findExportTargetAccess(stored, targetPath);
+  if (!access) return { grantId: null, displayPath: targetPath };
+  beginAccess(access);
+  return mintExportGrant(ownerId, documentKey, targetPath, access?.bookmark);
+}
+
+async function pickTarget(
+  event: IpcMainInvokeEvent,
+  ownerId: number,
+  documentKey: string,
+  filename: string,
+  currentGrantId: string | null,
+): Promise<{ grantId: string; displayPath: string } | null> {
+  let defaultPath = resolveExportTarget(
+    app.getPath('downloads'),
+    await readStoredTarget(documentKey),
+    filename,
+  );
+  if (currentGrantId) {
+    defaultPath = (await resolveExportGrant(ownerId, documentKey, currentGrantId)).absolutePath;
+  }
+
+  const result = await showSaveDialog(event, filename, defaultPath);
+  if (result.canceled || !result.filePath) return null;
+
+  const selectedPath = ensureExtension(path.resolve(result.filePath), filename);
+  const selectedAccess = result.bookmark
+    ? { path: selectedPath, bookmark: result.bookmark, confirmedByPicker: true as const }
+    : null;
+  beginAccess(selectedAccess);
+  const grant = await mintExportGrant(ownerId, documentKey, selectedPath, result.bookmark);
+  await rememberTarget(documentKey, grant.displayPath, result.bookmark);
+  return grant;
 }
 
 export function registerExportIpc(): void {
-  ipcMain.handle(
-    'exports:resolveTarget',
-    async (_event, documentId: string, filename: string): Promise<string> => {
-      const stored = await readStoredTarget(documentId);
-      return resolveExportTarget(app.getPath('downloads'), stored, filename);
-    },
-  );
+  ipcMain.handle('exports:resolveTarget', async (event, ...args: unknown[]) => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 2);
+    const [documentValue, fileValue] = args;
+    return mintResolvedTarget(owner.id, storageKey(documentValue), requireFilename(fileValue));
+  });
 
   ipcMain.handle(
     'exports:pickTarget',
-    async (
-      event,
-      documentId: string,
-      filename: string,
-      currentPath?: string | null,
-    ): Promise<string | null> => {
-      const stored = await readStoredTarget(documentId);
-      const downloadsDirectory = app.getPath('downloads');
-      const fallback = resolveExportTarget(downloadsDirectory, stored, filename);
-      const requested = ensureExtension(
-        resolveRequestedExportTarget(fallback, currentPath ?? null),
-        filename,
+    async (event, ...args: unknown[]): Promise<{ grantId: string; displayPath: string } | null> => {
+      const owner = ownerFor(event);
+      assertIpcArgumentCount(args, 3);
+      const [documentValue, fileValue, grantValue] = args;
+      return pickTarget(
+        event,
+        owner.id,
+        storageKey(documentValue),
+        requireFilename(fileValue),
+        requireOptionalGrant(grantValue),
       );
-      const result = await showSaveDialog(event, filename, requested);
-      if (result.canceled || !result.filePath) return null;
-
-      const targetPath = ensureExtension(path.resolve(result.filePath), filename);
-      beginAccess(result.bookmark ? { path: targetPath, bookmark: result.bookmark } : null);
-      await rememberTarget(documentId, targetPath, result.bookmark);
-      return targetPath;
     },
   );
 
   ipcMain.handle(
     'exports:save',
-    async (
-      event,
-      documentId: string,
-      filename: string,
-      targetPath: string | null,
-      data: ArrayBuffer | Uint8Array,
-    ): Promise<string | null> => {
-      let stored = await readStoredTarget(documentId);
-      const downloadsDirectory = app.getPath('downloads');
-      const fallback = resolveExportTarget(downloadsDirectory, stored, filename);
-      let resolvedTarget = ensureExtension(
-        resolveRequestedExportTarget(fallback, targetPath),
-        filename,
-      );
-      let bookmark: string | undefined;
+    async (event, ...args: unknown[]): Promise<{ grantId: string; displayPath: string } | null> => {
+      const owner = ownerFor(event);
+      assertIpcArgumentCount(args, 4);
+      const [documentValue, fileValue, grantValue, dataValue] = args;
+      const documentKey = storageKey(documentValue);
+      const filename = requireFilename(fileValue);
+      const grantId = requireOptionalGrant(grantValue);
+      if (!isBoundedBytePayload(dataValue)) throw new Error('Export payload exceeds host limits');
 
-      const exactAccess = findExportTargetAccess(stored, resolvedTarget);
-      const canWriteToDownloads = isInExportDirectory(downloadsDirectory, resolvedTarget);
-      const canWriteRememberedSibling =
-        !isSandboxed() && isInRememberedExportDirectory(stored, resolvedTarget);
+      const grant = grantId
+        ? { grantId, displayPath: '' }
+        : await pickTarget(event, owner.id, documentKey, filename, null);
+      if (!grant) return null;
 
-      if (exactAccess) {
-        bookmark = exactAccess.bookmark;
-        beginAccess(exactAccess);
-      } else if (!canWriteToDownloads && !canWriteRememberedSibling) {
-        const result = await showSaveDialog(event, filename, resolvedTarget);
-        if (result.canceled || !result.filePath) return null;
-        resolvedTarget = ensureExtension(path.resolve(result.filePath), filename);
-        bookmark = result.bookmark;
-        beginAccess(bookmark ? { path: resolvedTarget, bookmark } : null);
-        await rememberTarget(documentId, resolvedTarget, bookmark);
-        stored = await readStoredTarget(documentId);
+      const target = await resolveExportGrant(owner.id, documentKey, grant.grantId);
+      const requestedExtension = getExportExtension(filename);
+      const targetExtension = getExportExtension(target.absolutePath);
+      if (requestedExtension !== targetExtension) {
+        throw new Error('Export target grant does not match the requested file type');
       }
 
-      await fs.writeFile(resolvedTarget, toBuffer(data));
-      const remembered = findExportTargetAccess(stored, resolvedTarget);
-      await rememberTarget(documentId, resolvedTarget, bookmark ?? remembered?.bookmark);
-      return resolvedTarget;
+      if (target.bookmark) beginAccess({ path: target.absolutePath, bookmark: target.bookmark });
+      await withFileMutationLocks([target.absolutePath], () =>
+        atomicWriteBinary(target.absolutePath, dataValue),
+      );
+      await rememberTarget(documentKey, target.absolutePath, target.bookmark);
+      return { grantId: grant.grantId, displayPath: target.absolutePath };
     },
   );
 }

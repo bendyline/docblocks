@@ -8,14 +8,21 @@ import {
   type ExportOptions,
 } from '../../../react/src/Export/export-options.js';
 import { buildExportFilename, runExport } from '../../../react/src/Export/run-export.js';
-import { updateExportTargetExtension } from '../../../react/src/Export/export-destination.js';
+import type { ExportTargetGrantMessage } from '../../src/messages.js';
 
 export interface VscodeExportButtonProps {
   selectedFile: string | null;
   mediaContainer: ContentContainer | null;
-  saveBlob: (blob: Blob, filename: string, targetPath?: string | null) => Promise<string | null>;
-  resolveExportTarget: (filename: string) => Promise<string>;
-  pickExportTarget: (filename: string, currentPath?: string | null) => Promise<string | null>;
+  saveBlob: (
+    blob: Blob,
+    filename: string,
+    target?: ExportTargetGrantMessage | null,
+  ) => Promise<ExportTargetGrantMessage | null>;
+  resolveExportTarget: (filename: string) => Promise<ExportTargetGrantMessage | null>;
+  pickExportTarget: (
+    filename: string,
+    currentTarget?: ExportTargetGrantMessage | null,
+  ) => Promise<ExportTargetGrantMessage | null>;
 }
 
 export function VscodeExportButton({
@@ -29,7 +36,7 @@ export function VscodeExportButton({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [destinationPath, setDestinationPath] = useState('');
-  const destinationLockedRef = useRef(false);
+  const [destinationTarget, setDestinationTarget] = useState<ExportTargetGrantMessage | null>(null);
   const destinationRequestRef = useRef(0);
 
   const docThemeId = useMemo(() => {
@@ -48,20 +55,17 @@ export function VscodeExportButton({
   }, [docThemeId]);
 
   const refreshDestination = useCallback(
-    async (options: ExportOptions, force = false) => {
-      if (!force && destinationLockedRef.current) {
-        const filename = buildExportFilename(selectedFile, options);
-        setDestinationPath((current) => updateExportTargetExtension(current, filename));
-        return;
-      }
-
+    async (options: ExportOptions) => {
       const requestId = destinationRequestRef.current + 1;
       destinationRequestRef.current = requestId;
 
       try {
         const filename = buildExportFilename(selectedFile, options);
-        const path = await resolveExportTarget(filename);
-        if (destinationRequestRef.current === requestId) setDestinationPath(path);
+        const target = await resolveExportTarget(filename);
+        if (destinationRequestRef.current === requestId) {
+          setDestinationTarget(target);
+          setDestinationPath(target?.displayLabel ?? '');
+        }
       } catch {
         if (destinationRequestRef.current === requestId) setDestinationPath('');
       }
@@ -70,15 +74,9 @@ export function VscodeExportButton({
   );
 
   const handleOpenDialog = useCallback(() => {
-    destinationLockedRef.current = false;
     setDialogOpen(true);
-    void refreshDestination(dialogInitial, true);
+    void refreshDestination(dialogInitial);
   }, [dialogInitial, refreshDestination]);
-
-  const handleDestinationChange = useCallback((path: string) => {
-    destinationLockedRef.current = true;
-    setDestinationPath(path);
-  }, []);
 
   const handleOptionsChange = useCallback(
     (options: ExportOptions) => {
@@ -91,26 +89,26 @@ export function VscodeExportButton({
     async (options: ExportOptions) => {
       try {
         const filename = buildExportFilename(selectedFile, options);
-        const pickedPath = await pickExportTarget(filename, destinationPath);
-        if (pickedPath === null) return;
-        destinationLockedRef.current = true;
-        setDestinationPath(pickedPath);
+        const pickedTarget = await pickExportTarget(filename, destinationTarget);
+        if (pickedTarget === null) return;
+        setDestinationTarget(pickedTarget);
+        setDestinationPath(pickedTarget.displayLabel);
       } catch {
         // The extension host already surfaces picker errors.
       }
     },
-    [destinationPath, pickExportTarget, selectedFile],
+    [destinationTarget, pickExportTarget, selectedFile],
   );
 
   const handleSaveBlob = useCallback(
     async (blob: Blob, filename: string) => {
-      const savedPath = await saveBlob(blob, filename, destinationPath);
-      if (savedPath) {
-        destinationLockedRef.current = true;
-        setDestinationPath(savedPath);
+      const savedTarget = await saveBlob(blob, filename, destinationTarget);
+      if (savedTarget) {
+        setDestinationTarget(savedTarget);
+        setDestinationPath(savedTarget.displayLabel);
       }
     },
-    [destinationPath, saveBlob],
+    [destinationTarget, saveBlob],
   );
 
   const handleExport = useCallback(
@@ -145,8 +143,8 @@ export function VscodeExportButton({
           exporting={exporting}
           destination={{
             value: destinationPath,
-            onChange: handleDestinationChange,
             onPick: handlePickDestination,
+            hint: 'VS Code owns and validates this destination.',
           }}
           onExport={handleExport}
           onOptionsChange={handleOptionsChange}

@@ -39,6 +39,11 @@ describe('WorkspaceRoots path-traversal guard', () => {
     expect(resolved).to.equal(path.resolve(ROOT, 'notes/today.md'));
   });
 
+  it('resolves an opaque workspace id without accepting a renderer path', () => {
+    expect(roots.get('ws-1')).to.deep.equal({ id: 'ws-1', rootPath: path.resolve(ROOT) });
+    expect(roots.get(ROOT)).to.equal(null);
+  });
+
   it('rejects paths that escape the root via ..', () => {
     expect(() => roots.resolve(ROOT, '/../etc/passwd')).to.throw(/escape/i);
     expect(() => roots.resolve(ROOT, '../../etc/passwd')).to.throw(/escape/i);

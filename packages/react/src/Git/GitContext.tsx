@@ -45,7 +45,8 @@ export interface GitValue {
   capabilities: GitCapabilities | null;
   /** Tier 2 — the active workspace root is a repository. Gates everything else. */
   repo: GitRepoDetection | null;
-  rootPath: string | null;
+  /** Main-owned repository capability; never a native path. */
+  repositoryId: string | null;
   /** Parsed web location of the first remote, when one exists and parses. */
   remoteWeb: { host: string; owner: string; repo: string; webUrl: string } | null;
   /** Raw host API for read-heavy dialogs (log, branches, file-at-revision). */

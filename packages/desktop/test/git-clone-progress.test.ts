@@ -134,6 +134,17 @@ describe('createCloneProgressParser', () => {
     expect(events).to.have.length(0);
   });
 
+  it('drops unterminated oversized input and bounds renderer-visible detail', () => {
+    const { events, feed } = collect();
+    feed('x'.repeat(20_000));
+    feed('\n');
+    expect(events).to.deep.equal([]);
+
+    feed(`Receiving objects:  42% ${'x'.repeat(2_000)}\n`);
+    expect(events).to.have.length(1);
+    expect(events[0].detail.length).to.equal(1_024);
+  });
+
   it('handles a realistic interleaved stream', () => {
     const { events, feed } = collect();
     feed("Cloning into 'repo'...\nremote: Enumerating objects: 291, done.\n");
