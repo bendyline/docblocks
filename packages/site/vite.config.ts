@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
 // Strips //# sourceMappingURL pragmas from upstream packages whose published
@@ -37,9 +38,82 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
   return deps.filter((dep) => !isDeferredFeatureAsset(dep));
 }
 
+// PWA packaging. The whole dist is precached (~22 MB) so every feature —
+// export formats, Monaco language workers, theme fonts — works offline even
+// if the user never touched it while online. That is a deliberate product
+// decision: never let functionality break offline to save bandwidth.
+const docblocksPwa = (): Plugin[] =>
+  VitePWA({
+    // Updates are prompt-based: the shell shows an "Update available" banner
+    // and the user reloads when ready. Never auto-reload mid-edit.
+    registerType: 'prompt',
+    // The page CSP (`script-src 'self'`) forbids inline scripts, and we need
+    // the update callbacks anyway — registration lives in src/pwa.ts.
+    injectRegister: false,
+    devOptions: { enabled: false }, // SW exists only in build/preview
+    manifest: {
+      name: 'DocBlocks',
+      short_name: 'DocBlocks',
+      description:
+        'A local-first markdown document editor that runs entirely in your browser. Your files stay on your device.',
+      id: '/',
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      // Prefer the custom titlebar when the browser supports it — the WCO
+      // CSS lives in docblocks.css under `@media (display-mode:
+      // window-controls-overlay)`. 'standalone' is the fallback.
+      display_override: ['window-controls-overlay', 'standalone'],
+      theme_color: '#f3eede',
+      background_color: '#ffffff',
+      categories: ['productivity'],
+      launch_handler: { client_mode: 'focus-existing' },
+      // Installed-app OS integration (Chromium desktop): double-clicking a
+      // markdown file or a DocBlocks bundle opens it here (consumed by the
+      // shell's launchQueue effect), and the taskbar jump list offers a
+      // fresh document (`?action=new`, handled by the shell on boot).
+      file_handlers: [
+        {
+          action: '/',
+          accept: {
+            'text/markdown': ['.md', '.markdown'],
+            'application/x-docblocks': ['.dbk'],
+          },
+        },
+      ],
+      shortcuts: [
+        {
+          name: 'New document',
+          url: '/?action=new',
+          icons: [{ src: 'icons/pwa-192.png', sizes: '192x192', type: 'image/png' }],
+        },
+      ],
+      icons: [
+        { src: 'icons/pwa-192.png', sizes: '192x192', type: 'image/png' },
+        { src: 'icons/pwa-512.png', sizes: '512x512', type: 'image/png' },
+        { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      // Everything in dist. CNAME has no extension so it stays out.
+      globPatterns: ['**/*.{html,js,css,png,webp,ttf,woff2,webmanifest}'],
+      // Workbox's default cap is 2 MiB, which would SILENTLY drop the main
+      // bundle, the monaco chunk, and ts.worker (6 MB) from the precache.
+      // Any future chunk above this cap silently falls out too — check
+      // dist/sw.js after adding heavy dependencies.
+      maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+      navigateFallback: 'index.html',
+      cleanupOutdatedCaches: true,
+      // Paired with registerType 'prompt': the waiting SW takes over only
+      // when the user accepts the reload.
+      skipWaiting: false,
+      clientsClaim: false,
+    },
+  });
+
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
-  plugins: [stripBrokenSourcemapPragmas(), react()],
+  plugins: [stripBrokenSourcemapPragmas(), react(), docblocksPwa()],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy across the graph. Without this, the
@@ -65,7 +139,23 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../react/src/index.ts'),
       },
       {
-        find: '@bendyline/docblocks/filesystem',
+        find: '@bendyline/docblocks/filesystem/indexeddb',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/indexeddb.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/memory',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/memory.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/native',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/native.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/electron',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/electron.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/filesystem$/,
         replacement: path.resolve(__dirname, '../core/src/filesystem/index.ts'),
       },
       {

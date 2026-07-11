@@ -3297,6 +3297,86 @@ html:has(.db-shell[data-theme='dark'])
   outline-offset: 2px;
 }
 
+/* "Update available" prompt (browser PWA hosts) — same top-center banner
+   pattern as the document-conflict card, accent-toned instead of warning. */
+.db-update-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-accent);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-update-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.db-update-banner-actions button {
+  padding: 5px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-update-banner-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+/* Storage-full alert — the origin quota is exhausted and autosave is
+   failing. Danger-toned variant of the same top-center banner pattern. */
+.db-storage-full-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-danger, #a33a35);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-storage-full-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.db-storage-full-banner-actions button {
+  padding: 5px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-storage-full-banner-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
 @keyframes db-save-toast-fade {
   0% {
     opacity: 0;
@@ -3824,4 +3904,106 @@ button.db-git-file-row:hover {
   font-size: 12px;
   white-space: pre-wrap;
   font-family: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+   Window Controls Overlay — installed web app (PWA) custom titlebar.
+
+   When the manifest's `display_override: ["window-controls-overlay", ...]`
+   is active, the OS caption buttons float over the first shell row and this
+   block turns that row into the titlebar: draggable empty space, insets for
+   the caption buttons, and every interactive descendant opted back out.
+
+   Ported 1:1 from the Electron build — keep in sync with
+   packages/desktop/renderer/titlebar.css (which is scoped under
+   `.db-desktop-root`; Electron windows report `display-mode: browser`, so
+   this media query can never double-apply there). The desktop drag-dots
+   affordance (`.db-shell-sidebar-header::after`) is intentionally omitted.
+   The media query is live: toggling the overlay chevron flips it with no JS. */
+@media (display-mode: window-controls-overlay) {
+  .db-shell {
+    --db-wco-titlebar-height: 48px;
+  }
+
+  /* The first shell row replaces the native titlebar. Empty space can drag
+     the window; every interactive descendant opts back out below. */
+  .db-shell .db-shell-sidebar-header,
+  .db-shell .squisq-toolbar,
+  .db-shell .squisq-editor-header--image {
+    app-region: drag;
+    -webkit-app-region: drag;
+    box-sizing: border-box;
+    height: var(--db-wco-titlebar-height);
+    min-height: var(--db-wco-titlebar-height);
+  }
+
+  .db-shell .db-shell-sidebar-header {
+    padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
+    cursor: grab;
+  }
+
+  /* Let the workspace menu size itself to its contents and cross the sidebar
+     boundary above the editor. The explorer still clips its own contents. */
+  .db-shell .db-shell-sidebar {
+    overflow: visible;
+  }
+
+  .db-shell .db-workspace-dropdown {
+    box-sizing: border-box;
+    width: max-content;
+  }
+
+  /* The caption buttons normally occupy the right edge. Derive that inset
+     from the overlay safe area rather than assuming a fixed width, so
+     scaling, RTL controls, and OS variants stay clear. The compact sidebar
+     header is full-width, so it needs the same reservation. */
+  .db-shell.db-shell--mobile .db-shell-sidebar-header,
+  .db-shell .squisq-toolbar,
+  .db-shell .squisq-editor-header--image {
+    padding-right: max(
+      12px,
+      calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)
+    );
+  }
+
+  /* In compact mode there is no sidebar to absorb left-side controls such as
+     macOS traffic lights, so the editor toolbar also observes the left inset. */
+  .db-shell.db-shell--mobile .squisq-toolbar,
+  .db-shell.db-shell--mobile .squisq-editor-header--image {
+    padding-left: env(titlebar-area-x, 0px);
+  }
+
+  .db-shell
+    :is(
+      button,
+      a,
+      input,
+      select,
+      textarea,
+      [contenteditable='true'],
+      [role='button'],
+      [role='tab']
+    ) {
+    app-region: no-drag;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Folder and empty states do not render Squisq's toolbar. Preserve a top
+     drag strip in those states and keep folder content below it. */
+  .db-shell .db-shell-empty::before,
+  .db-shell .db-folder-view::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+    height: var(--db-wco-titlebar-height);
+    app-region: drag;
+    -webkit-app-region: drag;
+  }
+
+  .db-shell .db-folder-view {
+    box-sizing: border-box;
+    padding-top: calc(24px + var(--db-wco-titlebar-height));
+  }
 }

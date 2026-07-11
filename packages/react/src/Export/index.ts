@@ -1,8 +1,8 @@
-export { ExportToolbarControls } from './ExportToolbarControls.js';
+export { ExportToolbarControls } from './DeferredExportToolbarControls.js';
 export type {
   ExportDestinationAdapter,
   ExportToolbarControlsProps,
-} from './ExportToolbarControls.js';
+} from './DeferredExportToolbarControls.js';
 export { ExportDialog } from './ExportDialog.js';
 export type { ExportDestinationControl, ExportDialogProps } from './ExportDialog.js';
 export type { ExportFormat, ExportOptions } from './export-options.js';

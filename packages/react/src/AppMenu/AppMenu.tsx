@@ -45,6 +45,32 @@ export interface AppMenuProps {
    * When omitted, the menu item is hidden.
    */
   onKeepBrowserData?: () => void | Promise<void>;
+  /**
+   * Called when the user clicks "Install DocBlocks…" (browser PWA install).
+   * When omitted — Electron, unsupported browsers, or already installed —
+   * the menu item is hidden.
+   */
+  onInstallApp?: () => void | Promise<void>;
+  /**
+   * Async origin storage usage/quota for the Settings "Storage" section
+   * (fetched when the dialog opens). When omitted — Electron, or browsers
+   * without `navigator.storage.estimate` — the section is hidden.
+   */
+  getStorageEstimate?: () => Promise<{ usage: number; quota: number } | null>;
+  /** Whether the browser has marked origin storage persistent (Settings display). */
+  storagePersistent?: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  let value = bytes;
+  let unit = 'B';
+  for (const next of ['KB', 'MB', 'GB', 'TB']) {
+    if (value < 1024) break;
+    value /= 1024;
+    unit = next;
+  }
+  return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
 }
 
 export function AppMenu({
@@ -58,11 +84,34 @@ export function AppMenu({
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
   onKeepBrowserData,
+  onInstallApp,
+  getStorageEstimate,
+  storagePersistent,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [storageEstimate, setStorageEstimate] = useState<{
+    usage: number;
+    quota: number;
+  } | null>(null);
+
+  // Refresh the Settings "Storage" figures each time the dialog opens.
+  useEffect(() => {
+    if (!showSettings || !getStorageEstimate) return;
+    let cancelled = false;
+    getStorageEstimate()
+      .then((estimate) => {
+        if (!cancelled) setStorageEstimate(estimate);
+      })
+      .catch(() => {
+        if (!cancelled) setStorageEstimate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSettings, getStorageEstimate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -109,6 +158,15 @@ export function AppMenu({
             >
               Settings
             </button>
+            {onInstallApp && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                onClick={() => handleAction(() => void onInstallApp())}
+              >
+                Install DocBlocks&hellip;
+              </button>
+            )}
             {onKeepBrowserData && (
               <button
                 className="db-app-menu-item"
@@ -220,6 +278,26 @@ export function AppMenu({
                   ))}
                 </div>
               </fieldset>
+
+              {getStorageEstimate && (
+                <fieldset className="db-settings-fieldset">
+                  <legend className="db-settings-legend">Storage</legend>
+                  <p className="db-settings-hint">
+                    {storageEstimate
+                      ? `DocBlocks documents and app data are using ${formatBytes(
+                          storageEstimate.usage,
+                        )} of the ${formatBytes(
+                          storageEstimate.quota,
+                        )} this browser allows for the site.`
+                      : 'Storage usage is not available in this browser.'}{' '}
+                    {storagePersistent === undefined
+                      ? ''
+                      : storagePersistent
+                        ? 'Data is marked persistent, so the browser will avoid evicting it.'
+                        : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
+                  </p>
+                </fieldset>
+              )}
 
               {onVersioningPreferenceChange && (
                 <fieldset className="db-settings-fieldset">

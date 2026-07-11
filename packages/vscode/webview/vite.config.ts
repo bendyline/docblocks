@@ -36,7 +36,23 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../../react/src/index.ts'),
       },
       {
-        find: '@bendyline/docblocks/filesystem',
+        find: '@bendyline/docblocks/filesystem/indexeddb',
+        replacement: path.resolve(__dirname, '../../core/src/filesystem/indexeddb.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/memory',
+        replacement: path.resolve(__dirname, '../../core/src/filesystem/memory.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/native',
+        replacement: path.resolve(__dirname, '../../core/src/filesystem/native.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/filesystem/electron',
+        replacement: path.resolve(__dirname, '../../core/src/filesystem/electron.ts'),
+      },
+      {
+        find: /^@bendyline\/docblocks\/filesystem$/,
         replacement: path.resolve(__dirname, '../../core/src/filesystem/index.ts'),
       },
       {

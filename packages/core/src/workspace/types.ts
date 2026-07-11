@@ -1,10 +1,18 @@
 /**
  * Origin of a transient workspace — records where its contents came from and
  * how to save them back. Set only on `type: 'transient'` workspaces.
- * - 'loose-file' — a single markdown file opened from the OS; edits write
- *   straight back to `path`.
- * - 'dbk' — a `.dbk`/zip bundle unpacked into memory; edits are re-zipped and
- *   written back to `path`.
+ * - 'loose-file' — a single markdown file opened from the OS (Electron);
+ *   edits write straight back to `path` via the host bridge.
+ * - 'dbk' — a `.dbk`/zip bundle unpacked into memory (Electron); edits are
+ *   re-zipped and written back to `path` via the host bridge.
+ * - 'web-file' — a single markdown file launched into the installed web app
+ *   (File Handling API); edits write back through `handle`.
+ * - 'web-dbk' — a `.dbk`/zip bundle launched into the installed web app;
+ *   edits are re-zipped and written back through `handle`.
+ *
+ * The web variants hold a live `FileSystemFileHandle`. That is safe because
+ * transient descriptors are never persisted — they live only in the
+ * in-memory registry (see workspace-manager) for the current page session.
  */
 export type TransientOrigin =
   | { kind: 'loose-file'; path: string }
@@ -12,6 +20,14 @@ export type TransientOrigin =
       kind: 'dbk';
       path: string;
       /** SHA-256 of the last bundle version acknowledged by the host. */
+      version: string | null;
+    }
+  | { kind: 'web-file'; handle: FileSystemFileHandle; name: string }
+  | {
+      kind: 'web-dbk';
+      handle: FileSystemFileHandle;
+      name: string;
+      /** SHA-256 of the last bundle version observed on disk. */
       version: string | null;
     };
 

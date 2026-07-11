@@ -6,6 +6,7 @@ interface BundleSurface {
   htmlPath: string;
   assetsDir: string;
   entryBudgetBytes: number;
+  editorBudgetBytes: number;
   monacoBudgetBytes: number;
 }
 
@@ -14,9 +15,10 @@ const surfaces: BundleSurface[] = [
     name: 'site',
     htmlPath: 'packages/site/dist/index.html',
     assetsDir: 'packages/site/dist/assets',
-    // Re-baselined for the shared revisioned DocumentSession + conflict UI.
-    // This leaves ~39 kB of headroom over the larger desktop entry.
+    // Retain the post-DocumentSession cap; the editor and provider families
+    // are feature/backend chunks and are checked as deferred boundaries.
     entryBudgetBytes: 2_375_000,
+    editorBudgetBytes: 1_100_000,
     monacoBudgetBytes: 4_000_000,
   },
   {
@@ -24,6 +26,7 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/desktop/dist/renderer/index.html',
     assetsDir: 'packages/desktop/dist/renderer/assets',
     entryBudgetBytes: 2_375_000,
+    editorBudgetBytes: 1_100_000,
     monacoBudgetBytes: 4_000_000,
   },
 ];
@@ -49,7 +52,15 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
   const html = await readFile(surface.htmlPath, 'utf8');
   const messages: string[] = [];
 
-  for (const deferredName of ['monaco-', 'standalone-source']) {
+  for (const deferredName of [
+    'LazyEditorShell-',
+    'indexeddb-',
+    'native-',
+    'memory-',
+    'electron-',
+    'monaco-',
+    'standalone-source',
+  ]) {
     if (html.includes(deferredName)) {
       throw new Error(`${surface.name}: ${deferredName} is referenced from index.html`);
     }
@@ -66,6 +77,20 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
     );
   }
   messages.push(`${surface.name}: entry ${entryAsset} ${formatBytes(entrySize)}`);
+
+  const editorAsset = await findAssetByPrefix(surface.assetsDir, 'LazyEditorShell-');
+  if (!editorAsset) {
+    throw new Error(`${surface.name}: missing deferred editor chunk`);
+  }
+  const editorSize = (await stat(path.join(surface.assetsDir, editorAsset))).size;
+  if (editorSize > surface.editorBudgetBytes) {
+    throw new Error(
+      `${surface.name}: ${editorAsset} is ${formatBytes(editorSize)}, above ${formatBytes(
+        surface.editorBudgetBytes,
+      )}`,
+    );
+  }
+  messages.push(`${surface.name}: deferred ${editorAsset} ${formatBytes(editorSize)}`);
 
   const monacoAsset = await findAssetByPrefix(surface.assetsDir, 'monaco-');
   if (!monacoAsset) {

@@ -25,6 +25,7 @@ export {
   mapDomExceptionToFsErrorCode,
   mapNodeErrorCodeToFsErrorCode,
   isSerializedFsError,
+  isQuotaExceededError,
   serializeFsError,
   deserializeFsError,
   fsErrorFromUnknown,

@@ -6,7 +6,6 @@
  */
 
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { EditorShell } from '@bendyline/squisq-editor-react';
 import type {
   EditorColorScheme,
   EditorView,
@@ -35,6 +34,7 @@ import {
   createFileMediaProvider,
   FsError,
   getFileSystemProviderV2,
+  isQuotaExceededError,
   parseWorkspacePath,
   workspacePathContains,
 } from '@bendyline/docblocks/filesystem';
@@ -76,9 +76,19 @@ import { useDocumentSession } from '../hooks/useDocumentSession.js';
 import {
   ExportToolbarControls,
   type ExportDestinationAdapter,
-} from '../Export/ExportToolbarControls.js';
+} from '../Export/DeferredExportToolbarControls.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
+// The editor is only needed after a document and its media container are
+// ready. Workspace chrome stays interactive while this large feature loads.
+const EditorShell = lazy(async () => {
+  const workersReady = (globalThis as { docBlocksMonacoWorkersReady?: Promise<unknown> })
+    .docBlocksMonacoWorkersReady;
+  // Worker setup is an enhancement; a host that cannot install language
+  // workers must not make the document editor unavailable.
+  await workersReady?.catch(() => undefined);
+  return import('./LazyEditorShell.js');
+});
 // The git dialogs/status bar only ever render under the Electron host, so
 // they load as a split chunk — the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
@@ -93,6 +103,7 @@ import {
   type VersioningPreference,
 } from '../preferences/versioning.js';
 import {
+  DB_CHROME_COLORS,
   loadAccentColor,
   loadThemePreference,
   saveAccentColor,
@@ -105,31 +116,53 @@ import { retainFileSystemProvider } from '../provider-lease.js';
 let indexedDbFileSystemModule: Promise<
   typeof import('@bendyline/docblocks/filesystem/indexeddb')
 > | null = null;
-let memoryFileSystemModule: Promise<typeof import('@bendyline/docblocks/filesystem/memory')> | null =
-  null;
-let nativeFileSystemModule: Promise<typeof import('@bendyline/docblocks/filesystem/native')> | null =
-  null;
+let memoryFileSystemModule: Promise<
+  typeof import('@bendyline/docblocks/filesystem/memory')
+> | null = null;
+let nativeFileSystemModule: Promise<
+  typeof import('@bendyline/docblocks/filesystem/native')
+> | null = null;
 let electronFileSystemModule: Promise<
   typeof import('@bendyline/docblocks/filesystem/electron')
 > | null = null;
 
 function loadIndexedDbFileSystem() {
-  indexedDbFileSystemModule ??= import('@bendyline/docblocks/filesystem/indexeddb');
+  indexedDbFileSystemModule ??= import('@bendyline/docblocks/filesystem/indexeddb').catch(
+    (error: unknown) => {
+      indexedDbFileSystemModule = null;
+      throw error;
+    },
+  );
   return indexedDbFileSystemModule;
 }
 
 function loadMemoryFileSystem() {
-  memoryFileSystemModule ??= import('@bendyline/docblocks/filesystem/memory');
+  memoryFileSystemModule ??= import('@bendyline/docblocks/filesystem/memory').catch(
+    (error: unknown) => {
+      memoryFileSystemModule = null;
+      throw error;
+    },
+  );
   return memoryFileSystemModule;
 }
 
 function loadNativeFileSystem() {
-  nativeFileSystemModule ??= import('@bendyline/docblocks/filesystem/native');
+  nativeFileSystemModule ??= import('@bendyline/docblocks/filesystem/native').catch(
+    (error: unknown) => {
+      nativeFileSystemModule = null;
+      throw error;
+    },
+  );
   return nativeFileSystemModule;
 }
 
 function loadElectronFileSystem() {
-  electronFileSystemModule ??= import('@bendyline/docblocks/filesystem/electron');
+  electronFileSystemModule ??= import('@bendyline/docblocks/filesystem/electron').catch(
+    (error: unknown) => {
+      electronFileSystemModule = null;
+      throw error;
+    },
+  );
   return electronFileSystemModule;
 }
 
@@ -162,7 +195,7 @@ function isMemoryWorkspaceProvider(
   return (
     typeof candidate.captureContents === 'function' &&
     typeof candidate.replaceContents === 'function' &&
-    typeof candidate.treeVersion === 'string'
+    typeof candidate.treeVersion === 'number'
   );
 }
 
@@ -190,6 +223,19 @@ export interface DocBlocksShellProps {
   onSaveVersion?: (result: SaveVersionResult) => void;
   /** Optional escape hatch for hosts that want imperative access to the version manager. */
   versioningRef?: React.Ref<DocumentVersionManager | null>;
+  /**
+   * True when a new deploy is waiting (browser PWA hosts: a fresh service
+   * worker finished installing). The shell shows an "Update available"
+   * banner whose Reload action calls `onApplyUpdate`.
+   */
+  updateAvailable?: boolean;
+  /** Activates the waiting update and reloads onto the new version. */
+  onApplyUpdate?: () => void;
+  /**
+   * True once the app has been fully cached for offline use (browser PWA
+   * hosts). Shown to the user once as a passive notice.
+   */
+  offlineReady?: boolean;
 }
 
 function useOsTheme(): 'light' | 'dark' {
@@ -470,6 +516,29 @@ async function sha256Hex(data: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * Ask for write access to a file handle delivered by the web File Handling
+ * API. Chromium grants read on launch; readwrite needs one prompt, ideally
+ * requested while the OS-launch user activation is still fresh. The
+ * permission methods are Chromium-only extensions (same inline typing
+ * approach as core's native-provider), so absent methods are treated as
+ * writable and the write itself surfaces any failure.
+ */
+async function ensureHandleWritePermission(handle: FileSystemFileHandle): Promise<boolean> {
+  const h = handle as FileSystemFileHandle & {
+    queryPermission?(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+    requestPermission?(desc: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  };
+  if (!h.queryPermission || !h.requestPermission) return true;
+  try {
+    const opts = { mode: 'readwrite' as const };
+    if ((await h.queryPermission(opts)) === 'granted') return true;
+    return (await h.requestPermission(opts)) === 'granted';
+  } catch {
+    return false;
+  }
+}
+
 /** Portable relative link from one workspace file to another. Walks up
  *  from the source's directory and back down to the target so the link
  *  survives folder reshuffles (`../sibling.md`, `subfolder/child.md`,
@@ -646,6 +715,9 @@ export function DocBlocksShell({
   versioningAutoSaveIdleMs,
   onSaveVersion,
   versioningRef,
+  updateAvailable = false,
+  onApplyUpdate,
+  offlineReady = false,
 }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
@@ -659,6 +731,19 @@ export function DocBlocksShell({
     setThemePreference(pref);
     saveThemePreference(pref);
   }, []);
+
+  // Keep the browser's theme-color metas in sync with the resolved theme so
+  // the installed web app's titlebar (Window Controls Overlay caption area,
+  // Android status bar) matches the shell chrome. Both media-attributed
+  // metas are overwritten on purpose: an explicit user theme choice must
+  // beat the OS media query. Electron paints its own titlebar.
+  useEffect(() => {
+    if (isElectronHost() || typeof document === 'undefined') return;
+    const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
+    metas.forEach((meta) => {
+      meta.content = DB_CHROME_COLORS[resolvedTheme];
+    });
+  }, [resolvedTheme]);
 
   const handleAccentColorChange = useCallback((color: AccentColor) => {
     setAccentColor(color);
@@ -689,6 +774,13 @@ export function DocBlocksShell({
   const effectiveCompact = isMobile || compactLayout;
   const showBrowserStorageWarning = !isElectronHost();
   const [browserStoragePersistent, setBrowserStoragePersistent] = useState(false);
+  // Browser PWA install prompt (Chromium only). The event is stashed when
+  // the browser deems the app installable and spent on first use.
+  const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(
+    null,
+  );
+  // "Update available" can be postponed for the rest of the session.
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const handleResizerPointerDown = useCallback(
@@ -784,7 +876,14 @@ export function DocBlocksShell({
   }, [activeWorkspaceId, descriptorRefreshKey]);
 
   // All git UI state/actions — null-renders on surfaces without git.
-  const git = useGit(provider, resolvedTheme);
+  const gitRootPath =
+    provider &&
+    activeWorkspaceDescriptor?.id === activeWorkspaceId &&
+    provider.id === activeWorkspaceId &&
+    activeWorkspaceDescriptor.type === 'electron-native'
+      ? (activeWorkspaceDescriptor.rootPath ?? null)
+      : null;
+  const git = useGit(provider, gitRootPath, resolvedTheme);
   const gitRef = useRef(git);
   gitRef.current = git;
   const { scheduleRefresh: gitScheduleRefresh } = git;
@@ -860,7 +959,9 @@ export function DocBlocksShell({
       const transient = getTransientWorkspace(workspaceId);
       const baseTarget = createFileSystemDocumentTarget(fsProvider, filePath);
 
-      if (!transient?.descriptor.origin || !isElectronHost()) {
+      const originKind = transient?.descriptor.origin?.kind;
+      const needsElectronHost = originKind === 'loose-file' || originKind === 'dbk';
+      if (!transient?.descriptor.origin || (needsElectronHost && !isElectronHost())) {
         return {
           key: baseTarget.key,
           async commit(request) {
@@ -872,6 +973,96 @@ export function DocBlocksShell({
       }
 
       const origin = transient.descriptor.origin;
+
+      if (origin.kind === 'web-file' || origin.kind === 'web-dbk') {
+        // Launched-file origins (installed web app, File Handling API):
+        // read and write through the FileSystemFileHandle instead of the
+        // Electron host bridge, with the same optimistic external-change
+        // detection as the host-backed paths below.
+        const webOrigin = origin;
+        const transientProvider = transient.provider;
+        return {
+          key: baseTarget.key,
+          async commit(request) {
+            if (!(await ensureHandleWritePermission(webOrigin.handle))) {
+              throw new Error(
+                `DocBlocks needs permission to write to "${webOrigin.name}". Save again to grant it.`,
+              );
+            }
+            if (webOrigin.kind === 'web-file') {
+              const current = await (await webOrigin.handle.getFile()).text();
+              if (
+                request.persistedContent !== null &&
+                current !== request.persistedContent &&
+                current !== request.content
+              ) {
+                pendingDbkConflictsRef.current.delete(baseTarget.key);
+                await writeProviderText(fsProvider, filePath, current);
+                throw new DocumentCommitConflictError(
+                  'The original file changed outside DocBlocks.',
+                  current,
+                  null,
+                );
+              }
+              const writable = await webOrigin.handle.createWritable();
+              await writable.write(request.content);
+              await writable.close();
+              await baseTarget.commit(request);
+              pendingDbkConflictsRef.current.delete(baseTarget.key);
+              gitScheduleRefresh();
+              return {};
+            }
+            // web-dbk: package the in-memory workspace into a zip and write
+            // it back through the handle, guarded by a SHA-256
+            // compare-and-swap that mirrors the Electron dbk path.
+            const [{ MemoryContentContainer }, { containerToZip, zipToContainer }] =
+              await Promise.all([
+                import('@bendyline/squisq/storage'),
+                import('@bendyline/squisq-formats/container'),
+              ]);
+            const currentBytes = await (await webOrigin.handle.getFile()).arrayBuffer();
+            const currentVersion = await sha256Hex(currentBytes);
+            if (webOrigin.version !== null && currentVersion !== webOrigin.version) {
+              if (!isMemoryWorkspaceProvider(transientProvider)) {
+                throw new Error('A transient DBK workspace must use in-memory storage.');
+              }
+              const externalContainer = await zipToContainer(currentBytes);
+              const snapshot = await createDbkWorkspaceSnapshot(externalContainer, {
+                targetDocumentPath: filePath,
+              });
+              // Keep both branches intact until the user chooses — same
+              // semantics as the Electron dbk conflict staging below.
+              pendingDbkConflictsRef.current.set(baseTarget.key, {
+                provider: transientProvider,
+                snapshot,
+              });
+              webOrigin.version = currentVersion;
+              throw new DocumentCommitConflictError(
+                'The original DocBlocks bundle changed outside DocBlocks.',
+                snapshot.documentContent,
+                currentVersion,
+              );
+            }
+            const container = new MemoryContentContainer();
+            await copyProviderToContainer(transientProvider, container, '');
+            await container.writeFile(
+              filePath.replace(/^\/+/, ''),
+              new TextEncoder().encode(request.content),
+            );
+            const blob = await containerToZip(container);
+            const bytes = await blob.arrayBuffer();
+            const writable = await webOrigin.handle.createWritable();
+            await writable.write(bytes);
+            await writable.close();
+            webOrigin.version = await sha256Hex(bytes);
+            await baseTarget.commit(request);
+            pendingDbkConflictsRef.current.delete(baseTarget.key);
+            gitScheduleRefresh();
+            return { version: webOrigin.version };
+          },
+        };
+      }
+
       return {
         key: baseTarget.key,
         async commit(request) {
@@ -1339,6 +1530,54 @@ export function DocBlocksShell({
     };
   }, [showBrowserStorageWarning]);
 
+  // Browser PWA install plumbing. Chromium fires `beforeinstallprompt` when
+  // the app is installable; stashing it (after preventDefault) lets the app
+  // menu offer "Install DocBlocks…" on our terms. `appinstalled` fires for
+  // any install path (menu item or the browser's own omnibox affordance).
+  useEffect(() => {
+    if (isElectronHost() || typeof window === 'undefined') return;
+    const onBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
+      e.preventDefault();
+      setInstallPromptEvent(e);
+    };
+    const onAppInstalled = () => {
+      setInstallPromptEvent(null);
+      // Chromium auto-grants persistent storage to installed apps — re-probe
+      // so the "Keep data in browser for longer" nag retires itself.
+      const storage = navigator.storage;
+      if (storage && typeof storage.persisted === 'function') {
+        storage
+          .persisted()
+          .then((persistent) => {
+            if (persistent) setBrowserStoragePersistent(true);
+          })
+          .catch(() => {
+            // Probe is best-effort; the manual menu action still works.
+          });
+      }
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  const handleInstallApp = useCallback(async () => {
+    const promptEvent = installPromptEvent;
+    // prompt() is single-use: clear the stash up front and rely on the
+    // browser re-firing beforeinstallprompt if the user dismisses.
+    setInstallPromptEvent(null);
+    if (!promptEvent) return;
+    try {
+      await promptEvent.prompt();
+      await promptEvent.userChoice;
+    } catch {
+      // The prompt was already consumed or is not allowed right now.
+    }
+  }, [installPromptEvent]);
+
   // Track view mode changes (Editor/Raw/Play tabs) and persist to localStorage
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1379,7 +1618,11 @@ export function DocBlocksShell({
         } catch (error: unknown) {
           setSaveToast({
             kind: 'error',
-            message: error instanceof Error ? error.message : 'Could not save this document.',
+            message: isQuotaExceededError(error)
+              ? 'Could not save — browser storage is full. Free up space or back up your work.'
+              : error instanceof Error
+                ? error.message
+                : 'Could not save this document.',
           });
         }
         if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
@@ -1394,6 +1637,56 @@ export function DocBlocksShell({
       if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
     };
   }, []);
+
+  // One-time passive notice when the host reports the app is fully cached
+  // for offline use. Mirrors the save toast's look and self-dismissal.
+  const [offlineReadyToast, setOfflineReadyToast] = useState(false);
+  const offlineReadyAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!offlineReady || offlineReadyAnnouncedRef.current) return;
+    offlineReadyAnnouncedRef.current = true;
+    setOfflineReadyToast(true);
+    const timer = setTimeout(() => setOfflineReadyToast(false), 3000);
+    return () => clearTimeout(timer);
+  }, [offlineReady]);
+
+  // Quota-exhaustion banner. The session clears `error` on every keystroke
+  // and at each retry, so the raw snapshot flickers during a failing
+  // type/retry loop — latch it, and release only when a commit succeeds.
+  // Known gap: version-snapshot writes (squisq's DocumentVersionManager)
+  // swallow their own failures upstream (`SaveVersionResult` has no error
+  // variant), but they hit the same provider, so the primary autosave
+  // latches this banner within one edit cycle anyway.
+  const [storageFull, setStorageFull] = useState(false);
+  useEffect(() => {
+    if (documentSnapshot.error && isQuotaExceededError(documentSnapshot.error)) {
+      setStorageFull(true);
+    } else if (documentSnapshot.status === 'saved') {
+      setStorageFull(false);
+    }
+  }, [documentSnapshot.error, documentSnapshot.status]);
+
+  // Ask the browser to make origin storage durable the first time real work
+  // is saved (browser surface only, once per session). Chromium decides
+  // silently — installed apps are auto-granted; Firefox may show one prompt
+  // at this meaningful moment rather than at page load.
+  const autoPersistRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!showBrowserStorageWarning || browserStoragePersistent) return;
+    if (autoPersistRequestedRef.current) return;
+    if (documentSnapshot.status !== 'saved') return;
+    const storage = typeof navigator !== 'undefined' ? navigator.storage : undefined;
+    if (!storage || typeof storage.persist !== 'function') return;
+    autoPersistRequestedRef.current = true;
+    storage
+      .persist()
+      .then((granted) => {
+        if (granted) setBrowserStoragePersistent(true);
+      })
+      .catch(() => {
+        // Best-effort; the manual menu action remains available.
+      });
+  }, [showBrowserStorageWarning, browserStoragePersistent, documentSnapshot.status]);
 
   // Per-file media: for `notes.md` images live in `notes_files/` beside it.
   // Rebuilds whenever the provider or selected file changes.
@@ -1847,6 +2140,26 @@ export function DocBlocksShell({
     documentSession,
   ]);
 
+  // Manifest shortcut "New document" launches `/?action=new` (installed
+  // PWA jump list). Handled once the first workspace/provider is ready,
+  // then stripped from the URL so a reload doesn't re-trigger it.
+  const actionNewHandledRef = useRef(false);
+  useEffect(() => {
+    if (!provider || actionNewHandledRef.current) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') !== 'new') return;
+    actionNewHandledRef.current = true;
+    params.delete('action');
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + (query ? `?${query}` : '') + window.location.hash,
+    );
+    void handleNewFile();
+  }, [provider, handleNewFile]);
+
   const handleRevealWorkspace = useCallback(async () => {
     if (!isElectronHost() || !activeWorkspaceId) return;
     const ws = await getWorkspace(activeWorkspaceId);
@@ -2214,6 +2527,80 @@ export function DocBlocksShell({
     });
   }, [openFromIds, openTransient]);
 
+  /**
+   * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
+   * installed PWA (File Handling API) arrives as a FileSystemFileHandle.
+   * Contents are seeded into the same session-only in-memory workspace;
+   * saves write back through the handle (see `createDocumentTarget`).
+   */
+  const openTransientFromHandle = useCallback(
+    async (handle: FileSystemFileHandle) => {
+      const name = handle.name;
+      const isBundle = /\.(dbk|zip)$/i.test(name);
+      // Keyed by file name: relaunching the same file replaces the registry
+      // entry instead of piling up session workspaces. Two different files
+      // that share a name would collide — acceptable for session-only state.
+      const id = `transient-web-${isBundle ? 'bundle' : 'file'}-${name}`;
+      // Ask for write access while the OS-launch user activation is fresh so
+      // autosave doesn't have to prompt mid-typing. Best-effort: a denial
+      // surfaces on save, not on open.
+      await ensureHandleWritePermission(handle);
+      const mem = await createMemoryFileSystemProvider(id, name);
+      const file = await handle.getFile();
+      let primaryFile: string;
+      let origin: WorkspaceDescriptor['origin'];
+
+      if (!isBundle) {
+        primaryFile = name;
+        mem.seedText(primaryFile, await file.text());
+        origin = { kind: 'web-file', handle, name };
+      } else {
+        const bytes = await file.arrayBuffer();
+        const version = await sha256Hex(bytes);
+        const { zipToContainer } = await import('@bendyline/squisq-formats/container');
+        const container = await zipToContainer(bytes);
+        const base = name.replace(/\.[^.]+$/, '');
+        primaryFile = `${base}.md`;
+        const snapshot = await createDbkWorkspaceSnapshot(container, {
+          targetDocumentPath: primaryFile,
+        });
+        mem.replaceContents(snapshot);
+        origin = { kind: 'web-dbk', handle, name, version };
+      }
+
+      const descriptor: WorkspaceDescriptor = {
+        id,
+        name,
+        type: 'transient',
+        lastOpened: new Date().toISOString(),
+        origin,
+      };
+      registerTransientWorkspace(descriptor, mem);
+      await openFromIds(id, `/${primaryFile}`, true);
+    },
+    [openFromIds],
+  );
+
+  // Consume files the OS delivers to the installed PWA (Chromium desktop).
+  // launchQueue buffers launch params until a consumer is set, so a
+  // post-mount effect is early enough to catch the launching file.
+  useEffect(() => {
+    if (isElectronHost() || typeof window === 'undefined') return;
+    const launchQueue = window.launchQueue;
+    if (!launchQueue) return;
+    launchQueue.setConsumer((params) => {
+      if (params.files.length === 0) return;
+      const handle = params.files[0];
+      void openTransientFromHandle(handle).catch((error: unknown) => {
+        alert(
+          error instanceof Error
+            ? 'DocBlocks could not open the launched file: ' + error.message
+            : 'DocBlocks could not open the launched file.',
+        );
+      });
+    });
+  }, [openTransientFromHandle]);
+
   const handleDownloadWorkspace = useCallback(async () => {
     if (!provider) return;
     try {
@@ -2379,6 +2766,20 @@ export function DocBlocksShell({
     }
   }, []);
 
+  // Settings dialog "Storage" row (browser surface): usage/quota estimate.
+  const getBrowserStorageEstimate = useCallback(async () => {
+    if (typeof navigator === 'undefined') return null;
+    const storage = navigator.storage;
+    if (!storage || typeof storage.estimate !== 'function') return null;
+    try {
+      const { usage, quota } = await storage.estimate();
+      if (typeof usage !== 'number' || typeof quota !== 'number') return null;
+      return { usage, quota };
+    } catch {
+      return null;
+    }
+  }, []);
+
   const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspaceId) return;
     const confirmMsg = isElectronHost()
@@ -2453,6 +2854,11 @@ export function DocBlocksShell({
             {saveToast.message}
           </div>
         )}
+        {offlineReadyToast && !saveToast && (
+          <div className="db-save-toast db-save-toast--success" role="status" aria-live="polite">
+            DocBlocks is ready to work offline.
+          </div>
+        )}
         {documentSnapshot.conflict && (
           <div className="db-document-conflict" role="alert">
             <span>
@@ -2468,6 +2874,39 @@ export function DocBlocksShell({
             </div>
           </div>
         )}
+        {storageFull && !documentSnapshot.conflict && (
+          <div className="db-storage-full-banner" role="alert">
+            <span>
+              Browser storage is full — changes can&rsquo;t be saved. Free up space or back up your
+              work now.
+            </span>
+            <div className="db-storage-full-banner-actions">
+              <button type="button" onClick={() => void handleDownloadAllWorkspaces()}>
+                Download all workspaces
+              </button>
+              <button type="button" onClick={() => setStorageFull(false)}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+        {updateAvailable &&
+          !updateDismissed &&
+          onApplyUpdate &&
+          !documentSnapshot.conflict &&
+          !storageFull && (
+            <div className="db-update-banner" role="alert">
+              <span>A new version of DocBlocks is available.</span>
+              <div className="db-update-banner-actions">
+                <button type="button" onClick={onApplyUpdate}>
+                  Reload
+                </button>
+                <button type="button" onClick={() => setUpdateDismissed(true)}>
+                  Later
+                </button>
+              </div>
+            </div>
+          )}
         {workspaceSettingsOpen && activeWorkspaceDescriptor && (
           <WorkspaceSettingsDialog
             workspace={activeWorkspaceDescriptor}
@@ -2501,6 +2940,13 @@ export function DocBlocksShell({
                     showBrowserStorageWarning && !browserStoragePersistent
                       ? handleKeepBrowserData
                       : undefined
+                  }
+                  onInstallApp={installPromptEvent ? handleInstallApp : undefined}
+                  getStorageEstimate={
+                    showBrowserStorageWarning ? getBrowserStorageEstimate : undefined
+                  }
+                  storagePersistent={
+                    showBrowserStorageWarning ? browserStoragePersistent : undefined
                   }
                 />
                 <WorkspacePicker
@@ -2596,66 +3042,74 @@ export function DocBlocksShell({
             >
               {selectedFile && mediaProvider ? (
                 <MediaContext.Provider value={mediaProvider}>
-                  <EditorShell
-                    key={`${selectedFile}-${editorKey}`}
-                    initialMarkdown={editorContent}
-                    initialView={initialView}
-                    articleId={selectedFile}
-                    fileName={selectedFile}
-                    onChange={handleEditorChange}
-                    colorScheme={resolvedTheme}
-                    height="100%"
-                    outlineWidth={280}
-                    mediaProvider={mediaProvider}
-                    documentLinkProvider={documentLinkProvider}
-                    workspaceContainer={versionsContainer ?? undefined}
-                    allowVersioning={effectiveVersioning}
-                    viewPreferences={viewPreferences}
-                    onViewPreferencesChange={handleViewPreferencesChange}
-                    versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
-                    versioningPrunePolicy={versioningPrunePolicy}
-                    versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                    onSaveVersion={onSaveVersion}
-                    toolbarSlotLeft={
-                      effectiveCompact ? (
-                        <button
-                          className="db-mobile-back"
-                          onClick={() => setMobileShowEditor(false)}
-                          aria-label="Show file list"
-                        >
-                          <span className="db-mobile-back-arrow">&larr;</span>
-                        </button>
-                      ) : undefined
+                  <Suspense
+                    fallback={
+                      <div className="db-shell-empty" role="status">
+                        Loading editor&hellip;
+                      </div>
                     }
-                    toolbarSlotRight={
-                      <>
-                        {/* Restore split view — only relevant when compact
+                  >
+                    <EditorShell
+                      key={`${selectedFile}-${editorKey}`}
+                      initialMarkdown={editorContent}
+                      initialView={initialView}
+                      articleId={selectedFile}
+                      fileName={selectedFile}
+                      onChange={handleEditorChange}
+                      colorScheme={resolvedTheme}
+                      height="100%"
+                      outlineWidth={280}
+                      mediaProvider={mediaProvider}
+                      documentLinkProvider={documentLinkProvider}
+                      workspaceContainer={versionsContainer ?? undefined}
+                      allowVersioning={effectiveVersioning}
+                      viewPreferences={viewPreferences}
+                      onViewPreferencesChange={handleViewPreferencesChange}
+                      versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
+                      versioningPrunePolicy={versioningPrunePolicy}
+                      versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                      onSaveVersion={onSaveVersion}
+                      toolbarSlotLeft={
+                        effectiveCompact ? (
+                          <button
+                            className="db-mobile-back"
+                            onClick={() => setMobileShowEditor(false)}
+                            aria-label="Show file list"
+                          >
+                            <span className="db-mobile-back-arrow">&larr;</span>
+                          </button>
+                        ) : undefined
+                      }
+                      toolbarSlotRight={
+                        <>
+                          {/* Restore split view — only relevant when compact
                           layout was manually triggered on a wide viewport.
                           On real mobile, side-by-side doesn't fit so the
                           button is suppressed. */}
-                        {compactLayout && !isMobile && (
-                          <button
-                            className="db-restore-split"
-                            onClick={() => setCompactLayout(false)}
-                            aria-label="Restore split view"
-                            title="Restore split view"
-                          >
-                            <SplitViewIcon />
-                          </button>
-                        )}
-                        {git.repo && (
-                          <Suspense fallback={null}>
-                            <GitToolbarControl selectedFile={selectedFile} />
-                          </Suspense>
-                        )}
-                        <ExportToolbarControls
-                          selectedFile={selectedFile}
-                          mediaContainer={mediaContainerRef.current}
-                          destinationAdapter={exportDestinationAdapter}
-                        />
-                      </>
-                    }
-                  />
+                          {compactLayout && !isMobile && (
+                            <button
+                              className="db-restore-split"
+                              onClick={() => setCompactLayout(false)}
+                              aria-label="Restore split view"
+                              title="Restore split view"
+                            >
+                              <SplitViewIcon />
+                            </button>
+                          )}
+                          {git.repo && (
+                            <Suspense fallback={null}>
+                              <GitToolbarControl selectedFile={selectedFile} />
+                            </Suspense>
+                          )}
+                          <ExportToolbarControls
+                            selectedFile={selectedFile}
+                            mediaContainer={mediaContainerRef.current}
+                            destinationAdapter={exportDestinationAdapter}
+                          />
+                        </>
+                      }
+                    />
+                  </Suspense>
                   {showWelcomeGateway && (
                     <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
                       <span className="db-welcome-gateway-text">

@@ -26,6 +26,7 @@
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",
     "test:e2e": "playwright test",
+    "test:e2e:offline": "playwright test --config playwright.offline.config.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:vscode": "npm run test:e2e -w docblocks-vscode",
     "test:e2e:desktop": "npm run test:e2e -w docblocks-desktop",

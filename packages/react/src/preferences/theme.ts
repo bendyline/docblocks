@@ -14,6 +14,19 @@ export const ACCENT_COLORS = [
 
 export type AccentColor = (typeof ACCENT_COLORS)[number];
 
+/**
+ * Chrome (titlebar) background per resolved theme. Keep in sync with
+ * `--db-bg-subtle` for the default accent in styles/docblocks.css and with
+ * the static `<meta name="theme-color">` values in the site's index.html.
+ * The shell writes these into the theme-color metas so the installed web
+ * app's titlebar (Window Controls Overlay caption area, Android status bar)
+ * follows the resolved theme.
+ */
+export const DB_CHROME_COLORS: Record<'light' | 'dark', string> = {
+  light: '#f3eede',
+  dark: '#262219',
+};
+
 const THEME_STORAGE_KEY = 'docblocks:themePreference';
 const ACCENT_STORAGE_KEY = 'docblocks:accentColor';
 

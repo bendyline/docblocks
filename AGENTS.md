@@ -124,6 +124,10 @@ The v2 invariants are load-bearing:
 - Callers branch on `capabilities`, never concrete provider classes, for
   atomicity, conditional-write strength, watch support, case behavior,
   symlinks, and durability.
+- Multi-surface shells load concrete backends from the isolated
+  `filesystem/{indexeddb,memory,native,electron}` subpaths. Keep provider
+  constructors behind literal dynamic imports so mutually exclusive backends
+  do not return to the site and desktop startup bundles.
 - Watch subscriptions have a ready barrier, ordered typed events, overflow and
   error channels, and awaitable idempotent disposal. Provider `dispose()` owns
   all backend resources and permanently rejects new operations.

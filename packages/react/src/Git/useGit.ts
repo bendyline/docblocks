@@ -20,7 +20,6 @@ import type {
 } from '@bendyline/docblocks/host';
 import { maybeGetDocBlocksHost } from '@bendyline/docblocks/host';
 import type { FileSystemProvider } from '@bendyline/docblocks/filesystem';
-import { ElectronFileSystemProvider } from '@bendyline/docblocks/filesystem';
 import { buildBadgeMap, conflictedPaths } from './git-status.js';
 import { useGitStatus } from './useGitStatus.js';
 import type { GitBusyKind, GitDialogState, GitInlineResult, GitValue } from './GitContext.js';
@@ -36,11 +35,14 @@ function describeError(error: GitError): string {
   return error.message || 'Git operation failed';
 }
 
-export function useGit(provider: FileSystemProvider | null, theme: 'light' | 'dark'): GitValue {
+export function useGit(
+  provider: FileSystemProvider | null,
+  requestedRootPath: string | null,
+  theme: 'light' | 'dark',
+): GitValue {
   const host = maybeGetDocBlocksHost();
   const gitApi = host?.git ?? null;
-  const rootPath =
-    gitApi && provider instanceof ElectronFileSystemProvider ? provider.getRootPath() : null;
+  const rootPath = gitApi ? requestedRootPath : null;
 
   const [capabilities, setCapabilities] = useState<GitCapabilities | null>(null);
   useEffect(() => {

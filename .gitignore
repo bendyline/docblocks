@@ -16,6 +16,7 @@ pids
 *.pid.lock
 
 playwright-report/
+playwright-report-offline/
 test-results/
 
 .vscode-test-web/
@@ -89,6 +90,9 @@ out
 # Nuxt.js build / generate output
 .nuxt
 dist
+
+# vite-plugin-pwa dev output (only created when devOptions.enabled is flipped on)
+dev-dist
 
 # Gatsby files
 .cache/

@@ -40,6 +40,19 @@ const content = await fs.v2.readFile(path);
 
 `FileSystemProvider` remains as a deprecated text compatibility facade during the v2 migration. New code should discover `provider.v2` with `getFileSystemProviderV2()` and use v1 only as an explicit compatibility fallback. Every new backend must pass the shared v2 conformance suite.
 
+Provider families also have isolated entry points so a browser or desktop
+surface can load only the backend it selects:
+
+- `@bendyline/docblocks/filesystem/indexeddb`
+- `@bendyline/docblocks/filesystem/memory`
+- `@bendyline/docblocks/filesystem/native`
+- `@bendyline/docblocks/filesystem/electron`
+
+Use literal dynamic imports of those subpaths in multi-surface shells. The
+compatibility `filesystem` barrel still re-exports every provider, but eagerly
+constructing from that barrel puts mutually exclusive backends in one startup
+bundle.
+
 Mutation behavior is explicit: `writeFile` requires a `create`, `replace`, or
 `upsert` mode; `remove` distinguishes an empty-directory removal from a
 recursive tree removal; and `move` never overwrites its destination. Missing

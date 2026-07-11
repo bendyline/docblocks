@@ -213,6 +213,20 @@ export function serializeFsError(error: unknown, context: FsErrorContext = {}): 
   return fsErrorFromUnknown(error, context).toJSON();
 }
 
+/**
+ * True when a storage backend rejected an operation because the origin or
+ * device is out of space. Covers typed `FsError`s (`'quota-exceeded'`, from
+ * DOMException `QuotaExceededError` or Node `ENOSPC`/`EDQUOT`), serialized
+ * transport copies, and raw DOMExceptions from backends that do not wrap
+ * their errors (e.g. the File System Access API) — including cross-realm
+ * instances where `instanceof DOMException` would fail.
+ */
+export function isQuotaExceededError(error: unknown): boolean {
+  if (error instanceof FsError) return error.code === 'quota-exceeded';
+  if (isSerializedFsError(error)) return error.code === 'quota-exceeded';
+  return getErrorStringField(error, 'name') === 'QuotaExceededError';
+}
+
 function getErrorStringField(error: unknown, key: 'name' | 'message' | 'code'): string | null {
   if (!error || typeof error !== 'object') return null;
   const value = (error as Record<string, unknown>)[key];
