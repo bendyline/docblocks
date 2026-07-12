@@ -53,6 +53,14 @@ let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
 
+function drainPendingOpenRequests(win: BrowserWindow): void {
+  pendingOpenRequests.drain((request) => {
+    if (request.kind === 'url') handleOpenUrl(win, request.url);
+    else if (request.kind === 'file') handleOpenFileArg(win, [request.path]);
+    else handleOpenFileArg(win, request.argv);
+  });
+}
+
 // Single-instance lock — second launches forward their argv to the first
 // so Windows "Open With" and docblocks:// deep links route to the same window.
 const gotLock = app.requestSingleInstanceLock();
@@ -257,11 +265,7 @@ async function createWindow(): Promise<BrowserWindow> {
   win.once('ready-to-show', () => {
     win.show();
     // Drain any pending open requests received before the window existed.
-    pendingOpenRequests.drain((request) => {
-      if (request.kind === 'url') handleOpenUrl(win, request.url);
-      else if (request.kind === 'file') handleOpenFileArg(win, [request.path]);
-      else handleOpenFileArg(win, request.argv);
-    });
+    drainPendingOpenRequests(win);
     handleOpenFileArg(win, process.argv);
   });
 
@@ -379,6 +383,10 @@ app.whenReady().then(async () => {
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
 
   mainWindow = await createWindow();
+  // `ready-to-show` can precede the `createWindow()` continuation. Close the
+  // narrow interval where an OS event still observed `mainWindow === null`
+  // after the first drain and therefore queued one late request.
+  drainPendingOpenRequests(mainWindow);
 
   buildMenu(mainWindow);
   mainWindow.setMenuBarVisibility(false);
@@ -417,6 +425,7 @@ app.on('window-all-closed', () => {
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     mainWindow = await createWindow();
+    drainPendingOpenRequests(mainWindow);
     buildMenu(mainWindow);
     mainWindow.setMenuBarVisibility(false);
   }

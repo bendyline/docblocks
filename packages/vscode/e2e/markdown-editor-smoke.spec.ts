@@ -103,7 +103,11 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
 
     const exportPath = content.getByLabel('Export to');
     await expect(exportPath).toBeVisible();
-    await expect(exportPath).toHaveValue(/test-doc\.pdf$/);
+    // A fresh panel has no host-issued target grant. The filename is offered
+    // only inside VS Code's native save dialog; the webview must not receive a
+    // synthesized absolute path or sibling-directory authority beforehand.
+    await expect(exportPath).toHaveValue('');
+    await expect(content.getByText('VS Code owns and validates this destination.')).toBeVisible();
     await expect(content.getByRole('button', { name: 'Choose export location' })).toBeVisible();
   });
 

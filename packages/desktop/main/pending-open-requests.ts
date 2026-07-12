@@ -23,7 +23,21 @@ export class PendingOpenRequests {
     this.requests.push({ kind: 'url', url });
   }
 
-  public drain(dispatch: (request: PendingOpenRequest) => void): void {
-    for (const request of this.requests.splice(0)) dispatch(request);
+  /**
+   * Deliver the current batch in FIFO order. One stale or otherwise invalid OS
+   * request must not prevent later requests from reaching the renderer. The
+   * caller may inspect the returned failures for diagnostics; failed requests
+   * are consumed rather than retried indefinitely.
+   */
+  public drain(dispatch: (request: PendingOpenRequest) => void): readonly unknown[] {
+    const failures: unknown[] = [];
+    for (const request of this.requests.splice(0)) {
+      try {
+        dispatch(request);
+      } catch (error: unknown) {
+        failures.push(error);
+      }
+    }
+    return failures;
   }
 }

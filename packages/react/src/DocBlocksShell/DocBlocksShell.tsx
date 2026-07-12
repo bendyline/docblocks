@@ -2632,14 +2632,20 @@ export function DocBlocksShell({
 
       try {
         if (req.kind === 'external-file') {
-          const content = (await host.external.readText(req.resourceId)) ?? '';
+          const content = await host.external.readText(req.resourceId);
+          if (content === null) {
+            throw new Error('The external file is no longer available.');
+          }
           if (!isCurrent()) return;
           primaryFile = req.name; // e.g. "notes.md"
           mem.seedText(primaryFile, content);
           origin = { kind: 'loose-file', resourceId: req.resourceId };
         } else {
           const bytes = await host.external.readBinary(req.resourceId);
-          if (!bytes || !isCurrent()) return;
+          if (!bytes) {
+            throw new Error('The external bundle is no longer available.');
+          }
+          if (!isCurrent()) return;
           const version = await sha256Hex(bytes);
           if (!isCurrent()) return;
           const { zipToContainer } = await import('@bendyline/squisq-formats/container');

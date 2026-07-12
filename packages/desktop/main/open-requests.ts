@@ -8,7 +8,11 @@ import path from 'node:path';
 import type { OpenRequest } from '@bendyline/docblocks/host';
 import type { BrowserWindow } from 'electron';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
-import { grantExternalPath, revokeExternalOwner } from './external-files.js';
+import {
+  grantExternalPath,
+  revokeExternalOwner,
+  revokeExternalResource,
+} from './external-files.js';
 import { bindOwnerGrantRevocation } from './owner-revocation.js';
 
 const MARKDOWN_EXT = /\.(md|markdown|mdown|mkd|mdx|txt)$/i;
@@ -107,20 +111,41 @@ export function resolveOpenRequests(argv: readonly string[]): ResolvedOpenReques
   return requests;
 }
 
-export function sendOpenRequest(win: BrowserWindow, request: ResolvedOpenRequest): void {
+export function sendOpenRequest(win: BrowserWindow, request: ResolvedOpenRequest): boolean {
   if (request.kind === 'workspace-file') {
-    win.webContents.send('open-request', request satisfies OpenRequest);
-    return;
+    try {
+      win.webContents.send('open-request', request satisfies OpenRequest);
+      return true;
+    } catch {
+      // The renderer may have disappeared between the OS event and delivery.
+      return false;
+    }
   }
 
   const ownerId = win.webContents.id;
-  bindOwnerGrantRevocation(win.webContents, () => revokeExternalOwner(ownerId));
+  let resourceId: string;
+  try {
+    // The path was valid when argv was resolved, but the file can disappear or
+    // be replaced before authority is minted. Treat that as a stale request,
+    // not an uncaught main-process exception.
+    resourceId = grantExternalPath(ownerId, request.absolutePath);
+  } catch {
+    return false;
+  }
   const publicRequest: OpenRequest = {
     kind: request.kind,
-    resourceId: grantExternalPath(ownerId, request.absolutePath),
+    resourceId,
     name: request.name,
   };
-  win.webContents.send('open-request', publicRequest);
+  try {
+    bindOwnerGrantRevocation(win.webContents, () => revokeExternalOwner(ownerId));
+    win.webContents.send('open-request', publicRequest);
+    return true;
+  } catch {
+    // A token that never reached its renderer has no useful lifetime.
+    revokeExternalResource(ownerId, resourceId);
+    return false;
+  }
 }
 
 /**

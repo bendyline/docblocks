@@ -35,7 +35,17 @@ import { BufferedEventChannel } from './buffered-event-channel.js';
 // The main process can dispatch launch argv as soon as the BrowserWindow is
 // ready-to-show, before React effects subscribe. Install this preload listener
 // immediately and bridge a bounded backlog once the renderer is ready.
-const openRequestChannel = new BufferedEventChannel<OpenRequest>();
+const openRequestChannel = new BufferedEventChannel<OpenRequest>(
+  32,
+  () => undefined,
+  (request) => {
+    if (request.kind === 'external-file' || request.kind === 'external-bundle') {
+      // A bounded preload backlog can discard an old navigation request. Its
+      // opaque main-side capability must not outlive the request that owned it.
+      void ipcRenderer.invoke('external:revoke', request.resourceId).catch(() => undefined);
+    }
+  },
+);
 ipcRenderer.on('open-request', (_event, value: unknown) => {
   const request = parseOpenRequest(value);
   if (request) openRequestChannel.publish(request);

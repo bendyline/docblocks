@@ -109,16 +109,48 @@ export const test = base.extend<DocBlocksFixtures>({
       running = app;
       const window = await app.firstWindow();
       await window.waitForLoadState('domcontentloaded');
+      try {
+        await window.waitForFunction(
+          () => {
+            const host = (globalThis as { docBlocksHost?: unknown }).docBlocksHost;
+            return typeof host === 'object' && host !== null;
+          },
+          undefined,
+          { timeout: 5_000 },
+        );
+      } catch (error: unknown) {
+        // A sandbox-incompatible preload import prevents the entire bridge
+        // from loading. Fail at launch instead of exercising browser fallbacks
+        // and then hanging on the renderer close acknowledgement.
+        running = undefined;
+        const closed = app.waitForEvent('close', { timeout: 5_000 }).catch(() => undefined);
+        app.process().kill();
+        await closed;
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        throw new Error(`Electron preload did not expose docBlocksHost${detail}`);
+      }
       return { app, window };
     }
 
     await use(launch);
 
     if (running) {
-      try {
-        await running.close();
-      } catch {
-        // ignore double-close
+      let closeTimer: ReturnType<typeof setTimeout> | undefined;
+      const closeResult = await Promise.race([
+        running.close().then(
+          () => 'closed' as const,
+          () => 'failed' as const,
+        ),
+        new Promise<'timed-out'>((resolve) => {
+          closeTimer = setTimeout(() => resolve('timed-out'), 20_000);
+        }),
+      ]).finally(() => {
+        if (closeTimer) clearTimeout(closeTimer);
+      });
+      if (closeResult === 'timed-out') {
+        const closed = running.waitForEvent('close', { timeout: 5_000 }).catch(() => undefined);
+        running.process().kill();
+        await closed;
       }
     }
   },

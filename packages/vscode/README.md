@@ -43,7 +43,7 @@ The extension host ships two bundles from one source:
 - `dist/extension.js` — the Node-backed host (desktop VS Code); can spawn processes for environment checks
 - `dist/extension.web.js` — the web host (vscode.dev / VS Code for the Web); no Node APIs allowed
 
-Don't let Node-only imports (`fs`, `child_process`, Node-semantics `path`) sneak into code shared with the web bundle. The webview itself (`webview/`) is a Vite-built React app bundled into `dist/webview/`; it never imports `vscode` — the host ↔ webview boundary is the discriminated-union message types in `src/messages.ts`.
+Don't let Node-only imports (`fs`, `child_process`, Node-semantics `path`) sneak into code shared with the web bundle. The webview itself (`webview/`) is a Vite-built React app bundled into `dist/webview/`; it never imports `vscode` — the host ↔ webview boundary is the runtime-validated protocol in `packages/core/src/vscode/messages.ts`.
 
 ## Development
 

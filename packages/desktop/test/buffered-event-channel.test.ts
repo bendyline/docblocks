@@ -15,7 +15,8 @@ describe('BufferedEventChannel', () => {
   });
 
   it('bounds an unsubscribed queue and retains the newest navigation requests', () => {
-    const channel = new BufferedEventChannel<number>(2);
+    const evicted: number[] = [];
+    const channel = new BufferedEventChannel<number>(2, undefined, (value) => evicted.push(value));
     channel.publish(1);
     channel.publish(2);
     channel.publish(3);
@@ -27,6 +28,19 @@ describe('BufferedEventChannel', () => {
     channel.subscribe((value) => received.push(value));
 
     expect(received).to.deep.equal([2, 3, 4]);
+    expect(evicted).to.deep.equal([1]);
+  });
+
+  it('does not let eviction cleanup failure break queue delivery', () => {
+    const channel = new BufferedEventChannel<number>(1, undefined, () => {
+      throw new Error('cleanup failed');
+    });
+    channel.publish(1);
+    channel.publish(2);
+
+    const received: number[] = [];
+    channel.subscribe((value) => received.push(value));
+    expect(received).to.deep.equal([2]);
   });
 
   it('preserves FIFO order when a listener publishes during backlog delivery', () => {

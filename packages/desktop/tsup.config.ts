@@ -33,6 +33,10 @@ export default defineConfig([
     clean: true,
     shims: false,
     tsconfig: 'tsconfig.preload.json',
+    // A sandboxed Electron preload only receives Electron's deliberately
+    // limited `require` implementation. Bundle shared runtime validators into
+    // the preload instead of leaving workspace-package imports for runtime.
+    noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
     external: ['electron'],
     outExtension: () => ({ js: '.cjs' }),
   },

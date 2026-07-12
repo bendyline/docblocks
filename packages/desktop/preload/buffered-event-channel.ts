@@ -10,6 +10,7 @@ export class BufferedEventChannel<T> {
   public constructor(
     private readonly maximumPending = 32,
     private readonly onListenerError: (error: unknown) => void = () => undefined,
+    private readonly onEvict: (value: T) => void = () => undefined,
   ) {
     if (!Number.isInteger(maximumPending) || maximumPending < 1) {
       throw new RangeError('maximumPending must be a positive integer.');
@@ -17,7 +18,14 @@ export class BufferedEventChannel<T> {
   }
 
   public publish(value: T): void {
-    if (this.pending.length === this.maximumPending) this.pending.shift();
+    if (this.pending.length === this.maximumPending) {
+      const evicted = this.pending.shift()!;
+      try {
+        this.onEvict(evicted);
+      } catch {
+        // Eviction cleanup is advisory; queue bounds and ordering still hold.
+      }
+    }
     this.pending.push(value);
     this.drain();
   }
