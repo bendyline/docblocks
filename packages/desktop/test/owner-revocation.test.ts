@@ -18,7 +18,13 @@ describe('renderer capability owner revocation', () => {
       revocations += 1;
     });
 
-    fake.emit('did-start-navigation', {}, 'app://docblocks/index.html#workspace/file.md', true, true);
+    fake.emit(
+      'did-start-navigation',
+      {},
+      'app://docblocks/index.html#workspace/file.md',
+      true,
+      true,
+    );
 
     expect(revocations).to.equal(0);
   });

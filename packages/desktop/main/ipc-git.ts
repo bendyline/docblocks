@@ -43,6 +43,7 @@ import type { RepoContext } from './git/commands.js';
 import { gitEnv, trackGitChild } from './git/exec.js';
 import { createRepoWatcher, type RepoWatcher } from './git/repo-watcher.js';
 import { createCloneProgressParser } from './git/clone-progress.js';
+import { CloneDestination, CloneDestinationExistsError } from './git/clone-destination.js';
 import { deriveRepoDirName } from './git/parse-remote-url.js';
 import { isValidCloneUrl } from './git/validate.js';
 import { makeGitError, redactGitOutput } from './git/errors.js';
@@ -319,7 +320,7 @@ function releaseAllStatusSubscriptions(repositoryId: string): void {
 
 interface CloneOperation {
   child: ReturnType<typeof spawn>;
-  targetDir: string;
+  destination: CloneDestination;
   ownerId: number;
   cancelled: boolean;
   timedOut: boolean;
@@ -347,15 +348,6 @@ function registerCloneOwner(sender: WebContents): void {
     }
   });
   sender.once('destroyed', () => registeredCloneOwners.delete(sender.id));
-}
-
-async function isNonEmptyDir(candidate: string): Promise<boolean> {
-  try {
-    const entries = await fs.readdir(candidate);
-    return entries.length > 0;
-  } catch {
-    return false;
-  }
 }
 
 // ── gh helper ───────────────────────────────────────────────────
@@ -826,25 +818,36 @@ export function registerGitIpc(): void {
       if (picked.canceled || picked.filePaths.length === 0) {
         return { ok: true, value: null };
       }
-      const parentDir = await fs.realpath(picked.filePaths[0]);
-      if (!(await fs.stat(parentDir)).isDirectory()) {
-        return fail('permission-denied', 'Clone parent is not a regular directory');
+      let destination: CloneDestination;
+      try {
+        destination = await CloneDestination.create(picked.filePaths[0], deriveRepoDirName(url));
+      } catch (error: unknown) {
+        if (error instanceof CloneDestinationExistsError) {
+          return fail(
+            'destination-exists',
+            `${path.basename(error.targetDir)} already exists there`,
+          );
+        }
+        return fail('permission-denied', 'Could not prepare the selected clone destination');
       }
-      const targetDir = path.join(parentDir, deriveRepoDirName(url));
-      if (await isNonEmptyDir(targetDir)) {
-        return fail('destination-exists', `${path.basename(targetDir)} already exists there`);
-      }
+      const parentDir = destination.parentDir;
 
-      const child = spawn(bin, ['clone', '--progress', '--', url, targetDir], {
-        cwd: parentDir,
-        env: gitEnv(),
-        stdio: ['ignore', 'ignore', 'pipe'],
-        windowsHide: true,
-      });
+      let child: ReturnType<typeof spawn>;
+      try {
+        child = spawn(bin, ['clone', '--progress', '--', url, destination.stagingDir], {
+          cwd: parentDir,
+          env: gitEnv(),
+          stdio: ['ignore', 'ignore', 'pipe'],
+          windowsHide: true,
+        });
+      } catch {
+        await destination.cleanup();
+        return fail('unknown', 'Could not start git clone');
+      }
       const untrack = trackGitChild(child);
       const operation: CloneOperation = {
         child,
-        targetDir,
+        destination,
         ownerId: event.sender.id,
         cancelled: false,
         timedOut: false,
@@ -879,27 +882,30 @@ export function registerGitIpc(): void {
       cloneOperations.delete(operationId);
 
       if (operation.timedOut) {
-        await fs.rm(targetDir, { recursive: true, force: true });
+        await destination.cleanup();
         return fail('timeout', 'Clone timed out');
       }
       if (operation.cancelled) {
-        await fs.rm(targetDir, { recursive: true, force: true });
+        await destination.cleanup();
         return fail('cancelled', 'Clone cancelled');
       }
       if (code !== 0) {
-        await fs.rm(targetDir, { recursive: true, force: true });
+        await destination.cleanup();
         return { ok: false, error: makeGitError(code, stderr, 'git clone failed') };
       }
 
-      const physicalTargetDir = await fs.realpath(targetDir).catch(() => null);
-      const physicalTargetStat = physicalTargetDir ? await fs.stat(physicalTargetDir) : null;
-      if (
-        !physicalTargetDir ||
-        !isPathInside(parentDir, physicalTargetDir) ||
-        !physicalTargetStat?.isDirectory()
-      ) {
-        await fs.rm(targetDir, { recursive: true, force: true });
-        return fail('permission-denied', 'Clone target escaped the selected directory');
+      let physicalTargetDir: string;
+      try {
+        physicalTargetDir = await destination.promote();
+      } catch (error: unknown) {
+        await destination.cleanup();
+        if (error instanceof CloneDestinationExistsError) {
+          return fail(
+            'destination-exists',
+            `${path.basename(error.targetDir)} was created while cloning`,
+          );
+        }
+        return fail('permission-denied', 'Could not publish the cloned repository safely');
       }
       const info = await registerAndPersistWorkspace(physicalTargetDir);
       await updateSettings((s) => ({ ...s, lastCloneParentDir: parentDir }));

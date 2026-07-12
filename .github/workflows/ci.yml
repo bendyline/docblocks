@@ -67,6 +67,23 @@ jobs:
           # Skip signing/notarization in CI smoke builds.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Smoke packaged desktop artifact (Linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e:packaged:only -w docblocks-desktop
+
+      - name: Smoke packaged desktop artifact
+        if: runner.os != 'Linux'
+        run: npm run test:e2e:packaged:only -w docblocks-desktop
+
+      - name: Upload packaged desktop diagnostics
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: packaged-desktop-diagnostics-${{ matrix.os }}
+          path: packages/desktop/test-results/packaged/
+          if-no-files-found: ignore
+          retention-days: 14
+
   desktop-e2e:
     name: Desktop E2E (${{ matrix.os }})
     needs: desktop-build

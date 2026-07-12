@@ -13,6 +13,8 @@
 import { test, expect } from './fixtures.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -169,6 +171,91 @@ test('window close waits for the active document session to flush', async ({
   expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
 });
 
+test('quick close flushes a loose OS-opened file through its origin target', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalFile = path.join(userDataDir, 'quick-close.md');
+  fs.writeFileSync(externalFile, '# Loose origin\n', 'utf8');
+  const { app, window } = await launchApp([externalFile]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Loose origin', { timeout: 30_000 });
+
+  const sentinel = `loose-close-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  await app.close();
+  expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
+});
+
+test('quick close repacks a DBK origin before acknowledging window destruction', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalBundle = path.join(userDataDir, 'quick-bundle.dbk');
+  const source = new MemoryContentContainer();
+  await source.writeFile(
+    'quick-bundle.md',
+    new TextEncoder().encode('# Bundle origin\n'),
+    'text/markdown',
+  );
+  const sourceBlob = await containerToZip(source);
+  fs.writeFileSync(externalBundle, Buffer.from(await sourceBlob.arrayBuffer()));
+
+  const { app, window } = await launchApp([externalBundle]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Bundle origin', { timeout: 30_000 });
+
+  const sentinel = `bundle-close-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  await app.close();
+  const committed = await zipToContainer(fs.readFileSync(externalBundle));
+  const committedDocument = await committed.readFile('quick-bundle.md');
+  expect(new TextDecoder().decode(committedDocument ?? undefined)).toContain(sentinel);
+});
+
+test('keeping a local DBK conflict saves durable content without replaying the stale memory baseline', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalBundle = path.join(userDataDir, 'conflicted-bundle.dbk');
+  const documentName = 'conflicted-bundle.md';
+  await writeDbkDocument(externalBundle, documentName, '# Baseline A\n');
+
+  const { app, window } = await launchApp([externalBundle]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Baseline A', { timeout: 30_000 });
+
+  // Change the origin to B without changing the transient provider, then
+  // create local branch C. The first autosave must enter conflict.
+  await writeDbkDocument(externalBundle, documentName, '# External B\n');
+  const sentinel = `Local C ${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+
+  const keepMine = window.getByRole('button', { name: 'Keep mine' });
+  await expect(keepMine).toBeVisible({ timeout: 15_000 });
+  await keepMine.click();
+
+  await expect(window.getByText('Your version was saved.')).toBeVisible({ timeout: 15_000 });
+  await expect(keepMine).toBeHidden();
+  await expect
+    .poll(async () => readDbkDocument(externalBundle, documentName), { timeout: 15_000 })
+    .toContain(sentinel);
+  await app.close();
+});
+
 test('renderer cannot read files outside the workspace root', async ({
   launchApp,
   workspaceDir,
@@ -199,3 +286,21 @@ test('renderer cannot read files outside the workspace root', async ({
 
   expect(result.ok, `path-traversal probe: ${JSON.stringify(result)}`).toBe(true);
 });
+
+async function writeDbkDocument(filePath: string, documentName: string, content: string) {
+  const container = new MemoryContentContainer();
+  await container.writeFile(documentName, new TextEncoder().encode(content), 'text/markdown');
+  const blob = await containerToZip(container);
+  fs.writeFileSync(filePath, Buffer.from(await blob.arrayBuffer()));
+}
+
+async function readDbkDocument(filePath: string, documentName: string): Promise<string> {
+  try {
+    const container = await zipToContainer(fs.readFileSync(filePath));
+    const content = await container.readFile(documentName);
+    return new TextDecoder().decode(content ?? undefined);
+  } catch {
+    // Poll through the origin's atomic replacement window.
+    return '';
+  }
+}

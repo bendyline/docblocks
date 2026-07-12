@@ -9,7 +9,7 @@
     "node": ">=22.14.0"
   },
   "scripts": {
-    "all": "npm run build && npm run bundle:size && npm run check:desktop-config && npm run check:packages && npm run check:agent-guidance && npm run lint && npm run format:check && npm run typecheck && npm test",
+    "all": "npm run build && npm run bundle:size && npm run check:desktop-config && npm run check:packages && npm run check:agent-guidance && npm run check:assurance && npm run lint && npm run format:check && npm run typecheck && npm test",
     "prebuild": "tsx scripts/check-squisq-links.ts",
     "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop && npm run build:site",
     "build:core": "npm run build -w @bendyline/docblocks",
@@ -23,6 +23,7 @@
     "check:desktop-config": "tsx scripts/check-electron-builder-config.ts",
     "check:packages": "tsx scripts/check-package-consumers.ts",
     "check:agent-guidance": "tsx scripts/check-agent-guidance.ts",
+    "check:assurance": "tsx scripts/check-assurance-contract.ts",
     "generate:agent-guidance": "tsx scripts/check-agent-guidance.ts --write",
     "app": "npm run build:core && npm run build:react && npm run dev:desktop",
     "dev:desktop": "npm run dev -w docblocks-desktop",

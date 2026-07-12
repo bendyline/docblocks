@@ -1,11 +1,13 @@
 import { expect } from 'chai';
+import { parseWebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
+import { WebviewDocumentClient } from '../webview/src/webviewDocumentClient.js';
 import {
+  HostDocumentChangedError,
   VscodeDocumentSync,
   withApplyingEditFlag,
   type HostDocumentAdapter,
   type HostDocumentSnapshot,
 } from '../src/editSync.js';
-import { parseWebviewToExtensionMessage } from '../src/messages.js';
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,15 +22,29 @@ class FakeDocumentAdapter implements HostDocumentAdapter {
   public maxActiveCommits = 0;
   public failNextCommit = false;
   public failNextSaveAfterReplace = false;
+  public beforeReplacePreconditionCheck: (() => void) | null = null;
 
   public async read(): Promise<HostDocumentSnapshot> {
     return { content: this.content, version: this.version };
   }
 
-  public async replaceAndSave(content: string): Promise<HostDocumentSnapshot> {
+  public async replaceAndSave(
+    content: string,
+    expected: HostDocumentSnapshot,
+  ): Promise<HostDocumentSnapshot> {
     this.activeCommits += 1;
     this.maxActiveCommits = Math.max(this.maxActiveCommits, this.activeCommits);
     try {
+      const interleave = this.beforeReplacePreconditionCheck;
+      this.beforeReplacePreconditionCheck = null;
+      interleave?.();
+      const actual = await this.read();
+      if (actual.version !== expected.version || actual.content !== expected.content) {
+        throw new HostDocumentChangedError(
+          actual,
+          'The fake host document changed immediately before replacement.',
+        );
+      }
       await wait(2);
       if (this.failNextCommit) {
         this.failNextCommit = false;
@@ -92,7 +108,7 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
-  it('rejects stale sessions, stale document baselines, and skipped revisions', async () => {
+  it('rejects stale branches but accepts a coalesced complete-snapshot revision jump', async () => {
     const adapter = new FakeDocumentAdapter();
     const sync = await VscodeDocumentSync.create(adapter, {
       autoSaveDelayMs: 1_000,
@@ -102,9 +118,11 @@ describe('VS Code edit sync', () => {
 
     expect(sync.acceptEdit({ ...current, sessionId: 'obsolete' }).accepted).to.equal(false);
     expect(sync.acceptEdit({ ...current, baseDocumentVersion: 99 }).accepted).to.equal(false);
-    expect(sync.acceptEdit({ ...current, clientRevision: 2 }).accepted).to.equal(false);
-    expect(sync.acceptEdit(current).accepted).to.equal(true);
-    expect(sync.getSnapshot().acknowledgedClientRevision).to.equal(1);
+    expect(
+      sync.acceptEdit({ ...current, clientRevision: 200, content: 'coalesced latest' }).accepted,
+    ).to.equal(true);
+    expect(sync.getSnapshot().acknowledgedClientRevision).to.equal(200);
+    expect(sync.getSnapshot().session.content).to.equal('coalesced latest');
     sync.dispose();
   });
 
@@ -177,6 +195,25 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('rejects a delayed webview edit after a clean external branch replaces its baseline', async () => {
+    const adapter = new FakeDocumentAdapter();
+    let nextId = 0;
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 5,
+      createSessionId: () => `session-${++nextId}`,
+    });
+    const delayedEdit = editEnvelope(sync, 1, 'stale webview snapshot');
+
+    expect(sync.observeExternal(adapter.changeExternally('new external text'))).to.equal('applied');
+    expect(sync.acceptEdit(delayedEdit).accepted).to.equal(false);
+    await wait(20);
+
+    expect(adapter.content).to.equal('new external text');
+    expect(adapter.commits).to.deep.equal([]);
+    expect(sync.getSnapshot().session.content).to.equal('new external text');
+    sync.dispose();
+  });
+
   it('preserves dirty local text on external change until the user resolves it', async () => {
     const adapter = new FakeDocumentAdapter();
     let nextId = 0;
@@ -207,6 +244,28 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('does not let an already-scheduled local autosave overwrite an external edit', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 5,
+      createSessionId: () => 'session-a',
+    });
+    expect(sync.acceptEdit(editEnvelope(sync, 1, 'pending local snapshot')).accepted).to.equal(
+      true,
+    );
+
+    expect(sync.observeExternal(adapter.changeExternally('external wins until resolved'))).to.equal(
+      'conflict',
+    );
+    await wait(20);
+
+    expect(adapter.content).to.equal('external wins until resolved');
+    expect(adapter.commits).to.deep.equal([]);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('pending local snapshot');
+    sync.dispose();
+  });
+
   it('detects an external version change again at commit time', async () => {
     const adapter = new FakeDocumentAdapter();
     const sync = await VscodeDocumentSync.create(adapter, {
@@ -227,6 +286,32 @@ describe('VS Code edit sync', () => {
     expect(sync.getSnapshot().session.status).to.equal('conflict');
     expect(sync.getSnapshot().session.content).to.equal('local');
     expect(adapter.content).to.equal('external without watcher delivery');
+    sync.dispose();
+  });
+
+  it('rejects an external edit injected between the initial read and replacement precondition', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local replacement'));
+    adapter.beforeReplacePreconditionCheck = () => {
+      adapter.changeExternally('external in the read-to-replace gap');
+    };
+
+    let failure: unknown;
+    try {
+      await sync.save(saveEnvelope(sync));
+    } catch (error: unknown) {
+      failure = error;
+    }
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('local replacement');
+    expect(adapter.content).to.equal('external in the read-to-replace gap');
+    expect(adapter.commits).to.deep.equal([]);
     sync.dispose();
   });
 
@@ -331,5 +416,70 @@ describe('VS Code editor message guards', () => {
       }),
     ).to.equal(null);
     expect(parseWebviewToExtensionMessage({ type: 'surprise' })).to.equal(null);
+  });
+});
+
+describe('VS Code webview document scope', () => {
+  it('cannot relabel an obsolete editor callback as an edit on a newer host branch', () => {
+    const client = new WebviewDocumentClient();
+    const originalScope = client.acceptContent({
+      type: 'setContent',
+      content: 'original',
+      documentVersion: 1,
+      fileName: 'document.md',
+      sessionId: 'session-a',
+      sessionRevision: 0,
+      acknowledgedClientRevision: 0,
+    });
+    expect(client.createEdit(originalScope, 'local')).to.include({
+      type: 'edit',
+      sessionId: 'session-a',
+      clientRevision: 1,
+      baseDocumentVersion: 1,
+    });
+
+    const externalScope = client.acceptContent({
+      type: 'setContent',
+      content: 'external',
+      documentVersion: 2,
+      fileName: 'document.md',
+      sessionId: 'session-b',
+      sessionRevision: 0,
+      acknowledgedClientRevision: 0,
+    });
+
+    expect(client.createEdit(originalScope, 'stale queued callback')).to.equal(null);
+    expect(client.createEdit(externalScope, 'new branch edit')).to.deep.equal({
+      type: 'edit',
+      content: 'new branch edit',
+      sessionId: 'session-b',
+      clientRevision: 1,
+      baseDocumentVersion: 2,
+    });
+  });
+
+  it('advances the editor generation even when replacement text is identical', () => {
+    const client = new WebviewDocumentClient();
+    const first = client.acceptContent({
+      type: 'setContent',
+      content: 'same',
+      documentVersion: 1,
+      fileName: 'document.md',
+      sessionId: 'session-a',
+      sessionRevision: 0,
+      acknowledgedClientRevision: 0,
+    });
+    const replacement = client.acceptContent({
+      type: 'setContent',
+      content: 'same',
+      documentVersion: 2,
+      fileName: 'document.md',
+      sessionId: 'session-b',
+      sessionRevision: 0,
+      acknowledgedClientRevision: 0,
+    });
+
+    expect(replacement.generation).to.equal(first.generation + 1);
+    expect(client.createEdit(first, 'obsolete')).to.equal(null);
   });
 });

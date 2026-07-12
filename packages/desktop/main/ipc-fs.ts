@@ -198,8 +198,13 @@ export function registerFsIpc(): void {
       const parsedContent = textPayload(content) as string;
       const parsedExpected = textPayload(expectedContent, true);
       const rootAbs = roots.resolve(rootPath, '');
-      const abs = await roots.resolveMutation(rootPath, parsedPath);
-      return commitTextFile(abs, parsedContent, parsedExpected, [rootAbs, abs]);
+      const lexicalTarget = roots.resolve(rootPath, parsedPath);
+      return commitTextFile(
+        () => roots.resolveMutation(rootPath, parsedPath),
+        parsedContent,
+        parsedExpected,
+        [rootAbs, lexicalTarget],
+      );
     },
   );
 
@@ -240,7 +245,7 @@ export function registerFsIpc(): void {
       const rootPath = workspaceRoot(roots, workspaceId);
       const p = workspacePath(value);
       const abs = await roots.resolvePhysical(rootPath, p);
-      const rootAbs = roots.resolve(rootPath, '');
+      const rootAbs = await roots.resolvePhysical(rootPath, '');
       const before = await fs.stat(abs);
       const entries = await listEntries(abs);
       const validatedAfter = await roots.resolvePhysical(rootPath, p);

@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 # Accessibility Review Skill
 
-You are an accessibility expert reviewing DocBlocks for WCAG 2.1 AA compliance. DocBlocks ships the same React shell (`<DocBlocksShell>` from `@bendyline/docblocks-react`) to three rendering surfaces:
+You are an accessibility expert reviewing DocBlocks for WCAG 2.1 AA compliance. DocBlocks ships the same React shell (`<DocBlocksShell>` from `@bendyline/docblocks-react`) to the site and desktop, plus a deliberately separate VS Code editor webview:
 
 1. **Site** (web) — `packages/site/`, served at `localhost:5220` for dev
 2. **Desktop** (Electron renderer) — `packages/desktop/renderer/`, the same React tree plus a `DocBlocksHostAPI` injected via contextBridge
@@ -30,28 +30,20 @@ You run automated scans where you can, examine the rendered UI, fix common issue
 
 ## Prerequisites
 
-DocBlocks doesn't currently bundle `@axe-core/playwright`. The audit can still proceed using:
+DocBlocks bundles `@axe-core/playwright` at the workspace root and keeps the canonical site audit in `e2e/a11y.spec.ts`. The audit should use:
 
 - Existing Playwright specs (root `e2e/app.spec.ts`, desktop `app-lifecycle.spec.ts`, vscode `markdown-editor-smoke.spec.ts`) to drive the UI through key flows
 - Manual ARIA / semantic-HTML inspection via Read + Grep across `packages/react/src/`, `packages/vscode/webview/src/`, and `packages/desktop/renderer/`
-- Optional: install `@axe-core/playwright` for automated scans on first run of this skill
+- The checked-in axe suite for automated WCAG 2.1 A/AA scans
 
 ```bash
-# Check whether axe is installed at the root (Playwright is a root devDep)
-ls node_modules/@axe-core/playwright/dist/index.js 2>/dev/null && echo "axe present" || echo "axe NOT installed — propose adding it"
-
 # Confirm fresh builds — e2e requires them
 npm run build:react
 npm run build:site
+npx playwright test e2e/a11y.spec.ts --reporter=list
 ```
 
-If axe isn't installed, propose adding it before scanning:
-
-```bash
-npm install -D @axe-core/playwright
-```
-
-The skill can run a manual review without axe (ARIA/semantic inspection + Playwright keyboard traversal) but axe automation is the gold-standard first pass.
+Supplement axe with ARIA/semantic inspection and Playwright keyboard traversal; automated rules do not prove complete keyboard or screen-reader behavior.
 
 **Important note on Squisq**: the actual document editor is **Squisq** (published packages, with an optional sibling checkout at `..\squisq`). Editor-internal a11y (caret rendering, selection announcements, toolbar focus traps, formatting menus inside the document) is Squisq's responsibility. File issues there rather than monkey-patching from DocBlocks. DocBlocks's responsibility is everything **around** the editor: file explorer, workspace picker, app menu, export dialog, setup pane, and the shell chrome.
 
@@ -78,7 +70,7 @@ packages/react/src/                — the canonical component library
     ExportDialog.tsx
     ExportToolbarControls.tsx
     export-options.ts
-  hooks/useAutoSave.ts
+  hooks/useDocumentSession.ts
   styles/docblocks.css             — global stylesheet (color tokens, focus styles)
   icons.tsx                        — SVG icon components
   fonts/                           — 17 woff2 fonts (font-display matters)
@@ -93,7 +85,7 @@ packages/desktop/renderer/         — Electron surface (same React tree + host 
 packages/vscode/webview/src/       — VS Code custom editor
   main.tsx
   VscodeEditor.tsx                 — wraps Squisq/Monaco for *.md
-  monaco-slim.ts
+  setupMonacoWorkers.ts
   vscodeApi.ts                     — postMessage bridge
 ```
 
@@ -110,22 +102,20 @@ High-priority surfaces for accessibility (touched on every session):
 
 ---
 
-## Step 2: Run an Automated Scan (if axe is installed)
+## Step 2: Run the Automated Scan
 
-If axe-core is present, write a small Playwright test that runs against the **site** (the easiest target — no Electron, no VS Code chrome around it) and exercises each surface:
+Run the checked-in `e2e/a11y.spec.ts` suite against the **site** (the easiest target — no Electron, no VS Code chrome around it). It exercises the major shell states and runs axe against them:
 
 1. Boots the site dev server (`npm run dev` on port 5220, or use the existing root `playwright.config.ts` webServer)
 2. Visits the loaded shell with a few sample files in place
 3. Opens and closes the workspace settings dialog
 4. Opens and closes the export dialog
 5. Runs `AxeBuilder` against each rendered state
-6. Saves screenshots to `test-results/a11y/` for visual cross-check
-
-Suggested location: `e2e/a11y-site.spec.ts` (alongside `e2e/app.spec.ts`). Don't commit it to the long-term test suite without team agreement — accessibility specs are typically worth keeping, but the call belongs to the maintainer.
+6. Retains Playwright diagnostics under `test-results/` when a check fails
 
 ```bash
 # Run from repo root, after the site is buildable
-npx playwright test e2e/a11y-site.spec.ts --reporter=list
+npx playwright test e2e/a11y.spec.ts --reporter=list
 ```
 
 For the **VS Code webview** and **Electron renderer**, automated axe scans are harder (each runs in a non-standard browser context). Consider one of:
@@ -133,11 +123,11 @@ For the **VS Code webview** and **Electron renderer**, automated axe scans are h
 - Run axe against `packages/vscode/webview/` via Vite preview on port 3100 (the webview is a pure React app that can render standalone for testing)
 - Run axe inside the desktop e2e by injecting the axe script into the running Electron renderer
 
-If axe isn't installed and the user doesn't want it added yet, skip to Step 3 and do a manual review.
+Always continue to Step 3 after axe; the manual review covers behavior automated rules cannot observe.
 
 ## Step 3: Manual Review by Component
 
-Without axe, use Read + Grep to spot common WCAG issues. Walk through these checks per major surface.
+In addition to axe, use Read + Grep to spot WCAG issues that require structural or behavioral judgment. Walk through these checks per major surface.
 
 ### 3.1 Keyboard Navigation
 
@@ -361,8 +351,7 @@ Re-run the scan (or rerun the e2e suite) to verify your fixes.
 npm test
 npm run typecheck
 npm run lint
-# If axe spec was written:
-npx playwright test e2e/a11y-site.spec.ts
+npx playwright test e2e/a11y.spec.ts
 ```
 
 ## Step 6: Produce the Accessibility Report

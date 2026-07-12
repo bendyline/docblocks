@@ -128,6 +128,21 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
       expect(failure).to.be.instanceOf(FsError);
       expect((failure as FsError).code).to.equal('path-escape');
       expect((failure as FsError).operation).to.equal('read');
+
+      failure = null;
+      try {
+        await provider.writeFile(
+          parseWorkspacePath('/escape/new.md'),
+          new TextEncoder().encode('must stay inside'),
+          { createParents: true },
+        );
+      } catch (error: unknown) {
+        failure = error;
+      }
+      expect(failure).to.be.instanceOf(FsError);
+      expect((failure as FsError).code).to.equal('path-escape');
+      expect((failure as FsError).operation).to.equal('write');
+      expect(await fs.readdir(outside)).to.deep.equal(['secret.md']);
     } finally {
       await provider.dispose();
       roots.unregister(id);

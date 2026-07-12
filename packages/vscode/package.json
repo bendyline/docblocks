@@ -84,7 +84,11 @@
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
   },
   "dependencies": {
-    "@bendyline/docblocks": "1.1.2"
+    "@bendyline/docblocks": "1.1.2",
+    "@bendyline/docblocks-react": "1.1.2",
+    "@bendyline/squisq": "1.5.2",
+    "@bendyline/squisq-editor-react": "1.6.2",
+    "@bendyline/squisq-react": "1.4.2"
   },
   "devDependencies": {
     "@types/vscode": "1.85.0",

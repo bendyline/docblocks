@@ -100,22 +100,37 @@ export function sha256(content: Uint8Array): string {
 }
 
 export function commitTextFile(
-  absolutePath: string,
+  absolutePath: string | (() => Promise<string>),
   content: string,
   expectedContent: string | null,
-  lockPaths: string[] = [absolutePath],
+  lockPaths: string[] = typeof absolutePath === 'string' ? [absolutePath] : [],
 ): Promise<FileCommitResult> {
   return withFileMutationLocks(lockPaths, async () => {
-    const current = await readTextOrNull(absolutePath);
+    const resolvePath = async (): Promise<string> =>
+      path.resolve(typeof absolutePath === 'string' ? absolutePath : await absolutePath());
+    const observedPath = await resolvePath();
+    const current = await readTextOrNull(observedPath);
     if (current !== expectedContent && current !== content) {
+      const verifiedPath = await resolvePath();
+      if (verifiedPath !== observedPath) {
+        throw new Error('Commit target changed physical identity while checking for conflict.');
+      }
       return {
         status: 'conflict',
         content: current,
-        version: await fileSha256OrNull(absolutePath),
+        version: await fileSha256OrNull(observedPath),
       };
     }
-    await atomicWriteText(absolutePath, content);
-    return { status: 'committed', version: await fileSha256OrNull(absolutePath) };
+    const writePath = await resolvePath();
+    if (writePath !== observedPath) {
+      throw new Error('Commit target changed physical identity before mutation.');
+    }
+    await atomicWriteText(writePath, content);
+    const committedPath = await resolvePath();
+    if (committedPath !== writePath) {
+      throw new Error('Commit target changed physical identity after mutation.');
+    }
+    return { status: 'committed', version: await fileSha256OrNull(writePath) };
   });
 }
 

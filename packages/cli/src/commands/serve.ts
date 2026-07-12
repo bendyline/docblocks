@@ -1,9 +1,11 @@
 import { Command } from 'commander';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { realpath, stat } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { renderMarkdownHtml } from '../render-html.js';
 import { readContainedFile } from '../contained-file.js';
+import { isAllowedPreviewPath } from '../preview-policy.js';
 
 export interface ServeOptions {
   port: number;
@@ -25,7 +27,6 @@ export interface PreviewServer {
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_READS = 16;
-
 export async function startPreviewServer(opts: ServeOptions): Promise<PreviewServer> {
   const requestedRoot = path.resolve(opts.dir);
   const root = await realpath(requestedRoot).catch(() => requestedRoot);
@@ -43,13 +44,19 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
   );
   let activeRequests = 0;
   const server = createServer((req, res) => {
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : opts.port;
+    if (!isAllowedPreviewRequestAuthority(req.headers.host, host, port)) {
+      sendText(res, 421, 'Misdirected request', req.method === 'HEAD');
+      return;
+    }
     if (activeRequests >= maxConcurrentReads) {
-      sendText(res, 503, 'Server busy');
+      sendText(res, 503, 'Server busy', req.method === 'HEAD');
       return;
     }
     activeRequests += 1;
     handlePreviewRequest(req, res, root, opts.theme, maxFileBytes)
-      .catch(() => sendText(res, 500, 'Internal server error'))
+      .catch(() => sendText(res, 500, 'Internal server error', req.method === 'HEAD'))
       .finally(() => {
         activeRequests -= 1;
       });
@@ -112,21 +119,23 @@ async function handlePreviewRequest(
     return;
   }
 
+  const headOnly = req.method === 'HEAD';
+
   const target = await resolveServeTarget(root, req.url ?? '/', maxFileBytes);
   if (target.kind === 'bad-request') {
-    sendText(res, 400, 'Bad request');
+    sendText(res, 400, 'Bad request', headOnly);
     return;
   }
   if (target.kind === 'forbidden') {
-    sendText(res, 403, 'Forbidden');
+    sendText(res, 403, 'Forbidden', headOnly);
     return;
   }
   if (target.kind === 'missing') {
-    sendText(res, 404, 'Not found');
+    sendText(res, 404, 'Not found', headOnly);
     return;
   }
   if (target.kind === 'too-large') {
-    sendText(res, 413, 'File too large');
+    sendText(res, 413, 'File too large', headOnly);
     return;
   }
 
@@ -140,13 +149,15 @@ async function handlePreviewRequest(
       assetRoot: root,
       themeId,
       mode: 'static',
+      allowReferencedAsset: ({ assetRoot, requestedPath, physicalPath }) =>
+        isAllowedPreviewPath(assetRoot, requestedPath, physicalPath, 'embedded-image'),
     });
-    sendBody(res, 200, html, 'text/html; charset=utf-8', req.method === 'HEAD');
+    sendBody(res, 200, html, 'text/html; charset=utf-8', headOnly);
     return;
   }
 
   const body = await readContainedFile(root, target.filePath, maxFileBytes);
-  sendBody(res, 200, body, contentTypeFor(target.filePath), req.method === 'HEAD');
+  sendBody(res, 200, body, contentTypeFor(target.filePath), headOnly);
 }
 
 type ServeTarget =
@@ -169,7 +180,9 @@ export async function resolveServeTarget(
   const requestedPath = decodedPath.replace(/^\/+/, '');
   const candidate = path.resolve(physicalRoot, requestedPath);
 
-  if (!isPathInside(physicalRoot, candidate)) return { kind: 'forbidden' };
+  if (!isAllowedPreviewPath(physicalRoot, candidate, candidate, 'directory')) {
+    return { kind: 'forbidden' };
+  }
 
   const direct = await inspectTarget(physicalRoot, candidate, maxFileBytes);
   if (direct.kind === 'file') return direct;
@@ -221,11 +234,17 @@ async function inspectTarget(
   } catch {
     return { kind: 'missing' };
   }
-  if (!isPathInside(root, physical)) return { kind: 'forbidden' };
   const info = await stat(physical).catch(() => null);
   if (!info) return { kind: 'missing' };
-  if (info.isDirectory()) return { kind: 'directory', filePath: physical };
+  if (info.isDirectory()) {
+    return isAllowedPreviewPath(root, candidate, physical, 'directory')
+      ? { kind: 'directory', filePath: physical }
+      : { kind: 'forbidden' };
+  }
   if (!info.isFile()) return { kind: 'forbidden' };
+  if (!isAllowedPreviewPath(root, candidate, physical, 'document-or-asset')) {
+    return { kind: 'forbidden' };
+  }
   if (info.size > maxFileBytes) return { kind: 'too-large' };
   return { kind: 'file', filePath: physical, markdown: /\.(md|markdown)$/i.test(physical) };
 }
@@ -253,8 +272,8 @@ function parsePort(value: string): number {
   return port;
 }
 
-function sendText(res: ServerResponse, status: number, message: string): void {
-  sendBody(res, status, `${message}\n`, 'text/plain; charset=utf-8', false);
+function sendText(res: ServerResponse, status: number, message: string, headOnly = false): void {
+  sendBody(res, status, `${message}\n`, 'text/plain; charset=utf-8', headOnly);
 }
 
 function sendBody(
@@ -277,8 +296,14 @@ function sendBody(
 }
 
 function validateHost(value: string, allowNetwork: boolean): string {
-  const host = value.trim().toLowerCase();
-  if (!host || host.length > 255 || /[\s/\\\0]/.test(host)) {
+  const rawHost = value.trim().toLowerCase();
+  const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
+  if (
+    !host ||
+    host.length > 255 ||
+    /[\s/\\\0]/.test(host) ||
+    (isIP(host) === 0 && !isValidHostname(host))
+  ) {
     throw new Error('Invalid host');
   }
   if (!allowNetwork && !isLoopbackHost(host)) {
@@ -288,7 +313,68 @@ function validateHost(value: string, allowNetwork: boolean): string {
 }
 
 function isLoopbackHost(host: string): boolean {
-  return host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
+  if (host === 'localhost' || host === '::1') return true;
+  const octets = host.split('.');
+  return (
+    octets.length === 4 &&
+    octets[0] === '127' &&
+    octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+  );
+}
+
+export function isAllowedPreviewRequestAuthority(
+  header: string | undefined,
+  configuredHost: string,
+  configuredPort: number,
+): boolean {
+  const authority = parseRequestAuthority(header);
+  if (!authority || authority.port !== configuredPort) return false;
+
+  if (configuredHost === '0.0.0.0') return isIP(authority.host) === 4;
+  if (configuredHost === '::') return isIP(authority.host) === 6;
+  return authority.host === configuredHost;
+}
+
+function parseRequestAuthority(header: string | undefined): { host: string; port: number } | null {
+  if (!header || header.length > 512 || /[\s,\\/\0]/.test(header)) return null;
+
+  let host: string;
+  let portText = '';
+  let hasPortSeparator = false;
+  if (header.startsWith('[')) {
+    const closingBracket = header.indexOf(']');
+    if (closingBracket < 0) return null;
+    host = header.slice(1, closingBracket).toLowerCase();
+    const remainder = header.slice(closingBracket + 1);
+    if (remainder && !remainder.startsWith(':')) return null;
+    hasPortSeparator = remainder.startsWith(':');
+    portText = remainder.slice(1);
+    if (isIP(host) !== 6) return null;
+  } else {
+    const separator = header.lastIndexOf(':');
+    if (separator >= 0) {
+      if (header.indexOf(':') !== separator) return null;
+      hasPortSeparator = true;
+      host = header.slice(0, separator).toLowerCase();
+      portText = header.slice(separator + 1);
+    } else {
+      host = header.toLowerCase();
+    }
+    if (isIP(host) === 0 && !isValidHostname(host)) return null;
+  }
+
+  if (hasPortSeparator && !/^\d{1,5}$/.test(portText)) return null;
+  const port = portText ? Number(portText) : 80;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { host, port };
+}
+
+function isValidHostname(host: string): boolean {
+  return (
+    host.length <= 253 &&
+    !host.endsWith('.') &&
+    host.split('.').every((label) => /^(?!-)[a-z0-9-]{1,63}(?<!-)$/.test(label))
+  );
 }
 
 function urlHost(host: string): string {
@@ -327,12 +413,25 @@ function contentTypeFor(filePath: string): string {
       return 'image/webp';
     case '.ico':
       return 'image/x-icon';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    case '.ttf':
+      return 'font/ttf';
+    case '.otf':
+      return 'font/otf';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.wav':
+      return 'audio/wav';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
     default:
       return 'application/octet-stream';
   }
-}
-
-function isPathInside(rootAbs: string, candidateAbs: string): boolean {
-  const rel = path.relative(path.resolve(rootAbs), path.resolve(candidateAbs));
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
 }

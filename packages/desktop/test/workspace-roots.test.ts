@@ -131,6 +131,25 @@ describe('WorkspaceRoots physical containment', () => {
     expect(resolved).to.equal(path.join(workspace, 'new', 'deep', 'note.md'));
   });
 
+  it('anchors reads through contained links but rejects every linked mutation path', async () => {
+    const contained = path.join(workspace, 'contained');
+    const link = path.join(workspace, 'linked');
+    await fs.mkdir(contained);
+    await fs.writeFile(path.join(contained, 'note.md'), 'inside');
+    await fs.symlink(contained, link, process.platform === 'win32' ? 'junction' : 'dir');
+
+    const authorizedRead = await roots.resolvePhysical(workspace, '/linked/note.md');
+    expect(authorizedRead).to.equal(path.join(await fs.realpath(contained), 'note.md'));
+    await expectFailure(roots.resolveMutation(workspace, '/linked/new.md'), /symbolic link/i);
+
+    // Retargeting the lexical link after read authorization does not change
+    // the physically anchored path that the caller already received.
+    await fs.rm(link);
+    await fs.symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+    expect(await fs.readFile(authorizedRead, 'utf8')).to.equal('inside');
+    await expectFailure(roots.resolveMutation(workspace, '/linked/new.md'), /symbolic link/i);
+  });
+
   it('rejects a registered root that is later retargeted', async () => {
     const originalWorkspace = path.join(container, 'original-workspace');
     await fs.rename(workspace, originalWorkspace);

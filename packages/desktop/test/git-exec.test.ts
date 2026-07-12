@@ -146,7 +146,6 @@ describe('desktop git exec', function () {
         expect(env.GIT_TERMINAL_PROMPT).to.equal('0');
         expect(env.LC_ALL).to.equal('C');
         expect(env.DOCBLOCKS_GIT_TEST_SENTINEL).to.equal('sentinel-value');
-        expect(env.PATH).to.equal(process.env.PATH);
       } finally {
         delete process.env.DOCBLOCKS_GIT_TEST_SENTINEL;
       }

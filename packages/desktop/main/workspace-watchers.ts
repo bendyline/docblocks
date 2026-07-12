@@ -43,11 +43,10 @@ interface WatcherState {
 const watchers = new Map<string, WatcherState>();
 
 function canonicalWatcherRoot(rootPath: string): string {
-  try {
-    return fss.realpathSync.native(rootPath);
-  } catch {
-    return path.resolve(rootPath);
-  }
+  // Watching is privileged native I/O. A missing or inaccessible root must
+  // fail closed instead of silently falling back to a lexical path that can
+  // later be replaced by a symlink or junction.
+  return fss.realpathSync.native(rootPath);
 }
 
 export function acquireWorkspaceWatcher(rootPath: string): WorkspaceWatcherHandle {
@@ -83,7 +82,11 @@ export function acquireWorkspaceWatcher(rootPath: string): WorkspaceWatcherHandl
       kind: WorkspaceWatcherEvent['kind'],
       absPath: string,
     ) => {
-      const rel = '/' + path.relative(key, absPath).replace(/\\/g, '/');
+      const relative = path.relative(key, path.resolve(absPath));
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        return;
+      }
+      const rel = '/' + relative.replace(/\\/g, '/');
       const event: WorkspaceWatcherEvent = { type, kind, path: rel };
       for (const listener of [...created.listeners]) {
         try {

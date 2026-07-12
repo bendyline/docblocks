@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { openInitializedSite } from './helpers/site.js';
 
 test.describe('DocBlocks App', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    // Wait for the shell to initialize (workspace + welcome file may load)
-    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    await openInitializedSite(page);
   });
 
   test('loads and shows the shell', async ({ page }) => {
@@ -109,10 +108,7 @@ test.describe('DocBlocks App', () => {
 
 test.describe('File operations', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
-    // Wait for the file explorer to be ready
-    await expect(page.locator('.db-explorer-toolbar')).toBeVisible({ timeout: 10_000 });
+    await openInitializedSite(page);
   });
 
   test('can create a new file', async ({ page }) => {
@@ -200,7 +196,7 @@ test.describe('Folder context menu theming', () => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
     });
-    await page.goto('/');
+    await openInitializedSite(page);
     await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('.db-explorer-btn').nth(1).click();
@@ -245,8 +241,7 @@ test.describe('Folder context menu theming', () => {
 
 test.describe('Welcome gateway', () => {
   test('first run shows the gateway and Start writing opens the editor', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    await openInitializedSite(page);
 
     // Fresh storage → the welcome doc auto-opens in Play view with the gateway
     const gateway = page.locator('.db-welcome-gateway');
@@ -262,8 +257,7 @@ test.describe('Welcome gateway', () => {
   });
 
   test('dismissal persists across reload', async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    await openInitializedSite(page);
 
     const gateway = page.locator('.db-welcome-gateway');
     await expect(gateway).toBeVisible({ timeout: 10_000 });
@@ -286,7 +280,7 @@ test.describe('Squisq overflow menu theming', () => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
     });
-    await page.goto('/');
+    await openInitializedSite(page);
     await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
 
     await page.locator('.db-welcome-gateway-cta').click();
@@ -318,7 +312,9 @@ test.describe('Squisq overflow menu theming', () => {
 
       const menuStyle = getComputedStyle(element);
       const probeStyle = getComputedStyle(probe);
-      const firstItem = element.querySelector<HTMLElement>('.squisq-toolbar-overflow-item');
+      const firstItem = element.querySelector<HTMLElement>(
+        '.squisq-toolbar-overflow-item:not(.squisq-toolbar-overflow-item--active):not(.squisq-toolbar-overflow-item--danger)',
+      );
       const picker = element.querySelector<HTMLElement>('.squisq-template-picker-trigger');
 
       const result = {
@@ -343,8 +339,7 @@ test.describe('Squisq overflow menu theming', () => {
 
 test.describe('Workspace picker', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
+    await openInitializedSite(page);
   });
 
   test('shows current workspace', async ({ page }) => {

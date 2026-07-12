@@ -34,6 +34,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./export": {
+      "types": "./dist/export/index.d.ts",
+      "import": "./dist/export/index.js",
+      "default": "./dist/export/index.js"
+    },
     "./styles": "./src/styles/docblocks.css"
   },
   "scripts": {

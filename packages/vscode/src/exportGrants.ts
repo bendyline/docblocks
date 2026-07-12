@@ -1,5 +1,5 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
-import type { ExportTargetGrantMessage } from './messages.js';
+import type { ExportTargetGrantMessage } from '@bendyline/docblocks/vscode';
 
 const DEFAULT_GRANT_TTL_MS = 30 * 60 * 1_000;
 const DEFAULT_MAX_GRANTS = 32;

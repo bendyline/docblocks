@@ -5,6 +5,7 @@ import {
   isBoundedString,
   isTrustedRendererUrl,
   parseExternalHttpUrl,
+  parseOpenRequest,
 } from '../src/host/index.js';
 
 describe('host wire policy', () => {
@@ -44,5 +45,30 @@ describe('host wire policy', () => {
     expect(
       isTrustedRendererUrl('http://localhost:5221.evil.example/', 'http://localhost:5221'),
     ).to.equal(false);
+  });
+
+  it('parses only exact bounded open-request payloads', () => {
+    expect(
+      parseOpenRequest({ kind: 'workspace-file', workspaceId: 'workspace-1', path: '/notes.md' }),
+    ).to.deep.equal({ kind: 'workspace-file', workspaceId: 'workspace-1', path: '/notes.md' });
+    expect(
+      parseOpenRequest({ kind: 'external-bundle', resourceId: 'grant-1', name: 'notes.dbk' }),
+    ).to.deep.equal({ kind: 'external-bundle', resourceId: 'grant-1', name: 'notes.dbk' });
+    expect(
+      parseOpenRequest({
+        kind: 'external-file',
+        resourceId: 'grant-1',
+        name: 'notes.md',
+        absolutePath: 'C:\\secret.md',
+      }),
+    ).to.equal(null);
+    expect(
+      parseOpenRequest({
+        kind: 'workspace-file',
+        workspaceId: 'workspace-1',
+        path: 'x'.repeat(HOST_WIRE_LIMITS.pathCharacters + 1),
+      }),
+    ).to.equal(null);
+    expect(parseOpenRequest({ kind: 'unknown' })).to.equal(null);
   });
 });

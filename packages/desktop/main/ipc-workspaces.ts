@@ -17,7 +17,7 @@ import {
   iCloudAlternativeRoot,
 } from './icloud-detect.js';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
-import { deriveWorkspaceId } from './workspace-id.js';
+import { allocateWorkspaceId, deriveWorkspaceId } from './workspace-id.js';
 
 function samePath(left: string, right: string): boolean {
   const normalize = (value: string) => {
@@ -46,7 +46,7 @@ export async function registerAndPersistWorkspace(
   const existingByPath = settings.workspaces.find((workspace) =>
     samePath(workspace.rootPath, physicalRoot),
   );
-  const id = existingByPath?.id ?? deriveWorkspaceId(physicalRoot);
+  const id = existingByPath?.id ?? allocateWorkspaceId(physicalRoot, settings.workspaces);
   const name = existingByPath?.name ?? (path.basename(physicalRoot) || 'Folder');
   getWorkspaceRoots().register(id, physicalRoot);
 
@@ -66,6 +66,24 @@ export async function registerAndPersistWorkspace(
 
 export function registerWorkspaceIpc(): void {
   const roots = getWorkspaceRoots();
+
+  registerTrustedIpcHandler('workspaces:list', 0, async (): Promise<ElectronWorkspaceInfo[]> => {
+    const settings = await readSettings();
+    if (settings.workspaces.length > HOST_WIRE_LIMITS.arrayEntries) {
+      throw new Error('Persisted workspace list exceeds the host entry limit');
+    }
+    return settings.workspaces.map(({ id, name, rootPath }) => {
+      if (
+        !isBoundedString(id, HOST_WIRE_LIMITS.identifierCharacters, 1) ||
+        !isBoundedString(name, HOST_WIRE_LIMITS.labelCharacters, 1) ||
+        !isBoundedString(rootPath, HOST_WIRE_LIMITS.pathCharacters, 1) ||
+        !path.isAbsolute(rootPath)
+      ) {
+        throw new Error('Persisted workspace descriptor is invalid');
+      }
+      return { id, name, rootPath };
+    });
+  });
 
   registerTrustedIpcHandler(
     'workspaces:getDefault',

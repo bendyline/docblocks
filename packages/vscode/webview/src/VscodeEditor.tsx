@@ -6,24 +6,20 @@ import '@bendyline/docblocks-react/styles';
 import type {
   DocumentSessionMessageStatus,
   ExtensionToWebviewMessage,
-} from '../../src/messages.js';
+} from '@bendyline/docblocks/vscode';
+import { parseExtensionToWebviewMessage } from '@bendyline/docblocks/vscode';
 import { VscodeExportButton } from './VscodeExportButton.js';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { getVscodeApi } from './vscodeApi.js';
+import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 
 const vscode = getVscodeApi();
-
-interface ClientSession {
-  sessionId: string;
-  baseDocumentVersion: number;
-  clientRevision: number;
-}
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [editorKey, setEditorKey] = useState(0);
+  const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -31,38 +27,34 @@ export function VscodeEditor() {
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
-  const clientSessionRef = useRef<ClientSession | null>(null);
+  const documentClientRef = useRef(new WebviewDocumentClient());
   const nextSaveRequestId = useRef(1);
 
   useEffect(() => {
-    function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
-      const msg = event.data;
+    function handleMessage(event: MessageEvent<unknown>) {
+      const msg: ExtensionToWebviewMessage | null = parseExtensionToWebviewMessage(event.data);
+      if (!msg) return;
       switch (msg.type) {
         case 'setContent':
-          clientSessionRef.current = {
-            sessionId: msg.sessionId,
-            baseDocumentVersion: msg.documentVersion,
-            clientRevision: msg.acknowledgedClientRevision,
-          };
+          setEditorScope(documentClientRef.current.acceptContent(msg));
           if (msg.content === markdownRef.current && msg.fileName === fileNameRef.current) return;
           markdownRef.current = msg.content;
           fileNameRef.current = msg.fileName;
           setMarkdown(msg.content);
           setFileName(msg.fileName);
-          setEditorKey((key) => key + 1);
           break;
         case 'editAcknowledged':
-          if (msg.sessionId !== clientSessionRef.current?.sessionId || msg.accepted) return;
+          if (!documentClientRef.current.isCurrentSession(msg.sessionId) || msg.accepted) return;
           setSessionStatus('error');
           setSessionMessage(msg.message ?? 'VS Code rejected this document edit.');
           break;
         case 'sessionState':
-          if (msg.sessionId !== clientSessionRef.current?.sessionId) return;
+          if (!documentClientRef.current.isCurrentSession(msg.sessionId)) return;
           setSessionStatus(msg.status);
           setSessionMessage(msg.error);
           break;
         case 'saveResult':
-          if (msg.sessionId !== clientSessionRef.current?.sessionId) return;
+          if (!documentClientRef.current.isCurrentSession(msg.sessionId)) return;
           setSessionStatus(msg.ok ? 'saved' : 'error');
           setSessionMessage(msg.ok ? 'Saved' : (msg.message ?? 'The document could not be saved.'));
           break;
@@ -81,19 +73,13 @@ export function VscodeEditor() {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== 's' || (!event.metaKey && !event.ctrlKey)) return;
       event.preventDefault();
-      const session = clientSessionRef.current;
-      if (!session) return;
       const requestId = nextSaveRequestId.current;
       nextSaveRequestId.current += 1;
+      const message = documentClientRef.current.createSave(requestId);
+      if (!message) return;
       setSessionStatus('saving');
       setSessionMessage('Saving…');
-      vscode.postMessage({
-        type: 'save',
-        sessionId: session.sessionId,
-        requestId,
-        clientRevision: session.clientRevision,
-        baseDocumentVersion: session.baseDocumentVersion,
-      });
+      vscode.postMessage(message);
     }
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -119,31 +105,26 @@ export function VscodeEditor() {
   // Post every complete editor snapshot immediately. The extension host owns
   // the debounce and serialized persistence queue, so closing the webview
   // cannot strand a timer-held draft in renderer memory.
-  const handleChange = useCallback((source: string) => {
-    if (source === markdownRef.current) return;
-    markdownRef.current = source;
-    setMarkdown(source);
-    const session = clientSessionRef.current;
-    if (!session) return;
-    session.clientRevision += 1;
-    vscode.postMessage({
-      type: 'edit',
-      content: source,
-      sessionId: session.sessionId,
-      clientRevision: session.clientRevision,
-      baseDocumentVersion: session.baseDocumentVersion,
-    });
-    setSessionStatus('dirty');
-    setSessionMessage(null);
-  }, []);
+  const handleChange = useCallback(
+    (source: string) => {
+      if (source === markdownRef.current || !editorScope) return;
+      const message = documentClientRef.current.createEdit(editorScope, source);
+      if (!message) return;
+      markdownRef.current = source;
+      setMarkdown(source);
+      vscode.postMessage(message);
+      setSessionStatus('dirty');
+      setSessionMessage(null);
+    },
+    [editorScope],
+  );
 
   const resolveConflict = useCallback((choice: 'use-local' | 'use-external') => {
-    const session = clientSessionRef.current;
-    if (!session) return;
-    vscode.postMessage({ type: 'resolveConflict', sessionId: session.sessionId, choice });
+    const message = documentClientRef.current.createConflictResolution(choice);
+    if (message) vscode.postMessage(message);
   }, []);
 
-  if (markdown === null || mediaBridge === null || exportBridge === null) {
+  if (markdown === null || editorScope === null || mediaBridge === null || exportBridge === null) {
     return (
       <div
         style={{
@@ -164,7 +145,7 @@ export function VscodeEditor() {
     <div className="db-shell db-vscode-editor" data-theme={theme} style={{ position: 'relative' }}>
       <MediaContext.Provider value={mediaBridge.mediaProvider}>
         <EditorShell
-          key={editorKey}
+          key={`${editorScope.sessionId}:${editorScope.generation}`}
           initialMarkdown={markdown}
           onChange={handleChange}
           colorScheme={theme}

@@ -6,10 +6,15 @@ export default defineConfig({
   // registers on the dev server this config starts) — it runs from
   // playwright.offline.config.ts via `npm run test:e2e:offline`.
   testIgnore: '**/offline.spec.ts',
-  fullyParallel: true,
+  // Site tests exercise a first-run IndexedDB workspace at one origin. Keep
+  // them serialized so startup, seeding, and mutation assertions are not
+  // competing for browser/storage resources on high-core developer machines.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // A deterministic harness should fail on the first run. Retries previously
+  // hid readiness races locally and made CI substantially slower on failures.
+  retries: 0,
+  workers: 1,
   reporter: 'html',
   use: {
     baseURL: 'http://localhost:5220',

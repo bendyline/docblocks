@@ -293,6 +293,148 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot().status).to.equal('saved');
   });
 
+  it('refreshes a conflict when the external branch returns to the persisted baseline', async () => {
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async () => undefined),
+      'A',
+    );
+
+    edit(session, 'C');
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'B',
+        version: 2,
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+    expect(session.getSnapshot().conflict?.externalContent).to.equal('B');
+
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'A',
+        version: 3,
+        sequence: 2,
+      }),
+    ).to.equal('conflict');
+    expect(session.getSnapshot().conflict?.externalContent).to.equal('A');
+    expect(session.getSnapshot().conflict?.externalVersion).to.equal(3);
+
+    const reloaded = await session.resolveConflict('use-external');
+    expect(reloaded.content).to.equal('A');
+    expect(reloaded.persistedContent).to.equal('A');
+    expect(reloaded.status).to.equal('saved');
+  });
+
+  it('acknowledges an external branch that converges to the latest local revision', async () => {
+    const commits: DocumentCommitRequest[] = [];
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async (request) => {
+        commits.push(request);
+      }),
+      'A',
+    );
+
+    edit(session, 'C');
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'B',
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'C',
+        sequence: 2,
+      }),
+    ).to.equal('applied');
+
+    const converged = session.getSnapshot();
+    expect(converged.conflict).to.equal(null);
+    expect(converged.status).to.equal('saved');
+    expect(converged.persistedContent).to.equal('C');
+    expect(converged.persistedRevision).to.equal(converged.revision);
+    await session.flush('manual');
+    expect(commits).to.deep.equal([]);
+  });
+
+  it('waits for a matching in-flight commit before clearing a converged conflict', async () => {
+    const pending = deferred<void>();
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async () => pending.promise),
+      'A',
+    );
+
+    edit(session, 'C');
+    const flushing = session.flush('manual');
+    await nextTask();
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'B',
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'C',
+        sequence: 2,
+      }),
+    ).to.equal('conflict');
+    expect(session.getSnapshot().status).to.equal('conflict');
+
+    pending.resolve();
+    const saved = await flushing;
+    expect(saved.conflict).to.equal(null);
+    expect(saved.status).to.equal('saved');
+    expect(saved.persistedContent).to.equal('C');
+  });
+
+  it('resolves the latest external branch observed while an in-flight commit settles', async () => {
+    const pending = deferred<void>();
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async () => pending.promise),
+      'A',
+    );
+
+    edit(session, 'C');
+    const flushing = session.flush('manual');
+    void flushing.catch(() => undefined);
+    await nextTask();
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'B',
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+
+    const resolving = session.resolveConflict('use-external');
+    await nextTask();
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'A',
+        sequence: 2,
+      }),
+    ).to.equal('conflict');
+
+    pending.resolve();
+    await flushing.catch(() => undefined);
+    const resolved = await resolving;
+    expect(resolved.content).to.equal('A');
+    expect(resolved.persistedContent).to.equal('A');
+    expect(resolved.status).to.equal('saved');
+  });
+
   it('does not mistake its own in-flight write for an external conflict', async () => {
     const firstCommit = deferred<void>();
     const commits: DocumentCommitRequest[] = [];

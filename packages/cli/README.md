@@ -42,7 +42,9 @@ Start a local development server for previewing documents.
 
 The preview server resolves the served root and every requested file physically,
 rejects symlink/junction escapes, limits request concurrency and file size, and
-never returns native error details to HTTP clients.
+never returns native error details to HTTP clients. It serves only Markdown and
+explicit browser-preview asset types; hidden paths, credentials, private-key
+formats, and arbitrary repository files are not exposed.
 
 ### `docblocks convert <input>`
 

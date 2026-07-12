@@ -46,6 +46,8 @@ export interface ElectronWorkspaceInfo {
 
 /** Workspace-management operations exposed to the renderer. */
 export interface DocBlocksHostWorkspacesAPI {
+  /** List only folders already persisted as trusted main-process roots. */
+  list(): Promise<ElectronWorkspaceInfo[]>;
   /**
    * Return the default workspace (creating DocBlocks inside the operating
    * system's Documents folder on first call, or the user's configured default).

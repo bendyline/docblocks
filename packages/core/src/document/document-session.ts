@@ -17,6 +17,8 @@ import type { DocumentRecoveryJournal } from './recovery-journal.js';
 
 type SessionListener = () => void;
 
+const DEFAULT_AUTO_SAVE_RETRY_DELAYS_MS = [1_000, 3_000, 10_000] as const;
+
 /**
  * Raised by a commit target when optimistic external-change verification
  * fails. The session converts it into durable conflict state.
@@ -59,6 +61,7 @@ export class DocumentSessionConflictError extends Error {
  */
 export class DocumentSession {
   private readonly autoSaveDelayMs: number;
+  private readonly autoSaveRetryDelaysMs: readonly number[];
   private readonly recoveryJournal: DocumentRecoveryJournal | null;
   private readonly listeners = new Set<SessionListener>();
 
@@ -77,6 +80,7 @@ export class DocumentSession {
   private conflict: DocumentSessionConflict | null = null;
 
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private autoSaveRetryAttempt = 0;
   private drainPromise: Promise<void> | null = null;
   private haltDrain = false;
   private operationTail: Promise<void> = Promise.resolve();
@@ -84,6 +88,9 @@ export class DocumentSession {
 
   public constructor(options: DocumentSessionOptions = {}) {
     this.autoSaveDelayMs = Math.max(0, options.autoSaveDelayMs ?? 500);
+    this.autoSaveRetryDelaysMs = normalizeRetryDelays(
+      options.autoSaveRetryDelaysMs ?? DEFAULT_AUTO_SAVE_RETRY_DELAYS_MS,
+    );
     this.recoveryJournal = options.recoveryJournal ?? null;
     this.snapshot = this.createSnapshot();
   }
@@ -111,6 +118,14 @@ export class DocumentSession {
     this.content = content;
     this.revision += 1;
     this.error = null;
+    this.autoSaveRetryAttempt = 0;
+    if (this.conflict) {
+      this.conflict = {
+        ...this.conflict,
+        localContent: content,
+        localRevision: this.revision,
+      };
+    }
     this.writeRecoverySnapshot();
     if (!this.conflict) this.scheduleAutoSave();
     this.emit();
@@ -291,6 +306,59 @@ export class DocumentSession {
       }
       this.externalSequence = change.sequence;
     }
+
+    // While conflicted, a current observation equal to the latest local
+    // snapshot proves that revision durable without requiring another write.
+    // Never acknowledge while a commit is still running; its eventual result
+    // remains authoritative for the serialized drain.
+    if (
+      this.conflict &&
+      change.content === this.content &&
+      this.savingRevision === null &&
+      this.lifecycle === 'open'
+    ) {
+      this.clearAutoSaveTimer();
+      this.autoSaveRetryAttempt = 0;
+      this.persistedRevision = this.revision;
+      this.persistedContent = this.content;
+      this.haltDrain = false;
+      this.error = null;
+      this.conflict = null;
+      this.discardRecoverySnapshot();
+      this.emit();
+      return 'applied';
+    }
+
+    // Once a conflict exists, every later accepted observation refreshes its
+    // external branch before ordinary duplicate suppression. In particular,
+    // A -> local C -> external B -> external A must offer A, not stale B, when
+    // the user chooses Reload external.
+    if (this.conflict) {
+      const externalVersion = change.version ?? null;
+      if (
+        this.conflict.localContent === this.content &&
+        this.conflict.localRevision === this.revision &&
+        this.conflict.externalContent === change.content &&
+        this.conflict.externalVersion === externalVersion
+      ) {
+        return 'ignored';
+      }
+
+      this.clearAutoSaveTimer();
+      this.haltDrain = true;
+      this.conflict = {
+        targetKey: change.targetKey,
+        localContent: this.content,
+        localRevision: this.revision,
+        externalContent: change.content,
+        externalVersion,
+      };
+      this.error = null;
+      this.writeRecoverySnapshot();
+      this.emit();
+      return 'conflict';
+    }
+
     if (
       change.content === this.content ||
       change.content === this.persistedContent ||
@@ -333,12 +401,16 @@ export class DocumentSession {
 
   public resolveConflict(strategy: DocumentConflictStrategy): Promise<DocumentSessionSnapshot> {
     return this.enqueueOperation(async () => {
-      const currentConflict = this.conflict;
-      if (!currentConflict) return this.snapshot;
+      if (!this.conflict) return this.snapshot;
 
       this.clearAutoSaveTimer();
       this.haltDrain = true;
       await this.awaitActiveDrain();
+      // A watcher may refresh or converge the conflict while an in-flight
+      // commit settles. Resolve the branch that is current now, never the
+      // snapshot captured before the await.
+      const currentConflict = this.conflict;
+      if (!currentConflict) return this.snapshot;
 
       if (strategy === 'use-external') {
         this.discardRecoverySnapshot();
@@ -465,14 +537,40 @@ export class DocumentSession {
     }
   }
 
-  private scheduleAutoSave(): void {
+  private scheduleAutoSave(delayMs = this.autoSaveDelayMs): void {
     this.clearAutoSaveTimer();
     this.autoSaveTimer = setTimeout(() => {
       this.autoSaveTimer = null;
-      void this.flush('autosave').catch(() => {
-        // Error/conflict state is exposed through getSnapshot().
-      });
-    }, this.autoSaveDelayMs);
+      const target = this.target;
+      const generation = this.generation;
+      void this.flush('autosave').then(
+        () => {
+          this.autoSaveRetryAttempt = 0;
+        },
+        () => {
+          // Preserve honest error/conflict state while making ordinary I/O
+          // failures recoverable. A newer edit already owns a fresh debounce
+          // timer, and lifecycle operations cancel this retry path.
+          if (
+            this.autoSaveTimer !== null ||
+            !target ||
+            target !== this.target ||
+            generation !== this.generation ||
+            this.lifecycle !== 'open' ||
+            this.frozen ||
+            this.haltDrain ||
+            this.conflict ||
+            this.persistedRevision >= this.revision
+          ) {
+            return;
+          }
+          const retryDelay = this.autoSaveRetryDelaysMs[this.autoSaveRetryAttempt];
+          if (retryDelay === undefined) return;
+          this.autoSaveRetryAttempt += 1;
+          this.scheduleAutoSave(retryDelay);
+        },
+      );
+    }, delayMs);
   }
 
   private clearAutoSaveTimer(): void {
@@ -543,9 +641,18 @@ export class DocumentSession {
       if (generation !== this.generation || target !== this.target) return;
       this.persistedRevision = Math.max(this.persistedRevision, saveRevision);
       this.persistedContent = saveContent;
+      this.autoSaveRetryAttempt = 0;
       this.savingRevision = null;
       this.savingContent = null;
       this.error = null;
+      const activeConflict = this.getSnapshot().conflict;
+      if (activeConflict?.externalContent === saveContent && this.content === saveContent) {
+        // An observation that matched the in-flight local snapshot could not
+        // be acknowledged until the commit settled. Its successful return now
+        // proves both branches converged on the same durable revision.
+        this.conflict = null;
+        this.haltDrain = false;
+      }
       this.recoveryJournal?.acknowledge({
         targetKey: target.key,
         generation,
@@ -629,6 +736,7 @@ export class DocumentSession {
 
   private detach(): void {
     this.clearAutoSaveTimer();
+    this.autoSaveRetryAttempt = 0;
     this.generation += 1;
     this.externalSequence = -1;
     this.target = null;
@@ -692,4 +800,13 @@ export class DocumentSession {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function normalizeRetryDelays(delays: readonly number[]): readonly number[] {
+  return delays.map((delay) => {
+    if (!Number.isFinite(delay) || delay < 0) {
+      throw new TypeError('Autosave retry delays must be finite, non-negative numbers.');
+    }
+    return Math.floor(delay);
+  });
 }

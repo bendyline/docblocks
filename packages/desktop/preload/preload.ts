@@ -4,6 +4,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import { parseOpenRequest } from '@bendyline/docblocks/host';
 import type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
@@ -29,6 +30,16 @@ import type {
   UpdaterStatus,
 } from '@bendyline/docblocks/host';
 import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem';
+import { BufferedEventChannel } from './buffered-event-channel.js';
+
+// The main process can dispatch launch argv as soon as the BrowserWindow is
+// ready-to-show, before React effects subscribe. Install this preload listener
+// immediately and bridge a bounded backlog once the renderer is ready.
+const openRequestChannel = new BufferedEventChannel<OpenRequest>();
+ipcRenderer.on('open-request', (_event, value: unknown) => {
+  const request = parseOpenRequest(value);
+  if (request) openRequestChannel.publish(request);
+});
 
 // ── fs ──────────────────────────────────────────────────────────────
 
@@ -120,6 +131,7 @@ const externalApi: DocBlocksHostExternalAPI = {
 // ── workspaces ──────────────────────────────────────────────────────
 
 const workspacesApi: DocBlocksHostWorkspacesAPI = {
+  list: () => ipcRenderer.invoke('workspaces:list') as Promise<ElectronWorkspaceInfo[]>,
   getDefault: () => ipcRenderer.invoke('workspaces:getDefault') as Promise<ElectronWorkspaceInfo>,
   pickFolder: () =>
     ipcRenderer.invoke('workspaces:pickFolder') as Promise<ElectronWorkspaceInfo | null>,
@@ -299,9 +311,7 @@ function onMenuCommand(listener: (cmd: MenuCommand) => void): () => void {
 }
 
 function onOpenRequest(listener: (request: OpenRequest) => void): () => void {
-  const fn = (_event: Electron.IpcRendererEvent, request: OpenRequest) => listener(request);
-  ipcRenderer.on('open-request', fn);
-  return () => ipcRenderer.removeListener('open-request', fn);
+  return openRequestChannel.subscribe(listener);
 }
 
 // ── env ─────────────────────────────────────────────────────────────

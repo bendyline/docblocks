@@ -61,6 +61,7 @@ export {
   isBoundedString,
   isTrustedRendererUrl,
   parseExternalHttpUrl,
+  parseOpenRequest,
 } from './wire-policy.js';
 
 import type { DocBlocksHostAPI } from './types.js';

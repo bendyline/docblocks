@@ -115,8 +115,12 @@ export function FileTreeNode({
 
   const handleDeleteClick = useCallback(async () => {
     setShowContext(false);
+    const description = entry.kind === 'directory' ? 'folder and everything inside it' : 'document';
+    if (!window.confirm(`Delete the ${description} "${entry.name}"? This cannot be undone.`)) {
+      return;
+    }
     await onDelete(entry.path, entry.kind);
-  }, [entry.path, entry.kind, onDelete]);
+  }, [entry.name, entry.path, entry.kind, onDelete]);
 
   // Close context menu on outside click or scroll
   useEffect(() => {

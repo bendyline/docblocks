@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
   FsError,
   WORKSPACE_ROOT,
@@ -276,6 +277,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         await this.createDirectories(missingParents);
         const abs = await this.resolveMutation(canonical, 'write');
         await atomicWriteBinary(abs, bytes);
+        await this.assertMutationTarget(canonical, 'write', abs);
 
         const scanned = await this.scanEntry(canonical, false, new Set(), 'write');
         this.remember(scanned.entries);
@@ -472,6 +474,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           const sourceAbs = await this.resolveMutation(sourcePath, 'move');
           const destinationAbs = await this.resolveMutation(destinationPath, 'move');
           await fs.rename(sourceAbs, destinationAbs);
+          await this.assertMutationTarget(destinationPath, 'move', destinationAbs);
         } catch (error: unknown) {
           await this.rollbackDirectories(missingParents);
           throw error;
@@ -630,6 +633,26 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       return await this.roots.resolveMutation(this.rootPath, itemPath);
     } catch (error: unknown) {
       throw this.translateError(error, operation, itemPath, null);
+    }
+  }
+
+  private async assertMutationTarget(
+    itemPath: WorkspacePath,
+    operation: FsOperation,
+    expectedAbsolutePath: string,
+  ): Promise<void> {
+    const current = await this.resolveMutation(itemPath, operation);
+    const normalize = (value: string): string => {
+      const resolved = path.resolve(value);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    if (normalize(current) !== normalize(expectedAbsolutePath)) {
+      throw this.error(
+        'conflict',
+        operation,
+        itemPath,
+        'Mutation target changed physical identity during the operation.',
+      );
     }
   }
 

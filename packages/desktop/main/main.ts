@@ -24,9 +24,11 @@ import { registerGitIpc } from './ipc-git.js';
 import { killAllGitChildren } from './git/exec.js';
 import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
 import { buildMenu } from './menu.js';
-import { readSettings, flushSettings } from './settings.js';
+import { readSettings, updateSettings, flushSettings } from './settings.js';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
+import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
+import { PendingOpenRequests } from './pending-open-requests.js';
 import { registerTray } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
@@ -49,6 +51,7 @@ if (process.env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION === '1') {
 let mainWindow: BrowserWindow | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
+const pendingOpenRequests = new PendingOpenRequests();
 
 // Single-instance lock — second launches forward their argv to the first
 // so Windows "Open With" and docblocks:// deep links route to the same window.
@@ -62,6 +65,11 @@ app.on('second-instance', (_event, argv) => {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
     handleOpenFileArg(mainWindow, argv);
+  } else {
+    // A second launch can arrive after the primary acquired its lock but
+    // before createWindow assigned mainWindow. Preserve the complete argv so
+    // launch-file authority is not lost in that narrow startup interval.
+    pendingOpenRequests.enqueueArgv(argv);
   }
 });
 
@@ -72,7 +80,7 @@ app.on('open-file', (event, filePath) => {
     handleOpenFileArg(mainWindow, [filePath]);
   } else {
     // Queue until the window is ready.
-    pendingOpenPaths.push(filePath);
+    pendingOpenRequests.enqueueFile(filePath);
   }
 });
 
@@ -81,12 +89,9 @@ app.on('open-url', (event, url) => {
   if (mainWindow) {
     handleOpenUrl(mainWindow, url);
   } else {
-    pendingOpenUrls.push(url);
+    pendingOpenRequests.enqueueUrl(url);
   }
 });
-
-const pendingOpenPaths: string[] = [];
-const pendingOpenUrls: string[] = [];
 
 // Register docblocks:// as a deep-link protocol handler (also declared in electron-builder.yml).
 if (process.defaultApp) {
@@ -252,14 +257,11 @@ async function createWindow(): Promise<BrowserWindow> {
   win.once('ready-to-show', () => {
     win.show();
     // Drain any pending open requests received before the window existed.
-    while (pendingOpenPaths.length) {
-      const p = pendingOpenPaths.shift()!;
-      handleOpenFileArg(win, [p]);
-    }
-    while (pendingOpenUrls.length) {
-      const u = pendingOpenUrls.shift()!;
-      handleOpenUrl(win, u);
-    }
+    pendingOpenRequests.drain((request) => {
+      if (request.kind === 'url') handleOpenUrl(win, request.url);
+      else if (request.kind === 'file') handleOpenFileArg(win, [request.path]);
+      else handleOpenFileArg(win, request.argv);
+    });
     handleOpenFileArg(win, process.argv);
   });
 
@@ -335,10 +337,33 @@ app.whenReady().then(async () => {
   // In a MAS build, re-open security-scoped access from the saved bookmark
   // BEFORE registering — otherwise the sandbox denies node:fs on that path.
   // startAccessingBookmark is a no-op outside MAS, so this is inert elsewhere.
-  const settings = await readSettings();
+  let settings = await readSettings();
   const roots = getWorkspaceRoots();
   for (const info of settings.workspaces) {
     startAccessingBookmark(info.bookmark);
+  }
+  const canonicalWorkspaces = settings.workspaces.map((workspace) => {
+    const resolved = path.resolve(workspace.rootPath);
+    let rootPath = resolved;
+    try {
+      rootPath = fs.realpathSync.native(resolved);
+    } catch {
+      // Offline persisted roots remain registered lexically and fail closed
+      // when a filesystem operation later attempts physical resolution.
+    }
+    return rootPath === workspace.rootPath ? workspace : { ...workspace, rootPath };
+  });
+  const canonicalized = canonicalWorkspaces.some(
+    (workspace, index) => workspace !== settings.workspaces[index],
+  );
+  const repairedWorkspaces = repairWorkspaceIdentities(canonicalWorkspaces);
+  if (canonicalized || repairedWorkspaces.changed) {
+    settings = await updateSettings((current) => ({
+      ...current,
+      workspaces: repairedWorkspaces.records,
+    }));
+  }
+  for (const info of settings.workspaces) {
     roots.register(info.id, info.rootPath);
   }
 

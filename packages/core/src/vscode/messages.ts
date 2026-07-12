@@ -2,7 +2,7 @@
  * Typed message protocol between the extension host and webview.
  */
 
-import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import { HOST_WIRE_LIMITS, isBoundedString } from '../host/wire-policy.js';
 
 const MAX_REQUEST_ID = 2_147_483_647;
 
@@ -256,6 +256,232 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
     default:
       return null;
   }
+}
+
+/**
+ * Validate host responses before they influence webview state. This protects
+ * the browser side from protocol drift and from messages injected by another
+ * script in the webview document; a TypeScript MessageEvent annotation is not
+ * runtime validation.
+ */
+export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebviewMessage | null {
+  if (!isRecord(value) || typeof value.type !== 'string') return null;
+
+  switch (value.type) {
+    case 'setContent':
+      return hasOnlyKeys(value, [
+        'type',
+        'content',
+        'documentVersion',
+        'fileName',
+        'sessionId',
+        'sessionRevision',
+        'acknowledgedClientRevision',
+      ]) &&
+        hasBoundedString(value, 'content', HOST_WIRE_LIMITS.documentCharacters) &&
+        hasNonNegativeInteger(value, 'documentVersion') &&
+        hasBoundedString(value, 'fileName', HOST_WIRE_LIMITS.pathCharacters, 1) &&
+        hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
+        hasNonNegativeInteger(value, 'sessionRevision') &&
+        hasNonNegativeInteger(value, 'acknowledgedClientRevision')
+        ? {
+            type: 'setContent',
+            content: value.content,
+            documentVersion: value.documentVersion,
+            fileName: value.fileName,
+            sessionId: value.sessionId,
+            sessionRevision: value.sessionRevision,
+            acknowledgedClientRevision: value.acknowledgedClientRevision,
+          }
+        : null;
+    case 'editAcknowledged':
+      return hasOnlyKeys(value, [
+        'type',
+        'sessionId',
+        'clientRevision',
+        'sessionRevision',
+        'accepted',
+        'message',
+      ]) &&
+        hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
+        hasNonNegativeInteger(value, 'clientRevision') &&
+        hasNonNegativeInteger(value, 'sessionRevision') &&
+        typeof value.accepted === 'boolean' &&
+        hasNullableBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters)
+        ? {
+            type: 'editAcknowledged',
+            sessionId: value.sessionId,
+            clientRevision: value.clientRevision,
+            sessionRevision: value.sessionRevision,
+            accepted: value.accepted,
+            message: value.message,
+          }
+        : null;
+    case 'sessionState':
+      return hasOnlyKeys(value, [
+        'type',
+        'sessionId',
+        'status',
+        'revision',
+        'persistedRevision',
+        'acknowledgedClientRevision',
+        'documentVersion',
+        'error',
+      ]) &&
+        hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
+        isDocumentSessionMessageStatus(value.status) &&
+        hasNonNegativeInteger(value, 'revision') &&
+        hasNonNegativeInteger(value, 'persistedRevision') &&
+        value.persistedRevision <= value.revision &&
+        hasNonNegativeInteger(value, 'acknowledgedClientRevision') &&
+        hasNonNegativeInteger(value, 'documentVersion') &&
+        hasNullableBoundedString(value, 'error', HOST_WIRE_LIMITS.messageCharacters)
+        ? {
+            type: 'sessionState',
+            sessionId: value.sessionId,
+            status: value.status,
+            revision: value.revision,
+            persistedRevision: value.persistedRevision,
+            acknowledgedClientRevision: value.acknowledgedClientRevision,
+            documentVersion: value.documentVersion,
+            error: value.error,
+          }
+        : null;
+    case 'saveResult':
+      return hasOnlyKeys(value, [
+        'type',
+        'sessionId',
+        'requestId',
+        'ok',
+        'revision',
+        'persistedRevision',
+        'documentVersion',
+        'message',
+      ]) &&
+        hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
+        hasRequestId(value) &&
+        typeof value.ok === 'boolean' &&
+        hasNonNegativeInteger(value, 'revision') &&
+        hasNonNegativeInteger(value, 'persistedRevision') &&
+        value.persistedRevision <= value.revision &&
+        hasNonNegativeInteger(value, 'documentVersion') &&
+        hasNullableBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters)
+        ? {
+            type: 'saveResult',
+            sessionId: value.sessionId,
+            requestId: value.requestId,
+            ok: value.ok,
+            revision: value.revision,
+            persistedRevision: value.persistedRevision,
+            documentVersion: value.documentVersion,
+            message: value.message,
+          }
+        : null;
+    case 'themeChange':
+      return hasOnlyKeys(value, ['type', 'theme']) &&
+        (value.theme === 'light' || value.theme === 'dark')
+        ? { type: 'themeChange', theme: value.theme }
+        : null;
+    case 'mediaResolved':
+      return hasOnlyKeys(value, ['type', 'requestId', 'url']) &&
+        hasRequestId(value) &&
+        isBoundedMediaDataUrl(value.url)
+        ? { type: 'mediaResolved', requestId: value.requestId, url: value.url }
+        : null;
+    case 'mediaListed': {
+      if (!hasOnlyKeys(value, ['type', 'requestId', 'entries']) || !hasRequestId(value)) {
+        return null;
+      }
+      const entries = parseMediaEntries(value.entries);
+      return entries ? { type: 'mediaListed', requestId: value.requestId, entries } : null;
+    }
+    case 'mediaAdded':
+      return hasOnlyKeys(value, ['type', 'requestId', 'path']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'path', HOST_WIRE_LIMITS.pathCharacters, 1)
+        ? { type: 'mediaAdded', requestId: value.requestId, path: value.path }
+        : null;
+    case 'mediaRemoved':
+      return hasOnlyKeys(value, ['type', 'requestId']) && hasRequestId(value)
+        ? { type: 'mediaRemoved', requestId: value.requestId }
+        : null;
+    case 'mediaError':
+    case 'exportError':
+    case 'workspaceFileError':
+      return hasOnlyKeys(value, ['type', 'requestId', 'message']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters, 1)
+        ? { type: value.type, requestId: value.requestId, message: value.message }
+        : null;
+    case 'exportSaved':
+    case 'exportTargetResolved':
+    case 'exportTargetPicked': {
+      if (!hasOnlyKeys(value, ['type', 'requestId', 'target']) || !hasRequestId(value)) {
+        return null;
+      }
+      const target = parseExportTargetGrant(value.target);
+      return target !== undefined ? { type: value.type, requestId: value.requestId, target } : null;
+    }
+    case 'workspaceFileRead':
+      return hasOnlyKeys(value, ['type', 'requestId', 'dataBase64']) &&
+        hasRequestId(value) &&
+        hasNullableBoundedString(value, 'dataBase64', HOST_WIRE_LIMITS.base64Characters)
+        ? { type: 'workspaceFileRead', requestId: value.requestId, dataBase64: value.dataBase64 }
+        : null;
+    default:
+      return null;
+  }
+}
+
+function parseExportTargetGrant(value: unknown): ExportTargetGrantMessage | null | undefined {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['grantId', 'displayLabel']) ||
+    !hasBoundedString(value, 'grantId', HOST_WIRE_LIMITS.identifierCharacters, 1) ||
+    !hasBoundedString(value, 'displayLabel', HOST_WIRE_LIMITS.pathCharacters, 1)
+  ) {
+    return undefined;
+  }
+  return { grantId: value.grantId, displayLabel: value.displayLabel };
+}
+
+function parseMediaEntries(value: unknown): MediaEntryMessage[] | null {
+  if (!Array.isArray(value) || value.length > HOST_WIRE_LIMITS.arrayEntries) return null;
+  const entries: MediaEntryMessage[] = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      !hasOnlyKeys(entry, ['name', 'mimeType', 'size']) ||
+      !hasBoundedString(entry, 'name', HOST_WIRE_LIMITS.pathCharacters, 1) ||
+      !hasMimeType(entry, 'mimeType') ||
+      !hasNonNegativeInteger(entry, 'size') ||
+      entry.size > HOST_WIRE_LIMITS.binaryBytes
+    ) {
+      return null;
+    }
+    entries.push({ name: entry.name, mimeType: entry.mimeType, size: entry.size });
+  }
+  return entries;
+}
+
+function isBoundedMediaDataUrl(value: unknown): value is string {
+  if (!isBoundedString(value, HOST_WIRE_LIMITS.base64Characters + 512, 1)) return false;
+  if (!value.startsWith('data:')) return false;
+  const separator = value.indexOf(';base64,');
+  return separator > 5 && separator <= HOST_WIRE_LIMITS.identifierCharacters;
+}
+
+function isDocumentSessionMessageStatus(value: unknown): value is DocumentSessionMessageStatus {
+  return (
+    value === 'idle' ||
+    value === 'saved' ||
+    value === 'dirty' ||
+    value === 'saving' ||
+    value === 'error' ||
+    value === 'conflict' ||
+    value === 'closed'
+  );
 }
 
 function isSessionEnvelope(value: Record<string, unknown>): value is Record<string, unknown> & {

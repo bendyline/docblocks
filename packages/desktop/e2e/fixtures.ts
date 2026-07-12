@@ -31,7 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
-  launchApp: () => Promise<{ app: ElectronApplication; window: Page }>;
+  launchApp: (extraArgs?: string[]) => Promise<{ app: ElectronApplication; window: Page }>;
 }
 
 function makeTmpDir(prefix: string): string {
@@ -80,7 +80,10 @@ export const test = base.extend<DocBlocksFixtures>({
     const appRoot = path.resolve(__dirname, '..');
     let running: ElectronApplication | undefined;
 
-    async function launch(): Promise<{ app: ElectronApplication; window: Page }> {
+    async function launch(extraArgs: string[] = []): Promise<{
+      app: ElectronApplication;
+      window: Page;
+    }> {
       const args = [
         appRoot,
         `--user-data-dir=${userDataDir}`,
@@ -89,6 +92,7 @@ export const test = base.extend<DocBlocksFixtures>({
         '--noerrdialogs',
         '--disable-breakpad',
         '--disable-gpu',
+        ...extraArgs,
       ];
       // GitHub Actions Linux runners don't own chrome-sandbox with the
       // setuid bit, so Electron's SUID sandbox aborts at launch. Disable

@@ -22,7 +22,22 @@ export interface HostDocumentSnapshot {
 export interface HostDocumentAdapter {
   readonly key: string;
   read(): Promise<HostDocumentSnapshot>;
-  replaceAndSave(content: string): Promise<HostDocumentSnapshot>;
+  /**
+   * Recheck `expected` immediately before applying the replacement and reject
+   * with HostDocumentChangedError if the host document no longer matches.
+   */
+  replaceAndSave(content: string, expected: HostDocumentSnapshot): Promise<HostDocumentSnapshot>;
+}
+
+/** Adapter-level optimistic precondition failure with the observed branch. */
+export class HostDocumentChangedError extends Error {
+  public readonly actual: HostDocumentSnapshot;
+
+  public constructor(actual: HostDocumentSnapshot, message = 'The host document changed') {
+    super(message);
+    this.name = 'HostDocumentChangedError';
+    this.actual = actual;
+  }
 }
 
 export interface VscodeDocumentSyncOptions {
@@ -124,7 +139,7 @@ export class VscodeDocumentSync {
     });
   }
 
-  /** Accept an in-order complete client snapshot without waiting for disk I/O. */
+  /** Accept a monotonic, possibly coalesced complete snapshot without waiting for disk I/O. */
   public acceptEdit(edit: WebviewEditEnvelope): EditAcceptance {
     const invalid = this.validateEnvelope(edit);
     if (invalid) return this.rejectEdit(edit.clientRevision, invalid);
@@ -138,17 +153,13 @@ export class VscodeDocumentSync {
       };
     }
 
-    if (edit.clientRevision !== this.acknowledgedClientRevision + 1) {
-      return this.rejectEdit(
-        edit.clientRevision,
-        `Expected client revision ${this.acknowledgedClientRevision + 1}.`,
-      );
-    }
-
     try {
       const scope = this.clientScope;
       if (!scope) throw new Error('The VS Code document session has not finished opening.');
       const sessionRevision = this.session.edit(edit.content, scope);
+      // Every edit is a complete snapshot. The webview ingress may coalesce
+      // superseded messages while the host is delayed, so acknowledging a
+      // monotonic jump is lossless and keeps the bounded queue honest.
       this.acknowledgedClientRevision = edit.clientRevision;
       this.emit();
       return {
@@ -320,8 +331,15 @@ class VscodeCommitTarget implements DocumentCommitTarget {
 
     let committed: HostDocumentSnapshot;
     try {
-      committed = await this.adapter.replaceAndSave(request.content);
+      committed = await this.adapter.replaceAndSave(request.content, actual);
     } catch (error: unknown) {
+      if (error instanceof HostDocumentChangedError) {
+        throw new DocumentCommitConflictError(
+          error.message,
+          error.actual.content,
+          error.actual.version,
+        );
+      }
       // WorkspaceEdit may have succeeded even when TextDocument.save failed.
       // Rebase that host-owned partial application so an honest retry saves it
       // instead of misclassifying it as an external conflict.

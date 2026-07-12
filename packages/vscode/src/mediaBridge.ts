@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
+import type { MediaEntryMessage, WebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
 import {
   assertNoSymbolicLinkComponents,
   getDocumentSidecarUri,
@@ -7,7 +8,6 @@ import {
   readAuthorizedMediaFile,
   resolveAuthorizedDocumentResource,
 } from './documentAuthority.js';
-import type { MediaEntryMessage, WebviewToExtensionMessage } from './messages.js';
 import { guessMediaMimeType, mediaSidecarFolder } from './mediaPaths.js';
 import { assertBoundedBytes, decodeBoundedBase64, encodeBoundedBase64 } from './wirePayload.js';
 

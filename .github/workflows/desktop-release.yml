@@ -38,10 +38,31 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    name: Canonical Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run canonical quality gate
+        run: npm run all
+
   # ──────────────────────────────────────────────────────────────────────────
   # Windows — Build + Authenticode sign (Azure Trusted Signing, optional)
   # ──────────────────────────────────────────────────────────────────────────
   build-windows:
+    needs: quality
     runs-on: windows-latest
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
@@ -142,6 +163,7 @@ jobs:
   # macOS — Build + sign + notarize
   # ──────────────────────────────────────────────────────────────────────────
   build-macos:
+    needs: quality
     runs-on: macos-latest
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
@@ -236,6 +258,7 @@ jobs:
   # Linux — Build (no signing)
   # ──────────────────────────────────────────────────────────────────────────
   build-linux:
+    needs: quality
     runs-on: ubuntu-latest
 
     steps:
@@ -273,6 +296,7 @@ jobs:
   # VS Code — Build VSIX package
   # ──────────────────────────────────────────────────────────────────────────
   build-vscode-vsix:
+    needs: quality
     runs-on: ubuntu-latest
 
     steps:

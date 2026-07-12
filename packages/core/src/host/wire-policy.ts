@@ -1,3 +1,5 @@
+import type { OpenRequest } from './types.js';
+
 /** Quantitative limits shared by privileged host boundaries. */
 export const HOST_WIRE_LIMITS = Object.freeze({
   identifierCharacters: 256,
@@ -10,6 +12,14 @@ export const HOST_WIRE_LIMITS = Object.freeze({
   base64Characters: 140 * 1024 * 1024,
   arrayEntries: 10_000,
 });
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return (
+    actual.length === keys.length &&
+    keys.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+  );
+}
 
 export function isBoundedString(
   value: unknown,
@@ -32,6 +42,28 @@ export function isBoundedBytePayload(
     (value instanceof ArrayBuffer || value instanceof Uint8Array) &&
     value.byteLength <= maximumBytes
   );
+}
+
+/** Parse one exact, bounded main-to-renderer open request. */
+export function parseOpenRequest(value: unknown): OpenRequest | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+
+  if (record.kind === 'workspace-file') {
+    if (!hasExactKeys(record, ['kind', 'workspaceId', 'path'])) return null;
+    if (!isBoundedString(record.workspaceId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
+    if (!isBoundedString(record.path, HOST_WIRE_LIMITS.pathCharacters, 1)) return null;
+    return { kind: 'workspace-file', workspaceId: record.workspaceId, path: record.path };
+  }
+
+  if (record.kind === 'external-file' || record.kind === 'external-bundle') {
+    if (!hasExactKeys(record, ['kind', 'resourceId', 'name'])) return null;
+    if (!isBoundedString(record.resourceId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
+    if (!isBoundedString(record.name, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
+    return { kind: record.kind, resourceId: record.resourceId, name: record.name };
+  }
+
+  return null;
 }
 
 /** Return one canonical HTTP(S) URL, or null when external navigation is unsafe. */

@@ -31,14 +31,15 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  packages/core — @bendyline/docblocks                               │
-│   ├─ filesystem/  — FileSystemProvider interface + 3 implementations│
+│   ├─ filesystem/  — v1 adapters + FileSystemProviderV2 backends      │
 │   │     IndexedDBFileSystemProvider                                 │
 │   │     NativeFileSystemProvider     (File System Access API)       │
 │   │     ElectronFileSystemProvider   (IPC bridge to main)           │
 │   │     FilesystemContentContainer / IndexedDBContentContainer      │
 │   │     FileMediaProvider                                           │
-│   ├─ workspace/  — WorkspaceDescriptor + WorkspaceManager (CRUD,    │
-│   │                default-workspace logic)                         │
+│   ├─ document/   — DocumentSession transaction + recovery boundary  │
+│   ├─ workspace/  — descriptors, persistence, Electron reconciliation│
+│   ├─ vscode/     — parsed host↔webview wire protocol                │
 │   └─ host/       — DocBlocksHostAPI types (fs / workspaces / shell  │
 │                    / ffmpeg / updater / menu / open-file)           │
 │                    + isElectronHost() / getDocBlocksHost() runtime  │
@@ -65,7 +66,7 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │ Consumed by:           │ │   over stdio)         │ │ preload/preload.ts      │
 │ • site (web)           │ │ Bin: `docblocks`      │ │   (contextBridge →      │
 │ • desktop (renderer)   │ │                       │ │    DocBlocksHostAPI)    │
-│ • vscode (webview)     │ │                       │ │ renderer/ (Vite+React)  │
+│ • vscode export UI only│ │                       │ │ renderer/ (Vite+React)  │
 │                        │ │                       │ │   mounts                │
 │                        │ │                       │ │   <DocBlocksShell>      │
 │                        │ │                       │ │   UpdateStatusBanner    │
@@ -79,12 +80,13 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │   markdownEditorPanel.ts         │  │   App.tsx — mounts              │
 │     (CustomTextEditorProvider    │  │     <DocBlocksShell             │
 │      for *.md)                   │  │      theme="auto">              │
-│   messages.ts (host↔webview      │  │   main.tsx (Vite + React)       │
-│      message types)              │  │                                 │
+│   parsed protocol imported from  │  │   main.tsx (Vite + React)       │
+│      @bendyline/docblocks/vscode │  │                                 │
 │   extension.ts  / extension.web  │  │ Public marketing/demo surface,  │
 │ webview/ (Vite + React)          │  │ deployed to GitHub Pages        │
 │   main.tsx, VscodeEditor.tsx,    │  │ (CNAME in public/).             │
-│   monaco-slim.ts, vscodeApi.ts   │  │                                 │
+│   setupMonacoWorkers.ts,         │  │                                 │
+│   vscodeApi.ts                   │  │                                 │
 │ Setup pane (Activity bar webview)│  │                                 │
 └──────────────────────────────────┘  └─────────────────────────────────┘
 
@@ -97,17 +99,17 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 
 ### Code-sharing & integration map
 
-| From → To                                       | Mechanism                                                                                                                                           | Why                                                                                                    |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `core` → react / cli / vscode / desktop / site  | npm workspace `@bendyline/docblocks` (multi-entry tsup: `filesystem`, `workspace`, `host`)                                                          | Single source of truth for FileSystemProvider, WorkspaceDescriptor, and the Electron host API contract |
-| `react` → site / desktop / vscode               | `@bendyline/docblocks-react` — `<DocBlocksShell>` is the one true editor shell                                                                      | Same chrome (file explorer + workspace picker + app menu + export) on every surface                    |
-| `core/host` → desktop main → preload → renderer | `contextBridge` exposes `DocBlocksHostAPI` (typed in core); renderer calls via `window.docBlocksHost`                                               | Renderer is the _same_ React tree as site, but with a host API attached                                |
-| `core/filesystem` → react components            | `FileSystemProvider` interface; the active implementation is chosen at runtime by `<DocBlocksShell>` based on environment (`isElectronHost()` etc.) | Same UI, three storage backends                                                                        |
-| `vscode` webview ↔ extension host               | `postMessage` with `messages.ts` typed envelopes                                                                                                    | VS Code can't share Node deps with the webview — typed messages are the only safe seam                 |
-| `cli` → squisq-formats                          | `@bendyline/squisq-formats` does the format math (md ↔ docx ↔ pptx ↔ pdf ↔ html); CLI orchestrates I/O + Playwright/ffmpeg                          | Format conversion is squisq's responsibility; CLI is the surface                                       |
-| `cli` → playwright-core + ffmpeg                | `video.ts` command renders MP4 via headless Chromium + ffmpeg piped frames                                                                          | Heavy: lives behind a CLI command, not bundled into the editor                                         |
-| `cli/mcp` → stdio JSON-RPC                      | `@modelcontextprotocol/sdk` server registered in `cli/src/mcp/server.ts`                                                                            | Lets AI agents drive DocBlocks operations as MCP tool calls                                            |
-| `desktop/main` ↔ `desktop/renderer`             | Custom `app://` protocol (stable IndexedDB origin + Monaco worker compatibility)                                                                    | Electron's default `file://` breaks IndexedDB persistence and Monaco web workers                       |
+| From → To                                       | Mechanism                                                                                                                                           | Why                                                                                                  |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `core` → react / cli / vscode / desktop / site  | npm workspace `@bendyline/docblocks` (multi-entry tsup: `filesystem`, `document`, `workspace`, `host`, `vscode`)                                    | Single source of truth for storage, session, workspace, host, and postMessage contracts              |
+| `react` → site / desktop; export API → vscode   | `@bendyline/docblocks-react` provides `<DocBlocksShell>` to site/desktop and its public `/export` API to the chrome-less VS Code webview            | Shared chrome where the host owns chrome; explicit public editor-area integration where VS Code does |
+| `core/host` → desktop main → preload → renderer | `contextBridge` exposes `DocBlocksHostAPI` (typed in core); renderer calls via `window.docBlocksHost`                                               | Renderer is the _same_ React tree as site, but with a host API attached                              |
+| `core/filesystem` → react components            | `FileSystemProvider` interface; the active implementation is chosen at runtime by `<DocBlocksShell>` based on environment (`isElectronHost()` etc.) | Same UI, three storage backends                                                                      |
+| `vscode` webview ↔ extension host               | `postMessage` with the bidirectionally parsed `core/src/vscode/messages.ts` protocol                                                                | VS Code can't share Node deps with the webview — validated messages are the only safe seam           |
+| `cli` → squisq-formats                          | `@bendyline/squisq-formats` does the format math (md ↔ docx ↔ pptx ↔ pdf ↔ html); CLI orchestrates I/O + Playwright/ffmpeg                          | Format conversion is squisq's responsibility; CLI is the surface                                     |
+| `cli` → playwright-core + ffmpeg                | `video.ts` command renders MP4 via headless Chromium + ffmpeg piped frames                                                                          | Heavy: lives behind a CLI command, not bundled into the editor                                       |
+| `cli/mcp` → stdio JSON-RPC                      | `@modelcontextprotocol/sdk` server registered in `cli/src/mcp/server.ts`                                                                            | Lets AI agents drive DocBlocks operations as MCP tool calls                                          |
+| `desktop/main` ↔ `desktop/renderer`             | Custom `app://` protocol (stable IndexedDB origin + Monaco worker compatibility)                                                                    | Electron's default `file://` breaks IndexedDB persistence and Monaco web workers                     |
 
 ### Critical conventions baked in
 
@@ -120,7 +122,7 @@ These are the load-bearing patterns. The root **AGENTS.md** is canonical and its
 - **Squisq is a dependency, not a fork.** Issues with the editor itself belong upstream in the optional `..\squisq` checkout. Use `npm run link:squisq` for parallel development; never patch Squisq from inside DocBlocks.
 - **No `console.log` in production code.** ESLint enforces this (`no-console: error`). Use proper logging or surface errors via the host API / VS Code's `OutputChannel` / CLI stderr.
 - **No `any`.** ESLint enforces this (`@typescript-eslint/no-explicit-any: error`). Test files are allowed `any` as a warning.
-- **VS Code webview state lives in the webview.** The extension host owns the document model (`TextDocument`); the webview owns editor UI state. Synchronize via `messages.ts` envelopes — don't smuggle React state through the document text.
+- **VS Code webview state lives in the webview.** The extension host owns the document model (`TextDocument`); the webview owns editor UI state. Synchronize through the parsed `core/src/vscode/messages.ts` protocol — don't smuggle React state through the document text.
 - **The Electron `app://` protocol is load-bearing.** Don't switch to `file://` — IndexedDB origin stability and Monaco worker loading depend on it.
 
 ---
@@ -137,16 +139,16 @@ Examine every package and every cross-cutting concern. Recommended quarterly or 
 
 | Focus                  | What to Examine                                                                                                                                                             |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| "Code duplication"     | DocBlocksShell consumers (site / desktop / vscode), provider implementations, export pipeline split between react and cli                                                   |
+| "Code duplication"     | DocBlocksShell consumers (site / desktop), explicit VS Code editor-area integrations, provider implementations, export pipeline split between react and cli                 |
 | "Type safety"          | Schema coverage in `core/host/types.ts`, `any` at IPC/postMessage boundaries, untyped `JSON.parse`                                                                          |
 | "Build system"         | tsup configs across core/react/cli, Vite configs across site/desktop/vscode-webview, the `app://` protocol, tsconfig alignment                                              |
 | "Electron host"        | The IPC surface (`ipc-fs`, `ipc-workspaces`, `ipc-shell`, `ipc-ffmpeg`, `menu`, `tray`, `updater`, `settings`, `workspace-roots`), preload contextBridge, deep-link handler |
-| "VS Code extension"    | `markdownEditorPanel`, host↔webview messages, Setup pane, web extension parity (`extension.web.js`)                                                                          |
+| "VS Code extension"    | `markdownEditorPanel`, host↔webview messages, Setup pane, web extension parity (`extension.web.js`)                                                                         |
 | "CLI"                  | 9 commands (init / build / serve / convert / video / mcp / themes / transforms / parse), converters, MCP server tool inventory                                              |
-| "FileSystem providers" | The 3 implementations — interface conformance, error handling, identity (workspace IDs), media handling                                                                     |
+| "FileSystem providers" | All v2 backends plus compatibility adapters — conformance, errors, identity, media, watching, and disposal                                                                  |
 | "Squisq integration"   | Which surfaces import which squisq subpackages, externals in tsup/Vite, link:squisq script health                                                                           |
-| "Testing"              | Mocha unit/integration coverage across packages, site/desktop/VS Code Playwright suites, packed consumers, and packaged-desktop smoke                                      |
-| "Agent guidance"       | Tracked skills in `.agents/skills/`, generated assurance guidance, and whether AGENTS.md passes its freshness check                                                        |
+| "Testing"              | Mocha unit/integration coverage across packages, site/desktop/VS Code Playwright suites, packed consumers, and packaged-desktop smoke                                       |
+| "Agent guidance"       | Tracked skills in `.agents/skills/`, generated assurance guidance, and whether AGENTS.md passes its freshness check                                                         |
 
 ---
 
@@ -204,7 +206,7 @@ packages/cli/src/mcp/server.ts           # MCP tool inventory
 
 # VS Code extension
 packages/vscode/src/markdownEditorPanel.ts
-packages/vscode/src/messages.ts          # webview↔host envelope types
+packages/core/src/vscode/messages.ts     # canonical webview↔host envelope types + parsers
 packages/vscode/webview/src/main.tsx
 packages/vscode/webview/src/VscodeEditor.tsx
 packages/vscode/webview/src/vscodeApi.ts
@@ -295,15 +297,15 @@ For each dimension, note what works and what needs attention. Quote specific fil
 
 Known and historical hotspots — verify each on every review:
 
-| Concern                        | Where to look                                                                                                    | Status                                                                                               |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `<DocBlocksShell>` host wiring | `packages/site/src/App.tsx`, `packages/desktop/renderer/App.tsx`, `packages/vscode/webview/src/VscodeEditor.tsx` | Three mounts — props should be similar; divergence is signal                                         |
-| FileSystemProvider patterns    | `packages/core/src/filesystem/{indexeddb,native,electron}-provider.ts`                                           | Same interface — error handling, path conventions, async patterns should rhyme                       |
-| Export pipeline                | `packages/react/src/Export/run-export.ts` vs `packages/cli/src/commands/{build,convert,video}.ts`                | Both invoke squisq-formats / squisq-cli — risk of two different orchestration patterns               |
-| IPC bridge surface             | `packages/desktop/main/ipc-*.ts` × `packages/desktop/preload/preload.ts` × `packages/core/src/host/types.ts`     | Three lists of the same API — drift is silent                                                        |
-| Editor mount + Squisq config   | site / desktop-renderer / vscode-webview                                                                         | Editor extensions, theme handling, plugin registration                                               |
-| Theme handling                 | DocBlocksShell `theme` prop vs vscode webview theme sync via postMessage                                         | Two theme pipelines — converge if possible                                                           |
-| Workspace CRUD                 | `core/workspace/workspace-manager.ts` (browser) vs `desktop/main/ipc-workspaces.ts` (Electron)                   | Native-side CRUD should be a thin pass-through to the trusted-root whitelist, not a reimplementation |
+| Concern                        | Where to look                                                                                                | Status                                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `<DocBlocksShell>` host wiring | `packages/site/src/App.tsx`, `packages/desktop/renderer/App.tsx`                                             | Two shell mounts; VS Code is an intentional chrome-less `EditorShell` integration                    |
+| FileSystemProvider patterns    | `packages/core/src/filesystem/*-provider-v2.ts` plus desktop's Node backend                                  | One v2 contract and conformance suite; backend capability differences must remain explicit           |
+| Export pipeline                | `packages/react/src/Export/run-export.ts` vs `packages/cli/src/commands/{build,convert,video}.ts`            | Both invoke squisq-formats / squisq-cli — risk of two different orchestration patterns               |
+| IPC bridge surface             | `packages/desktop/main/ipc-*.ts` × `packages/desktop/preload/preload.ts` × `packages/core/src/host/types.ts` | Three lists of the same API — drift is silent                                                        |
+| Editor mount + Squisq config   | site / desktop-renderer / vscode-webview                                                                     | Editor extensions, theme handling, plugin registration                                               |
+| Theme handling                 | DocBlocksShell `theme` prop vs vscode webview theme sync via postMessage                                     | Two theme pipelines — converge if possible                                                           |
+| Workspace CRUD                 | `core/workspace/workspace-manager.ts` (browser) vs `desktop/main/ipc-workspaces.ts` (Electron)               | Native-side CRUD should be a thin pass-through to the trusted-root whitelist, not a reimplementation |
 
 For each, read both locations and diff mentally. Decide intentional vs accidental. For accidental drift, propose extraction with file paths.
 
@@ -313,7 +315,7 @@ For each, read both locations and diff mentally. Decide intentional vs accidenta
 - `as X` assertions — every one should have a comment justifying it. Especially around the contextBridge boundary, the webview postMessage envelope, and CLI argument parsing.
 - Untyped `JSON.parse` — any parse from a settings file, a workspace descriptor, or a message envelope must run through a validator (Zod in CLI; consider Zod or hand-rolled guards in core).
 - Is every IPC channel typed end-to-end? Trace `ipcMain.handle('foo:bar', …)` → `preload.ts` exposure → `DocBlocksHostAPI` field → renderer call. Any link that loses types is a drift surface.
-- Are VS Code postMessage envelopes (`packages/vscode/src/messages.ts`) discriminated unions, and is the webview using exhaustive switches?
+- Are VS Code postMessage envelopes (`packages/core/src/vscode/messages.ts`) runtime-validated discriminated unions, and is the webview using exhaustive switches?
 
 ### 3.4 Build System Health
 
@@ -340,7 +342,7 @@ For each, read both locations and diff mentally. Decide intentional vs accidenta
 
 - IndexedDB content container: any chance of unbounded growth? Cleanup story for orphaned blobs?
 - The Electron renderer mounts the same `<DocBlocksShell>` as the site, plus the host API layer — any extra cost?
-- Monaco loading: is `monaco-slim.ts` in the vscode webview keeping the bundle small? Sourcemap of the webview bundle to confirm.
+- Monaco loading: are `setupMonacoWorkers.ts` and the VS Code webview Vite aliases keeping the shipped worker/bundle budgets intact?
 - Font loading: 17 woff2 files in `packages/react/src/fonts/` — are they all referenced? Are they lazy-loaded via CSS `font-display: swap` or all blocking?
 - CLI `video` command: spawns Chromium + ffmpeg. Resource cleanup on `Ctrl+C`?
 - The document session (`packages/core/src/document/`): scoped editor generations, serialized drain, conditional commit semantics, transition-before-load ordering, conflict handling, recovery journaling, and close acknowledgement? There must be no independent active-document autosave hook.
@@ -528,7 +530,7 @@ Predictive, not speculative — ground recommendations in observed patterns.]
 | **`any` smuggling**                       | `as any` to silence the compiler                                                     | Wire-shape drift hits runtime, not compile time                       |
 | **Forking DocBlocksShell**                | A surface mounting its own editor instead of `<DocBlocksShell>`                      | Three-way drift in chrome and behavior                                |
 | **Patching Squisq from inside DocBlocks** | Reaching into `node_modules/@bendyline/squisq*` to monkey-patch                      | Upstream fixes get clobbered; squisq team can't help                  |
-| **Webview owning document state**         | The vscode webview persisting content other than via `messages.ts` to the host       | Lost edits on extension reload; out-of-sync TextDocument              |
+| **Webview owning document state**         | The vscode webview persisting content other than via the parsed core protocol        | Lost edits on extension reload; out-of-sync TextDocument              |
 | **Three-way IPC list drift**              | Channels listed differently in main/ipc-\*.ts, preload.ts, and host/types.ts         | Renderer calls a channel the main never registers, silently           |
 
 ### The "fresh AI agent" test
@@ -567,7 +569,7 @@ Imagine adding the next obvious feature. Trace the path:
 - [ ] `as X` assertions — each justified?
 - [ ] Every JSON.parse followed by validation?
 - [ ] IPC: every channel typed end-to-end through host/types.ts?
-- [ ] VS Code messages.ts: discriminated unions with exhaustive handling?
+- [ ] `core/src/vscode/messages.ts`: exact parsers in both directions with exhaustive handling?
 
 ### "Review build system"
 
@@ -591,7 +593,7 @@ Imagine adding the next obvious feature. Trace the path:
 ### "Review VS Code extension"
 
 - [ ] markdownEditorPanel correctly registers the custom editor for `*.md`
-- [ ] messages.ts envelopes use discriminated unions
+- [ ] `@bendyline/docblocks/vscode` envelopes use exact runtime-parsed discriminated unions
 - [ ] Webview <-> host message handlers are exhaustive
 - [ ] Setup pane environment checks current (Node, npm, CLI install state)
 - [ ] the `extension.web.js` output builds from the shared extension entry and activates in vscode.dev
@@ -612,7 +614,7 @@ Imagine adding the next obvious feature. Trace the path:
 - [ ] All providers throw the same shape of error for not-found / permission-denied
 - [ ] Workspace IDs are consistent across providers
 - [ ] Media handling (FileMediaProvider) parity across providers
-- [ ] Tests exist for at least the Electron provider (electron-provider.test.ts is the only one today)
+- [ ] The shared v2 conformance suite runs against memory, IndexedDB, native, and Electron/Node backends
 
 ### "Review document lifecycle"
 

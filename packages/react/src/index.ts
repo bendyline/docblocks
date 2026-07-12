@@ -28,6 +28,9 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Export
 export {
   buildExportFilename,
+  DEFAULT_OPTIONS,
+  loadLastExportOptions,
+  runExport,
   updateExportTargetExtension,
   ExportToolbarControls,
 } from './Export/index.js';
@@ -37,6 +40,8 @@ export type {
   ExportDestinationTarget,
   ExportToolbarControlsProps,
   ExportFormat,
+  HtmlBundle,
+  HtmlStyle,
   ExportOptions,
   ExportBlobSaver,
 } from './Export/index.js';

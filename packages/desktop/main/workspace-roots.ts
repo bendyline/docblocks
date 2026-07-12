@@ -106,7 +106,7 @@ function isMissingPath(error: unknown): boolean {
   return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
-async function nearestExistingPhysicalPath(candidate: string, rootAbs: string): Promise<string> {
+async function physicallyAnchoredCandidate(candidate: string, rootAbs: string): Promise<string> {
   let current = candidate;
   while (true) {
     try {
@@ -121,7 +121,34 @@ async function nearestExistingPhysicalPath(candidate: string, rootAbs: string): 
     // lstat sees dangling symlinks. Keep realpath outside the missing-path
     // catch: an unresolved link is not equivalent to a path that is safe to
     // create, because its target can later appear outside the root.
-    return fs.realpath(current);
+    //
+    // Anchor the returned path at the physical ancestor rather than returning
+    // the renderer-facing lexical spelling. If a contained link is retargeted
+    // after authorization, the operation still addresses the physical target
+    // that was authorized instead of following the changed link.
+    const physicalAncestor = await fs.realpath(current);
+    return path.resolve(physicalAncestor, path.relative(current, candidate));
+  }
+}
+
+async function assertNoLinkComponents(rootAbs: string, candidate: string): Promise<void> {
+  const relative = path.relative(rootAbs, candidate);
+  let current = rootAbs;
+  for (const component of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, component);
+    let stat: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      stat = await fs.lstat(current);
+    } catch (error: unknown) {
+      if (isMissingPath(error)) return;
+      throw error;
+    }
+    if (stat.isSymbolicLink()) {
+      throw new WorkspaceRootError(
+        'path-escape',
+        `Workspace mutations cannot traverse a symbolic link or junction: ${relative}`,
+      );
+    }
   }
 }
 
@@ -142,14 +169,14 @@ async function resolvePhysically(
   }
   entry.physicalRoot ??= currentPhysicalRoot;
 
-  const existingPhysicalPath = await nearestExistingPhysicalPath(candidate, rootAbs);
-  if (!isPathInside(entry.physicalRoot, existingPhysicalPath)) {
+  const physicalCandidate = await physicallyAnchoredCandidate(candidate, rootAbs);
+  if (!isPathInside(entry.physicalRoot, physicalCandidate)) {
     throw new WorkspaceRootError(
       'path-escape',
       `Path escapes workspace root through a symbolic link: ${relPath}`,
     );
   }
-  return { rootAbs, candidate };
+  return { rootAbs: entry.physicalRoot, candidate: physicalCandidate };
 }
 
 export function getWorkspaceRoots(): WorkspaceRoots {
@@ -189,6 +216,8 @@ export function getWorkspaceRoots(): WorkspaceRoots {
     },
     /** Resolve a mutation target and reject the registered root itself. */
     async resolveMutation(rootPath: string, relPath: string): Promise<string> {
+      const lexical = resolveLexically(rootPath, relPath);
+      await assertNoLinkComponents(lexical.rootAbs, lexical.candidate);
       const resolved = await resolvePhysically(rootPath, relPath);
       if (samePath(resolved.rootAbs, resolved.candidate)) {
         throw new WorkspaceRootError('root-mutation', 'The workspace root cannot be mutated.');

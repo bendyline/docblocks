@@ -1,8 +1,12 @@
 import { expect } from 'chai';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
+import {
+  parseExtensionToWebviewMessage,
+  parseWebviewToExtensionMessage,
+} from '@bendyline/docblocks/vscode';
 import { ExportTargetGrantRegistry } from '../src/exportGrants.js';
+import { selectRememberedExactExportTarget } from '../src/exportTargetPolicy.js';
 import { parseDocumentResourcePath, parseMediaRef } from '../src/mediaPaths.js';
-import { parseWebviewToExtensionMessage } from '../src/messages.js';
 import { parseSetupWebviewMessage } from '../src/setupMessages.js';
 
 describe('VS Code authority boundary', () => {
@@ -94,6 +98,81 @@ describe('VS Code authority boundary', () => {
       mimeType: 'application/pdf',
       grantId: 'export_123',
     });
+  });
+
+  it('auto-resolves only an exact remembered target for an allowlisted export format', () => {
+    const rememberedPdf = 'file:///exports/approved-report.pdf';
+    const stored = {
+      lastUri: 'file:///exports/previous.docx',
+      byExtension: {
+        pdf: rememberedPdf,
+        json: 'file:///workspace/package.json',
+      },
+    };
+
+    expect(selectRememberedExactExportTarget(stored, 'new-report.pdf')).to.equal(rememberedPdf);
+    expect(selectRememberedExactExportTarget(stored, 'new-report.docx')).to.equal(null);
+    expect(selectRememberedExactExportTarget(stored, '.env')).to.equal(null);
+    expect(selectRememberedExactExportTarget(stored, 'package.json')).to.equal(null);
+  });
+
+  it('does not turn a remembered directory or mismatched persisted URI into export authority', () => {
+    expect(
+      selectRememberedExactExportTarget(
+        { lastUri: 'file:///exports/previous.pdf' },
+        'client-chosen.pdf',
+      ),
+    ).to.equal(null);
+    expect(
+      selectRememberedExactExportTarget(
+        { byExtension: { pdf: 'file:///exports/.env' } },
+        'client-chosen.pdf',
+      ),
+    ).to.equal(null);
+  });
+
+  it('validates host responses before the webview consumes them', () => {
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'exportTargetResolved',
+        requestId: 7,
+        target: { grantId: 'export_123', displayLabel: 'document.pdf' },
+      }),
+    ).to.deep.equal({
+      type: 'exportTargetResolved',
+      requestId: 7,
+      target: { grantId: 'export_123', displayLabel: 'document.pdf' },
+    });
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'exportTargetResolved',
+        requestId: 7,
+        target: {
+          grantId: 'export_123',
+          displayLabel: 'document.pdf',
+          rawTarget: 'file:///forged.pdf',
+        },
+      }),
+    ).to.equal(null);
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'sessionState',
+        sessionId: 'session-a',
+        status: 'saved',
+        revision: 1,
+        persistedRevision: 2,
+        acknowledgedClientRevision: 1,
+        documentVersion: 2,
+        error: null,
+      }),
+    ).to.equal(null);
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'workspaceFileError',
+        requestId: 1,
+        message: 'x'.repeat(HOST_WIRE_LIMITS.messageCharacters + 1),
+      }),
+    ).to.equal(null);
   });
 
   it('maps reads only to the exact document or its fixed sidecar', () => {

@@ -6,6 +6,12 @@ import { collectImagePaths, docToHtml } from '@bendyline/squisq-formats/html';
 import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import { readContainedFile } from './contained-file.js';
 
+export interface ReferencedAssetPath {
+  assetRoot: string;
+  requestedPath: string;
+  physicalPath: string;
+}
+
 export interface RenderMarkdownHtmlOptions {
   title: string;
   sourcePath?: string;
@@ -13,6 +19,8 @@ export interface RenderMarkdownHtmlOptions {
   themeId?: string;
   mode?: 'slideshow' | 'static';
   maxAssetBytes?: number;
+  /** Optional surface policy applied after mandatory physical containment. */
+  allowReferencedAsset?: (asset: ReferencedAssetPath) => boolean;
 }
 
 const MAX_REFERENCED_IMAGES = 100;
@@ -32,6 +40,7 @@ export async function renderMarkdownHtml(
           options.sourcePath,
           options.assetRoot,
           options.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES,
+          options.allowReferencedAsset,
         )
       : undefined;
 
@@ -49,6 +58,7 @@ async function readReferencedImages(
   sourcePath: string,
   assetRoot: string,
   maxAssetBytes: number,
+  allowReferencedAsset: RenderMarkdownHtmlOptions['allowReferencedAsset'],
 ): Promise<Map<string, ArrayBuffer>> {
   const images = new Map<string, ArrayBuffer>();
   const root = await realpath(path.resolve(assetRoot)).catch(() => null);
@@ -66,6 +76,16 @@ async function readReferencedImages(
     try {
       const physicalPath = await realpath(absolutePath);
       if (!isPathInside(root, physicalPath)) continue;
+      if (
+        allowReferencedAsset &&
+        !allowReferencedAsset({
+          assetRoot: root,
+          requestedPath: absolutePath,
+          physicalPath,
+        })
+      ) {
+        continue;
+      }
       const info = await stat(physicalPath);
       if (
         !info.isFile() ||

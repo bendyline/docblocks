@@ -60,6 +60,18 @@ Top-left brand menu with the app-wide **Settings** dialog (theme preference, glo
 
 ### ExportToolbarControls / ExportDialog
 
+Consumers that need the export pipeline without the complete shell can use the
+public, independently built entry point:
+
+```ts
+import {
+  DEFAULT_OPTIONS,
+  ExportDialog,
+  buildExportFilename,
+  runExport,
+} from '@bendyline/docblocks-react/export';
+```
+
 The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, HTML, Markdown), visual theme, and page size.
 
 ## Hooks

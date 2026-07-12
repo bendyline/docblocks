@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { isBuiltin } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -125,7 +126,7 @@ function packageNameFromSpecifier(specifier: string): string | null {
   if (
     specifier.startsWith('.') ||
     specifier.startsWith('/') ||
-    specifier.startsWith('node:') ||
+    isBuiltin(specifier) ||
     specifier.startsWith('data:')
   ) {
     return null;
@@ -144,7 +145,10 @@ async function listFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-async function assertDeclaredImports(packageRoot: string, manifest: InstalledManifest): Promise<void> {
+async function assertDeclaredImports(
+  packageRoot: string,
+  manifest: InstalledManifest,
+): Promise<void> {
   const declared = new Set([
     ...Object.keys(manifest.dependencies ?? {}),
     ...Object.keys(manifest.peerDependencies ?? {}),
@@ -172,8 +176,13 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
   const packageRoot = path.join(consumerRoot, 'node_modules', ...packageName.split('/'));
   const installedRealPath = await realpath(packageRoot);
   const relativeToRepo = path.relative(repoRoot, installedRealPath);
-  if (relativeToRepo === '' || (!relativeToRepo.startsWith('..') && !path.isAbsolute(relativeToRepo))) {
-    throw new Error(`${packageName}: resolved back into the workspace instead of the packed install`);
+  if (
+    relativeToRepo === '' ||
+    (!relativeToRepo.startsWith('..') && !path.isAbsolute(relativeToRepo))
+  ) {
+    throw new Error(
+      `${packageName}: resolved back into the workspace instead of the packed install`,
+    );
   }
 
   const manifest = JSON.parse(
@@ -333,7 +342,10 @@ async function main(): Promise<void> {
 
     await run(
       process.execPath,
-      [path.join(consumerRoot, 'node_modules', '@bendyline', 'docblocks-cli', 'dist', 'index.js'), '--help'],
+      [
+        path.join(consumerRoot, 'node_modules', '@bendyline', 'docblocks-cli', 'dist', 'index.js'),
+        '--help',
+      ],
       consumerRoot,
     );
     process.stdout.write(

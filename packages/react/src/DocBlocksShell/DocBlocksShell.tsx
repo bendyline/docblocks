@@ -53,11 +53,13 @@ import {
   ensureDefaultWorkspace,
   getWorkspace,
   listWorkspaces,
+  reconcileElectronWorkspaceDescriptors,
   removeWorkspace,
   saveWorkspace,
   touchWorkspace,
   registerTransientWorkspace,
   getTransientWorkspace,
+  unregisterTransientWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu } from '../AppMenu/AppMenu.js';
 import {
@@ -112,6 +114,7 @@ import {
   type ThemePreference,
 } from '../preferences/theme.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
+import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 
 let indexedDbFileSystemModule: Promise<
   typeof import('@bendyline/docblocks/filesystem/indexeddb')
@@ -845,6 +848,7 @@ export function DocBlocksShell({
     [sidebarWidth],
   );
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
+  const [workspaceStartupError, setWorkspaceStartupError] = useState<string | null>(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
     useState<WorkspaceDescriptor | null>(null);
@@ -944,6 +948,7 @@ export function DocBlocksShell({
   // First-run gateway over the welcome doc's Play view — see WELCOME_GATEWAY_KEY.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   const navigationRequestRef = useRef(0);
+  const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
   const preparedCloseRequestRef = useRef<string | null>(null);
   const pendingDbkConflictsRef = useRef(new Map<string, PendingDbkConflict>());
 
@@ -1052,7 +1057,13 @@ export function DocBlocksShell({
             await writable.write(bytes);
             await writable.close();
             webOrigin.version = await sha256Hex(bytes);
-            await baseTarget.commit(request);
+            // The transient provider intentionally retained the complete
+            // local branch while external bundle B was staged for conflict
+            // resolution. Once bundle C is committed to the origin, advance
+            // that internal markdown baseline unconditionally; comparing its
+            // old A content against request.persistedContent B would report a
+            // false second conflict after the durable write already succeeded.
+            await writeProviderText(fsProvider, filePath, request.content);
             pendingDbkConflictsRef.current.delete(baseTarget.key);
             gitScheduleRefresh();
             return { version: webOrigin.version };
@@ -1135,7 +1146,12 @@ export function DocBlocksShell({
               );
             }
             origin.version = result.version;
-            await baseTarget.commit(request);
+            // As with web-dbk above, the in-memory provider still represents
+            // the preserved local branch rather than the external conflict
+            // baseline. The origin commit is the conditional authority check;
+            // now make the internal document agree with that acknowledged C
+            // bundle without re-comparing A against B.
+            await writeProviderText(fsProvider, filePath, request.content);
             pendingDbkConflictsRef.current.delete(baseTarget.key);
             gitScheduleRefresh();
             return { version: result.version };
@@ -1189,8 +1205,10 @@ export function DocBlocksShell({
       filePath: string | null,
       push: boolean,
       view?: EditorView,
+      navigationRequestId?: number,
     ): Promise<FileSystemProvider | null> => {
-      const requestId = ++navigationRequestRef.current;
+      const requestId = navigationRequestId ?? ++navigationRequestRef.current;
+      if (requestId !== navigationRequestRef.current) return null;
       // Transient (session-only) workspaces — a loose file or `.dbk` opened
       // from the OS — carry a pre-built in-memory provider in the registry.
       const transient = getTransientWorkspace(wsId);
@@ -1275,8 +1293,12 @@ export function DocBlocksShell({
   );
 
   const seedWelcomeFile = useCallback(
-    async (fs: FileSystemProvider) => {
+    async (fs: FileSystemProvider, navigationRequestId?: number) => {
+      const isCurrent = () =>
+        navigationRequestId === undefined || navigationRequestId === navigationRequestRef.current;
+      if (!isCurrent()) return;
       const entries = await readProviderDirectory(fs, '/');
+      if (!isCurrent()) return;
 
       // If the only file is the welcome doc, auto-select it.
       // Match either casing so workspaces seeded before the rename
@@ -1288,8 +1310,9 @@ export function DocBlocksShell({
       ) {
         const aboutPath = entries[0].path;
         const content = await readProviderText(fs, aboutPath);
-        if (content !== null) {
+        if (content !== null && isCurrent()) {
           await documentSession.transitionTo(createDocumentTarget(fs, fs.id, aboutPath), content);
+          if (!isCurrent()) return;
           setSelectedFile(aboutPath);
           setInitialView('preview');
           setExplorerKey((k) => k + 1);
@@ -1338,10 +1361,12 @@ export function DocBlocksShell({
         if (existing === null) throw error;
         seededContent = existing;
       }
+      if (!isCurrent()) return;
       await documentSession.transitionTo(
         createDocumentTarget(fs, fs.id, welcomePath),
         seededContent,
       );
+      if (!isCurrent()) return;
       setSelectedFile(welcomePath);
       setInitialView('preview');
       setExplorerKey((k) => k + 1);
@@ -1351,6 +1376,14 @@ export function DocBlocksShell({
     },
     [createDocumentTarget, documentSession, pushHash],
   );
+
+  // Startup is a mount lifecycle, not a reaction to callback identity. Keep
+  // the latest implementations available without letting git/provider state
+  // changes restart initialization and supersede an OS-open navigation.
+  const startupOpenFromIdsRef = useRef(openFromIds);
+  startupOpenFromIdsRef.current = openFromIds;
+  const startupSeedWelcomeFileRef = useRef(seedWelcomeFile);
+  startupSeedWelcomeFileRef.current = seedWelcomeFile;
 
   /** Hide the welcome gateway and never show it again. Safe to call from
    *  paths where it may not be showing — only persists when it was. */
@@ -1373,19 +1406,63 @@ export function DocBlocksShell({
 
   // Initialise workspace on mount — restore from hash or last-used
   useEffect(() => {
-    (async () => {
+    const requestId = ++navigationRequestRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && requestId === navigationRequestRef.current;
+
+    void (async () => {
+      const electron = isElectronHost();
+      let workspaceIdRemap: Readonly<Record<string, string>> = {};
+      if (electron) {
+        // Main-process persisted roots are authoritative after an upgrade or
+        // collision repair. Reconcile renderer metadata before hash or
+        // last-state restoration so an obsolete id cannot reopen a different
+        // folder that once shared its legacy id.
+        try {
+          const localWorkspaces = await listWorkspaces();
+          const hostWorkspaces = await getDocBlocksHost().workspaces.list();
+          const reconciliation = reconcileElectronWorkspaceDescriptors(
+            localWorkspaces,
+            hostWorkspaces,
+            getDocBlocksHost().env.platform,
+            new Date().toISOString(),
+          );
+          for (const id of reconciliation.removeIds) await removeWorkspace(id);
+          for (const workspace of reconciliation.upsert) await saveWorkspace(workspace);
+          workspaceIdRemap = reconciliation.idRemap;
+        } catch {
+          workspaceAuthorityBarrier.markReady();
+          if (isCurrent()) {
+            setWorkspaceStartupError(
+              'DocBlocks could not verify access to your saved workspaces. Restart the app or open the folder again.',
+            );
+          }
+          return;
+        }
+      }
+      workspaceAuthorityBarrier.markReady();
+      if (!isCurrent()) return;
+
       // Try restoring from URL hash first
       const hashState = parseHash();
       if (hashState) {
-        const restoredProvider = await openFromIds(
-          hashState.workspaceId,
+        const migratedWorkspaceId = workspaceIdRemap[hashState.workspaceId];
+        const restoredWorkspaceId = migratedWorkspaceId ?? hashState.workspaceId;
+        if (migratedWorkspaceId) {
+          window.history.replaceState(null, '', buildHash(restoredWorkspaceId, hashState.filePath));
+        }
+        const restoredProvider = await startupOpenFromIdsRef.current(
+          restoredWorkspaceId,
           hashState.filePath,
           false,
+          undefined,
+          requestId,
         );
+        if (!isCurrent()) return;
         if (restoredProvider) {
           // If the hash had no file, check whether we should auto-select the welcome doc
           if (!hashState.filePath) {
-            await seedWelcomeFile(restoredProvider);
+            await startupSeedWelcomeFileRef.current(restoredProvider, requestId);
           }
           return;
         }
@@ -1394,19 +1471,26 @@ export function DocBlocksShell({
       // Try restoring last viewed document from localStorage
       const lastState = loadLastState();
       if (lastState) {
-        const restoredProvider = await openFromIds(
-          lastState.workspaceId,
+        const restoredWorkspaceId =
+          workspaceIdRemap[lastState.workspaceId] ?? lastState.workspaceId;
+        if (restoredWorkspaceId !== lastState.workspaceId) {
+          saveLastState({ ...lastState, workspaceId: restoredWorkspaceId });
+        }
+        const restoredProvider = await startupOpenFromIdsRef.current(
+          restoredWorkspaceId,
           lastState.filePath,
           true,
           lastState.view,
+          requestId,
         );
+        if (!isCurrent()) return;
         if (restoredProvider) return;
       }
 
       let fsProvider: FileSystemProvider | null = null;
 
-      const electron = isElectronHost();
       const workspaces = await listWorkspaces();
+      if (!isCurrent()) return;
       // On desktop, hide web-only workspaces (indexeddb/native) — only
       // folder-based workspaces are valid.
       const candidates = electron
@@ -1420,26 +1504,44 @@ export function DocBlocksShell({
         if (ws.type === 'electron-native') {
           const p = await createElectronProviderFromWorkspace(ws);
           if (!p) continue;
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           await touchWorkspace(ws.id);
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           fsProvider = p;
-          setProvider(p);
-          setActiveWorkspaceId(ws.id);
           break;
         } else if (ws.type === 'native') {
           const restored = await (await loadNativeFileSystem()).restoreNativeFolder(ws.id);
           if (restored) {
+            if (!isCurrent()) {
+              await getFileSystemProviderV2(restored)?.dispose();
+              return;
+            }
             await touchWorkspace(ws.id);
+            if (!isCurrent()) {
+              await getFileSystemProviderV2(restored)?.dispose();
+              return;
+            }
             fsProvider = restored;
-            setProvider(restored);
-            setActiveWorkspaceId(ws.id);
             break;
           }
         } else {
           const p = await createIndexedDbFileSystemProvider(ws.id, ws.name);
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           await touchWorkspace(ws.id);
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           fsProvider = p;
-          setProvider(p);
-          setActiveWorkspaceId(ws.id);
           break;
         }
       }
@@ -1449,6 +1551,7 @@ export function DocBlocksShell({
           // Desktop: ask the host for the default folder workspace
           // (creates DocBlocks in the OS-resolved Documents folder on first launch).
           const info = await getDocBlocksHost().workspaces.getDefault();
+          if (!isCurrent()) return;
           const descriptor: WorkspaceDescriptor = {
             id: info.id,
             name: info.name,
@@ -1457,27 +1560,53 @@ export function DocBlocksShell({
             lastOpened: new Date().toISOString(),
           };
           await saveWorkspace(descriptor);
+          if (!isCurrent()) return;
           const p = await createElectronFileSystemProvider(info.id, info.name, info.rootPath);
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           fsProvider = p;
-          setProvider(p);
-          setActiveWorkspaceId(info.id);
         } else {
           // Web: create the IndexedDB default workspace
           const defaultWs = await ensureDefaultWorkspace();
+          if (!isCurrent()) return;
           const p = await createIndexedDbFileSystemProvider(defaultWs.id, defaultWs.name);
+          if (!isCurrent()) {
+            await getFileSystemProviderV2(p)?.dispose();
+            return;
+          }
           fsProvider = p;
-          setProvider(p);
-          setActiveWorkspaceId(defaultWs.id);
         }
       }
 
-      // Set initial hash
-      pushHash(fsProvider.id, null);
+      let adopted = false;
+      try {
+        if (!isCurrent()) return;
+        // Set the root hash before seeding; seedWelcomeFile replaces it with
+        // the welcome path when it opens that document.
+        pushHash(fsProvider.id, null);
+        await startupSeedWelcomeFileRef.current(fsProvider, requestId);
+        if (!isCurrent()) return;
+        setProvider(fsProvider);
+        setActiveWorkspaceId(fsProvider.id);
+        adopted = true;
+      } finally {
+        if (!adopted) await getFileSystemProviderV2(fsProvider)?.dispose();
+      }
+    })().catch(() => {
+      if (isCurrent()) {
+        setWorkspaceStartupError(
+          'DocBlocks could not initialize your workspace. Restart the app or open the folder again.',
+        );
+      }
+    });
 
-      // Seed welcome file if workspace is empty
-      await seedWelcomeFile(fsProvider);
-    })();
-  }, [openFromIds, pushHash, seedWelcomeFile]);
+    return () => {
+      cancelled = true;
+      if (navigationRequestRef.current === requestId) navigationRequestRef.current += 1;
+    };
+  }, [pushHash, workspaceAuthorityBarrier]);
 
   // Handle browser back/forward
   useEffect(() => {
@@ -2471,42 +2600,85 @@ export function DocBlocksShell({
    * straight back to disk; bundles are re-zipped by the session commit target.
    */
   const openTransient = useCallback(
-    async (req: Extract<OpenRequest, { kind: 'external-file' | 'external-bundle' }>) => {
+    async (
+      req: Extract<OpenRequest, { kind: 'external-file' | 'external-bundle' }>,
+      navigationRequestId: number,
+    ) => {
+      const isCurrent = () => navigationRequestId === navigationRequestRef.current;
       const host = getDocBlocksHost();
+      const revokeAbandonedResource = () =>
+        host.external.revoke(req.resourceId).catch(() => undefined);
+      if (!isCurrent()) {
+        await revokeAbandonedResource();
+        return;
+      }
       const id = `transient-${req.kind}-${req.resourceId}`;
-      const mem = await createMemoryFileSystemProvider(id, req.name);
+      let mem: MemoryFileSystemProvider;
+      try {
+        mem = await createMemoryFileSystemProvider(id, req.name);
+      } catch (error: unknown) {
+        await revokeAbandonedResource();
+        throw error;
+      }
+      if (!isCurrent()) {
+        await getFileSystemProviderV2(mem)?.dispose();
+        await revokeAbandonedResource();
+        return;
+      }
       let primaryFile: string;
       let origin: WorkspaceDescriptor['origin'];
+      let registered = false;
+      let opened = false;
 
-      if (req.kind === 'external-file') {
-        const content = (await host.external.readText(req.resourceId)) ?? '';
-        primaryFile = req.name; // e.g. "notes.md"
-        mem.seedText(primaryFile, content);
-        origin = { kind: 'loose-file', resourceId: req.resourceId };
-      } else {
-        const bytes = await host.external.readBinary(req.resourceId);
-        if (!bytes) return;
-        const version = await sha256Hex(bytes);
-        const { zipToContainer } = await import('@bendyline/squisq-formats/container');
-        const container = await zipToContainer(bytes);
-        const base = req.name.replace(/\.[^.]+$/, '');
-        primaryFile = `${base}.md`;
-        const snapshot = await createDbkWorkspaceSnapshot(container, {
-          targetDocumentPath: primaryFile,
-        });
-        mem.replaceContents(snapshot);
-        origin = { kind: 'dbk', resourceId: req.resourceId, version };
+      try {
+        if (req.kind === 'external-file') {
+          const content = (await host.external.readText(req.resourceId)) ?? '';
+          if (!isCurrent()) return;
+          primaryFile = req.name; // e.g. "notes.md"
+          mem.seedText(primaryFile, content);
+          origin = { kind: 'loose-file', resourceId: req.resourceId };
+        } else {
+          const bytes = await host.external.readBinary(req.resourceId);
+          if (!bytes || !isCurrent()) return;
+          const version = await sha256Hex(bytes);
+          if (!isCurrent()) return;
+          const { zipToContainer } = await import('@bendyline/squisq-formats/container');
+          if (!isCurrent()) return;
+          const container = await zipToContainer(bytes);
+          if (!isCurrent()) return;
+          const base = req.name.replace(/\.[^.]+$/, '');
+          primaryFile = `${base}.md`;
+          const snapshot = await createDbkWorkspaceSnapshot(container, {
+            targetDocumentPath: primaryFile,
+          });
+          if (!isCurrent()) return;
+          mem.replaceContents(snapshot);
+          origin = { kind: 'dbk', resourceId: req.resourceId, version };
+        }
+
+        const descriptor: WorkspaceDescriptor = {
+          id,
+          name: req.name,
+          type: 'transient',
+          lastOpened: new Date().toISOString(),
+          origin,
+        };
+        registerTransientWorkspace(descriptor, mem);
+        registered = true;
+        opened =
+          (await openFromIds(id, `/${primaryFile}`, true, undefined, navigationRequestId)) !== null;
+      } finally {
+        try {
+          if (!opened && registered && getTransientWorkspace(id)?.provider === mem) {
+            await unregisterTransientWorkspace(id);
+            registered = false;
+          } else if (!registered) {
+            await getFileSystemProviderV2(mem)?.dispose();
+          }
+        } finally {
+          if (!opened) await revokeAbandonedResource();
+        }
       }
-
-      const descriptor: WorkspaceDescriptor = {
-        id,
-        name: req.name,
-        type: 'transient',
-        lastOpened: new Date().toISOString(),
-        origin,
-      };
-      registerTransientWorkspace(descriptor, mem);
-      await openFromIds(id, `/${primaryFile}`, true);
     },
     [openFromIds],
   );
@@ -2515,14 +2687,35 @@ export function DocBlocksShell({
   useEffect(() => {
     if (!isElectronHost()) return;
     const host = getDocBlocksHost();
-    return host.onOpenRequest(async (req) => {
-      if (req.kind === 'workspace-file') {
-        await openFromIds(req.workspaceId, req.path, true);
-      } else {
-        await openTransient(req);
-      }
+    return host.onOpenRequest((req) => {
+      // Claim the navigation when the OS request arrives, before any external
+      // file read or bundle decoding. A slower older request can no longer
+      // finish after and replace a newer document.
+      const requestId = ++navigationRequestRef.current;
+      void (
+        req.kind === 'workspace-file'
+          ? workspaceAuthorityBarrier.wait().then(() => {
+              if (requestId !== navigationRequestRef.current) return null;
+              return openFromIds(req.workspaceId, req.path, true, undefined, requestId).then(
+                (opened) => {
+                  if (!opened && requestId === navigationRequestRef.current) {
+                    throw new Error('The requested workspace file is no longer available.');
+                  }
+                  return opened;
+                },
+              );
+            })
+          : openTransient(req, requestId)
+      ).catch((error: unknown) => {
+        if (requestId !== navigationRequestRef.current) return;
+        alert(
+          error instanceof Error
+            ? 'DocBlocks could not open the requested file: ' + error.message
+            : 'DocBlocks could not open the requested file.',
+        );
+      });
     });
-  }, [openFromIds, openTransient]);
+  }, [openFromIds, openTransient, workspaceAuthorityBarrier]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -2851,6 +3044,11 @@ export function DocBlocksShell({
       data-document-status={documentSnapshot.status}
     >
       <GitContext.Provider value={git}>
+        {workspaceStartupError && (
+          <div className="db-save-toast db-save-toast--error" role="alert" aria-live="assertive">
+            {workspaceStartupError}
+          </div>
+        )}
         {saveToast && (
           <div
             className={'db-save-toast db-save-toast--' + saveToast.kind}

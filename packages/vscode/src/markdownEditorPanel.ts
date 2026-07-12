@@ -1,6 +1,13 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
+  parseWebviewToExtensionMessage,
+  type DocumentConflictChoice,
+  type ExtensionToWebviewMessage,
+  type WebviewToExtensionMessage,
+} from '@bendyline/docblocks/vscode';
+import {
+  HostDocumentChangedError,
   VscodeDocumentSync,
   withApplyingEditFlag,
   type HostDocumentAdapter,
@@ -8,19 +15,19 @@ import {
 } from './editSync.js';
 import { handleExportMessage } from './exportBridge.js';
 import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
+import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueue.js';
+import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
-import {
-  parseWebviewToExtensionMessage,
-  type DocumentConflictChoice,
-  type ExtensionToWebviewMessage,
-  type WebviewToExtensionMessage,
-} from './messages.js';
 import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
 const USE_EXTERNAL_CHOICE = 'Use External Changes';
 const MAX_PENDING_OPERATIONS = 128;
 const MAX_PENDING_WIRE_CHARACTERS = HOST_WIRE_LIMITS.base64Characters;
+
+type EditorPanelQueueEntry =
+  | { kind: 'webview'; message: WebviewToExtensionMessage }
+  | { kind: 'external-change' };
 
 export class MarkdownEditorPanel {
   public static readonly viewType = 'docblocks.markdownPanel';
@@ -36,9 +43,8 @@ export class MarkdownEditorPanel {
   private isApplyingEdit = false;
   private webviewReady = false;
   private disposeStarted = false;
-  private operationQueue: Promise<void> = Promise.resolve();
-  private pendingOperationCount = 0;
-  private pendingWireCharacters = 0;
+  private readonly messageQueue: EditorMessageQueue<EditorPanelQueueEntry>;
+  private readonly latestEditQueue: LatestDocumentEditQueue;
   private invalidMessageWarningShown = false;
   private panelDisposed = false;
   private readonly exportGrantScope: ExportGrantScope;
@@ -50,6 +56,31 @@ export class MarkdownEditorPanel {
     private readonly panel: vscode.WebviewPanel,
   ) {
     this.exportGrantScope = { panelId: getNonce(), documentUri: this.uri.toString() };
+    this.messageQueue = new EditorMessageQueue({
+      maxPendingOperations: MAX_PENDING_OPERATIONS,
+      maxPendingWireCharacters: MAX_PENDING_WIRE_CHARACTERS,
+      estimateWireCharacters: (entry) =>
+        entry.kind === 'webview' ? estimateWireCharacters(entry.message) : 0,
+      drainAfterDispose: (entry) =>
+        entry.kind === 'external-change' || drainsAfterPanelDispose(entry.message),
+      onError: (error) => {
+        void vscode.window.showErrorMessage(
+          error instanceof Error
+            ? error.message
+            : `DocBlocks could not update ${getUriBasename(this.uri)}`,
+        );
+      },
+    });
+    this.latestEditQueue = new LatestDocumentEditQueue({
+      apply: (message) => this.applyWebviewEdit(message),
+      onError: (error) => {
+        void vscode.window.showErrorMessage(
+          error instanceof Error
+            ? error.message
+            : `DocBlocks could not accept an edit for ${getUriBasename(this.uri)}`,
+        );
+      },
+    });
     this.panel.webview.options = {
       enableScripts: true,
       localResourceRoots: getEditorLocalResourceRoots(this.context.extensionUri),
@@ -117,7 +148,7 @@ export class MarkdownEditorPanel {
     const adapter: HostDocumentAdapter = {
       key: this.uri.toString(),
       read: () => this.readHostDocument(),
-      replaceAndSave: (content) => this.replaceAndSaveHostDocument(content),
+      replaceAndSave: (content, expected) => this.replaceAndSaveHostDocument(content, expected),
     };
     const sync = await VscodeDocumentSync.create(adapter, { autoSaveDelayMs: 300 });
     this.sync = sync;
@@ -137,8 +168,14 @@ export class MarkdownEditorPanel {
           this.warnInvalidMessageOnce();
           return;
         }
+        if (message.type === 'edit') {
+          this.latestEditQueue.enqueue(message);
+          return;
+        }
         if (
-          !this.queueOperation(() => this.handleMessage(message), estimateWireCharacters(message))
+          !this.messageQueue.enqueue({ kind: 'webview', message }, () =>
+            this.handleMessage(message),
+          )
         ) {
           this.rejectBusyMessage(message);
         }
@@ -146,7 +183,8 @@ export class MarkdownEditorPanel {
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.uri.toString() !== this.uri.toString() || this.isApplyingEdit) return;
         this.document = event.document;
-        this.queueOperation(async () => {
+        this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
+          await this.latestEditQueue.flush();
           const external = toHostSnapshot(event.document);
           const sync = await this.syncReady;
           const result = sync.observeExternal(external);
@@ -174,6 +212,8 @@ export class MarkdownEditorPanel {
       }),
       this.panel.onDidDispose(() => {
         this.panelDisposed = true;
+        this.messageQueue.beginDispose();
+        this.latestEditQueue.beginDispose();
         MarkdownEditorPanel.panels.delete(this.uri.toString());
         MarkdownEditorPanel.exportGrants.revokeScope(this.exportGrantScope);
         vscode.Disposable.from(...this.disposables).dispose();
@@ -183,24 +223,28 @@ export class MarkdownEditorPanel {
   }
 
   private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
-    if (this.panelDisposed) return;
-    const document = await this.ensureDocument();
     switch (message.type) {
       case 'resolveMedia':
       case 'listMedia':
       case 'addMedia':
       case 'removeMedia':
-        await handleMediaMessage(message, document, this.panel.webview);
+        await handleMediaMessage(message, await this.ensureDocument(), this.panel.webview);
         return;
 
       case 'saveExport':
       case 'resolveExportTarget':
       case 'pickExportTarget':
       case 'readWorkspaceFile':
-        await handleExportMessage(message, document, this.panel.webview, this.context, {
-          grants: MarkdownEditorPanel.exportGrants,
-          scope: this.exportGrantScope,
-        });
+        await handleExportMessage(
+          message,
+          await this.ensureDocument(),
+          this.panel.webview,
+          this.context,
+          {
+            grants: MarkdownEditorPanel.exportGrants,
+            scope: this.exportGrantScope,
+          },
+        );
         return;
 
       case 'ready':
@@ -212,17 +256,7 @@ export class MarkdownEditorPanel {
         break;
 
       case 'edit': {
-        const sync = await this.syncReady;
-        const acknowledgement = sync.acceptEdit(message);
-        this.postMessage({
-          type: 'editAcknowledged',
-          sessionId: message.sessionId,
-          clientRevision: acknowledgement.clientRevision,
-          sessionRevision: acknowledgement.sessionRevision,
-          accepted: acknowledgement.accepted,
-          message: acknowledgement.message,
-        });
-        if (!acknowledgement.accepted) this.sendContent();
+        await this.applyWebviewEdit(message);
         break;
       }
 
@@ -244,6 +278,7 @@ export class MarkdownEditorPanel {
     sync: VscodeDocumentSync,
   ): Promise<void> {
     try {
+      await this.latestEditQueue.flush();
       const snapshot = await sync.save(message);
       const state = sync.getSnapshot();
       this.postMessage({
@@ -278,6 +313,7 @@ export class MarkdownEditorPanel {
     choice: DocumentConflictChoice,
     sync: VscodeDocumentSync,
   ): Promise<void> {
+    await this.latestEditQueue.flush();
     if (sessionId !== sync.getSnapshot().sessionId) {
       this.sendContent();
       return;
@@ -290,32 +326,6 @@ export class MarkdownEditorPanel {
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(toError(error).message);
     }
-  }
-
-  private queueOperation(operation: () => Promise<void>, wireCharacters = 0): boolean {
-    if (
-      this.pendingOperationCount >= MAX_PENDING_OPERATIONS ||
-      wireCharacters > MAX_PENDING_WIRE_CHARACTERS - this.pendingWireCharacters
-    ) {
-      return false;
-    }
-    this.pendingOperationCount += 1;
-    this.pendingWireCharacters += wireCharacters;
-    this.operationQueue = this.operationQueue
-      .then(operation)
-      .catch((error: unknown) =>
-        vscode.window.showErrorMessage(
-          error instanceof Error
-            ? error.message
-            : `DocBlocks could not update ${getUriBasename(this.uri)}`,
-        ),
-      )
-      .finally(() => {
-        this.pendingOperationCount -= 1;
-        this.pendingWireCharacters -= wireCharacters;
-      })
-      .then(() => undefined);
-    return true;
   }
 
   private warnInvalidMessageOnce(): void {
@@ -367,12 +377,47 @@ export class MarkdownEditorPanel {
     return toHostSnapshot(document);
   }
 
-  private async replaceAndSaveHostDocument(content: string): Promise<HostDocumentSnapshot> {
+  private async applyWebviewEdit(message: WebviewEditMessage): Promise<void> {
+    const sync = await this.syncReady;
+    const acknowledgement = sync.acceptEdit(message);
+    this.postMessage({
+      type: 'editAcknowledged',
+      sessionId: message.sessionId,
+      clientRevision: acknowledgement.clientRevision,
+      sessionRevision: acknowledgement.sessionRevision,
+      accepted: acknowledgement.accepted,
+      message: acknowledgement.message,
+    });
+    if (!acknowledgement.accepted) {
+      this.sendContent();
+      this.sendSessionState();
+    }
+  }
+
+  private async replaceAndSaveHostDocument(
+    content: string,
+    expected: HostDocumentSnapshot,
+  ): Promise<HostDocumentSnapshot> {
     let document = await this.ensureDocument();
+    const immediatelyBeforeApply = toHostSnapshot(document);
+    if (
+      immediatelyBeforeApply.version !== expected.version ||
+      immediatelyBeforeApply.content !== expected.content
+    ) {
+      throw new HostDocumentChangedError(
+        immediatelyBeforeApply,
+        'The VS Code document changed immediately before the DocBlocks edit was applied.',
+      );
+    }
     if (document.getText() !== content) {
       const edit = new vscode.WorkspaceEdit();
       edit.replace(document.uri, getFullDocumentRange(document), content);
 
+      // VS Code's public WorkspaceEdit API has no compare-and-swap/version
+      // precondition. This is the latest possible deterministic recheck, but
+      // an external edit can still land inside applyEdit itself. The commit
+      // target verifies the resulting snapshot afterward; eliminating that
+      // irreducible in-API race requires a versioned VS Code edit primitive.
       await withApplyingEditFlag(
         (nextIsApplyingEdit) => {
           this.isApplyingEdit = nextIsApplyingEdit;
@@ -453,6 +498,7 @@ export class MarkdownEditorPanel {
   }
 
   private postMessage(message: ExtensionToWebviewMessage): void {
+    if (this.panelDisposed) return;
     void this.panel.webview.postMessage(message);
   }
 
@@ -478,7 +524,8 @@ export class MarkdownEditorPanel {
 
   private async flushAndDispose(): Promise<void> {
     try {
-      await this.operationQueue;
+      await this.messageQueue.drain();
+      await this.latestEditQueue.flush();
       const sync = await this.syncReady;
       try {
         await sync.prepareClose();

@@ -55,4 +55,33 @@ describe('desktop conditional file commits', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it('re-resolves a dynamic workspace target inside the commit lock', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-commit-retarget-'));
+    const first = path.join(root, 'first.md');
+    const second = path.join(root, 'second.md');
+    try {
+      await fs.writeFile(first, 'baseline');
+      await fs.writeFile(second, 'other');
+      let resolutions = 0;
+      let failure: unknown;
+      try {
+        await commitTextFile(
+          async () => (++resolutions === 1 ? first : second),
+          'local',
+          'baseline',
+          [first],
+        );
+      } catch (error: unknown) {
+        failure = error;
+      }
+
+      expect(failure).to.be.instanceOf(Error);
+      expect((failure as Error).message).to.match(/physical identity before mutation/i);
+      expect(await fs.readFile(first, 'utf8')).to.equal('baseline');
+      expect(await fs.readFile(second, 'utf8')).to.equal('other');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });

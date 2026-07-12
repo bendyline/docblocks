@@ -88,6 +88,12 @@ export interface DocumentSessionSnapshot {
 
 export interface DocumentSessionOptions {
   autoSaveDelayMs?: number;
+  /**
+   * Bounded delays used after an automatic save fails. Each entry permits
+   * one retry; exhausting the list leaves the session in error state until
+   * the user edits again or explicitly flushes it. Conflicts never retry.
+   */
+  autoSaveRetryDelaysMs?: readonly number[];
   /** Optional synchronous crash-recovery journal owned by this session. */
   recoveryJournal?: DocumentRecoveryJournal | null;
 }

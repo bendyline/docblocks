@@ -17,7 +17,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 
 | Package            | npm name                     | Purpose                                                                                                                                                                                                                                                       |
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                          |
+| `packages/core`    | `@bendyline/docblocks`       | Shared types and runtime boundary schemas. Multi-entry tsup build with filesystem backends plus `/document`, `/workspace`, `/host`, and `/vscode`. **Single source of truth for wire types.**                                                                 |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`, 17 woff2 fonts. Consumed by site + desktop renderer. (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
 | `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion (via `squisq-formats`), video rendering (Playwright + ffmpeg), MCP server.                                                                                                                          |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                             |
@@ -77,6 +77,10 @@ error/conflict state, target transitions, retarget/delete ordering, external
 observations, and close preparation. Editor instances must capture a
 `{ targetKey, generation }` scope and pass it to `session.edit()` so callbacks
 from an obsolete editor cannot write into a newer document.
+
+Automatic save failures use the session's bounded retry schedule; exhaustion
+remains visible as `error` with the revision still dirty. Never add an
+unbounded retry loop or display manual-save success before `flush()` resolves.
 
 Read the next document through `transitionWithLoad()` so the current revision
 is frozen and flushed before the read begins. Rename and delete the active
@@ -167,7 +171,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **No `any`.** `@typescript-eslint/no-explicit-any: error` outside test files. Use proper types, generics, or `unknown` + a type guard.
 - **No `console.log`.** `no-console: error` outside test files and CJS scripts. Surface errors through proper channels (VS Code `OutputChannel`, host API, CLI stderr).
 - **No renderer-side Electron / Node imports.** Renderer = `packages/desktop/renderer/` + `packages/site/src/` + `packages/vscode/webview/`. These run in a browser context; importing `electron` or `node:fs` breaks the build for some surfaces and the security model for others.
-- **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/vscode/src/messages.ts` (discriminated unions) over `postMessage`.
+- **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/core/src/vscode/messages.ts` (runtime-validated discriminated unions) over `postMessage`.
 - **Wire types live in `packages/core`.** Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in `core` — usually under `host/types.ts` or `filesystem/types.ts`. Surface packages should not define their own copy.
 - **Active-document writes go through `DocumentSession`.** UI effects and event handlers may create commit targets and observe session state, but must not run a second autosave timer or write the active document directly. All editor edits require the scope captured for that mounted document generation.
 - **First-party filesystem work is v2-first.** Use branded paths, typed errors, explicit mutation modes, and capabilities. Do not add a new direct v1 mutation or a concrete-provider behavior check.
@@ -187,7 +191,12 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **VS Code dual build.** `extension.js` runs in the Node-backed host; `extension.web.js` runs in vscode.dev. Don't let Node-only imports (`fs`, `path` with Node semantics, `child_process`) sneak into the web bundle.
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.
 - **Electron workspace paths are display-only.** Filesystem, reveal, FFmpeg, and Git detection IPC accept a registered workspace ID, never `WorkspaceDescriptor.rootPath`. Export, external-file, and repository operations use owner-scoped opaque grants.
+- **Electron workspace identity is main-authoritative.** New roots use canonical-path SHA-256 IDs. Main repairs legacy collisions before registering roots, and the renderer reconciles/remaps its IndexedDB descriptors from `workspaces.list()` before restoring hash or last-session state.
 - **Git repository expansion is explicit.** A workspace nested in a parent repository or linked to external Git metadata requires a native main-process confirmation. Every command must use the granted, pinned `GIT_DIR` and work tree rather than rediscovering a repository from renderer input.
+- **Clone cleanup owns staging only.** Reserve the final directory exclusively, clone into a hidden operation-owned staging tree, and publish with no-replace entry creation. Never recursively delete the final target on failure or cancellation.
+- **Launch-file requests supersede startup navigation.** Main queues OS and second-instance argv received before a window exists; preload installs the `open-request` IPC listener before React mounts and retains a bounded FIFO backlog until the renderer subscribes. The shell claims a navigation generation as soon as each OS request arrives, before reading or decoding the resource; workspace-file requests await main-authoritative descriptor reconciliation, while async startup restoration and welcome seeding stop when that generation is superseded.
+- **VS Code edits are complete coalescible snapshots.** The webview scopes every edit to its mounted host branch. Host ingress may collapse superseded client revisions into the latest snapshot, but close/save/external-change boundaries must drain that snapshot before acting.
+- **CLI preview is local and allowlisted.** `docblocks serve` binds `127.0.0.1` unless network exposure is explicitly authorized, physically contains every read, and serves only documented preview asset types. Hidden paths, credentials, keys, and arbitrary repository files stay inaccessible.
 - **Root mutation stays forbidden twice.** Core providers reject it semantically and Electron main rejects it again after physical root resolution. Never weaken either check.
 - **Provider lifetime is explicit.** Persisted providers are retained/released by the shell; transient providers are owned by the transient registry. React effect cleanup must use the Strict-Mode-safe lease helper rather than call `dispose()` directly.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
@@ -197,12 +206,14 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **17 woff2 fonts** are bundled in `packages/react/src/fonts/`. Verify any addition is actually referenced before adding.
 
 <!-- BEGIN GENERATED: assurance -->
+
 ## Assurance and agent skills
 
 _This section is generated by `npm run generate:agent-guidance`; `npm run all` checks it for drift._
 
 - Canonical local and CI gate: `npm run all`.
 - Packed public-package consumer check: `npm run check:packages`.
+- Assurance-contract freshness check: `npm run check:assurance`.
 - Site E2E: `npm run test:e2e` and `npm run test:e2e:offline`.
 - Desktop source E2E: `npm run test:e2e:desktop`.
 - Desktop packaged-artifact smoke: `npm run test:e2e:desktop:packaged`.
@@ -214,16 +225,17 @@ Tracked repository skills:
 - `/developmentarchitect` — source: `.agents/skills/developmentarchitect/SKILL.md`
 
 `reports/` is gitignored; audit output stays local unless the team explicitly promotes it.
+
 <!-- END GENERATED: assurance -->
 
 ## Where to look first
 
-| Task                       | Start with                                                                                  |
-| -------------------------- | ------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`  |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                      |
-| Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides              |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                         |
-| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)     |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes    |
+| Task                       | Start with                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture           |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
+| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)               |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |

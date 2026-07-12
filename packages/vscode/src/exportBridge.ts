@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import type {
+  ExportTargetGrantMessage,
+  WebviewToExtensionMessage,
+} from '@bendyline/docblocks/vscode';
 import {
   resolveAuthorizedDocumentResource,
   assertNoSymbolicLinkComponents,
@@ -8,7 +12,12 @@ import {
   readAuthorizedMediaFile,
 } from './documentAuthority.js';
 import type { ExportGrantScope, ExportTargetGrantRegistry } from './exportGrants.js';
-import type { ExportTargetGrantMessage, WebviewToExtensionMessage } from './messages.js';
+import {
+  getAllowedExportExtension,
+  parseStoredExportTarget,
+  selectRememberedExactExportTarget,
+  type StoredExportTarget,
+} from './exportTargetPolicy.js';
 import { decodeBoundedBase64, encodeBoundedBase64 } from './wirePayload.js';
 
 export type ExportRequestMessage = Extract<
@@ -29,11 +38,6 @@ type ExportBridgeResponseMessage =
   | { type: 'workspaceFileRead'; requestId: number; dataBase64: string | null };
 
 type ExportBridgeErrorType = 'exportError' | 'workspaceFileError';
-
-interface StoredExportTarget {
-  lastUri?: string;
-  byExtension?: Record<string, string>;
-}
 
 export interface ExportAuthority {
   grants: ExportTargetGrantRegistry<vscode.Uri>;
@@ -58,7 +62,7 @@ export async function handleExportMessage(
           target = authority.grants.consume(authority.scope, msg.grantId);
         } else {
           target = await vscode.window.showSaveDialog({
-            defaultUri: getDefaultExportUri(context, document.uri, msg.filename),
+            defaultUri: getDialogDefaultExportUri(context, document.uri, msg.filename),
             filters: getSaveFilters(msg.filename),
           });
         }
@@ -81,7 +85,7 @@ export async function handleExportMessage(
 
     case 'resolveExportTarget':
       await postExportResult(webview, msg.requestId, 'exportError', async () => {
-        const target = getDefaultExportUri(context, document.uri, msg.filename);
+        const target = getRememberedExactExportUri(context, document.uri, msg.filename);
         return {
           type: 'exportTargetResolved' as const,
           requestId: msg.requestId,
@@ -96,7 +100,8 @@ export async function handleExportMessage(
           ? authority.grants.peek(authority.scope, msg.currentGrantId)
           : undefined;
         const target = await vscode.window.showSaveDialog({
-          defaultUri: currentTarget ?? getDefaultExportUri(context, document.uri, msg.filename),
+          defaultUri:
+            currentTarget ?? getDialogDefaultExportUri(context, document.uri, msg.filename),
           filters: getSaveFilters(msg.filename),
         });
         if (!target) {
@@ -143,63 +148,43 @@ function issueGrant(authority: ExportAuthority, target: vscode.Uri): ExportTarge
   return authority.grants.issue(authority.scope, target, pathForDisplay(target));
 }
 
-function getDefaultExportUri(
+function getDialogDefaultExportUri(
   context: vscode.ExtensionContext,
   documentUri: vscode.Uri,
   filename: string,
 ): vscode.Uri | undefined {
-  const remembered = getRememberedExportUri(context, documentUri, filename);
+  const remembered = getRememberedExactExportUri(context, documentUri, filename);
   if (remembered) return remembered;
+
+  const stored = readStoredExportTarget(context, documentUri);
+  const lastTarget = stored.lastUri ? tryParseUri(stored.lastUri) : null;
+  if (lastTarget) {
+    const lastDirectory = getDocumentDirectoryUri(lastTarget);
+    if (lastDirectory) return vscode.Uri.joinPath(lastDirectory, sanitizeFilename(filename));
+  }
 
   const documentDirectory = getDocumentDirectoryUri(documentUri);
   if (!documentDirectory) return undefined;
   return vscode.Uri.joinPath(documentDirectory, sanitizeFilename(filename));
 }
 
-function getRememberedExportUri(
+function getRememberedExactExportUri(
   context: vscode.ExtensionContext,
   documentUri: vscode.Uri,
   filename: string,
 ): vscode.Uri | null {
-  const stored = readStoredExportTarget(context, documentUri);
-  const extension = getExtension(filename);
-  const storedForExtension = extension ? stored.byExtension?.[extension] : undefined;
-  const exactTarget = storedForExtension ? tryParseUri(storedForExtension) : null;
-  if (exactTarget) return exactTarget;
-
-  const lastTarget = stored.lastUri ? tryParseUri(stored.lastUri) : null;
-  if (!lastTarget) return null;
-
-  const lastDirectory = getDocumentDirectoryUri(lastTarget);
-  if (!lastDirectory) return lastTarget;
-  return vscode.Uri.joinPath(lastDirectory, sanitizeFilename(filename));
+  const stored = context.workspaceState.get<unknown>(getExportTargetStorageKey(documentUri));
+  const serialized = selectRememberedExactExportTarget(stored, filename);
+  return serialized ? tryParseUri(serialized) : null;
 }
 
 function readStoredExportTarget(
   context: vscode.ExtensionContext,
   documentUri: vscode.Uri,
 ): StoredExportTarget {
-  const stored = context.workspaceState.get<unknown>(getExportTargetStorageKey(documentUri));
-  if (!isRecord(stored)) return {};
-
-  const result: StoredExportTarget = {};
-  if (isBoundedString(stored.lastUri, HOST_WIRE_LIMITS.urlCharacters, 1)) {
-    result.lastUri = stored.lastUri;
-  }
-  if (isRecord(stored.byExtension)) {
-    const entries = Object.entries(stored.byExtension).slice(0, 64);
-    const byExtension: Record<string, string> = {};
-    for (const [extension, uri] of entries) {
-      if (
-        /^[a-z0-9]{1,16}$/.test(extension) &&
-        isBoundedString(uri, HOST_WIRE_LIMITS.urlCharacters, 1)
-      ) {
-        byExtension[extension] = uri;
-      }
-    }
-    result.byExtension = byExtension;
-  }
-  return result;
+  return parseStoredExportTarget(
+    context.workspaceState.get<unknown>(getExportTargetStorageKey(documentUri)),
+  );
 }
 
 async function rememberExportTarget(
@@ -213,7 +198,7 @@ async function rememberExportTarget(
   }
   const stored = readStoredExportTarget(context, documentUri);
   const byExtension = { ...(stored.byExtension ?? {}) };
-  const extension = getExtension(getUriBasename(targetUri));
+  const extension = getAllowedExportExtension(getUriBasename(targetUri));
   if (extension) byExtension[extension] = serialized;
 
   await context.workspaceState.update(getExportTargetStorageKey(documentUri), {
@@ -245,7 +230,7 @@ function tryParseUri(value: string): vscode.Uri | null {
 }
 
 function getSaveFilters(filename: string): Record<string, string[]> | undefined {
-  const extension = getExtension(filename);
+  const extension = getAllowedExportExtension(filename);
   if (!extension) return undefined;
   const label = extensionLabel(extension);
   return { [label]: [extension] };
@@ -268,13 +253,6 @@ function extensionLabel(extension: string): string {
     default:
       return `${extension.toUpperCase()} File`;
   }
-}
-
-function getExtension(filename: string): string | null {
-  const dot = filename.lastIndexOf('.');
-  if (dot === -1 || dot === filename.length - 1) return null;
-  const extension = filename.slice(dot + 1).toLowerCase();
-  return /^[a-z0-9]{1,16}$/.test(extension) ? extension : null;
 }
 
 function sanitizeFilename(filename: string): string {
@@ -300,10 +278,6 @@ async function postExportResult(
 function boundedErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.slice(0, HOST_WIRE_LIMITS.messageCharacters);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function assertNever(value: never): never {

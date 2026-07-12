@@ -1,14 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
 import type { ContentContainer } from '@bendyline/squisq/storage';
-import { ExportDialog } from '../../../react/src/Export/ExportDialog.js';
 import {
   DEFAULT_OPTIONS,
+  ExportDialog,
+  buildExportFilename,
   loadLastExportOptions,
+  runExport,
   type ExportOptions,
-} from '../../../react/src/Export/export-options.js';
-import { buildExportFilename, runExport } from '../../../react/src/Export/run-export.js';
-import type { ExportTargetGrantMessage } from '../../src/messages.js';
+} from '@bendyline/docblocks-react/export';
+import type { ExportTargetGrantMessage } from '@bendyline/docblocks/vscode';
 
 export interface VscodeExportButtonProps {
   selectedFile: string | null;

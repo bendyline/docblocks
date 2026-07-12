@@ -72,6 +72,11 @@
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js",
       "default": "./dist/host/index.js"
+    },
+    "./vscode": {
+      "types": "./dist/vscode/index.d.ts",
+      "import": "./dist/vscode/index.js",
+      "default": "./dist/vscode/index.js"
     }
   },
   "scripts": {

@@ -10,7 +10,9 @@ npm install @bendyline/docblocks
 
 ## Exports
 
-Four subpath modules (also re-exported from the package root):
+The package exposes focused subpath modules. Filesystem, document, workspace,
+and host APIs are also re-exported from the package root; boundary-specific
+wire protocols stay isolated in their own entry points.
 
 ### Filesystem (`@bendyline/docblocks/filesystem`)
 
@@ -116,6 +118,13 @@ if (host) {
   await host.shell.revealInFolder(workspaceId, path);
 }
 ```
+
+### VS Code protocol (`@bendyline/docblocks/vscode`)
+
+The canonical bidirectional `postMessage` contract for the VS Code extension
+host and editor webview. Both sides consume the same discriminated unions and
+must parse incoming `unknown` values with `parseWebviewToExtensionMessage()`
+or `parseExtensionToWebviewMessage()` before dispatch.
 
 ## Conventions
 

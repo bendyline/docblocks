@@ -11,6 +11,7 @@ export default defineConfig({
     'document/index': 'src/document/index.ts',
     'workspace/index': 'src/workspace/index.ts',
     'host/index': 'src/host/index.ts',
+    'vscode/index': 'src/vscode/index.ts',
   },
   format: ['esm'],
   dts: true,
