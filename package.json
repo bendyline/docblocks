@@ -29,6 +29,7 @@
     "dev:desktop": "npm run dev -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "mocha",
+    "test:mcp": "mocha --no-config --require tsx --timeout 60000 \"packages/cli/test/mcp-*.test.ts\"",
     "test:e2e": "playwright test",
     "test:e2e:offline": "playwright test --config playwright.offline.config.ts",
     "test:a11y": "playwright test e2e/a11y.spec.ts",

@@ -1329,7 +1329,7 @@ export function DocBlocksShell({
       const welcomeContent = [
         '# Welcome to DocBlocks',
         '',
-        'Your docs as exquisite blocks',
+        'Your markdown can do anything.',
         '',
         'DocBlocks is a free browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser. What you write here can become a Word or PDF doc, a slide deck, an e-book, or a video.',
         '',
@@ -1945,7 +1945,6 @@ export function DocBlocksShell({
 
     const subscription = providerV2.watch(
       (event) => {
-        setExplorerKey((k) => k + 1);
         if (event.type === 'overflow') {
           void drainWatcherReads();
           return;

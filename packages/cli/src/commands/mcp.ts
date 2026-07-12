@@ -5,7 +5,7 @@
  *   docblocks mcp
  *
  * For Claude Desktop, add to your config:
- *   { "mcpServers": { "docblocks": { "command": "npx", "args": ["docblocks", "mcp"] } } }
+ *   { "mcpServers": { "docblocks": { "command": "npx", "args": ["-y", "@bendyline/docblocks-cli", "mcp"] } } }
  */
 
 import { Command } from 'commander';

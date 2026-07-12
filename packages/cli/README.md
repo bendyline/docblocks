@@ -104,12 +104,20 @@ contained by an `--allow-read` root. Every output must be contained by an
 processes, and concurrent expensive tools are bounded; use `--max-concurrency`
 to change the default of 2 (maximum 32).
 
+For file-backed Markdown with relative media, package the document and media
+as a `.dbk`/`.zip` container before exporting. A loose `.md` source does not
+implicitly grant or embed sibling files.
+
 **MCP Tools exposed:**
 
 - `export_markdown_to_docx` / `_pdf` / `_pptx` / `_html` / `_video` — Export markdown to polished output formats
+- `convert_docx_to_markdown` / `convert_pptx_to_markdown` / `convert_pdf_to_markdown` — Import professional document formats as Markdown
 - `analyze_markdown` — Extract content structure (stats, quotes, facts, dates)
 - `restyle_markdown` — Apply a transform style and return restyled markdown
 - `list_themes` / `list_transform_styles` / `list_export_formats` — Discovery tools
+
+The server also exposes the `docblocks://formats` resource and guided
+`create-presentation`, `create-video`, and `create-document` prompts.
 
 All export tools accept raw markdown text directly — AI agents can write content and immediately export without temp files.
 
@@ -120,7 +128,7 @@ All export tools accept raw markdown text directly — AI agents can write conte
   "mcpServers": {
     "docblocks": {
       "command": "npx",
-      "args": ["docblocks", "mcp", "--allow-write", "/path/to/exports"]
+      "args": ["-y", "@bendyline/docblocks-cli", "mcp", "--allow-write", "/path/to/exports"]
     }
   }
 }

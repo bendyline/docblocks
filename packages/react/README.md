@@ -48,7 +48,9 @@ Storage is abstracted behind the byte-authoritative `FileSystemProviderV2` contr
 
 ### FileExplorer / FileTreeNode
 
-File tree browser with inline create (file + folder), rename, delete, and refresh. Long names truncate gracefully.
+File tree browser with inline create (file + folder), rename, and delete. It follows filesystem
+watch events automatically and re-reads the visible tree when a browser surface resumes. Long
+names truncate gracefully.
 
 ### WorkspacePicker
 

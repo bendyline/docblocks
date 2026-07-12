@@ -20,10 +20,6 @@ export function FolderIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-folder" />;
 }
 
-export function RefreshIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-arrows-rotate" />;
-}
-
 export function MoreIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-ellipsis" />;
 }

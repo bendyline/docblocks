@@ -18,7 +18,7 @@ import {
   type FileTreeNodeBadge,
   type FileTreeNodeGitActions,
 } from './FileTreeNode.js';
-import { NewFileIcon, NewFolderIcon, RefreshIcon } from '../icons.js';
+import { NewFileIcon, NewFolderIcon } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 
@@ -438,14 +438,6 @@ export function FileExplorer({
             aria-label="New Folder"
           >
             <NewFolderIcon />
-          </button>
-          <button
-            className="db-explorer-btn"
-            onClick={() => tree.refresh()}
-            title="Refresh file list"
-            aria-label="Refresh file list"
-          >
-            <RefreshIcon />
           </button>
         </div>
       </div>

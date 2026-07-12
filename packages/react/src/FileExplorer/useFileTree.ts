@@ -141,6 +141,71 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     }
   }, [loadRoot, loadChildren, expanded]);
 
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
+  // Keep the explorer synchronized with provider changes. Watch-capable
+  // providers (including Electron's chokidar-backed provider) update in real
+  // time. Calls are serialized and coalesced so event bursts cannot publish
+  // directory reads out of order.
+  useEffect(() => {
+    if (!provider) return;
+    const providerV2 = getFileSystemProviderV2(provider);
+    if (!providerV2?.capabilities.watch) return;
+
+    let disposed = false;
+    let refreshing = false;
+    let refreshAgain = false;
+
+    const requestRefresh = () => {
+      if (disposed) return;
+      if (refreshing) {
+        refreshAgain = true;
+        return;
+      }
+      refreshing = true;
+      void (async () => {
+        try {
+          do {
+            refreshAgain = false;
+            await refreshRef.current();
+          } while (refreshAgain && !disposed);
+        } catch {
+          // A later watcher event or window resume will retry the read.
+        } finally {
+          refreshing = false;
+          if (refreshAgain && !disposed) requestRefresh();
+        }
+      })();
+    };
+
+    const subscription = providerV2.watch(requestRefresh, { onError: requestRefresh });
+    void subscription.ready.catch(() => undefined);
+    return () => {
+      disposed = true;
+      void subscription.dispose();
+    };
+  }, [provider]);
+
+  // File System Access and IndexedDB do not expose a dependable external
+  // watcher. Refreshing on resume catches changes made while this surface was
+  // in the background without continuously polling the filesystem.
+  useEffect(() => {
+    if (!provider) return;
+    const refreshOnFocus = () => {
+      void refreshRef.current().catch(() => undefined);
+    };
+    const refreshOnVisibility = () => {
+      if (document.visibilityState === 'visible') refreshOnFocus();
+    };
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisibility);
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisibility);
+    };
+  }, [provider]);
+
   const createFile = useCallback(
     async (path: string, content = '') => {
       if (!providerRef.current) return;

@@ -6,9 +6,11 @@
  *   • Selection (select / clear-on-delete / move-on-rename)
  *   • Expand/collapse + lazy child load
  *   • CRUD actions delegate to the provider and refresh the tree
+ *   • Provider watch events and window resume refresh visible directories
  *   • Null-provider path: actions are no-ops, root is empty
  */
 import { expect } from 'chai';
+import { MemoryFileSystemProvider, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
 import type {
   FileSystemProvider,
   FileSystemEntry,
@@ -133,6 +135,45 @@ describe('useFileTree', () => {
     expect(provider.readDirCalls).to.include('');
     expect(handle.result.current.entries).to.have.length(2);
     expect(handle.result.current.entries[0].name).to.equal('readme.md');
+    await handle.unmount();
+  });
+
+  it('refreshes an empty tree when a watched provider reports a change', async () => {
+    const provider = new MemoryFileSystemProvider('watched', 'Watched');
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+    expect(handle.result.current.entries).to.deep.equal([]);
+
+    await act(async () => {
+      await provider.v2.writeFile(parseWorkspacePath('external.md'), new Uint8Array([1]), {
+        mode: 'create',
+      });
+    });
+    await advanceTime(SETTLE);
+
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['external.md']);
+    await handle.unmount();
+    await provider.v2.dispose();
+  });
+
+  it('refreshes the tree when the window regains focus', async () => {
+    const provider = makeProvider({ '': [] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+    provider.tree[''] = [file('resumed.md')];
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await advanceTime(SETTLE);
+
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['resumed.md']);
     await handle.unmount();
   });
 

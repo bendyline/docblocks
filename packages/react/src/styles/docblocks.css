@@ -3471,7 +3471,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-git-statusbar {
   position: relative;
   flex-shrink: 0;
-  padding: 0 8px 6px;
+  padding: 2px 8px 4px;
   border-bottom: 1px solid var(--db-border);
 }
 
