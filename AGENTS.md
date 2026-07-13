@@ -19,7 +19,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types and runtime boundary schemas. Multi-entry tsup build with filesystem backends plus `/document`, `/workspace`, `/host`, and `/vscode`. **Single source of truth for wire types.**                                                                 |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`, 17 woff2 fonts. Consumed by site + desktop renderer. (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion (via `squisq-formats`), video rendering (Playwright + ffmpeg), MCP server.                                                                                                                          |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                  |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                             |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                            |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                            |
@@ -60,6 +60,8 @@ npm run format              # prettier --write
 npm run link:squisq         # link
 npm run dev:squisq          # link + watch
 npm run unlink:squisq       # restore registry versions
+npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
+npm run check:squisq-linked # require sibling links and verify MCP registry parity
 
 # Release — multi-semantic-release per package
 npm run release
@@ -158,6 +160,35 @@ packages/desktop/preload/preload.ts      ← contextBridge exposure
 
 Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host` and degrades gracefully when running in a non-Electron context (site, vscode webview). **Renderer must never import `electron` or `node:*`.**
 
+### MCP is artifact-first and Squisq-registry-backed
+
+Canonical MCP wire types and exact runtime parsers live in
+`packages/core/src/mcp/`. Agent-native tools are registered from
+`packages/cli/src/mcp/agentic-tools.ts`; normalization and conversion are
+owned by `document-service.ts` and `conversion-service.ts`. Keep these
+boundaries behind the single artifact-first surface assembled by `server.ts`;
+do not add format-specific or path-writing MCP aliases.
+
+Agent-native document sources are an exact union of bounded inline Markdown,
+an opaque root ID plus canonical root-relative path, a session artifact URI,
+or Markdown with explicitly listed file/artifact assets. Root IDs make paths
+usable but never grant authority: startup `--allow-read` / `--allow-write`
+flags remain the authority source, and physical containment is rechecked at
+every read and materialization.
+
+Conversions, bundles, and visual previews return immutable, session-scoped
+`ArtifactRef`s. Binary results stay out of model context unless a client
+explicitly reads the bounded `docblocks://artifacts/{id}` resource. Durable
+output is a separate `save_artifact` operation: creation is no-replace, while
+replacement requires the destination's current SHA-256. Server shutdown owns
+artifact cleanup.
+
+The linked Squisq CLI registry is the conversion capability source of truth.
+`MCP_FORMAT_CAPABILITIES` must account for every registry format and direction
+as either exposed or explicitly excluded. New conversion code calls the
+linked `@bendyline/squisq-cli/api` registry; do not add another hard-coded
+conversion switch.
+
 ### `<DocBlocksShell>` is the canonical editor shell — for site + desktop
 
 Site and the desktop renderer both mount `<DocBlocksShell>`. The VS Code webview ([packages/vscode/webview/src/VscodeEditor.tsx](packages/vscode/webview/src/VscodeEditor.tsx)) is the documented exception: it mounts squisq's `EditorShell` directly because VS Code provides the file explorer, workspace, and theme via its own activity bar / API. New cross-surface UI that lives **inside the shell chrome** (file tree, workspace picker, app menu, export dialog) belongs in `packages/react/src/`. New editor-area features that need to work in vscode too either go in squisq, or get wired into both `DocBlocksShell` and `VscodeEditor` explicitly.
@@ -173,6 +204,8 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **No renderer-side Electron / Node imports.** Renderer = `packages/desktop/renderer/` + `packages/site/src/` + `packages/vscode/webview/`. These run in a browser context; importing `electron` or `node:fs` breaks the build for some surfaces and the security model for others.
 - **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/core/src/vscode/messages.ts` (runtime-validated discriminated unions) over `postMessage`.
 - **Wire types live in `packages/core`.** Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in `core` — usually under `host/types.ts` or `filesystem/types.ts`. Surface packages should not define their own copy.
+- **MCP conversion is registry-backed.** A new Squisq format or direction must flow through the linked CLI registry, update the MCP capability manifest, and pass `npm run check:squisq-linked`; never infer parity from an npm-installed copy.
+- **MCP artifacts are not files or authority.** Keep conversion output session-scoped until an explicit `save_artifact`; artifact URIs must not expose physical paths, cross server instances, or bypass root grants.
 - **Active-document writes go through `DocumentSession`.** UI effects and event handlers may create commit targets and observe session state, but must not run a second autosave timer or write the active document directly. All editor edits require the scope captured for that mounted document generation.
 - **First-party filesystem work is v2-first.** Use branded paths, typed errors, explicit mutation modes, and capabilities. Do not add a new direct v1 mutation or a concrete-provider behavior check.
 - **Filesystem absence is narrow.** Only typed `not-found` may become `null`, `false`, or an intentionally empty optional container. Never catch every storage failure and continue a backup, export, move, or save.
@@ -199,6 +232,8 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **CLI preview is local and allowlisted.** `docblocks serve` binds `127.0.0.1` unless network exposure is explicitly authorized, physically contains every read, and serves only documented preview asset types. Hidden paths, credentials, keys, and arbitrary repository files stay inaccessible.
 - **Root mutation stays forbidden twice.** Core providers reject it semantically and Electron main rejects it again after physical root resolution. Never weaken either check.
 - **Provider lifetime is explicit.** Persisted providers are retained/released by the shell; transient providers are owned by the transient registry. React effect cleanup must use the Strict-Mode-safe lease helper rather than call `dispose()` directly.
+- **Squisq links need provenance verification.** `npm install` can replace the sibling symlinks with registry packages. `scripts/check-linked-squisq.ts` verifies the actual package realpaths, source/build freshness, commit/fingerprint, and registry/schema parity; run `npm run test:mcp:linked` when auditing MCP/API parity. It rebuilds and links the sibling checkout, runs the focused upstream format/media contracts, and then runs the MCP suite against that source.
+- **MCP is local stdio today.** Session artifacts, root aliases, quotas, and cancellation assume one local server process. Do not describe them as remote URLs or durable jobs; a future HTTP transport requires authentication, principal isolation, Origin checks, and durable task cleanup.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
 - **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
@@ -222,7 +257,6 @@ _This section is generated by `npm run generate:agent-guidance`; `npm run all` c
 Tracked repository skills:
 
 - `/a11yreview` — source: `.agents/skills/a11yreview/SKILL.md`
-- `/developmentarchitect` — source: `.agents/skills/developmentarchitect/SKILL.md`
 
 `reports/` is gitignored; audit output stays local unless the team explicitly promotes it.
 
@@ -230,12 +264,12 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture           |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
-| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)               |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |
+| Task                       | Start with                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                   |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                    |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                        |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides         |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                           |
+| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `packages/cli/src/mcp/conversion-service.ts` for MCP exposure |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                      |

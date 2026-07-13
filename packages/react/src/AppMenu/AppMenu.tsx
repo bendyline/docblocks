@@ -376,7 +376,11 @@ export function AppMenu({
                 >
                   squisq
                 </a>{' '}
-                by Bendyline.
+                by{' '}
+                <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
+                  Bendyline
+                </a>
+                .
               </p>
               <p className="db-dialog-links">
                 <a
@@ -393,6 +397,14 @@ export function AppMenu({
                   rel="noopener noreferrer"
                 >
                   License (MIT)
+                </a>
+                <span className="db-dialog-sep">&middot;</span>
+                <a
+                  href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  &hearts; built on open source
                 </a>
               </p>
             </div>

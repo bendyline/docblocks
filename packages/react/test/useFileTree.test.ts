@@ -221,6 +221,32 @@ describe('useFileTree', () => {
     await handle.unmount();
   });
 
+  it('reveal() selects an entry and expands every ancestor directory', async () => {
+    const provider = makeProvider({
+      '': [dir('guides')],
+      '/guides': [dir('advanced', '/guides')],
+      '/guides/advanced': [file('intro.md', '/guides/advanced')],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+
+    await act(async () => {
+      handle.result.current.reveal('/guides/advanced/intro.md', 'file');
+    });
+    await advanceTime(SETTLE);
+
+    expect(handle.result.current.selectedPath).to.equal('/guides/advanced/intro.md');
+    expect(handle.result.current.selectedKind).to.equal('file');
+    expect(handle.result.current.expanded).to.include('/guides');
+    expect(handle.result.current.expanded).to.include('/guides/advanced');
+    expect(provider.readDirCalls).to.include('/guides');
+    expect(provider.readDirCalls).to.include('/guides/advanced');
+    await handle.unmount();
+  });
+
   it('createFile() delegates to provider and refreshes the tree', async () => {
     const provider = makeProvider({ '': [] });
     const handle = await renderHook(

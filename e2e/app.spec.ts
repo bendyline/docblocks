@@ -9,6 +9,7 @@ test.describe('DocBlocks App', () => {
   test('loads and shows the shell', async ({ page }) => {
     const shell = page.locator('.db-shell');
     await expect(shell).toBeVisible();
+    await expect(page).toHaveTitle('aboutDocBlocks - DocBlocks');
   });
 
   test('has a sidebar with workspace picker', async ({ page }) => {
@@ -141,6 +142,7 @@ test.describe('File operations', () => {
 
     // Editor should appear (empty state should be gone)
     await expect(page.locator('.db-shell-empty')).not.toBeVisible();
+    await expect(page).toHaveTitle('edit-me - DocBlocks');
   });
 
   test('can create a folder', async ({ page }) => {
@@ -357,7 +359,9 @@ test.describe('Workspace picker', () => {
   test('dropdown has new workspace option', async ({ page }) => {
     await page.locator('.db-workspace-picker-btn').click();
     const dropdown = page.locator('.db-workspace-dropdown');
-    await expect(dropdown.getByText('New Workspace')).toBeVisible();
+    const newWorkspace = dropdown.getByRole('button', { name: 'New Workspace' });
+    await expect(newWorkspace).toBeVisible();
+    await expect(newWorkspace.locator('.fa-folder-plus')).toBeVisible();
   });
 
   test('dropdown closes on outside click', async ({ page }) => {

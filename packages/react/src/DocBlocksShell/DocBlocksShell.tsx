@@ -1,5 +1,5 @@
 /**
- * DocBlocksShell — top-level layout component.
+ * DocBlocksShell -- top-level layout component.
  *
  * Composes the left sidebar (WorkspacePicker + FileExplorer) with
  * the center editor area (squisq EditorShell).
@@ -92,7 +92,7 @@ const EditorShell = lazy(async () => {
   return import('./LazyEditorShell.js');
 });
 // The git dialogs/status bar only ever render under the Electron host, so
-// they load as a split chunk — the site never pays for them (the entry
+// they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
 const GitUI = lazy(() => import('../Git/GitUI.js').then((m) => ({ default: m.GitUI })));
 const GitToolbarControl = lazy(() =>
@@ -114,6 +114,7 @@ import {
   type ThemePreference,
 } from '../preferences/theme.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
+import { useDocumentTitle } from './document-title.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 
 let indexedDbFileSystemModule: Promise<
@@ -305,7 +306,7 @@ function loadLastState(): LastState | null {
 
 /** One-time first-run callout shown over the welcome doc's Play view.
  *  Once the user starts writing, switches views themselves, or dismisses
- *  it, it never comes back — on any workspace. */
+ *  it, it never comes back -- on any workspace. */
 const WELCOME_GATEWAY_KEY = 'docblocks:welcomeGatewayDismissed';
 
 function isWelcomeGatewayDismissed(): boolean {
@@ -328,7 +329,7 @@ const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
 const SIDEBAR_WIDTH_DEFAULT = 320;
 const SIDEBAR_WIDTH_MIN = 320;
 const SIDEBAR_WIDTH_MAX = 600;
-/** Drag below this many pixels and the sidebar collapses entirely —
+/** Drag below this many pixels and the sidebar collapses entirely --
  *  the workspace pane takes the full width and offers a control to
  *  restore the side-by-side layout. */
 const SIDEBAR_COLLAPSE_THRESHOLD = SIDEBAR_WIDTH_MIN;
@@ -721,7 +722,7 @@ export function DocBlocksShell({
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
-  // "System default" (auto) always follows the OS — the host's theme prop
+  // "System default" (auto) always follows the OS -- the host's theme prop
   // is kept only for API back-compat and does not override OS detection.
   const resolvedTheme: 'light' | 'dark' =
     themePreference === 'light' || themePreference === 'dark' ? themePreference : osTheme;
@@ -756,13 +757,13 @@ export function DocBlocksShell({
   }, []);
   const isMobile = useIsMobile();
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
-  // Sidebar width — persisted across sessions, dragged via the resizer
+  // Sidebar width -- persisted across sessions, dragged via the resizer
   // between sidebar and editor area. We track the "live" width during a
   // drag in a ref so each mousemove doesn't trigger a state update; only
   // setState on commit so React doesn't churn through every pixel.
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
   // When the user drags the resizer below SIDEBAR_COLLAPSE_THRESHOLD,
-  // we switch the layout into single-pane "compact" mode — same UX as
+  // we switch the layout into single-pane "compact" mode -- same UX as
   // the mobile narrow-viewport flow, where only the sidebar OR the
   // editor is visible at a time and a back-arrow in the toolbar pops
   // between them. A "Restore split view" button in either pane's header
@@ -800,7 +801,7 @@ export function DocBlocksShell({
         if (!drag) return;
         lastRaw = drag.startWidth + (ev.clientX - drag.startX);
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD && sidebarRef.current) {
-          // Below threshold — preview the collapse by snapping to the
+          // Below threshold -- preview the collapse by snapping to the
           // minimum width and fading the sidebar, so the user can see
           // they've crossed into "release to collapse" territory.
           sidebarRef.current.style.width = `${SIDEBAR_WIDTH_MIN}px`;
@@ -824,7 +825,7 @@ export function DocBlocksShell({
           sidebarRef.current.style.opacity = '';
         }
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD) {
-          // Released below threshold — switch to compact (single-pane)
+          // Released below threshold -- switch to compact (single-pane)
           // layout focused on the document pane. Keep the persisted
           // sidebarWidth so exiting compact mode restores it.
           setCompactLayout(true);
@@ -875,7 +876,7 @@ export function DocBlocksShell({
     };
   }, [activeWorkspaceId, descriptorRefreshKey]);
 
-  // All git UI state/actions — null-renders on surfaces without git.
+  // All git UI state/actions -- null-renders on surfaces without git.
   const gitWorkspaceId =
     provider &&
     activeWorkspaceDescriptor?.id === activeWorkspaceId &&
@@ -913,6 +914,7 @@ export function DocBlocksShell({
     [activeWorkspaceDescriptor],
   );
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  useDocumentTitle(selectedFile);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
     if (!isElectronHost() || !activeWorkspaceId || !selectedFile) return undefined;
     const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
@@ -945,7 +947,7 @@ export function DocBlocksShell({
   const editorKey = `${documentSnapshot.generation}:${editorPresentationEpoch}`;
   const [explorerKey, setExplorerKey] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
-  // First-run gateway over the welcome doc's Play view — see WELCOME_GATEWAY_KEY.
+  // First-run gateway over the welcome doc's Play view -- see WELCOME_GATEWAY_KEY.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
@@ -1032,7 +1034,7 @@ export function DocBlocksShell({
               const snapshot = await createDbkWorkspaceSnapshot(externalContainer, {
                 targetDocumentPath: filePath,
               });
-              // Keep both branches intact until the user chooses — same
+              // Keep both branches intact until the user chooses -- same
               // semantics as the Electron dbk conflict staging below.
               pendingDbkConflictsRef.current.set(baseTarget.key, {
                 provider: transientProvider,
@@ -1209,8 +1211,8 @@ export function DocBlocksShell({
     ): Promise<FileSystemProvider | null> => {
       const requestId = navigationRequestId ?? ++navigationRequestRef.current;
       if (requestId !== navigationRequestRef.current) return null;
-      // Transient (session-only) workspaces — a loose file or `.dbk` opened
-      // from the OS — carry a pre-built in-memory provider in the registry.
+      // Transient (session-only) workspaces -- a loose file or `.dbk` opened
+      // from the OS -- carry a pre-built in-memory provider in the registry.
       const transient = getTransientWorkspace(wsId);
       let ws: WorkspaceDescriptor | undefined;
       let fsProvider: FileSystemProvider | null = null;
@@ -1337,19 +1339,19 @@ export function DocBlocksShell({
         '',
         '## Features',
         '',
-        '- **Rich Markdown Editing** — Write in a visual editor or switch to raw markdown anytime. Use section annotations to change the visualization for blocks of content.',
-        '- **Workspaces** — Organize your documents into separate workspaces in the browser or on your device.',
-        '- **Useful Everywhere** — Your content is usable across multiple formats — Microsoft Word .docx, PowerPoint, PDF, HTML, EPUB e-books, and Markdown.',
-        '- **Playback & Video** — Preview your documents as rich visual presentations and export them as MP4 video',
-        '- **No BS** — Free, no ads, no accounts, no tracking - everything runs locally in your browser',
+        '- **Rich Markdown Editing** -- Write in a visual editor or switch to raw markdown source anytime. Use section annotations to change the visualization for blocks of content.',
+        '- **Workspaces** -- Organize your documents into separate workspaces in the browser or on your device.',
+        '- **Useful Everywhere** -- Your content is usable across multiple formats -- Microsoft Word .docx, PowerPoint, PDF, HTML, EPUB e-books, and Markdown.',
+        '- **Playback & Video** -- Preview your documents as rich visual presentations and export them as MP4 video',
+        '- **No BS** -- Free, no ads, no accounts, no tracking - everything runs locally in your browser',
         '',
         '## Getting Started',
         '',
         '1. Create a new file using the **New File** button in the sidebar',
-        '2. Start writing in markdown — the editor supports headings, lists, links, images, and more',
+        '2. Start writing in markdown -- the editor supports headings, lists, links, images, and more',
         '3. Your work is saved automatically',
         '',
-        'Built with [Squiggly Square](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
+        'Built on [Squiggly Square markdown extensions](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
       ].join('\n');
 
       let seededContent = welcomeContent;
@@ -1386,7 +1388,7 @@ export function DocBlocksShell({
   startupSeedWelcomeFileRef.current = seedWelcomeFile;
 
   /** Hide the welcome gateway and never show it again. Safe to call from
-   *  paths where it may not be showing — only persists when it was. */
+   *  paths where it may not be showing -- only persists when it was. */
   const closeWelcomeGateway = useCallback(() => {
     setShowWelcomeGateway((showing) => {
       if (showing) markWelcomeGatewayDismissed();
@@ -1394,7 +1396,7 @@ export function DocBlocksShell({
     });
   }, []);
 
-  /** Gateway CTA — flip the welcome doc from Play into the editor. */
+  /** Gateway CTA -- flip the welcome doc from Play into the editor. */
   const handleStartWriting = useCallback(() => {
     closeWelcomeGateway();
     setInitialView('wysiwyg');
@@ -1404,7 +1406,7 @@ export function DocBlocksShell({
     }
   }, [closeWelcomeGateway, activeWorkspaceId, selectedFile]);
 
-  // Initialise workspace on mount — restore from hash or last-used
+  // Initialise workspace on mount -- restore from hash or last-used
   useEffect(() => {
     const requestId = ++navigationRequestRef.current;
     let cancelled = false;
@@ -1491,7 +1493,7 @@ export function DocBlocksShell({
 
       const workspaces = await listWorkspaces();
       if (!isCurrent()) return;
-      // On desktop, hide web-only workspaces (indexeddb/native) — only
+      // On desktop, hide web-only workspaces (indexeddb/native) -- only
       // folder-based workspaces are valid.
       const candidates = electron
         ? workspaces.filter((w) => w.type === 'electron-native')
@@ -1668,7 +1670,7 @@ export function DocBlocksShell({
     };
     const onAppInstalled = () => {
       setInstallPromptEvent(null);
-      // Chromium auto-grants persistent storage to installed apps — re-probe
+      // Chromium auto-grants persistent storage to installed apps -- re-probe
       // so the "Keep data in browser for longer" nag retires itself.
       const storage = navigator.storage;
       if (storage && typeof storage.persisted === 'function') {
@@ -1711,7 +1713,7 @@ export function DocBlocksShell({
       if (target) {
         const view = target.getAttribute('data-view') as EditorView;
         if (view) {
-          // The user found the view tabs on their own — the gateway's job is done.
+          // The user found the view tabs on their own -- the gateway's job is done.
           closeWelcomeGateway();
         }
         if (view && activeWorkspaceId && selectedFile) {
@@ -1745,7 +1747,7 @@ export function DocBlocksShell({
           setSaveToast({
             kind: 'error',
             message: isQuotaExceededError(error)
-              ? 'Could not save — browser storage is full. Free up space or back up your work.'
+              ? 'Could not save -- browser storage is full. Free up space or back up your work.'
               : error instanceof Error
                 ? error.message
                 : 'Could not save this document.',
@@ -1778,7 +1780,7 @@ export function DocBlocksShell({
 
   // Quota-exhaustion banner. The session clears `error` on every keystroke
   // and at each retry, so the raw snapshot flickers during a failing
-  // type/retry loop — latch it, and release only when a commit succeeds.
+  // type/retry loop -- latch it, and release only when a commit succeeds.
   // Known gap: version-snapshot writes (squisq's DocumentVersionManager)
   // swallow their own failures upstream (`SaveVersionResult` has no error
   // variant), but they hit the same provider, so the primary autosave
@@ -1794,7 +1796,7 @@ export function DocBlocksShell({
 
   // Ask the browser to make origin storage durable the first time real work
   // is saved (browser surface only, once per session). Chromium decides
-  // silently — installed apps are auto-granted; Firefox may show one prompt
+  // silently -- installed apps are auto-granted; Firefox may show one prompt
   // at this meaningful moment rather than at page load.
   const autoPersistRequestedRef = useRef(false);
   useEffect(() => {
@@ -1841,7 +1843,7 @@ export function DocBlocksShell({
   }, [provider, selectedFile, mediaEpoch]);
 
   // Invalidate the document-link candidate cache when the backing
-  // workspace changes — otherwise the link dialog would surface
+  // workspace changes -- otherwise the link dialog would surface
   // neighbours from a previously-open workspace.
   useEffect(() => {
     mdFileCacheRef.current = null;
@@ -2106,7 +2108,7 @@ export function DocBlocksShell({
       } else if (ws.type === 'native') {
         const restored = await (await loadNativeFileSystem()).restoreNativeFolder(ws.id);
         if (!restored) {
-          // Permission denied or handle lost — fall through without changing provider
+          // Permission denied or handle lost -- fall through without changing provider
           return;
         }
         nextProvider = restored;
@@ -2361,7 +2363,7 @@ export function DocBlocksShell({
   }, [handleNewFile, handleOpenFolder, handleRevealWorkspace]);
 
   // OS open-file / deep-link handling lives after the container helpers it
-  // depends on — see the `openTransient` + onOpenRequest effect below.
+  // depends on -- see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
     async (path: string, kind: 'file' | 'directory') => {
@@ -2734,7 +2736,7 @@ export function DocBlocksShell({
       const isBundle = /\.(dbk|zip)$/i.test(name);
       // Keyed by file name: relaunching the same file replaces the registry
       // entry instead of piling up session workspaces. Two different files
-      // that share a name would collide — acceptable for session-only state.
+      // that share a name would collide -- acceptable for session-only state.
       const id = `transient-web-${isBundle ? 'bundle' : 'file'}-${name}`;
       // Ask for write access while the OS-launch user activation is fresh so
       // autosave doesn't have to prompt mid-typing. Best-effort: a denial
@@ -2827,7 +2829,7 @@ export function DocBlocksShell({
    * Bundle every workspace the host can open without further prompting
    * into a single zip, with each workspace nested under its own folder.
    * Native (browser-picked) workspaces whose handle hasn't been re-granted
-   * for this session are skipped — restoring them would require a user
+   * for this session are skipped -- restoring them would require a user
    * gesture per workspace.
    */
   const handleDownloadAllWorkspaces = useCallback(async () => {
@@ -2865,7 +2867,7 @@ export function DocBlocksShell({
             p = await createElectronProviderFromWorkspace(ws);
             ownsProvider = p !== null;
           } else if (ws.type === 'native') {
-            // Restore without prompting — only succeeds when the browser
+            // Restore without prompting -- only succeeds when the browser
             // still remembers the granted handle for this origin/session.
             p = await (await loadNativeFileSystem()).restoreNativeFolder(ws.id);
             ownsProvider = p !== null;
@@ -2989,7 +2991,7 @@ export function DocBlocksShell({
       try {
         await getDocBlocksHost().workspaces.unregister(activeWorkspaceId);
       } catch {
-        // ignore — host cleanup is best-effort
+        // ignore -- host cleanup is best-effort
       }
     } else if (ws?.type === 'transient') {
       const origin = ws.origin;
@@ -3086,7 +3088,7 @@ export function DocBlocksShell({
         {storageFull && !documentSnapshot.conflict && (
           <div className="db-storage-full-banner" role="alert">
             <span>
-              Browser storage is full — changes can&rsquo;t be saved. Free up space or back up your
+              Browser storage is full -- changes can&rsquo;t be saved. Free up space or back up your
               work now.
             </span>
             <div className="db-storage-full-banner-actions">
@@ -3126,7 +3128,7 @@ export function DocBlocksShell({
         )}
         {/* Main area */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Left sidebar — hidden in compact layout when the editor is
+          {/* Left sidebar -- hidden in compact layout when the editor is
             showing (compact = real mobile narrow viewport OR the user
             dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
           {(!effectiveCompact || !mobileShowEditor) && (
@@ -3194,6 +3196,7 @@ export function DocBlocksShell({
               <FileExplorer
                 key={explorerKey}
                 provider={provider}
+                activeFilePath={selectedFile}
                 onSelect={handleSelect}
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
@@ -3226,7 +3229,7 @@ export function DocBlocksShell({
             </div>
           )}
 
-          {/* Resize handle between sidebar and editor — hidden whenever
+          {/* Resize handle between sidebar and editor -- hidden whenever
             the layout is compact (no sidebar to resize). */}
           {!effectiveCompact && (
             <div
@@ -3238,7 +3241,7 @@ export function DocBlocksShell({
             />
           )}
 
-          {/* Editor area — hidden in compact layout when the sidebar is showing. */}
+          {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
           {(!effectiveCompact || mobileShowEditor) && (
             <div
               style={{
@@ -3291,7 +3294,7 @@ export function DocBlocksShell({
                       }
                       toolbarSlotRight={
                         <>
-                          {/* Restore split view — only relevant when compact
+                          {/* Restore split view -- only relevant when compact
                           layout was manually triggered on a wide viewport.
                           On real mobile, side-by-side doesn't fit so the
                           button is suppressed. */}
@@ -3322,7 +3325,7 @@ export function DocBlocksShell({
                   {showWelcomeGateway && (
                     <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
                       <span className="db-welcome-gateway-text">
-                        You&rsquo;re watching this welcome doc in <strong>Play</strong> view —
+                        You&rsquo;re watching this welcome doc in <strong>Slideshow</strong> view --
                         it&rsquo;s a regular markdown file, and so is everything you&rsquo;ll write.
                       </span>
                       <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>

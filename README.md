@@ -18,11 +18,42 @@ DocBlocks ships as **four surfaces** from this one repository:
 ## What it does
 
 - **Three views of every document** — **Editor** (rich WYSIWYG), **Markdown** (raw source), and **Play**, which presents the same file as a **Video**, **Slideshow**, **Document**, or **Page**.
-- **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; DOCX / PPTX / PDF / HTML / DBK containers and **MP4 video** (with synced animations and captions) from the CLI.
+- **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; the CLI follows the linked Squisq registry for Markdown, DOCX, PPTX, PDF, XLSX, CSV, HTML / HTML ZIP, EPUB, DBK, **MP4 video**, and GIF (with directional support varying by format).
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.
 - **Version history** — optional per-document revisions kept in a plain `<name>_files/.versions/` sibling folder. On by default for browser workspaces, off for local folders (your files, your call).
-- **AI-agent ready** — `docblocks mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io) server exposing export, analysis, and restyle tools, so assistants like Claude or Copilot can write markdown and ship it as a PDF, deck, or video without leaving the conversation.
+- **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can inspect and validate documents, convert between the linked Squisq formats, retain media in DBK bundles, and materialize finished artifacts only when requested.
+
+## Agent workflows
+
+The MCP server is artifact-first. An agent can supply inline Markdown without
+filesystem access, or you can grant narrow read/write roots when it needs local
+documents and durable output:
+
+```bash
+docblocks mcp
+docblocks mcp --allow-read ./documents --allow-write ./exports
+```
+
+The preferred workflow is:
+
+1. Discover granted root aliases with `list_roots` when files are involved.
+2. Use `inspect_document` and `validate_document` to understand the source and
+   its target-format constraints.
+3. Call `convert_document` once for one or more targets. Conversion returns
+   immutable, session-scoped artifact references rather than writing files.
+4. Use `preview_document` for bounded, paginated image checks and inspect its
+   `previewBasis`: Markdown/DBK are source renders, imported document artifacts
+   are reconstructed previews rather than native-application pixels, and MP4
+   or GIF sources return one natively extracted first-frame JPEG.
+5. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
+   another document operation, or explicitly persist it with `save_artifact`.
+
+The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,
+CSV, HTML, HTML ZIP, EPUB, DBK, MP4, and GIF; support is directional for formats
+that are export-only. See the [CLI MCP guide](packages/cli/README.md#docblocks-mcp)
+for source shapes, authority rules, the complete tool surface, and current
+local-only limitations.
 
 ## Repository map
 
@@ -58,6 +89,12 @@ npm run dev            # site on http://localhost:5220
 npm run app            # Build shared packages, then launch Electron + Vite on port 5221
 npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5
+
+# Sibling-source MCP assurance (never uses the npm copy)
+npm run link:squisq
+npm run check:squisq-linked
+# Or rebuild, verify, run focused sibling tests, and run the complete MCP suite:
+npm run test:mcp:linked
 ```
 
 ### Testing

@@ -12,6 +12,8 @@ export default defineConfig({
     'workspace/index': 'src/workspace/index.ts',
     'host/index': 'src/host/index.ts',
     'vscode/index': 'src/vscode/index.ts',
+    'mcp/index': 'src/mcp/index.ts',
+    'mcp/zod': 'src/mcp/zod.ts',
   },
   format: ['esm'],
   dts: true,

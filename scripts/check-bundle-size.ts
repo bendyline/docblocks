@@ -60,7 +60,8 @@ const surfaces: BundleSurface[] = [
       {
         label: 'deferred standalone editor source',
         prefix: 'standalone-source',
-        budgetBytes: 1_150_000,
+        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path.
+        budgetBytes: 1_153_000,
       },
       { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 6_200_000 },
     ],

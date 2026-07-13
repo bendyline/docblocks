@@ -24,6 +24,25 @@ function relocatePath(path: string, oldPath: string, newPath: string): string {
   return `${newPath.replace(/\/+$/, '')}${suffix}`;
 }
 
+function ancestorPaths(path: string): string[] {
+  const canonical = normalisePath(path);
+  if (!canonical) return [];
+  const segments = canonical.split('/');
+  const prefix = /^[\\/]/u.test(path) ? '/' : '';
+  return segments
+    .slice(0, -1)
+    .map((_, index) => `${prefix}${segments.slice(0, index + 1).join('/')}`);
+}
+
+function equivalentPathKeys(path: string): string[] {
+  const canonical = normalisePath(path);
+  return canonical ? [path, canonical, `/${canonical}`] : [path, canonical];
+}
+
+function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {
+  return equivalentPathKeys(path).some((candidate) => paths.has(candidate));
+}
+
 async function readProviderDirectory(
   provider: FileSystemProvider,
   path: string,
@@ -52,6 +71,8 @@ export interface FileTreeActions {
   toggleExpand: (path: string) => void;
   /** Select a file or directory. */
   select: (path: string, kind: 'file' | 'directory') => void;
+  /** Select an entry and expand each directory needed to reveal it. */
+  reveal: (path: string, kind: 'file' | 'directory') => void;
   /** Create a new file with optional initial content. */
   createFile: (path: string, content?: string) => Promise<void>;
   /** Create a new directory. */
@@ -114,8 +135,8 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     (path: string) => {
       setExpanded((prev) => {
         const next = new Set(prev);
-        if (next.has(path)) {
-          next.delete(path);
+        if (hasEquivalentPath(next, path)) {
+          for (const candidate of equivalentPathKeys(path)) next.delete(candidate);
         } else {
           next.add(path);
           // Load children when expanding
@@ -131,6 +152,25 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     setSelectedPath(path);
     setSelectedKind(kind);
   }, []);
+
+  const reveal = useCallback(
+    (path: string, kind: 'file' | 'directory') => {
+      const ancestors = ancestorPaths(path);
+      setSelectedPath(path);
+      setSelectedKind(kind);
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        for (const ancestor of ancestors) {
+          if (!hasEquivalentPath(next, ancestor)) next.add(ancestor);
+        }
+        return next;
+      });
+      for (const ancestor of ancestors) {
+        void loadChildren(ancestor);
+      }
+    },
+    [loadChildren],
+  );
 
   const refresh = useCallback(async () => {
     await loadRoot();
@@ -300,6 +340,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     loading,
     toggleExpand,
     select,
+    reveal,
     createFile,
     createDirectory,
     deleteEntry,

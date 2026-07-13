@@ -17,9 +17,15 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 
 test('boots and renders the shell', async ({ launchApp }) => {
-  const { window } = await launchApp();
+  const { app, window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await expect(window.locator('.db-shell')).toBeVisible();
+  await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
+
+  const browserWindow = await app.browserWindow(window);
+  await expect
+    .poll(() => browserWindow.evaluate((nativeWindow) => nativeWindow.getTitle()))
+    .toBe('aboutDocBlocks - DocBlocks');
 });
 
 test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {

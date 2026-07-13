@@ -2,8 +2,7 @@ import { expect } from 'chai';
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { McpFileAuthority } from '../src/mcp/authority.js';
-import { callTool, startMcpHarness, type McpHarness } from './mcp-helpers.js';
+import { MCP_FILE_AUTHORITY_LIMITS, McpFileAuthority } from '../src/mcp/authority.js';
 
 describe('MCP authority boundary', () => {
   let root = '';
@@ -75,19 +74,31 @@ describe('MCP authority boundary', () => {
     await expectFailure(authority.authorizeWrite(path.join(allowed, 'note.md:secret')), 'portable');
   });
 
-  it('treats the legacy markdown string as content even when it names a readable file', async () => {
-    let harness: McpHarness | null = null;
-    try {
-      harness = await startMcpHarness();
-      const candidate = path.join(harness.tmpDir, 'looks-like-input.md');
-      await writeFile(candidate, 'this file has several secret words');
-      const result = await callTool(harness.client, 'analyze_markdown', { markdown: candidate });
-      expect(result.isError).to.equal(false);
-      const payload = JSON.parse(result.text) as { stats: { wordCount: number } };
-      expect(payload.stats.wordCount).to.equal(1);
-    } finally {
-      await harness?.dispose();
-    }
+  it('enforces startup ceilings for input bytes and configured roots', async () => {
+    await expectFailure(
+      McpFileAuthority.create({
+        maxInputFileBytes: MCP_FILE_AUTHORITY_LIMITS.maxInputFileBytes + 1,
+      }),
+      'input file limit',
+    );
+    await expectFailure(
+      McpFileAuthority.create({
+        readRoots: Array.from(
+          { length: MCP_FILE_AUTHORITY_LIMITS.maxRootsPerCapability + 1 },
+          () => root,
+        ),
+      }),
+      'too many configured roots',
+    );
+    await expectFailure(
+      McpFileAuthority.create({
+        writeRoots: Array.from(
+          { length: MCP_FILE_AUTHORITY_LIMITS.maxRootsPerCapability + 1 },
+          () => root,
+        ),
+      }),
+      'too many configured roots',
+    );
   });
 });
 

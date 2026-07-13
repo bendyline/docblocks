@@ -15,6 +15,9 @@ describe('MCP Squisq API contract', () => {
       pdf,
       html,
       container,
+      recommend,
+      formats,
+      video,
       standalone,
     ] = await Promise.all([
       import('@bendyline/squisq/markdown'),
@@ -29,6 +32,9 @@ describe('MCP Squisq API contract', () => {
       import('@bendyline/squisq-formats/pdf'),
       import('@bendyline/squisq-formats/html'),
       import('@bendyline/squisq-formats/container'),
+      import('@bendyline/squisq/recommend'),
+      import('@bendyline/squisq-formats'),
+      import('@bendyline/squisq-video'),
       import('@bendyline/squisq-react/standalone-source'),
     ]);
 
@@ -46,35 +52,84 @@ describe('MCP Squisq API contract', () => {
       doc.markdownToDoc,
       doc.docToMarkdown,
       doc.countBlocks,
+      doc.flattenBlocks,
+      doc.validateMarkdownSource,
+      doc.getAvailableTemplates,
+      doc.resolveThemeForDoc,
       doc.readCustomThemesFromFrontmatter,
     ]) {
       expect(api).to.be.a('function');
     }
+    expect(Object.keys(doc.TEMPLATE_METADATA).length).to.be.greaterThan(0);
+    expect(Object.keys(doc.TEMPLATE_INPUT_DESCRIPTORS).length).to.be.greaterThan(0);
     for (const api of [
       transform.applyTransform,
+      transform.analyzeBlocks,
       transform.extractDocImages,
       transform.getTransformStyleIds,
       transform.getTransformStyleSummaries,
     ]) {
       expect(api).to.be.a('function');
     }
-    for (const api of [schemas.getAvailableThemes, schemas.getThemeSummaries]) {
+    for (const api of [
+      schemas.getAvailableThemes,
+      schemas.getThemeSummaries,
+      schemas.getDocPlaybackDuration,
+    ]) {
       expect(api).to.be.a('function');
     }
+    expect(Object.keys(schemas.THEMES).length).to.be.greaterThan(0);
     expect(storage.MemoryContentContainer).to.be.a('function');
-    expect(cli.readInput).to.be.a('function');
-    expect(cli.renderDocToMp4).to.be.a('function');
+    for (const api of [
+      cli.readInput,
+      cli.createCliRegistry,
+      cli.prepareConversion,
+      cli.convert,
+      cli.renderDocToMp4,
+      cli.renderDocToGif,
+      cli.extractThumbnails,
+    ]) {
+      expect(api).to.be.a('function');
+    }
+    expect(cli.CapturedFrameBudgetError).to.be.a('function');
+    expect(cli.MAX_CAPTURED_FRAME_BYTES).to.be.a('number').and.greaterThan(0);
+
+    type ExtractThumbnailsOptions = Parameters<typeof cli.extractThumbnails>[0];
+    const signal = new AbortController().signal;
+    const extractorContract = {
+      videoPath: 'preview.gif',
+      outputDir: 'thumbnails',
+      slug: 'preview',
+      sizes: [{ name: 'small', width: 320, height: 180, filter: 'scale=320:180' }],
+      signal,
+    } satisfies ExtractThumbnailsOptions;
+    const acceptedSignal: ExtractThumbnailsOptions['signal'] = extractorContract.signal;
+    expect(acceptedSignal).to.equal(signal);
+    type InferThemeOptions = NonNullable<Parameters<typeof formats.inferThemeFromFile>[1]>;
+    const inferContract = { signal } satisfies InferThemeOptions;
+    const acceptedInferSignal: InferThemeOptions['signal'] = inferContract.signal;
+    expect(acceptedInferSignal).to.equal(signal);
     expect(docx.markdownDocToDocx).to.be.a('function');
     expect(docx.docxToMarkdownDoc).to.be.a('function');
     expect(docx.docxToContainer).to.be.a('function');
     expect(pptx.markdownDocToPptx).to.be.a('function');
     expect(pptx.pptxToMarkdownDoc).to.be.a('function');
     expect(pptx.pptxToContainer).to.be.a('function');
+    expect(pptx.inspectPptxLayouts).to.be.a('function');
+    type InspectPptxLayoutsOptions = NonNullable<Parameters<typeof pptx.inspectPptxLayouts>[1]>;
+    const inspectContract = { signal } satisfies InspectPptxLayoutsOptions;
+    const acceptedInspectSignal: InspectPptxLayoutsOptions['signal'] = inspectContract.signal;
+    expect(acceptedInspectSignal).to.equal(signal);
     expect(pdf.markdownDocToPdf).to.be.a('function');
     expect(pdf.pdfToMarkdownDoc).to.be.a('function');
     expect(html.docToHtml).to.be.a('function');
     expect(html.collectImagePaths).to.be.a('function');
     expect(container.containerToZip).to.be.a('function');
+    expect(container.zipToContainer).to.be.a('function');
+    expect(recommend.profileBlockContents).to.be.a('function');
+    expect(recommend.recommendTemplatesForBlock).to.be.a('function');
+    expect(formats.inferThemeFromFile).to.be.a('function');
+    expect(video.generateRenderHtml).to.be.a('function');
     expect(standalone.PLAYER_BUNDLE).to.be.a('string').with.length.greaterThan(1_000);
   });
 

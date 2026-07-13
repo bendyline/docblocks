@@ -514,6 +514,12 @@
   background: var(--db-bg-hover);
 }
 
+.db-workspace-dropdown-action-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .db-workspace-dropdown-item--active {
   background: var(--db-bg-selected);
   color: var(--db-text-on-selected);
@@ -3924,9 +3930,8 @@ button.db-git-file-row:hover {
    Ported 1:1 from the Electron build — keep in sync with
    packages/desktop/renderer/titlebar.css (which is scoped under
    `.db-desktop-root`; Electron windows report `display-mode: browser`, so
-   this media query can never double-apply there). The desktop drag-dots
-   affordance (`.db-shell-sidebar-header::after`) is intentionally omitted.
-   The media query is live: toggling the overlay chevron flips it with no JS. */
+   this media query can never double-apply there). The media query is live:
+   toggling the overlay chevron flips it with no JS. */
 @media (display-mode: window-controls-overlay) {
   .db-shell {
     --db-wco-titlebar-height: 48px;
@@ -3947,6 +3952,23 @@ button.db-git-file-row:hover {
   .db-shell .db-shell-sidebar-header {
     padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
     cursor: grab;
+  }
+
+  /* Make the draggable header space beside the workspace gear discoverable,
+     matching the Electron titlebar without introducing another control. */
+  .db-shell .db-shell-sidebar-header::after {
+    content: '';
+    width: 12px;
+    height: 20px;
+    flex: 0 0 12px;
+    margin-right: 3px;
+    background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+    background-position: center;
+    background-size: 4px 4px;
+    opacity: 0.72;
+    pointer-events: none;
+    app-region: drag;
+    -webkit-app-region: drag;
   }
 
   /* Let the workspace menu size itself to its contents and cross the sidebar

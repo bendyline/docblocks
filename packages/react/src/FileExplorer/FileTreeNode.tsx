@@ -148,6 +148,12 @@ export function FileTreeNode({
     }
   }, [renaming]);
 
+  // Active documents can be revealed after asynchronous ancestor loads. Keep
+  // the selected row inside the explorer's scroll viewport once it mounts.
+  useEffect(() => {
+    if (selected) nodeRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [selected]);
+
   // Clamp menu inside viewport after it renders
   useLayoutEffect(() => {
     if (!showContext || !contextRef.current) return;

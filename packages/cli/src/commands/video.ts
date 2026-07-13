@@ -24,12 +24,21 @@ export interface VideoOptions {
   captions?: CaptionOption;
   width?: number;
   height?: number;
+  /** Cancel input preparation, browser capture, or FFmpeg encoding. */
+  signal?: AbortSignal;
 }
 
 export interface VideoResult {
   outputPath: string;
   duration: number;
   frameCount: number;
+}
+
+type RenderDocToMp4 = typeof import('@bendyline/squisq-cli/api').renderDocToMp4;
+
+export interface VideoRunDependencies {
+  /** Test/programmatic override; production uses the linked Squisq renderer. */
+  renderDocToMp4?: RenderDocToMp4;
 }
 
 /**
@@ -39,7 +48,9 @@ export async function runVideo(
   inputPath: string,
   opts: VideoOptions,
   onProgress?: (phase: string, percent: number) => void,
+  dependencies: VideoRunDependencies = {},
 ): Promise<VideoResult> {
+  throwIfAborted(opts.signal);
   const resolvedInput = resolve(inputPath);
 
   const fps = opts.fps ?? 30;
@@ -74,10 +85,15 @@ export async function runVideo(
     : resolve(dirname(resolvedInput), `${baseName}.mp4`);
 
   await mkdir(dirname(outputPath), { recursive: true });
+  throwIfAborted(opts.signal);
 
   console.error(`Reading: ${resolvedInput}`);
-  const { readInput, renderDocToMp4 } = await import('@bendyline/squisq-cli/api');
-  const result = await readInput(resolvedInput);
+  const squisq = await import('@bendyline/squisq-cli/api');
+  throwIfAborted(opts.signal);
+  const renderDocToMp4 = dependencies.renderDocToMp4 ?? squisq.renderDocToMp4;
+  const { readInput } = squisq;
+  const result = await readInput(resolvedInput, { signal: opts.signal });
+  throwIfAborted(opts.signal);
   const { container } = result;
 
   // Get or parse Doc
@@ -87,6 +103,7 @@ export async function runVideo(
     doc = result.doc;
   } else if (result.markdownDoc) {
     const { markdownToDoc } = await import('@bendyline/squisq/doc');
+    throwIfAborted(opts.signal);
     doc = markdownToDoc(result.markdownDoc);
   } else {
     throw new Error('No document found in input');
@@ -96,7 +113,9 @@ export async function runVideo(
     `Rendering: ${fps} fps, quality: ${quality}, orientation: ${orientation}, captions: ${captions}`,
   );
 
+  let latestProgress = 0;
   const renderResult = await renderDocToMp4(doc, container, {
+    signal: opts.signal,
     outputPath,
     fps,
     quality,
@@ -104,12 +123,17 @@ export async function runVideo(
     width: opts.width,
     height: opts.height,
     captionStyle,
-    onProgress:
-      onProgress ??
-      ((phase, percent) => {
-        process.stderr.write(`\r  ${phase}: ${percent}%  `);
-      }),
+    onProgress: (phase, percent) => {
+      throwIfAborted(opts.signal);
+      const boundedPercent = Math.max(0, Math.min(100, percent));
+      if (boundedPercent < latestProgress) return;
+      latestProgress = boundedPercent;
+      if (onProgress) onProgress(phase, boundedPercent);
+      else process.stderr.write(`\r  ${phase}: ${boundedPercent}%  `);
+      throwIfAborted(opts.signal);
+    },
   });
+  throwIfAborted(opts.signal);
 
   process.stderr.write('\r' + ' '.repeat(60) + '\r');
   console.error(`  ✓ ${outputPath}`);
@@ -123,6 +147,14 @@ export async function runVideo(
     duration: renderResult.duration,
     frameCount: renderResult.frameCount,
   };
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+  const error = new Error('Video rendering was cancelled');
+  error.name = 'AbortError';
+  throw error;
 }
 
 interface VideoCommandOptions {

@@ -57,10 +57,16 @@ export async function callTool(
 }> {
   const result = await client.callTool({ name, arguments: args });
   const first = (result.content as Array<{ type: string; text?: string }>)[0];
+  const structured = result.structuredContent;
+  const unwrapped =
+    structured?.kind === 'success' && structured.error === null ? structured.result : structured;
   return {
     text: first && first.type === 'text' ? (first.text ?? '') : '',
     isError: Boolean((result as { isError?: boolean }).isError),
-    structuredContent: result.structuredContent,
+    structuredContent:
+      unwrapped && typeof unwrapped === 'object' && !Array.isArray(unwrapped)
+        ? (unwrapped as Record<string, unknown>)
+        : undefined,
   };
 }
 

@@ -77,6 +77,16 @@
       "types": "./dist/vscode/index.d.ts",
       "import": "./dist/vscode/index.js",
       "default": "./dist/vscode/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/index.d.ts",
+      "import": "./dist/mcp/index.js",
+      "default": "./dist/mcp/index.js"
+    },
+    "./mcp/zod": {
+      "types": "./dist/mcp/zod.d.ts",
+      "import": "./dist/mcp/zod.js",
+      "default": "./dist/mcp/zod.js"
     }
   },
   "scripts": {
@@ -84,6 +94,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "1.5.2"
+    "@bendyline/squisq": "2.0.0",
+    "zod": "3.25.76"
   }
 }

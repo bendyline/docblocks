@@ -5,7 +5,7 @@
  * for creating new files/folders.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
@@ -42,6 +42,18 @@ export type FileTreeMutationHandler = (
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
+}
+
+function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {
+  const canonical = normalisePath(path);
+  return (
+    paths.has(path) || paths.has(canonical) || (canonical !== '' && paths.has(`/${canonical}`))
+  );
+}
+
+function getEquivalentPathValue<T>(values: ReadonlyMap<string, T>, path: string): T | undefined {
+  const canonical = normalisePath(path);
+  return values.get(path) ?? values.get(canonical) ?? values.get(`/${canonical}`);
 }
 
 function parentPath(path: string): string {
@@ -90,6 +102,8 @@ function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
+  /** Active document to select and reveal by expanding all ancestor folders. */
+  activeFilePath?: string | null;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
   /**
@@ -107,6 +121,7 @@ export interface FileExplorerProps {
 
 export function FileExplorer({
   provider,
+  activeFilePath,
   onSelect,
   onTreeMutation,
   onTreeChange,
@@ -117,6 +132,7 @@ export function FileExplorer({
   const { childEntries } = tree as typeof tree & {
     childEntries: Map<string, FileSystemEntry[]>;
   };
+  const { reveal } = tree;
   // Null on surfaces without git (site, tests) — everything degrades.
   const git = useGitContext();
 
@@ -127,6 +143,10 @@ export function FileExplorer({
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const dragCounter = useRef(0);
+
+  useEffect(() => {
+    if (activeFilePath) reveal(activeFilePath, 'file');
+  }, [activeFilePath, provider, reveal]);
 
   const hasSupported = useCallback((dt: DataTransfer): boolean => {
     for (const item of Array.from(dt.items)) {
@@ -372,8 +392,11 @@ export function FileExplorer({
           key={entry.path}
           entry={entry}
           depth={depth}
-          expanded={tree.expanded.has(entry.path)}
-          selected={tree.selectedPath === entry.path}
+          expanded={hasEquivalentPath(tree.expanded, entry.path)}
+          selected={
+            tree.selectedPath !== null &&
+            normalisePath(tree.selectedPath) === normalisePath(entry.path)
+          }
           badge={badgeFor(entry)}
           gitActions={gitActionsFor(entry)}
           onToggle={tree.toggleExpand}
@@ -388,7 +411,7 @@ export function FileExplorer({
           onDragOverEntry={handleEntryDragOver}
           onDropEntry={handleEntryDrop}
           renderChildren={(dirPath: string) => {
-            const children = childEntries.get(dirPath) ?? [];
+            const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
             return renderEntries(children, depth + 1);
           }}
         />

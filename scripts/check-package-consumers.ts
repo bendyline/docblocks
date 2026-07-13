@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { preProcessFile } from 'typescript';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -195,12 +196,11 @@ async function assertDeclaredImports(
   const files = (await listFiles(distRoot)).filter(
     (file) => file.endsWith('.js') || file.endsWith('.d.ts'),
   );
-  const importPattern = /\b(?:from|import|require)\s*(?:\(\s*)?['"]([^'"]+)['"]/g;
-
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    for (const match of source.matchAll(importPattern)) {
-      const dependency = packageNameFromSpecifier(match[1]);
+    const importedFiles = preProcessFile(source, true, true).importedFiles;
+    for (const importedFile of importedFiles) {
+      const dependency = packageNameFromSpecifier(importedFile.fileName);
       if (dependency && dependency !== manifest.name && !declared.has(dependency)) {
         throw new Error(
           `${manifest.name ?? packageRoot}: ${path.relative(packageRoot, file)} imports undeclared dependency ${dependency}`,

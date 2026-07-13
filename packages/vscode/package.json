@@ -86,9 +86,9 @@
   "dependencies": {
     "@bendyline/docblocks": "1.1.2",
     "@bendyline/docblocks-react": "1.1.2",
-    "@bendyline/squisq": "1.5.2",
-    "@bendyline/squisq-editor-react": "1.6.2",
-    "@bendyline/squisq-react": "1.4.2"
+    "@bendyline/squisq": "2.0.0",
+    "@bendyline/squisq-editor-react": "2.0.0",
+    "@bendyline/squisq-react": "2.0.0"
   },
   "devDependencies": {
     "@types/vscode": "1.85.0",

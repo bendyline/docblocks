@@ -7,7 +7,7 @@ import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { isElectronHost } from '@bendyline/docblocks/host';
-import { FolderIcon } from '../icons.js';
+import { FolderIcon, NewFolderIcon } from '../icons.js';
 
 function isNativeFileSystemSupported(): boolean {
   return (
@@ -154,7 +154,10 @@ export function WorkspacePicker({
 
           {!electron && (
             <button className="db-workspace-dropdown-item" onClick={handleCreateNew}>
-              + New Workspace
+              <span className="db-workspace-dropdown-action-label">
+                <NewFolderIcon />
+                <span>New Workspace</span>
+              </span>
             </button>
           )}
 

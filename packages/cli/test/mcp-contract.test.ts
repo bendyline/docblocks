@@ -1,428 +1,257 @@
 import { expect } from 'chai';
-import { readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import JSZip from 'jszip';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/server.js';
-import { callTool, startMcpHarness, type McpHarness } from './mcp-helpers.js';
+import { callTool, startMcpHarness } from './mcp-helpers.js';
 
-const ANALYSIS_MARKDOWN = `# Root
-
-An introduction with **strong emphasis** and a [reference](https://example.com/source).
-
-## Metrics
-
-Revenue grew to 4,200 units in 2019 for the small team.
-
-### Detail
-
-The expansion reached 87 employees across three offices.
-
-## Result
-
-Today the product ships to 40 countries.
-`;
-
-const TRANSFORM_MARKDOWN = `# The Numbers
-
-Revenue grew to 4,200 units in 2019 which was a big jump for the small team.
-"We never expected this kind of growth," said the founder about the year.
-
-# The Turning Point
-
-By 2021 the company had 87 employees across three offices and a plan.
-The expansion cost 1,500,000 dollars and took fourteen months to finish.
-
-# The Result
-
-Today the product ships to 40 countries and the team keeps growing steadily.
-`;
-
-describe('MCP boundary and Squisq integration contracts', function () {
-  this.timeout(60_000);
-
-  let h: McpHarness;
-
-  before(async () => {
-    h = await startMcpHarness();
-  });
-
-  after(async () => {
-    await h.dispose();
-  });
-
-  it('analyzes canonical text and file sources with nested-block semantics', async () => {
-    const textResult = await callTool(h.client, 'analyze_markdown', {
-      source: { kind: 'text', text: ANALYSIS_MARKDOWN },
-    });
-    expect(textResult.isError).to.equal(false);
-    const textPayload = JSON.parse(textResult.text) as AnalysisPayload;
-    expect(textResult.structuredContent).to.deep.equal(textPayload);
-    expect(textPayload.stats).to.include({
-      blockCount: 4,
-      headingCount: 4,
-      wordCount: 38,
-      characterCount: ANALYSIS_MARKDOWN.length,
-    });
-
-    const extractedText = JSON.stringify(textPayload.extracted);
-    expect(extractedText).to.not.include('**');
-    expect(extractedText).to.not.include('https://example.com');
-
-    const inputPath = join(h.tmpDir, 'analysis.md');
-    await writeFile(inputPath, ANALYSIS_MARKDOWN, 'utf8');
-    const fileResult = await callTool(h.client, 'analyze_markdown', {
-      source: { kind: 'file', path: inputPath },
-    });
-    expect(fileResult.isError).to.equal(false);
-    expect(JSON.parse(fileResult.text)).to.deep.equal(textPayload);
-  });
-
-  it('enforces exactly one strict markdown source at the tool boundary', async () => {
-    const invalidCalls: Array<{ args: Record<string, unknown>; message: string }> = [
-      { args: {}, message: 'source is required' },
-      {
-        args: { source: { kind: 'text', text: '# One' }, markdown: '# Two' },
-        message: 'either source or markdown',
-      },
-      {
-        args: { source: { kind: 'unknown', text: '# One' } },
-        message: 'invalid arguments',
-      },
-      {
-        args: { source: { kind: 'text', text: '# One', unexpected: true } },
-        message: 'unrecognized',
-      },
-      {
-        args: { source: { kind: 'text', text: '# One' }, unexpected: true },
-        message: 'unrecognized',
-      },
-    ];
-
-    for (const { args, message } of invalidCalls) {
-      const result = await callTool(h.client, 'analyze_markdown', args);
-      expect(result.isError, JSON.stringify(args)).to.equal(true);
-      expect(result.text.toLowerCase(), JSON.stringify(args)).to.include(message);
-    }
-
-    const zeroArgumentResult = await callTool(h.client, 'list_themes', { unexpected: true });
-    expect(zeroArgumentResult.isError).to.equal(true);
-    expect(zeroArgumentResult.text.toLowerCase()).to.include('unrecognized');
-
-    const wrongExtension = await callTool(h.client, 'export_markdown_to_pdf', {
-      source: { kind: 'text', text: '# PDF' },
-      outputPath: join(h.tmpDir, 'not-a-pdf.md'),
-    });
-    expect(wrongExtension.isError).to.equal(true);
-    expect(wrongExtension.text).to.include('must end with .pdf');
-
-    const invalidVideo = await callTool(h.client, 'export_markdown_to_video', {
-      source: { kind: 'text', text: '# Video' },
-      outputPath: join(h.tmpDir, 'video.mp4'),
-      fps: 0,
-    });
-    expect(invalidVideo.isError).to.equal(true);
-    expect(invalidVideo.text).to.include('Invalid arguments');
-  });
-
-  it('rejects oversized and unauthorized file sources through MCP', async () => {
-    const limited = await startMcpHarness({ maxInputFileBytes: 4 });
-    const defaultDeny = await startMcpHarness({ readRoots: [] });
+describe('MCP canonical boundary contracts', () => {
+  it('rejects missing, malformed, and inexact canonical sources', async () => {
+    const harness = await startMcpHarness();
     try {
-      const limitedPath = join(limited.tmpDir, 'too-large.md');
-      await writeFile(limitedPath, '12345', 'utf8');
-      const oversized = await callTool(limited.client, 'analyze_markdown', {
-        source: { kind: 'file', path: limitedPath },
+      const calls: Array<{ name: string; args: Record<string, unknown> }> = [
+        { name: 'inspect_document', args: {} },
+        {
+          name: 'inspect_document',
+          args: { source: { kind: 'markdown', markdown: '# Exact', name: null, extra: true } },
+        },
+        {
+          name: 'convert_document',
+          args: {
+            source: { kind: 'unknown', markdown: '# Unknown', name: null },
+            targets: [{ format: 'dbk', fidelity: 'semantic' }],
+          },
+        },
+        {
+          name: 'convert_document',
+          args: {
+            source: { kind: 'markdown', markdown: '# Exact', name: null },
+            targets: [{ format: 'dbk', fidelity: 'semantic', unexpected: true }],
+          },
+        },
+        {
+          name: 'save_artifact',
+          args: {
+            artifactUri: '00000000-0000-4000-8000-000000000000',
+            destination: {
+              rootId: 'root-unknown',
+              path: 'output.dbk',
+              ifExists: 'error',
+              expectedSha256: null,
+            },
+          },
+        },
+        {
+          name: 'save_artifact',
+          args: {
+            artifactUri: 'docblocks://user@artifacts/00000000-0000-4000-8000-000000000000',
+            destination: {
+              rootId: 'root-unknown',
+              path: 'output.dbk',
+              ifExists: 'error',
+              expectedSha256: null,
+            },
+          },
+        },
+      ];
+      for (const call of calls) {
+        const result = await callTool(harness.client, call.name, call.args);
+        expect(result.isError, `${call.name}: ${JSON.stringify(call.args)}`).to.equal(true);
+        expect(result.text).to.include('Invalid arguments');
+      }
+      const discovery = await callTool(harness.client, 'list_formats', { unexpected: true });
+      expect(discovery.isError).to.equal(true);
+      expect(discovery.text).to.include('Invalid arguments');
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it('enforces root aliases and input byte limits through canonical tools', async () => {
+    const harness = await startMcpHarness({ maxInputFileBytes: 4 });
+    try {
+      await writeFile(join(harness.tmpDir, 'too-large.md'), '12345', 'utf8');
+      const roots = await callTool(harness.client, 'list_roots', {});
+      const rootId = readableRootId(roots.structuredContent?.roots);
+      const oversized = await callTool(harness.client, 'inspect_document', {
+        source: { kind: 'file', rootId, path: 'too-large.md', format: 'md' },
       });
       expect(oversized.isError).to.equal(true);
       expect(oversized.text).to.include('file-size limit');
 
-      const deniedPath = join(defaultDeny.tmpDir, 'denied.md');
-      await writeFile(deniedPath, '# Denied', 'utf8');
-      const denied = await callTool(defaultDeny.client, 'analyze_markdown', {
-        source: { kind: 'file', path: deniedPath },
+      const denied = await callTool(harness.client, 'inspect_document', {
+        source: { kind: 'file', rootId: 'root-not-granted', path: 'too-large.md', format: 'md' },
       });
       expect(denied.isError).to.equal(true);
-      expect(denied.text).to.include('outside the configured roots');
+      expect(denied.text).to.include('Unknown or unreadable MCP root');
     } finally {
-      await limited.dispose();
-      await defaultDeny.dispose();
+      await harness.dispose();
     }
   });
 
-  it('applies every discovered Squisq transform without losing source sections', async () => {
-    const listed = await callTool(h.client, 'list_transform_styles', {});
-    const styles = JSON.parse(listed.text) as Array<{ id: string }>;
-    expect(styles).to.be.an('array').with.length.greaterThan(0);
-    const outputs = new Map<string, string>();
-
-    for (const { id } of styles) {
-      const transformed = await callTool(h.client, 'restyle_markdown', {
-        source: { kind: 'text', text: TRANSFORM_MARKDOWN },
-        style: id,
+  it('propagates malformed DBK import failures without publishing an artifact', async () => {
+    const harness = await startMcpHarness();
+    try {
+      await writeFile(join(harness.tmpDir, 'malformed.dbk'), Buffer.from('PK\u0003\u0004invalid'));
+      const roots = await callTool(harness.client, 'list_roots', {});
+      const result = await callTool(harness.client, 'convert_document', {
+        source: {
+          kind: 'file',
+          rootId: readableRootId(roots.structuredContent?.roots),
+          path: 'malformed.dbk',
+          format: 'dbk',
+        },
+        targets: [{ format: 'html', fidelity: 'semantic' }],
       });
-      expect(transformed.isError, id).to.equal(false);
-      expect(transformed.text, id).to.include('# The Numbers');
-      expect(transformed.text, id).to.include('# The Turning Point');
-      expect(transformed.text, id).to.include('# The Result');
-      expect(transformed.text, id).to.include('4,200 units');
-      expect(transformed.text, id).to.include('87 employees');
-      expect(transformed.text, id).to.include('40 countries');
-      outputs.set(id, transformed.text);
+      expect(result.isError).to.equal(true);
+      expect(result.structuredContent?.kind).to.equal('error');
+    } finally {
+      await harness.dispose();
     }
-
-    expect(outputs.get('documentary')).to.include('squisq-theme: documentary');
-    expect(outputs.get('documentary')).to.include('{[');
-
-    const dataDriven = outputs.get('data-driven');
-    if (!dataDriven) throw new Error('Expected the data-driven transform output');
-    const [{ parseMarkdown }, { flattenRenderableBlocks, markdownToDoc, materializeBlockLayers }] =
-      await Promise.all([import('@bendyline/squisq/markdown'), import('@bendyline/squisq/doc')]);
-    const reparsed = markdownToDoc(parseMarkdown(dataDriven));
-    const rendered = flattenRenderableBlocks(reparsed.blocks).map((block, blockIndex) =>
-      materializeBlockLayers(block, {
-        blockIndex,
-        totalBlocks: reparsed.blocks.length,
-        failureMode: 'empty',
-      }),
-    );
-    expect(rendered.every(({ layers }) => layers.length > 0)).to.equal(true);
-    const renderedJson = JSON.stringify(rendered);
-    expect(renderedJson).to.include('2019');
-    expect(renderedJson).to.include('Revenue grew');
   });
 
-  it('preserves authored annotation parameters while applying a visual transform', async () => {
-    const source = `# The Numbers {[sectionHeader duration=11 customLabel=keep-me]}
+  it('produces DBK artifacts that satisfy the same strict import policy', async () => {
+    const harness = await startMcpHarness();
+    try {
+      const converted = await callTool(harness.client, 'convert_document', {
+        source: {
+          kind: 'markdown',
+          markdown: `# Compressible\n\n${'x'.repeat(16 * 1024)}`,
+          name: 'compressible.md',
+        },
+        targets: [{ format: 'dbk', fidelity: 'semantic' }],
+      });
+      expect(converted.isError, converted.text).to.equal(false);
+      const results = converted.structuredContent?.results;
+      if (!Array.isArray(results)) throw new Error('Expected DBK conversion result');
+      const artifact = (results[0] as { artifact?: { uri?: unknown } } | undefined)?.artifact;
+      if (!artifact || typeof artifact.uri !== 'string') throw new Error('Expected DBK artifact');
 
-Revenue grew to 4,200 units in 2019 which was a big jump for the small team and changed everything.
+      const resource = await harness.client.readResource({ uri: artifact.uri });
+      const blob = resource.contents.find(
+        (content): content is typeof content & { blob: string } =>
+          'blob' in content && typeof content.blob === 'string',
+      );
+      if (!blob) throw new Error('Expected DBK binary resource');
+      expect(zipCompressionMethods(Buffer.from(blob.blob, 'base64'))).to.deep.equal([0]);
 
-# The Result
-
-Today the product ships to 40 countries and the team keeps growing steadily.
-`;
-    const transformed = await callTool(h.client, 'restyle_markdown', {
-      source: { kind: 'text', text: source },
-      style: 'data-driven',
-    });
-    expect(transformed.isError).to.equal(false);
-    expect(transformed.text).to.include('duration=11');
-    expect(transformed.text).to.include('customLabel=keep-me');
-    expect(transformed.text).to.include('date="in 2019"');
-    expect(transformed.text).to.include('description="Revenue grew');
+      const inspected = await callTool(harness.client, 'inspect_document', {
+        source: { kind: 'artifact', uri: artifact.uri },
+        maxBlocks: 5,
+      });
+      expect(inspected.isError, inspected.text).to.equal(false);
+      expect(inspected.structuredContent?.sourceFormat).to.equal('dbk');
+    } finally {
+      await harness.dispose();
+    }
   });
 
-  it('keeps authored template values and transitions ahead of generated transform defaults', async () => {
-    const authoredValues = await callTool(h.client, 'restyle_markdown', {
-      source: {
-        kind: 'text',
-        text: `# The Numbers {[sectionHeader date="Authored date" description="Authored description"]}
-
-Revenue grew to 4,200 units in 2019 which was a big jump for the small team and changed everything.
-
-# The Result
-
-Today the product ships to 40 countries and the team keeps growing steadily.
-`,
-      },
-      style: 'data-driven',
-    });
-    expect(authoredValues.isError).to.equal(false);
-    expect(authoredValues.text).to.include('date="Authored date"');
-    expect(authoredValues.text).to.include('description="Authored description"');
-
-    const authoredTransition = await callTool(h.client, 'restyle_markdown', {
-      source: {
-        kind: 'text',
-        text: `# The Numbers {[sectionHeader transition=wipe transitionDuration=2 transitionDirection=left customLabel=keep]}
-
-Revenue grew to 4,200 units in 2019 which was a big jump for the small team and changed everything.
-
-# The Result
-
-Today the product ships to 40 countries and the team keeps growing steadily.
-`,
-      },
-      style: 'documentary',
-    });
-    expect(authoredTransition.isError).to.equal(false);
-    expect(authoredTransition.text).to.include('transition=wipe');
-    expect(authoredTransition.text).to.include('transitionDuration=2');
-    expect(authoredTransition.text).to.include('transitionDirection=left');
-    expect(authoredTransition.text).to.include('customLabel=keep');
-    expect(authoredTransition.text).to.not.include('transition=fade');
-  });
-
-  it('validates and persists the requested theme when restyling', async () => {
-    const transformed = await callTool(h.client, 'restyle_markdown', {
-      source: { kind: 'text', text: TRANSFORM_MARKDOWN },
-      style: 'documentary',
-      theme: 'standard',
-    });
-    expect(transformed.isError).to.equal(false);
-    expect(transformed.text).to.include('squisq-theme: standard');
-
-    const invalid = await callTool(h.client, 'restyle_markdown', {
-      source: { kind: 'text', text: TRANSFORM_MARKDOWN },
-      style: 'documentary',
-      theme: 'not-a-real-theme',
-    });
-    expect(invalid.isError).to.equal(true);
-    expect(invalid.text).to.include('Unknown theme');
-
-    const existingTheme = await callTool(h.client, 'restyle_markdown', {
-      source: {
-        kind: 'text',
-        text: `---
-squisq-theme: cinematic
----
-
-${TRANSFORM_MARKDOWN}`,
-      },
-      style: 'data-driven',
-    });
-    expect(existingTheme.isError).to.equal(false);
-    expect(existingTheme.text).to.include('squisq-theme: cinematic');
-    expect(existingTheme.text).to.not.include('squisq-theme: tech-dark');
-
-    const [{ compileTheme }, { writeCustomThemesToFrontmatter }] = await Promise.all([
-      import('@bendyline/squisq/schemas'),
-      import('@bendyline/squisq/doc'),
-    ]);
-    const customTheme = compileTheme({
-      id: 'my-brand',
-      name: 'My Brand',
-      seedColors: { primary: '#3182ce', secondary: '#805ad5' },
-    });
-    const encodedTheme = writeCustomThemesToFrontmatter([customTheme]);
-    const custom = await callTool(h.client, 'restyle_markdown', {
-      source: {
-        kind: 'text',
-        text: `---
-squisq-theme: my-brand
-squisq-custom-themes: ${encodedTheme}
----
-
-${TRANSFORM_MARKDOWN}`,
-      },
-      style: 'data-driven',
-      theme: 'my-brand',
-    });
-    expect(custom.isError).to.equal(false);
-    expect(custom.text).to.include('squisq-theme: my-brand');
-    expect(custom.text).to.include('squisq-custom-themes:');
-  });
-
-  it('stages file-backed exports without touching input-derived sibling files', async () => {
-    const sourcePath = join(h.tmpDir, 'source.md');
-    const collateralPath = join(h.tmpDir, 'source.html');
-    const outputPath = join(h.tmpDir, 'requested.html');
-    await writeFile(sourcePath, TRANSFORM_MARKDOWN, 'utf8');
-    await writeFile(collateralPath, 'DO NOT REPLACE', 'utf8');
-    await writeFile(outputPath, 'REPLACE THIS TARGET', 'utf8');
-
-    const result = await callTool(h.client, 'export_markdown_to_html', {
-      source: { kind: 'file', path: sourcePath },
-      outputPath,
-      theme: 'standard',
-      transform: 'data-driven',
-    });
-    expect(result.isError).to.equal(false);
-    expect(await readFile(collateralPath, 'utf8')).to.equal('DO NOT REPLACE');
-
-    const html = await readFile(outputPath, 'utf8');
-    expect(html.toLowerCase()).to.include('<!doctype html');
-    expect(html).to.include('The Numbers');
-    const payload = JSON.parse(result.text) as { fileSize: number; outputPath: string };
-    expect(result.structuredContent).to.deep.equal(JSON.parse(result.text));
-    expect(payload.outputPath).to.equal(join(await realpath(h.tmpDir), 'requested.html'));
-    expect(payload.fileSize).to.equal((await stat(outputPath)).size);
-    expect(await exportStagingEntries(h.tmpDir)).to.deep.equal([]);
-  });
-
-  it('preserves bundled media across the Squisq DBK-to-HTML pipeline', async () => {
-    const image = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=',
-      'base64',
-    );
-    const archive = new JSZip();
-    archive.file('index.md', '# Bundled media\n\n![A pixel](images/pixel.png)\n');
-    archive.file('images/pixel.png', image);
-    const inputPath = join(h.tmpDir, 'media.dbk');
-    const outputPath = join(h.tmpDir, 'media.html');
-    await writeFile(inputPath, await archive.generateAsync({ type: 'nodebuffer' }));
-
-    const result = await callTool(h.client, 'export_markdown_to_html', {
-      source: { kind: 'file', path: inputPath },
-      outputPath,
-    });
-    expect(result.isError).to.equal(false);
-    const html = await readFile(outputPath, 'utf8');
-    expect(html).to.include('data:image/png;base64,');
-    expect(html).to.include(image.toString('base64'));
-    expect(await exportStagingEntries(h.tmpDir)).to.deep.equal([]);
-  });
-
-  it('propagates malformed container failures and cleans export staging', async () => {
-    const inputPath = join(h.tmpDir, 'malformed.dbk');
-    const outputPath = join(h.tmpDir, 'malformed.html');
-    await writeFile(inputPath, Buffer.from('PK\u0003\u0004not-a-valid-archive'));
-
-    const result = await callTool(h.client, 'export_markdown_to_html', {
-      source: { kind: 'file', path: inputPath },
-      outputPath,
-    });
-    expect(result.isError).to.equal(true);
-    expect(await pathExists(outputPath)).to.equal(false);
-    expect(await exportStagingEntries(h.tmpDir)).to.deep.equal([]);
-  });
-
-  it('bounds concurrent expensive operations and validates the configured limit', async () => {
+  it('validates operation concurrency and runtime budgets at server startup', () => {
     expect(() => createMcpServer({ maxConcurrentOperations: 0 })).to.throw(
-      'Invalid MCP operation concurrency limit',
-    );
-    expect(() => createMcpServer({ maxConcurrentOperations: 1.5 })).to.throw(
       'Invalid MCP operation concurrency limit',
     );
     expect(() => createMcpServer({ maxConcurrentOperations: 33 })).to.throw(
       'Invalid MCP operation concurrency limit',
     );
+    expect(() => createMcpServer({ operationTimeoutMs: 9 })).to.throw(
+      'Invalid MCP operation timeout',
+    );
+  });
 
-    const serial = await startMcpHarness({ maxConcurrentOperations: 1 });
+  it('rejects invalid root grants before starting the MCP transport', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'docblocks-mcp-invalid-root-'));
+    const server = createMcpServer({ readRoots: [join(parent, 'missing')] });
+    const [, serverTransport] = InMemoryTransport.createLinkedPair();
+    const startTransport = serverTransport.start.bind(serverTransport);
+    let transportStarted = false;
+    serverTransport.start = async () => {
+      transportStarted = true;
+      await startTransport();
+    };
     try {
-      const results = await Promise.all([
-        callTool(serial.client, 'analyze_markdown', {
-          source: { kind: 'text', text: ANALYSIS_MARKDOWN },
-        }),
-        callTool(serial.client, 'analyze_markdown', {
-          source: { kind: 'text', text: ANALYSIS_MARKDOWN },
-        }),
-      ]);
-      expect(results.filter((result) => !result.isError)).to.have.length(1);
-      const busy = results.find((result) => result.isError);
-      expect(busy?.text).to.include('busy; retry later');
+      // Root resolution may reject before a consumer calls connect; the server
+      // must retain that failure without publishing an unhandled rejection.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      let caught: unknown;
+      try {
+        await server.connect(serverTransport);
+      } catch (error: unknown) {
+        caught = error;
+      }
+      expect(caught).to.be.instanceOf(Error);
+      expect(transportStarted).to.equal(false);
     } finally {
-      await serial.dispose();
+      await server.close().catch(() => undefined);
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects artifact-store startup failures before starting the MCP transport', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'docblocks-mcp-invalid-artifacts-'));
+    const missing = join(parent, 'missing');
+    const environmentKeys = ['TMPDIR', 'TMP', 'TEMP'] as const;
+    const previous = environmentKeys.map((key) => [key, process.env[key]] as const);
+    const server = (() => {
+      try {
+        for (const key of environmentKeys) process.env[key] = missing;
+        return createMcpServer();
+      } finally {
+        for (const [key, value] of previous) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    })();
+
+    const [, serverTransport] = InMemoryTransport.createLinkedPair();
+    const startTransport = serverTransport.start.bind(serverTransport);
+    let transportStarted = false;
+    serverTransport.start = async () => {
+      transportStarted = true;
+      await startTransport();
+    };
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      let caught: unknown;
+      try {
+        await server.connect(serverTransport);
+      } catch (error: unknown) {
+        caught = error;
+      }
+      expect(caught).to.be.instanceOf(Error);
+      expect(transportStarted).to.equal(false);
+    } finally {
+      await server.close().catch(() => undefined);
+      await rm(parent, { recursive: true, force: true });
     }
   });
 });
 
-interface AnalysisPayload {
-  stats: {
-    blockCount: number;
-    headingCount: number;
-    paragraphCount: number;
-    wordCount: number;
-    characterCount: number;
-  };
-  extracted: unknown;
+function zipCompressionMethods(bytes: Uint8Array): number[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const methods: number[] = [];
+  let offset = 0;
+  while (offset + 30 <= bytes.byteLength && view.getUint32(offset, true) === 0x04034b50) {
+    methods.push(view.getUint16(offset + 8, true));
+    const compressedSize = view.getUint32(offset + 18, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    offset += 30 + nameLength + extraLength + compressedSize;
+  }
+  if (methods.length === 0) throw new Error('Expected at least one ZIP local-file record');
+  return methods;
 }
 
-async function exportStagingEntries(directory: string): Promise<string[]> {
-  return (await readdir(directory)).filter((entry) => entry.startsWith('.docblocks-mcp-export-'));
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  return stat(path)
-    .then(() => true)
-    .catch(() => false);
+function readableRootId(value: unknown): string {
+  if (!Array.isArray(value)) throw new Error('Expected root descriptors');
+  const root = value.find(
+    (entry): entry is { id: string; read: true } =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { id?: unknown }).id === 'string' &&
+      (entry as { read?: unknown }).read === true,
+  );
+  if (!root) throw new Error('Expected readable root');
+  return root.id;
 }
