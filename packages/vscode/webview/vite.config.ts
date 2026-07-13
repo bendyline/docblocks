@@ -36,6 +36,10 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../../react/src/Export/public-api.ts'),
       },
       {
+        find: '@bendyline/docblocks-react/settings',
+        replacement: path.resolve(__dirname, '../../react/src/Settings/public-api.ts'),
+      },
+      {
         find: /^@bendyline\/docblocks-react$/,
         replacement: path.resolve(__dirname, '../../react/src/index.ts'),
       },

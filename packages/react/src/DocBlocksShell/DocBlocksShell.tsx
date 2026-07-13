@@ -62,6 +62,7 @@ import {
   unregisterTransientWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu } from '../AppMenu/AppMenu.js';
+import { pickEmptyDocumentPrompt } from '../editor.js';
 import {
   FileExplorer,
   type FileTreeChange,
@@ -115,6 +116,7 @@ import {
 } from '../preferences/theme.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
+import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 
 let indexedDbFileSystemModule: Promise<
@@ -230,7 +232,7 @@ export interface DocBlocksShellProps {
   /**
    * True when a new deploy is waiting (browser PWA hosts: a fresh service
    * worker finished installing). The shell shows an "Update available"
-   * banner whose Reload action calls `onApplyUpdate`.
+   * status-bar notice that opens a Reload/Later prompt.
    */
   updateAvailable?: boolean;
   /** Activates the waiting update and reloads onto the new version. */
@@ -779,8 +781,6 @@ export function DocBlocksShell({
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
-  // "Update available" can be postponed for the rest of the session.
-  const [updateDismissed, setUpdateDismissed] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const handleResizerPointerDown = useCallback(
@@ -945,6 +945,11 @@ export function DocBlocksShell({
   );
   const [editorPresentationEpoch, setEditorPresentationEpoch] = useState(0);
   const editorKey = `${documentSnapshot.generation}:${editorPresentationEpoch}`;
+  const editorPlaceholder = useMemo(() => {
+    // Keep the selection scoped to the same generation that remounts Squisq.
+    void editorKey;
+    return pickEmptyDocumentPrompt();
+  }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   // First-run gateway over the welcome doc's Play view -- see WELCOME_GATEWAY_KEY.
@@ -2798,6 +2803,9 @@ export function DocBlocksShell({
     });
   }, [openTransientFromHandle]);
 
+  const updateStatusBarVisible =
+    viewPreferences.showStatusBar === true && selectedFile !== null && mediaProvider !== null;
+
   const handleDownloadWorkspace = useCallback(async () => {
     if (!provider) return;
     try {
@@ -3101,23 +3109,6 @@ export function DocBlocksShell({
             </div>
           </div>
         )}
-        {updateAvailable &&
-          !updateDismissed &&
-          onApplyUpdate &&
-          !documentSnapshot.conflict &&
-          !storageFull && (
-            <div className="db-update-banner" role="alert">
-              <span>A new version of DocBlocks is available.</span>
-              <div className="db-update-banner-actions">
-                <button type="button" onClick={onApplyUpdate}>
-                  Reload
-                </button>
-                <button type="button" onClick={() => setUpdateDismissed(true)}>
-                  Later
-                </button>
-              </div>
-            </div>
-          )}
         {workspaceSettingsOpen && activeWorkspaceDescriptor && (
           <WorkspaceSettingsDialog
             workspace={activeWorkspaceDescriptor}
@@ -3244,6 +3235,11 @@ export function DocBlocksShell({
           {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
           {(!effectiveCompact || mobileShowEditor) && (
             <div
+              className={
+                updateAvailable && onApplyUpdate && updateStatusBarVisible
+                  ? 'db-shell-editor-area db-shell-editor-area--has-update'
+                  : 'db-shell-editor-area'
+              }
               style={{
                 flex: 1,
                 overflow: 'hidden',
@@ -3270,6 +3266,7 @@ export function DocBlocksShell({
                       onChange={handleEditorChange}
                       colorScheme={resolvedTheme}
                       height="100%"
+                      placeholder={editorPlaceholder}
                       outlineWidth={280}
                       mediaProvider={mediaProvider}
                       documentLinkProvider={documentLinkProvider}
@@ -3386,6 +3383,12 @@ export function DocBlocksShell({
                   <p>Select a file to start editing, or create a new one.</p>
                 </div>
               )}
+              <UpdateAvailableNotice
+                available={updateAvailable}
+                onApplyUpdate={onApplyUpdate}
+                blocked={documentSnapshot.conflict !== null || storageFull}
+                statusBarVisible={updateStatusBarVisible}
+              />
             </div>
           )}
         </div>

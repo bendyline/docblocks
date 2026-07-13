@@ -145,6 +145,63 @@ test.describe('VS Code web and UX integration', () => {
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
+  test('opens a trailing-newline document without authoring or saving a hydration edit', async ({
+    page,
+  }) => {
+    const untouched = 'testing!\n';
+    await writeFixture(untouched);
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    await expect(editor.locator('body')).toContainText('testing!');
+    await page.waitForTimeout(1_000);
+
+    await expect(editor.getByText('Unsaved changes', { exact: true })).toHaveCount(0);
+    await expect(editor.getByText(/This file changed outside DocBlocks/)).toHaveCount(0);
+    expect(await readFixture()).toBe(untouched);
+  });
+
+  test('deletes a trailing-newline document to zero bytes without a self-conflict', async ({
+    page,
+  }) => {
+    await writeFixture('testing!\n\n\n');
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const paragraph = editor.getByText('testing!').first();
+    await expect(paragraph).toBeVisible({ timeout: 15_000 });
+    await paragraph.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.press('Backspace');
+
+    await expect(editor.getByText('0 chars', { exact: true })).toBeVisible();
+    await page.waitForTimeout(1_000);
+    await expect(editor.getByText('Unsaved changes', { exact: true })).toHaveCount(0);
+    await expect(editor.getByText(/This file changed outside DocBlocks/)).toHaveCount(0);
+  });
+
+  test('opens DocBlocks for VS Code settings from the editor toolbar', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const settingsButton = editor.getByRole('button', { name: /docblocks settings/i });
+    await expect(settingsButton).toBeVisible();
+    await settingsButton.click();
+
+    await expect(
+      editor.getByRole('dialog', { name: /docblocks for vs code settings/i }),
+    ).toBeVisible();
+    await expect(editor.getByRole('checkbox', { name: /automatically save files/i })).toBeChecked();
+    await expect(editor.getByRole('radio', { name: 'Green' })).toBeVisible();
+    await editor.getByRole('button', { name: 'Close' }).click();
+    await expect(
+      editor.getByRole('dialog', { name: /docblocks for vs code settings/i }),
+    ).not.toBeVisible();
+  });
+
   test('edits in the webview and syncs the changed markdown document', async ({ page }) => {
     await bootVSCode(page);
     await openDocBlocksEditor(page);

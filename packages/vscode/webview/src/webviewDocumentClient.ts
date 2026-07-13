@@ -16,6 +16,7 @@ export interface WebviewDocumentScope {
 interface ClientSession extends WebviewDocumentScope {
   baseDocumentVersion: number;
   clientRevision: number;
+  editsArmed: boolean;
 }
 
 /**
@@ -37,13 +38,14 @@ export class WebviewDocumentClient {
       generation: this.generation,
       baseDocumentVersion: message.documentVersion,
       clientRevision: message.acknowledgedClientRevision,
+      editsArmed: false,
     };
     return Object.freeze({ sessionId: message.sessionId, generation: this.generation });
   }
 
   public createEdit(scope: WebviewDocumentScope, content: string): EditMessage | null {
     const session = this.session;
-    if (!session || !sameScope(session, scope)) return null;
+    if (!session || !sameScope(session, scope) || !session.editsArmed) return null;
     session.clientRevision += 1;
     return {
       type: 'edit',
@@ -52,6 +54,19 @@ export class WebviewDocumentClient {
       clientRevision: session.clientRevision,
       baseDocumentVersion: session.baseDocumentVersion,
     };
+  }
+
+  /**
+   * Mark this mounted editor as user-active before accepting its change
+   * callbacks. EditorShell may normalize its initial WYSIWYG snapshot during
+   * hydration; those callbacks have no browser input event and must not be
+   * relabelled as authored edits.
+   */
+  public armEdits(scope: WebviewDocumentScope): boolean {
+    const session = this.session;
+    if (!session || !sameScope(session, scope)) return false;
+    session.editsArmed = true;
+    return true;
   }
 
   public createSave(requestId: number): SaveMessage | null {

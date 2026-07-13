@@ -69,6 +69,31 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot().persistedRevision).to.equal(session.getSnapshot().revision);
   });
 
+  it('can disable and re-enable autosave without weakening manual persistence', async () => {
+    const committed: string[] = [];
+    const session = new DocumentSession({ autoSaveDelayMs: 5, autoSaveEnabled: false });
+    await session.transitionTo(
+      target('workspace:a.md', async (request) => {
+        committed.push(request.content);
+      }),
+      'initial',
+    );
+
+    edit(session, 'manual revision');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(committed).to.deep.equal([]);
+    expect(session.getSnapshot().status).to.equal('dirty');
+
+    await session.flush('manual');
+    expect(committed).to.deep.equal(['manual revision']);
+
+    edit(session, 'automatic revision');
+    session.setAutoSaveEnabled(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(committed).to.deep.equal(['manual revision', 'automatic revision']);
+    expect(session.getSnapshot().status).to.equal('saved');
+  });
+
   it('serializes commits and follows an in-flight write with the latest revision', async () => {
     const firstCommit = deferred<void>();
     const committed: string[] = [];

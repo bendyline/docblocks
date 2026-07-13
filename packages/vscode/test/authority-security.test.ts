@@ -100,6 +100,38 @@ describe('VS Code authority boundary', () => {
     });
   });
 
+  it('validates editor settings in both protocol directions', () => {
+    expect(parseWebviewToExtensionMessage({ type: 'setAutoSave', enabled: false })).to.deep.equal({
+      type: 'setAutoSave',
+      enabled: false,
+    });
+    expect(
+      parseWebviewToExtensionMessage({ type: 'setAutoSave', enabled: false, extra: true }),
+    ).to.equal(null);
+    expect(
+      parseWebviewToExtensionMessage({ type: 'setAccentColor', accentColor: 'green' }),
+    ).to.deep.equal({ type: 'setAccentColor', accentColor: 'green' });
+    expect(
+      parseWebviewToExtensionMessage({ type: 'setAccentColor', accentColor: 'chartreuse' }),
+    ).to.equal(null);
+
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'editorSettings',
+        settings: { autoSave: true, accentColor: 'purple' },
+      }),
+    ).to.deep.equal({
+      type: 'editorSettings',
+      settings: { autoSave: true, accentColor: 'purple' },
+    });
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'editorSettings',
+        settings: { autoSave: 'yes', accentColor: 'purple' },
+      }),
+    ).to.equal(null);
+  });
+
   it('auto-resolves only an exact remembered target for an allowlisted export format', () => {
     const rememberedPdf = 'file:///exports/approved-report.pdf';
     const stored = {
@@ -158,12 +190,52 @@ describe('VS Code authority boundary', () => {
       parseExtensionToWebviewMessage({
         type: 'sessionState',
         sessionId: 'session-a',
+        status: 'conflict',
+        revision: 2,
+        persistedRevision: 1,
+        acknowledgedClientRevision: 1,
+        documentVersion: 3,
+        error: null,
+        conflict: {
+          localBaseDocumentVersion: 1,
+          externalDocumentVersion: 3,
+          localBytes: 12,
+          externalBytes: 9,
+          localEditedAt: 1_000,
+          externalObservedAt: 2_000,
+          externalIsDirty: true,
+        },
+      }),
+    ).to.deep.equal({
+      type: 'sessionState',
+      sessionId: 'session-a',
+      status: 'conflict',
+      revision: 2,
+      persistedRevision: 1,
+      acknowledgedClientRevision: 1,
+      documentVersion: 3,
+      error: null,
+      conflict: {
+        localBaseDocumentVersion: 1,
+        externalDocumentVersion: 3,
+        localBytes: 12,
+        externalBytes: 9,
+        localEditedAt: 1_000,
+        externalObservedAt: 2_000,
+        externalIsDirty: true,
+      },
+    });
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'sessionState',
+        sessionId: 'session-a',
         status: 'saved',
         revision: 1,
         persistedRevision: 2,
         acknowledgedClientRevision: 1,
         documentVersion: 2,
         error: null,
+        conflict: null,
       }),
     ).to.equal(null);
     expect(

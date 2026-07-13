@@ -24,7 +24,7 @@ export function registerDiscoveryTools(server: McpServer): void {
     'list_formats',
     {
       description:
-        'List every format in the linked Squisq registry and whether DocBlocks can import or export it through convert_document.',
+        'List every format in the linked Squisq registry and whether DocBlocks can import it through document tools or export it through convert_document.',
       inputSchema: z.object({}).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.list_formats,
       annotations: READ_ONLY,

@@ -22,6 +22,7 @@ class FakeDocumentAdapter implements HostDocumentAdapter {
   public maxActiveCommits = 0;
   public failNextCommit = false;
   public failNextSaveAfterReplace = false;
+  public transformOnSave: ((content: string) => string) | null = null;
   public beforeReplacePreconditionCheck: (() => void) | null = null;
 
   public async read(): Promise<HostDocumentSnapshot> {
@@ -50,7 +51,7 @@ class FakeDocumentAdapter implements HostDocumentAdapter {
         this.failNextCommit = false;
         throw new Error('disk full');
       }
-      this.content = content;
+      this.content = this.transformOnSave?.(content) ?? content;
       this.version += 1;
       if (this.failNextSaveAfterReplace) {
         this.failNextSaveAfterReplace = false;
@@ -105,6 +106,28 @@ describe('VS Code edit sync', () => {
     expect(adapter.content).to.equal('latest');
     expect(adapter.maxActiveCommits).to.equal(1);
     expect(sync.getSnapshot().session.status).to.equal('saved');
+    sync.dispose();
+  });
+
+  it('applies a live autosave preference while retaining manual Save', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 5,
+      autoSaveEnabled: false,
+      createSessionId: () => 'session-a',
+    });
+
+    expect(sync.acceptEdit(editEnvelope(sync, 1, 'manual')).accepted).to.equal(true);
+    await wait(20);
+    expect(adapter.commits).to.deep.equal([]);
+
+    await sync.save(saveEnvelope(sync));
+    expect(adapter.commits).to.deep.equal(['manual']);
+
+    expect(sync.acceptEdit(editEnvelope(sync, 2, 'automatic')).accepted).to.equal(true);
+    sync.setAutoSaveEnabled(true);
+    await wait(20);
+    expect(adapter.commits).to.deep.equal(['manual', 'automatic']);
     sync.dispose();
   });
 
@@ -174,6 +197,82 @@ describe('VS Code edit sync', () => {
     await sync.save(saveEnvelope(sync));
     expect(sync.getSnapshot().session.status).to.equal('saved');
     expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('absorbs a version-only host update before committing pending text', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local'));
+    adapter.changeExternally('initial');
+
+    await sync.save(saveEnvelope(sync));
+
+    expect(adapter.content).to.equal('local');
+    expect(adapter.commits).to.deep.equal(['local']);
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('acknowledges an already-converged host snapshot without rewriting it', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'same local text'));
+    adapter.changeExternally('same local text');
+
+    await sync.save(saveEnvelope(sync));
+
+    expect(adapter.commits).to.deep.equal([]);
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('accepts VS Code line-ending and final-newline normalization during its own save', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.content = 'testing!\n\n\n';
+    adapter.transformOnSave = (content) => `${content.replace(/\n/gu, '\r\n')}\r\n\r\n`;
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, ''));
+
+    await sync.save(saveEnvelope(sync));
+
+    expect(adapter.commits).to.deep.equal(['']);
+    expect(adapter.content).to.equal('\r\n\r\n');
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('still conflicts when save-time changes include non-newline characters', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.transformOnSave = (content) => `${content}external`;
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local'));
+
+    let failure: unknown;
+    try {
+      await sync.save(saveEnvelope(sync));
+    } catch (error: unknown) {
+      failure = error;
+    }
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('local');
+    expect(adapter.content).to.equal('localexternal');
     sync.dispose();
   });
 
@@ -331,6 +430,48 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('does not rewrite or re-notify when branches converge before Keep mine', async () => {
+    const adapter = new FakeDocumentAdapter();
+    let nextId = 0;
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => `session-${++nextId}`,
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local'));
+    sync.observeExternal(adapter.changeExternally('external'));
+    adapter.changeExternally('local');
+
+    await sync.resolveConflict('use-local');
+
+    expect(adapter.commits).to.deep.equal([]);
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('reports bounded conflict diagnostics from the two complete snapshots', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+      now: () => 1_000,
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'mine💡'));
+    const external = adapter.changeExternally('theirs');
+    sync.observeExternal({ ...external, observedAt: 2_000, isDirty: true });
+
+    expect(sync.getSnapshot().conflict).to.deep.equal({
+      localBaseDocumentVersion: 1,
+      externalDocumentVersion: 2,
+      localBytes: 8,
+      externalBytes: 6,
+      localEditedAt: 1_000,
+      externalObservedAt: 2_000,
+      externalIsDirty: true,
+    });
+    sync.dispose();
+  });
+
   it('uses the latest external text when it reverts before resolution', async () => {
     const adapter = new FakeDocumentAdapter();
     let nextId = 0;
@@ -431,6 +572,7 @@ describe('VS Code webview document scope', () => {
       sessionRevision: 0,
       acknowledgedClientRevision: 0,
     });
+    expect(client.armEdits(originalScope)).to.equal(true);
     expect(client.createEdit(originalScope, 'local')).to.include({
       type: 'edit',
       sessionId: 'session-a',
@@ -448,7 +590,9 @@ describe('VS Code webview document scope', () => {
       acknowledgedClientRevision: 0,
     });
 
+    expect(client.armEdits(originalScope)).to.equal(false);
     expect(client.createEdit(originalScope, 'stale queued callback')).to.equal(null);
+    expect(client.armEdits(externalScope)).to.equal(true);
     expect(client.createEdit(externalScope, 'new branch edit')).to.deep.equal({
       type: 'edit',
       content: 'new branch edit',
@@ -481,5 +625,26 @@ describe('VS Code webview document scope', () => {
 
     expect(replacement.generation).to.equal(first.generation + 1);
     expect(client.createEdit(first, 'obsolete')).to.equal(null);
+  });
+
+  it('ignores mount-time normalization until the current editor receives user input', () => {
+    const client = new WebviewDocumentClient();
+    const scope = client.acceptContent({
+      type: 'setContent',
+      content: 'testing!\n',
+      documentVersion: 1,
+      fileName: 'document.md',
+      sessionId: 'session-a',
+      sessionRevision: 0,
+      acknowledgedClientRevision: 0,
+    });
+
+    expect(client.createEdit(scope, 'testing!')).to.equal(null);
+    expect(client.armEdits(scope)).to.equal(true);
+    expect(client.createEdit(scope, 'testing! now')).to.deep.include({
+      type: 'edit',
+      content: 'testing! now',
+      clientRevision: 1,
+    });
   });
 });

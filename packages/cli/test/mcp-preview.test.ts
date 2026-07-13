@@ -134,6 +134,52 @@ describe('MCP visual preview artifacts', () => {
     });
   });
 
+  it('bounds capture diagnostics with an occurrence-preserving aggregate', async () => {
+    const documents = new DocumentService(await McpFileAuthority.create(), artifacts);
+    const prepared = await documents.prepare({
+      kind: 'markdown',
+      markdown: '# Diagnostic bounds',
+      name: 'diagnostics.md',
+    });
+    const result = await previewPreparedDocument(
+      artifacts,
+      prepared,
+      { width: 640, height: 360 },
+      undefined,
+      undefined,
+      async () => ({
+        totalItems: 1,
+        captures: [
+          {
+            bytes: new Uint8Array([137, 80, 78, 71]),
+            index: 0,
+            label: 'Page 1',
+            width: 640,
+            height: 360,
+          },
+        ],
+        diagnostics: Array.from({ length: 600 }, (_, index) => ({
+          code: `preview-diagnostic-${index}`,
+          severity: 'warning' as const,
+          stage: 'render' as const,
+          format: 'md',
+          count: 1,
+          message: `Preview diagnostic ${index}`,
+          remediation: null,
+          retryable: false,
+          location: null,
+        })),
+      }),
+    );
+
+    expect(result.diagnostics.length).to.be.at.most(500);
+    expect(result.diagnostics.find(({ code }) => code === 'diagnostics-truncated')).to.include({
+      severity: 'warning',
+      stage: 'render',
+      count: 103,
+    });
+  });
+
   it('honors cancellation before launching the renderer', async () => {
     const authority = await McpFileAuthority.create();
     const documents = new DocumentService(authority, artifacts);

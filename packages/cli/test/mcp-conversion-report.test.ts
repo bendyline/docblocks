@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { parseConversionResult } from '@bendyline/docblocks/mcp';
+import { parseConversionResult, parsePreviewResult } from '@bendyline/docblocks/mcp';
 import { callTool, startMcpHarness } from './mcp-helpers.js';
 
 describe('MCP persisted conversion reports and binary resources', () => {
@@ -33,6 +33,24 @@ describe('MCP persisted conversion reports and binary resources', () => {
       });
       if (!content || !('text' in content)) throw new Error('Expected report text resource');
       expect(parseConversionResult(JSON.parse(content.text) as unknown)).to.deep.equal(original);
+
+      const previewed = await callTool(harness.client, 'preview_document', {
+        source: { kind: 'markdown', markdown: '# No report', name: 'preview.md' },
+        maxItems: 1,
+      });
+      const preview = parsePreviewResult(previewed.structuredContent);
+      expect(preview).to.not.equal(null);
+      if (!preview) throw new Error('Expected preview result');
+      const previewArtifact = preview.items[0]?.artifact;
+      expect(previewArtifact).to.not.equal(undefined);
+      if (!previewArtifact) throw new Error('Expected preview artifact');
+
+      const completion = await harness.client.complete({
+        ref: { type: 'ref/resource', uri: 'docblocks://reports/{id}' },
+        argument: { name: 'id', value: '' },
+      });
+      expect(completion.completion.values).to.include(original.artifact.id);
+      expect(completion.completion.values).not.to.include(previewArtifact.id);
     } finally {
       await harness.dispose();
     }

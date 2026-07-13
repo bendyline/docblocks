@@ -86,6 +86,7 @@ describe('MCP artifact store', function () {
     expect(Date.parse(ref.expiresAt ?? '')).to.be.greaterThan(Date.parse(ref.createdAt));
     expect(Buffer.from(await store.read(ref.id))).to.deep.equal(Buffer.from(bytes));
     expect(await store.get(ref.uri)).to.deep.equal(ref);
+    expect(await store.completeReportIds('')).to.deep.equal([]);
 
     const report = {
       version: 1 as const,
@@ -102,6 +103,7 @@ describe('MCP artifact store', function () {
     };
     await store.attachConversionReport(report);
     expect(await store.getConversionReport(ref.uri)).to.deep.equal(report);
+    expect(await store.completeReportIds(ref.id.slice(0, 8))).to.deep.equal([ref.id]);
   });
 
   it('clones and freezes caller metadata so mutation cannot corrupt quota accounting', async () => {
@@ -443,6 +445,7 @@ describe('MCP artifact store', function () {
     await store.dispose();
     await expectFailure(store.put(artifact(new Uint8Array([1]))), 'disposed');
     await expectFailure(store.completeIds(''), 'disposed');
+    await expectFailure(store.completeReportIds(''), 'disposed');
   });
 
   it('bounds reports and releases artifact quotas when unpublished output is discarded', async () => {

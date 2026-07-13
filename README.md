@@ -24,6 +24,14 @@ DocBlocks ships as **four surfaces** from this one repository:
 - **Version history** — optional per-document revisions kept in a plain `<name>_files/.versions/` sibling folder. On by default for browser workspaces, off for local folders (your files, your call).
 - **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can inspect and validate documents, convert between the linked Squisq formats, retain media in DBK bundles, and materialize finished artifacts only when requested.
 
+## Documentation
+
+| Guide                                              | Scope                                                                                          |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [CLI reference](docs/cli.md)                       | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
+| [MCP architecture and protocol guide](docs/mcp.md) | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
+| [Agent/contributor guidance](AGENTS.md)            | Repository architecture, hard rules, test gates, and development conventions.                  |
+
 ## Agent workflows
 
 The MCP server is artifact-first. An agent can supply inline Markdown without
@@ -51,7 +59,7 @@ The preferred workflow is:
 
 The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,
 CSV, HTML, HTML ZIP, EPUB, DBK, MP4, and GIF; support is directional for formats
-that are export-only. See the [CLI MCP guide](packages/cli/README.md#docblocks-mcp)
+that are export-only. See the [MCP architecture and protocol guide](docs/mcp.md)
 for source shapes, authority rules, the complete tool surface, and current
 local-only limitations.
 

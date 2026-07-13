@@ -88,6 +88,8 @@ export interface DocumentSessionSnapshot {
 
 export interface DocumentSessionOptions {
   autoSaveDelayMs?: number;
+  /** Whether edits schedule automatic persistence. Manual and lifecycle flushes remain available. */
+  autoSaveEnabled?: boolean;
   /**
    * Bounded delays used after an automatic save fails. Each entry permits
    * one retry; exhausting the list leaves the session in error state until

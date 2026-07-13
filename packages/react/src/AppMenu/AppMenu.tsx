@@ -4,19 +4,10 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VersioningPreference } from '../preferences/versioning.js';
-import { ACCENT_COLORS, type AccentColor, type ThemePreference } from '../preferences/theme.js';
+import type { AccentColor, ThemePreference } from '../preferences/theme.js';
+import { AccentColorSettings, SettingsDialog, ThemeSettings } from '../Settings/Settings.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
-
-const ACCENT_LABELS: Record<AccentColor, string> = {
-  brown: 'Brown',
-  green: 'Green',
-  blue: 'Blue',
-  purple: 'Purple',
-  maroon: 'Maroon',
-  orange: 'Orange',
-  gray: 'Gray',
-};
 
 export interface AppMenuProps {
   /** URL for the about page. */
@@ -198,150 +189,77 @@ export function AppMenu({
       </div>
 
       {showSettings && (
-        <div className="db-dialog-overlay" onClick={() => setShowSettings(false)}>
-          <div
-            className="db-dialog"
-            role="dialog"
-            aria-label="Settings"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="db-dialog-header">
-              <h2 className="db-dialog-title">Settings</h2>
-              <button
-                className="db-dialog-close"
-                onClick={() => setShowSettings(false)}
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="db-dialog-body">
-              <fieldset className="db-settings-fieldset">
-                <legend className="db-settings-legend">Theme</legend>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="auto"
-                    checked={themePreference === 'auto'}
-                    onChange={() => onThemeChange?.('auto')}
-                  />
-                  System default
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="light"
-                    checked={themePreference === 'light'}
-                    onChange={() => onThemeChange?.('light')}
-                  />
-                  Light
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="dark"
-                    checked={themePreference === 'dark'}
-                    onChange={() => onThemeChange?.('dark')}
-                  />
-                  Dark
-                </label>
-              </fieldset>
+        <SettingsDialog onClose={() => setShowSettings(false)}>
+          <ThemeSettings
+            value={themePreference}
+            onChange={(preference) => onThemeChange?.(preference)}
+          />
+          <AccentColorSettings
+            value={accentColor}
+            onChange={(color) => onAccentColorChange?.(color)}
+          />
 
-              <fieldset className="db-settings-fieldset">
-                <legend className="db-settings-legend">Accent color</legend>
-                <p className="db-settings-hint">Used in both light and dark appearances.</p>
-                <div className="db-settings-accent-grid">
-                  {ACCENT_COLORS.map((color) => (
-                    <label
-                      className={`db-settings-accent${
-                        accentColor === color ? ' db-settings-accent--selected' : ''
-                      }`}
-                      key={color}
-                    >
-                      <input
-                        className="db-settings-accent-input"
-                        type="radio"
-                        name="accent-color"
-                        value={color}
-                        checked={accentColor === color}
-                        onChange={() => onAccentColorChange?.(color)}
-                      />
-                      <span
-                        className={`db-settings-accent-swatch db-settings-accent-swatch--${color}`}
-                        aria-hidden="true"
-                      />
-                      <span>{ACCENT_LABELS[color]}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+          {getStorageEstimate && (
+            <fieldset className="db-settings-fieldset">
+              <legend className="db-settings-legend">Storage</legend>
+              <p className="db-settings-hint">
+                {storageEstimate
+                  ? `DocBlocks documents and app data are using ${formatBytes(
+                      storageEstimate.usage,
+                    )} of the ${formatBytes(
+                      storageEstimate.quota,
+                    )} this browser allows for the site.`
+                  : 'Storage usage is not available in this browser.'}{' '}
+                {storagePersistent === undefined
+                  ? ''
+                  : storagePersistent
+                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
+                    : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
+              </p>
+            </fieldset>
+          )}
 
-              {getStorageEstimate && (
-                <fieldset className="db-settings-fieldset">
-                  <legend className="db-settings-legend">Storage</legend>
-                  <p className="db-settings-hint">
-                    {storageEstimate
-                      ? `DocBlocks documents and app data are using ${formatBytes(
-                          storageEstimate.usage,
-                        )} of the ${formatBytes(
-                          storageEstimate.quota,
-                        )} this browser allows for the site.`
-                      : 'Storage usage is not available in this browser.'}{' '}
-                    {storagePersistent === undefined
-                      ? ''
-                      : storagePersistent
-                        ? 'Data is marked persistent, so the browser will avoid evicting it.'
-                        : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
-                  </p>
-                </fieldset>
-              )}
-
-              {onVersioningPreferenceChange && (
-                <fieldset className="db-settings-fieldset">
-                  <legend className="db-settings-legend">Version history</legend>
-                  <p className="db-settings-hint">
-                    When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
-                    <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
-                    override this default in their own settings.
-                  </p>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="on"
-                      checked={versioningPreference === 'on'}
-                      onChange={() => onVersioningPreferenceChange('on')}
-                    />
-                    On for all workspaces
-                  </label>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="browser-only"
-                      checked={versioningPreference === 'browser-only'}
-                      onChange={() => onVersioningPreferenceChange('browser-only')}
-                    />
-                    On in browser workspaces, off for local folders
-                  </label>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="off"
-                      checked={versioningPreference === 'off'}
-                      onChange={() => onVersioningPreferenceChange('off')}
-                    />
-                    Off for all workspaces
-                  </label>
-                </fieldset>
-              )}
-            </div>
-          </div>
-        </div>
+          {onVersioningPreferenceChange && (
+            <fieldset className="db-settings-fieldset">
+              <legend className="db-settings-legend">Version history</legend>
+              <p className="db-settings-hint">
+                When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
+                <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
+                override this default in their own settings.
+              </p>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="on"
+                  checked={versioningPreference === 'on'}
+                  onChange={() => onVersioningPreferenceChange('on')}
+                />
+                On for all workspaces
+              </label>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="browser-only"
+                  checked={versioningPreference === 'browser-only'}
+                  onChange={() => onVersioningPreferenceChange('browser-only')}
+                />
+                On in browser workspaces, off for local folders
+              </label>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="off"
+                  checked={versioningPreference === 'off'}
+                  onChange={() => onVersioningPreferenceChange('off')}
+                />
+                Off for all workspaces
+              </label>
+            </fieldset>
+          )}
+        </SettingsDialog>
       )}
 
       {showAbout && (

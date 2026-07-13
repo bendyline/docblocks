@@ -51,7 +51,7 @@ const packages: readonly PackageUnderTest[] = [
   {
     name: '@bendyline/docblocks-react',
     directory: 'packages/react',
-    runtimeImports: [],
+    runtimeImports: ['@bendyline/docblocks-react/settings'],
   },
   {
     name: '@bendyline/docblocks-cli',

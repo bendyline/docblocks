@@ -160,8 +160,23 @@ packages/desktop/preload/preload.ts      ← contextBridge exposure
 
 Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host` and degrades gracefully when running in a non-Electron context (site, vscode webview). **Renderer must never import `electron` or `node:*`.**
 
+### The CLI has one current command contract
+
+[`docs/cli.md`](docs/cli.md) is the authoritative behavioral guide for all
+`docblocks` commands: arguments, defaults, streams, filesystem effects, linked
+Squisq ownership, and current format directions. Command implementation lives in
+`packages/cli/src/commands/`; register each public command once in
+`packages/cli/src/index.ts`. Keep the guide and the concise publishable
+`packages/cli/README.md` synchronized when behavior changes.
+
+Direct build/convert/video commands run with the invoking process's filesystem
+authority and replace their documented outputs. Do not describe those commands as
+having MCP root grants or conditional-write semantics. Conversely, do not bypass
+the artifact-first boundary in MCP to imitate direct CLI writes.
+
 ### MCP is artifact-first and Squisq-registry-backed
 
+[`docs/mcp.md`](docs/mcp.md) is the authoritative architecture and protocol guide.
 Canonical MCP wire types and exact runtime parsers live in
 `packages/core/src/mcp/`. Agent-native tools are registered from
 `packages/cli/src/mcp/agentic-tools.ts`; normalization and conversion are
@@ -187,7 +202,8 @@ The linked Squisq CLI registry is the conversion capability source of truth.
 `MCP_FORMAT_CAPABILITIES` must account for every registry format and direction
 as either exposed or explicitly excluded. New conversion code calls the
 linked `@bendyline/squisq-cli/api` registry; do not add another hard-coded
-conversion switch.
+conversion switch. `packages/cli/test/documentation.test.ts` keeps the documented
+command, tool, and format catalogs aligned with these runtime contracts.
 
 ### `<DocBlocksShell>` is the canonical editor shell — for site + desktop
 
@@ -264,12 +280,12 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                                    |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                   |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                    |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                        |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides         |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                           |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `packages/cli/src/mcp/conversion-service.ts` for MCP exposure |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                      |
+| Task                       | Start with                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture           |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
+| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/index.ts`                |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
+| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure        |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |

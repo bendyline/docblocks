@@ -35,7 +35,7 @@ This package is the live reference implementation of DocBlocks — the web surfa
 The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configured in `vite.config.ts`):
 
 - **Full offline, automatically.** The service worker precaches the entire `dist` (~22 MB, `maximumFileSizeToCacheInBytes` raised to 10 MiB so the 6 MB Monaco ts.worker fits) in the background on the first ordinary visit — no install or user action needed. Every feature works offline from then on; documents were already local (IndexedDB / File System Access).
-- **Prompt-based updates.** New deploys surface as an "Update available — Reload" banner in the shell (`registerType: 'prompt'`; registration + hourly update checks live in `src/pwa.ts`). Nothing auto-reloads mid-edit.
+- **Prompt-based updates.** New deploys surface as an "Update available" notice at the lower-right of the editor status bar. Clicking it opens the shell's Reload/Later prompt (`registerType: 'prompt'`; registration + hourly update checks live in `src/pwa.ts`). Nothing auto-reloads mid-edit.
 - **Install integration.** "Install DocBlocks…" appears in the app menu when the browser allows it (Chromium). Installed, the app registers as an OS handler for `.md`/`.dbk` files (`file_handlers` + the shell's `launchQueue` consumer), offers a "New document" jump-list shortcut (`/?action=new`), and draws its own title bar via Window Controls Overlay (CSS in `docblocks-react`'s `docblocks.css`, kept in sync with `packages/desktop/renderer/titlebar.css`).
 - **Testing.** The SW exists only in production builds (`devOptions` off). Offline e2e runs against `vite preview` via `npm run test:e2e:offline` (root `playwright.offline.config.ts`); the default e2e config ignores `offline.spec.ts`.
 

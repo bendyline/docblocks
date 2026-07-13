@@ -15,6 +15,7 @@ import { getDependencyRuntimeVersion, getPackageVersion } from '../version.js';
 import { ArtifactStore } from './artifact-store.js';
 import type { PreparedDocument } from './document-service.js';
 import { throwIfAborted } from './document-service.js';
+import { boundDiagnostics } from './intelligence.js';
 
 const DEFAULT_WIDTH = 1_280;
 const DEFAULT_HEIGHT = 720;
@@ -179,13 +180,16 @@ export async function previewPreparedDocument(
     totalItems: rendered.totalItems,
     items,
     truncated: options.startIndex > 0 || options.startIndex + items.length < rendered.totalItems,
-    diagnostics: [
-      ...prepared.diagnostics,
-      ...(rendered.diagnostics ?? []),
-      ...(previewBasis === 'reconstructed-import'
-        ? [reconstructedPreviewDiagnostic(prepared.sourceFormat)]
-        : []),
-    ],
+    diagnostics: boundDiagnostics(
+      [
+        ...prepared.diagnostics,
+        ...(rendered.diagnostics ?? []),
+        ...(previewBasis === 'reconstructed-import'
+          ? [reconstructedPreviewDiagnostic(prepared.sourceFormat)]
+          : []),
+      ],
+      'render',
+    ),
   };
 }
 

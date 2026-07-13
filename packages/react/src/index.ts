@@ -25,6 +25,14 @@ export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 export { AppMenu } from './AppMenu/index.js';
 export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index.js';
 
+// Settings
+export { AccentColorSettings, SettingsDialog, ThemeSettings } from './Settings/public-api.js';
+export type {
+  AccentColorSettingsProps,
+  SettingsDialogProps,
+  ThemeSettingsProps,
+} from './Settings/public-api.js';
+
 // Export
 export {
   buildExportFilename,

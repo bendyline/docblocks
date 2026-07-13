@@ -17,6 +17,39 @@ export type DocumentSessionMessageStatus =
 
 export type DocumentConflictChoice = 'use-local' | 'use-external';
 
+/** Host-observed details that help a user distinguish two text branches. */
+export interface DocumentConflictDetailsMessage {
+  /** VS Code document version on which the DocBlocks draft was based. */
+  localBaseDocumentVersion: number;
+  /** Current VS Code document version observed outside the DocBlocks edit pipeline. */
+  externalDocumentVersion: number;
+  /** UTF-8 encoded sizes of the complete text snapshots. */
+  localBytes: number;
+  externalBytes: number | null;
+  /** Times are extension-host observations, not filesystem-authoritative mtimes. */
+  localEditedAt: number | null;
+  externalObservedAt: number | null;
+  /** Whether VS Code reported the external document snapshot as not yet saved. */
+  externalIsDirty: boolean | null;
+}
+
+export const DOCBLOCKS_ACCENT_COLORS = [
+  'brown',
+  'green',
+  'blue',
+  'purple',
+  'maroon',
+  'orange',
+  'gray',
+] as const;
+
+export type DocBlocksAccentColor = (typeof DOCBLOCKS_ACCENT_COLORS)[number];
+
+export interface VscodeEditorSettings {
+  autoSave: boolean;
+  accentColor: DocBlocksAccentColor;
+}
+
 /**
  * An opaque, one-shot authority to write one host-owned export target.
  * The label is presentation-only and must never be interpreted as a path.
@@ -54,6 +87,7 @@ export type ExtensionToWebviewMessage =
       acknowledgedClientRevision: number;
       documentVersion: number;
       error: string | null;
+      conflict: DocumentConflictDetailsMessage | null;
     }
   | {
       type: 'saveResult';
@@ -66,6 +100,7 @@ export type ExtensionToWebviewMessage =
       message: string | null;
     }
   | { type: 'themeChange'; theme: 'light' | 'dark' }
+  | { type: 'editorSettings'; settings: VscodeEditorSettings }
   | { type: 'mediaResolved'; requestId: number; url: string }
   | { type: 'mediaListed'; requestId: number; entries: MediaEntryMessage[] }
   | { type: 'mediaAdded'; requestId: number; path: string }
@@ -81,6 +116,8 @@ export type ExtensionToWebviewMessage =
 /** Messages sent from the webview to the extension host. */
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
+  | { type: 'setAutoSave'; enabled: boolean }
+  | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
   | {
       type: 'edit';
       content: string;
@@ -134,6 +171,15 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
   switch (value.type) {
     case 'ready':
       return hasOnlyKeys(value, ['type']) ? { type: 'ready' } : null;
+    case 'setAutoSave':
+      return hasOnlyKeys(value, ['type', 'enabled']) && typeof value.enabled === 'boolean'
+        ? { type: 'setAutoSave', enabled: value.enabled }
+        : null;
+    case 'setAccentColor':
+      return hasOnlyKeys(value, ['type', 'accentColor']) &&
+        isDocBlocksAccentColor(value.accentColor)
+        ? { type: 'setAccentColor', accentColor: value.accentColor }
+        : null;
     case 'edit':
       return hasOnlyKeys(value, [
         'type',
@@ -317,36 +363,50 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
             message: value.message,
           }
         : null;
-    case 'sessionState':
-      return hasOnlyKeys(value, [
-        'type',
-        'sessionId',
-        'status',
-        'revision',
-        'persistedRevision',
-        'acknowledgedClientRevision',
-        'documentVersion',
-        'error',
-      ]) &&
-        hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
-        isDocumentSessionMessageStatus(value.status) &&
-        hasNonNegativeInteger(value, 'revision') &&
-        hasNonNegativeInteger(value, 'persistedRevision') &&
-        value.persistedRevision <= value.revision &&
-        hasNonNegativeInteger(value, 'acknowledgedClientRevision') &&
-        hasNonNegativeInteger(value, 'documentVersion') &&
-        hasNullableBoundedString(value, 'error', HOST_WIRE_LIMITS.messageCharacters)
-        ? {
-            type: 'sessionState',
-            sessionId: value.sessionId,
-            status: value.status,
-            revision: value.revision,
-            persistedRevision: value.persistedRevision,
-            acknowledgedClientRevision: value.acknowledgedClientRevision,
-            documentVersion: value.documentVersion,
-            error: value.error,
-          }
-        : null;
+    case 'sessionState': {
+      if (
+        !hasOnlyKeys(value, [
+          'type',
+          'sessionId',
+          'status',
+          'revision',
+          'persistedRevision',
+          'acknowledgedClientRevision',
+          'documentVersion',
+          'error',
+          'conflict',
+        ]) ||
+        !hasBoundedString(value, 'sessionId', HOST_WIRE_LIMITS.identifierCharacters, 1) ||
+        !isDocumentSessionMessageStatus(value.status) ||
+        !hasNonNegativeInteger(value, 'revision') ||
+        !hasNonNegativeInteger(value, 'persistedRevision') ||
+        value.persistedRevision > value.revision ||
+        !hasNonNegativeInteger(value, 'acknowledgedClientRevision') ||
+        !hasNonNegativeInteger(value, 'documentVersion') ||
+        !hasNullableBoundedString(value, 'error', HOST_WIRE_LIMITS.messageCharacters)
+      ) {
+        return null;
+      }
+      const conflict = parseDocumentConflictDetails(value.conflict);
+      if (
+        conflict === undefined ||
+        (value.status === 'conflict' && conflict === null) ||
+        (value.status !== 'conflict' && conflict !== null)
+      ) {
+        return null;
+      }
+      return {
+        type: 'sessionState',
+        sessionId: value.sessionId,
+        status: value.status,
+        revision: value.revision,
+        persistedRevision: value.persistedRevision,
+        acknowledgedClientRevision: value.acknowledgedClientRevision,
+        documentVersion: value.documentVersion,
+        error: value.error,
+        conflict,
+      };
+    }
     case 'saveResult':
       return hasOnlyKeys(value, [
         'type',
@@ -382,6 +442,11 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
         (value.theme === 'light' || value.theme === 'dark')
         ? { type: 'themeChange', theme: value.theme }
         : null;
+    case 'editorSettings': {
+      if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
+      const settings = parseVscodeEditorSettings(value.settings);
+      return settings ? { type: 'editorSettings', settings } : null;
+    }
     case 'mediaResolved':
       return hasOnlyKeys(value, ['type', 'requestId', 'url']) &&
         hasRequestId(value) &&
@@ -444,6 +509,58 @@ function parseExportTargetGrant(value: unknown): ExportTargetGrantMessage | null
     return undefined;
   }
   return { grantId: value.grantId, displayLabel: value.displayLabel };
+}
+
+function parseDocumentConflictDetails(
+  value: unknown,
+): DocumentConflictDetailsMessage | null | undefined {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'localBaseDocumentVersion',
+      'externalDocumentVersion',
+      'localBytes',
+      'externalBytes',
+      'localEditedAt',
+      'externalObservedAt',
+      'externalIsDirty',
+    ]) ||
+    !hasNonNegativeInteger(value, 'localBaseDocumentVersion') ||
+    !hasNonNegativeInteger(value, 'externalDocumentVersion') ||
+    !hasNonNegativeInteger(value, 'localBytes') ||
+    !isNullableNonNegativeInteger(value.externalBytes) ||
+    !isNullableNonNegativeInteger(value.localEditedAt) ||
+    !isNullableNonNegativeInteger(value.externalObservedAt) ||
+    (value.externalIsDirty !== null && typeof value.externalIsDirty !== 'boolean')
+  ) {
+    return undefined;
+  }
+  return {
+    localBaseDocumentVersion: value.localBaseDocumentVersion,
+    externalDocumentVersion: value.externalDocumentVersion,
+    localBytes: value.localBytes,
+    externalBytes: value.externalBytes,
+    localEditedAt: value.localEditedAt,
+    externalObservedAt: value.externalObservedAt,
+    externalIsDirty: value.externalIsDirty,
+  };
+}
+
+function parseVscodeEditorSettings(value: unknown): VscodeEditorSettings | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['autoSave', 'accentColor']) ||
+    typeof value.autoSave !== 'boolean' ||
+    !isDocBlocksAccentColor(value.accentColor)
+  ) {
+    return null;
+  }
+  return { autoSave: value.autoSave, accentColor: value.accentColor };
+}
+
+export function isDocBlocksAccentColor(value: unknown): value is DocBlocksAccentColor {
+  return DOCBLOCKS_ACCENT_COLORS.some((color) => color === value);
 }
 
 function parseMediaEntries(value: unknown): MediaEntryMessage[] | null {
@@ -526,6 +643,10 @@ function hasNonNegativeInteger<K extends string>(
 ): value is Record<string, unknown> & Record<K, number> {
   const entry = value[key];
   return typeof entry === 'number' && Number.isSafeInteger(entry) && entry >= 0;
+}
+
+function isNullableNonNegativeInteger(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -64,6 +64,7 @@ export class DocumentSession {
   private readonly autoSaveRetryDelaysMs: readonly number[];
   private readonly recoveryJournal: DocumentRecoveryJournal | null;
   private readonly listeners = new Set<SessionListener>();
+  private autoSaveEnabled: boolean;
 
   private target: DocumentCommitTarget | null = null;
   private content = '';
@@ -88,6 +89,7 @@ export class DocumentSession {
 
   public constructor(options: DocumentSessionOptions = {}) {
     this.autoSaveDelayMs = Math.max(0, options.autoSaveDelayMs ?? 500);
+    this.autoSaveEnabled = options.autoSaveEnabled ?? true;
     this.autoSaveRetryDelaysMs = normalizeRetryDelays(
       options.autoSaveRetryDelaysMs ?? DEFAULT_AUTO_SAVE_RETRY_DELAYS_MS,
     );
@@ -101,6 +103,25 @@ export class DocumentSession {
   };
 
   public readonly getSnapshot = (): DocumentSessionSnapshot => this.snapshot;
+
+  /** Enable or disable automatic persistence without weakening explicit or lifecycle flushes. */
+  public setAutoSaveEnabled(enabled: boolean): void {
+    if (this.autoSaveEnabled === enabled) return;
+    this.autoSaveEnabled = enabled;
+    if (!enabled) {
+      this.clearAutoSaveTimer();
+      return;
+    }
+    if (
+      this.target &&
+      this.lifecycle === 'open' &&
+      !this.frozen &&
+      !this.conflict &&
+      this.persistedRevision < this.revision
+    ) {
+      this.scheduleAutoSave();
+    }
+  }
 
   /**
    * Record a complete local snapshot and schedule its persistence.
@@ -539,6 +560,7 @@ export class DocumentSession {
 
   private scheduleAutoSave(delayMs = this.autoSaveDelayMs): void {
     this.clearAutoSaveTimer();
+    if (!this.autoSaveEnabled) return;
     this.autoSaveTimer = setTimeout(() => {
       this.autoSaveTimer = null;
       const target = this.target;

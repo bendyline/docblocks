@@ -8,7 +8,7 @@ import { Command } from 'commander';
 
 export const parseCommand = new Command('parse')
   .description('Parse a markdown file and print its structure as JSON')
-  .argument('<input>', 'Path to a .md file')
+  .argument('<input>', 'Path to UTF-8 Markdown content')
   .action(async (inputPath: string) => {
     try {
       const resolvedInput = resolve(inputPath);

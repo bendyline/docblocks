@@ -1,10 +1,14 @@
-import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { MediaContext } from '@bendyline/squisq-react';
 import '@bendyline/squisq-editor-react/styles';
 import '@bendyline/docblocks-react/styles';
+import { pickEmptyDocumentPrompt } from '@bendyline/docblocks-react/editor';
 import type {
+  DocBlocksAccentColor,
+  DocumentConflictDetailsMessage,
   DocumentSessionMessageStatus,
   ExtensionToWebviewMessage,
+  VscodeEditorSettings,
 } from '@bendyline/docblocks/vscode';
 import { parseExtensionToWebviewMessage } from '@bendyline/docblocks/vscode';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
@@ -26,6 +30,14 @@ const EditorShell = lazy(async () => {
 const VscodeExportButton = lazy(() =>
   import('./VscodeExportButton.js').then((module) => ({ default: module.VscodeExportButton })),
 );
+const VscodeSettingsButton = lazy(() =>
+  import('./VscodeSettingsButton.js').then((module) => ({ default: module.VscodeSettingsButton })),
+);
+
+const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
+  autoSave: true,
+  accentColor: 'brown',
+};
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
@@ -36,6 +48,10 @@ export function VscodeEditor() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const [conflictDetails, setConflictDetails] = useState<DocumentConflictDetailsMessage | null>(
+    null,
+  );
+  const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
   const documentClientRef = useRef(new WebviewDocumentClient());
@@ -63,6 +79,7 @@ export function VscodeEditor() {
           if (!documentClientRef.current.isCurrentSession(msg.sessionId)) return;
           setSessionStatus(msg.status);
           setSessionMessage(msg.error);
+          setConflictDetails(msg.conflict);
           break;
         case 'saveResult':
           if (!documentClientRef.current.isCurrentSession(msg.sessionId)) return;
@@ -71,6 +88,9 @@ export function VscodeEditor() {
           break;
         case 'themeChange':
           setTheme(msg.theme);
+          break;
+        case 'editorSettings':
+          setSettings(msg.settings);
           break;
       }
     }
@@ -130,17 +150,55 @@ export function VscodeEditor() {
     [editorScope],
   );
 
+  // EditorShell can emit a normalized WYSIWYG snapshot while it hydrates.
+  // Arm the current scope only from browser input that precedes a real user
+  // edit, so opening a document remains byte-preserving and read-only.
+  const armEditorEdits = useCallback(() => {
+    if (editorScope) documentClientRef.current.armEdits(editorScope);
+  }, [editorScope]);
+
   const resolveConflict = useCallback((choice: 'use-local' | 'use-external') => {
     const message = documentClientRef.current.createConflictResolution(choice);
     if (message) vscode.postMessage(message);
   }, []);
+
+  const handleAutoSaveChange = useCallback((enabled: boolean) => {
+    setSettings((current) => ({ ...current, autoSave: enabled }));
+    vscode.postMessage({ type: 'setAutoSave', enabled });
+  }, []);
+
+  const handleAccentColorChange = useCallback((accentColor: DocBlocksAccentColor) => {
+    setSettings((current) => ({ ...current, accentColor }));
+    vscode.postMessage({ type: 'setAccentColor', accentColor });
+  }, []);
+
+  const editorGenerationKey = editorScope
+    ? `${editorScope.sessionId}:${editorScope.generation}`
+    : 'loading';
+  const editorPlaceholder = useMemo(() => {
+    // Keep the selection scoped to the same generation that remounts Squisq.
+    void editorGenerationKey;
+    return pickEmptyDocumentPrompt();
+  }, [editorGenerationKey]);
 
   if (markdown === null || editorScope === null || mediaBridge === null || exportBridge === null) {
     return <EditorLoading />;
   }
 
   return (
-    <div className="db-shell db-vscode-editor" data-theme={theme} style={{ position: 'relative' }}>
+    <div
+      className="db-shell db-vscode-editor"
+      data-theme={theme}
+      data-accent={settings.accentColor}
+      style={{ position: 'relative' }}
+      onBeforeInputCapture={armEditorEdits}
+      onCompositionStartCapture={armEditorEdits}
+      onKeyDownCapture={armEditorEdits}
+      onPasteCapture={armEditorEdits}
+      onCutCapture={armEditorEdits}
+      onDropCapture={armEditorEdits}
+      onPointerDownCapture={armEditorEdits}
+    >
       <MediaContext.Provider value={mediaBridge.mediaProvider}>
         <Suspense fallback={<EditorLoading />}>
           <EditorShell
@@ -149,16 +207,24 @@ export function VscodeEditor() {
             onChange={handleChange}
             colorScheme={theme}
             height="100%"
+            placeholder={editorPlaceholder}
             mediaProvider={mediaBridge.mediaProvider}
             showFilesToggle={false}
             toolbarSlotRight={
-              <VscodeExportButton
-                selectedFile={fileName}
-                mediaContainer={exportBridge.contentContainer}
-                saveBlob={exportBridge.saveBlob}
-                resolveExportTarget={exportBridge.resolveExportTarget}
-                pickExportTarget={exportBridge.pickExportTarget}
-              />
+              <>
+                <VscodeExportButton
+                  selectedFile={fileName}
+                  mediaContainer={exportBridge.contentContainer}
+                  saveBlob={exportBridge.saveBlob}
+                  resolveExportTarget={exportBridge.resolveExportTarget}
+                  pickExportTarget={exportBridge.pickExportTarget}
+                />
+                <VscodeSettingsButton
+                  settings={settings}
+                  onAutoSaveChange={handleAutoSaveChange}
+                  onAccentColorChange={handleAccentColorChange}
+                />
+              </>
             }
           />
         </Suspense>
@@ -166,6 +232,7 @@ export function VscodeEditor() {
       <DocumentSessionStatus
         status={sessionStatus}
         message={sessionMessage}
+        conflict={conflictDetails}
         onResolveConflict={resolveConflict}
       />
     </div>
@@ -193,10 +260,12 @@ function EditorLoading() {
 function DocumentSessionStatus({
   status,
   message,
+  conflict,
   onResolveConflict,
 }: {
   status: DocumentSessionMessageStatus;
   message: string | null;
+  conflict: DocumentConflictDetailsMessage | null;
   onResolveConflict: (choice: 'use-local' | 'use-external') => void;
 }) {
   if (status === 'idle' || (status === 'saved' && !message)) return null;
@@ -225,9 +294,10 @@ function DocumentSessionStatus({
         bottom: 10,
         zIndex: 20,
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        maxWidth: 'min(560px, calc(100% - 24px))',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: 6,
+        maxWidth: 'min(680px, calc(100% - 24px))',
         padding: '6px 10px',
         border: '1px solid var(--vscode-widget-border, rgba(127,127,127,.4))',
         borderRadius: 4,
@@ -239,17 +309,88 @@ function DocumentSessionStatus({
         fontSize: 12,
       }}
     >
-      <span>{label}</span>
-      {status === 'conflict' && (
-        <>
-          <button type="button" onClick={() => onResolveConflict('use-local')}>
-            Keep mine
-          </button>
-          <button type="button" onClick={() => onResolveConflict('use-external')}>
-            Use external
-          </button>
-        </>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ flex: 1 }}>{label}</span>
+        {status === 'conflict' && (
+          <>
+            <button type="button" onClick={() => onResolveConflict('use-local')}>
+              Keep mine
+            </button>
+            <button type="button" onClick={() => onResolveConflict('use-external')}>
+              Use external
+            </button>
+          </>
+        )}
+      </div>
+      {status === 'conflict' && conflict && <ConflictDetails details={conflict} />}
     </div>
   );
+}
+
+function ConflictDetails({ details }: { details: DocumentConflictDetailsMessage }) {
+  const byteDelta =
+    details.externalBytes === null ? null : details.externalBytes - details.localBytes;
+  return (
+    <div style={{ display: 'grid', gap: 4, lineHeight: 1.35 }}>
+      <span>
+        Your draft:{' '}
+        {details.localEditedAt === null
+          ? 'edit time unavailable'
+          : `last edited ${formatObservedTime(details.localEditedAt)}`}
+      </span>
+      <span>
+        Current version:{' '}
+        {details.externalObservedAt === null
+          ? 'observation time unavailable'
+          : `observed ${formatObservedTime(details.externalObservedAt)}`}
+      </span>
+      <span>{formatExternalSaveState(details.externalIsDirty)}</span>
+      <span>
+        {details.externalBytes === null
+          ? 'Current file: deleted'
+          : `Size difference: ${formatSizeComparison(byteDelta ?? 0)}`}
+      </span>
+      <details>
+        <summary style={{ cursor: 'pointer' }}>Advanced details</summary>
+        <div style={{ display: 'grid', gap: 3, marginTop: 5 }}>
+          <span>
+            Your draft: {formatBytes(details.localBytes)} (UTF-8); VS Code document version{' '}
+            {details.localBaseDocumentVersion}
+          </span>
+          <span>
+            Current version: {formatEncodedSize(details.externalBytes)}; VS Code document version{' '}
+            {details.externalDocumentVersion}
+          </span>
+          <span>
+            Source: VS Code's shared document model. VS Code does not expose which process or
+            extension made a text-document change.
+          </span>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function formatObservedTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString();
+}
+
+function formatEncodedSize(bytes: number | null): string {
+  return bytes === null ? 'deleted' : `${formatBytes(bytes)} (UTF-8)`;
+}
+
+function formatBytes(bytes: number): string {
+  return `${new Intl.NumberFormat().format(bytes)} ${bytes === 1 ? 'byte' : 'bytes'}`;
+}
+
+function formatSizeComparison(bytes: number): string {
+  if (bytes === 0) return 'same byte count as your draft';
+  const direction = bytes > 0 ? 'larger' : 'smaller';
+  return `${formatBytes(Math.abs(bytes))} ${direction} than your draft`;
+}
+
+function formatExternalSaveState(isDirty: boolean | null): string {
+  if (isDirty === true) return 'The current version has unsaved changes in VS Code';
+  if (isDirty === false) return 'VS Code reports the current version saved';
+  return 'The current version save state is unavailable';
 }

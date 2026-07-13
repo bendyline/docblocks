@@ -8,10 +8,20 @@ import {
   type DocumentSessionEditScope,
   type DocumentSessionSnapshot,
 } from '@bendyline/docblocks/document';
+import type { DocumentConflictDetailsMessage } from '@bendyline/docblocks/vscode';
 
 export interface HostDocumentSnapshot {
   content: string;
   version: number;
+  /** Extension-host observation time, used only for conflict diagnostics. */
+  observedAt?: number;
+  /** Whether VS Code currently considers this document snapshot unsaved. */
+  isDirty?: boolean | null;
+}
+
+interface ObservedHostDocumentSnapshot extends HostDocumentSnapshot {
+  observedAt: number;
+  isDirty: boolean | null;
 }
 
 /**
@@ -42,7 +52,9 @@ export class HostDocumentChangedError extends Error {
 
 export interface VscodeDocumentSyncOptions {
   autoSaveDelayMs?: number;
+  autoSaveEnabled?: boolean;
   createSessionId?: () => string;
+  now?: () => number;
 }
 
 export interface VscodeDocumentSyncSnapshot {
@@ -51,6 +63,7 @@ export interface VscodeDocumentSyncSnapshot {
   documentVersion: number;
   acknowledgedClientRevision: number;
   session: DocumentSessionSnapshot;
+  conflict: DocumentConflictDetailsMessage | null;
 }
 
 export interface WebviewEditEnvelope {
@@ -87,6 +100,7 @@ export class VscodeDocumentSync {
   private readonly session: DocumentSession;
   private readonly target: VscodeCommitTarget;
   private readonly createSessionId: () => string;
+  private readonly now: () => number;
   private readonly listeners = new Set<SyncListener>();
   private readonly unsubscribeSession: () => void;
 
@@ -95,6 +109,8 @@ export class VscodeDocumentSync {
   private documentVersion: number;
   private acknowledgedClientRevision = 0;
   private clientScope: DocumentSessionEditScope | null = null;
+  private localEditedAt: number | null = null;
+  private lastExternalSnapshot: ObservedHostDocumentSnapshot | null = null;
 
   private constructor(
     adapter: HostDocumentAdapter,
@@ -102,14 +118,25 @@ export class VscodeDocumentSync {
     options: VscodeDocumentSyncOptions,
   ) {
     this.createSessionId = options.createSessionId ?? createSessionId;
+    this.now = options.now ?? Date.now;
     this.sessionId = this.createSessionId();
     this.baseDocumentVersion = initial.version;
     this.documentVersion = initial.version;
-    this.session = new DocumentSession({ autoSaveDelayMs: options.autoSaveDelayMs ?? 300 });
-    this.target = new VscodeCommitTarget(adapter, initial, (committed) => {
-      this.documentVersion = committed.version;
-      this.emit();
+    this.session = new DocumentSession({
+      autoSaveDelayMs: options.autoSaveDelayMs ?? 300,
+      autoSaveEnabled: options.autoSaveEnabled,
     });
+    this.target = new VscodeCommitTarget(
+      adapter,
+      initial,
+      (committed) => {
+        this.documentVersion = committed.version;
+        this.emit();
+      },
+      (observed) => {
+        this.rememberExternalSnapshot(observed);
+      },
+    );
     this.unsubscribeSession = this.session.subscribe(() => this.emit());
   }
 
@@ -136,7 +163,12 @@ export class VscodeDocumentSync {
       documentVersion: this.documentVersion,
       acknowledgedClientRevision: this.acknowledgedClientRevision,
       session: this.session.getSnapshot(),
+      conflict: this.createConflictDetails(),
     });
+  }
+
+  public setAutoSaveEnabled(enabled: boolean): void {
+    this.session.setAutoSaveEnabled(enabled);
   }
 
   /** Accept a monotonic, possibly coalesced complete snapshot without waiting for disk I/O. */
@@ -156,7 +188,9 @@ export class VscodeDocumentSync {
     try {
       const scope = this.clientScope;
       if (!scope) throw new Error('The VS Code document session has not finished opening.');
+      const previousContent = this.session.getSnapshot().content;
       const sessionRevision = this.session.edit(edit.content, scope);
+      if (edit.content !== previousContent) this.localEditedAt = this.now();
       // Every edit is a complete snapshot. The webview ingress may coalesce
       // superseded messages while the host is delayed, so acknowledging a
       // monotonic jump is lossless and keeps the bounded queue honest.
@@ -191,19 +225,20 @@ export class VscodeDocumentSync {
    * local content.
    */
   public observeExternal(snapshot: HostDocumentSnapshot): DocumentExternalChangeResult {
+    const observed = this.rememberExternalSnapshot(snapshot);
     const result = this.session.observeExternal({
       targetKey: this.target.key,
-      content: snapshot.content,
-      version: snapshot.version,
+      content: observed.content,
+      version: observed.version,
     });
 
-    this.documentVersion = snapshot.version;
+    this.documentVersion = observed.version;
     if (result !== 'conflict') {
-      this.target.rebase(snapshot);
+      this.target.rebase(observed);
     }
 
     if (result === 'applied') {
-      this.rotateClientBranch(snapshot.version);
+      this.rotateClientBranch(observed.version);
     } else {
       this.emit();
     }
@@ -220,9 +255,22 @@ export class VscodeDocumentSync {
     // Re-read at resolution time: multiple external edits may have arrived
     // while the conflict UI was open, and the choice must apply to the latest
     // TextDocument rather than the first conflicting snapshot.
-    const external = await this.target.read();
+    const external = this.rememberExternalSnapshot(await this.target.read());
+    const observationResult = this.session.observeExternal({
+      targetKey: this.target.key,
+      content: external.content,
+      version: external.version,
+    });
     this.target.rebase(external);
     this.documentVersion = external.version;
+
+    // The branches may have converged while the conflict controls were open.
+    // Acknowledge that byte-identical text instead of issuing a redundant
+    // overwrite that can generate a second conflict notification.
+    if (!this.session.getSnapshot().conflict) {
+      if (observationResult === 'applied') this.rotateClientBranch(external.version);
+      return this.session.getSnapshot();
+    }
 
     let result = await this.session.resolveConflict(strategy);
     if (strategy === 'use-external') {
@@ -277,6 +325,7 @@ export class VscodeDocumentSync {
     this.sessionId = this.createSessionId();
     this.baseDocumentVersion = baseDocumentVersion;
     this.acknowledgedClientRevision = 0;
+    this.localEditedAt = null;
     this.captureClientScope();
     this.emit();
   }
@@ -286,6 +335,39 @@ export class VscodeDocumentSync {
     this.clientScope = snapshot.targetKey
       ? { targetKey: snapshot.targetKey, generation: snapshot.generation }
       : null;
+  }
+
+  private rememberExternalSnapshot(snapshot: HostDocumentSnapshot): ObservedHostDocumentSnapshot {
+    const observed: ObservedHostDocumentSnapshot = {
+      ...snapshot,
+      observedAt: snapshot.observedAt ?? this.now(),
+      isDirty: snapshot.isDirty ?? null,
+    };
+    this.lastExternalSnapshot = observed;
+    return observed;
+  }
+
+  private createConflictDetails(): DocumentConflictDetailsMessage | null {
+    const conflict = this.session.getSnapshot().conflict;
+    if (!conflict) return null;
+    const observed = this.lastExternalSnapshot;
+    const matchesObserved =
+      observed !== null &&
+      observed.version === conflict.externalVersion &&
+      observed.content === conflict.externalContent;
+    return Object.freeze({
+      localBaseDocumentVersion: this.baseDocumentVersion,
+      externalDocumentVersion:
+        typeof conflict.externalVersion === 'number'
+          ? conflict.externalVersion
+          : this.documentVersion,
+      localBytes: utf8ByteLength(conflict.localContent),
+      externalBytes:
+        conflict.externalContent === null ? null : utf8ByteLength(conflict.externalContent),
+      localEditedAt: this.localEditedAt,
+      externalObservedAt: matchesObserved ? observed.observedAt : null,
+      externalIsDirty: matchesObserved ? observed.isDirty : null,
+    });
   }
 
   private emit(): void {
@@ -314,6 +396,7 @@ class VscodeCommitTarget implements DocumentCommitTarget {
     private readonly adapter: HostDocumentAdapter,
     initial: HostDocumentSnapshot,
     private readonly onCommitted: (snapshot: HostDocumentSnapshot) => void,
+    private readonly onExternalSnapshot: (snapshot: HostDocumentSnapshot) => void,
   ) {
     this.key = adapter.key;
     this.baseline = initial;
@@ -322,11 +405,29 @@ class VscodeCommitTarget implements DocumentCommitTarget {
   public async commit(request: DocumentCommitRequest): Promise<{ version: number }> {
     const actual = await this.adapter.read();
     if (actual.version !== this.baseline.version || actual.content !== this.baseline.content) {
-      throw new DocumentCommitConflictError(
-        'The VS Code document changed before the DocBlocks revision could be committed.',
-        actual.content,
-        actual.version,
-      );
+      if (hasEquivalentHostText(actual.content, request.content)) {
+        // VS Code already contains the complete local snapshot. This can
+        // happen when an equivalent save/change notification wins the race,
+        // including VS Code's line-ending and final-newline normalization.
+        this.baseline = actual;
+        if (actual.isDirty !== true) {
+          this.onCommitted(actual);
+          return { version: actual.version };
+        }
+      }
+      if (hasEquivalentHostText(actual.content, this.baseline.content)) {
+        // Version-only and host newline-normalization changes carry no
+        // competing document text and are safe to absorb before applying the
+        // pending DocBlocks revision.
+        this.baseline = actual;
+      } else {
+        this.onExternalSnapshot(actual);
+        throw new DocumentCommitConflictError(
+          'The VS Code document changed before the DocBlocks revision could be committed.',
+          actual.content,
+          actual.version,
+        );
+      }
     }
 
     let committed: HostDocumentSnapshot;
@@ -334,6 +435,7 @@ class VscodeCommitTarget implements DocumentCommitTarget {
       committed = await this.adapter.replaceAndSave(request.content, actual);
     } catch (error: unknown) {
       if (error instanceof HostDocumentChangedError) {
+        this.onExternalSnapshot(error.actual);
         throw new DocumentCommitConflictError(
           error.message,
           error.actual.content,
@@ -344,11 +446,14 @@ class VscodeCommitTarget implements DocumentCommitTarget {
       // Rebase that host-owned partial application so an honest retry saves it
       // instead of misclassifying it as an external conflict.
       const afterFailure = await this.adapter.read();
-      if (afterFailure.content === request.content) this.baseline = afterFailure;
+      if (hasEquivalentHostText(afterFailure.content, request.content)) {
+        this.baseline = afterFailure;
+      }
       throw error;
     }
 
-    if (committed.content !== request.content) {
+    if (!hasEquivalentHostText(committed.content, request.content)) {
+      this.onExternalSnapshot(committed);
       throw new DocumentCommitConflictError(
         'The VS Code document was changed while the DocBlocks revision was being saved.',
         committed.content,
@@ -369,6 +474,21 @@ class VscodeCommitTarget implements DocumentCommitTarget {
   }
 }
 
+/**
+ * VS Code and save participants may rewrite line endings or enforce a final
+ * newline while applying a DocBlocks snapshot. Those transformations do not
+ * represent a competing edit. Every other character difference remains a
+ * conflict so an extension-owned save window cannot hide an external change.
+ */
+function hasEquivalentHostText(left: string, right: string): boolean {
+  if (left === right) return true;
+  return normalizeHostText(left) === normalizeHostText(right);
+}
+
+function normalizeHostText(content: string): string {
+  return content.replace(/\r\n?/gu, '\n').replace(/\n+$/u, '');
+}
+
 let sessionSequence = 0;
 
 function createSessionId(): string {
@@ -376,6 +496,10 @@ function createSessionId(): string {
   return `${Date.now().toString(36)}-${sessionSequence.toString(36)}-${Math.random()
     .toString(36)
     .slice(2, 10)}`;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function toError(error: unknown): Error {

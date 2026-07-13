@@ -44,8 +44,8 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
 // decision: never let functionality break offline to save bandwidth.
 const docblocksPwa = (): Plugin[] =>
   VitePWA({
-    // Updates are prompt-based: the shell shows an "Update available" banner
-    // and the user reloads when ready. Never auto-reload mid-edit.
+    // Updates are prompt-based: the shell shows an "Update available" status
+    // notice that opens Reload/Later controls. Never auto-reload mid-edit.
     registerType: 'prompt',
     // The page CSP (`script-src 'self'`) forbids inline scripts, and we need
     // the update callbacks anyway — registration lives in src/pwa.ts.

@@ -330,6 +330,23 @@ export class ArtifactStore {
     return result.ids;
   }
 
+  /** Complete only artifacts that have an attached conversion report. */
+  public async completeReportIds(prefix: string): Promise<string[]> {
+    const result = await this.lock(() => {
+      this.assertActive();
+      return {
+        expiredPaths: this.takeExpiredLocked(),
+        ids: [...this.records.entries()]
+          .filter(([id, stored]) => id.startsWith(prefix) && stored.conversionReport !== null)
+          .map(([id]) => id)
+          .sort()
+          .slice(0, 100),
+      };
+    });
+    await removeFilesBestEffort(result.expiredPaths);
+    return result.ids;
+  }
+
   public dispose(): Promise<void> {
     this.disposePromise ??= this.disposeOnce();
     return this.disposePromise;

@@ -2,6 +2,10 @@
 
 Guidance for Claude Code (and any other AI coding agent) working in this repo. Read this first; the conventions below are load-bearing.
 
+> **Canonical guidance:** [`AGENTS.md`](AGENTS.md) supersedes this legacy summary.
+> Use [`docs/cli.md`](docs/cli.md) for the current CLI contract and
+> [`docs/mcp.md`](docs/mcp.md) for the current MCP architecture and protocol.
+
 ## What DocBlocks is
 
 A markdown document editor and management platform that ships from one npm-workspaces monorepo to **four delivery surfaces**:
@@ -19,7 +23,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                          |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`, 17 woff2 fonts. Consumed by site + desktop renderer. (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion (via `squisq-formats`), video rendering (Playwright + ffmpeg), MCP server.                                                                                                                          |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                             |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                             |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                            |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                            |
@@ -140,5 +144,5 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 | Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                     |
 | Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides             |
 | Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                        |
-| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)    |
+| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure            |
 | Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes   |

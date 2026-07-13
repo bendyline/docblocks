@@ -248,7 +248,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'get_conversion_report',
     {
       description:
-        'Retrieve the original bounded diagnostics, applied options, fidelity, provenance, and source-asset manifest for a session artifact.',
+        'Retrieve the original bounded diagnostics, applied options, fidelity, provenance, and source-asset manifest for a conversion-backed session artifact.',
       inputSchema: z.object({ artifactUri: artifactUriSchema }).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.get_conversion_report,
       annotations: READ_ONLY,
@@ -597,14 +597,14 @@ function registerArtifactResource(server: McpServer, artifacts: ArtifactStore): 
 function registerConversionReportResource(server: McpServer, artifacts: ArtifactStore): void {
   const template = new ResourceTemplate('docblocks://reports/{id}', {
     list: undefined,
-    complete: { id: (prefix) => artifacts.completeIds(prefix) },
+    complete: { id: (prefix) => artifacts.completeReportIds(prefix) },
   });
   server.registerResource(
     'conversion-report',
     template,
     {
       description:
-        'Original machine-readable conversion diagnostics and provenance for a session artifact.',
+        'Original machine-readable diagnostics and provenance for a conversion-backed session artifact.',
       mimeType: 'application/json',
     },
     async (uri, variables) => {

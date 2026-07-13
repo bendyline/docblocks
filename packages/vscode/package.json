@@ -21,6 +21,41 @@
   "browser": "./dist/extension.web.js",
   "activationEvents": [],
   "contributes": {
+    "configuration": {
+      "title": "DocBlocks",
+      "properties": {
+        "docblocks.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Automatically save markdown files after edits in the DocBlocks editor. Manual Save and editor close still flush pending changes when disabled."
+        },
+        "docblocks.accentColor": {
+          "type": "string",
+          "default": "brown",
+          "scope": "window",
+          "enum": [
+            "brown",
+            "green",
+            "blue",
+            "purple",
+            "maroon",
+            "orange",
+            "gray"
+          ],
+          "enumDescriptions": [
+            "Brown accent",
+            "Green accent",
+            "Blue accent",
+            "Purple accent",
+            "Maroon accent",
+            "Orange accent",
+            "Gray accent"
+          ],
+          "description": "Accent color used by DocBlocks editor controls in both light and dark VS Code themes."
+        }
+      }
+    },
     "commands": [
       {
         "command": "docblocks.openEditor",
@@ -86,9 +121,9 @@
   "dependencies": {
     "@bendyline/docblocks": "1.1.2",
     "@bendyline/docblocks-react": "1.1.2",
-    "@bendyline/squisq": "2.0.0",
-    "@bendyline/squisq-editor-react": "2.0.0",
-    "@bendyline/squisq-react": "2.0.0"
+    "@bendyline/squisq": "2.0.1",
+    "@bendyline/squisq-editor-react": "2.0.1",
+    "@bendyline/squisq-react": "2.0.1"
   },
   "devDependencies": {
     "@types/vscode": "1.85.0",

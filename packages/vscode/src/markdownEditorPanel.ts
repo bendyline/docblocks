@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
+  isDocBlocksAccentColor,
   parseWebviewToExtensionMessage,
   type DocumentConflictChoice,
   type ExtensionToWebviewMessage,
+  type VscodeEditorSettings,
   type WebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
 import {
@@ -150,7 +152,11 @@ export class MarkdownEditorPanel {
       read: () => this.readHostDocument(),
       replaceAndSave: (content, expected) => this.replaceAndSaveHostDocument(content, expected),
     };
-    const sync = await VscodeDocumentSync.create(adapter, { autoSaveDelayMs: 300 });
+    const settings = readVscodeEditorSettings(this.uri);
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 300,
+      autoSaveEnabled: settings.autoSave,
+    });
     this.sync = sync;
     this.unsubscribeSync = sync.subscribe(() => {
       this.sendSessionState();
@@ -183,13 +189,22 @@ export class MarkdownEditorPanel {
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.uri.toString() !== this.uri.toString() || this.isApplyingEdit) return;
         this.document = event.document;
+        // TextDocument objects are live. Capture the exact event snapshot now
+        // so a queued callback cannot accidentally classify a later version.
+        let external: HostDocumentSnapshot;
+        try {
+          external = toHostSnapshot(event.document);
+        } catch (error: unknown) {
+          void vscode.window.showErrorMessage(toError(error).message);
+          return;
+        }
         this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
           await this.latestEditQueue.flush();
-          const external = toHostSnapshot(event.document);
           const sync = await this.syncReady;
+          const wasConflicted = sync.getSnapshot().session.conflict !== null;
           const result = sync.observeExternal(external);
           if (result === 'applied') this.sendContent();
-          if (result === 'conflict') {
+          if (result === 'conflict' && !wasConflicted) {
             void vscode.window.showWarningMessage(
               `${getUriBasename(this.uri)} changed outside DocBlocks while local edits were pending. Resolve the conflict in the DocBlocks editor.`,
             );
@@ -209,6 +224,19 @@ export class MarkdownEditorPanel {
       }),
       vscode.window.onDidChangeActiveColorTheme(() => {
         this.sendTheme();
+      }),
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (
+          !event.affectsConfiguration('docblocks.autoSave', this.uri) &&
+          !event.affectsConfiguration('docblocks.accentColor', this.uri)
+        ) {
+          return;
+        }
+        void this.applyEditorSettings().catch((error: unknown) => {
+          void vscode.window.showErrorMessage(
+            `DocBlocks could not apply its editor settings: ${toError(error).message}`,
+          );
+        });
       }),
       this.panel.onDidDispose(() => {
         this.panelDisposed = true;
@@ -253,6 +281,12 @@ export class MarkdownEditorPanel {
         this.sendContent();
         this.sendSessionState();
         this.sendTheme();
+        this.sendEditorSettings();
+        break;
+
+      case 'setAutoSave':
+      case 'setAccentColor':
+        await this.handleSettingsUpdate(message);
         break;
 
       case 'edit': {
@@ -321,11 +355,39 @@ export class MarkdownEditorPanel {
 
     try {
       await sync.resolveConflict(choice);
-      if (choice === 'use-external') this.sendContent();
+      // Reload after a content replacement, or when a byte-identical latest
+      // host snapshot automatically rotated the client version while the
+      // conflict controls were open.
+      if (choice === 'use-external' || sessionId !== sync.getSnapshot().sessionId) {
+        this.sendContent();
+      }
       this.sendSessionState();
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(toError(error).message);
     }
+  }
+
+  private async handleSettingsUpdate(
+    message: Extract<WebviewToExtensionMessage, { type: 'setAutoSave' | 'setAccentColor' }>,
+  ): Promise<void> {
+    const configuration = vscode.workspace.getConfiguration('docblocks', this.uri);
+    const key = message.type === 'setAutoSave' ? 'autoSave' : 'accentColor';
+    const value = message.type === 'setAutoSave' ? message.enabled : message.accentColor;
+    try {
+      await configuration.update(key, value, getConfigurationTarget(configuration, key));
+    } catch (error: unknown) {
+      await vscode.window.showErrorMessage(
+        `DocBlocks could not update ${key}: ${toError(error).message}`,
+      );
+    }
+    await this.applyEditorSettings();
+  }
+
+  private async applyEditorSettings(): Promise<void> {
+    const settings = readVscodeEditorSettings(this.uri);
+    const sync = await this.syncReady;
+    sync.setAutoSaveEnabled(settings.autoSave);
+    this.sendEditorSettings(settings);
   }
 
   private warnInvalidMessageOnce(): void {
@@ -409,36 +471,39 @@ export class MarkdownEditorPanel {
         'The VS Code document changed immediately before the DocBlocks edit was applied.',
       );
     }
-    if (document.getText() !== content) {
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(document.uri, getFullDocumentRange(document), content);
+    // Keep ownership through save participants as well as applyEdit. VS Code
+    // can emit document-change events while document.save() runs (formatting,
+    // final-newline normalization, and similar participants); those are part
+    // of this commit and are verified by the commit target afterward.
+    await withApplyingEditFlag(
+      (nextIsApplyingEdit) => {
+        this.isApplyingEdit = nextIsApplyingEdit;
+      },
+      async () => {
+        if (document.getText() !== content) {
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(document.uri, getFullDocumentRange(document), content);
 
-      // VS Code's public WorkspaceEdit API has no compare-and-swap/version
-      // precondition. This is the latest possible deterministic recheck, but
-      // an external edit can still land inside applyEdit itself. The commit
-      // target verifies the resulting snapshot afterward; eliminating that
-      // irreducible in-API race requires a versioned VS Code edit primitive.
-      await withApplyingEditFlag(
-        (nextIsApplyingEdit) => {
-          this.isApplyingEdit = nextIsApplyingEdit;
-        },
-        async () => {
+          // VS Code's public WorkspaceEdit API has no compare-and-swap/version
+          // precondition. This is the latest possible deterministic recheck,
+          // but an external edit can still land inside applyEdit itself. The
+          // final snapshot verification below detects that bounded race.
           const didApply = await vscode.workspace.applyEdit(edit);
           if (!didApply) {
             throw new Error(`VS Code rejected the DocBlocks edit for ${getUriBasename(this.uri)}`);
           }
-        },
-      );
-      document = await this.ensureDocument();
-    }
+          document = await this.ensureDocument();
+        }
 
-    if (document.isDirty) {
-      const didSave = await document.save();
-      if (!didSave) {
-        throw new Error(`VS Code could not save ${getUriBasename(this.uri)}`);
-      }
-      document = await this.ensureDocument();
-    }
+        if (document.isDirty) {
+          const didSave = await document.save();
+          if (!didSave) {
+            throw new Error(`VS Code could not save ${getUriBasename(this.uri)}`);
+          }
+          document = await this.ensureDocument();
+        }
+      },
+    );
 
     this.document = document;
     this.updateTitle();
@@ -486,6 +551,7 @@ export class MarkdownEditorPanel {
       acknowledgedClientRevision: snapshot.acknowledgedClientRevision,
       documentVersion: snapshot.documentVersion,
       error: snapshot.session.error ? boundedMessage(snapshot.session.error.message) : null,
+      conflict: snapshot.conflict,
     });
   }
 
@@ -495,6 +561,11 @@ export class MarkdownEditorPanel {
       type: 'themeChange',
       theme: getVscodeTheme(),
     });
+  }
+
+  private sendEditorSettings(settings = readVscodeEditorSettings(this.uri)): void {
+    if (!this.webviewReady) return;
+    this.postMessage({ type: 'editorSettings', settings });
   }
 
   private postMessage(message: ExtensionToWebviewMessage): void {
@@ -577,11 +648,31 @@ export class MarkdownEditorPanel {
   }
 }
 
+function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
+  const configuration = vscode.workspace.getConfiguration('docblocks', uri);
+  const autoSave = configuration.get<unknown>('autoSave');
+  const accentColor = configuration.get<unknown>('accentColor');
+  return {
+    autoSave: typeof autoSave === 'boolean' ? autoSave : true,
+    accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
+  };
+}
+
+function getConfigurationTarget(
+  configuration: vscode.WorkspaceConfiguration,
+  key: 'autoSave' | 'accentColor',
+): vscode.ConfigurationTarget {
+  const inspected = configuration.inspect<unknown>(key);
+  if (inspected?.workspaceFolderValue !== undefined) {
+    return vscode.ConfigurationTarget.WorkspaceFolder;
+  }
+  if (inspected?.workspaceValue !== undefined) return vscode.ConfigurationTarget.Workspace;
+  return vscode.ConfigurationTarget.Global;
+}
+
 function getFullDocumentRange(document: vscode.TextDocument): vscode.Range {
-  return new vscode.Range(
-    document.lineAt(0).range.start,
-    document.lineAt(document.lineCount - 1).range.end,
-  );
+  const contentLength = document.getText().length;
+  return new vscode.Range(document.positionAt(0), document.positionAt(contentLength));
 }
 
 function toHostSnapshot(document: vscode.TextDocument): HostDocumentSnapshot {
@@ -589,7 +680,12 @@ function toHostSnapshot(document: vscode.TextDocument): HostDocumentSnapshot {
   if (content.length > HOST_WIRE_LIMITS.documentCharacters) {
     throw new Error('This document exceeds the DocBlocks editor size limit.');
   }
-  return { content, version: document.version };
+  return {
+    content,
+    version: document.version,
+    observedAt: Date.now(),
+    isDirty: document.isDirty,
+  };
 }
 
 function getUriBasename(uri: vscode.Uri): string {
