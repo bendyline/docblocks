@@ -1299,6 +1299,13 @@ body.db-resizing-sidebar * {
   padding-bottom: 10px;
 }
 
+/* Keep the preview-mode chevron on the same lifted baseline as its tab
+   label. Squisq's native 9px bottom padding is paired with the native 4px
+   tab padding; the DocBlocks override above adds 6px to the latter. */
+.db-shell .squisq-use-mode-trigger {
+  padding-bottom: 15px;
+}
+
 .squisq-toolbar-button[aria-label='Insert image'] {
   font-size: 0;
   background: no-repeat center / 18px

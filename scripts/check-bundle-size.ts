@@ -51,10 +51,11 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/vscode/dist/webview/index.html',
     entryDir: 'packages/vscode/dist/webview',
     assetsDir: 'packages/vscode/dist/webview/assets',
-    // The webview has a different split strategy from the site shell: the
-    // editor entry is eager, while Monaco and its workers remain deferred.
-    entryBudgetBytes: 2_400_000,
+    // The webview has no shell chrome, but it still defers Squisq until the
+    // extension has supplied a document and the renderer bridges are ready.
+    entryBudgetBytes: 1_350_000,
     chunkBudgets: [
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_125_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
       {
         label: 'deferred standalone editor source',

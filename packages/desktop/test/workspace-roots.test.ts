@@ -128,7 +128,7 @@ describe('WorkspaceRoots physical containment', () => {
 
   it('allows creation below a missing path whose nearest ancestor is inside the root', async () => {
     const resolved = await roots.resolveMutation(workspace, '/new/deep/note.md');
-    expect(resolved).to.equal(path.join(workspace, 'new', 'deep', 'note.md'));
+    expect(resolved).to.equal(path.join(await fs.realpath(workspace), 'new', 'deep', 'note.md'));
   });
 
   it('anchors reads through contained links but rejects every linked mutation path', async () => {

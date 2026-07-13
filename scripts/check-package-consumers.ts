@@ -113,6 +113,44 @@ async function run(
   }
 }
 
+async function packPackage(
+  npmCli: string,
+  packageRoot: string,
+  packageName: string,
+  packsRoot: string,
+): Promise<string> {
+  const output = await run(
+    process.execPath,
+    [npmCli, 'pack', '--json', '--ignore-scripts', '--pack-destination', packsRoot],
+    packageRoot,
+  );
+  const packed = parsePackResult(output, packageName);
+  return path.join(packsRoot, packed.filename);
+}
+
+async function packLinkedSquisqPackages(npmCli: string, packsRoot: string): Promise<string[]> {
+  const scopeRoot = path.join(repoRoot, 'node_modules', '@bendyline');
+  const entries = (await readdir(scopeRoot, { withFileTypes: true })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+  const tarballs: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink()) continue;
+    if (entry.name !== 'squisq' && !entry.name.startsWith('squisq-')) continue;
+    const packageRoot = path.join(scopeRoot, entry.name);
+    const manifest = JSON.parse(
+      await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
+    ) as InstalledManifest;
+    if (manifest.name !== '@bendyline/squisq' && !manifest.name?.startsWith('@bendyline/squisq-')) {
+      continue;
+    }
+    tarballs.push(await packPackage(npmCli, await realpath(packageRoot), manifest.name, packsRoot));
+  }
+
+  return tarballs;
+}
+
 function collectExportTargets(value: unknown, targets: Set<string>): void {
   if (typeof value === 'string') {
     if (value.startsWith('./')) targets.add(value.slice(2));
@@ -226,29 +264,25 @@ async function main(): Promise<void> {
   );
 
   try {
-    const tarballs: string[] = [];
+    // `npm run link:squisq` is a supported parallel-development workflow.
+    // Pack those symlinked packages into the isolated consumer too so the
+    // check validates the exact local dependency graph before its versions
+    // are published. Normal unlinked/CI installs still resolve Squisq from the
+    // registry and therefore retain the release-order check.
+    const linkedSquisqTarballs = await packLinkedSquisqPackages(npmCli, packsRoot);
+    const tarballs: string[] = [...linkedSquisqTarballs];
     for (const packageUnderTest of packages) {
       const packageRoot = path.join(repoRoot, packageUnderTest.directory);
-      const output = await run(
-        process.execPath,
-        [npmCli, 'pack', '--json', '--ignore-scripts', '--pack-destination', packsRoot],
-        packageRoot,
-      );
-      const packed = parsePackResult(output, packageUnderTest.name);
-      tarballs.push(path.join(packsRoot, packed.filename));
+      tarballs.push(await packPackage(npmCli, packageRoot, packageUnderTest.name, packsRoot));
     }
     for (const relativeDirectory of consumerTypePackages) {
       const packageRoot = path.join(repoRoot, relativeDirectory);
       const manifest = JSON.parse(
         await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
       ) as InstalledManifest;
-      const output = await run(
-        process.execPath,
-        [npmCli, 'pack', '--json', '--ignore-scripts', '--pack-destination', packsRoot],
-        packageRoot,
+      tarballs.push(
+        await packPackage(npmCli, packageRoot, manifest.name ?? relativeDirectory, packsRoot),
       );
-      const packed = parsePackResult(output, manifest.name ?? relativeDirectory);
-      tarballs.push(path.join(packsRoot, packed.filename));
     }
 
     await writeFile(
@@ -349,7 +383,11 @@ async function main(): Promise<void> {
       consumerRoot,
     );
     process.stdout.write(
-      'Packed core, React, and CLI packages installed and passed export, dependency, type, runtime, and CLI consumer checks.\n',
+      `Packed core, React, and CLI packages${
+        linkedSquisqTarballs.length > 0
+          ? ` with ${linkedSquisqTarballs.length} linked Squisq packages`
+          : ''
+      } installed and passed export, dependency, type, runtime, and CLI consumer checks.\n`,
     );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });

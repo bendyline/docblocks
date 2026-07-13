@@ -18,12 +18,13 @@ describe('desktop export grants', () => {
 
   it('binds an exact target to one owner and document', async () => {
     const target = path.join(directory, 'report.pdf');
+    const physicalTarget = path.join(await fs.realpath(directory), 'report.pdf');
     const grant = await mintExportGrant(10, 'document-a', target);
 
-    expect(grant.displayPath).to.equal(target);
+    expect(grant.displayPath).to.equal(physicalTarget);
     expect(grant.grantId).not.to.include(target);
     expect(await resolveExportGrant(10, 'document-a', grant.grantId)).to.deep.equal({
-      absolutePath: target,
+      absolutePath: physicalTarget,
       bookmark: undefined,
     });
     await expectRejected(resolveExportGrant(11, 'document-a', grant.grantId), 'another window');

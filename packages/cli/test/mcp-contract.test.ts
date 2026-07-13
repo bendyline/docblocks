@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import JSZip from 'jszip';
 import { createMcpServer } from '../src/mcp/server.js';
@@ -334,7 +334,7 @@ ${TRANSFORM_MARKDOWN}`,
     expect(html).to.include('The Numbers');
     const payload = JSON.parse(result.text) as { fileSize: number; outputPath: string };
     expect(result.structuredContent).to.deep.equal(JSON.parse(result.text));
-    expect(payload.outputPath).to.equal(outputPath);
+    expect(payload.outputPath).to.equal(join(await realpath(h.tmpDir), 'requested.html'));
     expect(payload.fileSize).to.equal((await stat(outputPath)).size);
     expect(await exportStagingEntries(h.tmpDir)).to.deep.equal([]);
   });

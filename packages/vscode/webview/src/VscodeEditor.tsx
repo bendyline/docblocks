@@ -1,5 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { EditorShell } from '@bendyline/squisq-editor-react';
+import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import { MediaContext } from '@bendyline/squisq-react';
 import '@bendyline/squisq-editor-react/styles';
 import '@bendyline/docblocks-react/styles';
@@ -8,13 +7,25 @@ import type {
   ExtensionToWebviewMessage,
 } from '@bendyline/docblocks/vscode';
 import { parseExtensionToWebviewMessage } from '@bendyline/docblocks/vscode';
-import { VscodeExportButton } from './VscodeExportButton.js';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 
 const vscode = getVscodeApi();
+
+// The host cannot render an editor until the extension sends a document.
+// Keep the large Squisq implementation out of the startup entry and load it
+// only after that document and its media/export bridges are ready.
+const EditorShell = lazy(async () => {
+  // Worker setup is an enhancement; a host that cannot install language
+  // workers must not make the document editor unavailable.
+  await import('./setupMonacoWorkers.js').catch(() => undefined);
+  return import('./LazyEditorShell.js');
+});
+const VscodeExportButton = lazy(() =>
+  import('./VscodeExportButton.js').then((module) => ({ default: module.VscodeExportButton })),
+);
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
@@ -125,49 +136,56 @@ export function VscodeEditor() {
   }, []);
 
   if (markdown === null || editorScope === null || mediaBridge === null || exportBridge === null) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: 'var(--vscode-foreground, #ccc)',
-          fontFamily: 'var(--vscode-font-family, sans-serif)',
-        }}
-      >
-        Loading...
-      </div>
-    );
+    return <EditorLoading />;
   }
 
   return (
     <div className="db-shell db-vscode-editor" data-theme={theme} style={{ position: 'relative' }}>
       <MediaContext.Provider value={mediaBridge.mediaProvider}>
-        <EditorShell
-          key={`${editorScope.sessionId}:${editorScope.generation}`}
-          initialMarkdown={markdown}
-          onChange={handleChange}
-          colorScheme={theme}
-          height="100%"
-          mediaProvider={mediaBridge.mediaProvider}
-          showFilesToggle={false}
-          toolbarSlotRight={
-            <VscodeExportButton
-              selectedFile={fileName}
-              mediaContainer={exportBridge.contentContainer}
-              saveBlob={exportBridge.saveBlob}
-              resolveExportTarget={exportBridge.resolveExportTarget}
-              pickExportTarget={exportBridge.pickExportTarget}
-            />
-          }
-        />
+        <Suspense fallback={<EditorLoading />}>
+          <EditorShell
+            key={`${editorScope.sessionId}:${editorScope.generation}`}
+            initialMarkdown={markdown}
+            onChange={handleChange}
+            colorScheme={theme}
+            height="100%"
+            mediaProvider={mediaBridge.mediaProvider}
+            showFilesToggle={false}
+            toolbarSlotRight={
+              <VscodeExportButton
+                selectedFile={fileName}
+                mediaContainer={exportBridge.contentContainer}
+                saveBlob={exportBridge.saveBlob}
+                resolveExportTarget={exportBridge.resolveExportTarget}
+                pickExportTarget={exportBridge.pickExportTarget}
+              />
+            }
+          />
+        </Suspense>
       </MediaContext.Provider>
       <DocumentSessionStatus
         status={sessionStatus}
         message={sessionMessage}
         onResolveConflict={resolveConflict}
       />
+    </div>
+  );
+}
+
+function EditorLoading() {
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        color: 'var(--vscode-foreground, #ccc)',
+        fontFamily: 'var(--vscode-font-family, sans-serif)',
+      }}
+    >
+      Loading editor&hellip;
     </div>
   );
 }
