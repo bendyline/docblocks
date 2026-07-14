@@ -18,6 +18,7 @@ import {
 } from './icloud-detect.js';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { allocateWorkspaceId, deriveWorkspaceId } from './workspace-id.js';
+import { developmentWorkspacePath, isDevelopmentRuntime } from './development-runtime.js';
 
 function samePath(left: string, right: string): boolean {
   const normalize = (value: string) => {
@@ -64,6 +65,18 @@ export async function registerAndPersistWorkspace(
   return { id, name, rootPath: physicalRoot };
 }
 
+/** Ensure the source checkout's deterministic, production-isolated workspace. */
+export async function ensureDevelopmentWorkspace(): Promise<ElectronWorkspaceInfo> {
+  const rootPath = developmentWorkspacePath(app.getPath('documents'));
+  await ensureFolder(rootPath);
+  const info = await registerAndPersistWorkspace(rootPath);
+  await updateSettings((settings) => ({
+    ...settings,
+    defaultWorkspaceRoot: info.rootPath,
+  }));
+  return info;
+}
+
 export function registerWorkspaceIpc(): void {
   const roots = getWorkspaceRoots();
 
@@ -100,6 +113,13 @@ export function registerWorkspaceIpc(): void {
         const id = deriveWorkspaceId(physicalRoot);
         roots.register(id, physicalRoot);
         return { id, name: path.basename(physicalRoot) || 'DocBlocks', rootPath: physicalRoot };
+      }
+
+      // Source builds always use their dedicated development folder. This
+      // branch precedes saved defaults so a developer's production workspace
+      // can never become the implicit development target.
+      if (isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV)) {
+        return ensureDevelopmentWorkspace();
       }
 
       // Honour a previously configured default.

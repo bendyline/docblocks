@@ -27,6 +27,8 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GRACEFUL_CLOSE_TIMEOUT_MS = 20_000;
+const FORCED_CLOSE_TIMEOUT_MS = 5_000;
 
 export interface DocBlocksFixtures {
   userDataDir: string;
@@ -51,6 +53,47 @@ function cleanEnv(workspaceDir: string): Record<string, string> {
   // OS Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
   return env;
+}
+
+async function waitForProcessExit(app: ElectronApplication, timeoutMs: number): Promise<boolean> {
+  const child = app.process();
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return await new Promise((resolve) => {
+    const onExit = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off('exit', onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.once('exit', onExit);
+  });
+}
+
+async function forceCloseApplication(app: ElectronApplication): Promise<void> {
+  const child = app.process();
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  await waitForProcessExit(app, FORCED_CLOSE_TIMEOUT_MS);
+}
+
+async function closeApplication(app: ElectronApplication): Promise<void> {
+  if (app.process().exitCode !== null || app.process().signalCode !== null) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const closeResult = await Promise.race([
+    app.close().then(
+      () => 'closed' as const,
+      () => 'failed' as const,
+    ),
+    new Promise<'timed-out'>((resolve) => {
+      timer = setTimeout(() => resolve('timed-out'), GRACEFUL_CLOSE_TIMEOUT_MS);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+
+  if (closeResult !== 'closed') await forceCloseApplication(app);
 }
 
 export const test = base.extend<DocBlocksFixtures>({
@@ -107,7 +150,20 @@ export const test = base.extend<DocBlocksFixtures>({
         timeout: 30_000,
       });
       running = app;
-      const window = await app.firstWindow();
+      app.once('close', () => {
+        if (running === app) running = undefined;
+      });
+      let window: Page;
+      try {
+        window = await app.firstWindow();
+      } catch (error: unknown) {
+        // macOS normally keeps an application alive with no windows. A failed
+        // Playwright launch must not inherit that behavior or strand the worker.
+        running = undefined;
+        await forceCloseApplication(app);
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        throw new Error(`Electron did not expose its main window${detail}`);
+      }
       await window.waitForLoadState('domcontentloaded');
       try {
         await window.waitForFunction(
@@ -123,9 +179,7 @@ export const test = base.extend<DocBlocksFixtures>({
         // from loading. Fail at launch instead of exercising browser fallbacks
         // and then hanging on the renderer close acknowledgement.
         running = undefined;
-        const closed = app.waitForEvent('close', { timeout: 5_000 }).catch(() => undefined);
-        app.process().kill();
-        await closed;
+        await forceCloseApplication(app);
         const detail = error instanceof Error ? `: ${error.message}` : '';
         throw new Error(`Electron preload did not expose docBlocksHost${detail}`);
       }
@@ -135,23 +189,7 @@ export const test = base.extend<DocBlocksFixtures>({
     await use(launch);
 
     if (running) {
-      let closeTimer: ReturnType<typeof setTimeout> | undefined;
-      const closeResult = await Promise.race([
-        running.close().then(
-          () => 'closed' as const,
-          () => 'failed' as const,
-        ),
-        new Promise<'timed-out'>((resolve) => {
-          closeTimer = setTimeout(() => resolve('timed-out'), 20_000);
-        }),
-      ]).finally(() => {
-        if (closeTimer) clearTimeout(closeTimer);
-      });
-      if (closeResult === 'timed-out') {
-        const closed = running.waitForEvent('close', { timeout: 5_000 }).catch(() => undefined);
-        running.process().kill();
-        await closed;
-      }
+      await closeApplication(running);
     }
   },
 });

@@ -294,7 +294,10 @@ async function main(): Promise<void> {
       [
         npmCli,
         'install',
-        '--prefer-offline',
+        // This check is also the release-order guard for public DocBlocks
+        // dependencies. Force npm to revalidate registry metadata so a cached
+        // pre-release packument cannot report ETARGET after Squisq is published.
+        '--prefer-online',
         '--ignore-scripts',
         '--no-audit',
         '--no-fund',

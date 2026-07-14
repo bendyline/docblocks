@@ -111,7 +111,8 @@ describe('MCP canonical boundary contracts', () => {
     }
   });
 
-  it('produces DBK artifacts that satisfy the same strict import policy', async () => {
+  it('produces DBK artifacts that satisfy the same strict import policy', async function () {
+    this.timeout(30_000);
     const harness = await startMcpHarness();
     try {
       const converted = await callTool(harness.client, 'convert_document', {

@@ -23,7 +23,10 @@ describe('MCP root aliases and safe materialization', function () {
   let outside = '';
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(os.tmpdir(), 'docblocks-mcp-authority-v2-'));
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'docblocks-mcp-authority-v2-'));
+    // macOS exposes the same temp directory through /var and /private/var.
+    // Start with its physical identity because the authority returns physical paths.
+    root = await realpath(temporaryRoot);
     allowed = path.join(root, 'allowed');
     outside = path.join(root, 'outside');
     await mkdir(path.join(allowed, 'nested'), { recursive: true });

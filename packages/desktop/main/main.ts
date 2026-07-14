@@ -16,7 +16,7 @@ import { isTrustedRendererUrl, parseExternalHttpUrl } from '@bendyline/docblocks
 import { registerFsIpc } from './ipc-fs.js';
 import { registerFsV2Ipc } from './ipc-fs-v2.js';
 import { registerExternalIpc } from './ipc-external.js';
-import { registerWorkspaceIpc } from './ipc-workspaces.js';
+import { ensureDevelopmentWorkspace, registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
 import { registerExportIpc } from './ipc-export.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
@@ -36,10 +36,19 @@ import {
   prepareWindowsForExit,
   registerWindowLifecycleIpc,
 } from './window-lifecycle.js';
+import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
 const TITLE_BAR_HEIGHT = 48;
-const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
+const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
+const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
+
+// Development must not share Chromium storage, settings, window state, or the
+// single-instance lock with an installed DocBlocks build. Honour an explicit
+// command-line profile so automation and one-off debugging can remain isolated.
+if (isDev && !app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', developmentUserDataPath(app.getPath('appData')));
+}
 
 // Some headless/virtualized Windows environments cannot start Chromium's GPU
 // subprocess (0xC0000135). This must run before app.ready; E2E sets the flag so
@@ -182,7 +191,7 @@ function boundsAreVisible(bounds: {
   });
 }
 
-async function createWindow(): Promise<BrowserWindow> {
+async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow> {
   const winState = windowStateKeeper({
     defaultWidth: 1280,
     defaultHeight: 800,
@@ -270,7 +279,9 @@ async function createWindow(): Promise<BrowserWindow> {
   });
 
   if (isDev) {
-    await win.loadURL(DEV_SERVER_URL);
+    const developmentUrl = new URL(DEV_SERVER_URL);
+    if (startupWorkspaceId) developmentUrl.hash = encodeURIComponent(startupWorkspaceId);
+    await win.loadURL(developmentUrl.toString());
     win.webContents.openDevTools({ mode: 'detach' });
   } else {
     await win.loadURL('app://docblocks/index.html');
@@ -382,7 +393,12 @@ app.whenReady().then(async () => {
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
 
-  mainWindow = await createWindow();
+  // A source checkout always starts on its dedicated development workspace.
+  // The URL hash intentionally wins over renderer last-document state, while
+  // OS open-file/deep-link requests still supersede it through the normal
+  // launch-request generation path.
+  const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
+  mainWindow = await createWindow(developmentWorkspace?.id);
   // `ready-to-show` can precede the `createWindow()` continuation. Close the
   // narrow interval where an OS event still observed `mainWindow === null`
   // after the first drain and therefore queued one late request.
@@ -417,14 +433,19 @@ app.on('before-quit', (event) => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  // Normal macOS apps remain active after their final window closes. Test
+  // processes must instead terminate deterministically; otherwise a launch
+  // failure can leave a headless Electron process (and Playwright worker)
+  // alive indefinitely.
+  if (process.platform !== 'darwin' || isAutomation) {
     app.quit();
   }
 });
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    mainWindow = await createWindow();
+    const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
+    mainWindow = await createWindow(developmentWorkspace?.id);
     drainPendingOpenRequests(mainWindow);
     buildMenu(mainWindow);
     mainWindow.setMenuBarVisibility(false);

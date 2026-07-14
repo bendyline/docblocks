@@ -151,7 +151,7 @@ async function launchPackagedApplication(
       } catch {
         // The window may already have closed as part of the assertion path.
       }
-      if (!(await waitForExit(child, 5_000))) child.kill();
+      if (!(await waitForExit(child, 5_000))) child.kill('SIGKILL');
       try {
         await browser?.close();
       } catch {
@@ -167,7 +167,7 @@ async function launchPackagedApplication(
     } catch {
       // Ignore cleanup failure while preserving the launch error.
     }
-    child.kill();
+    child.kill('SIGKILL');
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`${detail}\nPackaged process output:\n${processLog()}`);
   }

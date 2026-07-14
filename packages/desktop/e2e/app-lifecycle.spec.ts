@@ -129,7 +129,7 @@ test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir
 test('export dialog exposes a remembered native target control', async ({ launchApp }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
-  await window.getByRole('button', { name: 'More actions' }).click();
+  await window.locator('.db-toolbar-menu-trigger').click();
   await window.getByRole('button', { name: 'Export...' }).click();
 
   const exportTarget = window.getByLabel('Export to');
@@ -173,10 +173,9 @@ test('window close waits for the active document session to flush', async ({
   await window.keyboard.insertText(sentinel);
   await expect(editor).toContainText(sentinel);
 
-  // Exercise the guarded BrowserWindow close path directly. On macOS closing
-  // the final window intentionally leaves the application running, so the
-  // fixture owns the later app quit after this assertion has observed the
-  // renderer's save acknowledgement.
+  // Exercise the guarded BrowserWindow close path directly. Production macOS
+  // builds remain active after the final window closes, but automation mode
+  // exits so a headless application cannot strand the Playwright worker.
   const browserWindow = await app.browserWindow(window);
   const windowClosed = window.waitForEvent('close');
   await browserWindow.evaluate((nativeWindow) => nativeWindow.close());
