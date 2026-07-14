@@ -1,3 +1,28 @@
+## @bendyline/docblocks-cli [2.0.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@1.1.2...@bendyline/docblocks-cli@2.0.0) (2026-07-14)
+
+### ⚠ BREAKING CHANGES
+
+* Updated MCP and CLI APIs
+
+### Features
+
+* Updated MCP and CLI APIs ([b88fe16](https://github.com/bendyline/docblocks/commit/b88fe161523dda1107abaee25485d111cfc4d119))
+
+### Bug Fixes
+
+* Bug fixes ([bd5e8b7](https://github.com/bendyline/docblocks/commit/bd5e8b7dd606bfa9a4791ce496114e89d1c4158c))
+* DocBlocks fixes ([ba2f0db](https://github.com/bendyline/docblocks/commit/ba2f0dbb12b39159db967d62afda52ca3623ec84))
+* MCP updates ([f3b31d4](https://github.com/bendyline/docblocks/commit/f3b31d4b80a25f97803ca4c3055fb1453d295dd0))
+* More code review hardening ([015196a](https://github.com/bendyline/docblocks/commit/015196a47ebbeb978e999e61e9f148b5fd344a5d))
+* More fixes ([bfa9929](https://github.com/bendyline/docblocks/commit/bfa9929424e081ce369b9d2e1426a24ecdfedc93))
+* Test updates ([81b4f90](https://github.com/bendyline/docblocks/commit/81b4f902c0a99758b21b9f5e8d0db0483b10fa39))
+* Update ([a6e6e56](https://github.com/bendyline/docblocks/commit/a6e6e56ede9f64a215d682f5f2f8d895a0b5d49b))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.0.0
+
 ## @bendyline/docblocks-cli [1.1.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@1.1.1...@bendyline/docblocks-cli@1.1.2) (2026-07-07)
 
 ### Bug Fixes
