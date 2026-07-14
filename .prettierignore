@@ -3,4 +3,5 @@ node_modules
 *.tgz
 test-results
 playwright-report
+playwright-report-offline
 CHANGELOG.md

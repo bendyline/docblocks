@@ -1,0 +1,100 @@
+/* The Electron renderer owns the titlebar. Keep this file desktop-only:
+   site and VS Code use their host application's normal chrome — except the
+   installed web app's Window Controls Overlay mode, which ports these rules
+   under `@media (display-mode: window-controls-overlay)` at the bottom of
+   packages/react/src/styles/docblocks.css. Keep the two blocks in sync. */
+
+.db-desktop-root {
+  --db-desktop-titlebar-height: 48px;
+}
+
+/* The first shell row replaces the native titlebar. Empty space can drag
+   the window; every interactive descendant opts back out below. */
+.db-desktop-root .db-shell-sidebar-header,
+.db-desktop-root .squisq-toolbar,
+.db-desktop-root .squisq-editor-header--image {
+  app-region: drag;
+  -webkit-app-region: drag;
+  box-sizing: border-box;
+  height: var(--db-desktop-titlebar-height);
+  min-height: var(--db-desktop-titlebar-height);
+}
+
+.db-desktop-root .db-shell-sidebar-header {
+  padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
+  cursor: grab;
+}
+
+/* Make the draggable header space discoverable without turning it into a
+   control. This desktop-only pseudo-element lands immediately after the
+   workspace gear and leaves pointer handling to the header's drag region. */
+.db-desktop-root .db-shell-sidebar-header::after {
+  content: '';
+  width: 12px;
+  height: 20px;
+  flex: 0 0 12px;
+  margin-right: 3px;
+  background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+  background-position: center;
+  background-size: 4px 4px;
+  opacity: 0.72;
+  pointer-events: none;
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+/* Let the workspace menu size itself to its contents and cross the sidebar
+   boundary above the editor. The explorer still clips its own contents. */
+.db-desktop-root .db-shell-sidebar {
+  overflow: visible;
+}
+
+.db-desktop-root .db-workspace-dropdown {
+  box-sizing: border-box;
+  width: max-content;
+}
+
+/* On Windows/Linux the caption buttons normally occupy the right edge.
+   Derive that inset from Electron's overlay safe area rather than assuming
+   a fixed width, so scaling, RTL controls, and OS variants stay clear. The
+   compact sidebar header is full-width, so it needs the same reservation. */
+.db-desktop-root .db-shell--mobile .db-shell-sidebar-header,
+.db-desktop-root .squisq-toolbar,
+.db-desktop-root .squisq-editor-header--image {
+  padding-right: max(
+    12px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)
+  );
+}
+
+/* In compact mode there is no sidebar to absorb left-side controls such as
+   macOS traffic lights, so the editor toolbar also observes the left inset. */
+.db-desktop-root .db-shell--mobile .squisq-toolbar,
+.db-desktop-root .db-shell--mobile .squisq-editor-header--image {
+  padding-left: env(titlebar-area-x, 0px);
+}
+
+.db-desktop-root
+  :is(button, a, input, select, textarea, [contenteditable='true'], [role='button'], [role='tab']) {
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+/* Folder and empty states do not render Squisq's toolbar. Preserve a top
+   drag strip in those states and keep folder content below it. */
+.db-desktop-root .db-shell-empty::before,
+.db-desktop-root .db-folder-view::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: env(titlebar-area-x, 0px);
+  width: env(titlebar-area-width, 100%);
+  height: var(--db-desktop-titlebar-height);
+  app-region: drag;
+  -webkit-app-region: drag;
+}
+
+.db-desktop-root .db-folder-view {
+  box-sizing: border-box;
+  padding-top: calc(24px + var(--db-desktop-titlebar-height));
+}

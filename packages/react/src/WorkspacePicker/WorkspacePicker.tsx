@@ -3,11 +3,18 @@
  * (IndexedDB-based or native folder via File System Access API).
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
-import { isNativeFileSystemSupported } from '@bendyline/docblocks/filesystem';
 import { isElectronHost } from '@bendyline/docblocks/host';
+import { FolderIcon, NewFolderIcon } from '../icons.js';
+
+function isNativeFileSystemSupported(): boolean {
+  return (
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function'
+  );
+}
 
 export interface WorkspacePickerProps {
   /** Currently active workspace id. */
@@ -16,14 +23,29 @@ export interface WorkspacePickerProps {
   onSelect: (descriptor: WorkspaceDescriptor) => void;
   /** Called when the user chooses "Open Folder" (native FS). */
   onOpenFolder: () => void;
+  /**
+   * Called when the user chooses "Clone Git repository". Only provided on
+   * the desktop when git is available — omitted, the item is hidden.
+   */
+  onCloneRepository?: () => void;
   /** Optional className. */
   className?: string;
+}
+
+function WorkspacePath({ path }: { path: string }) {
+  return path.split(/([\\/])/).map((segment, index) => (
+    <Fragment key={index}>
+      {segment}
+      {(segment === '\\' || segment === '/') && <wbr />}
+    </Fragment>
+  ));
 }
 
 export function WorkspacePicker({
   activeWorkspaceId,
   onSelect,
   onOpenFolder,
+  onCloneRepository,
   className,
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
@@ -82,6 +104,7 @@ export function WorkspacePicker({
   }, [workspaces.length, onSelect, refresh]);
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
+  const activeWorkspaceName = activeWs?.name ?? 'No workspace';
 
   return (
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>
@@ -89,9 +112,16 @@ export function WorkspacePicker({
         className="db-workspace-picker-btn"
         onClick={() => setIsOpen(!isOpen)}
         title="Switch workspace"
+        aria-label={`Switch workspace, current: ${activeWorkspaceName}`}
       >
-        {activeWs?.name ?? 'No workspace'}
-        <span className="db-workspace-picker-caret">{isOpen ? '\u25B4' : '\u25BE'}</span>
+        <span className="db-workspace-picker-label">{activeWorkspaceName}</span>
+        <span className="db-workspace-picker-compact-icon">
+          <FolderIcon />
+        </span>
+        <span
+          className={`db-workspace-picker-caret${isOpen ? ' db-workspace-picker-caret--open' : ''}`}
+          aria-hidden="true"
+        />
       </button>
 
       {isOpen && (
@@ -104,9 +134,18 @@ export function WorkspacePicker({
               }`}
               onClick={() => handleSelect(ws)}
             >
-              {ws.name}
-              <span className="db-workspace-type">
-                {ws.type === 'native' || ws.type === 'electron-native' ? '(folder)' : ''}
+              <span className="db-workspace-details">
+                <span className="db-workspace-heading">
+                  <span>{ws.name}</span>
+                  {(ws.type === 'native' || ws.type === 'electron-native') && (
+                    <span className="db-workspace-type">(folder)</span>
+                  )}
+                </span>
+                {ws.rootPath && (
+                  <span className="db-workspace-path" title={ws.rootPath}>
+                    <WorkspacePath path={ws.rootPath} />
+                  </span>
+                )}
               </span>
             </button>
           ))}
@@ -115,7 +154,10 @@ export function WorkspacePicker({
 
           {!electron && (
             <button className="db-workspace-dropdown-item" onClick={handleCreateNew}>
-              + New Workspace
+              <span className="db-workspace-dropdown-action-label">
+                <NewFolderIcon />
+                <span>New Workspace</span>
+              </span>
             </button>
           )}
 
@@ -128,6 +170,18 @@ export function WorkspacePicker({
               }}
             >
               Open Folder...
+            </button>
+          )}
+
+          {onCloneRepository && (
+            <button
+              className="db-workspace-dropdown-item"
+              onClick={() => {
+                setIsOpen(false);
+                onCloneRepository();
+              }}
+            >
+              Clone Git Repository...
             </button>
           )}
         </div>

@@ -11,13 +11,15 @@
  * and can call `quitAndInstall` once a `'downloaded'` status arrives.
  */
 
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import pkg, { type UpdateInfo } from 'electron-updater';
-import type { UpdaterStatus } from '@bendyline/docblocks/host';
+import type { UpdateInstallResult, UpdaterStatus } from '@bendyline/docblocks/host';
+import { registerTrustedIpcHandler } from './ipc-authority.js';
 
 const { autoUpdater } = pkg;
 
 const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
+let updateDownloaded = false;
 
 /**
  * True in store-distributed builds (Mac App Store / Microsoft Store), where
@@ -70,14 +72,15 @@ export function initAutoUpdater(): void {
   autoUpdater.on('download-progress', (info) =>
     broadcast({ kind: 'downloading', percent: info.percent }),
   );
-  autoUpdater.on('update-downloaded', (info: UpdateInfo) =>
+  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    updateDownloaded = true;
     broadcast({
       kind: 'downloaded',
       version: info.version,
       releaseNotes: releaseNotesOf(info),
       releaseUrl: releaseUrlFor(info.version),
-    }),
-  );
+    });
+  });
   autoUpdater.on('error', (err) =>
     broadcast({ kind: 'error', message: err?.message ?? 'Update error' }),
   );
@@ -87,8 +90,10 @@ export function initAutoUpdater(): void {
   });
 }
 
-export function registerUpdaterIpc(): void {
-  ipcMain.handle('updater:checkForUpdates', async (): Promise<boolean> => {
+export function registerUpdaterIpc(
+  prepareForInstall: () => Promise<boolean> = async () => true,
+): void {
+  registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<boolean> => {
     // Store builds are updated by the store, not by electron-updater.
     if (isStoreBuild()) return false;
     try {
@@ -99,14 +104,16 @@ export function registerUpdaterIpc(): void {
     }
   });
 
-  ipcMain.handle('updater:getVersion', async (): Promise<string> => {
+  registerTrustedIpcHandler('updater:getVersion', 0, async (): Promise<string> => {
     return app.getVersion();
   });
 
-  ipcMain.handle('updater:quitAndInstall', async (): Promise<void> => {
-    if (isStoreBuild()) return;
+  registerTrustedIpcHandler('updater:quitAndInstall', 0, async (): Promise<UpdateInstallResult> => {
+    if (isStoreBuild() || !updateDownloaded) return 'not-ready';
+    if (!(await prepareForInstall())) return 'cancelled';
     // Must fire on the next tick so the IPC round-trip completes before
     // the process exits; otherwise the renderer gets a connection error.
     setImmediate(() => autoUpdater.quitAndInstall());
+    return 'installing';
   });
 }

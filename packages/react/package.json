@@ -34,6 +34,21 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./export": {
+      "types": "./dist/export/index.d.ts",
+      "import": "./dist/export/index.js",
+      "default": "./dist/export/index.js"
+    },
+    "./settings": {
+      "types": "./dist/settings/index.d.ts",
+      "import": "./dist/settings/index.js",
+      "default": "./dist/settings/index.js"
+    },
+    "./editor": {
+      "types": "./dist/editor.d.ts",
+      "import": "./dist/editor.js",
+      "default": "./dist/editor.js"
+    },
     "./styles": "./src/styles/docblocks.css"
   },
   "scripts": {
@@ -46,13 +61,13 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "1.1.2",
-    "@bendyline/squisq": "1.5.2",
-    "@bendyline/squisq-editor-react": "1.6.2",
-    "@bendyline/squisq-formats": "1.4.2",
-    "@bendyline/squisq-react": "1.4.2",
-    "@bendyline/squisq-video": "1.2.2",
-    "@bendyline/squisq-video-react": "1.2.2",
-    "monaco-editor": "0.53.0"
+    "@bendyline/squisq": "2.0.1",
+    "@bendyline/squisq-editor-react": "2.0.1",
+    "@bendyline/squisq-formats": "2.0.1",
+    "@bendyline/squisq-react": "2.0.1",
+    "@bendyline/squisq-video": "2.0.1",
+    "@bendyline/squisq-video-react": "2.0.1",
+    "monaco-editor": "0.50.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",

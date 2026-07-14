@@ -1,16 +1,17 @@
 /**
  * ElectronFileSystemProvider — implements FileSystemProvider by delegating
  * to the Electron desktop host's fs IPC bridge. Every operation is scoped
- * to an absolute root path that the main process validates against a
- * whitelist of registered workspace roots.
+ * to an opaque workspace id that the main process resolves against its
+ * registered workspace authority.
  *
  * This file has no Electron dependency — it is a pure IPC client that
  * relies on the `docBlocksHost` global installed by the preload script.
  */
 
-import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import type { FileCommitResult, FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
 import { maybeGetDocBlocksHost } from '../host/index.js';
 import type { DocBlocksHostFsAPI } from '../host/types.js';
+import { ElectronFileSystemProviderV2 } from './electron-provider-v2.js';
 
 export { isElectronHost } from '../host/index.js';
 
@@ -27,6 +28,7 @@ function getHostFs(): DocBlocksHostFsAPI {
 export class ElectronFileSystemProvider implements FileSystemProvider {
   readonly id: string;
   readonly label: string;
+  readonly v2: ElectronFileSystemProviderV2;
 
   private readonly rootPath: string;
 
@@ -34,6 +36,7 @@ export class ElectronFileSystemProvider implements FileSystemProvider {
     this.id = id;
     this.label = label;
     this.rootPath = rootPath;
+    this.v2 = new ElectronFileSystemProviderV2(id, label, rootPath);
   }
 
   /** Absolute path this provider is rooted at. */
@@ -42,47 +45,55 @@ export class ElectronFileSystemProvider implements FileSystemProvider {
   }
 
   readFile(path: string): Promise<string | null> {
-    return getHostFs().readFile(this.rootPath, path);
+    return getHostFs().readFile(this.id, path);
   }
 
   writeFile(path: string, content: string): Promise<void> {
-    return getHostFs().writeFile(this.rootPath, path, content);
+    return getHostFs().writeFile(this.id, path, content);
+  }
+
+  commitFile(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult> {
+    return getHostFs().commitFile(this.id, path, content, expectedContent);
   }
 
   delete(path: string): Promise<void> {
-    return getHostFs().delete(this.rootPath, path);
+    return getHostFs().delete(this.id, path);
   }
 
   rename(oldPath: string, newPath: string): Promise<void> {
-    return getHostFs().rename(this.rootPath, oldPath, newPath);
+    return getHostFs().rename(this.id, oldPath, newPath);
   }
 
   readDirectory(path: string): Promise<FileSystemEntry[]> {
-    return getHostFs().readDirectory(this.rootPath, path);
+    return getHostFs().readDirectory(this.id, path);
   }
 
   exists(path: string): Promise<boolean> {
-    return getHostFs().exists(this.rootPath, path);
+    return getHostFs().exists(this.id, path);
   }
 
   createDirectory(path: string): Promise<void> {
-    return getHostFs().createDirectory(this.rootPath, path);
+    return getHostFs().createDirectory(this.id, path);
   }
 
   stat(path: string): Promise<FileMeta | null> {
-    return getHostFs().stat(this.rootPath, path);
+    return getHostFs().stat(this.id, path);
   }
 
   readBinary(path: string): Promise<ArrayBuffer | null> {
-    return getHostFs().readBinary(this.rootPath, path);
+    return getHostFs().readBinary(this.id, path);
   }
 
   writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
-    return getHostFs().writeBinary(this.rootPath, path, data);
+    return getHostFs().writeBinary(this.id, path, data);
   }
 
   /** Subscribe to external change notifications under this root. */
   watch(onChange: (changedPath: string) => void): () => void {
-    return getHostFs().watch(this.rootPath, onChange);
+    return getHostFs().watch(this.id, onChange);
   }
 }

@@ -9,7 +9,9 @@
 
 import type { ContentContainer, ContentEntry } from '@bendyline/squisq/storage';
 import { findDocumentPath } from '@bendyline/squisq/storage';
-import type { FileSystemProvider } from './types.js';
+import { FsError } from './fs-error.js';
+import { getFileSystemProviderV2, type FileSystemProvider } from './types.js';
+import { parseWorkspacePath, workspacePathContains, workspacePathJoin } from './workspace-path.js';
 
 const EXTENSION_MIME_MAP: Record<string, string> = {
   '.md': 'text/markdown',
@@ -37,8 +39,7 @@ function guessMimeType(path: string): string {
 }
 
 function joinPrefix(prefix: string, p: string): string {
-  const clean = p.replace(/^\/+/, '');
-  return prefix.replace(/\/+$/, '') + '/' + clean;
+  return workspacePathJoin(parseWorkspacePath(prefix), p);
 }
 
 export class FileSystemContentContainer implements ContentContainer {
@@ -48,11 +49,13 @@ export class FileSystemContentContainer implements ContentContainer {
     private readonly provider: FileSystemProvider,
     prefix = '.docblocks/media',
   ) {
-    this.prefix = prefix.replace(/^\/+/, '').replace(/\/+$/, '');
+    this.prefix = parseWorkspacePath(prefix);
   }
 
   async readFile(path: string): Promise<ArrayBuffer | null> {
     const full = joinPrefix(this.prefix, path);
+    const providerV2 = getFileSystemProviderV2(this.provider);
+    if (providerV2) return (await providerV2.readFile(parseWorkspacePath(full)))?.data ?? null;
     const binary = await this.provider.readBinary(full);
     if (binary) return binary;
     // IndexedDB-backed workspaces store text via `writeFile(string)` and
@@ -67,43 +70,78 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async writeFile(path: string, data: ArrayBuffer | Uint8Array, _mimeType?: string): Promise<void> {
-    await this.provider.writeBinary(joinPrefix(this.prefix, path), data);
+    const full = joinPrefix(this.prefix, path);
+    const providerV2 = getFileSystemProviderV2(this.provider);
+    if (providerV2) {
+      await providerV2.writeFile(parseWorkspacePath(full), data, {
+        mode: 'upsert',
+        createParents: true,
+      });
+      return;
+    }
+    await this.provider.writeBinary(full, data);
   }
 
   async removeFile(path: string): Promise<void> {
-    await this.provider.delete(joinPrefix(this.prefix, path));
+    const full = joinPrefix(this.prefix, path);
+    const providerV2 = getFileSystemProviderV2(this.provider);
+    if (providerV2) {
+      await providerV2.remove(parseWorkspacePath(full), { missing: 'ignore' });
+      return;
+    }
+    await this.provider.delete(full);
   }
 
   async listFiles(prefix?: string): Promise<ContentEntry[]> {
     const entries: ContentEntry[] = [];
+    const providerV2 = getFileSystemProviderV2(this.provider);
+    const root = parseWorkspacePath(this.prefix);
+    type ListedEntry = {
+      readonly kind: 'file' | 'directory';
+      readonly path: string;
+      readonly size?: number | null;
+    };
     const walk = async (dir: string) => {
-      let children;
+      let children: readonly ListedEntry[];
       try {
-        children = await this.provider.readDirectory(dir);
-      } catch {
-        return;
+        children = providerV2
+          ? await providerV2.readDirectory(parseWorkspacePath(dir))
+          : await this.provider.readDirectory(dir);
+      } catch (error: unknown) {
+        // An absent container root means an empty container. Every other
+        // storage fault (including a subtree disappearing mid-snapshot)
+        // remains observable to backup/export callers.
+        if (dir === root && error instanceof FsError && error.code === 'not-found') return;
+        throw error;
       }
       for (const child of children) {
         if (child.kind === 'directory') {
           await walk(child.path);
         } else {
-          const rel = child.path.replace(new RegExp('^/?' + this.prefix + '/?'), '');
+          const childPath = parseWorkspacePath(child.path);
+          const prefixPath = parseWorkspacePath(this.prefix);
+          if (!workspacePathContains(prefixPath, childPath)) continue;
+          const rel = childPath === prefixPath ? '' : childPath.slice(prefixPath.length + 1);
           if (prefix && !rel.startsWith(prefix)) continue;
-          const meta = await this.provider.stat(child.path);
+          const size = child.size ?? (await this.provider.stat(child.path))?.size ?? 0;
           entries.push({
             path: rel,
             mimeType: guessMimeType(rel),
-            size: meta?.size ?? 0,
+            size,
           });
         }
       }
     };
-    await walk('/' + this.prefix);
+    await walk(root);
     return entries;
   }
 
   async exists(path: string): Promise<boolean> {
-    return this.provider.exists(joinPrefix(this.prefix, path));
+    const full = joinPrefix(this.prefix, path);
+    const providerV2 = getFileSystemProviderV2(this.provider);
+    return providerV2
+      ? (await providerV2.stat(parseWorkspacePath(full))) !== null
+      : this.provider.exists(full);
   }
 
   async getDocumentPath(): Promise<string | null> {

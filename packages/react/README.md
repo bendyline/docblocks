@@ -21,6 +21,16 @@ function App() {
 }
 ```
 
+The video-export worker uses module chunks. Vite consumers must retain the
+same worker setting used by the DocBlocks site and desktop renderer:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+
+export default defineConfig({ worker: { format: 'es' } });
+```
+
 ## Components
 
 ### DocBlocksShell
@@ -34,11 +44,13 @@ The canonical DocBlocks experience in one component — file explorer, workspace
 - `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
 - `logoUrl` — brand mark for the app menu button
 
-Storage is abstracted behind `FileSystemProvider` from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), or the Electron host.
+Storage is abstracted behind the byte-authoritative `FileSystemProviderV2` contract from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), transient memory workspaces, or the Electron host. Built-in compatibility facades expose it as `provider.v2`; first-party shell and file-tree operations are v2-first.
 
 ### FileExplorer / FileTreeNode
 
-File tree browser with inline create (file + folder), rename, delete, and refresh. Long names truncate gracefully.
+File tree browser with inline create (file + folder), rename, and delete. It follows filesystem
+watch events automatically and re-reads the visible tree when a browser surface resumes. Long
+names truncate gracefully.
 
 ### WorkspacePicker
 
@@ -50,17 +62,31 @@ Top-left brand menu with the app-wide **Settings** dialog (theme preference, glo
 
 ### ExportToolbarControls / ExportDialog
 
+Consumers that need the export pipeline without the complete shell can use the
+public, independently built entry point:
+
+```ts
+import {
+  DEFAULT_OPTIONS,
+  ExportDialog,
+  buildExportFilename,
+  runExport,
+} from '@bendyline/docblocks-react/export';
+```
+
 The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, HTML, Markdown), visual theme, and page size.
 
 ## Hooks
 
-### `useAutoSave(content, save, delay?)`
+### `useDocumentSession(delay?)`
 
-Debounced auto-save (default 500ms).
+React binding for the revisioned `DocumentSession`. Active-document writes,
+transitions, conflicts, and close preparation must flow through this session;
+there is intentionally no independent autosave hook.
 
 ### `useFileTree(provider)`
 
-File tree state management over any `FileSystemProvider` — returns the tree, selection, and mutation functions.
+File tree state management over any v2-capable provider — returns the tree, selection, and explicit create/move/remove functions, with a temporary v1 fallback for external providers.
 
 ## Styles
 

@@ -1,121 +1,93 @@
 # @bendyline/docblocks-cli
 
-DocBlocks CLI — build, serve, convert, and manage markdown document projects from the command line.
+The DocBlocks command-line surface for document build and preview, linked-Squisq
+format conversion, MP4 rendering, document parsing, and a local MCP server for
+agents.
 
 ## Installation
 
+Node.js 22.14 or newer is required.
+
 ```bash
 npm install -g @bendyline/docblocks-cli
+docblocks --help
 ```
+
+## Documentation
+
+- [Authoritative CLI reference](https://github.com/bendyline/docblocks/blob/main/docs/cli.md)
+- [MCP architecture and protocol guide](https://github.com/bendyline/docblocks/blob/main/docs/mcp.md)
+
+Those guides describe current input support, linked Squisq ownership, format
+directions, overwrite behavior, MCP authority, artifact lifecycle, and assurance.
 
 ## Commands
 
-### `docblocks init [dir]`
+| Command                            | Purpose                                               |
+| ---------------------------------- | ----------------------------------------------------- |
+| `docblocks init [dir]`             | Create minimal `.docblocks/config.json` metadata.     |
+| `docblocks build`                  | Recursively build Markdown into standalone HTML.      |
+| `docblocks serve`                  | Run a constrained local preview server.               |
+| `docblocks convert <input>`        | Convert through the linked Squisq registry.           |
+| `docblocks video <input> [output]` | Render a configurable MP4.                            |
+| `docblocks mcp`                    | Start the artifact-first MCP server over local stdio. |
+| `docblocks themes`                 | List linked Squisq theme IDs.                         |
+| `docblocks transforms`             | List linked Squisq transform IDs.                     |
+| `docblocks parse <input>`          | Parse UTF-8 Markdown into Squisq Markdown AST JSON.   |
 
-Initialize a new DocBlocks workspace. Creates a `.docblocks` directory with configuration.
+Use `docblocks help <command>` for the installed option summary.
 
-### `docblocks build`
-
-Build markdown files into HTML output.
-
-```bash
-docblocks build -i ./docs -o ./dist
-```
-
-**Options:**
-
-- `-i, --input <dir>` — Input directory (default: `.`)
-- `-o, --output <dir>` — Output directory (default: `dist`)
-- `-t, --theme <id>` — Visual theme to apply
-
-### `docblocks serve`
-
-Start a local development server for previewing documents.
-
-**Options:**
-
-- `-p, --port <port>` — Port to listen on (default: `3000`)
-- `-d, --dir <dir>` — Directory to serve (default: `.`)
-- `-t, --theme <id>` — Visual theme to apply
-
-### `docblocks convert <input>`
-
-Convert a markdown document to DOCX, PPTX, PDF, HTML, or DBK container format. `<input>` can be a `.md` file, a `.zip`/`.dbk` container, or a folder.
+## Examples
 
 ```bash
-# Convert to all formats
+# Build and preview Markdown
+docblocks build --input ./docs --output ./dist
+docblocks serve --dir ./docs
+
+# The no-flag conversion set is exactly DOCX, PPTX, PDF, HTML, and DBK
 docblocks convert story.md
 
-# Convert to specific formats with a theme
-docblocks convert story.md -f docx,pdf -t cinematic
+# Select any export-capable linked-registry formats
+docblocks convert report.docx --formats md,pdf,pptx --output-dir ./exports
 
-# Apply a transform style before exporting
-docblocks convert story.md --transform documentary -o ./output
-```
-
-**Options:**
-
-- `-o, --output-dir <dir>` — Output directory
-- `-f, --formats <list>` — Comma-separated formats: docx, pptx, pdf, html, dbk
-- `-t, --theme <id>` — Visual theme (use `docblocks themes` to list)
-- `--transform <style>` — Transform style (use `docblocks transforms` to list)
-
-### `docblocks video <input> [output]`
-
-Render a document to MP4 video with synced animations. Requires ffmpeg and Playwright. `<input>` can be a `.md` file, a `.zip`/`.dbk` container, or a folder.
-
-```bash
+# Render MP4 with explicit media controls
 docblocks video story.md --quality high --orientation portrait
+
+# Discover authoring vocabulary from linked Squisq
+docblocks themes
+docblocks transforms
+
+# Start MCP with no filesystem authority
+docblocks mcp
+
+# Grant independent roots when an agent needs files or durable output
+docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
 
-**Options:**
+`convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
+import-capable linked-registry formats. Direct `build`, `convert`, and `video`
+outputs replace existing destination files. MCP conversions instead return
+immutable session artifacts; only explicit `save_artifact` materializes one, using
+no-replace or hash-conditional replacement semantics.
 
-- `-o, --output <path>` — Output MP4 path
-- `--fps <number>` — Frames per second (1-120, default: 30)
-- `--quality <level>` — draft, normal, or high
-- `--orientation <orient>` — landscape or portrait
-- `--captions <style>` — off, standard, or social
-- `--width <pixels>` / `--height <pixels>` — Override dimensions
+The live linked registry currently covers Markdown, DOCX, PDF, PPTX, XLSX, CSV,
+HTML, HTML ZIP, EPUB, DBK, MP4, and GIF. Direction varies by format, so use the
+CLI reference or MCP `list_formats` rather than assuming every format imports.
 
-### `docblocks mcp`
+MP4/GIF rendering requires Chromium and FFmpeg. Install Chromium with
+`npx playwright install chromium`; Squisq resolves FFmpeg from `SQUISQ_FFMPEG`,
+`PATH`, or `ffmpeg-static`, in that order.
 
-Start an MCP (Model Context Protocol) server over stdio for AI-assisted document operations.
+## Development with linked Squisq
+
+From the DocBlocks repository root:
 
 ```bash
-docblocks mcp
+npm run link:squisq
+npm run check:squisq-linked
+npm run test:mcp:linked
+npm run all
 ```
 
-**MCP Tools exposed:**
-
-- `export_markdown_to_docx` / `_pdf` / `_pptx` / `_html` / `_video` — Export markdown to polished output formats
-- `analyze_markdown` — Extract content structure (stats, quotes, facts, dates)
-- `restyle_markdown` — Apply a transform style and return restyled markdown
-- `list_themes` / `list_transform_styles` / `list_export_formats` — Discovery tools
-
-All export tools accept raw markdown text directly — AI agents can write content and immediately export without temp files.
-
-**Claude Desktop / Copilot integration:**
-
-```json
-{
-  "mcpServers": {
-    "docblocks": { "command": "npx", "args": ["docblocks", "mcp"] }
-  }
-}
-```
-
-### `docblocks themes`
-
-List all available visual themes.
-
-### `docblocks transforms`
-
-List all available transform styles.
-
-### `docblocks parse <input>`
-
-Parse a markdown file and print its structure as JSON.
-
-## License
-
-MIT
+The linked assurance commands use the sibling `..\squisq` source checkout, not the
+npm package copy.

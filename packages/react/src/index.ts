@@ -4,7 +4,11 @@
 
 // FileExplorer
 export { FileExplorer } from './FileExplorer/index.js';
-export type { FileExplorerProps } from './FileExplorer/index.js';
+export type {
+  FileExplorerProps,
+  FileTreeChange,
+  FileTreeMutationHandler,
+} from './FileExplorer/index.js';
 export { FileTreeNode } from './FileExplorer/index.js';
 export type { FileTreeNodeProps } from './FileExplorer/index.js';
 export { useFileTree } from './FileExplorer/index.js';
@@ -19,14 +23,33 @@ export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 
 // AppMenu
 export { AppMenu } from './AppMenu/index.js';
-export type { AppMenuProps, ThemePreference } from './AppMenu/index.js';
+export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index.js';
+
+// Settings
+export { AccentColorSettings, SettingsDialog, ThemeSettings } from './Settings/public-api.js';
+export type {
+  AccentColorSettingsProps,
+  SettingsDialogProps,
+  ThemeSettingsProps,
+} from './Settings/public-api.js';
 
 // Export
-export { buildExportFilename, ExportToolbarControls } from './Export/index.js';
+export {
+  buildExportFilename,
+  DEFAULT_OPTIONS,
+  loadLastExportOptions,
+  runExport,
+  updateExportTargetExtension,
+  ExportToolbarControls,
+} from './Export/index.js';
 export type {
   ExportDestinationControl,
+  ExportDestinationAdapter,
+  ExportDestinationTarget,
   ExportToolbarControlsProps,
   ExportFormat,
+  HtmlBundle,
+  HtmlStyle,
   ExportOptions,
   ExportBlobSaver,
 } from './Export/index.js';
@@ -34,4 +57,5 @@ export { ExportDialog } from './Export/index.js';
 export type { ExportDialogProps } from './Export/index.js';
 
 // Hooks
-export { useAutoSave } from './hooks/index.js';
+export { useDocumentSession } from './hooks/index.js';
+export type { UseDocumentSessionResult } from './hooks/index.js';

@@ -30,12 +30,19 @@ Key main-process modules:
 
 ```bash
 # From the monorepo root
-npm run dev:desktop
+npm run app
 
 # Or from this package
 npm run dev            # Vite dev server on port 5221 + Electron, concurrently
 npm run start          # launch Electron against the last build
 ```
+
+Source launches use a separate `DocBlocks-dev` Electron profile and always
+start on `DocBlocks-dev` inside the operating system's Documents folder. This
+keeps installed-app settings, registered workspaces, and last-document state
+out of development while leaving the development workspace persistent across
+restarts. An explicit `--user-data-dir` still overrides the development
+profile for one-off isolated runs.
 
 ## Build & package
 
@@ -51,10 +58,29 @@ electron-builder config is in `electron-builder.yml` (appId `com.bendyline.docbl
 ## Testing
 
 ```bash
-npm run test:e2e       # builds, then Playwright launches the packaged main process
+npm run test:e2e                 # fast source-build Electron flows
+npm run test:e2e:packaged        # package with electron-builder, then smoke the real app
+npm run test:e2e:packaged:only   # smoke an existing dist/artifacts unpacked package
 ```
 
-The e2e fixture (`e2e/fixtures.ts`) launches the app with a throwaway `--user-data-dir` and an isolated workspace root passed via `DOCBLOCKS_E2E_DEFAULT_ROOT`, so tests never touch your real `~/Documents/DocBlocks`. Tests cover boot, first-launch workspace bootstrap (including the seeded `aboutDocBlocks.md` welcome doc), persistence across relaunch, and the IPC path-traversal guard.
+The source fixture (`e2e/fixtures.ts`) launches `dist/main/main.cjs` with a
+throwaway `--user-data-dir` and an isolated workspace root passed via
+`DOCBLOCKS_E2E_DEFAULT_ROOT`, so tests never touch `DocBlocks` inside your real
+operating-system Documents folder or the persistent `DocBlocks-dev` workspace.
+Both directories are removed after each test. Those tests cover boot, first-launch
+workspace bootstrap, persistence across relaunch, and the IPC path-traversal
+guard. Automation also exits when its final window closes on macOS and uses a
+forced process fallback after a bounded graceful shutdown, so a failed launch
+cannot leave a headless Electron process or Playwright worker behind.
+
+The packaged smoke uses `e2e/playwright.packaged.config.ts`. It resolves the
+current platform's electron-builder `--dir` output, verifies `app.asar` and the
+production Electron fuse wire, launches that executable, and checks the
+sandboxed renderer and shell over renderer CDP. It deliberately does not use
+Playwright's Electron launcher: that launcher requires the Node inspector,
+which the production `EnableNodeCliInspectArguments` fuse disables. Set
+`DOCBLOCKS_PACKAGED_EXECUTABLE` to smoke a previously downloaded unpacked
+artifact rather than `dist/artifacts`.
 
 ## License
 

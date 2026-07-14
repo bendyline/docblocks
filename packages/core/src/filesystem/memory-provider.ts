@@ -1,218 +1,180 @@
 /**
- * MemoryFileSystemProvider — an in-memory FileSystemProvider.
+ * In-memory filesystem used by transient loose-file and DBK workspaces.
  *
- * Mirrors IndexedDBFileSystemProvider's path conventions exactly (normalised,
- * leading/trailing slashes stripped) so it is a drop-in wherever a provider is
- * used, but keeps everything in RAM and is never persisted.
- *
- * Used to back *transient* workspaces — a single loose markdown file opened
- * from the OS, or a `.dbk` bundle unpacked for the session. The caller is
- * responsible for seeding it (see `seedText` / `writeBinary`) and for saving
- * its contents back to the origin (disk file or re-zipped bundle).
+ * MemoryFileSystemProviderV2 is authoritative. This class is the temporary
+ * text-oriented v1 facade retained while callers migrate to the byte contract.
  */
 
-import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import { FsError, type FsOperation } from './fs-error.js';
+import {
+  MemoryFileSystemProviderV2,
+  type MemoryFileSystemV2ReplacementFile,
+} from './memory-provider-v2.js';
+import type { FileCommitResult, FileSystemEntry, FileSystemProvider, FileMeta } from './types.js';
+import { parseWorkspacePath, type WorkspacePath } from './workspace-path.js';
 
-/** Normalise a path: strip leading/trailing slashes, collapse doubles. */
-function normalisePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
-}
-
-/** Get the parent directory of a path, or empty string for root-level. */
-function parentDir(p: string): string {
-  const idx = p.lastIndexOf('/');
-  return idx === -1 ? '' : p.slice(0, idx);
-}
-
-/** Get the filename component of a path. */
-function baseName(p: string): string {
-  const idx = p.lastIndexOf('/');
-  return idx === -1 ? p : p.slice(idx + 1);
-}
-
-interface MemoryEntry {
-  content?: string;
-  binary?: ArrayBuffer;
-  meta: FileMeta;
-}
-
-export class MemoryFileSystemProvider implements FileSystemProvider {
-  readonly id: string;
-  readonly label: string;
-
-  private files = new Map<string, MemoryEntry>();
-  private dirs = new Set<string>();
-
-  constructor(id: string, label: string) {
-    this.id = id;
-    this.label = label;
-  }
-
-  /** Seed a text file synchronously during setup (before the provider is used). */
-  seedText(path: string, content: string): void {
-    const p = normalisePath(path);
-    this.ensureDir(parentDir(p));
-    this.files.set(p, {
-      content,
-      meta: {
-        name: baseName(p),
-        path: p,
-        size: new Blob([content]).size,
-        lastModified: new Date().toISOString(),
-      },
-    });
-  }
-
-  private ensureDir(dirPath: string): void {
-    if (!dirPath) return;
-    const parts = dirPath.split('/');
-    let current = '';
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      this.dirs.add(current);
+export type MemoryFileSystemSnapshotFile =
+  | {
+      readonly kind: 'text';
+      readonly path: string;
+      readonly content: string;
     }
-  }
-
-  async readFile(path: string): Promise<string | null> {
-    return this.files.get(normalisePath(path))?.content ?? null;
-  }
-
-  async writeFile(path: string, content: string): Promise<void> {
-    const p = normalisePath(path);
-    this.ensureDir(parentDir(p));
-    this.files.set(p, {
-      content,
-      meta: {
-        name: baseName(p),
-        path: p,
-        size: new Blob([content]).size,
-        lastModified: new Date().toISOString(),
-      },
-    });
-  }
-
-  async delete(path: string): Promise<void> {
-    const p = normalisePath(path);
-    this.files.delete(p);
-
-    if (this.dirs.has(p)) {
-      const prefix = p + '/';
-      for (const d of [...this.dirs]) {
-        if (d === p || d.startsWith(prefix)) this.dirs.delete(d);
-      }
-      for (const f of [...this.files.keys()]) {
-        if (f.startsWith(prefix)) this.files.delete(f);
-      }
-    }
-  }
-
-  async rename(oldPath: string, newPath: string): Promise<void> {
-    const op = normalisePath(oldPath);
-    const np = normalisePath(newPath);
-    if (op === np) return;
-    if (!op || !np) throw new Error('Cannot rename the filesystem root');
-    if (np.startsWith(op + '/')) throw new Error('Cannot move a directory into itself');
-
-    const remap = (from: string, to: string): void => {
-      const entry = this.files.get(from);
-      if (!entry) return;
-      this.ensureDir(parentDir(to));
-      this.files.set(to, {
-        ...entry,
-        meta: { ...entry.meta, name: baseName(to), path: to },
-      });
-      this.files.delete(from);
+  | {
+      readonly kind: 'binary';
+      readonly path: string;
+      readonly data: ArrayBuffer | Uint8Array;
     };
 
-    if (this.dirs.has(op)) {
-      const oldPrefix = op + '/';
-      const newPrefix = np + '/';
-      for (const f of [...this.files.keys()]) {
-        if (f.startsWith(oldPrefix)) remap(f, newPrefix + f.slice(oldPrefix.length));
-      }
-      this.dirs.delete(op);
-      for (const d of [...this.dirs]) {
-        if (d.startsWith(oldPrefix)) {
-          this.dirs.delete(d);
-          this.dirs.add(newPrefix + d.slice(oldPrefix.length));
-        }
-      }
-      this.ensureDir(np);
-      return;
-    }
+/** Complete provider-relative state for a transient memory workspace. */
+export interface MemoryFileSystemSnapshot {
+  readonly files: readonly MemoryFileSystemSnapshotFile[];
+  readonly directories?: readonly string[];
+}
 
-    remap(op, np);
-  }
+function canonicalPath(path: string): WorkspacePath {
+  return parseWorkspacePath(path);
+}
 
-  async readDirectory(path: string): Promise<FileSystemEntry[]> {
-    const p = normalisePath(path);
-    const prefix = p ? p + '/' : '';
-    const entries: FileSystemEntry[] = [];
-    const seen = new Set<string>();
-
-    for (const d of this.dirs) {
-      let rel: string | null = null;
-      if (!p && !d.includes('/')) rel = d;
-      else if (p && d.startsWith(prefix)) {
-        const rest = d.slice(prefix.length);
-        if (!rest.includes('/')) rel = rest;
-      }
-      if (rel && !seen.has(rel)) {
-        seen.add(rel);
-        entries.push({ kind: 'directory', name: rel, path: d });
-      }
-    }
-
-    for (const filePath of this.files.keys()) {
-      if (p && !filePath.startsWith(prefix)) continue;
-      const rel = p ? filePath.slice(prefix.length) : filePath;
-      if (rel.includes('/')) continue;
-      if (!seen.has(rel)) {
-        seen.add(rel);
-        entries.push({ kind: 'file', name: rel, path: filePath });
-      }
-    }
-
-    entries.sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-      return a.name.localeCompare(b.name);
+function entryPath(path: string, operation: FsOperation): WorkspacePath {
+  const canonical = canonicalPath(path);
+  if (!canonical) {
+    throw new FsError('invalid-path', 'The workspace root is not a file entry.', {
+      operation,
+      path,
     });
-    return entries;
+  }
+  return canonical;
+}
+
+function decode(data: ArrayBuffer): string {
+  return new TextDecoder().decode(data);
+}
+
+/**
+ * Legacy facade over the correctness-first memory provider.
+ *
+ * Synchronous seed/snapshot replacement methods remain because DBK import
+ * fully stages external bytes before publishing one atomic in-memory swap.
+ */
+export class MemoryFileSystemProvider implements FileSystemProvider {
+  public readonly id: string;
+  public readonly label: string;
+  public readonly v2: MemoryFileSystemProviderV2;
+
+  public constructor(id: string, label: string) {
+    this.id = id;
+    this.label = label;
+    this.v2 = new MemoryFileSystemProviderV2(id, label);
   }
 
-  async exists(path: string): Promise<boolean> {
-    const p = normalisePath(path);
-    return this.dirs.has(p) || this.files.has(p);
+  /** Monotonic version of the complete in-memory tree. */
+  public get treeVersion(): number {
+    return this.v2.mutationRevision;
   }
 
-  async createDirectory(path: string): Promise<void> {
-    this.ensureDir(normalisePath(path));
+  /** Capture an owned deterministic copy of the complete transient tree. */
+  public captureContents(): MemoryFileSystemSnapshot {
+    const state = this.v2.captureState();
+    return {
+      files: state.files.map((file) =>
+        file.payloadKind === 'text'
+          ? { kind: 'text' as const, path: file.path, content: decode(file.data) }
+          : { kind: 'binary' as const, path: file.path, data: file.data.slice(0) },
+      ),
+      directories: [...state.directories],
+    };
   }
 
-  async stat(path: string): Promise<FileMeta | null> {
-    return this.files.get(normalisePath(path))?.meta ?? null;
+  /** Atomically replace the complete tree after validating and owning all input. */
+  public replaceContents(snapshot: MemoryFileSystemSnapshot, expectedTreeVersion?: number): void {
+    const files: MemoryFileSystemV2ReplacementFile[] = snapshot.files.map((file) => ({
+      path: entryPath(file.path, 'write'),
+      payloadKind: file.kind,
+      data: file.kind === 'text' ? new TextEncoder().encode(file.content) : file.data,
+    }));
+    const directories = (snapshot.directories ?? []).map((path) =>
+      entryPath(path, 'create-directory'),
+    );
+    this.v2.replaceState({ files, directories }, expectedTreeVersion);
   }
 
-  async readBinary(path: string): Promise<ArrayBuffer | null> {
-    return this.files.get(normalisePath(path))?.binary ?? null;
+  /** Seed synchronously before publishing a transient provider to consumers. */
+  public seedText(path: string, content: string): void {
+    this.v2.seedText(entryPath(path, 'write'), content);
   }
 
-  async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
-    const p = normalisePath(path);
-    this.ensureDir(parentDir(p));
-    // Copy into a fresh, standalone ArrayBuffer so we never alias the caller's
-    // buffer (or a pooled Node Buffer).
-    const src = data instanceof Uint8Array ? data : new Uint8Array(data);
-    const copy = new Uint8Array(src.byteLength);
-    copy.set(src);
-    this.files.set(p, {
-      binary: copy.buffer as ArrayBuffer,
-      meta: {
-        name: baseName(p),
-        path: p,
-        size: data.byteLength,
-        lastModified: new Date().toISOString(),
-      },
+  public async readFile(path: string): Promise<string | null> {
+    const file = await this.v2.readFile(entryPath(path, 'read'));
+    return file ? decode(file.data) : null;
+  }
+
+  public async writeFile(path: string, content: string): Promise<void> {
+    await this.v2.writeText(entryPath(path, 'write'), content, { createParents: true });
+  }
+
+  public commitFile(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult> {
+    return this.v2.commitText(entryPath(path, 'write'), content, expectedContent);
+  }
+
+  public async delete(path: string): Promise<void> {
+    await this.v2.remove(entryPath(path, 'remove'), { recursive: true, missing: 'ignore' });
+  }
+
+  public async rename(oldPath: string, newPath: string): Promise<void> {
+    await this.v2.move(entryPath(oldPath, 'move'), entryPath(newPath, 'move'), {
+      createParents: true,
     });
+  }
+
+  public async readDirectory(path: string): Promise<FileSystemEntry[]> {
+    const canonical = canonicalPath(path);
+    try {
+      const entries = await this.v2.readDirectory(canonical);
+      return entries.map((entry) => ({
+        kind: entry.kind,
+        name: entry.name,
+        path: entry.path,
+      }));
+    } catch (error: unknown) {
+      // Preserve the v1 missing-directory behavior only on the compatibility facade.
+      if (error instanceof FsError && error.code === 'not-found') return [];
+      throw error;
+    }
+  }
+
+  public async exists(path: string): Promise<boolean> {
+    return (await this.v2.stat(canonicalPath(path))) !== null;
+  }
+
+  public async createDirectory(path: string): Promise<void> {
+    await this.v2.createDirectory(canonicalPath(path), { createParents: true });
+  }
+
+  public async stat(path: string): Promise<FileMeta | null> {
+    const canonical = canonicalPath(path);
+    if (!canonical) return null;
+    const entry = await this.v2.stat(canonical);
+    if (!entry || entry.kind !== 'file') return null;
+    return {
+      name: entry.name,
+      path: entry.path,
+      size: entry.size,
+      lastModified: entry.lastModified,
+    };
+  }
+
+  public async readBinary(path: string): Promise<ArrayBuffer | null> {
+    const canonical = entryPath(path, 'read');
+    const file = this.v2.readCompatibilityFile(canonical);
+    if (!file || file.payloadKind !== 'binary') return null;
+    return file.data;
+  }
+
+  public async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+    await this.v2.writeBinary(entryPath(path, 'write'), data, { createParents: true });
   }
 }

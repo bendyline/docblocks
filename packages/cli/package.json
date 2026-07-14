@@ -1,7 +1,7 @@
 {
   "name": "@bendyline/docblocks-cli",
   "version": "1.1.2",
-  "description": "DocBlocks CLI — build, serve, and manage markdown document projects",
+  "description": "Build, preview, convert, render, inspect, and automate documents",
   "license": "MIT",
   "author": "Bendyline",
   "repository": {
@@ -32,18 +32,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "1.5.2",
-    "@bendyline/squisq-cli": "1.2.2",
-    "@bendyline/squisq-editor-react": "1.6.2",
-    "@bendyline/squisq-formats": "1.4.2",
-    "@bendyline/squisq-react": "1.4.2",
-    "@bendyline/squisq-video": "1.2.2",
-    "@modelcontextprotocol/sdk": "1.28.0",
+    "@bendyline/docblocks": "1.1.2",
+    "@bendyline/squisq": "2.0.1",
+    "@bendyline/squisq-cli": "2.0.1",
+    "@bendyline/squisq-editor-react": "2.0.1",
+    "@bendyline/squisq-formats": "2.0.1",
+    "@bendyline/squisq-react": "2.0.1",
+    "@bendyline/squisq-video": "2.0.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "13.1.0",
     "jszip": "3.10.1",
-    "mammoth": "1.12.0",
-    "pdfjs-dist": "4.10.38",
     "playwright-core": "1.58.2",
+    "pdf-lib": "1.17.1",
     "zod": "3.25.76"
   }
 }

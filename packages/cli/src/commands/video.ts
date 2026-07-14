@@ -24,12 +24,21 @@ export interface VideoOptions {
   captions?: CaptionOption;
   width?: number;
   height?: number;
+  /** Cancel input preparation, browser capture, or FFmpeg encoding. */
+  signal?: AbortSignal;
 }
 
 export interface VideoResult {
   outputPath: string;
   duration: number;
   frameCount: number;
+}
+
+type RenderDocToMp4 = typeof import('@bendyline/squisq-cli/api').renderDocToMp4;
+
+export interface VideoRunDependencies {
+  /** Test/programmatic override; production uses the linked Squisq renderer. */
+  renderDocToMp4?: RenderDocToMp4;
 }
 
 /**
@@ -39,11 +48,13 @@ export async function runVideo(
   inputPath: string,
   opts: VideoOptions,
   onProgress?: (phase: string, percent: number) => void,
+  dependencies: VideoRunDependencies = {},
 ): Promise<VideoResult> {
+  throwIfAborted(opts.signal);
   const resolvedInput = resolve(inputPath);
 
   const fps = opts.fps ?? 30;
-  if (fps < 1 || fps > 120) {
+  if (!Number.isFinite(fps) || fps < 1 || fps > 120) {
     throw new Error('FPS must be a number between 1 and 120');
   }
 
@@ -74,29 +85,25 @@ export async function runVideo(
     : resolve(dirname(resolvedInput), `${baseName}.mp4`);
 
   await mkdir(dirname(outputPath), { recursive: true });
+  throwIfAborted(opts.signal);
 
   console.error(`Reading: ${resolvedInput}`);
-  const { readInput, renderDocToMp4 } = await import('@bendyline/squisq-cli/api');
-  const result = await readInput(resolvedInput);
-  const { container } = result;
-
-  // Get or parse Doc
-  let doc;
-  if (result.doc) {
-    console.error('Using pre-built Doc JSON');
-    doc = result.doc;
-  } else if (result.markdownDoc) {
-    const { markdownToDoc } = await import('@bendyline/squisq/doc');
-    doc = markdownToDoc(result.markdownDoc);
-  } else {
-    throw new Error('No document found in input');
-  }
+  const squisq = await import('@bendyline/squisq-cli/api');
+  throwIfAborted(opts.signal);
+  const renderDocToMp4 = dependencies.renderDocToMp4 ?? squisq.renderDocToMp4;
+  const { readInput } = squisq;
+  const result = await readInput(resolvedInput, { signal: opts.signal });
+  throwIfAborted(opts.signal);
+  const { container, doc } = result;
+  console.error(`Using normalized ${result.sourceFormat} document`);
 
   console.error(
     `Rendering: ${fps} fps, quality: ${quality}, orientation: ${orientation}, captions: ${captions}`,
   );
 
+  let latestProgress = 0;
   const renderResult = await renderDocToMp4(doc, container, {
+    signal: opts.signal,
     outputPath,
     fps,
     quality,
@@ -104,12 +111,17 @@ export async function runVideo(
     width: opts.width,
     height: opts.height,
     captionStyle,
-    onProgress:
-      onProgress ??
-      ((phase, percent) => {
-        process.stderr.write(`\r  ${phase}: ${percent}%  `);
-      }),
+    onProgress: (phase, percent) => {
+      throwIfAborted(opts.signal);
+      const boundedPercent = Math.max(0, Math.min(100, percent));
+      if (boundedPercent < latestProgress) return;
+      latestProgress = boundedPercent;
+      if (onProgress) onProgress(phase, boundedPercent);
+      else process.stderr.write(`\r  ${phase}: ${boundedPercent}%  `);
+      throwIfAborted(opts.signal);
+    },
   });
+  throwIfAborted(opts.signal);
 
   process.stderr.write('\r' + ' '.repeat(60) + '\r');
   console.error(`  ✓ ${outputPath}`);
@@ -125,6 +137,14 @@ export async function runVideo(
   };
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+  const error = new Error('Video rendering was cancelled');
+  error.name = 'AbortError';
+  throw error;
+}
+
 interface VideoCommandOptions {
   output?: string;
   fps?: string;
@@ -137,21 +157,17 @@ interface VideoCommandOptions {
 
 export const videoCommand = new Command('video')
   .description('Render a squisq document to MP4 video')
-  .argument('<input>', 'Path to .md file, .zip/.dbk container, or folder')
+  .argument('<input>', 'Path to a supported document, .zip/.dbk container, or folder')
   .argument('[output]', 'Output MP4 path (default: <input>.mp4)')
   .option('-o, --output <path>', 'Output MP4 path (default: <input>.mp4)')
-  .option('--fps <number>', 'Frames per second (default: 30)', '30')
-  .option(
-    '--quality <level>',
-    `Encoding quality: ${VALID_QUALITIES.join(', ')} (default: normal)`,
-    'normal',
-  )
+  .option('--fps <number>', 'Frames per second', '30')
+  .option('--quality <level>', `Encoding quality: ${VALID_QUALITIES.join(', ')}`, 'normal')
   .option(
     '--orientation <orient>',
-    `Video orientation: ${VALID_ORIENTATIONS.join(', ')} (default: landscape)`,
+    `Video orientation: ${VALID_ORIENTATIONS.join(', ')}`,
     'landscape',
   )
-  .option('--captions <style>', `Caption style: ${VALID_CAPTIONS.join(', ')} (default: off)`, 'off')
+  .option('--captions <style>', `Caption style: ${VALID_CAPTIONS.join(', ')}`, 'off')
   .option('--width <pixels>', 'Override video width')
   .option('--height <pixels>', 'Override video height')
   .action(async (inputPath: string, outputArg: string | undefined, opts: VideoCommandOptions) => {
@@ -161,12 +177,12 @@ export const videoCommand = new Command('video')
       }
       await runVideo(inputPath, {
         output: opts.output,
-        fps: parseInt(opts.fps ?? '30', 10),
+        fps: parseNumberOption('--fps', opts.fps ?? '30'),
         quality: opts.quality as VideoQuality,
         orientation: opts.orientation as VideoOrientation,
         captions: opts.captions as CaptionOption,
-        width: opts.width ? parseInt(opts.width, 10) : undefined,
-        height: opts.height ? parseInt(opts.height, 10) : undefined,
+        width: opts.width ? parseNumberOption('--width', opts.width) : undefined,
+        height: opts.height ? parseNumberOption('--height', opts.height) : undefined,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -174,3 +190,9 @@ export const videoCommand = new Command('video')
       process.exitCode = 1;
     }
   });
+
+function parseNumberOption(name: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${name} must be a finite number`);
+  return parsed;
+}

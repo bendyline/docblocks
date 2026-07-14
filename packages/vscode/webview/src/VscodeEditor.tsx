@@ -1,71 +1,97 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { EditorShell } from '@bendyline/squisq-editor-react';
+import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { MediaContext } from '@bendyline/squisq-react';
 import '@bendyline/squisq-editor-react/styles';
 import '@bendyline/docblocks-react/styles';
-import type { ExtensionToWebviewMessage } from '../../src/messages.js';
-import { createDebouncedEditPoster, type DebouncedEditPoster } from './debouncedEditPoster.js';
-import { VscodeExportButton } from './VscodeExportButton.js';
+import { pickEmptyDocumentPrompt } from '@bendyline/docblocks-react/editor';
+import type {
+  DocBlocksAccentColor,
+  ExtensionToWebviewMessage,
+  VscodeEditorSettings,
+} from '@bendyline/docblocks/vscode';
+import { parseExtensionToWebviewMessage } from '@bendyline/docblocks/vscode';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { getVscodeApi } from './vscodeApi.js';
+import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 
 const vscode = getVscodeApi();
+
+// The host cannot render an editor until the extension sends a document.
+// Keep the large Squisq implementation out of the startup entry and load it
+// only after that document and its media/export bridges are ready.
+const EditorShell = lazy(async () => {
+  // Worker setup is an enhancement; a host that cannot install language
+  // workers must not make the document editor unavailable.
+  await import('./setupMonacoWorkers.js').catch(() => undefined);
+  return import('./LazyEditorShell.js');
+});
+const VscodeExportButton = lazy(() =>
+  import('./VscodeExportButton.js').then((module) => ({ default: module.VscodeExportButton })),
+);
+const VscodeSettingsButton = lazy(() =>
+  import('./VscodeSettingsButton.js').then((module) => ({ default: module.VscodeSettingsButton })),
+);
+
+const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
+  autoSave: true,
+  accentColor: 'brown',
+};
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [editorKey, setEditorKey] = useState(0);
+  const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
-  const editPosterRef = useRef<DebouncedEditPoster | null>(null);
+  const documentClientRef = useRef(new WebviewDocumentClient());
+  const nextSaveRequestId = useRef(1);
 
   useEffect(() => {
-    function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
-      const msg = event.data;
+    function handleMessage(event: MessageEvent<unknown>) {
+      const msg: ExtensionToWebviewMessage | null = parseExtensionToWebviewMessage(event.data);
+      if (!msg) return;
       switch (msg.type) {
         case 'setContent':
+          setEditorScope(documentClientRef.current.acceptContent(msg));
           if (msg.content === markdownRef.current && msg.fileName === fileNameRef.current) return;
           markdownRef.current = msg.content;
           fileNameRef.current = msg.fileName;
           setMarkdown(msg.content);
           setFileName(msg.fileName);
-          setEditorKey((key) => key + 1);
+          break;
+        case 'editAcknowledged':
+        case 'sessionState':
+        case 'saveResult':
+          // Persistence notices render in VS Code's native status bar. These
+          // revisioned responses remain in the validated host protocol.
           break;
         case 'themeChange':
           setTheme(msg.theme);
+          break;
+        case 'editorSettings':
+          setSettings(msg.settings);
           break;
       }
     }
 
     window.addEventListener('message', handleMessage);
-
-    // Signal to the extension that we're ready to receive content
     vscode.postMessage({ type: 'ready' });
-
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  useEffect(() => {
-    const editPoster = createDebouncedEditPoster((message) => vscode.postMessage(message), 300);
-    editPosterRef.current = editPoster;
-
-    return () => {
-      editPoster.dispose();
-      editPosterRef.current = null;
-    };
   }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== 's' || (!event.metaKey && !event.ctrlKey)) return;
       event.preventDefault();
-      editPosterRef.current?.flush();
-      const content = markdownRef.current;
-      if (content !== null) vscode.postMessage({ type: 'save', content });
+      const requestId = nextSaveRequestId.current;
+      nextSaveRequestId.current += 1;
+      const message = documentClientRef.current.createSave(requestId);
+      if (!message) return;
+      vscode.postMessage(message);
     }
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -88,52 +114,113 @@ export function VscodeEditor() {
     return () => bridge.dispose();
   }, []);
 
-  // Debounced change handler — sends edits back to extension
-  const handleChange = useCallback((source: string) => {
-    markdownRef.current = source;
-    setMarkdown(source);
-    editPosterRef.current?.schedule(source);
+  // Post every complete editor snapshot immediately. The extension host owns
+  // the debounce and serialized persistence queue, so closing the webview
+  // cannot strand a timer-held draft in renderer memory.
+  const handleChange = useCallback(
+    (source: string) => {
+      if (source === markdownRef.current || !editorScope) return;
+      const message = documentClientRef.current.createEdit(editorScope, source);
+      if (!message) return;
+      markdownRef.current = source;
+      setMarkdown(source);
+      vscode.postMessage(message);
+    },
+    [editorScope],
+  );
+
+  // EditorShell can emit a normalized WYSIWYG snapshot while it hydrates.
+  // Arm the current scope only from browser input that precedes a real user
+  // edit, so opening a document remains byte-preserving and read-only.
+  const armEditorEdits = useCallback(() => {
+    if (editorScope) documentClientRef.current.armEdits(editorScope);
+  }, [editorScope]);
+
+  const handleAutoSaveChange = useCallback((enabled: boolean) => {
+    setSettings((current) => ({ ...current, autoSave: enabled }));
+    vscode.postMessage({ type: 'setAutoSave', enabled });
   }, []);
 
-  if (markdown === null || mediaBridge === null || exportBridge === null) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          color: 'var(--vscode-foreground, #ccc)',
-          fontFamily: 'var(--vscode-font-family, sans-serif)',
-        }}
-      >
-        Loading...
-      </div>
-    );
+  const handleAccentColorChange = useCallback((accentColor: DocBlocksAccentColor) => {
+    setSettings((current) => ({ ...current, accentColor }));
+    vscode.postMessage({ type: 'setAccentColor', accentColor });
+  }, []);
+
+  const editorGenerationKey = editorScope
+    ? `${editorScope.sessionId}:${editorScope.generation}`
+    : 'loading';
+  const editorPlaceholder = useMemo(() => {
+    // Keep the selection scoped to the same generation that remounts Squisq.
+    void editorGenerationKey;
+    return pickEmptyDocumentPrompt();
+  }, [editorGenerationKey]);
+
+  if (markdown === null || editorScope === null || mediaBridge === null || exportBridge === null) {
+    return <EditorLoading />;
   }
 
   return (
-    <div className="db-shell db-vscode-editor" data-theme={theme}>
+    <div
+      className="db-shell db-vscode-editor"
+      data-theme={theme}
+      data-accent={settings.accentColor}
+      style={{ position: 'relative' }}
+      onBeforeInputCapture={armEditorEdits}
+      onCompositionStartCapture={armEditorEdits}
+      onKeyDownCapture={armEditorEdits}
+      onPasteCapture={armEditorEdits}
+      onCutCapture={armEditorEdits}
+      onDropCapture={armEditorEdits}
+      onPointerDownCapture={armEditorEdits}
+    >
       <MediaContext.Provider value={mediaBridge.mediaProvider}>
-        <EditorShell
-          key={editorKey}
-          initialMarkdown={markdown}
-          onChange={handleChange}
-          colorScheme={theme}
-          height="100%"
-          mediaProvider={mediaBridge.mediaProvider}
-          showFilesToggle={false}
-          toolbarSlotRight={
-            <VscodeExportButton
-              selectedFile={fileName}
-              mediaContainer={exportBridge.contentContainer}
-              saveBlob={exportBridge.saveBlob}
-              resolveExportTarget={exportBridge.resolveExportTarget}
-              pickExportTarget={exportBridge.pickExportTarget}
-            />
-          }
-        />
+        <Suspense fallback={<EditorLoading />}>
+          <EditorShell
+            key={`${editorScope.sessionId}:${editorScope.generation}`}
+            initialMarkdown={markdown}
+            onChange={handleChange}
+            colorScheme={theme}
+            height="100%"
+            placeholder={editorPlaceholder}
+            mediaProvider={mediaBridge.mediaProvider}
+            showFilesToggle={false}
+            toolbarSlotRight={
+              <>
+                <VscodeExportButton
+                  selectedFile={fileName}
+                  mediaContainer={exportBridge.contentContainer}
+                  saveBlob={exportBridge.saveBlob}
+                  resolveExportTarget={exportBridge.resolveExportTarget}
+                  pickExportTarget={exportBridge.pickExportTarget}
+                />
+                <VscodeSettingsButton
+                  settings={settings}
+                  onAutoSaveChange={handleAutoSaveChange}
+                  onAccentColorChange={handleAccentColorChange}
+                />
+              </>
+            }
+          />
+        </Suspense>
       </MediaContext.Provider>
+    </div>
+  );
+}
+
+function EditorLoading() {
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        color: 'var(--vscode-foreground, #ccc)',
+        fontFamily: 'var(--vscode-font-family, sans-serif)',
+      }}
+    >
+      Loading editor&hellip;
     </div>
   );
 }

@@ -1,30 +1,42 @@
 import * as vscode from 'vscode';
-import type { MediaEntryMessage, WebviewToExtensionMessage } from './messages.js';
-import { guessMediaMimeType, mediaSidecarFolder, parseMediaRef } from './mediaPaths.js';
+import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
+import type { MediaEntryMessage, WebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
+import {
+  assertNoSymbolicLinkComponents,
+  getDocumentSidecarUri,
+  isFileNotFound,
+  readAuthorizedMediaFile,
+  resolveAuthorizedDocumentResource,
+} from './documentAuthority.js';
+import { guessMediaMimeType, mediaSidecarFolder } from './mediaPaths.js';
+import { assertBoundedBytes, decodeBoundedBase64, encodeBoundedBase64 } from './wirePayload.js';
 
-export function getEditorLocalResourceRoots(
-  extensionUri: vscode.Uri,
-  documentUri: vscode.Uri,
-): vscode.Uri[] {
-  const roots = [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')];
-  const documentDirectory = getDocumentDirectoryUri(documentUri);
-  if (documentDirectory) roots.push(documentDirectory);
-  return roots;
+const MAX_MEDIA_DEPTH = 32;
+
+export type MediaRequestMessage = Extract<
+  WebviewToExtensionMessage,
+  { type: 'resolveMedia' | 'listMedia' | 'addMedia' | 'removeMedia' }
+>;
+
+export function getEditorLocalResourceRoots(extensionUri: vscode.Uri): vscode.Uri[] {
+  // Document resources cross the validated message bridge. Exposing the
+  // document directory here would let a compromised webview bypass it.
+  return [vscode.Uri.joinPath(extensionUri, 'dist', 'webview')];
 }
 
 export async function handleMediaMessage(
-  msg: WebviewToExtensionMessage,
+  msg: MediaRequestMessage,
   document: vscode.TextDocument,
   webview: vscode.Webview,
-): Promise<boolean> {
+): Promise<void> {
   switch (msg.type) {
     case 'resolveMedia':
       await postMediaResult(webview, msg.requestId, async () => ({
         type: 'mediaResolved' as const,
         requestId: msg.requestId,
-        url: resolveMediaUrl(document.uri, webview, msg.ref),
+        url: await resolveMediaDataUrl(document.uri, msg.ref),
       }));
-      return true;
+      return;
 
     case 'listMedia':
       await postMediaResult(webview, msg.requestId, async () => ({
@@ -32,14 +44,14 @@ export async function handleMediaMessage(
         requestId: msg.requestId,
         entries: await listDocumentMedia(document.uri),
       }));
-      return true;
+      return;
 
     case 'addMedia':
       await postMediaResult(webview, msg.requestId, async () => {
         const writtenPath = await writeDocumentMedia(
           document.uri,
           msg.name,
-          decodeBase64(msg.dataBase64),
+          decodeBoundedBase64(msg.dataBase64),
         );
         return {
           type: 'mediaAdded' as const,
@@ -47,37 +59,37 @@ export async function handleMediaMessage(
           path: writtenPath,
         };
       });
-      return true;
+      return;
 
     case 'removeMedia':
       await postMediaResult(webview, msg.requestId, async () => {
         await removeDocumentMedia(document.uri, msg.ref);
         return { type: 'mediaRemoved' as const, requestId: msg.requestId };
       });
-      return true;
+      return;
 
     default:
-      return false;
+      assertNever(msg);
   }
 }
 
-function resolveMediaUrl(documentUri: vscode.Uri, webview: vscode.Webview, ref: string): string {
-  const mediaUri = getDocumentMediaUri(documentUri, ref);
-  if (!mediaUri) return ref;
-  const parsed = parseMediaRef(ref, getUriBasename(documentUri));
-  const suffix = parsed?.suffix ?? '';
-  return webview.asWebviewUri(mediaUri).toString() + suffix;
+async function resolveMediaDataUrl(documentUri: vscode.Uri, ref: string): Promise<string> {
+  const resource = resolveAuthorizedDocumentResource(documentUri, ref);
+  if (!resource || resource.kind !== 'media') {
+    throw new Error('The requested media path is outside this document sidecar');
+  }
+  const bytes = await readAuthorizedMediaFile(resource.uri);
+  if (!bytes) throw new Error('The requested media file does not exist');
+  return `data:${guessMediaMimeType(resource.key)};base64,${encodeBoundedBase64(bytes)}`;
 }
 
 async function listDocumentMedia(documentUri: vscode.Uri): Promise<MediaEntryMessage[]> {
-  const documentDirectory = getDocumentDirectoryUri(documentUri);
-  if (!documentDirectory) return [];
+  const sidecarUri = getDocumentSidecarUri(documentUri);
+  if (!sidecarUri) return [];
 
-  const sidecar = mediaSidecarFolder(getUriBasename(documentUri));
-  const sidecarUri = vscode.Uri.joinPath(documentDirectory, sidecar);
+  await assertNoSymbolicLinkComponents(sidecarUri, true);
   const entries: MediaEntryMessage[] = [];
-
-  await walkMediaFolder(sidecarUri, sidecar, entries);
+  await walkMediaFolder(sidecarUri, mediaSidecarFolder(getUriBasename(documentUri)), entries, 0);
   return entries;
 }
 
@@ -86,45 +98,34 @@ async function writeDocumentMedia(
   name: string,
   bytes: Uint8Array,
 ): Promise<string> {
-  const parsed = parseMediaRef(name, getUriBasename(documentUri));
-  const documentDirectory = getDocumentDirectoryUri(documentUri);
-  if (!parsed || !documentDirectory) {
-    throw new Error(`Cannot write media "${name}" for this document`);
+  assertBoundedBytes(bytes);
+  const resource = resolveAuthorizedDocumentResource(documentUri, name);
+  if (!resource || resource.kind !== 'media') {
+    throw new Error(`Cannot write media "${name}" outside this document sidecar`);
   }
 
-  const targetUri = vscode.Uri.joinPath(documentDirectory, ...parsed.key.split('/'));
-  await ensureParentDirectory(targetUri);
-  await vscode.workspace.fs.writeFile(targetUri, bytes);
-  return parsed.key;
+  await assertNoSymbolicLinkComponents(resource.uri, true);
+  await ensureParentDirectory(resource.uri);
+  await assertNoSymbolicLinkComponents(resource.uri, true);
+  await vscode.workspace.fs.writeFile(resource.uri, bytes);
+  return resource.key;
 }
 
 async function removeDocumentMedia(documentUri: vscode.Uri, ref: string): Promise<void> {
-  const mediaUri = getDocumentMediaUri(documentUri, ref);
-  if (!mediaUri) return;
-  await vscode.workspace.fs.delete(mediaUri, { useTrash: false });
-}
+  const resource = resolveAuthorizedDocumentResource(documentUri, ref);
+  if (!resource || resource.kind !== 'media') {
+    throw new Error('Cannot remove media outside this document sidecar');
+  }
 
-function getDocumentMediaUri(documentUri: vscode.Uri, ref: string): vscode.Uri | null {
-  const parsed = parseMediaRef(ref, getUriBasename(documentUri));
-  const documentDirectory = getDocumentDirectoryUri(documentUri);
-  if (!parsed || !documentDirectory) return null;
-  return vscode.Uri.joinPath(documentDirectory, ...parsed.key.split('/'));
-}
-
-function getDocumentDirectoryUri(documentUri: vscode.Uri): vscode.Uri | null {
-  if (documentUri.scheme === 'untitled') return null;
-  const slash = documentUri.path.lastIndexOf('/');
-  const directoryPath = slash <= 0 ? '/' : documentUri.path.slice(0, slash);
-  return documentUri.with({ path: directoryPath, query: '', fragment: '' });
-}
-
-function getUriBasename(uri: vscode.Uri): string {
-  const slash = uri.path.lastIndexOf('/');
-  const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
   try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
+    await assertNoSymbolicLinkComponents(resource.uri);
+    const stat = await vscode.workspace.fs.stat(resource.uri);
+    if ((stat.type & vscode.FileType.File) === 0) {
+      throw new Error('Only regular DocBlocks media files can be removed');
+    }
+    await vscode.workspace.fs.delete(resource.uri, { useTrash: false });
+  } catch (error: unknown) {
+    if (!isFileNotFound(error)) throw error;
   }
 }
 
@@ -132,34 +133,52 @@ async function walkMediaFolder(
   folderUri: vscode.Uri,
   relativeFolder: string,
   entries: MediaEntryMessage[],
+  depth: number,
 ): Promise<void> {
+  if (depth > MAX_MEDIA_DEPTH) {
+    throw new Error('The document media folder exceeds the maximum directory depth');
+  }
+
+  await assertNoSymbolicLinkComponents(folderUri);
+
   let children: [string, vscode.FileType][];
   try {
     children = await vscode.workspace.fs.readDirectory(folderUri);
-  } catch {
-    return;
+  } catch (error: unknown) {
+    if (isFileNotFound(error)) return;
+    throw error;
+  }
+  if (children.length > HOST_WIRE_LIMITS.arrayEntries) {
+    throw new Error('The document media folder contains too many entries');
   }
 
   for (const [name, type] of children) {
+    if (entries.length >= HOST_WIRE_LIMITS.arrayEntries) {
+      throw new Error('The document media listing exceeds the allowed size');
+    }
+    if ((type & vscode.FileType.SymbolicLink) !== 0) {
+      throw new Error(`Symbolic links are not permitted in document media: ${name}`);
+    }
+
     const childUri = vscode.Uri.joinPath(folderUri, name);
     const relativePath = `${relativeFolder}/${name}`;
-    if (type === vscode.FileType.Directory) {
-      await walkMediaFolder(childUri, relativePath, entries);
+    await assertNoSymbolicLinkComponents(childUri);
+    if ((type & vscode.FileType.Directory) !== 0) {
+      await walkMediaFolder(childUri, relativePath, entries, depth + 1);
       continue;
     }
-    if (type !== vscode.FileType.File || relativePath.toLowerCase().endsWith('.md')) continue;
-
-    let size = 0;
-    try {
-      size = (await vscode.workspace.fs.stat(childUri)).size;
-    } catch {
-      size = 0;
+    if ((type & vscode.FileType.File) === 0 || relativePath.toLowerCase().endsWith('.md')) {
+      continue;
     }
 
+    const stat = await vscode.workspace.fs.stat(childUri);
+    if ((stat.type & vscode.FileType.SymbolicLink) !== 0) {
+      throw new Error(`Symbolic links are not permitted in document media: ${name}`);
+    }
     entries.push({
       name: relativePath,
       mimeType: guessMediaMimeType(relativePath),
-      size,
+      size: stat.size,
     });
   }
 }
@@ -169,15 +188,6 @@ async function ensureParentDirectory(uri: vscode.Uri): Promise<void> {
   if (slash <= 0) return;
   const parent = uri.with({ path: uri.path.slice(0, slash), query: '', fragment: '' });
   await vscode.workspace.fs.createDirectory(parent);
-}
-
-function decodeBase64(value: string): Uint8Array {
-  const binary = globalThis.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
 }
 
 async function postMediaResult(
@@ -192,11 +202,25 @@ async function postMediaResult(
 ): Promise<void> {
   try {
     await webview.postMessage(await createMessage());
-  } catch (error) {
-    await webview.postMessage({
-      type: 'mediaError',
-      requestId,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  } catch (error: unknown) {
+    const message = (error instanceof Error ? error.message : String(error)).slice(
+      0,
+      HOST_WIRE_LIMITS.messageCharacters,
+    );
+    await webview.postMessage({ type: 'mediaError', requestId, message });
   }
+}
+
+function getUriBasename(uri: vscode.Uri): string {
+  const slash = uri.path.lastIndexOf('/');
+  const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled media message: ${String(value)}`);
 }

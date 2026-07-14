@@ -1,5 +1,15 @@
+import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from '@bendyline/docblocks/host';
+import {
+  isSafeMimeType,
+  parseExtensionToWebviewMessage,
+  type ExtensionToWebviewMessage,
+  type WebviewToExtensionMessage,
+} from '@bendyline/docblocks/vscode';
 import type { MediaEntry, MediaProvider } from '@bendyline/squisq/schemas';
-import type { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../../src/messages.js';
+import { encodeBoundedBase64 } from '../../src/wirePayload.js';
+import { WebviewRequestRegistry } from './webviewRequestRegistry.js';
+
+const MAX_PENDING_REQUESTS = 64;
 
 type MediaResponse =
   | { type: 'mediaResolved'; url: string }
@@ -13,98 +23,74 @@ type MediaBridgeRequest =
   | { type: 'addMedia'; name: string; dataBase64: string; mimeType: string }
   | { type: 'removeMedia'; ref: string };
 
-interface PendingRequest {
-  resolve: (response: MediaResponse) => void;
-  reject: (error: Error) => void;
-}
-
 export interface VscodeMediaBridge {
   mediaProvider: MediaProvider;
   dispose(): void;
 }
 
+export interface VscodeMediaBridgeOptions {
+  requestTimeoutMs?: number;
+}
+
 export function createVscodeMediaBridge(
   postMessage: (message: WebviewToExtensionMessage) => void,
+  options: VscodeMediaBridgeOptions = {},
 ): VscodeMediaBridge {
-  let nextRequestId = 1;
-  let disposed = false;
-  const pending = new Map<number, PendingRequest>();
+  const requests = new WebviewRequestRegistry<MediaResponse>({
+    label: 'VS Code media',
+    maxPending: MAX_PENDING_REQUESTS,
+    timeoutMs: options.requestTimeoutMs,
+  });
 
-  function request<T extends MediaResponse>(message: MediaBridgeRequest): Promise<T> {
-    const requestId = nextRequestId;
-    nextRequestId += 1;
-
-    return new Promise<T>((resolve, reject) => {
-      pending.set(requestId, {
-        resolve: (response) => resolve(response as T),
-        reject,
-      });
+  function request<TType extends MediaResponse['type']>(
+    message: MediaBridgeRequest,
+    expectedType: TType,
+  ): Promise<Extract<MediaResponse, { type: TType }>> {
+    return requests.request(expectedType, (requestId) => {
       postMessage({ ...message, requestId } as WebviewToExtensionMessage);
     });
   }
 
-  function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
-    const msg = event.data;
+  function handleMessage(event: MessageEvent<unknown>) {
+    const msg: ExtensionToWebviewMessage | null = parseExtensionToWebviewMessage(event.data);
+    if (!msg) return;
     switch (msg.type) {
       case 'mediaResolved':
-        settle(msg.requestId, { type: 'mediaResolved', url: msg.url });
+        requests.settle(msg.requestId, { type: 'mediaResolved', url: msg.url });
         break;
       case 'mediaListed':
-        settle(msg.requestId, { type: 'mediaListed', entries: msg.entries });
+        requests.settle(msg.requestId, { type: 'mediaListed', entries: msg.entries });
         break;
       case 'mediaAdded':
-        settle(msg.requestId, { type: 'mediaAdded', path: msg.path });
+        requests.settle(msg.requestId, { type: 'mediaAdded', path: msg.path });
         break;
       case 'mediaRemoved':
-        settle(msg.requestId, { type: 'mediaRemoved' });
+        requests.settle(msg.requestId, { type: 'mediaRemoved' });
         break;
       case 'mediaError':
-        reject(msg.requestId, new Error(msg.message));
+        requests.reject(msg.requestId, new Error(msg.message));
         break;
     }
-  }
-
-  function settle(requestId: number, response: MediaResponse) {
-    const pendingRequest = pending.get(requestId);
-    if (!pendingRequest) return;
-    pending.delete(requestId);
-    pendingRequest.resolve(response);
-  }
-
-  function reject(requestId: number, error: Error) {
-    const pendingRequest = pending.get(requestId);
-    if (!pendingRequest) return;
-    pending.delete(requestId);
-    pendingRequest.reject(error);
   }
 
   window.addEventListener('message', handleMessage);
 
   function dispose() {
-    if (disposed) return;
-    disposed = true;
     window.removeEventListener('message', handleMessage);
-    for (const pendingRequest of pending.values()) {
-      pendingRequest.reject(new Error('VS Code media bridge disposed'));
-    }
-    pending.clear();
+    requests.dispose();
   }
 
   return {
     mediaProvider: {
       async resolveUrl(ref: string): Promise<string> {
-        if (isAlreadyDisplayableUrl(ref)) return ref;
-        const response = await request<{ type: 'mediaResolved'; url: string }>({
-          type: 'resolveMedia',
-          ref,
-        });
+        const displayableUrl = parseDisplayableUrl(ref);
+        if (displayableUrl) return displayableUrl;
+        const response = await request({ type: 'resolveMedia', ref }, 'mediaResolved');
         return response.url;
       },
 
       async listMedia(): Promise<MediaEntry[]> {
-        const response = await request<{ type: 'mediaListed'; entries: MediaEntry[] }>({
-          type: 'listMedia',
-        });
+        const response = await request({ type: 'listMedia' }, 'mediaListed');
         return response.entries;
       },
 
@@ -113,17 +99,26 @@ export function createVscodeMediaBridge(
         data: ArrayBuffer | Blob | Uint8Array,
         mimeType: string,
       ): Promise<string> {
-        const response = await request<{ type: 'mediaAdded'; path: string }>({
-          type: 'addMedia',
-          name,
-          dataBase64: await toBase64(data),
-          mimeType,
-        });
+        if (!isBoundedString(name, HOST_WIRE_LIMITS.pathCharacters, 1)) {
+          throw new Error('The media name is invalid');
+        }
+        if (!isSafeMimeType(mimeType)) {
+          throw new Error('The media type is invalid');
+        }
+        const response = await request(
+          {
+            type: 'addMedia',
+            name,
+            dataBase64: await toBase64(data),
+            mimeType,
+          },
+          'mediaAdded',
+        );
         return response.path;
       },
 
       async removeMedia(ref: string): Promise<void> {
-        await request<{ type: 'mediaRemoved' }>({ type: 'removeMedia', ref });
+        await request({ type: 'removeMedia', ref }, 'mediaRemoved');
       },
 
       dispose,
@@ -133,8 +128,11 @@ export function createVscodeMediaBridge(
   };
 }
 
-function isAlreadyDisplayableUrl(ref: string): boolean {
-  return /^(?:blob:|data:|https?:)/i.test(ref);
+function parseDisplayableUrl(ref: string): string | null {
+  if (!isBoundedString(ref, HOST_WIRE_LIMITS.urlCharacters, 1)) return null;
+  if (ref.startsWith('blob:') || ref.startsWith('data:')) return ref;
+  const external = parseExternalHttpUrl(ref);
+  return external?.startsWith('https:') ? external : null;
 }
 
 async function toBase64(data: ArrayBuffer | Blob | Uint8Array): Promise<string> {
@@ -145,11 +143,5 @@ async function toBase64(data: ArrayBuffer | Blob | Uint8Array): Promise<string> 
         ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
         : data;
   const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-  return btoa(binary);
+  return encodeBoundedBase64(bytes);
 }

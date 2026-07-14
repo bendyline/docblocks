@@ -11,6 +11,6 @@ export const transformsCommand = new Command('transforms')
     const styles = getTransformStyleIds();
     console.error('Available transform styles:\n');
     for (const style of styles) {
-      process.stdout.write(`  ${style}\n`);
+      process.stdout.write(`${style}\n`);
     }
   });

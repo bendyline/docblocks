@@ -1,10 +1,22 @@
+import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import {
+  isSafeExportFilename,
+  isSafeMimeType,
+  parseExtensionToWebviewMessage,
+  type ExportTargetGrantMessage,
+  type ExtensionToWebviewMessage,
+  type WebviewToExtensionMessage,
+} from '@bendyline/docblocks/vscode';
 import type { ContentContainer, ContentEntry } from '@bendyline/squisq/storage';
-import type { ExtensionToWebviewMessage, WebviewToExtensionMessage } from '../../src/messages.js';
+import { decodeBoundedBase64, encodeBoundedBase64 } from '../../src/wirePayload.js';
+import { WebviewRequestRegistry } from './webviewRequestRegistry.js';
+
+const MAX_PENDING_REQUESTS = 64;
 
 type ExportBridgeResponse =
-  | { type: 'exportSaved'; uri: string | null; path: string | null }
-  | { type: 'exportTargetResolved'; path: string }
-  | { type: 'exportTargetPicked'; path: string | null }
+  | { type: 'exportSaved'; target: ExportTargetGrantMessage | null }
+  | { type: 'exportTargetResolved'; target: ExportTargetGrantMessage | null }
+  | { type: 'exportTargetPicked'; target: ExportTargetGrantMessage | null }
   | { type: 'workspaceFileRead'; dataBase64: string | null };
 
 type ExportBridgeRequest =
@@ -13,94 +25,89 @@ type ExportBridgeRequest =
       filename: string;
       dataBase64: string;
       mimeType: string;
-      targetPath: string | null;
+      grantId: string | null;
     }
   | { type: 'resolveExportTarget'; filename: string }
-  | { type: 'pickExportTarget'; filename: string; currentPath: string | null }
+  | { type: 'pickExportTarget'; filename: string; currentGrantId: string | null }
   | { type: 'readWorkspaceFile'; path: string };
 
-interface PendingRequest {
-  resolve: (response: ExportBridgeResponse) => void;
-  reject: (error: Error) => void;
-}
-
 export interface VscodeExportBridge {
-  saveBlob(blob: Blob, filename: string, targetPath?: string | null): Promise<string | null>;
-  resolveExportTarget(filename: string): Promise<string>;
-  pickExportTarget(filename: string, currentPath?: string | null): Promise<string | null>;
+  saveBlob(
+    blob: Blob,
+    filename: string,
+    target?: ExportTargetGrantMessage | null,
+  ): Promise<ExportTargetGrantMessage | null>;
+  resolveExportTarget(filename: string): Promise<ExportTargetGrantMessage | null>;
+  pickExportTarget(
+    filename: string,
+    currentTarget?: ExportTargetGrantMessage | null,
+  ): Promise<ExportTargetGrantMessage | null>;
   contentContainer: ContentContainer;
   dispose(): void;
+}
+
+export interface VscodeExportBridgeOptions {
+  requestTimeoutMs?: number;
 }
 
 export function createVscodeExportBridge(
   postMessage: (message: WebviewToExtensionMessage) => void,
   getCurrentMarkdown: () => string | null,
   getCurrentFileName: () => string | null,
+  options: VscodeExportBridgeOptions = {},
 ): VscodeExportBridge {
-  let nextRequestId = 1;
-  let disposed = false;
-  const pending = new Map<number, PendingRequest>();
+  const requests = new WebviewRequestRegistry<ExportBridgeResponse>({
+    label: 'VS Code export',
+    maxPending: MAX_PENDING_REQUESTS,
+    timeoutMs: options.requestTimeoutMs,
+  });
 
-  function request<T extends ExportBridgeResponse>(message: ExportBridgeRequest): Promise<T> {
-    const requestId = nextRequestId;
-    nextRequestId += 1;
-
-    return new Promise<T>((resolve, reject) => {
-      pending.set(requestId, {
-        resolve: (response) => resolve(response as T),
-        reject,
-      });
+  function request<TType extends ExportBridgeResponse['type']>(
+    message: ExportBridgeRequest,
+    expectedType: TType,
+  ): Promise<Extract<ExportBridgeResponse, { type: TType }>> {
+    return requests.request(expectedType, (requestId) => {
       postMessage({ ...message, requestId } as WebviewToExtensionMessage);
     });
   }
 
-  function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>) {
-    const msg = event.data;
+  function handleMessage(event: MessageEvent<unknown>) {
+    const msg: ExtensionToWebviewMessage | null = parseExtensionToWebviewMessage(event.data);
+    if (!msg) return;
     switch (msg.type) {
       case 'exportSaved':
-        settle(msg.requestId, { type: 'exportSaved', uri: msg.uri, path: msg.path });
+        requests.settle(msg.requestId, { type: 'exportSaved', target: msg.target });
         break;
       case 'exportError':
-        reject(msg.requestId, new Error(msg.message));
+        requests.reject(msg.requestId, new Error(msg.message));
         break;
       case 'exportTargetResolved':
-        settle(msg.requestId, { type: 'exportTargetResolved', path: msg.path });
+        requests.settle(msg.requestId, { type: 'exportTargetResolved', target: msg.target });
         break;
       case 'exportTargetPicked':
-        settle(msg.requestId, { type: 'exportTargetPicked', path: msg.path });
+        requests.settle(msg.requestId, { type: 'exportTargetPicked', target: msg.target });
         break;
       case 'workspaceFileRead':
-        settle(msg.requestId, { type: 'workspaceFileRead', dataBase64: msg.dataBase64 });
+        requests.settle(msg.requestId, {
+          type: 'workspaceFileRead',
+          dataBase64: msg.dataBase64,
+        });
         break;
       case 'workspaceFileError':
-        reject(msg.requestId, new Error(msg.message));
+        requests.reject(msg.requestId, new Error(msg.message));
         break;
     }
   }
 
-  function settle(requestId: number, response: ExportBridgeResponse) {
-    const pendingRequest = pending.get(requestId);
-    if (!pendingRequest) return;
-    pending.delete(requestId);
-    pendingRequest.resolve(response);
-  }
-
-  function reject(requestId: number, error: Error) {
-    const pendingRequest = pending.get(requestId);
-    if (!pendingRequest) return;
-    pending.delete(requestId);
-    pendingRequest.reject(error);
-  }
-
   async function readFile(path: string): Promise<ArrayBuffer | null> {
+    if (!isBoundedString(path, HOST_WIRE_LIMITS.pathCharacters, 1)) return null;
     const current = currentDocumentBuffer(path, getCurrentMarkdown, getCurrentFileName);
     if (current) return current;
 
-    const response = await request<{ type: 'workspaceFileRead'; dataBase64: string | null }>({
-      type: 'readWorkspaceFile',
-      path,
-    });
-    return response.dataBase64 ? base64ToArrayBuffer(response.dataBase64) : null;
+    const response = await request({ type: 'readWorkspaceFile', path }, 'workspaceFileRead');
+    if (!response.dataBase64) return null;
+    const bytes = decodeBoundedBase64(response.dataBase64);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
   const contentContainer: ContentContainer = {
@@ -138,52 +145,57 @@ export function createVscodeExportBridge(
   async function saveBlob(
     blob: Blob,
     filename: string,
-    targetPath?: string | null,
-  ): Promise<string | null> {
-    const response = await request<{
-      type: 'exportSaved';
-      uri: string | null;
-      path: string | null;
-    }>({
-      type: 'saveExport',
-      filename,
-      dataBase64: await blobToBase64(blob),
-      mimeType: blob.type || 'application/octet-stream',
-      targetPath: targetPath?.trim() ? targetPath.trim() : null,
-    });
-    return response.path;
+    target?: ExportTargetGrantMessage | null,
+  ): Promise<ExportTargetGrantMessage | null> {
+    if (!isSafeExportFilename(filename)) throw new Error('The export filename is invalid');
+    if (blob.size > HOST_WIRE_LIMITS.binaryBytes) {
+      throw new Error('The export exceeds the allowed size');
+    }
+    const mimeType = blob.type || 'application/octet-stream';
+    if (!isSafeMimeType(mimeType)) throw new Error('The export media type is invalid');
+    const response = await request(
+      {
+        type: 'saveExport',
+        filename,
+        dataBase64: encodeBoundedBase64(new Uint8Array(await blob.arrayBuffer())),
+        mimeType,
+        grantId: target?.grantId ?? null,
+      },
+      'exportSaved',
+    );
+    return response.target;
   }
 
-  async function resolveExportTarget(filename: string): Promise<string> {
-    const response = await request<{ type: 'exportTargetResolved'; path: string }>({
-      type: 'resolveExportTarget',
-      filename,
-    });
-    return response.path;
+  async function resolveExportTarget(filename: string): Promise<ExportTargetGrantMessage | null> {
+    if (!isSafeExportFilename(filename)) throw new Error('The export filename is invalid');
+    const response = await request(
+      { type: 'resolveExportTarget', filename },
+      'exportTargetResolved',
+    );
+    return response.target;
   }
 
   async function pickExportTarget(
     filename: string,
-    currentPath?: string | null,
-  ): Promise<string | null> {
-    const response = await request<{ type: 'exportTargetPicked'; path: string | null }>({
-      type: 'pickExportTarget',
-      filename,
-      currentPath: currentPath?.trim() ? currentPath.trim() : null,
-    });
-    return response.path;
+    currentTarget?: ExportTargetGrantMessage | null,
+  ): Promise<ExportTargetGrantMessage | null> {
+    if (!isSafeExportFilename(filename)) throw new Error('The export filename is invalid');
+    const response = await request(
+      {
+        type: 'pickExportTarget',
+        filename,
+        currentGrantId: currentTarget?.grantId ?? null,
+      },
+      'exportTargetPicked',
+    );
+    return response.target;
   }
 
   window.addEventListener('message', handleMessage);
 
   function dispose() {
-    if (disposed) return;
-    disposed = true;
     window.removeEventListener('message', handleMessage);
-    for (const pendingRequest of pending.values()) {
-      pendingRequest.reject(new Error('VS Code export bridge disposed'));
-    }
-    pending.clear();
+    requests.dispose();
   }
 
   return {
@@ -209,27 +221,4 @@ function currentDocumentBuffer(
 
 function pathWithoutSuffix(path: string): string {
   return path.split(/[?#]/, 1)[0]?.replace(/\\/g, '/').replace(/^\/+/, '') ?? '';
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return arrayBufferToBase64(await blob.arrayBuffer());
-}
-
-function arrayBufferToBase64(data: ArrayBuffer): string {
-  const bytes = new Uint8Array(data);
-  const chunkSize = 0x8000;
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
-function base64ToArrayBuffer(value: string): ArrayBuffer {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes.buffer as ArrayBuffer;
 }

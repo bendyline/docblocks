@@ -1,8 +1,10 @@
 /**
  * convert command
  *
- * Reads a markdown file, ZIP/DBK container, or folder and exports to
- * supported formats: DOCX, PPTX, PDF, HTML, and container ZIP (.dbk).
+ * Reads any input supported by the linked Squisq CLI and exports through its
+ * canonical format registry. The historical default set remains DOCX, PPTX,
+ * PDF, HTML, and DBK; callers may explicitly request any export-capable
+ * registry format.
  *
  * Wraps the same logic as squisq-cli's convert command, reusing the
  * underlying squisq libraries directly.
@@ -13,59 +15,81 @@ import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type { Block, Doc } from '@bendyline/squisq/schemas';
+import type { ConvertSource, FormatId, FormatRegistry } from '@bendyline/squisq-cli/api';
 
-const ALL_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
-type Format = (typeof ALL_FORMATS)[number];
-
-function parseFormats(value: string): Format[] {
-  const requested = value.split(',').map((s) => s.trim().toLowerCase());
-  const valid: Format[] = [];
-  for (const r of requested) {
-    if (ALL_FORMATS.includes(r as Format)) {
-      valid.push(r as Format);
-    } else {
-      console.warn(`Unknown format "${r}" — skipping. Valid: ${ALL_FORMATS.join(', ')}`);
-    }
-  }
-  if (valid.length === 0) {
-    throw new Error(`No valid formats specified. Valid: ${ALL_FORMATS.join(', ')}`);
-  }
-  return valid;
-}
+const DEFAULT_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
 
 export interface ConvertOptions {
   outputDir?: string;
   formats?: string;
   theme?: string;
   transform?: string;
+  /** Cancel reading, transformation, conversion, or publication at a bounded boundary. */
+  signal?: AbortSignal;
+  /** Programmatic registry override; the CLI defaults to the linked Squisq registry. */
+  registry?: FormatRegistry;
 }
 
 export interface ConvertResult {
-  outputFiles: { path: string; format: string; size: number }[];
+  outputFiles: {
+    path: string;
+    format: string;
+    size: number;
+    mimeType: string;
+    suggestedFilename: string;
+    warnings: string[];
+  }[];
 }
 
 export async function runConvert(inputPath: string, opts: ConvertOptions): Promise<ConvertResult> {
+  throwIfAborted(opts.signal);
   const resolvedInput = resolve(inputPath);
-  const formats: Format[] = opts.formats ? parseFormats(opts.formats) : [...ALL_FORMATS];
   const outputDir = opts.outputDir ? resolve(opts.outputDir) : dirname(resolvedInput);
   const inputBasename = basename(resolvedInput);
   const inputExt = extname(inputBasename);
   const baseName = inputExt ? inputBasename.slice(0, -inputExt.length) : inputBasename;
 
-  await mkdir(outputDir, { recursive: true });
+  const squisq = await import('@bendyline/squisq-cli/api');
+  throwIfAborted(opts.signal);
+  const registry = opts.registry ?? squisq.createCliRegistry();
+  const exportableIds = registry
+    .list()
+    .filter((definition) => definition.exportDoc !== undefined)
+    .map((definition) => definition.id);
+  const exportable = new Set<FormatId>(exportableIds);
+  const requested = opts.formats
+    ? opts.formats
+        .split(',')
+        .map((format) => format.trim().toLowerCase())
+        .filter(Boolean)
+    : [...DEFAULT_FORMATS];
+  const formats = requested.filter((format): format is FormatId => exportable.has(format));
+  const unknown = requested.filter((format) => !exportable.has(format));
 
-  // Validate theme
-  if (opts.theme) {
-    const { getAvailableThemes } = await import('@bendyline/squisq/schemas');
-    const themes = getAvailableThemes();
-    if (!themes.includes(opts.theme)) {
-      throw new Error(`Unknown theme "${opts.theme}". Available: ${themes.join(', ')}`);
-    }
+  if (unknown.length > 0) {
+    console.warn(
+      `Unknown or non-exportable format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}" — skipping. Valid: ${exportableIds.join(', ')}`,
+    );
   }
+  if (formats.length === 0) {
+    throw new squisq.ConversionError(
+      'unknown-format',
+      `No valid formats specified. Valid: ${exportableIds.join(', ')}`,
+      {
+        format: requested[0],
+        hint: 'Choose a format reported by the linked Squisq CLI registry.',
+      },
+    );
+  }
+
+  await mkdir(outputDir, { recursive: true });
+  throwIfAborted(opts.signal);
 
   // Validate transform
   if (opts.transform) {
     const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
+    throwIfAborted(opts.signal);
     const styles = getTransformStyleIds();
     if (!styles.includes(opts.transform)) {
       throw new Error(
@@ -75,37 +99,57 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   }
 
   console.error(`Reading: ${resolvedInput}`);
-  const { readInput } = await import('@bendyline/squisq-cli/api');
-  const result = await readInput(resolvedInput);
+  const result = await squisq.readInput(resolvedInput, { signal: opts.signal });
+  throwIfAborted(opts.signal);
   const { container } = result;
 
-  if (!result.markdownDoc) {
-    throw new Error(
-      'Convert command requires a markdown document. JSON Doc input is not supported for convert — use the video command instead.',
-    );
-  }
-
-  // Apply transform if requested
+  // Keep DocBlocks' source-preserving Markdown transform projection for
+  // authored Markdown. JSON Doc inputs have no Markdown source to protect, so
+  // they use the registry's native transform path below.
   let exportMarkdownDoc = result.markdownDoc;
-  if (opts.transform) {
+  if (opts.transform && exportMarkdownDoc) {
     exportMarkdownDoc = await applyTransformToMarkdown(
-      result.markdownDoc,
+      exportMarkdownDoc,
       container,
       opts.transform,
       opts.theme,
     );
+    throwIfAborted(opts.signal);
     console.error(`  Applied transform: ${opts.transform}`);
   }
 
-  const themeId = opts.theme;
+  const source: ConvertSource = exportMarkdownDoc
+    ? { kind: 'markdown', markdown: exportMarkdownDoc, container, baseName }
+    : { kind: 'doc', doc: result.doc, container, baseName };
   const outputFiles: ConvertResult['outputFiles'] = [];
 
   for (const format of formats) {
-    const outPath = join(outputDir, `${baseName}.${format}`);
-    const buf = await exportToFormat(format, exportMarkdownDoc, container, baseName, themeId);
-    await writeFile(outPath, buf);
+    throwIfAborted(opts.signal);
+    const conversion = await squisq.convert(source, format, {
+      signal: opts.signal,
+      registry,
+      title: baseName,
+      themeId: opts.theme,
+      ...(!exportMarkdownDoc && opts.transform ? { transformStyle: opts.transform } : {}),
+    });
+    throwIfAborted(opts.signal);
+    const suggestedFilename = basename(conversion.suggestedFilename);
+    const outPath = join(outputDir, suggestedFilename);
+    await writeFile(outPath, conversion.bytes);
+    throwIfAborted(opts.signal);
     const info = await stat(outPath);
-    outputFiles.push({ path: outPath, format, size: info.size });
+    throwIfAborted(opts.signal);
+    outputFiles.push({
+      path: outPath,
+      format,
+      size: info.size,
+      mimeType: conversion.mimeType,
+      suggestedFilename: conversion.suggestedFilename,
+      warnings: [...conversion.warnings],
+    });
+    for (const warning of conversion.warnings) {
+      console.error(`  Warning [${format}]: ${warning}`);
+    }
     console.error(`  ✓ ${outPath}`);
   }
 
@@ -113,64 +157,12 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   return { outputFiles };
 }
 
-async function exportToFormat(
-  format: Format,
-  markdownDoc: MarkdownDocument,
-  container: ContentContainer,
-  baseName: string,
-  themeId?: string,
-): Promise<Buffer | Uint8Array | string> {
-  switch (format) {
-    case 'docx': {
-      const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
-      const buf = await markdownDocToDocx(markdownDoc, { themeId });
-      return Buffer.from(buf);
-    }
-
-    case 'pptx': {
-      const { markdownDocToPptx } = await import('@bendyline/squisq-formats/pptx');
-      const images = await collectContainerImages(container);
-      const buf = await markdownDocToPptx(markdownDoc, { themeId, images });
-      return Buffer.from(buf);
-    }
-
-    case 'pdf': {
-      const { markdownDocToPdf } = await import('@bendyline/squisq-formats/pdf');
-      const buf = await markdownDocToPdf(markdownDoc, { themeId });
-      return Buffer.from(buf);
-    }
-
-    case 'html': {
-      const { markdownToDoc } = await import('@bendyline/squisq/doc');
-      const { docToHtml, collectImagePaths } = await import('@bendyline/squisq-formats/html');
-      const { PLAYER_BUNDLE } = await import('@bendyline/squisq-react/standalone-source');
-
-      const doc = markdownToDoc(markdownDoc);
-      const imagePaths = collectImagePaths(doc);
-      const images = new Map<string, ArrayBuffer>();
-      for (const imgPath of imagePaths) {
-        const data = await container.readFile(imgPath);
-        if (data) {
-          images.set(imgPath, data);
-        }
-      }
-
-      return docToHtml(doc, {
-        playerScript: PLAYER_BUNDLE,
-        images,
-        title: baseName,
-        mode: 'static',
-        themeId,
-      });
-    }
-
-    case 'dbk': {
-      const { containerToZip } = await import('@bendyline/squisq-formats/container');
-      const blob = await containerToZip(container);
-      const buf = await blob.arrayBuffer();
-      return Buffer.from(buf);
-    }
-  }
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+  const error = new Error('Document conversion was cancelled');
+  error.name = 'AbortError';
+  throw error;
 }
 
 /**
@@ -183,37 +175,220 @@ export async function applyTransformToMarkdown(
   themeId?: string,
 ): Promise<MarkdownDocument> {
   const { markdownToDoc, docToMarkdown } = await import('@bendyline/squisq/doc');
+  const { readFrontmatterThemeId } = await import('@bendyline/squisq/markdown');
   const { applyTransform, extractDocImages } = await import('@bendyline/squisq/transform');
 
   const doc = markdownToDoc(markdownDoc);
   const images = extractDocImages(doc.blocks);
-  const result = applyTransform(doc, transformStyle, { themeId, images });
-  return docToMarkdown(result.doc);
+  const effectiveTheme = themeId ?? readFrontmatterThemeId(markdownDoc.frontmatter);
+  const result = applyTransform(doc, transformStyle, { themeId: effectiveTheme, images });
+  const projected = projectTransformOntoMarkdownSource(doc, result.doc);
+  const transformedMarkdown = docToMarkdown(projected);
+  const resolvedTheme = effectiveTheme ?? result.doc.themeId ?? doc.themeId;
+  if (!resolvedTheme) return transformedMarkdown;
+  return {
+    ...transformedMarkdown,
+    frontmatter: {
+      ...(transformedMarkdown.frontmatter ?? {}),
+      'squisq-theme': resolvedTheme,
+    },
+  };
 }
 
-async function collectContainerImages(
-  container: ContentContainer,
-): Promise<Map<string, ArrayBuffer>> {
-  const images = new Map<string, ArrayBuffer>();
-  const files = await container.listFiles();
-  for (const file of files) {
-    if (/\.(jpg|jpeg|png|gif|webp|svg|bmp|avif)$/i.test(file.path)) {
-      const data = await container.readFile(file.path);
-      if (data) {
-        images.set(file.path, data);
+/**
+ * Squisq transforms produce a presentation Doc whose generated highlight
+ * blocks intentionally replace source blocks. Those generated blocks do not
+ * carry Markdown authoring nodes, so serializing the transformed Doc directly
+ * can drop complete sections. Project each selected visual template back onto
+ * its source block instead: the style remains material while the authored
+ * headings, body content, media references, and hierarchy stay intact.
+ */
+function projectTransformOntoMarkdownSource(source: Doc, transformed: Doc): Doc {
+  const candidatesBySource = new Map<string, Block[]>();
+  const timedSourceBlocks = collectTransformSourceBlocks(source.blocks).sort(
+    (left, right) => left.startTime - right.startTime,
+  );
+
+  const collectCandidates = (blocks: readonly Block[]): void => {
+    for (const block of blocks) {
+      const provenance = block as Block & {
+        sourceBlockId?: string;
+        sourceStartTime?: number;
+      };
+      const sourceBlockId =
+        provenance.sourceBlockId ??
+        findSourceBlockAtTime(timedSourceBlocks, provenance.sourceStartTime)?.id;
+      if (sourceBlockId && block.template) {
+        const candidates = candidatesBySource.get(sourceBlockId) ?? [];
+        candidates.push(block);
+        candidatesBySource.set(sourceBlockId, candidates);
       }
+      if (block.children) collectCandidates(block.children);
+    }
+  };
+  collectCandidates(transformed.blocks);
+
+  const projectBlock = (block: Block): Block => {
+    const children = block.children?.map(projectBlock);
+    const visual = selectVisualCandidate(candidatesBySource.get(block.id));
+    if (!visual || !block.sourceHeading) {
+      return { ...block, ...(children ? { children } : {}) };
+    }
+
+    const { autoTemplate: _autoTemplate, ...sourceBlock } = block;
+    void _autoTemplate;
+    const templateOverrides = {
+      ...visual.overrides,
+      ...(block.sourceHeading.templateAnnotation?.params ?? {}),
+      ...(block.templateOverrides ?? {}),
+    };
+    const sourceHeading = {
+      ...block.sourceHeading,
+      templateAnnotation: {
+        ...(block.sourceHeading.templateAnnotation ?? {}),
+        template: visual.block.template,
+        ...(Object.keys(templateOverrides).length > 0 ? { params: templateOverrides } : {}),
+      },
+    };
+
+    return {
+      ...sourceBlock,
+      ...(children ? { children } : {}),
+      template: visual.block.template,
+      templateOverrides,
+      sourceHeading,
+      ...(block.transition || visual.block.transition
+        ? { transition: block.transition ?? visual.block.transition }
+        : {}),
+    };
+  };
+
+  return {
+    ...source,
+    blocks: source.blocks.map(projectBlock),
+    themeId: transformed.themeId ?? source.themeId,
+  };
+}
+
+function collectTransformSourceBlocks(blocks: readonly Block[]): Block[] {
+  const sourceBlocks: Block[] = [];
+  for (const block of blocks) {
+    if (block.children && block.children.length > 0) {
+      if (!block.contents || block.contents.length === 0) sourceBlocks.push(block);
+      sourceBlocks.push(...collectTransformSourceBlocks(block.children));
+    } else {
+      sourceBlocks.push(block);
     }
   }
-  return images;
+  return sourceBlocks;
+}
+
+function findSourceBlockAtTime(
+  sourceBlocks: readonly Block[],
+  sourceStartTime: number | undefined,
+): Block | undefined {
+  if (sourceStartTime === undefined) return undefined;
+  let match: Block | undefined;
+  for (const block of sourceBlocks) {
+    if (block.startTime > sourceStartTime) break;
+    match = block;
+  }
+  return match;
+}
+
+interface ProjectedVisual {
+  block: Block;
+  overrides: Record<string, string>;
+}
+
+function selectVisualCandidate(
+  candidates: readonly Block[] | undefined,
+): ProjectedVisual | undefined {
+  if (!candidates || candidates.length === 0) return undefined;
+  for (const candidate of candidates) {
+    if (
+      candidate.id.startsWith('transform-header-') ||
+      candidate.id.startsWith('transform-img-') ||
+      candidate.template === 'sectionHeader'
+    ) {
+      continue;
+    }
+    const overrides = serializeVisualInputs(candidate);
+    if (overrides) return { block: candidate, overrides };
+  }
+  return undefined;
+}
+
+function serializeVisualInputs(block: Block): Record<string, string> | undefined {
+  const input = block as unknown as Record<string, unknown>;
+  switch (block.template) {
+    case 'title':
+      return serializeStringInputs(input, ['title'], ['subtitle', 'backgroundColor']);
+    case 'statHighlight':
+      return serializeStringInputs(input, ['stat', 'description'], ['detail', 'colorScheme']);
+    case 'quote':
+      return serializeStringInputs(input, ['quote'], ['attribution']);
+    case 'fullBleedQuote':
+      return serializeStringInputs(input, ['text'], ['colorScheme']);
+    case 'factCard':
+      return serializeStringInputs(input, ['fact', 'explanation'], ['source']);
+    case 'definitionCard':
+      return serializeStringInputs(input, ['term', 'definition'], ['origin', 'colorScheme']);
+    case 'dateEvent':
+      return serializeStringInputs(input, ['date', 'description'], ['footer', 'mood']);
+    case 'twoColumn': {
+      const left = serializeLabeledPair(input.left);
+      const right = serializeLabeledPair(input.right);
+      if (!left || !right) return undefined;
+      return {
+        left,
+        right,
+        ...(serializeStringInputs(input, [], ['header', 'leftColor', 'rightColor']) ?? {}),
+      };
+    }
+    default:
+      // Some template inputs (lists, images, tables, and custom templates)
+      // are structured and cannot be represented losslessly in one inline
+      // annotation. Keep their source Markdown unchanged instead of emitting
+      // a visually empty or corrupt template block.
+      return undefined;
+  }
+}
+
+function serializeStringInputs(
+  input: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+): Record<string, string> | undefined {
+  const serialized: Record<string, string> = {};
+  for (const key of required) {
+    const value = input[key];
+    if (typeof value !== 'string') return undefined;
+    serialized[key] = value;
+  }
+  for (const key of optional) {
+    const value = input[key];
+    if (typeof value === 'string') serialized[key] = value;
+  }
+  return serialized;
+}
+
+function serializeLabeledPair(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const pair = value as Record<string, unknown>;
+  if (typeof pair.label !== 'string') return undefined;
+  return typeof pair.sublabel === 'string' && pair.sublabel
+    ? `${pair.label}|${pair.sublabel}`
+    : pair.label;
 }
 
 export const convertCommand = new Command('convert')
-  .description('Convert a markdown document to DOCX, PPTX, PDF, HTML, and DBK container formats')
-  .argument('<input>', 'Path to .md file, .zip/.dbk container, or folder')
+  .description('Convert a document through the linked Squisq format registry')
+  .argument('<input>', 'Path to a supported document, .zip/.dbk container, or folder')
   .option('-o, --output-dir <dir>', 'Output directory (default: same as input)')
   .option(
     '-f, --formats <list>',
-    `Comma-separated formats to produce (default: all). Valid: ${ALL_FORMATS.join(', ')}`,
+    `Comma-separated linked Squisq export formats (default: ${DEFAULT_FORMATS.join(', ')})`,
   )
   .option('-t, --theme <id>', 'Squisq theme ID to apply (e.g., documentary, cinematic, bold)')
   .option(
@@ -226,6 +401,22 @@ export const convertCommand = new Command('convert')
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`Error: ${message}`);
+      if (isConversionErrorMetadata(err)) {
+        console.error(`  Code: ${err.code}${err.format ? ` (${err.format})` : ''}`);
+        if (err.hint) console.error(`  Hint: ${err.hint}`);
+      }
       process.exitCode = 1;
     }
   });
+
+function isConversionErrorMetadata(
+  error: unknown,
+): error is Error & { code: string; format?: string; hint?: string } {
+  if (!(error instanceof Error)) return false;
+  const candidate = error as Error & { code?: unknown; format?: unknown; hint?: unknown };
+  if (typeof candidate.code !== 'string') return false;
+  if (candidate.format !== undefined && typeof candidate.format !== 'string') {
+    return false;
+  }
+  return candidate.hint === undefined || typeof candidate.hint === 'string';
+}

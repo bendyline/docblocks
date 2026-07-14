@@ -5,24 +5,94 @@
  * for creating new files/folders.
  */
 
-import { useCallback, useState } from 'react';
-import type { FileSystemProvider, FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  isFileSystemMoveStateError,
+  parseWorkspacePath,
+  type FileSystemProvider,
+  type FileSystemEntry,
+} from '@bendyline/docblocks/filesystem';
 import { useFileTree } from './useFileTree.js';
-import { FileTreeNode } from './FileTreeNode.js';
-import { NewFileIcon, NewFolderIcon, RefreshIcon } from '../icons.js';
+import {
+  FileTreeNode,
+  type FileTreeNodeBadge,
+  type FileTreeNodeGitActions,
+} from './FileTreeNode.js';
+import { NewFileIcon, NewFolderIcon } from '../icons.js';
+import { useGitContext } from '../Git/GitContext.js';
+import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
+const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
+
+export type FileTreeChange =
+  | { type: 'create'; path: string; kind?: 'file' | 'directory' }
+  | { type: 'delete'; path: string; kind: 'file' | 'directory' }
+  | {
+      type: 'move';
+      oldPath: string;
+      newPath: string;
+      kind: 'file' | 'directory';
+    };
+
+export type FileTreeMutationHandler = (
+  change: FileTreeChange,
+  mutate: () => Promise<void>,
+) => Promise<void>;
+
+function normalisePath(path: string): string {
+  return parseWorkspacePath(path);
+}
+
+function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {
+  const canonical = normalisePath(path);
+  return (
+    paths.has(path) || paths.has(canonical) || (canonical !== '' && paths.has(`/${canonical}`))
+  );
+}
+
+function getEquivalentPathValue<T>(values: ReadonlyMap<string, T>, path: string): T | undefined {
+  const canonical = normalisePath(path);
+  return values.get(path) ?? values.get(canonical) ?? values.get(`/${canonical}`);
+}
+
+function parentPath(path: string): string {
+  const clean = normalisePath(path);
+  const slash = clean.lastIndexOf('/');
+  return slash < 0 ? '' : clean.slice(0, slash);
+}
+
+function pathInDirectory(entry: FileSystemEntry, directoryPath: string): string {
+  const prefix = directoryPath.replace(/\/+$/, '');
+  if (prefix) return `${prefix}/${entry.name}`;
+  return entry.path.startsWith('/') ? `/${entry.name}` : entry.name;
+}
+
+function canMoveTo(entry: FileSystemEntry, directoryPath: string): boolean {
+  const source = normalisePath(entry.path);
+  const target = normalisePath(directoryPath);
+  if (parentPath(source) === target) return false;
+  if (entry.kind === 'directory' && (target === source || target.startsWith(`${source}/`))) {
+    return false;
+  }
+  return true;
+}
+
+function isInternalDrag(dataTransfer: DataTransfer): boolean {
+  return Array.from(dataTransfer.types).includes(INTERNAL_DRAG_TYPE);
+}
 
 /**
- * Hide auto-generated `<basename>_files/` companion folders from the
- * tree. They hold per-document images and version snapshots — useful
- * to the editor, noisy in the user-facing file list. The folders still
- * exist on disk; we just don't surface them in the explorer.
+ * Hide dot-entries (`.git`, `.gitignore`, `.DS_Store`, …) — never user
+ * documents — and auto-generated `<basename>_files/` companion folders,
+ * which hold per-document images and version snapshots (useful to the
+ * editor, noisy in the user-facing file list). Everything still exists on
+ * disk; we just don't surface it in the explorer.
  */
 function isHiddenEntry(entry: FileSystemEntry): boolean {
-  if (entry.kind !== 'directory') return false;
   const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
-  return name.endsWith('_files');
+  if (name.startsWith('.')) return true;
+  return entry.kind === 'directory' && name.endsWith('_files');
 }
 
 function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
@@ -32,10 +102,17 @@ function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
+  /** Active document to select and reveal by expanding all ancestor folders. */
+  activeFilePath?: string | null;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
-  /** Called after any mutation (create, delete, rename). */
-  onTreeChange?: () => void;
+  /**
+   * Wraps destructive tree mutations so the active document session can
+   * flush, cancel, or retarget itself before storage changes.
+   */
+  onTreeMutation?: FileTreeMutationHandler;
+  /** Called after any mutation, with move details when paths change. */
+  onTreeChange?: (change?: FileTreeChange) => void;
   /** Called when supported files are dropped onto the explorer. */
   onImportFiles?: (files: File[]) => void;
   /** Optional className for the root element. */
@@ -44,7 +121,9 @@ export interface FileExplorerProps {
 
 export function FileExplorer({
   provider,
+  activeFilePath,
   onSelect,
+  onTreeMutation,
   onTreeChange,
   onImportFiles,
   className,
@@ -53,11 +132,21 @@ export function FileExplorer({
   const { childEntries } = tree as typeof tree & {
     childEntries: Map<string, FileSystemEntry[]>;
   };
+  const { reveal } = tree;
+  // Null on surfaces without git (site, tests) — everything degrades.
+  const git = useGitContext();
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const dragCounter = useState({ current: 0 })[0];
+  const [draggedEntry, setDraggedEntry] = useState<FileSystemEntry | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const dragCounter = useRef(0);
+
+  useEffect(() => {
+    if (activeFilePath) reveal(activeFilePath, 'file');
+  }, [activeFilePath, provider, reveal]);
 
   const hasSupported = useCallback((dt: DataTransfer): boolean => {
     for (const item of Array.from(dt.items)) {
@@ -73,6 +162,7 @@ export function FileExplorer({
 
   const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
+      if (isInternalDrag(e.dataTransfer)) return;
       e.preventDefault();
       dragCounter.current += 1;
       if (hasSupported(e.dataTransfer)) setDragOver(true);
@@ -81,12 +171,14 @@ export function FileExplorer({
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (isInternalDrag(e.dataTransfer)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
   }, []);
 
   const handleDragLeave = useCallback(
     (e: React.DragEvent) => {
+      if (isInternalDrag(e.dataTransfer)) return;
       e.preventDefault();
       dragCounter.current -= 1;
       if (dragCounter.current <= 0) {
@@ -99,6 +191,7 @@ export function FileExplorer({
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
+      if (isInternalDrag(e.dataTransfer)) return;
       e.preventDefault();
       dragCounter.current = 0;
       setDragOver(false);
@@ -108,7 +201,7 @@ export function FileExplorer({
       });
       if (supported.length > 0) onImportFiles?.(supported);
     },
-    [onImportFiles, dragCounter],
+    [onImportFiles],
   );
 
   const handleSelect = useCallback(
@@ -141,31 +234,155 @@ export function FileExplorer({
     // Scope to currently selected folder (or root)
     const prefix =
       tree.selectedKind === 'directory' && tree.selectedPath ? `${tree.selectedPath}/` : '';
+    let createdPath = `${prefix}${name}`;
     if (newItemType === 'file') {
       const filename = name.endsWith('.md') ? name : `${name}.md`;
-      await tree.createFile(`${prefix}${filename}`, '');
+      createdPath = `${prefix}${filename}`;
+      await tree.createFile(createdPath, '');
     } else if (newItemType === 'directory') {
-      await tree.createDirectory(`${prefix}${name}`);
+      await tree.createDirectory(createdPath);
     }
     setNewItemName('');
     setNewItemType(null);
-    onTreeChange?.();
+    onTreeChange?.({ type: 'create', path: createdPath });
   }, [newItemName, newItemType, tree, onTreeChange]);
 
-  const handleDelete = useCallback(
-    async (path: string) => {
-      await tree.deleteEntry(path);
-      onTreeChange?.();
+  const runTreeMutation = useCallback(
+    async (change: FileTreeChange, mutate: () => Promise<void>) => {
+      if (onTreeMutation) await onTreeMutation(change, mutate);
+      else await mutate();
+      onTreeChange?.(change);
     },
-    [tree, onTreeChange],
+    [onTreeMutation, onTreeChange],
+  );
+
+  const handleDelete = useCallback(
+    async (path: string, kind: 'file' | 'directory') => {
+      const change: FileTreeChange = { type: 'delete', path, kind };
+      await runTreeMutation(change, () => tree.deleteEntry(path));
+    },
+    [tree, runTreeMutation],
   );
 
   const handleRename = useCallback(
-    async (oldPath: string, newPath: string) => {
-      await tree.renameEntry(oldPath, newPath);
-      onTreeChange?.();
+    async (oldPath: string, newPath: string, kind: 'file' | 'directory') => {
+      setMoveError(null);
+      const change: FileTreeChange = { type: 'move', oldPath, newPath, kind };
+      try {
+        await runTreeMutation(change, () => tree.renameEntry(oldPath, newPath, kind));
+      } catch (error: unknown) {
+        await tree.refresh();
+        if (isFileSystemMoveStateError(error) && error.documentLocation === 'destination') {
+          onTreeChange?.(change);
+        }
+        setMoveError(error instanceof Error ? error.message : 'Unable to move this entry.');
+      }
     },
-    [tree, onTreeChange],
+    [tree, runTreeMutation, onTreeChange],
+  );
+
+  const handleMove = useCallback(
+    async (entry: FileSystemEntry, directoryPath: string) => {
+      if (!canMoveTo(entry, directoryPath)) return;
+      const newPath = pathInDirectory(entry, directoryPath);
+      await handleRename(entry.path, newPath, entry.kind);
+      if (directoryPath && !tree.expanded.has(directoryPath)) {
+        tree.toggleExpand(directoryPath);
+      }
+    },
+    [handleRename, tree],
+  );
+
+  const handleInternalDragStart = useCallback((e: React.DragEvent, entry: FileSystemEntry) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(INTERNAL_DRAG_TYPE, entry.path);
+    e.dataTransfer.setData('text/plain', entry.path);
+    setDraggedEntry(entry);
+    setMoveError(null);
+  }, []);
+
+  const handleInternalDragEnd = useCallback(() => {
+    setDraggedEntry(null);
+    setDropTarget(null);
+  }, []);
+
+  const handleEntryDragOver = useCallback(
+    (e: React.DragEvent, entry: FileSystemEntry) => {
+      if (!isInternalDrag(e.dataTransfer)) return;
+      e.stopPropagation();
+      const canDrop =
+        entry.kind === 'directory' && draggedEntry && canMoveTo(draggedEntry, entry.path);
+      e.dataTransfer.dropEffect = canDrop ? 'move' : 'none';
+      if (canDrop) {
+        e.preventDefault();
+        setDropTarget(entry.path);
+      } else {
+        setDropTarget(null);
+      }
+    },
+    [draggedEntry],
+  );
+
+  const handleEntryDrop = useCallback(
+    (e: React.DragEvent, entry: FileSystemEntry) => {
+      if (!isInternalDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDropTarget(null);
+      if (entry.kind === 'directory' && draggedEntry) {
+        void handleMove(draggedEntry, entry.path);
+      }
+    },
+    [draggedEntry, handleMove],
+  );
+
+  const handleRootDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isInternalDrag(e.dataTransfer) || !draggedEntry) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const canDrop = canMoveTo(draggedEntry, '');
+      e.dataTransfer.dropEffect = canDrop ? 'move' : 'none';
+      setDropTarget(canDrop ? '' : null);
+    },
+    [draggedEntry],
+  );
+
+  const handleRootDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!isInternalDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDropTarget(null);
+      if (draggedEntry) void handleMove(draggedEntry, '');
+    },
+    [draggedEntry, handleMove],
+  );
+
+  const badgeFor = useCallback(
+    (entry: FileSystemEntry): FileTreeNodeBadge | undefined => {
+      if (!git?.repo) return undefined;
+      const key = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+      const kind = git.badges.get(key);
+      if (!kind) return undefined;
+      return { kind, glyph: BADGE_GLYPHS[kind], label: BADGE_LABELS[kind] };
+    },
+    [git],
+  );
+
+  const gitActionsFor = useCallback(
+    (entry: FileSystemEntry): FileTreeNodeGitActions | undefined => {
+      if (!git?.repo || entry.kind !== 'file') return undefined;
+      const path = entry.path.startsWith('/') ? entry.path : `/${entry.path}`;
+      return {
+        viewChanges: isFileDirty(git.status, path)
+          ? () => git.openDialog({ kind: 'diff', path })
+          : undefined,
+        fileHistory: () => git.openDialog({ kind: 'history', path }),
+        openOnRemote: git.remoteWeb ? () => git.openOnRemote(path) : undefined,
+      };
+    },
+    [git],
   );
 
   const renderEntries = useCallback(
@@ -175,20 +392,46 @@ export function FileExplorer({
           key={entry.path}
           entry={entry}
           depth={depth}
-          expanded={tree.expanded.has(entry.path)}
-          selected={tree.selectedPath === entry.path}
+          expanded={hasEquivalentPath(tree.expanded, entry.path)}
+          selected={
+            tree.selectedPath !== null &&
+            normalisePath(tree.selectedPath) === normalisePath(entry.path)
+          }
+          badge={badgeFor(entry)}
+          gitActions={gitActionsFor(entry)}
           onToggle={tree.toggleExpand}
           onSelect={handleSelect}
           onDelete={handleDelete}
           onRename={handleRename}
+          draggable
+          dragging={draggedEntry?.path === entry.path}
+          dropTarget={dropTarget === entry.path}
+          onDragStart={handleInternalDragStart}
+          onDragEnd={handleInternalDragEnd}
+          onDragOverEntry={handleEntryDragOver}
+          onDropEntry={handleEntryDrop}
           renderChildren={(dirPath: string) => {
-            const children = childEntries.get(dirPath) ?? [];
+            const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
             return renderEntries(children, depth + 1);
           }}
         />
       ));
     },
-    [tree, handleSelect, handleDelete, handleRename, childEntries],
+    [
+      tree,
+      handleSelect,
+      handleDelete,
+      handleRename,
+      childEntries,
+      badgeFor,
+      gitActionsFor,
+      draggedEntry,
+      dropTarget,
+      handleInternalDragStart,
+      handleInternalDragEnd,
+      handleEntryDragOver,
+      handleEntryDrop,
+    ],
   );
 
   return (
@@ -218,14 +461,6 @@ export function FileExplorer({
             aria-label="New Folder"
           >
             <NewFolderIcon />
-          </button>
-          <button
-            className="db-explorer-btn"
-            onClick={() => tree.refresh()}
-            title="Refresh file list"
-            aria-label="Refresh file list"
-          >
-            <RefreshIcon />
           </button>
         </div>
       </div>
@@ -261,6 +496,12 @@ export function FileExplorer({
         </div>
       )}
 
+      {moveError && (
+        <div className="db-tree-error" role="alert">
+          {moveError}
+        </div>
+      )}
+
       {/* Tree — role="tree" only when there are real treeitem children; the
           loading/empty states get a status role so axe doesn't flag the
           tree as missing required children. */}
@@ -273,7 +514,12 @@ export function FileExplorer({
           <div className="db-tree-empty">No files yet</div>
         </div>
       ) : (
-        <div className="db-tree" role="tree">
+        <div
+          className={`db-tree ${dropTarget === '' ? 'db-tree--drop-target' : ''}`}
+          role="tree"
+          onDragOver={handleRootDragOver}
+          onDrop={handleRootDrop}
+        >
           {renderEntries(tree.entries, 0)}
         </div>
       )}

@@ -28,11 +28,16 @@
   --db-text-on-accent: #ffffff;
   --db-text-on-selected: #ffffff;
   --db-accent-soft-08: rgba(125, 105, 72, 0.08);
+  --db-accent-soft-10: rgba(125, 105, 72, 0.1);
   --db-accent-soft-12: rgba(125, 105, 72, 0.12);
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
   --db-accent-soft-25: rgba(125, 105, 72, 0.25);
   --db-accent-tint-strong: #d8d0b5;
   --db-accent-deep: #3d3220;
+  --db-editor-canvas: #ffffff;
+  --db-badge-bg: #f3eede;
+  --db-badge-text: #3d3220;
+  --db-badge-text-hover: #2a2419;
   /* Outline pane + inline-preview gutter background. Sits one step
      lighter than the toolbar (`--db-accent-tint-strong`) so the chrome
      panes read as distinct from the action bar above the canvas. */
@@ -41,6 +46,14 @@
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
   --db-shadow: rgba(40, 30, 15, 0.12);
+  /* Git status colors — file badges, sync chips. Deleted/conflicted reuse
+     the danger hue on purpose; renamed gets the one cool accent. */
+  --db-git-modified: #9a6b00;
+  --db-git-added: #2e7d32;
+  --db-git-untracked: #2e7d32;
+  --db-git-renamed: #1565c0;
+  --db-git-deleted: #b22b1b;
+  --db-git-conflicted: #b22b1b;
 }
 
 .db-shell[data-theme='dark'] {
@@ -60,11 +73,16 @@
   --db-text-on-accent: #1a1812;
   --db-text-on-selected: #e8e2d0;
   --db-accent-soft-08: rgba(200, 180, 143, 0.08);
+  --db-accent-soft-10: rgba(200, 180, 143, 0.1);
   --db-accent-soft-12: rgba(200, 180, 143, 0.12);
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
   --db-accent-soft-25: rgba(200, 180, 143, 0.28);
   --db-accent-tint-strong: #3a382e;
   --db-accent-deep: #e6dcc0;
+  --db-editor-canvas: #16110b;
+  --db-badge-bg: #3a2f1f;
+  --db-badge-text: #fff4d6;
+  --db-badge-text-hover: #fff8e6;
   --db-input-border: #c8b48f;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
@@ -73,6 +91,12 @@
      sits a step above `--db-accent-tint-strong` instead of between it
      and tint. */
   --db-gutter-bg: #4a4538;
+  --db-git-modified: #e5b567;
+  --db-git-added: #81c784;
+  --db-git-untracked: #81c784;
+  --db-git-renamed: #64b5f6;
+  --db-git-deleted: #f87171;
+  --db-git-conflicted: #f87171;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -103,6 +127,12 @@
     --db-danger-bg: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
     --db-gutter-bg: #4a4538;
+    --db-git-modified: #e5b567;
+    --db-git-added: #81c784;
+    --db-git-untracked: #81c784;
+    --db-git-renamed: #64b5f6;
+    --db-git-deleted: #f87171;
+    --db-git-conflicted: #f87171;
   }
 }
 
@@ -157,12 +187,15 @@
 }
 
 .db-explorer-btn {
+  width: 24px;
+  height: 24px;
   background: none;
   border: 1px solid transparent;
   border-radius: 3px;
   cursor: pointer;
-  padding: 3px;
-  font-size: 12px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
   color: var(--db-text-muted);
   display: flex;
   align-items: center;
@@ -237,6 +270,20 @@
   font-size: 12px;
 }
 
+.db-tree-error {
+  margin: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--db-danger, #c33);
+  border-radius: 3px;
+  color: var(--db-danger, #c33);
+  font-size: 12px;
+}
+
+.db-tree--drop-target {
+  box-shadow: inset 0 0 0 2px var(--db-accent);
+  background: var(--db-accent-soft-08);
+}
+
 .db-tree-row {
   display: flex;
   align-items: center;
@@ -249,6 +296,18 @@
 
 .db-tree-row:hover {
   background: var(--db-bg-hover);
+}
+
+.db-tree-row--dragging {
+  opacity: 0.45;
+}
+
+.db-tree-row--drop-target,
+.db-tree-row--drop-target:hover {
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+  outline: 1px solid var(--db-accent);
+  outline-offset: -1px;
 }
 
 .db-tree-row--selected {
@@ -302,6 +361,8 @@
   border-radius: 3px;
   background: transparent;
   color: var(--db-text-secondary);
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   visibility: hidden;
 }
@@ -370,6 +431,7 @@
   position: relative;
   flex: 1;
   min-width: 0;
+  max-width: 320px;
 }
 
 .db-workspace-picker-btn {
@@ -390,10 +452,33 @@
   background: var(--db-bg-hover);
 }
 
+.db-workspace-picker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-workspace-picker-compact-icon {
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
 .db-workspace-picker-caret {
-  font-size: 10px;
+  width: 10px;
+  height: 6px;
+  flex: 0 0 auto;
   margin-left: 4px;
-  color: var(--db-text-placeholder);
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  color: var(--db-text-muted);
+  transform-origin: center;
+  transition: transform 0.15s;
+}
+
+.db-workspace-picker-caret--open {
+  transform: rotate(180deg);
 }
 
 .db-workspace-dropdown {
@@ -412,7 +497,7 @@
 
 .db-workspace-dropdown-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   width: 100%;
@@ -423,11 +508,16 @@
   border: none;
   cursor: pointer;
   color: var(--db-text-secondary);
-  white-space: nowrap;
 }
 
 .db-workspace-dropdown-item:hover {
   background: var(--db-bg-hover);
+}
+
+.db-workspace-dropdown-action-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .db-workspace-dropdown-item--active {
@@ -439,6 +529,35 @@
 .db-workspace-type {
   font-size: 11px;
   color: var(--db-text-placeholder);
+}
+
+.db-workspace-details {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.db-workspace-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.db-workspace-path {
+  margin-top: 2px;
+  color: var(--db-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.db-workspace-dropdown-item--active :is(.db-workspace-type, .db-workspace-path) {
+  color: var(--db-text-on-selected);
+  opacity: 0.75;
 }
 
 .db-workspace-dropdown-divider {
@@ -479,9 +598,14 @@
 }
 
 .db-app-menu-caret {
-  font-size: 18px;
+  width: 10px;
+  height: 6px;
+  flex: 0 0 auto;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
   color: var(--db-text-muted);
   display: inline-block;
+  transform-origin: center;
   transition: transform 0.15s;
 }
 
@@ -550,6 +674,8 @@
   border-radius: 4px;
   background: transparent;
   color: var(--db-text-muted);
+  font-size: 14px;
+  line-height: 1;
   cursor: pointer;
   transition:
     background 0.12s,
@@ -702,6 +828,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-header {
+  container: db-sidebar-header / inline-size;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--db-border-strong);
@@ -709,6 +836,25 @@ body.db-resizing-sidebar * {
   gap: 4px;
   flex-shrink: 0;
   min-height: 40px;
+}
+
+@container db-sidebar-header (max-width: 300px) {
+  .db-workspace-picker {
+    flex: 0 0 auto;
+  }
+
+  .db-workspace-picker-btn {
+    width: auto;
+    gap: 6px;
+  }
+
+  .db-workspace-picker-label {
+    display: none;
+  }
+
+  .db-workspace-picker-compact-icon {
+    display: inline-flex;
+  }
 }
 
 .db-shell-sidebar-footer {
@@ -722,6 +868,10 @@ body.db-resizing-sidebar * {
   flex-shrink: 0;
   font-size: 11px;
   line-height: 1;
+}
+
+.db-shell-sidebar-footer > * {
+  transform: translateY(-1px);
 }
 
 .db-shell-sidebar-footer a {
@@ -810,10 +960,9 @@ body.db-resizing-sidebar * {
   background: var(--db-bg-subtle);
 }
 
-/* "Restore split view" button — appears on the editor toolbar when
-   compact layout was triggered manually on a wide viewport. Lets the
-   user pop the sidebar back open alongside the editor. Iconic only,
-   no label, so it stays compact in the toolbar's right-slot. */
+/* "Restore split view" button — appears in whichever pane is visible when
+   compact layout was triggered manually on a wide viewport. Iconic only,
+   no label, so it stays compact in either header. */
 .db-restore-split {
   display: inline-flex;
   align-items: center;
@@ -967,6 +1116,105 @@ body.db-resizing-sidebar * {
 .db-settings-radio input[type='radio'] {
   margin: 0;
   cursor: pointer;
+  accent-color: var(--db-accent);
+}
+
+.db-settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
+.db-settings-checkbox input[type='checkbox'] {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--db-accent);
+}
+
+.db-settings-accent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.db-settings-accent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
+.db-settings-accent:hover {
+  background: var(--db-bg-subtle);
+}
+
+.db-settings-accent--selected {
+  background: var(--db-accent-soft-08);
+  border-color: var(--db-accent);
+}
+
+.db-settings-accent-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.db-settings-accent:has(.db-settings-accent-input:focus-visible) {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+.db-settings-accent-swatch {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+
+.db-settings-accent-swatch--brown {
+  background: #7d6948;
+}
+
+.db-settings-accent-swatch--green {
+  background: #4f715d;
+}
+
+.db-settings-accent-swatch--blue {
+  background: #526f91;
+}
+
+.db-settings-accent-swatch--purple {
+  background: #735b8c;
+}
+
+.db-settings-accent-swatch--maroon {
+  background: #805365;
+}
+
+.db-settings-accent-swatch--orange {
+  background: #8a5a32;
+}
+
+.db-settings-accent-swatch--gray {
+  background: #676767;
 }
 
 /* ── Folder View ─────────────────────────────────────────────── */
@@ -1073,6 +1321,13 @@ body.db-resizing-sidebar * {
   padding-bottom: 10px;
 }
 
+/* Keep the preview-mode chevron on the same lifted baseline as its tab
+   label. Squisq's native 9px bottom padding is paired with the native 4px
+   tab padding; the DocBlocks override above adds 6px to the latter. */
+.db-shell .squisq-use-mode-trigger {
+  padding-bottom: 15px;
+}
+
 .squisq-toolbar-button[aria-label='Insert image'] {
   font-size: 0;
   background: no-repeat center / 18px
@@ -1116,6 +1371,15 @@ body.db-resizing-sidebar * {
 }
 
 .db-toolbar-export-trigger svg {
+  width: 16px;
+  height: 16px;
+}
+
+.db-toolbar-settings-trigger {
+  margin-left: 2px;
+}
+
+.db-toolbar-settings-trigger svg {
   width: 16px;
   height: 16px;
 }
@@ -1389,7 +1653,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
-  background: #16110b;
+  background: var(--db-editor-canvas);
 }
 
 /* ── Inline preview gutter: thematic green ──────────────────── */
@@ -1452,15 +1716,51 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-container {
-  background: #16110b;
+  background: var(--db-editor-canvas);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor {
   background: var(--db-bg);
 }
 
+/* The WYSIWYG canvas owns its scroll port, so the browser's native light
+   scrollbar otherwise cuts a bright stripe through the dark editor. Keep
+   the track and thumb within the DocBlocks palette; Firefox uses the
+   standard properties while Chromium/Electron use the WebKit pseudo-elements. */
+.db-shell .squisq-wysiwyg-container {
+  scrollbar-color: var(--db-border-strong) var(--db-bg);
+  scrollbar-width: thin;
+}
+
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar-track,
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar-corner {
+  background: var(--db-bg);
+}
+
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background: var(--db-border-strong);
+  border: 3px solid var(--db-bg);
+  border-radius: 999px;
+}
+
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar-thumb:hover {
+  background: var(--db-accent);
+}
+
+.db-shell .squisq-wysiwyg-container::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor pre {
-  background: #16110b;
+  background: var(--db-editor-canvas);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor code {
@@ -1479,7 +1779,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-preview-codeblock {
-  background: #16110b;
+  background: var(--db-editor-canvas);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-status-bar {
@@ -1574,10 +1874,17 @@ body.db-resizing-sidebar * {
   filter: grayscale(1);
 }
 
-/* Closed-state template trigger: neutralize squisq's slate-navy bg ── */
+/* Keep the block-type and transition triggers on the same DocBlocks surface.
+   The transition trigger has no thumbnail, so give it the block trigger's
+   natural rendered height explicitly. */
+.db-shell .squisq-editor-shell .squisq-transition-picker-trigger {
+  box-sizing: border-box;
+  height: 29px;
+}
+
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger) {
   background: var(--db-bg-subtle);
   border-color: var(--db-border);
   color: var(--db-text);
@@ -1585,7 +1892,7 @@ body.db-resizing-sidebar * {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger:hover {
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -1641,15 +1948,15 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
-  .squisq-template-picker-trigger--open {
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
   border-color: var(--db-accent-hover);
   outline-color: var(--db-accent-soft-25);
 }
 
-/* The template gallery is rendered into document.body via createPortal,
-   so it lives outside `.db-shell`. Hoist the same brown/canvas tokens
-   onto the html element (gated by `:has(.db-shell[data-theme=…])`) so
-   the portal rules below can pull from the same source of truth. */
+/* The template gallery and file-tree context menu render into document.body
+   via createPortal, so they live outside `.db-shell`. Hoist the same
+   brown/canvas tokens onto the html element (gated by the resolved shell
+   theme) so every portaled surface keeps the DocBlocks palette. */
 html:has(.db-shell[data-theme='dark']) {
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
@@ -1657,7 +1964,11 @@ html:has(.db-shell[data-theme='dark']) {
   --db-border: #4d4636;
   --db-border-strong: #6b6448;
   --db-text: #e8e2d0;
+  --db-text-secondary: #d4ccb0;
   --db-text-muted: #a89a7c;
+  --db-danger: #f87171;
+  --db-danger-bg: #1c1917;
+  --db-shadow: rgba(0, 0, 0, 0.4);
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
@@ -1673,7 +1984,11 @@ html:has(.db-shell[data-theme='light']) {
   --db-border: #d6cdb0;
   --db-border-strong: #b5a985;
   --db-text: #2a2419;
+  --db-text-secondary: #3d3528;
   --db-text-muted: #6b614a;
+  --db-danger: #b22b1b;
+  --db-danger-bg: #fdf0ee;
+  --db-shadow: rgba(40, 30, 15, 0.12);
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
@@ -1682,12 +1997,350 @@ html:has(.db-shell[data-theme='light']) {
   --db-gutter-bg: #efe8d4;
 }
 
+/* Accent variants keep Brown as the untouched default while recoloring the
+   full chrome palette for either appearance. The same tokens are hoisted to
+   `html` so Squisq portals and file-tree menus inherit the active variant. */
+.db-shell[data-theme='light']:not([data-accent='brown']),
+html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) {
+  --db-accent-soft-08: rgb(var(--db-accent-rgb) / 8%);
+  --db-accent-soft-10: rgb(var(--db-accent-rgb) / 10%);
+  --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
+  --db-accent-soft-15: rgb(var(--db-accent-rgb) / 15%);
+  --db-accent-soft-25: rgb(var(--db-accent-rgb) / 25%);
+  --db-gallery-backdrop: rgba(30, 30, 30, 0.24);
+  --db-gallery-panel-bg: var(--db-bg);
+  --db-gallery-raised-bg: var(--db-bg);
+  --db-gallery-icon-bg: var(--db-gutter-bg);
+  --db-gallery-new-bg: var(--db-bg-subtle);
+  --db-gallery-placeholder: var(--db-text-muted);
+}
+
+.db-shell[data-theme='dark']:not([data-accent='brown']),
+html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) {
+  --db-accent-soft-08: rgb(var(--db-accent-rgb) / 8%);
+  --db-accent-soft-10: rgb(var(--db-accent-rgb) / 10%);
+  --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
+  --db-accent-soft-15: rgb(var(--db-accent-rgb) / 18%);
+  --db-accent-soft-25: rgb(var(--db-accent-rgb) / 28%);
+  --db-gallery-backdrop: rgba(0, 0, 0, 0.58);
+  --db-gallery-panel-bg: var(--db-bg);
+  --db-gallery-header-bg: var(--db-editor-canvas);
+  --db-gallery-raised-bg: var(--db-bg-subtle);
+  --db-gallery-icon-bg: var(--db-editor-canvas);
+  --db-gallery-new-bg: var(--db-bg-subtle);
+  --db-gallery-placeholder: var(--db-text-muted);
+}
+
+.db-shell[data-theme='light'][data-accent='green'],
+html:has(.db-shell[data-theme='light'][data-accent='green']) {
+  --db-bg-subtle: #edf4ef;
+  --db-bg-hover: #dfece3;
+  --db-bg-selected: #4f715d;
+  --db-bg-selected-hover: #3d5949;
+  --db-border: #c6d8cb;
+  --db-border-strong: #98b3a1;
+  --db-text: #202a23;
+  --db-text-secondary: #334038;
+  --db-text-muted: #5b6d61;
+  --db-text-placeholder: #69786d;
+  --db-accent-rgb: 79 113 93;
+  --db-accent: #4f715d;
+  --db-accent-hover: #3d5949;
+  --db-accent-tint-strong: #cfe0d3;
+  --db-accent-deep: #284534;
+  --db-gutter-bg: #e5f0e8;
+  --db-input-border: #abc2b1;
+}
+
+.db-shell[data-theme='dark'][data-accent='green'],
+html:has(.db-shell[data-theme='dark'][data-accent='green']) {
+  --db-bg: #121814;
+  --db-bg-subtle: #1c261f;
+  --db-bg-hover: #2b392e;
+  --db-bg-selected: #2b392e;
+  --db-bg-selected-hover: #3a4b3e;
+  --db-border: #3b4e40;
+  --db-border-strong: #5b705f;
+  --db-text: #e2ebe4;
+  --db-text-secondary: #cbd9ce;
+  --db-text-muted: #91a596;
+  --db-text-placeholder: #607267;
+  --db-accent-rgb: 158 194 168;
+  --db-accent: #9ec2a8;
+  --db-accent-hover: #b4d2bc;
+  --db-text-on-accent: #132018;
+  --db-text-on-selected: #e2ebe4;
+  --db-accent-tint-strong: #2f4034;
+  --db-accent-deep: #d4e8d9;
+  --db-gutter-bg: #3b4d40;
+  --db-input-border: #9ec2a8;
+  --db-editor-canvas: #0e1510;
+  --db-badge-bg: #294031;
+  --db-badge-text: #dcf1e2;
+  --db-badge-text-hover: #effaf2;
+}
+
+.db-shell[data-theme='light'][data-accent='blue'],
+html:has(.db-shell[data-theme='light'][data-accent='blue']) {
+  --db-bg-subtle: #eef2f7;
+  --db-bg-hover: #e1e8f0;
+  --db-bg-selected: #526f91;
+  --db-bg-selected-hover: #3c5675;
+  --db-border: #c7d1de;
+  --db-border-strong: #99aabd;
+  --db-text: #202733;
+  --db-text-secondary: #34404e;
+  --db-text-muted: #5d6979;
+  --db-text-placeholder: #6d7886;
+  --db-accent-rgb: 82 111 145;
+  --db-accent: #526f91;
+  --db-accent-hover: #3c5675;
+  --db-accent-tint-strong: #d0dbe7;
+  --db-accent-deep: #293e58;
+  --db-gutter-bg: #e7edf5;
+  --db-input-border: #acb9c9;
+}
+
+.db-shell[data-theme='dark'][data-accent='blue'],
+html:has(.db-shell[data-theme='dark'][data-accent='blue']) {
+  --db-bg: #13171c;
+  --db-bg-subtle: #1c232b;
+  --db-bg-hover: #2a3542;
+  --db-bg-selected: #2a3542;
+  --db-bg-selected-hover: #39495a;
+  --db-border: #3b4a5c;
+  --db-border-strong: #5a6d83;
+  --db-text: #e2e8ef;
+  --db-text-secondary: #cad5e0;
+  --db-text-muted: #8fa0b3;
+  --db-text-placeholder: #5f7083;
+  --db-accent-rgb: 167 189 216;
+  --db-accent: #a7bdd8;
+  --db-accent-hover: #bdd0e5;
+  --db-text-on-accent: #131b24;
+  --db-text-on-selected: #e2e8ef;
+  --db-accent-tint-strong: #2e3b49;
+  --db-accent-deep: #d8e5f2;
+  --db-gutter-bg: #394858;
+  --db-input-border: #a7bdd8;
+  --db-editor-canvas: #0f1318;
+  --db-badge-bg: #28394a;
+  --db-badge-text: #dceaff;
+  --db-badge-text-hover: #edf5ff;
+}
+
+.db-shell[data-theme='light'][data-accent='purple'],
+html:has(.db-shell[data-theme='light'][data-accent='purple']) {
+  --db-bg-subtle: #f3eff6;
+  --db-bg-hover: #e9e1ef;
+  --db-bg-selected: #735b8c;
+  --db-bg-selected-hover: #59436f;
+  --db-border: #d5c8dd;
+  --db-border-strong: #b19cbe;
+  --db-text: #29222e;
+  --db-text-secondary: #403648;
+  --db-text-muted: #6e6075;
+  --db-text-placeholder: #7c6e82;
+  --db-accent-rgb: 115 91 140;
+  --db-accent: #735b8c;
+  --db-accent-hover: #59436f;
+  --db-accent-tint-strong: #ddd0e4;
+  --db-accent-deep: #483252;
+  --db-gutter-bg: #eee7f2;
+  --db-input-border: #c2afcc;
+}
+
+.db-shell[data-theme='dark'][data-accent='purple'],
+html:has(.db-shell[data-theme='dark'][data-accent='purple']) {
+  --db-bg: #18141b;
+  --db-bg-subtle: #251d29;
+  --db-bg-hover: #382c3e;
+  --db-bg-selected: #382c3e;
+  --db-bg-selected-hover: #4b3a53;
+  --db-border: #504057;
+  --db-border-strong: #705b79;
+  --db-text: #ece3ef;
+  --db-text-secondary: #d8cadd;
+  --db-text-muted: #a38fab;
+  --db-text-placeholder: #715f79;
+  --db-accent-rgb: 194 169 212;
+  --db-accent: #c2a9d4;
+  --db-accent-hover: #d6bee3;
+  --db-text-on-accent: #211727;
+  --db-text-on-selected: #ece3ef;
+  --db-accent-tint-strong: #413348;
+  --db-accent-deep: #eadcf1;
+  --db-gutter-bg: #493b50;
+  --db-input-border: #c2a9d4;
+  --db-editor-canvas: #120f15;
+  --db-badge-bg: #3b2a44;
+  --db-badge-text: #f2e2fb;
+  --db-badge-text-hover: #faefff;
+}
+
+.db-shell[data-theme='light'][data-accent='maroon'],
+html:has(.db-shell[data-theme='light'][data-accent='maroon']) {
+  --db-bg-subtle: #f7eff2;
+  --db-bg-hover: #eedfe5;
+  --db-bg-selected: #805365;
+  --db-bg-selected-hover: #643d4d;
+  --db-border: #dec8d0;
+  --db-border-strong: #bd9ba8;
+  --db-text: #2f2227;
+  --db-text-secondary: #49343d;
+  --db-text-muted: #775e68;
+  --db-text-placeholder: #856c75;
+  --db-accent-rgb: 128 83 101;
+  --db-accent: #805365;
+  --db-accent-hover: #643d4d;
+  --db-accent-tint-strong: #e6d0d8;
+  --db-accent-deep: #53303e;
+  --db-gutter-bg: #f2e7eb;
+  --db-input-border: #cdaeb9;
+}
+
+.db-shell[data-theme='dark'][data-accent='maroon'],
+html:has(.db-shell[data-theme='dark'][data-accent='maroon']) {
+  --db-bg: #1b1316;
+  --db-bg-subtle: #291d21;
+  --db-bg-hover: #3d2b31;
+  --db-bg-selected: #3d2b31;
+  --db-bg-selected-hover: #513942;
+  --db-border: #553e46;
+  --db-border-strong: #785b65;
+  --db-text: #f0e3e7;
+  --db-text-secondary: #dccbd1;
+  --db-text-muted: #aa929a;
+  --db-text-placeholder: #765f67;
+  --db-accent-rgb: 208 165 180;
+  --db-accent: #d0a5b4;
+  --db-accent-hover: #e2bac8;
+  --db-text-on-accent: #26171c;
+  --db-text-on-selected: #f0e3e7;
+  --db-accent-tint-strong: #473139;
+  --db-accent-deep: #f0d8e0;
+  --db-gutter-bg: #503b42;
+  --db-input-border: #d0a5b4;
+  --db-editor-canvas: #150e11;
+  --db-badge-bg: #442832;
+  --db-badge-text: #ffe4ec;
+  --db-badge-text-hover: #fff2f6;
+}
+
+.db-shell[data-theme='light'][data-accent='orange'],
+html:has(.db-shell[data-theme='light'][data-accent='orange']) {
+  --db-bg-subtle: #f8f1e9;
+  --db-bg-hover: #f0e4d6;
+  --db-bg-selected: #8a5a32;
+  --db-bg-selected-hover: #6d4323;
+  --db-border: #e0cfbc;
+  --db-border-strong: #c2a282;
+  --db-text: #30271f;
+  --db-text-secondary: #4a3c30;
+  --db-text-muted: #776655;
+  --db-text-placeholder: #857362;
+  --db-accent-rgb: 138 90 50;
+  --db-accent: #8a5a32;
+  --db-accent-hover: #6d4323;
+  --db-accent-tint-strong: #ead8c5;
+  --db-accent-deep: #57371f;
+  --db-gutter-bg: #f3e9de;
+  --db-input-border: #cfb394;
+}
+
+.db-shell[data-theme='dark'][data-accent='orange'],
+html:has(.db-shell[data-theme='dark'][data-accent='orange']) {
+  --db-bg: #1b1611;
+  --db-bg-subtle: #2a2118;
+  --db-bg-hover: #3e3123;
+  --db-bg-selected: #3e3123;
+  --db-bg-selected-hover: #52412f;
+  --db-border: #574634;
+  --db-border-strong: #79654d;
+  --db-text: #f0e7dc;
+  --db-text-secondary: #ddcfbe;
+  --db-text-muted: #aa9883;
+  --db-text-placeholder: #756552;
+  --db-accent-rgb: 215 176 138;
+  --db-accent: #d7b08a;
+  --db-accent-hover: #e8c39e;
+  --db-text-on-accent: #251a11;
+  --db-text-on-selected: #f0e7dc;
+  --db-accent-tint-strong: #493a2a;
+  --db-accent-deep: #f1dbc4;
+  --db-gutter-bg: #514333;
+  --db-input-border: #d7b08a;
+  --db-editor-canvas: #15100c;
+  --db-badge-bg: #44301f;
+  --db-badge-text: #ffe8d1;
+  --db-badge-text-hover: #fff4e8;
+}
+
+.db-shell[data-theme='light'][data-accent='gray'],
+html:has(.db-shell[data-theme='light'][data-accent='gray']) {
+  --db-bg-subtle: #f2f2f2;
+  --db-bg-hover: #e6e6e6;
+  --db-bg-selected: #676767;
+  --db-bg-selected-hover: #505050;
+  --db-border: #d1d1d1;
+  --db-border-strong: #a8a8a8;
+  --db-text: #252525;
+  --db-text-secondary: #3d3d3d;
+  --db-text-muted: #686868;
+  --db-text-placeholder: #777777;
+  --db-accent-rgb: 103 103 103;
+  --db-accent: #676767;
+  --db-accent-hover: #505050;
+  --db-accent-tint-strong: #d8d8d8;
+  --db-accent-deep: #383838;
+  --db-gutter-bg: #ececec;
+  --db-input-border: #b8b8b8;
+}
+
+.db-shell[data-theme='dark'][data-accent='gray'],
+html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
+  --db-bg: #171717;
+  --db-bg-subtle: #242424;
+  --db-bg-hover: #363636;
+  --db-bg-selected: #363636;
+  --db-bg-selected-hover: #484848;
+  --db-border: #494949;
+  --db-border-strong: #686868;
+  --db-text: #e8e8e8;
+  --db-text-secondary: #d1d1d1;
+  --db-text-muted: #9a9a9a;
+  --db-text-placeholder: #696969;
+  --db-accent-rgb: 184 184 184;
+  --db-accent: #b8b8b8;
+  --db-accent-hover: #cecece;
+  --db-text-on-accent: #1b1b1b;
+  --db-text-on-selected: #e8e8e8;
+  --db-accent-tint-strong: #383838;
+  --db-accent-deep: #e2e2e2;
+  --db-gutter-bg: #444444;
+  --db-input-border: #b8b8b8;
+  --db-editor-canvas: #111111;
+  --db-badge-bg: #333333;
+  --db-badge-text: #eeeeee;
+  --db-badge-text-hover: #ffffff;
+}
+
+html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) .squisq-tooltip {
+  background: var(--db-accent-deep);
+  color: var(--db-bg-subtle);
+}
+
+html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) .squisq-tooltip {
+  background: var(--db-accent-deep);
+  color: var(--db-bg);
+}
+
 html:has(.db-shell[data-theme='dark'])
   #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='dark'] {
-  --squisq-template-gallery-backdrop: rgba(18, 14, 9, 0.58);
-  --squisq-template-gallery-panel-bg: var(--db-bg);
+  --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(18, 14, 9, 0.58));
+  --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, var(--db-bg));
   --squisq-template-gallery-panel-border: var(--db-border);
-  --squisq-template-gallery-header-bg: #17130d;
+  --squisq-template-gallery-header-bg: var(--db-gallery-header-bg, #17130d);
   --squisq-template-gallery-header-border: var(--db-border);
   --squisq-template-gallery-title: var(--db-text);
   --squisq-template-gallery-close-color: var(--db-text-muted);
@@ -1699,11 +2352,11 @@ html:has(.db-shell[data-theme='dark'])
   --squisq-template-gallery-bg: var(--db-bg);
   --squisq-template-gallery-text: var(--db-text);
   --squisq-template-gallery-border: var(--db-border);
-  --squisq-template-gallery-search-bg: #17130d;
+  --squisq-template-gallery-search-bg: var(--db-gallery-header-bg, #17130d);
   --squisq-template-gallery-search-border: var(--db-border);
   --squisq-template-gallery-search-icon: var(--db-text-muted);
   --squisq-template-gallery-search-input: var(--db-text);
-  --squisq-template-gallery-search-placeholder: #8f8267;
+  --squisq-template-gallery-search-placeholder: var(--db-gallery-placeholder, #8f8267);
   --squisq-template-gallery-empty: var(--db-text-muted);
   --squisq-template-gallery-option-bg: var(--db-bg-subtle);
   --squisq-template-gallery-option-border: var(--db-border);
@@ -1718,17 +2371,17 @@ html:has(.db-shell[data-theme='dark'])
   --squisq-template-gallery-selected-bg: var(--db-accent-tint-strong);
   --squisq-template-gallery-selected-border: var(--db-accent-hover);
   --squisq-template-gallery-selected-shadow: 0 0 0 2px var(--db-accent-soft-25);
-  --squisq-template-gallery-card-icon-bg: #15120d;
+  --squisq-template-gallery-card-icon-bg: var(--db-gallery-icon-bg, #15120d);
   --squisq-template-gallery-card-icon-border: var(--db-border);
-  --squisq-template-gallery-content-preview-bg: #15120d;
+  --squisq-template-gallery-content-preview-bg: var(--db-gallery-icon-bg, #15120d);
   --squisq-template-gallery-name: var(--db-text);
   --squisq-template-gallery-description: var(--db-text-muted);
-  --squisq-template-gallery-new-bg: #2b2418;
+  --squisq-template-gallery-new-bg: var(--db-gallery-new-bg, #2b2418);
   --squisq-template-gallery-new-border: var(--db-accent);
   --squisq-template-gallery-new-hover-bg: var(--db-accent-tint-strong);
   --squisq-template-gallery-new-hover-border: var(--db-accent-hover);
   --squisq-template-gallery-new-plus-color: var(--db-accent-hover);
-  --squisq-template-gallery-new-plus-bg: #17130d;
+  --squisq-template-gallery-new-plus-bg: var(--db-gallery-header-bg, #17130d);
   --squisq-template-gallery-new-plus-border: var(--db-accent);
   --squisq-template-gallery-new-label: var(--db-text);
   --squisq-template-gallery-new-desc: var(--db-text-muted);
@@ -1738,28 +2391,28 @@ html:has(.db-shell[data-theme='dark'])
 
 html:has(.db-shell[data-theme='light'])
   #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='light'] {
-  --squisq-template-gallery-backdrop: rgba(42, 36, 25, 0.24);
-  --squisq-template-gallery-panel-bg: #fffdf7;
+  --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(42, 36, 25, 0.24));
+  --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, #fffdf7);
   --squisq-template-gallery-panel-border: var(--db-border);
   --squisq-template-gallery-header-bg: var(--db-bg-subtle);
   --squisq-template-gallery-header-border: var(--db-border);
   --squisq-template-gallery-title: var(--db-text);
   --squisq-template-gallery-close-color: var(--db-text-muted);
-  --squisq-template-gallery-close-bg: #fffaf0;
+  --squisq-template-gallery-close-bg: var(--db-gallery-raised-bg, #fffaf0);
   --squisq-template-gallery-close-border: var(--db-border);
   --squisq-template-gallery-close-hover-color: var(--db-text);
   --squisq-template-gallery-close-hover-border: var(--db-accent);
   --squisq-template-gallery-close-hover-shadow: 0 1px 4px var(--db-accent-soft-15);
-  --squisq-template-gallery-bg: #fffdf7;
+  --squisq-template-gallery-bg: var(--db-gallery-panel-bg, #fffdf7);
   --squisq-template-gallery-text: var(--db-text);
   --squisq-template-gallery-border: var(--db-border);
   --squisq-template-gallery-search-bg: var(--db-bg-subtle);
   --squisq-template-gallery-search-border: var(--db-border);
   --squisq-template-gallery-search-icon: var(--db-text-muted);
   --squisq-template-gallery-search-input: var(--db-text);
-  --squisq-template-gallery-search-placeholder: #8b8065;
+  --squisq-template-gallery-search-placeholder: var(--db-gallery-placeholder, #8b8065);
   --squisq-template-gallery-empty: var(--db-text-muted);
-  --squisq-template-gallery-option-bg: #fffaf0;
+  --squisq-template-gallery-option-bg: var(--db-gallery-raised-bg, #fffaf0);
   --squisq-template-gallery-option-border: var(--db-border);
   --squisq-template-gallery-option-hover-bg: var(--db-bg-hover);
   --squisq-template-gallery-option-hover-border: var(--db-accent);
@@ -1772,17 +2425,17 @@ html:has(.db-shell[data-theme='light'])
   --squisq-template-gallery-selected-bg: var(--db-bg-hover);
   --squisq-template-gallery-selected-border: var(--db-accent);
   --squisq-template-gallery-selected-shadow: 0 0 0 2px var(--db-accent-soft-15);
-  --squisq-template-gallery-card-icon-bg: #f6f0df;
+  --squisq-template-gallery-card-icon-bg: var(--db-gallery-icon-bg, #f6f0df);
   --squisq-template-gallery-card-icon-border: var(--db-border);
-  --squisq-template-gallery-content-preview-bg: #f6f0df;
+  --squisq-template-gallery-content-preview-bg: var(--db-gallery-icon-bg, #f6f0df);
   --squisq-template-gallery-name: var(--db-text);
   --squisq-template-gallery-description: var(--db-text-muted);
-  --squisq-template-gallery-new-bg: #f1ead6;
+  --squisq-template-gallery-new-bg: var(--db-gallery-new-bg, #f1ead6);
   --squisq-template-gallery-new-border: var(--db-border-strong);
   --squisq-template-gallery-new-hover-bg: var(--db-bg-hover);
   --squisq-template-gallery-new-hover-border: var(--db-accent);
   --squisq-template-gallery-new-plus-color: var(--db-accent-hover);
-  --squisq-template-gallery-new-plus-bg: #fffaf0;
+  --squisq-template-gallery-new-plus-bg: var(--db-gallery-raised-bg, #fffaf0);
   --squisq-template-gallery-new-plus-border: var(--db-border-strong);
   --squisq-template-gallery-new-label: var(--db-text);
   --squisq-template-gallery-new-desc: var(--db-text-muted);
@@ -2073,7 +2726,7 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell[data-theme='light']
   .squisq-editor-shell[data-theme='light']
-  .squisq-template-picker-trigger--open {
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
   border-color: var(--db-accent);
   outline-color: var(--db-accent-soft-25);
 }
@@ -2113,6 +2766,10 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell .squisq-props-badge {
   font-family: inherit;
   opacity: 1;
+}
+
+.db-shell .squisq-props-badge {
+  transform: translateY(1px);
 }
 
 .db-shell .squisq-template-badge-core::after {
@@ -2208,8 +2865,8 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-template-badge-core {
-  color: #fff4d6;
-  background: #3a2f1f;
+  color: var(--db-badge-text);
+  background: var(--db-badge-bg);
   border-color: var(--db-accent);
 }
 
@@ -2221,7 +2878,7 @@ html:has(.db-shell[data-theme='dark'])
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-badge:focus-visible
   .squisq-template-badge-core {
-  color: #fff8e6;
+  color: var(--db-badge-text-hover);
   background: var(--db-bg-hover);
   border-color: var(--db-accent-hover);
   box-shadow: 0 0 0 2px var(--db-accent-soft-25);
@@ -2239,7 +2896,7 @@ html:has(.db-shell[data-theme='dark'])
   .squisq-template-badge.squisq-template-badge--empty
   .squisq-template-badge-core {
   color: var(--db-text-secondary);
-  background: rgba(200, 180, 143, 0.1);
+  background: var(--db-accent-soft-10);
   border-color: var(--db-border-strong);
   border-style: dashed;
 }
@@ -2252,7 +2909,7 @@ html:has(.db-shell[data-theme='dark'])
   .squisq-editor-shell[data-theme='dark']
   .squisq-template-badge.squisq-template-badge--empty:focus-visible
   .squisq-template-badge-core {
-  color: #fff8e6;
+  color: var(--db-badge-text-hover);
   background: var(--db-bg-hover);
   border-color: var(--db-accent-hover);
   border-style: solid;
@@ -2261,14 +2918,14 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-props-badge {
   color: var(--db-text-secondary);
-  background: rgba(200, 180, 143, 0.1);
+  background: var(--db-accent-soft-10);
   border-color: var(--db-border-strong);
 }
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-props-badge[data-props-summary] {
-  color: #fff4d6;
+  color: var(--db-badge-text);
   background: var(--db-bg-hover);
   border-color: var(--db-accent);
 }
@@ -2277,7 +2934,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
   .squisq-props-badge:focus-visible {
-  color: #fff8e6;
+  color: var(--db-badge-text-hover);
   background: var(--db-bg-selected-hover);
   border-color: var(--db-accent-hover);
   box-shadow: 0 0 0 2px var(--db-accent-soft-25);
@@ -2349,6 +3006,95 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell .squisq-inline-preview-gutter {
   border-left: 1px solid var(--db-border-strong);
+}
+
+/* Toolbar overflow menu. Squisq intentionally ships a neutral slate
+   palette; inside DocBlocks this popover should use the same surfaces,
+   borders, text, and interaction colors as our other shell menus. The
+   contextual template/transition controls need explicit treatment too,
+   since they bring their own Squisq surfaces into the popover. */
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow: 0 4px 12px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu--up {
+  box-shadow: 0 -4px 12px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-heading {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu > .squisq-toolbar-separator {
+  background: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger {
+  color: var(--db-danger);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger:hover {
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger) {
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
+  background: var(--db-bg-hover);
+  border-color: var(--db-accent);
+  outline-color: var(--db-accent-soft-25);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-label, .squisq-transition-picker-trigger-label),
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-caret, .squisq-transition-picker-trigger svg) {
+  color: var(--db-text-muted);
+}
+
+.db-shell
+  .squisq-editor-shell
+  .squisq-toolbar-overflow-menu
+  :is(.squisq-template-picker-trigger-value, .squisq-transition-picker-trigger-value) {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu .squisq-template-picker-trigger-thumb {
+  background: var(--db-bg);
+  border-color: var(--db-border);
 }
 
 /* Monaco's line-number gutter ("editorGutter.background") is set via
@@ -2543,7 +3289,180 @@ html:has(.db-shell[data-theme='dark'])
   border-radius: 6px;
   box-shadow: 0 4px 12px var(--db-shadow);
   pointer-events: none;
-  animation: db-save-toast-fade 1.8s ease-out forwards;
+  animation: db-save-toast-fade 3s ease-out forwards;
+}
+
+.db-save-toast--error {
+  color: #fff;
+  background: var(--db-danger, #a33a35);
+}
+
+.db-document-conflict {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-warning, #b7791f);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-document-conflict-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.db-document-conflict-actions button {
+  padding: 5px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-document-conflict-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+/* Browser PWA update notice. It is docked over the right side of Squisq's
+   status bar, while extra status-bar padding keeps the parse result visible.
+   If the status bar is hidden, it becomes a compact floating badge so the
+   waiting update remains reachable. */
+.db-shell-editor-area--has-update .squisq-status-bar {
+  padding-right: 132px;
+}
+
+.db-update-status-notice {
+  position: absolute;
+  right: 8px;
+  bottom: 1px;
+  z-index: 5;
+  height: 21px;
+  padding: 0 4px;
+  color: var(--db-accent-deep);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  text-decoration: underline;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.db-update-status-notice:hover {
+  color: var(--db-text);
+}
+
+.db-update-status-notice:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: -2px;
+}
+
+.db-update-status-notice:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.db-update-status-notice--floating {
+  right: 8px;
+  bottom: 8px;
+  height: auto;
+  padding: 6px 8px;
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  box-shadow: 0 2px 8px var(--db-shadow);
+}
+
+/* The expanded Reload/Later prompt uses the same top-center card pattern as
+   the document-conflict card, accent-toned instead of warning. */
+.db-update-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-accent);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-update-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.db-update-banner-actions button {
+  padding: 5px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-update-banner-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+/* Storage-full alert — the origin quota is exhausted and autosave is
+   failing. Danger-toned variant of the same top-center banner pattern. */
+.db-storage-full-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-danger, #a33a35);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-shadow);
+  transform: translateX(-50%);
+}
+
+.db-storage-full-banner-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.db-storage-full-banner-actions button {
+  padding: 5px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-storage-full-banner-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
 }
 
 @keyframes db-save-toast-fade {
@@ -2562,5 +3481,633 @@ html:has(.db-shell[data-theme='dark'])
   100% {
     opacity: 0;
     transform: translate(-50%, -4px);
+  }
+}
+
+/* ── Git ─────────────────────────────────────────────────────── */
+
+/* Dialog size modifiers (shared Dialog component) */
+.db-dialog--wide {
+  width: 560px;
+  max-width: 94vw;
+}
+
+.db-dialog--full {
+  width: min(1100px, 94vw);
+  height: 82vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-dialog--full .db-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--db-border);
+}
+
+/* Buttons used in git dialog footers */
+.db-git-primary-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 5px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-git-primary-btn:hover:not(:disabled) {
+  background: var(--db-accent-hover);
+}
+
+.db-git-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.db-git-secondary-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--db-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.db-git-secondary-btn:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+
+.db-git-secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Status bar row in the sidebar */
+.db-git-statusbar {
+  position: relative;
+  flex-shrink: 0;
+  padding: 2px 8px 4px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-git-statusbar-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.db-git-statusbar-chip:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-git-branch-glyph {
+  color: var(--db-text-muted);
+  flex-shrink: 0;
+}
+
+.db-git-statusbar-branch {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-git-statusbar-counts {
+  color: var(--db-text-muted);
+  flex-shrink: 0;
+}
+
+.db-git-statusbar-dirty {
+  color: var(--db-git-modified);
+  flex-shrink: 0;
+}
+
+.db-git-statusbar-merge {
+  color: var(--db-git-conflicted);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.db-git-statusbar-busy {
+  color: var(--db-text-muted);
+  flex-shrink: 0;
+}
+
+/* Actions dropdown (mirrors db-ws-settings-dropdown) */
+.db-git-menu {
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  right: 8px;
+  z-index: 100;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+  padding: 4px 0;
+  margin-top: 2px;
+}
+
+.db-git-menu-item {
+  display: block;
+  width: 100%;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
+.db-git-menu-item:hover:not(:disabled) {
+  background: var(--db-bg-hover);
+}
+
+.db-git-menu-item:disabled {
+  color: var(--db-text-placeholder);
+  cursor: default;
+}
+
+.db-git-menu-divider {
+  height: 1px;
+  background: var(--db-border);
+  margin: 4px 0;
+}
+
+/* aria-live op-result line — visually subtle, announced politely */
+.db-git-inline-status {
+  display: block;
+  padding: 0 16px;
+  font-size: 11px;
+  color: var(--db-text-muted);
+  min-height: 0;
+}
+
+.db-git-inline-status:empty {
+  display: none;
+}
+
+/* File-tree badges */
+.db-git-badge {
+  margin-left: auto;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.db-tree-row .db-git-badge {
+  margin-left: 4px;
+}
+
+.db-git-badge--modified {
+  color: var(--db-git-modified);
+}
+
+.db-git-badge--added {
+  color: var(--db-git-added);
+}
+
+.db-git-badge--untracked {
+  color: var(--db-git-untracked);
+}
+
+.db-git-badge--renamed {
+  color: var(--db-git-renamed);
+}
+
+.db-git-badge--deleted {
+  color: var(--db-git-deleted);
+}
+
+.db-git-badge--conflicted {
+  color: var(--db-git-conflicted);
+}
+
+.db-git-badge--dir {
+  color: var(--db-git-modified);
+}
+
+.db-tree-context-divider {
+  height: 1px;
+  background: var(--db-border);
+  margin: 4px 0;
+}
+
+/* Toolbar control */
+.db-git-toolbar-trigger {
+  position: relative;
+}
+
+.db-git-toolbar-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-git-modified);
+}
+
+/* Dialog internals — file lists (commit + conflicts) */
+.db-git-file-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-git-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--db-text);
+  text-align: left;
+}
+
+.db-git-file-row + .db-git-file-row {
+  border-top: 1px solid var(--db-border);
+}
+
+button.db-git-file-row {
+  cursor: pointer;
+}
+
+button.db-git-file-row:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-git-file-kind {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--db-text-muted);
+  flex-shrink: 0;
+}
+
+.db-git-commit-message {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* Generic form rows in git dialogs */
+.db-git-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.db-git-form-label {
+  font-size: 12.5px;
+  color: var(--db-text-secondary);
+  flex-shrink: 0;
+}
+
+.db-git-form-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.db-git-form-error {
+  margin: 8px 0 0;
+  color: var(--db-danger);
+  font-size: 12.5px;
+}
+
+.db-git-hint {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+/* Branches dialog */
+.db-git-branch-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.db-git-branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 13px;
+  color: var(--db-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-git-branch-row:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-git-branch-row--current {
+  font-weight: 600;
+  color: var(--db-accent);
+  cursor: default;
+}
+
+.db-git-branch-row--current:hover {
+  background: transparent;
+}
+
+/* History dialog */
+.db-git-history-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-git-history-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--db-border);
+  cursor: pointer;
+}
+
+.db-git-history-item:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-git-history-meta {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--db-text-muted);
+}
+
+.db-git-history-files {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-git-history-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--db-text-secondary);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.db-git-history-file:hover {
+  background: var(--db-bg-hover);
+}
+
+/* Diff dialog */
+.db-git-diff-host {
+  flex: 1;
+  min-height: 320px;
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.db-git-diff-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--db-text-muted);
+}
+
+.db-git-diff-labels {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--db-text-muted);
+}
+
+.db-git-diff-labels > span {
+  flex: 1;
+}
+
+/* Clone progress */
+.db-git-progress {
+  margin: 12px 0 4px;
+}
+
+.db-git-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--db-accent-soft-15);
+  overflow: hidden;
+  position: relative;
+}
+
+.db-git-progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--db-accent);
+  transition: width 0.2s;
+}
+
+.db-git-progress-text {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--db-text-muted);
+}
+
+/* History dialog internals added by the expanded-row layout */
+.db-git-history-toggle {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-git-history-subject {
+  display: block;
+  font-size: 13px;
+  color: var(--db-text);
+}
+
+.db-git-history-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+   Window Controls Overlay — installed web app (PWA) custom titlebar.
+
+   When the manifest's `display_override: ["window-controls-overlay", ...]`
+   is active, the OS caption buttons float over the first shell row and this
+   block turns that row into the titlebar: draggable empty space, insets for
+   the caption buttons, and every interactive descendant opted back out.
+
+   Ported 1:1 from the Electron build — keep in sync with
+   packages/desktop/renderer/titlebar.css (which is scoped under
+   `.db-desktop-root`; Electron windows report `display-mode: browser`, so
+   this media query can never double-apply there). The media query is live:
+   toggling the overlay chevron flips it with no JS. */
+@media (display-mode: window-controls-overlay) {
+  .db-shell {
+    --db-wco-titlebar-height: 48px;
+  }
+
+  /* The first shell row replaces the native titlebar. Empty space can drag
+     the window; every interactive descendant opts back out below. */
+  .db-shell .db-shell-sidebar-header,
+  .db-shell .squisq-toolbar,
+  .db-shell .squisq-editor-header--image {
+    app-region: drag;
+    -webkit-app-region: drag;
+    box-sizing: border-box;
+    height: var(--db-wco-titlebar-height);
+    min-height: var(--db-wco-titlebar-height);
+  }
+
+  .db-shell .db-shell-sidebar-header {
+    padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
+    cursor: grab;
+  }
+
+  /* Make the draggable header space beside the workspace gear discoverable,
+     matching the Electron titlebar without introducing another control. */
+  .db-shell .db-shell-sidebar-header::after {
+    content: '';
+    width: 12px;
+    height: 20px;
+    flex: 0 0 12px;
+    margin-right: 3px;
+    background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+    background-position: center;
+    background-size: 4px 4px;
+    opacity: 0.72;
+    pointer-events: none;
+    app-region: drag;
+    -webkit-app-region: drag;
+  }
+
+  /* Let the workspace menu size itself to its contents and cross the sidebar
+     boundary above the editor. The explorer still clips its own contents. */
+  .db-shell .db-shell-sidebar {
+    overflow: visible;
+  }
+
+  .db-shell .db-workspace-dropdown {
+    box-sizing: border-box;
+    width: max-content;
+  }
+
+  /* The caption buttons normally occupy the right edge. Derive that inset
+     from the overlay safe area rather than assuming a fixed width, so
+     scaling, RTL controls, and OS variants stay clear. The compact sidebar
+     header is full-width, so it needs the same reservation. */
+  .db-shell.db-shell--mobile .db-shell-sidebar-header,
+  .db-shell .squisq-toolbar,
+  .db-shell .squisq-editor-header--image {
+    padding-right: max(
+      12px,
+      calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)
+    );
+  }
+
+  /* In compact mode there is no sidebar to absorb left-side controls such as
+     macOS traffic lights, so the editor toolbar also observes the left inset. */
+  .db-shell.db-shell--mobile .squisq-toolbar,
+  .db-shell.db-shell--mobile .squisq-editor-header--image {
+    padding-left: env(titlebar-area-x, 0px);
+  }
+
+  .db-shell
+    :is(
+      button,
+      a,
+      input,
+      select,
+      textarea,
+      [contenteditable='true'],
+      [role='button'],
+      [role='tab']
+    ) {
+    app-region: no-drag;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Folder and empty states do not render Squisq's toolbar. Preserve a top
+     drag strip in those states and keep folder content below it. */
+  .db-shell .db-shell-empty::before,
+  .db-shell .db-folder-view::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, 100%);
+    height: var(--db-wco-titlebar-height);
+    app-region: drag;
+    -webkit-app-region: drag;
+  }
+
+  .db-shell .db-folder-view {
+    box-sizing: border-box;
+    padding-top: calc(24px + var(--db-wco-titlebar-height));
   }
 }

@@ -1,1 +1,2 @@
-export { useAutoSave } from './useAutoSave.js';
+export { useDocumentSession } from './useDocumentSession.js';
+export type { UseDocumentSessionResult } from './useDocumentSession.js';

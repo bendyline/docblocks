@@ -9,7 +9,7 @@
  * actual packaging (missing icon files, signing errors, etc.).
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,7 @@ import yaml from 'js-yaml';
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = path.join(repoRoot, 'packages/desktop/electron-builder.yml');
+const preloadPath = path.join(repoRoot, 'packages/desktop/dist/preload/preload.cjs');
 
 const config = yaml.load(readFileSync(configPath, 'utf8'));
 // app-builder-lib is present because electron-builder depends on it; its
@@ -42,3 +43,34 @@ if (!validate(config)) {
 }
 
 process.stdout.write('electron-builder.yml: schema OK\n');
+
+// Electron's sandboxed preload exposes only a very small CommonJS surface.
+// Workspace/package imports that tsup leaves as runtime `require()` calls make
+// the entire preload fail before contextBridge exposes docBlocksHost. Inspect
+// the artifact produced by the preceding desktop build, not just source config.
+if (!existsSync(preloadPath)) {
+  process.stderr.write(
+    `Desktop preload artifact is missing at ${preloadPath}; build desktop before validating it.\n`,
+  );
+  process.exit(1);
+}
+
+const preload = readFileSync(preloadPath, 'utf8');
+const runtimeRequires = new Set<string>();
+for (const match of preload.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
+  runtimeRequires.add(match[2]);
+}
+const unsupportedRequires = [...runtimeRequires].filter((specifier) => specifier !== 'electron');
+if (unsupportedRequires.length > 0) {
+  process.stderr.write(
+    `Sandboxed preload contains unsupported runtime require(s): ${unsupportedRequires.join(', ')}\n`,
+  );
+  process.exit(1);
+}
+
+if (!preload.includes('exposeInMainWorld("docBlocksHost"')) {
+  process.stderr.write('Sandboxed preload does not expose the docBlocksHost bridge.\n');
+  process.exit(1);
+}
+
+process.stdout.write('desktop preload: sandbox bundle OK\n');

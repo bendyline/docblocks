@@ -2,6 +2,10 @@
 
 Guidance for Claude Code (and any other AI coding agent) working in this repo. Read this first; the conventions below are load-bearing.
 
+> **Canonical guidance:** [`AGENTS.md`](AGENTS.md) supersedes this legacy summary.
+> Use [`docs/cli.md`](docs/cli.md) for the current CLI contract and
+> [`docs/mcp.md`](docs/mcp.md) for the current MCP architecture and protocol.
+
 ## What DocBlocks is
 
 A markdown document editor and management platform that ships from one npm-workspaces monorepo to **four delivery surfaces**:
@@ -11,7 +15,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
 - **CLI** (`packages/cli`) — `docblocks` binary for init / build / serve / convert / video / mcp / parse / themes / transforms
 
-The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, a sister project that lives in `..\qualla` and ships as `@bendyline/squisq*` npm packages.
+The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, a sister project that lives in `..\squisq` and ships as `@bendyline/squisq*` npm packages.
 
 ## Packages
 
@@ -19,7 +23,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                          |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`, 17 woff2 fonts. Consumed by site + desktop renderer. (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion (via `squisq-formats`), video rendering (Playwright + ffmpeg), MCP server.                                                                                                                          |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                             |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                             |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                            |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                            |
@@ -55,7 +59,7 @@ npm run lint                # eslint flat config
 npm run format:check        # prettier
 npm run format              # prettier --write
 
-# Squisq parallel dev — symlinks @bendyline/squisq* from ..\qualla
+# Squisq parallel dev — symlinks @bendyline/squisq* from ..\squisq
 npm run link:squisq         # link
 npm run dev:squisq          # link + watch
 npm run unlink:squisq       # restore registry versions
@@ -96,7 +100,7 @@ Site and the desktop renderer both mount `<DocBlocksShell>`. The VS Code webview
 
 ### Squisq is a dependency, not a fork
 
-Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in `..\qualla` and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.
+Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in `..\squisq` and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.
 
 ## Hard rules (enforced by ESLint or convention)
 
@@ -115,9 +119,10 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.
 - **No `CLAUDE.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
-- **Playwright runs from three configs.** Root (`playwright.config.ts`) drives the site dev server. `packages/desktop/e2e/playwright.config.ts` launches Electron. `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100. Each writes to its own `test-results/`.
-- **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Coverage today: `useAutoSave`, `useFileTree`, `export-options`, `versioning` — the components themselves still have no tests, which remains the next-biggest gap.
-- **17 woff2 fonts** are bundled in `packages/react/src/fonts/`. Verify any addition is actually referenced before adding.
+- **Playwright runs from four configs.** Root (`playwright.config.ts`) drives the site dev server. Root `playwright.offline.config.ts` runs the PWA/offline spec against `vite preview` of a production build (`npm run test:e2e:offline`) — the SW never registers on the dev server, which is why the default config testIgnores `offline.spec.ts`. `packages/desktop/e2e/playwright.config.ts` launches Electron. `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100. Each writes to its own `test-results/`.
+- **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
+- **The site is an installable PWA with the entire dist precached (~22 MB).** `vite-plugin-pwa` config lives in `packages/site/vite.config.ts`; SW registration + update prompts in `packages/site/src/pwa.ts` → shell props. Two traps: the service worker exists **only in build/preview** (`devOptions` off), and **any chunk over the 10 MiB `maximumFileSizeToCacheInBytes` cap silently falls out of the precache** — after adding a heavy dependency, confirm it appears in `dist/sw.js` (the offline e2e asserts ts.worker and the fonts as canaries).
+- **Theme fonts are served from `packages/site/public/fonts/`** (copied from squisq's site; squisq `fontStacks` expect the host page to supply the `@font-face`s — regenerate upstream via squisq's `download-fonts.ps1`). Electron's renderer does not load them yet (known parity gap).
 
 ## Claude skills
 
@@ -139,5 +144,5 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 | Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                     |
 | Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides             |
 | Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                        |
-| Add a new format converter | `packages/cli/src/converters/` (and consider what belongs upstream in `squisq-formats`)    |
+| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure            |
 | Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes   |

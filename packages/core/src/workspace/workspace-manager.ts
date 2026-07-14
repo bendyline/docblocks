@@ -7,7 +7,7 @@
  */
 
 import { LocalForageAdapter } from '@bendyline/squisq/storage';
-import type { FileSystemProvider } from '../filesystem/types.js';
+import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/types.js';
 import type { WorkspaceDescriptor } from './types.js';
 
 const DB_NAME = 'docblocks-workspaces';
@@ -37,6 +37,10 @@ export function registerTransientWorkspace(
   descriptor: WorkspaceDescriptor,
   provider: FileSystemProvider,
 ): void {
+  const previous = transientWorkspaces.get(descriptor.id);
+  if (previous && previous.provider !== provider) {
+    void getFileSystemProviderV2(previous.provider)?.dispose();
+  }
   transientWorkspaces.set(descriptor.id, { descriptor, provider });
 }
 
@@ -48,8 +52,11 @@ export function getTransientWorkspace(
 }
 
 /** Forget a transient workspace (e.g. when it is closed). */
-export function unregisterTransientWorkspace(id: string): void {
+export async function unregisterTransientWorkspace(id: string): Promise<void> {
+  const entry = transientWorkspaces.get(id);
+  if (!entry) return;
   transientWorkspaces.delete(id);
+  await getFileSystemProviderV2(entry.provider)?.dispose();
 }
 
 /** The persisted (on-disk) workspace list only — excludes transient ones. */
@@ -98,7 +105,10 @@ export async function saveWorkspace(workspace: WorkspaceDescriptor): Promise<voi
  * Remove a workspace descriptor by id (transient or persisted).
  */
 export async function removeWorkspace(id: string): Promise<void> {
-  if (transientWorkspaces.delete(id)) return;
+  if (transientWorkspaces.has(id)) {
+    await unregisterTransientWorkspace(id);
+    return;
+  }
   const list = await listPersisted();
   const filtered = list.filter((w) => w.id !== id);
   await store.set(LIST_KEY, filtered);

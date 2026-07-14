@@ -5,7 +5,7 @@
  * Every test gets:
  *   • a throwaway `userDataDir` so saved settings never pollute dev state
  *   • an explicit `workspaceDir` the first-launch bootstrap is told to
- *     use (avoids real ~/Documents/DocBlocks)
+ *     use (avoids DocBlocks inside the real OS Documents folder)
  *   • an env with ELECTRON_RUN_AS_NODE / ELECTRON_NO_ATTACH_CONSOLE
  *     stripped (matches scripts/run-electron.cjs)
  *   • NODE_ENV=production so the main process boots through the app://
@@ -27,26 +27,89 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GRACEFUL_CLOSE_TIMEOUT_MS = 20_000;
+const FORCED_CLOSE_TIMEOUT_MS = 5_000;
+const closingApplications = new WeakMap<ElectronApplication, Promise<void>>();
 
 export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
-  launchApp: () => Promise<{ app: ElectronApplication; window: Page }>;
+  launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
+}
+
+export interface LaunchedDocBlocksApplication {
+  app: ElectronApplication;
+  window: Page;
+  close(): Promise<void>;
 }
 
 function makeTmpDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+function cleanEnv(workspaceDir: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) env[key] = value;
+  }
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   env.NODE_ENV = 'production';
+  env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   // Tell the main process to use this workspace root instead of
-  // ~/Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
+  // OS Documents/DocBlocks. Read by ipc-workspaces.getDefault() when set.
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
   return env;
+}
+
+async function waitForProcessExit(app: ElectronApplication, timeoutMs: number): Promise<boolean> {
+  const child = app.process();
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return await new Promise((resolve) => {
+    const onExit = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off('exit', onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.once('exit', onExit);
+  });
+}
+
+async function forceCloseApplication(app: ElectronApplication): Promise<void> {
+  const child = app.process();
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  await waitForProcessExit(app, FORCED_CLOSE_TIMEOUT_MS);
+}
+
+function closeApplication(app: ElectronApplication): Promise<void> {
+  const existing = closingApplications.get(app);
+  if (existing) return existing;
+
+  const closing = closeApplicationOnce(app).finally(() => closingApplications.delete(app));
+  closingApplications.set(app, closing);
+  return closing;
+}
+
+async function closeApplicationOnce(app: ElectronApplication): Promise<void> {
+  if (app.process().exitCode !== null || app.process().signalCode !== null) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const closeResult = await Promise.race([
+    app.close().then(
+      () => 'closed' as const,
+      () => 'failed' as const,
+    ),
+    new Promise<'timed-out'>((resolve) => {
+      timer = setTimeout(() => resolve('timed-out'), GRACEFUL_CLOSE_TIMEOUT_MS);
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+
+  if (closeResult !== 'closed') await forceCloseApplication(app);
 }
 
 export const test = base.extend<DocBlocksFixtures>({
@@ -76,12 +139,21 @@ export const test = base.extend<DocBlocksFixtures>({
     const appRoot = path.resolve(__dirname, '..');
     let running: ElectronApplication | undefined;
 
-    async function launch(): Promise<{ app: ElectronApplication; window: Page }> {
-      const args = [appRoot, `--user-data-dir=${userDataDir}`];
+    async function launch(extraArgs: string[] = []): Promise<LaunchedDocBlocksApplication> {
+      const args = [
+        appRoot,
+        `--user-data-dir=${userDataDir}`,
+        // Native crash dialogs block Playwright teardown and multiply across
+        // retries. Fail the process visibly in test output instead.
+        '--noerrdialogs',
+        '--disable-breakpad',
+        '--disable-gpu',
+        ...extraArgs,
+      ];
       // GitHub Actions Linux runners don't own chrome-sandbox with the
       // setuid bit, so Electron's SUID sandbox aborts at launch. Disable
       // sandboxing in CI — safe because the runner is an isolated VM.
-      if (process.env.CI) {
+      if (process.platform === 'linux' && process.env.CI) {
         args.push('--no-sandbox');
       }
       const app = await electron.launch({
@@ -91,19 +163,50 @@ export const test = base.extend<DocBlocksFixtures>({
         timeout: 30_000,
       });
       running = app;
-      const window = await app.firstWindow();
+      app.once('close', () => {
+        if (running === app) running = undefined;
+      });
+      let window: Page;
+      try {
+        window = await app.firstWindow();
+      } catch (error: unknown) {
+        // macOS normally keeps an application alive with no windows. A failed
+        // Playwright launch must not inherit that behavior or strand the worker.
+        running = undefined;
+        await forceCloseApplication(app);
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        throw new Error(`Electron did not expose its main window${detail}`);
+      }
       await window.waitForLoadState('domcontentloaded');
-      return { app, window };
+      try {
+        await window.waitForFunction(
+          () => {
+            const host = (globalThis as { docBlocksHost?: unknown }).docBlocksHost;
+            return typeof host === 'object' && host !== null;
+          },
+          undefined,
+          { timeout: 5_000 },
+        );
+      } catch (error: unknown) {
+        // A sandbox-incompatible preload import prevents the entire bridge
+        // from loading. Fail at launch instead of exercising browser fallbacks
+        // and then hanging on the renderer close acknowledgement.
+        running = undefined;
+        await forceCloseApplication(app);
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        throw new Error(`Electron preload did not expose docBlocksHost${detail}`);
+      }
+      return {
+        app,
+        window,
+        close: () => closeApplication(app),
+      };
     }
 
     await use(launch);
 
     if (running) {
-      try {
-        await running.close();
-      } catch {
-        // ignore double-close
-      }
+      await closeApplication(running);
     }
   },
 });

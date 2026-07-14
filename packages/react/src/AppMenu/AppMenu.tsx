@@ -4,8 +4,10 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VersioningPreference } from '../preferences/versioning.js';
+import type { AccentColor, ThemePreference } from '../preferences/theme.js';
+import { AccentColorSettings, SettingsDialog, ThemeSettings } from '../Settings/Settings.js';
 
-export type ThemePreference = 'auto' | 'light' | 'dark';
+export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
 export interface AppMenuProps {
   /** URL for the about page. */
@@ -16,6 +18,10 @@ export interface AppMenuProps {
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
   onThemeChange?: (theme: ThemePreference) => void;
+  /** Current accent color. */
+  accentColor?: AccentColor;
+  /** Called when the user changes the accent color. */
+  onAccentColorChange?: (color: AccentColor) => void;
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -30,6 +36,32 @@ export interface AppMenuProps {
    * When omitted, the menu item is hidden.
    */
   onKeepBrowserData?: () => void | Promise<void>;
+  /**
+   * Called when the user clicks "Install DocBlocks…" (browser PWA install).
+   * When omitted — Electron, unsupported browsers, or already installed —
+   * the menu item is hidden.
+   */
+  onInstallApp?: () => void | Promise<void>;
+  /**
+   * Async origin storage usage/quota for the Settings "Storage" section
+   * (fetched when the dialog opens). When omitted — Electron, or browsers
+   * without `navigator.storage.estimate` — the section is hidden.
+   */
+  getStorageEstimate?: () => Promise<{ usage: number; quota: number } | null>;
+  /** Whether the browser has marked origin storage persistent (Settings display). */
+  storagePersistent?: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  let value = bytes;
+  let unit = 'B';
+  for (const next of ['KB', 'MB', 'GB', 'TB']) {
+    if (value < 1024) break;
+    value /= 1024;
+    unit = next;
+  }
+  return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
 }
 
 export function AppMenu({
@@ -37,15 +69,40 @@ export function AppMenu({
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
+  accentColor = 'brown',
+  onAccentColorChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
   onKeepBrowserData,
+  onInstallApp,
+  getStorageEstimate,
+  storagePersistent,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [storageEstimate, setStorageEstimate] = useState<{
+    usage: number;
+    quota: number;
+  } | null>(null);
+
+  // Refresh the Settings "Storage" figures each time the dialog opens.
+  useEffect(() => {
+    if (!showSettings || !getStorageEstimate) return;
+    let cancelled = false;
+    getStorageEstimate()
+      .then((estimate) => {
+        if (!cancelled) setStorageEstimate(estimate);
+      })
+      .catch(() => {
+        if (!cancelled) setStorageEstimate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showSettings, getStorageEstimate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -77,9 +134,10 @@ export function AppMenu({
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
-          <span className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}>
-            {'\u25BE'}
-          </span>
+          <span
+            className={`db-app-menu-caret${isOpen ? ' db-app-menu-caret--open' : ''}`}
+            aria-hidden="true"
+          />
         </button>
 
         {isOpen && (
@@ -91,6 +149,15 @@ export function AppMenu({
             >
               Settings
             </button>
+            {onInstallApp && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                onClick={() => handleAction(() => void onInstallApp())}
+              >
+                Install DocBlocks&hellip;
+              </button>
+            )}
             {onKeepBrowserData && (
               <button
                 className="db-app-menu-item"
@@ -122,101 +189,77 @@ export function AppMenu({
       </div>
 
       {showSettings && (
-        <div className="db-dialog-overlay" onClick={() => setShowSettings(false)}>
-          <div
-            className="db-dialog"
-            role="dialog"
-            aria-label="Settings"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="db-dialog-header">
-              <h2 className="db-dialog-title">Settings</h2>
-              <button
-                className="db-dialog-close"
-                onClick={() => setShowSettings(false)}
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="db-dialog-body">
-              <fieldset className="db-settings-fieldset">
-                <legend className="db-settings-legend">Theme</legend>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="auto"
-                    checked={themePreference === 'auto'}
-                    onChange={() => onThemeChange?.('auto')}
-                  />
-                  System default
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="light"
-                    checked={themePreference === 'light'}
-                    onChange={() => onThemeChange?.('light')}
-                  />
-                  Light
-                </label>
-                <label className="db-settings-radio">
-                  <input
-                    type="radio"
-                    name="theme"
-                    value="dark"
-                    checked={themePreference === 'dark'}
-                    onChange={() => onThemeChange?.('dark')}
-                  />
-                  Dark
-                </label>
-              </fieldset>
+        <SettingsDialog onClose={() => setShowSettings(false)}>
+          <ThemeSettings
+            value={themePreference}
+            onChange={(preference) => onThemeChange?.(preference)}
+          />
+          <AccentColorSettings
+            value={accentColor}
+            onChange={(color) => onAccentColorChange?.(color)}
+          />
 
-              {onVersioningPreferenceChange && (
-                <fieldset className="db-settings-fieldset">
-                  <legend className="db-settings-legend">Version history</legend>
-                  <p className="db-settings-hint">
-                    When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
-                    <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
-                    override this default in their own settings.
-                  </p>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="on"
-                      checked={versioningPreference === 'on'}
-                      onChange={() => onVersioningPreferenceChange('on')}
-                    />
-                    On for all workspaces
-                  </label>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="browser-only"
-                      checked={versioningPreference === 'browser-only'}
-                      onChange={() => onVersioningPreferenceChange('browser-only')}
-                    />
-                    On in browser workspaces, off for local folders
-                  </label>
-                  <label className="db-settings-radio">
-                    <input
-                      type="radio"
-                      name="versioning"
-                      value="off"
-                      checked={versioningPreference === 'off'}
-                      onChange={() => onVersioningPreferenceChange('off')}
-                    />
-                    Off for all workspaces
-                  </label>
-                </fieldset>
-              )}
-            </div>
-          </div>
-        </div>
+          {getStorageEstimate && (
+            <fieldset className="db-settings-fieldset">
+              <legend className="db-settings-legend">Storage</legend>
+              <p className="db-settings-hint">
+                {storageEstimate
+                  ? `DocBlocks documents and app data are using ${formatBytes(
+                      storageEstimate.usage,
+                    )} of the ${formatBytes(
+                      storageEstimate.quota,
+                    )} this browser allows for the site.`
+                  : 'Storage usage is not available in this browser.'}{' '}
+                {storagePersistent === undefined
+                  ? ''
+                  : storagePersistent
+                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
+                    : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
+              </p>
+            </fieldset>
+          )}
+
+          {onVersioningPreferenceChange && (
+            <fieldset className="db-settings-fieldset">
+              <legend className="db-settings-legend">Version history</legend>
+              <p className="db-settings-hint">
+                When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
+                <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
+                override this default in their own settings.
+              </p>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="on"
+                  checked={versioningPreference === 'on'}
+                  onChange={() => onVersioningPreferenceChange('on')}
+                />
+                On for all workspaces
+              </label>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="browser-only"
+                  checked={versioningPreference === 'browser-only'}
+                  onChange={() => onVersioningPreferenceChange('browser-only')}
+                />
+                On in browser workspaces, off for local folders
+              </label>
+              <label className="db-settings-radio">
+                <input
+                  type="radio"
+                  name="versioning"
+                  value="off"
+                  checked={versioningPreference === 'off'}
+                  onChange={() => onVersioningPreferenceChange('off')}
+                />
+                Off for all workspaces
+              </label>
+            </fieldset>
+          )}
+        </SettingsDialog>
       )}
 
       {showAbout && (
@@ -251,7 +294,11 @@ export function AppMenu({
                 >
                   squisq
                 </a>{' '}
-                by Bendyline.
+                by{' '}
+                <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
+                  Bendyline
+                </a>
+                .
               </p>
               <p className="db-dialog-links">
                 <a
@@ -268,6 +315,14 @@ export function AppMenu({
                   rel="noopener noreferrer"
                 >
                   License (MIT)
+                </a>
+                <span className="db-dialog-sep">&middot;</span>
+                <a
+                  href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  &hearts; built on open source
                 </a>
               </p>
             </div>

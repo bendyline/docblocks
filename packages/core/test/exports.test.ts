@@ -1,9 +1,11 @@
 import { expect } from 'chai';
+import { IndexedDBFileSystemProvider } from '@bendyline/docblocks/filesystem/indexeddb';
+import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem/memory';
 import {
   isNativeFileSystemSupported,
   NativeFileSystemProvider,
-  IndexedDBFileSystemProvider,
-} from '@bendyline/docblocks/filesystem';
+} from '@bendyline/docblocks/filesystem/native';
+import { ElectronFileSystemProvider } from '@bendyline/docblocks/filesystem/electron';
 import type {
   FileSystemEntry,
   FileEntry,
@@ -20,6 +22,11 @@ describe('Core exports', () => {
 
     it('exports IndexedDBFileSystemProvider class', () => {
       expect(IndexedDBFileSystemProvider).to.be.a('function');
+    });
+
+    it('exports isolated memory and Electron provider entry points', () => {
+      expect(MemoryFileSystemProvider).to.be.a('function');
+      expect(ElectronFileSystemProvider).to.be.a('function');
     });
 
     it('isNativeFileSystemSupported returns false in Node', () => {

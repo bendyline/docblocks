@@ -7,7 +7,16 @@
  * Must be rendered inside <EditorProvider> so useEditorContext() works.
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo, type ComponentType } from 'react';
+import {
+  lazy,
+  Suspense,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+  type ComponentType,
+} from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
@@ -20,9 +29,19 @@ import {
   loadLastExportOptions,
   saveExportOptions,
 } from './export-options.js';
-import { ExportDialog } from './ExportDialog.js';
-import { runExport, type ExportBlobSaver } from './run-export.js';
+import type { ExportBlobSaver } from './run-export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+
+const ExportDialog = lazy(() =>
+  import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
+);
+
+let runExportModulePromise: Promise<typeof import('./run-export.js')> | null = null;
+
+function loadRunExportModule(): Promise<typeof import('./run-export.js')> {
+  runExportModulePromise ??= import('./run-export.js');
+  return runExportModulePromise;
+}
 
 export interface ExportToolbarControlsProps {
   /** Currently selected file path — used to derive the download filename. */
@@ -31,10 +50,32 @@ export interface ExportToolbarControlsProps {
   mediaContainer?: ContentContainer | null;
   /** Override the default browser download behavior for host-provided save flows. */
   saveBlob?: ExportBlobSaver;
+  /** Optional host adapter for displaying, picking, and saving to a native target path. */
+  destinationAdapter?: ExportDestinationAdapter;
   /** Render the trigger as a direct Export button instead of the overflow menu. */
   trigger?: 'menu' | 'button';
   /** Whether to show video export in the overflow menu. */
   showVideoExport?: boolean;
+}
+
+/** Host-specific operations behind the shared export destination control. */
+export interface ExportDestinationTarget {
+  grantId: string | null;
+  displayPath: string;
+}
+
+export interface ExportDestinationAdapter {
+  resolveTarget: (filename: string) => Promise<ExportDestinationTarget>;
+  pickTarget: (
+    filename: string,
+    currentTarget?: ExportDestinationTarget | null,
+  ) => Promise<ExportDestinationTarget | null>;
+  saveBlob: (
+    blob: Blob,
+    filename: string,
+    target?: ExportDestinationTarget | null,
+  ) => Promise<ExportDestinationTarget | null>;
+  hint?: string;
 }
 
 type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
@@ -99,6 +140,7 @@ export function ExportToolbarControls({
   selectedFile,
   mediaContainer,
   saveBlob,
+  destinationAdapter,
   trigger = 'menu',
   showVideoExport = true,
 }: ExportToolbarControlsProps) {
@@ -112,6 +154,8 @@ export function ExportToolbarControls({
   const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
+  const destinationRequestRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const lastOptions = loadLastExportOptions();
@@ -183,10 +227,30 @@ export function ExportToolbarControls({
     setMenuOpen((prev) => !prev);
   }, []);
 
+  const refreshDestination = useCallback(
+    async (options: ExportOptions) => {
+      if (!destinationAdapter) return;
+
+      const requestId = destinationRequestRef.current + 1;
+      destinationRequestRef.current = requestId;
+
+      try {
+        const { buildExportFilename } = await loadRunExportModule();
+        const filename = buildExportFilename(selectedFile, options);
+        const target = await destinationAdapter.resolveTarget(filename);
+        if (destinationRequestRef.current === requestId) setDestinationTarget(target);
+      } catch {
+        if (destinationRequestRef.current === requestId) setDestinationTarget(null);
+      }
+    },
+    [destinationAdapter, selectedFile],
+  );
+
   const handleOpenDialog = useCallback(() => {
     setMenuOpen(false);
     setDialogOpen(true);
-  }, []);
+    void refreshDestination(dialogInitial);
+  }, [dialogInitial, refreshDestination]);
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
@@ -215,17 +279,70 @@ export function ExportToolbarControls({
     setVideoLoadError(null);
   }, []);
 
+  const handleOptionsChange = useCallback(
+    (options: ExportOptions) => {
+      void refreshDestination(options);
+    },
+    [refreshDestination],
+  );
+
+  const handlePickDestination = useCallback(
+    async (options: ExportOptions) => {
+      if (!destinationAdapter) return;
+      try {
+        const { buildExportFilename } = await loadRunExportModule();
+        const filename = buildExportFilename(selectedFile, options);
+        const pickedTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
+        if (pickedTarget === null) return;
+        setDestinationTarget(pickedTarget);
+      } catch {
+        // Native hosts surface picker failures through their own UI channel.
+      }
+    },
+    [destinationAdapter, destinationTarget, selectedFile],
+  );
+
+  const saveToDestination = useCallback(
+    async (blob: Blob, filename: string, target: ExportDestinationTarget | null) => {
+      if (!destinationAdapter) return;
+      const savedTarget = await destinationAdapter.saveBlob(blob, filename, target);
+      if (savedTarget) setDestinationTarget(savedTarget);
+    },
+    [destinationAdapter],
+  );
+
+  const handleDestinationSaveBlob = useCallback(
+    async (blob: Blob, filename: string) => {
+      await saveToDestination(blob, filename, destinationTarget);
+    },
+    [destinationTarget, saveToDestination],
+  );
+
   const handleExport = useCallback(
     async (opts: ExportOptions) => {
       setExporting(true);
       try {
-        await runExport(markdownSource, selectedFile, opts, mediaContainer, saveBlob);
+        const { runExport } = await loadRunExportModule();
+        await runExport(
+          markdownSource,
+          selectedFile,
+          opts,
+          mediaContainer,
+          destinationAdapter ? handleDestinationSaveBlob : saveBlob,
+        );
       } finally {
         setExporting(false);
         setDialogOpen(false);
       }
     },
-    [markdownSource, selectedFile, mediaContainer, saveBlob],
+    [
+      markdownSource,
+      selectedFile,
+      mediaContainer,
+      destinationAdapter,
+      handleDestinationSaveBlob,
+      saveBlob,
+    ],
   );
 
   const handleQuickExport = useCallback(async () => {
@@ -234,11 +351,35 @@ export function ExportToolbarControls({
     setExporting(true);
     try {
       saveExportOptions(lastOptions);
-      await runExport(markdownSource, selectedFile, lastOptions, mediaContainer, saveBlob);
+      const { runExport } = await loadRunExportModule();
+      let quickTarget: ExportDestinationTarget | null = null;
+      if (destinationAdapter) {
+        const { buildExportFilename } = await loadRunExportModule();
+        quickTarget = await destinationAdapter.resolveTarget(
+          buildExportFilename(selectedFile, lastOptions),
+        );
+      }
+      await runExport(
+        markdownSource,
+        selectedFile,
+        lastOptions,
+        mediaContainer,
+        destinationAdapter
+          ? async (blob, filename) => saveToDestination(blob, filename, quickTarget)
+          : saveBlob,
+      );
     } finally {
       setExporting(false);
     }
-  }, [lastOptions, markdownSource, selectedFile, mediaContainer, saveBlob]);
+  }, [
+    destinationAdapter,
+    lastOptions,
+    markdownSource,
+    mediaContainer,
+    saveBlob,
+    saveToDestination,
+    selectedFile,
+  ]);
 
   const LoadedVideoExportModal = videoModules?.Modal;
 
@@ -294,12 +435,24 @@ export function ExportToolbarControls({
       )}
 
       {dialogOpen && (
-        <ExportDialog
-          initial={dialogInitial}
-          exporting={exporting}
-          onExport={handleExport}
-          onClose={handleCloseDialog}
-        />
+        <Suspense fallback={null}>
+          <ExportDialog
+            initial={dialogInitial}
+            exporting={exporting}
+            destination={
+              destinationAdapter
+                ? {
+                    value: destinationTarget?.displayPath ?? '',
+                    onPick: handlePickDestination,
+                    hint: destinationAdapter.hint,
+                  }
+                : undefined
+            }
+            onExport={handleExport}
+            onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
+            onClose={handleCloseDialog}
+          />
+        </Suspense>
       )}
 
       {videoModalOpen && (videoLoading || videoLoadError) && (

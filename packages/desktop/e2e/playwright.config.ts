@@ -9,11 +9,12 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: '.',
+  testIgnore: /packaged-smoke\.spec\.ts/u,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: process.env.CI ? 'github' : 'html',
+  reporter: process.env.CI ? 'github' : [['html', { open: 'never' }]],
   timeout: 60_000,
   expect: {
     timeout: 10_000,

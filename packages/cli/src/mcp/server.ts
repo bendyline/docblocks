@@ -1,632 +1,298 @@
-/**
- * DocBlocks MCP Server
- *
- * Exposes document conversion, analysis, and transformation tools
- * via the Model Context Protocol (MCP) over stdio.
- *
- * Designed for AI agents: tools accept raw markdown text so agents
- * can write content and immediately export it without temp files.
- */
-
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { writeFile, readFile, stat, rm, rename } from 'node:fs/promises';
-import { resolve, dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
+import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
+import type { ServerNotification, ServerRequest } from '@modelcontextprotocol/sdk/types.js';
 import { getPackageVersion } from '../version.js';
+import {
+  registerAgenticTools,
+  MCP_CONVERSION_TARGET_FORMATS,
+  MCP_FORMAT_CAPABILITIES,
+} from './agentic-tools.js';
+import { ArtifactStore, type ArtifactStoreOptions } from './artifact-store.js';
+import { McpFileAuthority, type McpFileAuthorityOptions } from './authority.js';
+import { registerDiscoveryTools } from './discovery-tools.js';
+import { registerAuthoringPrompts } from './prompts.js';
 
-/**
- * Resolve markdown input: either raw text or a file path.
- * Returns the resolved file path (writing to a temp file if given raw text).
- */
-async function resolveMarkdownInput(
-  markdown: string,
-): Promise<{ filePath: string; isTemp: boolean }> {
-  // If it looks like a file path (no newlines, ends with known ext or exists on disk)
-  if (!markdown.includes('\n') && markdown.length < 500) {
-    try {
-      const resolved = resolve(markdown);
-      const info = await stat(resolved);
-      if (info.isFile() || info.isDirectory()) {
-        return { filePath: resolved, isTemp: false };
-      }
-    } catch {
-      // Not a valid path — treat as raw markdown
+const DEFAULT_MAX_CONCURRENT_OPERATIONS = 2;
+const DEFAULT_OPERATION_TIMEOUT_MS = 2 * 60 * 1_000;
+const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 5_000;
+
+export interface McpServerOptions extends McpFileAuthorityOptions, ArtifactStoreOptions {
+  maxConcurrentOperations?: number;
+  operationTimeoutMs?: number;
+  /** Bound cleanup latency after shutdown has aborted every active operation. */
+  shutdownDrainTimeoutMs?: number;
+}
+
+/** Bounds expensive work while preserving the exact caller cancellation reason. */
+export class OperationGuard {
+  private active = 0;
+  private accepting = true;
+  private readonly controllers = new Set<AbortController>();
+  private readonly completions = new Set<Promise<unknown>>();
+  private shutdownPromise: Promise<void> | null = null;
+
+  public constructor(
+    private readonly maximum: number,
+    private readonly timeoutMs: number,
+    private readonly shutdownDrainTimeoutMs = DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
+  ) {
+    if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 32) {
+      throw new Error('Invalid MCP operation concurrency limit');
+    }
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 10 || timeoutMs > 30 * 60 * 1_000) {
+      throw new Error('Invalid MCP operation timeout');
+    }
+    if (
+      !Number.isSafeInteger(shutdownDrainTimeoutMs) ||
+      shutdownDrainTimeoutMs < 10 ||
+      shutdownDrainTimeoutMs > 60_000
+    ) {
+      throw new Error('Invalid MCP shutdown drain timeout');
     }
   }
 
-  // Write raw markdown to a temp file
-  const tmpId = randomBytes(8).toString('hex');
-  const tmpPath = join(tmpdir(), `docblocks-mcp-${tmpId}.md`);
-  await writeFile(tmpPath, markdown, 'utf-8');
-  return { filePath: tmpPath, isTemp: true };
-}
-
-/**
- * Clean up a temp file if needed.
- */
-async function cleanupTemp(filePath: string, isTemp: boolean): Promise<void> {
-  if (isTemp) {
-    await rm(filePath, { force: true });
-  }
-}
-
-/**
- * Resolve markdown input to text content. Used by tools that operate
- * on the markdown string directly (analyze, restyle) rather than via file.
- */
-async function resolveMarkdownText(markdown: string): Promise<string> {
-  if (!markdown.includes('\n') && markdown.length < 500) {
-    try {
-      const resolved = resolve(markdown);
-      const info = await stat(resolved);
-      if (info.isFile()) {
-        return await readFile(resolved, 'utf-8');
-      }
-    } catch {
-      // Not a valid path — use as-is
+  public async run<T>(
+    requestSignal: AbortSignal,
+    work: (operationSignal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    requestSignal.throwIfAborted();
+    if (!this.accepting) throw new OperationClosingError();
+    if (this.active >= this.maximum) {
+      throw new OperationBusyError(this.active, this.maximum);
     }
-  }
-  return markdown;
-}
+    this.active += 1;
+    const controller = new AbortController();
+    this.controllers.add(controller);
+    const forwardCancellation = (): void => controller.abort(requestSignal.reason);
+    if (requestSignal.aborted) forwardCancellation();
+    else requestSignal.addEventListener('abort', forwardCancellation, { once: true });
+    const timer = setTimeout(
+      () => controller.abort(new OperationTimeoutError(this.timeoutMs)),
+      this.timeoutMs,
+    );
+    let rejectAborted: () => void = () => undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectAborted = (): void =>
+        reject(controller.signal.reason ?? new Error('MCP operation was cancelled'));
+      if (controller.signal.aborted) rejectAborted();
+      else controller.signal.addEventListener('abort', rejectAborted, { once: true });
+    });
+    const completion: Promise<T> = Promise.resolve()
+      .then(() => work(controller.signal))
+      .finally(() => {
+        clearTimeout(timer);
+        requestSignal.removeEventListener('abort', forwardCancellation);
+        controller.signal.removeEventListener('abort', rejectAborted);
+        this.controllers.delete(controller);
+        this.completions.delete(completion);
+        this.active -= 1;
+      });
+    this.completions.add(completion);
 
-export function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: 'docblocks',
-    version: getPackageVersion(),
-  });
-
-  // ── Export Tools ─────────────────────────────────────────────────
-
-  const EXPORT_FORMATS: { format: string; description: string }[] = [
-    {
-      format: 'docx',
-      description:
-        'Export a markdown document to a polished Microsoft Word (.docx) file with professional formatting and themes. Accepts raw markdown text or a file path.',
-    },
-    {
-      format: 'pdf',
-      description:
-        'Export a markdown document to a styled PDF file. Accepts raw markdown text or a file path.',
-    },
-    {
-      format: 'pptx',
-      description:
-        'Export a markdown document to a PowerPoint presentation — each section becomes a slide. Accepts raw markdown text or a file path.',
-    },
-    {
-      format: 'html',
-      description:
-        'Export a markdown document to a self-contained interactive HTML page with an embedded player. Accepts raw markdown text or a file path.',
-    },
-  ];
-
-  for (const { format, description } of EXPORT_FORMATS) {
-    server.tool(
-      `export_markdown_to_${format}`,
-      description,
-      {
-        markdown: z
-          .string()
-          .describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-        outputPath: z.string().describe(`Output .${format} file path`),
-        theme: z.string().optional().describe('Visual theme ID (use list_themes to see options)'),
-        transform: z
-          .string()
-          .optional()
-          .describe(
-            'Transform style to apply before export (use list_transform_styles to see options)',
+    try {
+      return await Promise.race([completion, aborted]);
+    } catch (caught: unknown) {
+      if (controller.signal.aborted) {
+        // Give abort-aware work a turn to release resources. Work that ignores
+        // cancellation still occupies its slot without delaying the response.
+        await Promise.race([
+          completion.then(
+            () => undefined,
+            () => undefined,
           ),
-      },
-      async ({ markdown, outputPath, theme, transform }) => {
-        const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-        try {
-          const { runConvert } = await import('../commands/convert.js');
-          const resolvedOutput = resolve(outputPath);
-          const result = await runConvert(filePath, {
-            outputDir: dirname(resolvedOutput),
-            formats: format,
-            theme,
-            transform,
-          });
-          const file = result.outputFiles[0];
-          // runConvert names the output after the input basename; rename to
-          // honor the caller's requested outputPath.
-          if (file.path !== resolvedOutput) {
-            await rename(file.path, resolvedOutput);
-            file.path = resolvedOutput;
-          }
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({
-                  outputPath: file.path,
-                  fileSize: file.size,
-                  format,
-                }),
-              },
-            ],
-          };
-        } finally {
-          await cleanupTemp(filePath, isTemp);
-        }
-      },
-    );
+          new Promise<void>((resolve) => setTimeout(resolve, 0)),
+        ]);
+        throw controller.signal.reason ?? caught;
+      }
+      throw caught;
+    }
   }
 
-  server.tool(
-    'export_markdown_to_video',
-    'Render a markdown document as an MP4 video with narration-synced animations. Requires ffmpeg and Playwright. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md/.zip/.dbk file or folder'),
-      outputPath: z.string().describe('Output .mp4 file path'),
-      fps: z.number().min(1).max(120).optional().describe('Frames per second (default: 30)'),
-      quality: z
-        .enum(['draft', 'normal', 'high'])
-        .optional()
-        .describe('Encoding quality (default: normal)'),
-      orientation: z
-        .enum(['landscape', 'portrait'])
-        .optional()
-        .describe('Video orientation (default: landscape)'),
-      captions: z
-        .enum(['off', 'standard', 'social'])
-        .optional()
-        .describe('Caption style (default: off)'),
-      width: z.number().optional().describe('Override video width in pixels'),
-      height: z.number().optional().describe('Override video height in pixels'),
-    },
-    async ({ markdown, outputPath, fps, quality, orientation, captions, width, height }) => {
-      const { filePath, isTemp } = await resolveMarkdownInput(markdown);
-      try {
-        const { runVideo } = await import('../commands/video.js');
-        const result = await runVideo(filePath, {
-          output: outputPath,
-          fps,
-          quality,
-          orientation,
-          captions: captions as 'off' | 'standard' | 'social',
-          width,
-          height,
-        });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                outputPath: result.outputPath,
-                duration: result.duration,
-                frameCount: result.frameCount,
-              }),
-            },
-          ],
-        };
-      } finally {
-        await cleanupTemp(filePath, isTemp);
-      }
-    },
-  );
-
-  // ── Reverse Conversion Tools ─────────────────────────────────────
-
-  const REVERSE_FORMATS: {
-    ext: 'docx' | 'pptx' | 'pdf';
-    description: string;
-    loader: () => Promise<(input: string | Buffer | Uint8Array) => Promise<string>>;
-  }[] = [
-    {
-      ext: 'docx',
-      description:
-        'Convert a Microsoft Word (.docx) file to Markdown. Preserves headings, paragraphs, emphasis, lists, and tables on a best-effort basis.',
-      loader: async () => (await import('../converters/docx-to-md.js')).docxToMarkdown,
-    },
-    {
-      ext: 'pptx',
-      description:
-        'Convert a PowerPoint (.pptx) file to Markdown. Each slide becomes a section; the first paragraph on each slide is treated as the slide title.',
-      loader: async () => (await import('../converters/pptx-to-md.js')).pptxToMarkdown,
-    },
-    {
-      ext: 'pdf',
-      description:
-        'Convert a PDF file to Markdown. Extracts text from each page; formatting and layout are not preserved. Each page becomes a section.',
-      loader: async () => (await import('../converters/pdf-to-md.js')).pdfToMarkdown,
-    },
-  ];
-
-  for (const { ext, description, loader } of REVERSE_FORMATS) {
-    server.tool(
-      `convert_${ext}_to_markdown`,
-      description,
-      {
-        inputPath: z.string().describe(`Path to the source .${ext} file`),
-        outputPath: z
-          .string()
-          .optional()
-          .describe('If provided, write the resulting markdown to this file path'),
-      },
-      async ({ inputPath, outputPath }) => {
-        const convert = await loader();
-        const resolvedInput = resolve(inputPath);
-        const markdown = await convert(resolvedInput);
-        if (outputPath) {
-          await writeFile(resolve(outputPath), markdown, 'utf-8');
-        }
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: markdown,
-            },
-          ],
-        };
-      },
-    );
+  /** Stop admission, abort active work, and wait for all operation cleanup before disposal. */
+  public shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.accepting = false;
+    const attempt = this.drain();
+    this.shutdownPromise = attempt.catch((caught: unknown) => {
+      this.shutdownPromise = null;
+      throw caught;
+    });
+    return this.shutdownPromise;
   }
 
-  // ── Markdown Intelligence Tools ──────────────────────────────────
+  private async drain(): Promise<void> {
+    const reason = new OperationShutdownError();
+    for (const controller of this.controllers) {
+      if (!controller.signal.aborted) controller.abort(reason);
+    }
+    if (this.completions.size === 0) return;
 
-  server.tool(
-    'analyze_markdown',
-    "Analyze a markdown document's structure, extracting key content elements: statistics, quotes, dates, facts, comparisons, and lists. Use this to understand what a document contains before choosing a theme or transform. Accepts raw markdown text or a file path.",
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md file'),
-    },
-    async ({ markdown }) => {
-      const content = await resolveMarkdownText(markdown);
-
-      const { parseMarkdown } = await import('@bendyline/squisq/markdown');
-      const { extractContent } = await import('@bendyline/squisq/generate');
-      const { markdownToDoc } = await import('@bendyline/squisq/doc');
-
-      const markdownDoc = parseMarkdown(content);
-      const doc = markdownToDoc(markdownDoc);
-
-      // Extract content elements
-      const extracted = extractContent(content);
-
-      // Compute structure stats
-      const stats = {
-        blockCount: doc.blocks?.length ?? 0,
-        headingCount: 0,
-        paragraphCount: 0,
-        wordCount: content.split(/\s+/).filter(Boolean).length,
-        characterCount: content.length,
-      };
-
-      if (markdownDoc.children) {
-        for (const node of markdownDoc.children) {
-          if (node.type === 'heading') stats.headingCount++;
-          if (node.type === 'paragraph') stats.paragraphCount++;
-        }
-      }
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify({ stats, extracted }, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  server.tool(
-    'restyle_markdown',
-    'Restyle a markdown document by applying a visual transform — restructures content for a specific presentation style (documentary, magazine, data-driven, narrative, minimal). Returns the transformed markdown text. Use list_transform_styles to see available styles. Accepts raw markdown text or a file path.',
-    {
-      markdown: z.string().describe('Raw markdown text or path to a .md file'),
-      style: z.string().describe('Transform style ID (use list_transform_styles to see options)'),
-      theme: z
-        .string()
-        .optional()
-        .describe('Visual theme ID to apply (use list_themes to see options)'),
-      outputPath: z
-        .string()
-        .optional()
-        .describe('If provided, write the transformed markdown to this file path'),
-    },
-    async ({ markdown, style, theme, outputPath }) => {
-      const content = await resolveMarkdownText(markdown);
-
-      const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
-      const validStyles = getTransformStyleIds();
-      if (!validStyles.includes(style)) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Unknown transform style "${style}". Available: ${validStyles.join(', ')}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const { parseMarkdown, stringifyMarkdown } = await import('@bendyline/squisq/markdown');
-      const { MemoryContentContainer } = await import('@bendyline/squisq/storage');
-      const { applyTransformToMarkdown } = await import('../commands/convert.js');
-
-      const markdownDoc = parseMarkdown(content);
-      const container = new MemoryContentContainer();
-      const transformedMarkdownDoc = await applyTransformToMarkdown(
-        markdownDoc,
-        container,
-        style,
-        theme,
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new OperationDrainTimeoutError(this.shutdownDrainTimeoutMs)),
+        this.shutdownDrainTimeoutMs,
       );
-      const transformedText = stringifyMarkdown(transformedMarkdownDoc);
+    });
+    try {
+      await Promise.race([
+        Promise.allSettled([...this.completions]).then(() => undefined),
+        timeout,
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+}
 
-      if (outputPath) {
-        await writeFile(resolve(outputPath), transformedText, 'utf-8');
-      }
+export class OperationTimeoutError extends Error {
+  public readonly code = 'timeout';
+  public readonly hint: string;
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: transformedText,
-          },
-        ],
-      };
-    },
+  public constructor(timeoutMs: number) {
+    super(`MCP operation exceeded its ${timeoutMs} ms runtime budget`);
+    this.name = 'OperationTimeoutError';
+    this.hint = 'Retry with fewer targets/items or increase the server operation timeout.';
+  }
+}
+
+export class OperationBusyError extends Error {
+  public readonly code = 'busy';
+  public readonly hint: string;
+  public readonly retryable = true;
+
+  public constructor(
+    public readonly active: number,
+    public readonly capacity: number,
+  ) {
+    super(
+      `MCP server is busy; retry later (${active} of ${capacity} expensive-operation slots are active)`,
+    );
+    this.name = 'OperationBusyError';
+    this.hint =
+      'Retry after one active operation completes; reducing target or preview count may help.';
+  }
+}
+
+export class OperationClosingError extends Error {
+  public readonly code = 'server-closing';
+  public readonly hint = 'Reconnect to a running DocBlocks MCP server before retrying.';
+  public readonly retryable = true;
+
+  public constructor() {
+    super('MCP server is closing and is not accepting new operations');
+    this.name = 'OperationClosingError';
+  }
+}
+
+export class OperationShutdownError extends Error {
+  public readonly code = 'server-shutdown';
+  public readonly hint = 'Reconnect to a running DocBlocks MCP server before retrying.';
+  public readonly retryable = true;
+
+  public constructor() {
+    super('MCP operation was cancelled because the server is shutting down');
+    this.name = 'OperationShutdownError';
+  }
+}
+
+export class OperationDrainTimeoutError extends Error {
+  public readonly code = 'shutdown-drain-timeout';
+  public readonly hint = 'Wait for active converter cleanup, then close the server again.';
+  public readonly retryable = true;
+
+  public constructor(timeoutMs: number) {
+    super(`MCP operations did not finish cleanup within ${timeoutMs} ms`);
+    this.name = 'OperationDrainTimeoutError';
+  }
+}
+
+/** Retains every independent failure encountered while closing the server. */
+export class McpServerShutdownError extends Error {
+  public readonly errors: readonly unknown[];
+  public readonly cause: unknown;
+
+  public constructor(errors: readonly unknown[]) {
+    super(`MCP server shutdown encountered ${errors.length} failures`);
+    this.name = 'McpServerShutdownError';
+    this.errors = Object.freeze([...errors]);
+    this.cause = this.errors[0];
+  }
+}
+
+export type McpToolRequestExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
+export function createMcpServer(options: McpServerOptions = {}): McpServer {
+  const authority = McpFileAuthority.create(options);
+  // `createMcpServer` remains synchronous for SDK ergonomics, but root
+  // resolution is asynchronous. Attach a handler immediately so an invalid
+  // startup grant cannot become an unhandled rejection before connect(), then
+  // make transport admission wait for every startup prerequisite.
+  void authority.catch(() => undefined);
+  const operations = new OperationGuard(
+    options.maxConcurrentOperations ?? DEFAULT_MAX_CONCURRENT_OPERATIONS,
+    options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS,
+    options.shutdownDrainTimeoutMs ?? DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
   );
+  const artifacts = new ArtifactStore(options);
+  const server = new McpServer({ name: 'docblocks', version: getPackageVersion() });
 
-  // ── Discovery Tools ──────────────────────────────────────────────
-
-  server.tool(
-    'list_themes',
-    'List all available visual themes (e.g., documentary, cinematic, bold) with descriptions. Use to choose a theme before exporting.',
-    {},
-    async () => {
-      const { getThemeSummaries } = await import('@bendyline/squisq/schemas');
-      const themes = getThemeSummaries();
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(themes, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  server.tool(
-    'list_transform_styles',
-    'List all available transform styles (e.g., documentary, magazine, minimal) with descriptions. Use before calling restyle_markdown to see what styles are available.',
-    {},
-    async () => {
-      const { getTransformStyleSummaries } = await import('@bendyline/squisq/transform');
-      const styles = getTransformStyleSummaries();
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(styles, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  server.tool(
-    'list_export_formats',
-    'List all supported export formats with descriptions of what each produces. Use to help choose the right output format.',
-    {},
-    async () => {
-      const formats = {
-        input: [
-          { ext: '.md', description: 'Markdown file' },
-          { ext: '.zip/.dbk', description: 'Container archive with embedded media' },
-          { ext: 'folder', description: 'Directory with markdown and media files' },
-          {
-            ext: '.docx',
-            description: 'Microsoft Word document — via convert_docx_to_markdown',
-            tool: 'convert_docx_to_markdown',
-          },
-          {
-            ext: '.pptx',
-            description: 'PowerPoint presentation — via convert_pptx_to_markdown',
-            tool: 'convert_pptx_to_markdown',
-          },
-          {
-            ext: '.pdf',
-            description: 'PDF document — via convert_pdf_to_markdown',
-            tool: 'convert_pdf_to_markdown',
-          },
-        ],
-        output: [
-          {
-            format: 'docx',
-            description: 'Microsoft Word document with professional formatting',
-            tool: 'export_markdown_to_docx',
-          },
-          {
-            format: 'pdf',
-            description: 'Styled PDF document',
-            tool: 'export_markdown_to_pdf',
-          },
-          {
-            format: 'pptx',
-            description: 'PowerPoint presentation — each section becomes a slide',
-            tool: 'export_markdown_to_pptx',
-          },
-          {
-            format: 'html',
-            description: 'Self-contained interactive HTML page with embedded player',
-            tool: 'export_markdown_to_html',
-          },
-          {
-            format: 'mp4',
-            description: 'Video with narration-synced animations (requires ffmpeg)',
-            tool: 'export_markdown_to_video',
-          },
-        ],
-      };
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(formats, null, 2),
-          },
-        ],
-      };
-    },
-  );
-
-  // ── Resources ────────────────────────────────────────────────────
-
-  server.resource('formats', 'docblocks://formats', async () => {
-    return {
-      contents: [
-        {
-          uri: 'docblocks://formats',
-          mimeType: 'application/json',
-          text: JSON.stringify(
-            {
-              description:
-                'DocBlocks supports converting markdown documents to multiple professional output formats',
-              inputFormats: ['.md', '.zip', '.dbk', 'folder', '.docx', '.pptx', '.pdf'],
-              outputFormats: ['docx', 'pptx', 'pdf', 'html', 'mp4', 'dbk', 'markdown'],
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
+  registerAgenticTools(server, {
+    authority,
+    artifacts,
+    runOperation: (signal, work) => operations.run(signal, work),
   });
+  registerDiscoveryTools(server);
+  registerAuthoringPrompts(server);
 
-  // ── Prompts ──────────────────────────────────────────────────────
-
-  server.prompt(
-    'create-presentation',
-    'Create a presentation-ready document from markdown. Guides you through writing content, choosing a theme, applying a transform style, and exporting to PPTX or PDF.',
-    {
-      topic: z.string().describe('The topic or subject for the presentation'),
-      style: z
-        .string()
-        .optional()
-        .describe(
-          'Transform style (documentary, magazine, data-driven, narrative, minimal). If omitted, you will be guided to choose.',
-        ),
-    },
-    async ({ topic, style }) => {
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: `Create a presentation about: ${topic}
-
-Instructions for the AI agent:
-
-1. First, call list_themes and list_transform_styles to see available options.
-2. Write well-structured markdown content about the topic. Structure it with clear sections using ## headings — each heading becomes a slide.
-3. Call restyle_markdown with style="${style ?? 'documentary'}" to transform the content for presentation.
-4. Review the restyled markdown and make any adjustments.
-5. Call export_markdown_to_pptx to generate the PowerPoint file.
-
-Tips for great presentations:
-- Use ## for slide breaks
-- Keep each section focused on one idea
-- Include statistics and quotes when relevant — they become visual highlights
-- Use bullet lists for key points
-- Add image references with ![alt](path) for visual slides`,
-            },
-          },
-        ],
-      };
-    },
-  );
-
-  server.prompt(
-    'create-video',
-    'Create a video from markdown content. Guides you through writing content optimized for video, choosing a theme, and rendering to MP4.',
-    {
-      topic: z.string().describe('The topic or subject for the video'),
-      orientation: z
-        .enum(['landscape', 'portrait'])
-        .optional()
-        .describe('Video orientation (default: landscape)'),
-    },
-    async ({ topic, orientation }) => {
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: `Create a video about: ${topic}
-
-Instructions for the AI agent:
-
-1. First, call list_themes to see available visual themes.
-2. Write markdown content optimized for video presentation. The document will be rendered as an animated sequence.
-3. Call analyze_markdown to understand the content structure and choose the best theme.
-4. Call export_markdown_to_video with orientation="${orientation ?? 'landscape'}" to render the video.
-
-Tips for great video content:
-- Use clear ## section headings — they create visual transitions
-- Include statistics (numbers with context) — they animate dramatically
-- Add quotes with attribution — they get cinematic treatment
-- Keep paragraphs concise — each maps to a timed visual block
-- The video player auto-times content, so focus on clarity over length`,
-            },
-          },
-        ],
-      };
-    },
-  );
-
-  server.prompt(
-    'create-document',
-    'Create a professional document from markdown. Guides you through writing content, choosing a theme, and exporting to DOCX or PDF.',
-    {
-      topic: z.string().describe('The topic or subject for the document'),
-      format: z.enum(['docx', 'pdf']).optional().describe('Output format (default: pdf)'),
-    },
-    async ({ topic, format }) => {
-      const outputFormat = format ?? 'pdf';
-      const toolName =
-        outputFormat === 'docx' ? 'export_markdown_to_docx' : 'export_markdown_to_pdf';
-      return {
-        messages: [
-          {
-            role: 'user' as const,
-            content: {
-              type: 'text' as const,
-              text: `Create a professional document about: ${topic}
-
-Instructions for the AI agent:
-
-1. First, call list_themes to see available visual themes.
-2. Write well-structured markdown content. Use standard markdown formatting:
-   - # for the document title
-   - ## for major sections
-   - ### for subsections
-   - **bold** and *italic* for emphasis
-   - > for important quotes or callouts
-   - Numbered and bullet lists for organized content
-3. Optionally call restyle_markdown to apply a professional transform.
-4. Call ${toolName} to generate the final document.
-
-Tips for professional documents:
-- Start with a clear title and introduction
-- Use consistent heading hierarchy
-- Include data and statistics where appropriate
-- End with a conclusion or summary section`,
-            },
-          },
-        ],
-      };
-    },
-  );
-
+  const connectServer = server.connect.bind(server);
+  server.connect = async (transport) => {
+    await Promise.all([authority, artifacts.ready()]);
+    await connectServer(transport);
+  };
+  const closeServer = server.close.bind(server);
+  let closePromise: Promise<void> | null = null;
+  const beginShutdown = (closeTransport: boolean): Promise<void> => {
+    if (closePromise) return closePromise;
+    closePromise = (async () => {
+      const failures: unknown[] = [];
+      try {
+        await operations.shutdown();
+      } catch (caught: unknown) {
+        failures.push(caught);
+      }
+      if (closeTransport) {
+        try {
+          await closeServer();
+        } catch (caught: unknown) {
+          failures.push(caught);
+        }
+      }
+      try {
+        await artifacts.dispose();
+      } catch (caught: unknown) {
+        failures.push(caught);
+      }
+      throwShutdownFailures(failures);
+    })().catch((caught: unknown) => {
+      closePromise = null;
+      throw caught;
+    });
+    return closePromise;
+  };
+  const previousOnClose = server.server.onclose;
+  server.server.onclose = () => {
+    previousOnClose?.();
+    void beginShutdown(false).catch(() => undefined);
+  };
+  server.close = () => beginShutdown(true);
   return server;
 }
+
+function throwShutdownFailures(failures: readonly unknown[]): void {
+  if (failures.length === 0) return;
+  if (failures.length === 1) throw failures[0];
+  throw new McpServerShutdownError(failures);
+}
+
+export { MCP_CONVERSION_TARGET_FORMATS, MCP_FORMAT_CAPABILITIES };

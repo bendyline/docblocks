@@ -13,11 +13,74 @@
 import { test, expect } from './fixtures.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 
 test('boots and renders the shell', async ({ launchApp }) => {
-  const { window } = await launchApp();
+  const { app, window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await expect(window.locator('.db-shell')).toBeVisible();
+  await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
+
+  const browserWindow = await app.browserWindow(window);
+  await expect
+    .poll(() => browserWindow.evaluate((nativeWindow) => nativeWindow.getTitle()))
+    .toBe('aboutDocBlocks - DocBlocks');
+});
+
+test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {
+  const { app, window } = await launchApp();
+  const toolbar = window.locator('.squisq-toolbar');
+  await expect(toolbar).toBeVisible({ timeout: 30_000 });
+
+  const chrome = await toolbar.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      height: element.getBoundingClientRect().height,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+    };
+  });
+  expect(chrome.height).toBe(48);
+  expect(chrome.appRegion).toBe('drag');
+
+  // The sidebar titlebar ends with a desktop-only dotted grip so the
+  // draggable space beside the workspace gear is visually discoverable.
+  const sidebarHeader = window.locator('.db-shell-sidebar-header');
+  const grip = await sidebarHeader.evaluate((element) => {
+    const headerStyle = getComputedStyle(element);
+    const style = getComputedStyle(element, '::after');
+    return {
+      hasContent: style.content !== 'none' && style.content !== 'normal',
+      width: style.width,
+      backgroundImage: style.backgroundImage,
+      cursor: headerStyle.cursor,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+    };
+  });
+  expect(grip.hasContent).toBe(true);
+  expect(grip.width).toBe('12px');
+  expect(grip.backgroundImage).toContain('radial-gradient');
+  expect(grip.cursor).toBe('grab');
+  expect(grip.appRegion).toBe('drag');
+
+  // Interactive controls inside the drag region must remain clickable.
+  await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
+  await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
+  const sourceTab = toolbar.getByRole('tab', { name: 'Source' });
+  await sourceTab.click();
+  await expect(sourceTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+
+  // macOS owns its global application menu outside the BrowserWindow;
+  // Windows/Linux should have no in-window File/Edit/View menu row.
+  if (process.platform !== 'darwin') {
+    const browserWindow = await app.browserWindow(window);
+    const menuBarVisible = await browserWindow.evaluate((nativeWindow) =>
+      nativeWindow.isMenuBarVisible(),
+    );
+    expect(menuBarVisible).toBe(false);
+  }
 });
 
 test('default workspace folder exists on disk after first launch', async ({
@@ -29,6 +92,20 @@ test('default workspace folder exists on disk after first launch', async ({
   // Main process creates the folder synchronously during getDefault().
   expect(fs.existsSync(workspaceDir)).toBe(true);
   expect(fs.statSync(workspaceDir).isDirectory()).toBe(true);
+});
+
+test('workspace dropdown shows the full folder path', async ({ launchApp, workspaceDir }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const canonicalWorkspaceDir = fs.realpathSync.native(workspaceDir);
+
+  await window.locator('.db-workspace-picker-btn').click();
+  const activeWorkspace = window.locator('.db-workspace-dropdown-item--active');
+  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveText(canonicalWorkspaceDir);
+  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveAttribute(
+    'title',
+    canonicalWorkspaceDir,
+  );
 });
 
 test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir }) => {
@@ -49,13 +126,25 @@ test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir
   expect(fs.readFileSync(welcome, 'utf8')).toContain('Welcome to DocBlocks');
 });
 
+test('export dialog exposes a remembered native target control', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await window.locator('.db-toolbar-menu-trigger').click();
+  await window.getByRole('button', { name: 'Export...' }).click();
+
+  const exportTarget = window.getByLabel('Export to');
+  await expect(exportTarget).toBeVisible();
+  await expect(exportTarget).toHaveValue(/aboutDocBlocks\.pdf$/);
+  await expect(window.getByRole('button', { name: 'Choose export location' })).toBeVisible();
+});
+
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {
   // First launch: write a file directly (avoids brittle UI typing).
   const first = await launchApp();
   await first.window.waitForSelector('.db-shell', { timeout: 30_000 });
   const target = path.join(workspaceDir, 'e2e-test.md');
   fs.writeFileSync(target, '# Hello from e2e\nsome body text\n', 'utf8');
-  await first.app.close();
+  await first.close();
 
   // Second launch: the file should still be there and the shell should
   // render against the same workspace.
@@ -63,6 +152,121 @@ test('content persists across relaunch', async ({ launchApp, workspaceDir }) => 
   await second.window.waitForSelector('.db-shell', { timeout: 30_000 });
   expect(fs.existsSync(target)).toBe(true);
   expect(fs.readFileSync(target, 'utf8')).toContain('Hello from e2e');
+});
+
+test('window close waits for the active document session to flush', async ({
+  launchApp,
+  workspaceDir,
+}) => {
+  const { app, window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 15_000 });
+  await window.locator('.db-welcome-gateway-cta').click();
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toBeVisible({ timeout: 15_000 });
+  const sentinel = `close-flush-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  // Exercise the guarded BrowserWindow close path directly. Production macOS
+  // builds remain active after the final window closes, but automation mode
+  // exits so a headless application cannot strand the Playwright worker.
+  const browserWindow = await app.browserWindow(window);
+  const windowClosed = window.waitForEvent('close');
+  await browserWindow.evaluate((nativeWindow) => nativeWindow.close());
+  await windowClosed;
+  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
+});
+
+test('quick close flushes a loose OS-opened file through its origin target', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalFile = path.join(userDataDir, 'quick-close.md');
+  fs.writeFileSync(externalFile, '# Loose origin\n', 'utf8');
+  const { close, window } = await launchApp([externalFile]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Loose origin', { timeout: 30_000 });
+
+  const sentinel = `loose-close-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  await close();
+  expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
+});
+
+test('quick close repacks a DBK origin before acknowledging window destruction', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalBundle = path.join(userDataDir, 'quick-bundle.dbk');
+  const source = new MemoryContentContainer();
+  await source.writeFile(
+    'quick-bundle.md',
+    new TextEncoder().encode('# Bundle origin\n'),
+    'text/markdown',
+  );
+  const sourceBlob = await containerToZip(source);
+  fs.writeFileSync(externalBundle, Buffer.from(await sourceBlob.arrayBuffer()));
+
+  const { close, window } = await launchApp([externalBundle]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Bundle origin', { timeout: 30_000 });
+
+  const sentinel = `bundle-close-${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+  await expect(editor).toContainText(sentinel);
+
+  await close();
+  const committed = await zipToContainer(fs.readFileSync(externalBundle));
+  const committedDocument = await committed.readFile('quick-bundle.md');
+  expect(new TextDecoder().decode(committedDocument ?? undefined)).toContain(sentinel);
+});
+
+test('keeping a local DBK conflict saves durable content without replaying the stale memory baseline', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const externalBundle = path.join(userDataDir, 'conflicted-bundle.dbk');
+  const documentName = 'conflicted-bundle.md';
+  await writeDbkDocument(externalBundle, documentName, '# Baseline A\n');
+
+  const { close, window } = await launchApp([externalBundle]);
+  const editor = window.locator('[contenteditable="true"]').first();
+  await expect(editor).toContainText('Baseline A', { timeout: 30_000 });
+
+  // Change the origin to B without changing the transient provider, then
+  // create local branch C. The first autosave must enter conflict.
+  await writeDbkDocument(externalBundle, documentName, '# External B\n');
+  const sentinel = `Local C ${Date.now()}`;
+  await editor.click();
+  await window.keyboard.press('Control+End');
+  await window.keyboard.press('Enter');
+  await window.keyboard.insertText(sentinel);
+
+  const keepMine = window.getByRole('button', { name: 'Keep mine' });
+  await expect(keepMine).toBeVisible({ timeout: 15_000 });
+  await keepMine.click();
+
+  await expect(window.getByText('Your version was saved.')).toBeVisible({ timeout: 15_000 });
+  await expect(keepMine).toBeHidden();
+  await expect
+    .poll(async () => readDbkDocument(externalBundle, documentName), { timeout: 15_000 })
+    .toContain(sentinel);
+  await close();
 });
 
 test('renderer cannot read files outside the workspace root', async ({
@@ -95,3 +299,21 @@ test('renderer cannot read files outside the workspace root', async ({
 
   expect(result.ok, `path-traversal probe: ${JSON.stringify(result)}`).toBe(true);
 });
+
+async function writeDbkDocument(filePath: string, documentName: string, content: string) {
+  const container = new MemoryContentContainer();
+  await container.writeFile(documentName, new TextEncoder().encode(content), 'text/markdown');
+  const blob = await containerToZip(container);
+  fs.writeFileSync(filePath, Buffer.from(await blob.arrayBuffer()));
+}
+
+async function readDbkDocument(filePath: string, documentName: string): Promise<string> {
+  try {
+    const container = await zipToContainer(fs.readFileSync(filePath));
+    const content = await container.readFile(documentName);
+    return new TextDecoder().decode(content ?? undefined);
+  } catch {
+    // Poll through the origin's atomic replacement window.
+    return '';
+  }
+}

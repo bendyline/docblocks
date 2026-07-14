@@ -17,6 +17,21 @@ files:
   - dist/renderer/**/*
   - package.json
 
+# Lock production binaries to the signed ASAR and disable Node/Electron
+# environment-variable escape hatches that the app does not use.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  # Only enable this when packaging a generated
+  # browser_v8_context_snapshot.bin. Electron's stock distribution does not
+  # contain one and exits fatally at startup when this fuse is enabled.
+  loadBrowserProcessSpecificV8Snapshot: false
+  grantFileProtocolExtraPrivileges: false
+
 # electron-builder auto-detects native modules with .node bindings and
 # unpacks them into app.asar.unpacked automatically. Adding an explicit
 # `asarUnpack` list here is only necessary for runtime resources that

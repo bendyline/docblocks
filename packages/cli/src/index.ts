@@ -14,7 +14,7 @@ const program = new Command();
 
 program
   .name('docblocks')
-  .description('DocBlocks CLI — build, serve, and manage markdown document projects')
+  .description('Build, preview, convert, render, inspect, and automate documents')
   .version(getPackageVersion());
 
 program.addCommand(initCommand);

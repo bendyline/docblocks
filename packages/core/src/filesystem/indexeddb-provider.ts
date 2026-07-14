@@ -1,345 +1,171 @@
 /**
- * IndexedDBFileSystemProvider — virtualises a filesystem on top of IndexedDB
- * using the LocalForageAdapter from @bendyline/squisq/storage.
+ * Legacy FileSystemProvider facade over the revisioned IndexedDB authority.
  *
- * Key schema:
- *   fs:{path}:content  → string (text file contents)
- *   fs:{path}:binary   → ArrayBuffer (binary file contents)
- *   fs:{path}:meta     → FileMeta object
- *   fs:dirs             → Set<string> of known directory paths
+ * The old `fs:*` namespace is migration input only. Keeping this facade as an
+ * adapter prevents current callers from recreating a second persistent source
+ * of truth while the workspace moves to FileSystemProviderV2.
  */
 
-import { LocalForageAdapter } from '@bendyline/squisq/storage';
-import type { FileSystemProvider, FileSystemEntry, FileMeta } from './types.js';
+import type { FileCommitResult, FileMeta, FileSystemEntry, FileSystemProvider } from './types.js';
+import { FsError, type FsOperation } from './fs-error.js';
+import { parseWorkspacePath, type WorkspacePath } from './workspace-path.js';
+import { RawIndexedDBFileSystemStore, type IndexedDBFileSystemStore } from './indexeddb-store.js';
+import { IndexedDBFileSystemProviderV2 } from './indexeddb-provider-v2.js';
 
-// ── Helpers ────────────────────────────────────────────────────────
-
-/** Normalise a path: strip leading/trailing slashes, collapse doubles. */
-function normalisePath(p: string): string {
-  return p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\//, '').replace(/\/$/, '');
+export interface IndexedDBFileSystemProviderOptions {
+  /** Injectable transaction store for deterministic fault/concurrency tests. */
+  store?: IndexedDBFileSystemStore;
+  /** Injectable metadata clock. */
+  now?: () => Date;
 }
-
-/** Get the parent directory of a path, or empty string for root-level. */
-function parentDir(p: string): string {
-  const idx = p.lastIndexOf('/');
-  return idx === -1 ? '' : p.slice(0, idx);
-}
-
-/** Get the filename component of a path. */
-function baseName(p: string): string {
-  const idx = p.lastIndexOf('/');
-  return idx === -1 ? p : p.slice(idx + 1);
-}
-
-// ── Key helpers ────────────────────────────────────────────────────
-
-function contentKey(path: string): string {
-  return `fs:${path}:content`;
-}
-
-function binaryKey(path: string): string {
-  return `fs:${path}:binary`;
-}
-
-function metaKey(path: string): string {
-  return `fs:${path}:meta`;
-}
-
-const DIRS_KEY = 'fs:dirs';
-
-// ── Implementation ─────────────────────────────────────────────────
 
 export class IndexedDBFileSystemProvider implements FileSystemProvider {
-  readonly id: string;
-  readonly label: string;
+  public readonly id: string;
+  public readonly label: string;
+  public readonly v2: IndexedDBFileSystemProviderV2;
 
-  private store: LocalForageAdapter;
+  private disposed = false;
 
-  constructor(id: string, label: string) {
+  public constructor(id: string, label: string, options: IndexedDBFileSystemProviderOptions = {}) {
     this.id = id;
     this.label = label;
-    this.store = new LocalForageAdapter({
-      name: `docblocks-fs-${id}`,
-      storeName: 'files',
+    const store = options.store ?? new RawIndexedDBFileSystemStore(`docblocks-fs-${id}`, 'files');
+    this.v2 = new IndexedDBFileSystemProviderV2(id, label, {
+      store,
+      now: options.now,
+      closeStoreOnDispose: true,
     });
   }
 
-  // ── Directory tracking ──────────────────────────────────────────
-
-  private async getDirs(): Promise<Set<string>> {
-    const raw = await this.store.get<string[]>(DIRS_KEY);
-    return new Set(raw ?? []);
+  /** Release the underlying database connection after accepted work settles. */
+  public dispose(): Promise<void> {
+    this.disposed = true;
+    return this.v2.dispose();
   }
 
-  private async saveDirs(dirs: Set<string>): Promise<void> {
-    await this.store.set(DIRS_KEY, [...dirs]);
+  public async readFile(path: string): Promise<string | null> {
+    this.assertOpen('read');
+    const read = await this.v2.readFile(this.path(path, false, 'read'));
+    return read ? new TextDecoder().decode(read.data) : null;
   }
 
-  /** Ensure a directory (and all ancestors) are tracked. */
-  private async ensureDir(dirPath: string): Promise<void> {
-    if (!dirPath) return;
-    const dirs = await this.getDirs();
-    const parts = dirPath.split('/');
-    let current = '';
-    let changed = false;
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      if (!dirs.has(current)) {
-        dirs.add(current);
-        changed = true;
-      }
-    }
-    if (changed) {
-      await this.saveDirs(dirs);
-    }
+  public async writeFile(path: string, content: string): Promise<void> {
+    this.assertOpen('write');
+    await this.v2.writeFile(this.path(path, false, 'write'), new TextEncoder().encode(content), {
+      createParents: true,
+    });
   }
 
-  // ── FileSystemProvider implementation ───────────────────────────
-
-  async readFile(path: string): Promise<string | null> {
-    const p = normalisePath(path);
-    return this.store.get<string>(contentKey(p));
-  }
-
-  async writeFile(path: string, content: string): Promise<void> {
-    const p = normalisePath(path);
-    const parent = parentDir(p);
-    if (parent) {
-      await this.ensureDir(parent);
+  public async commitFile(
+    path: string,
+    content: string,
+    expectedContent: string | null,
+  ): Promise<FileCommitResult> {
+    this.assertOpen('write');
+    const canonical = this.path(path, false, 'write');
+    const current = await this.v2.readFile(canonical);
+    const currentContent = current ? new TextDecoder().decode(current.data) : null;
+    if (currentContent !== expectedContent && currentContent !== content) {
+      return {
+        status: 'conflict',
+        content: currentContent,
+        version: current?.entry.version ?? null,
+      };
     }
 
-    const meta: FileMeta = {
-      name: baseName(p),
-      path: p,
-      size: new Blob([content]).size,
-      lastModified: new Date().toISOString(),
-    };
-
-    await this.store.set(contentKey(p), content);
-    await this.store.set(metaKey(p), meta);
-  }
-
-  async delete(path: string): Promise<void> {
-    const p = normalisePath(path);
-
-    // Remove file keys
-    await this.store.remove(contentKey(p));
-    await this.store.remove(binaryKey(p));
-    await this.store.remove(metaKey(p));
-
-    // If it was a directory, remove it and all children
-    const dirs = await this.getDirs();
-    if (dirs.has(p)) {
-      const prefix = p + '/';
-      const toRemove: string[] = [p];
-      for (const d of dirs) {
-        if (d.startsWith(prefix)) {
-          toRemove.push(d);
-        }
-      }
-      for (const d of toRemove) {
-        dirs.delete(d);
-      }
-      await this.saveDirs(dirs);
-
-      // Remove all file keys under this directory
-      const allKeys = await this.store.keys();
-      const filePrefix = `fs:${p}/`;
-      const keysToRemove = allKeys.filter((k) => k.startsWith(filePrefix));
-      await Promise.all(keysToRemove.map((k) => this.store.remove(k)));
-    }
-  }
-
-  async rename(oldPath: string, newPath: string): Promise<void> {
-    const op = normalisePath(oldPath);
-    const np = normalisePath(newPath);
-    if (op === np) return;
-    if (!op || !np) {
-      throw new Error('Cannot rename the filesystem root');
-    }
-    if (np.startsWith(op + '/')) {
-      throw new Error('Cannot move a directory into itself');
-    }
-
-    const dirs = await this.getDirs();
-
-    // Handle directory rename by moving every tracked child directory and
-    // every file record keyed under the old directory prefix.
-    if (dirs.has(op)) {
-      const newParent = parentDir(np);
-      if (newParent) {
-        await this.ensureDir(newParent);
-      }
-
-      const allKeys = await this.store.keys();
-      const oldKeyPrefix = `fs:${op}/`;
-      const newKeyPrefix = `fs:${np}/`;
-      const metaSuffix = ':meta';
-      const keysToMove = allKeys.filter((k) => k.startsWith(oldKeyPrefix));
-
-      await Promise.all(
-        keysToMove.map(async (oldKey) => {
-          const newKey = newKeyPrefix + oldKey.slice(oldKeyPrefix.length);
-          if (oldKey.endsWith(metaSuffix)) {
-            const meta = await this.store.get<FileMeta>(oldKey);
-            if (meta) {
-              const newFilePath = newKey.slice(3, -metaSuffix.length);
-              await this.store.set(metaKey(newFilePath), {
-                ...meta,
-                name: baseName(newFilePath),
-                path: newFilePath,
-              });
-            }
-          } else {
-            const value = await this.store.get<unknown>(oldKey);
-            if (value !== null) {
-              await this.store.set(newKey, value);
-            }
-          }
-          await this.store.remove(oldKey);
-        }),
-      );
-
-      dirs.delete(op);
-      dirs.add(np);
-      const oldPrefix = op + '/';
-      const newPrefix = np + '/';
-      for (const d of [...dirs]) {
-        if (d.startsWith(oldPrefix)) {
-          dirs.delete(d);
-          dirs.add(newPrefix + d.slice(oldPrefix.length));
-        }
-      }
-      await this.saveDirs(dirs);
-      return;
-    }
-
-    // Read existing data
-    const content = await this.store.get<string>(contentKey(op));
-    const binary = await this.store.get<ArrayBuffer>(binaryKey(op));
-    const meta = await this.store.get<FileMeta>(metaKey(op));
-
-    // Write to new location
-    if (content !== null) {
-      await this.store.set(contentKey(np), content);
-    }
-    if (binary !== null) {
-      await this.store.set(binaryKey(np), binary);
-    }
-    if (meta) {
-      await this.store.set(metaKey(np), {
-        ...meta,
-        name: baseName(np),
-        path: np,
+    try {
+      const committed = await this.v2.writeFile(canonical, new TextEncoder().encode(content), {
+        createParents: true,
+        expectedVersion: current?.entry.version ?? null,
       });
+      return { status: 'committed', version: committed.version };
+    } catch (error: unknown) {
+      if (!(error instanceof FsError) || error.code !== 'conflict') throw error;
+      const latest = await this.v2.readFile(canonical);
+      return {
+        status: 'conflict',
+        content: latest ? new TextDecoder().decode(latest.data) : null,
+        version: latest?.entry.version ?? null,
+      };
     }
-
-    // Ensure parent dir of new path exists
-    const newParent = parentDir(np);
-    if (newParent) {
-      await this.ensureDir(newParent);
-    }
-
-    // Delete old
-    await this.store.remove(contentKey(op));
-    await this.store.remove(binaryKey(op));
-    await this.store.remove(metaKey(op));
   }
 
-  async readDirectory(path: string): Promise<FileSystemEntry[]> {
-    const p = normalisePath(path);
-    const dirs = await this.getDirs();
-    const entries: FileSystemEntry[] = [];
-    const seen = new Set<string>();
-
-    // Find child directories
-    const prefix = p ? p + '/' : '';
-    for (const d of dirs) {
-      if (!p && !d.includes('/')) {
-        // Root-level directory
-        if (!seen.has(d)) {
-          seen.add(d);
-          entries.push({ kind: 'directory', name: d, path: d });
-        }
-      } else if (p && d.startsWith(prefix)) {
-        const rest = d.slice(prefix.length);
-        if (!rest.includes('/')) {
-          // Direct child directory
-          if (!seen.has(rest)) {
-            seen.add(rest);
-            entries.push({ kind: 'directory', name: rest, path: d });
-          }
-        }
-      }
-    }
-
-    // Find child files by scanning meta keys
-    const allKeys = await this.store.keys();
-    const metaPrefix = p ? `fs:${p}/` : 'fs:';
-    const metaSuffix = ':meta';
-
-    for (const key of allKeys) {
-      if (!key.startsWith(metaPrefix) || !key.endsWith(metaSuffix)) continue;
-
-      const filePath = key.slice(3, -metaSuffix.length); // strip "fs:" and ":meta"
-      const rel = p ? filePath.slice(prefix.length) : filePath;
-
-      // Only direct children (no further slashes)
-      if (rel.includes('/')) continue;
-
-      if (!seen.has(rel)) {
-        seen.add(rel);
-        entries.push({ kind: 'file', name: rel, path: filePath });
-      }
-    }
-
-    // Sort: directories first, then alphabetical
-    entries.sort((a, b) => {
-      if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-      return a.name.localeCompare(b.name);
+  public async delete(path: string): Promise<void> {
+    this.assertOpen('remove');
+    await this.v2.remove(this.path(path, false, 'remove'), {
+      recursive: true,
+      missing: 'ignore',
     });
-
-    return entries;
   }
 
-  async exists(path: string): Promise<boolean> {
-    const p = normalisePath(path);
-    const dirs = await this.getDirs();
-    if (dirs.has(p)) return true;
-    const meta = await this.store.get(metaKey(p));
-    return meta !== null;
+  public async rename(oldPath: string, newPath: string): Promise<void> {
+    this.assertOpen('move');
+    await this.v2.move(this.path(oldPath, false, 'move'), this.path(newPath, false, 'move'), {
+      createParents: true,
+    });
   }
 
-  async createDirectory(path: string): Promise<void> {
-    const p = normalisePath(path);
-    await this.ensureDir(p);
-  }
-
-  async stat(path: string): Promise<FileMeta | null> {
-    const p = normalisePath(path);
-    return this.store.get<FileMeta>(metaKey(p));
-  }
-
-  async readBinary(path: string): Promise<ArrayBuffer | null> {
-    const p = normalisePath(path);
-    return this.store.get<ArrayBuffer>(binaryKey(p));
-  }
-
-  async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
-    const p = normalisePath(path);
-    const parent = parentDir(p);
-    if (parent) {
-      await this.ensureDir(parent);
+  public async readDirectory(path: string): Promise<FileSystemEntry[]> {
+    this.assertOpen('list');
+    try {
+      const entries = await this.v2.readDirectory(this.path(path, true, 'list'));
+      return entries.map((entry) => ({
+        kind: entry.kind,
+        name: entry.name,
+        path: entry.path,
+      }));
+    } catch (error: unknown) {
+      if (error instanceof FsError && error.code === 'not-found') return [];
+      throw error;
     }
+  }
 
-    const meta: FileMeta = {
-      name: baseName(p),
-      path: p,
-      size: data.byteLength,
-      lastModified: new Date().toISOString(),
+  public async exists(path: string): Promise<boolean> {
+    this.assertOpen('stat');
+    return (await this.v2.stat(this.path(path, true, 'stat'))) !== null;
+  }
+
+  public async createDirectory(path: string): Promise<void> {
+    this.assertOpen('create-directory');
+    await this.v2.createDirectory(this.path(path, false, 'create-directory'), {
+      createParents: true,
+      mode: 'ensure',
+    });
+  }
+
+  public async stat(path: string): Promise<FileMeta | null> {
+    this.assertOpen('stat');
+    const entry = await this.v2.stat(this.path(path, false, 'stat'));
+    if (!entry || entry.kind !== 'file') return null;
+    return {
+      name: entry.name,
+      path: entry.path,
+      size: entry.size,
+      lastModified: entry.lastModified,
     };
+  }
 
-    await this.store.set(binaryKey(p), data);
-    await this.store.set(metaKey(p), meta);
+  public async readBinary(path: string): Promise<ArrayBuffer | null> {
+    this.assertOpen('read');
+    return (await this.v2.readFile(this.path(path, false, 'read')))?.data ?? null;
+  }
+
+  public async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+    this.assertOpen('write');
+    await this.v2.writeFile(this.path(path, false, 'write'), data, { createParents: true });
+  }
+
+  private path(path: string, allowRoot: boolean, operation: FsOperation): WorkspacePath {
+    const canonical = parseWorkspacePath(path);
+    if (canonical || allowRoot) return canonical;
+    throw new FsError('invalid-path', 'The filesystem root cannot be used as a mutation target.', {
+      operation,
+      path,
+    });
+  }
+
+  private assertOpen(operation: FsOperation): void {
+    if (!this.disposed) return;
+    throw new FsError('closed', 'The IndexedDB filesystem provider is disposed.', { operation });
   }
 }

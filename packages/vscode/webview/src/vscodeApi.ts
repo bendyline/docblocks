@@ -2,7 +2,7 @@
  * Typed wrapper around VS Code's webview API.
  */
 
-import type { WebviewToExtensionMessage } from '../../src/messages.js';
+import type { WebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
 
 interface VsCodeApi {
   postMessage(message: WebviewToExtensionMessage): void;

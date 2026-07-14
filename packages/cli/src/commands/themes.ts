@@ -11,6 +11,6 @@ export const themesCommand = new Command('themes')
     const themes = getAvailableThemes();
     console.error('Available themes:\n');
     for (const theme of themes) {
-      process.stdout.write(`  ${theme}\n`);
+      process.stdout.write(`${theme}\n`);
     }
   });

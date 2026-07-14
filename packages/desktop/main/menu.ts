@@ -8,6 +8,8 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { MenuCommand } from '@bendyline/docblocks/host';
 import { isStoreBuild } from './updater.js';
+import { gitFeaturesDisabled } from './git/detect.js';
+import { reloadWindowWithPreparation } from './window-lifecycle.js';
 
 function send(win: BrowserWindow, cmd: MenuCommand): void {
   win.webContents.send('menu:command', cmd);
@@ -80,11 +82,48 @@ export function buildMenu(win: BrowserWindow): void {
         { role: 'selectAll' },
       ],
     },
+    // Git features spawn the user's system git, which the Mac App Store
+    // sandbox forbids — hide the whole menu there. Items are always enabled;
+    // the renderer explains when the active workspace isn't a repository.
+    ...(gitFeaturesDisabled()
+      ? []
+      : ([
+          {
+            label: 'Git',
+            submenu: [
+              { label: 'Commit...', click: () => send(win, 'git:commit') },
+              { label: 'Push', click: () => send(win, 'git:push') },
+              { label: 'Pull', click: () => send(win, 'git:pull') },
+              { label: 'Fetch', click: () => send(win, 'git:fetch') },
+              { type: 'separator' },
+              { label: 'New Branch...', click: () => send(win, 'git:newBranch') },
+              { label: 'Switch Branch...', click: () => send(win, 'git:switchBranch') },
+              { type: 'separator' },
+              { label: 'Commit History', click: () => send(win, 'git:history') },
+              { type: 'separator' },
+              { label: 'Clone Repository...', click: () => send(win, 'git:clone') },
+              { type: 'separator' },
+              { label: 'Open on Remote', click: () => send(win, 'git:openOnRemote') },
+              {
+                label: 'Create Pull Request',
+                click: () => send(win, 'git:createPullRequest'),
+              },
+            ],
+          },
+        ] as MenuItemConstructorOptions[])),
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => void reloadWindowWithPreparation(win),
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => void reloadWindowWithPreparation(win, true),
+        },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },

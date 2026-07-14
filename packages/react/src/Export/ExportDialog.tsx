@@ -25,7 +25,6 @@ export interface ExportDialogProps {
 
 export interface ExportDestinationControl {
   value: string;
-  onChange: (path: string) => void;
   onPick: (options: ExportOptions) => void | Promise<void>;
   hint?: string;
 }
@@ -261,7 +260,7 @@ export function ExportDialog({
                   id="db-export-path"
                   className="db-export-path-input"
                   value={destination.value}
-                  onChange={(e) => destination.onChange(e.target.value)}
+                  readOnly
                   disabled={exporting}
                   spellCheck={false}
                   autoComplete="off"

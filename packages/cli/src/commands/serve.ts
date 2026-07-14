@@ -1,38 +1,70 @@
 import { Command } from 'commander';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import path from 'node:path';
 import { renderMarkdownHtml } from '../render-html.js';
+import { readContainedFile } from '../contained-file.js';
+import { isAllowedPreviewPath } from '../preview-policy.js';
 
 export interface ServeOptions {
   port: number;
   dir: string;
   theme?: string;
+  host?: string;
+  allowNetwork?: boolean;
+  maxFileBytes?: number;
+  maxConcurrentReads?: number;
 }
 
 export interface PreviewServer {
   server: Server;
   root: string;
+  host: string;
   url: string;
 }
 
+const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_READS = 16;
 export async function startPreviewServer(opts: ServeOptions): Promise<PreviewServer> {
-  const root = path.resolve(opts.dir);
+  const requestedRoot = path.resolve(opts.dir);
+  const root = await realpath(requestedRoot).catch(() => requestedRoot);
   const rootStat = await stat(root).catch(() => null);
   if (!rootStat?.isDirectory()) {
     throw new Error(`Directory not found: ${root}`);
   }
 
+  const host = validateHost(opts.host ?? DEFAULT_HOST, opts.allowNetwork === true);
+  const maxFileBytes = positiveLimit(opts.maxFileBytes, DEFAULT_MAX_FILE_BYTES, 'file size');
+  const maxConcurrentReads = positiveLimit(
+    opts.maxConcurrentReads,
+    DEFAULT_MAX_CONCURRENT_READS,
+    'concurrent request',
+  );
+  let activeRequests = 0;
   const server = createServer((req, res) => {
-    handlePreviewRequest(req, res, root, opts.theme).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      sendText(res, 500, `Internal server error: ${message}`);
-    });
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : opts.port;
+    if (!isAllowedPreviewRequestAuthority(req.headers.host, host, port)) {
+      sendText(res, 421, 'Misdirected request', req.method === 'HEAD');
+      return;
+    }
+    if (activeRequests >= maxConcurrentReads) {
+      sendText(res, 503, 'Server busy', req.method === 'HEAD');
+      return;
+    }
+    activeRequests += 1;
+    handlePreviewRequest(req, res, root, opts.theme, maxFileBytes)
+      .catch(() => sendText(res, 500, 'Internal server error', req.method === 'HEAD'))
+      .finally(() => {
+        activeRequests -= 1;
+      });
   });
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(opts.port, () => {
+    server.listen(opts.port, host, () => {
       server.off('error', reject);
       resolve();
     });
@@ -40,7 +72,7 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
 
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : opts.port;
-  return { server, root, url: `http://localhost:${port}/` };
+  return { server, root, host, url: `http://${urlHost(host)}:${port}/` };
 }
 
 export const serveCommand = new Command('serve')
@@ -48,86 +80,128 @@ export const serveCommand = new Command('serve')
   .option('-p, --port <port>', 'port to listen on', '3000')
   .option('-d, --dir <dir>', 'directory to serve', '.')
   .option('-t, --theme <id>', 'Squisq theme ID to apply')
-  .action(async (opts: { port: string; dir: string; theme?: string }) => {
-    try {
-      const server = await startPreviewServer({
-        port: parsePort(opts.port),
-        dir: opts.dir,
-        theme: opts.theme,
-      });
-      console.error(`Serving ${server.root} at ${server.url}`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`Error: ${message}`);
-      process.exitCode = 1;
-    }
-  });
+  .option('--host <host>', 'interface to bind (loopback by default)', DEFAULT_HOST)
+  .option('--allow-network', 'allow a non-loopback --host')
+  .action(
+    async (opts: {
+      port: string;
+      dir: string;
+      theme?: string;
+      host: string;
+      allowNetwork?: boolean;
+    }) => {
+      try {
+        const server = await startPreviewServer({
+          port: parsePort(opts.port),
+          dir: opts.dir,
+          theme: opts.theme,
+          host: opts.host,
+          allowNetwork: opts.allowNetwork,
+        });
+        console.error(`Serving ${server.root} at ${server.url}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`Error: ${message}`);
+        process.exitCode = 1;
+      }
+    },
+  );
 
 async function handlePreviewRequest(
   req: IncomingMessage,
   res: ServerResponse,
   root: string,
   themeId: string | undefined,
+  maxFileBytes: number,
 ): Promise<void> {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     sendText(res, 405, 'Method not allowed');
     return;
   }
 
-  const target = await resolveServeTarget(root, req.url ?? '/');
+  const headOnly = req.method === 'HEAD';
+
+  const target = await resolveServeTarget(root, req.url ?? '/', maxFileBytes);
   if (target.kind === 'bad-request') {
-    sendText(res, 400, 'Bad request');
+    sendText(res, 400, 'Bad request', headOnly);
     return;
   }
   if (target.kind === 'forbidden') {
-    sendText(res, 403, 'Forbidden');
+    sendText(res, 403, 'Forbidden', headOnly);
     return;
   }
   if (target.kind === 'missing') {
-    sendText(res, 404, 'Not found');
+    sendText(res, 404, 'Not found', headOnly);
+    return;
+  }
+  if (target.kind === 'too-large') {
+    sendText(res, 413, 'File too large', headOnly);
     return;
   }
 
   if (target.markdown) {
-    const markdown = await readFile(target.filePath, 'utf-8');
+    const markdown = (await readContainedFile(root, target.filePath, maxFileBytes)).toString(
+      'utf8',
+    );
     const html = await renderMarkdownHtml(markdown, {
       title: path.basename(target.filePath).replace(/\.(md|markdown)$/i, ''),
       sourcePath: target.filePath,
       assetRoot: root,
       themeId,
       mode: 'static',
+      allowReferencedAsset: ({ assetRoot, requestedPath, physicalPath }) =>
+        isAllowedPreviewPath(assetRoot, requestedPath, physicalPath, 'embedded-image'),
     });
-    sendBody(res, 200, html, 'text/html; charset=utf-8', req.method === 'HEAD');
+    sendBody(res, 200, html, 'text/html; charset=utf-8', headOnly);
     return;
   }
 
-  const body = await readFile(target.filePath);
-  sendBody(res, 200, body, contentTypeFor(target.filePath), req.method === 'HEAD');
+  const body = await readContainedFile(root, target.filePath, maxFileBytes);
+  sendBody(res, 200, body, contentTypeFor(target.filePath), headOnly);
 }
 
 type ServeTarget =
   | { kind: 'file'; filePath: string; markdown: boolean }
   | { kind: 'missing' }
   | { kind: 'forbidden' }
+  | { kind: 'too-large' }
   | { kind: 'bad-request' };
 
-export async function resolveServeTarget(root: string, requestUrl: string): Promise<ServeTarget> {
+export async function resolveServeTarget(
+  root: string,
+  requestUrl: string,
+  maxFileBytes = DEFAULT_MAX_FILE_BYTES,
+): Promise<ServeTarget> {
+  if (requestUrl.length > 8_192 || requestUrl.includes('\0')) return { kind: 'bad-request' };
+  const physicalRoot = await realpath(path.resolve(root)).catch(() => null);
+  if (!physicalRoot) return { kind: 'missing' };
   const decodedPath = decodeRequestPath(requestUrl);
   if (!decodedPath) return { kind: 'bad-request' };
   const requestedPath = decodedPath.replace(/^\/+/, '');
-  const candidate = path.resolve(root, requestedPath);
+  const candidate = path.resolve(physicalRoot, requestedPath);
 
-  if (!isPathInside(root, candidate)) return { kind: 'forbidden' };
+  if (!isAllowedPreviewPath(physicalRoot, candidate, candidate, 'directory')) {
+    return { kind: 'forbidden' };
+  }
 
-  const direct = await fileTarget(candidate);
-  if (direct) return direct;
+  const direct = await inspectTarget(physicalRoot, candidate, maxFileBytes);
+  if (direct.kind === 'file') return direct;
+  if (direct.kind === 'forbidden' || direct.kind === 'too-large') return direct;
 
-  const dirIndex = await directoryIndexTarget(candidate);
-  if (dirIndex) return dirIndex;
+  if (direct.kind === 'directory') {
+    const dirIndex = await directoryIndexTarget(physicalRoot, direct.filePath, maxFileBytes);
+    if (dirIndex.kind !== 'missing') return dirIndex;
+  }
 
   if (/\.html?$/i.test(candidate)) {
-    const markdownTarget = await fileTarget(candidate.replace(/\.html?$/i, '.md'));
-    if (markdownTarget) return markdownTarget;
+    const markdownTarget = await inspectTarget(
+      physicalRoot,
+      candidate.replace(/\.html?$/i, '.md'),
+      maxFileBytes,
+    );
+    if (markdownTarget.kind !== 'directory' && markdownTarget.kind !== 'missing') {
+      return markdownTarget;
+    }
   }
 
   return { kind: 'missing' };
@@ -142,22 +216,52 @@ function decodeRequestPath(requestUrl: string): string {
   }
 }
 
-async function fileTarget(filePath: string): Promise<ServeTarget | null> {
-  const info = await stat(filePath).catch(() => null);
-  if (!info?.isFile()) return null;
-  return { kind: 'file', filePath, markdown: /\.(md|markdown)$/i.test(filePath) };
+type InspectedTarget =
+  | { kind: 'file'; filePath: string; markdown: boolean }
+  | { kind: 'directory'; filePath: string }
+  | { kind: 'missing' }
+  | { kind: 'forbidden' }
+  | { kind: 'too-large' };
+
+async function inspectTarget(
+  root: string,
+  candidate: string,
+  maxFileBytes: number,
+): Promise<InspectedTarget> {
+  let physical: string;
+  try {
+    physical = await realpath(candidate);
+  } catch {
+    return { kind: 'missing' };
+  }
+  const info = await stat(physical).catch(() => null);
+  if (!info) return { kind: 'missing' };
+  if (info.isDirectory()) {
+    return isAllowedPreviewPath(root, candidate, physical, 'directory')
+      ? { kind: 'directory', filePath: physical }
+      : { kind: 'forbidden' };
+  }
+  if (!info.isFile()) return { kind: 'forbidden' };
+  if (!isAllowedPreviewPath(root, candidate, physical, 'document-or-asset')) {
+    return { kind: 'forbidden' };
+  }
+  if (info.size > maxFileBytes) return { kind: 'too-large' };
+  return { kind: 'file', filePath: physical, markdown: /\.(md|markdown)$/i.test(physical) };
 }
 
-async function directoryIndexTarget(dirPath: string): Promise<ServeTarget | null> {
-  const info = await stat(dirPath).catch(() => null);
-  if (!info?.isDirectory()) return null;
-
+async function directoryIndexTarget(
+  root: string,
+  dirPath: string,
+  maxFileBytes: number,
+): Promise<ServeTarget> {
   for (const fileName of ['index.html', 'index.htm', 'index.md', 'index.markdown']) {
-    const target = await fileTarget(path.join(dirPath, fileName));
-    if (target) return target;
+    const target = await inspectTarget(root, path.join(dirPath, fileName), maxFileBytes);
+    if (target.kind === 'file' || target.kind === 'forbidden' || target.kind === 'too-large') {
+      return target;
+    }
   }
 
-  return null;
+  return { kind: 'missing' };
 }
 
 function parsePort(value: string): number {
@@ -168,8 +272,8 @@ function parsePort(value: string): number {
   return port;
 }
 
-function sendText(res: ServerResponse, status: number, message: string): void {
-  sendBody(res, status, `${message}\n`, 'text/plain; charset=utf-8', false);
+function sendText(res: ServerResponse, status: number, message: string, headOnly = false): void {
+  sendBody(res, status, `${message}\n`, 'text/plain; charset=utf-8', headOnly);
 }
 
 function sendBody(
@@ -181,11 +285,106 @@ function sendBody(
 ): void {
   res.statusCode = status;
   res.setHeader('content-type', contentType);
+  res.setHeader('x-content-type-options', 'nosniff');
+  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('cache-control', 'no-store');
   if (headOnly) {
     res.end();
     return;
   }
   res.end(body);
+}
+
+function validateHost(value: string, allowNetwork: boolean): string {
+  const rawHost = value.trim().toLowerCase();
+  const host = rawHost.startsWith('[') && rawHost.endsWith(']') ? rawHost.slice(1, -1) : rawHost;
+  if (
+    !host ||
+    host.length > 255 ||
+    /[\s/\\\0]/.test(host) ||
+    (isIP(host) === 0 && !isValidHostname(host))
+  ) {
+    throw new Error('Invalid host');
+  }
+  if (!allowNetwork && !isLoopbackHost(host)) {
+    throw new Error('Non-loopback hosts require --allow-network');
+  }
+  return host;
+}
+
+function isLoopbackHost(host: string): boolean {
+  if (host === 'localhost' || host === '::1') return true;
+  const octets = host.split('.');
+  return (
+    octets.length === 4 &&
+    octets[0] === '127' &&
+    octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255)
+  );
+}
+
+export function isAllowedPreviewRequestAuthority(
+  header: string | undefined,
+  configuredHost: string,
+  configuredPort: number,
+): boolean {
+  const authority = parseRequestAuthority(header);
+  if (!authority || authority.port !== configuredPort) return false;
+
+  if (configuredHost === '0.0.0.0') return isIP(authority.host) === 4;
+  if (configuredHost === '::') return isIP(authority.host) === 6;
+  return authority.host === configuredHost;
+}
+
+function parseRequestAuthority(header: string | undefined): { host: string; port: number } | null {
+  if (!header || header.length > 512 || /[\s,\\/\0]/.test(header)) return null;
+
+  let host: string;
+  let portText = '';
+  let hasPortSeparator = false;
+  if (header.startsWith('[')) {
+    const closingBracket = header.indexOf(']');
+    if (closingBracket < 0) return null;
+    host = header.slice(1, closingBracket).toLowerCase();
+    const remainder = header.slice(closingBracket + 1);
+    if (remainder && !remainder.startsWith(':')) return null;
+    hasPortSeparator = remainder.startsWith(':');
+    portText = remainder.slice(1);
+    if (isIP(host) !== 6) return null;
+  } else {
+    const separator = header.lastIndexOf(':');
+    if (separator >= 0) {
+      if (header.indexOf(':') !== separator) return null;
+      hasPortSeparator = true;
+      host = header.slice(0, separator).toLowerCase();
+      portText = header.slice(separator + 1);
+    } else {
+      host = header.toLowerCase();
+    }
+    if (isIP(host) === 0 && !isValidHostname(host)) return null;
+  }
+
+  if (hasPortSeparator && !/^\d{1,5}$/.test(portText)) return null;
+  const port = portText ? Number(portText) : 80;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { host, port };
+}
+
+function isValidHostname(host: string): boolean {
+  return (
+    host.length <= 253 &&
+    !host.endsWith('.') &&
+    host.split('.').every((label) => /^(?!-)[a-z0-9-]{1,63}(?<!-)$/.test(label))
+  );
+}
+
+function urlHost(host: string): string {
+  return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+}
+
+function positiveLimit(value: number | undefined, fallback: number, label: string): number {
+  const selected = value ?? fallback;
+  if (!Number.isSafeInteger(selected) || selected < 1) throw new Error(`Invalid ${label} limit`);
+  return selected;
 }
 
 function contentTypeFor(filePath: string): string {
@@ -214,12 +413,25 @@ function contentTypeFor(filePath: string): string {
       return 'image/webp';
     case '.ico':
       return 'image/x-icon';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    case '.ttf':
+      return 'font/ttf';
+    case '.otf':
+      return 'font/otf';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.wav':
+      return 'audio/wav';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.mp4':
+      return 'video/mp4';
+    case '.webm':
+      return 'video/webm';
     default:
       return 'application/octet-stream';
   }
-}
-
-function isPathInside(rootAbs: string, candidateAbs: string): boolean {
-  const rel = path.relative(path.resolve(rootAbs), path.resolve(candidateAbs));
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
 }

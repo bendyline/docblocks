@@ -2,6 +2,7 @@ import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { openInitializedSite } from './helpers/site.js';
 
 /**
  * Accessibility audits using axe-core against the DocBlocks site shell.
@@ -94,9 +95,7 @@ async function scanAndReport(page: Page, info: TestInfo, state: string) {
 }
 
 async function waitForShell(page: Page) {
-  await page.goto('/');
-  await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('.db-explorer-toolbar')).toBeVisible({ timeout: 10_000 });
+  await openInitializedSite(page);
 }
 
 test.describe('a11y — initial shell', () => {

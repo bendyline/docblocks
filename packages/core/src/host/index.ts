@@ -10,14 +10,59 @@ export type {
   DocBlocksHostExternalAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostShellAPI,
+  DocBlocksHostExportAPI,
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,
+  DocBlocksHostLifecycleAPI,
   ElectronWorkspaceInfo,
+  ExternalBinaryCommitResult,
+  HostCloseReason,
   HostEnvironment,
+  HostExportTargetGrant,
+  HostPrepareCloseRequest,
+  HostPrepareCloseResult,
   MenuCommand,
   OpenRequest,
+  UpdateInstallResult,
   UpdaterStatus,
 } from './types.js';
+
+export type {
+  DocBlocksHostGitAPI,
+  GitBranchInfo,
+  GitCapabilities,
+  GitCloneHandle,
+  GitCloneProgress,
+  GitError,
+  GitErrorCode,
+  GitFileAtRevision,
+  GitFileChange,
+  GitFileStatusCode,
+  GitLogEntry,
+  GitLogOptions,
+  GitRemoteInfo,
+  GitRepoDetection,
+  GitResult,
+  GitRevision,
+  GitStatus,
+} from './git.js';
+
+export {
+  ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  type DocBlocksHostFsV2API,
+  type HostFileSystemV2OpenRequest,
+  type HostFileSystemV2Result,
+  type HostFileSystemV2WatchMessage,
+} from './filesystem-v2.js';
+
+export {
+  HOST_WIRE_LIMITS,
+  isBoundedBytePayload,
+  isBoundedString,
+  isTrustedRendererUrl,
+  parseExternalHttpUrl,
+  parseOpenRequest,
+} from './wire-policy.js';
 
 import type { DocBlocksHostAPI } from './types.js';
 

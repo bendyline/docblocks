@@ -3,12 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Pre-boot chrome color for the splash/titlebar; DocBlocksShell keeps
+         these in sync with the resolved theme after mount. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3eede" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#262219" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <title>DocBlocks</title>
+    <!-- Self-hosted theme fonts (Latin + Latin Extended). Copied from squisq's
+         site (packages/site/public/fonts); regenerate upstream via its
+         download-fonts.ps1. squisq's fontStacks expect the host page to
+         provide these @font-face declarations. -->
+    <link rel="stylesheet" href="/fonts/fonts.css" />
     <style>
       html,
       body,
