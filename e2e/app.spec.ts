@@ -39,7 +39,9 @@ test.describe('DocBlocks App', () => {
 
     await expect(page.locator('.db-shell-sidebar')).not.toBeVisible();
     await expect(editor).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Show file list' })).toBeVisible();
+    const showFilesButton = page.getByRole('button', { name: 'Show file list' });
+    await expect(showFilesButton).toBeVisible();
+    await expect(showFilesButton.locator('.db-mobile-files-icon svg')).toBeVisible();
   });
 
   test('shows the app menu button', async ({ page }) => {
@@ -64,6 +66,48 @@ test.describe('DocBlocks App', () => {
     await expect(page.locator('.db-app-menu-dropdown')).not.toBeVisible();
   });
 
+  test('applies and persists Write canvas typography settings', async ({ page }) => {
+    await page.locator('.db-app-menu-btn').click();
+    await page.getByRole('menuitem', { name: 'Settings' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Settings' });
+    const textSize = dialog.getByRole('slider', { name: 'Text size' });
+    const lineSpacing = dialog.getByRole('slider', { name: 'Line spacing' });
+    await expect(textSize).toHaveValue('16');
+    await expect(lineSpacing).toHaveValue('1.7');
+
+    await textSize.fill('20');
+    await lineSpacing.fill('2');
+    await expect(dialog.getByText('20px', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('2\u00d7', { exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.locator('.squisq-editor-shell').evaluate((element) => ({
+          textSize: getComputedStyle(element).getPropertyValue('--squisq-write-text-size').trim(),
+          lineSpacing: getComputedStyle(element)
+            .getPropertyValue('--squisq-write-line-spacing')
+            .trim(),
+        })),
+      )
+      .toEqual({ textSize: '20px', lineSpacing: '2' });
+    expect(await page.evaluate(() => localStorage.getItem('docblocks:writeCanvasSettings'))).toBe(
+      JSON.stringify({ textSize: 20, lineSpacing: 2 }),
+    );
+
+    await page.reload();
+    await expect(page.locator('.squisq-editor-shell')).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() =>
+        page.locator('.squisq-editor-shell').evaluate((element) => ({
+          textSize: getComputedStyle(element).getPropertyValue('--squisq-write-text-size').trim(),
+          lineSpacing: getComputedStyle(element)
+            .getPropertyValue('--squisq-write-line-spacing')
+            .trim(),
+        })),
+      )
+      .toEqual({ textSize: '20px', lineSpacing: '2' });
+  });
+
   test('shows file explorer with FILES heading', async ({ page }) => {
     const title = page.locator('.db-explorer-title');
     await expect(title).toBeVisible();
@@ -84,20 +128,33 @@ test.describe('DocBlocks App', () => {
     await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
   });
 
-  test('shows Terms of Use link in footer', async ({ page }) => {
+  test('shows support links in the footer', async ({ page }) => {
     const footer = page.locator('.db-shell-sidebar-footer');
     await expect(footer).toBeVisible();
 
-    const link = footer.locator('a');
-    await expect(link).toHaveText('Terms of Use');
-    await expect(link).toHaveAttribute(
+    const termsLink = footer.getByRole('link', { name: 'Terms of Use' });
+    await expect(termsLink).toHaveAttribute(
       'href',
       'https://github.com/bendyline/docblocks/blob/main/LICENSE',
     );
 
+    const issuesLink = footer.getByRole('link', { name: 'Issues' });
+    const issuesHref = await issuesLink.getAttribute('href');
+    if (!issuesHref) throw new Error('Issues link did not have an href');
+    const issuesUrl = new URL(issuesHref);
+    const issueBody = issuesUrl.searchParams.get('body');
+    expect(issuesUrl.origin).toBe('https://github.com');
+    expect(issuesUrl.pathname).toBe('/bendyline/docblocks/issues/new');
+    expect(issueBody).toMatch(/^- Date: \d{4}-\d{2}-\d{2}$/m);
+    expect(issueBody).toMatch(/^- DocBlocks: \d+\.\d+\.\d+ web$/m);
+    expect(issueBody).toContain('- User agent: Mozilla/5.0');
+
     const statusItem = page.locator('.squisq-status-item').first();
     await expect(statusItem).toBeVisible();
-    const [linkBox, statusBox] = await Promise.all([link.boundingBox(), statusItem.boundingBox()]);
+    const [linkBox, statusBox] = await Promise.all([
+      termsLink.boundingBox(),
+      statusItem.boundingBox(),
+    ]);
     if (!linkBox || !statusBox) throw new Error('Footer alignment elements not found');
 
     const linkCenter = linkBox.y + linkBox.height / 2;
@@ -336,6 +393,64 @@ test.describe('Squisq overflow menu theming', () => {
     expect(colors.menuBorder).toBe(colors.expectedBorder);
     expect(colors.itemColor).toBe(colors.expectedText);
     expect(colors.pickerBorder).toBe(colors.expectedBorder);
+  });
+});
+
+test.describe('Squisq block type picker theming', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('uses the active DocBlocks accent in the portaled picker', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('docblocks:themePreference', 'dark');
+      localStorage.setItem('docblocks:accentColor', 'green');
+    });
+    await openInitializedSite(page);
+    await expect(page.locator('.db-shell[data-theme="dark"][data-accent="green"]')).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.locator('.db-welcome-gateway-cta').click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    const heading = page.locator('.tiptap.ProseMirror').locator('h1, h2, h3').first();
+    await heading.click({ position: { x: 8, y: 8 } });
+    const trigger = heading.locator('.squisq-template-badge').first();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+
+    const dialog = page.locator(
+      '.squisq-template-gallery-dialog:has([data-squisq-template-gallery-portal])',
+    );
+    await expect(dialog).toBeVisible();
+
+    const colors = await dialog.evaluate((element) => {
+      const shell = document.querySelector<HTMLElement>('.db-shell');
+      const selected = element.querySelector<HTMLElement>(
+        '.squisq-template-gallery-card--selected',
+      );
+      const newBlockType = element.querySelector<HTMLElement>('.squisq-template-gallery-new-plus');
+      if (!shell || !selected || !newBlockType) {
+        throw new Error('Block type picker accent probes were not found');
+      }
+
+      const probe = document.createElement('div');
+      probe.style.cssText =
+        'position:absolute;visibility:hidden;border:1px solid var(--db-accent-hover)';
+      shell.appendChild(probe);
+
+      const result = {
+        expectedAccent: getComputedStyle(probe).borderTopColor,
+        selectedBorder: getComputedStyle(selected).borderTopColor,
+        newBlockTypeColor: getComputedStyle(newBlockType).color,
+      };
+      probe.remove();
+      return result;
+    });
+
+    expect(colors.selectedBorder).toBe(colors.expectedAccent);
+    expect(colors.newBlockTypeColor).toBe(colors.expectedAccent);
   });
 });
 

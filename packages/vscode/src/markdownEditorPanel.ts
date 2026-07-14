@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
+  DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   isDocBlocksAccentColor,
+  isDocBlocksWriteCanvasLineSpacing,
+  isDocBlocksWriteCanvasTextSize,
   parseWebviewToExtensionMessage,
   type DocumentConflictChoice,
   type ExtensionToWebviewMessage,
@@ -250,7 +253,9 @@ export class MarkdownEditorPanel {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
           !event.affectsConfiguration('docblocks.autoSave', this.uri) &&
-          !event.affectsConfiguration('docblocks.accentColor', this.uri)
+          !event.affectsConfiguration('docblocks.accentColor', this.uri) &&
+          !event.affectsConfiguration('docblocks.writeCanvasTextSize', this.uri) &&
+          !event.affectsConfiguration('docblocks.writeCanvasLineSpacing', this.uri)
         ) {
           return;
         }
@@ -308,6 +313,7 @@ export class MarkdownEditorPanel {
 
       case 'setAutoSave':
       case 'setAccentColor':
+      case 'setWriteCanvasSettings':
         await this.handleSettingsUpdate(message);
         break;
 
@@ -457,16 +463,28 @@ export class MarkdownEditorPanel {
   }
 
   private async handleSettingsUpdate(
-    message: Extract<WebviewToExtensionMessage, { type: 'setAutoSave' | 'setAccentColor' }>,
+    message: Extract<
+      WebviewToExtensionMessage,
+      { type: 'setAutoSave' | 'setAccentColor' | 'setWriteCanvasSettings' }
+    >,
   ): Promise<void> {
     const configuration = vscode.workspace.getConfiguration('docblocks', this.uri);
-    const key = message.type === 'setAutoSave' ? 'autoSave' : 'accentColor';
-    const value = message.type === 'setAutoSave' ? message.enabled : message.accentColor;
+    const updates: ReadonlyArray<[VscodeEditorConfigurationKey, boolean | string | number]> =
+      message.type === 'setAutoSave'
+        ? [['autoSave', message.enabled]]
+        : message.type === 'setAccentColor'
+          ? [['accentColor', message.accentColor]]
+          : [
+              ['writeCanvasTextSize', message.settings.textSize],
+              ['writeCanvasLineSpacing', message.settings.lineSpacing],
+            ];
     try {
-      await configuration.update(key, value, getConfigurationTarget(configuration, key));
+      for (const [key, value] of updates) {
+        await configuration.update(key, value, getConfigurationTarget(configuration, key));
+      }
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(
-        `DocBlocks could not update ${key}: ${toError(error).message}`,
+        `DocBlocks could not update its editor settings: ${toError(error).message}`,
       );
     }
     await this.applyEditorSettings();
@@ -786,15 +804,31 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const configuration = vscode.workspace.getConfiguration('docblocks', uri);
   const autoSave = configuration.get<unknown>('autoSave');
   const accentColor = configuration.get<unknown>('accentColor');
+  const textSize = configuration.get<unknown>('writeCanvasTextSize');
+  const lineSpacing = configuration.get<unknown>('writeCanvasLineSpacing');
   return {
     autoSave: typeof autoSave === 'boolean' ? autoSave : true,
     accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
+    writeCanvasSettings: {
+      textSize: isDocBlocksWriteCanvasTextSize(textSize)
+        ? textSize
+        : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.textSize,
+      lineSpacing: isDocBlocksWriteCanvasLineSpacing(lineSpacing)
+        ? lineSpacing
+        : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.lineSpacing,
+    },
   };
 }
 
+type VscodeEditorConfigurationKey =
+  | 'autoSave'
+  | 'accentColor'
+  | 'writeCanvasTextSize'
+  | 'writeCanvasLineSpacing';
+
 function getConfigurationTarget(
   configuration: vscode.WorkspaceConfiguration,
-  key: 'autoSave' | 'accentColor',
+  key: VscodeEditorConfigurationKey,
 ): vscode.ConfigurationTarget {
   const inspected = configuration.inspect<unknown>(key);
   if (inspected?.workspaceFolderValue !== undefined) {

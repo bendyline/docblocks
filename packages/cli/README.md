@@ -77,17 +77,3 @@ CLI reference or MCP `list_formats` rather than assuming every format imports.
 MP4/GIF rendering requires Chromium and FFmpeg. Install Chromium with
 `npx playwright install chromium`; Squisq resolves FFmpeg from `SQUISQ_FFMPEG`,
 `PATH`, or `ffmpeg-static`, in that order.
-
-## Development with linked Squisq
-
-From the DocBlocks repository root:
-
-```bash
-npm run link:squisq
-npm run check:squisq-linked
-npm run test:mcp:linked
-npm run all
-```
-
-The linked assurance commands use the sibling `..\squisq` source checkout, not the
-npm package copy.

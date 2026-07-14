@@ -26,11 +26,18 @@ export { AppMenu } from './AppMenu/index.js';
 export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index.js';
 
 // Settings
-export { AccentColorSettings, SettingsDialog, ThemeSettings } from './Settings/public-api.js';
+export {
+  AccentColorSettings,
+  SettingsDialog,
+  ThemeSettings,
+  WriteCanvasSettingsControls,
+} from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
   SettingsDialogProps,
   ThemeSettingsProps,
+  WriteCanvasPreferences,
+  WriteCanvasSettingsControlsProps,
 } from './Settings/public-api.js';
 
 // Export

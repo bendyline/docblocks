@@ -16,27 +16,28 @@ The editor gives you the same three views as every other DocBlocks surface:
 
 The editor resolves media through the sibling `<name>_files/` folder. VS Code keeps its own file explorer, tabs, and light/dark theme — the DocBlocks webview is intentionally chrome-less.
 
-Use the gear button beside Export to open **DocBlocks for VS Code settings**. The dialog reuses the app's accent-color picker and adds an **Automatically save files as you edit** checkbox. Both choices are persisted as `docblocks.accentColor` and `docblocks.autoSave` VS Code settings and update every open DocBlocks editor. Autosave waits until 20 seconds after the most recent edit; manual Save and the close-time safety flush remain immediate, including when autosave is off.
+Use the gear button beside Export to open **DocBlocks for VS Code settings**. The dialog reuses the app's accent-color picker and Write-canvas text-size and line-spacing sliders, then adds an **Automatically save files as you edit** checkbox. Choices are persisted as `docblocks.accentColor`, `docblocks.writeCanvasTextSize`, `docblocks.writeCanvasLineSpacing`, and `docblocks.autoSave` VS Code settings and update every open DocBlocks editor. Autosave waits until 20 seconds after the most recent edit; manual Save and the close-time safety flush remain immediate, including when autosave is off.
 
 Document persistence is owned by the extension host. The webview posts each complete edit immediately with a session id, client revision, and base `TextDocument.version`; a host-side `DocumentSession` coalesces and serializes saves. Clean external edits reload the editor, while version-only changes and exact text convergence are acknowledged automatically. A genuinely different external edit that overlaps a local draft enters an explicit conflict state instead of replacing local text; its details disclose the two VS Code versions, observation times, UTF-8 byte sizes, and whether the competing document snapshot was unsaved. Closing a panel or deactivating the extension flushes the latest host-acknowledged revision.
 
 ### Setup tab
 
-Run **DocBlocks: Open Setup** from the command palette to open the Setup tab. It checks your environment and guides installation of the optional toolchain:
+Run **DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup** from the command palette to open the Setup tab. It checks your environment and guides installation of the optional toolchain:
 
 - **Node.js** — detects installation, links to nodejs.org if missing
-- **npm** — verifies package manager availability
-- **DocBlocks CLI** — checks for `@bendyline/docblocks-cli` and offers a one-click install
+- **npm** — verifies package manager availability, including the `npm.cmd` shim on Windows
+- **DocBlocks CLI** — checks the workspace root's `package.json` for `@bendyline/docblocks-cli` in `devDependencies` and offers a one-click local install
+- **VS Code MCP** — after the CLI is available, checks `.vscode/mcp.json` and registers a `docblocks` stdio server that runs `npm exec -- docblocks mcp`
 
-The editor works without any of these; the CLI unlocks conversion, video rendering, and the MCP server for AI-assisted document workflows.
+The editor works without any of these; the CLI unlocks conversion, video rendering, and the MCP server for AI-assisted document workflows. Setup installs the CLI with `npm install --save-dev @bendyline/docblocks-cli`; if the workspace root has no `package.json`, it first creates one with `npm init --yes`. It does not install the CLI globally. MCP registration preserves other servers and comments in `.vscode/mcp.json` and does not add filesystem grants; add explicit `--allow-read` or `--allow-write` arguments only for roots you intend to expose.
 
 ### Commands
 
-| Command                  | What it does                                          |
-| ------------------------ | ----------------------------------------------------- |
-| `DocBlocks: Open Editor` | Open the active markdown file in the DocBlocks editor |
-| `Open in DocBlocks`      | Context-menu entry on markdown files                  |
-| `DocBlocks: Open Setup`  | Open the Setup tab                                    |
+| Command                                           | What it does                                          |
+| ------------------------------------------------- | ----------------------------------------------------- |
+| `DocBlocks: Open Editor`                          | Open the active markdown file in the DocBlocks editor |
+| `Open in DocBlocks`                               | Context-menu entry on markdown files                  |
+| `DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup` | Open the Setup tab                                    |
 
 ## Dual build (desktop VS Code + vscode.dev)
 

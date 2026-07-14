@@ -28,7 +28,7 @@ async function getWebviewContent(page: Page): Promise<FrameLocator> {
 async function openDocBlocksSetupTab(page: Page) {
   await page.keyboard.press('F1');
   await page.waitForTimeout(500);
-  await page.keyboard.type('DocBlocks: Open Setup');
+  await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
   await page.waitForTimeout(1_000);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3_000);
@@ -77,10 +77,12 @@ test.describe('Extension activation', () => {
     const quickInput = page.locator('.quick-input-widget');
     await expect(quickInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.type('DocBlocks: Open Setup');
+    await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await page.waitForTimeout(1_000);
 
-    await expect(quickInput.getByText('DocBlocks: Open Setup')).toBeVisible({
+    await expect(
+      quickInput.getByText('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup'),
+    ).toBeVisible({
       timeout: 5_000,
     });
   });
@@ -116,6 +118,7 @@ test.describe('Setup tab', () => {
     await expect(content.locator('#check-node')).toBeVisible();
     await expect(content.locator('#check-npm')).toBeVisible();
     await expect(content.locator('#check-cli')).toBeVisible();
+    await expect(content.locator('#check-mcp')).toBeVisible();
   });
 
   test('setup tab has re-check button', async ({ page }) => {
@@ -222,10 +225,10 @@ test.describe('Commands', () => {
     const quickInput = page.locator('.quick-input-widget');
     await expect(quickInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.type('DocBlocks: Open Setup');
+    await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await page.waitForTimeout(1_000);
 
-    const setupCmd = quickInput.getByText('DocBlocks: Open Setup');
+    const setupCmd = quickInput.getByText('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await expect(setupCmd).toBeVisible({ timeout: 5_000 });
   });
 });

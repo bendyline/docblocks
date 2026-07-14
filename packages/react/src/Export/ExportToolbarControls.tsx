@@ -17,10 +17,12 @@ import {
   useMemo,
   type ComponentType,
 } from 'react';
-import { useEditorContext } from '@bendyline/squisq-editor-react';
+import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-react';
+import type { SharedDocumentMode } from '@bendyline/docblocks/share';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type { DisplayMode } from '@bendyline/squisq-react';
 import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
 import type { ExportOptions } from './export-options.js';
 import {
@@ -34,6 +36,9 @@ import { loadTransformStyleSummaries, type ExportSummaryOption } from './transfo
 
 const ExportDialog = lazy(() =>
   import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
+);
+const ShareDialog = lazy(() =>
+  import('./ShareDialog.js').then((module) => ({ default: module.ShareDialog })),
 );
 
 let runExportModulePromise: Promise<typeof import('./run-export.js')> | null = null;
@@ -56,6 +61,10 @@ export interface ExportToolbarControlsProps {
   trigger?: 'menu' | 'button';
   /** Whether to show video export in the overflow menu. */
   showVideoExport?: boolean;
+  /** HTTP(S) DocBlocks page used as the base of generated shared links. */
+  shareBaseUrl?: string;
+  /** One-time Use mode supplied by an opened shared document link. */
+  initialSharedMode?: SharedDocumentMode | null;
 }
 
 /** Host-specific operations behind the shared export destination control. */
@@ -84,6 +93,29 @@ interface VideoExportModules {
   Modal: ComponentType<VideoExportModalProps>;
   markdownToDoc: (doc: ParsedMarkdown) => VideoExportModalProps['doc'];
   playerScript: string;
+}
+
+const SHARED_USE_MODES: Readonly<Record<SharedDocumentMode, DisplayMode>> = Object.freeze({
+  slideshow: 'slideshow',
+  video: 'video',
+  page: 'linear',
+  document: 'page',
+  narrate: 'narrate',
+});
+
+function SharedModeInitializer({ mode }: { mode: SharedDocumentMode }) {
+  const appliedRef = useRef(false);
+  const { setActiveView } = useEditorContext();
+  const { setSelectedDisplayMode } = usePreviewSettings();
+
+  useEffect(() => {
+    if (appliedRef.current) return;
+    appliedRef.current = true;
+    setSelectedDisplayMode(SHARED_USE_MODES[mode]);
+    setActiveView('preview');
+  }, [mode, setActiveView, setSelectedDisplayMode]);
+
+  return null;
 }
 
 let videoExportModulesPromise: Promise<VideoExportModules> | null = null;
@@ -143,10 +175,13 @@ export function ExportToolbarControls({
   destinationAdapter,
   trigger = 'menu',
   showVideoExport = true,
+  shareBaseUrl,
+  initialSharedMode = null,
 }: ExportToolbarControlsProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
@@ -254,6 +289,15 @@ export function ExportToolbarControls({
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
+  }, []);
+
+  const handleOpenShareDialog = useCallback(() => {
+    setMenuOpen(false);
+    setShareDialogOpen(true);
+  }, []);
+
+  const handleCloseShareDialog = useCallback(() => {
+    setShareDialogOpen(false);
   }, []);
 
   const handleOpenVideoModal = useCallback(async () => {
@@ -385,6 +429,7 @@ export function ExportToolbarControls({
 
   return (
     <>
+      {initialSharedMode && <SharedModeInitializer mode={initialSharedMode} />}
       {trigger === 'button' ? (
         <button
           type="button"
@@ -421,6 +466,9 @@ export function ExportToolbarControls({
               <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
                 Export...
               </button>
+              <button className="db-toolbar-menu-item" onClick={handleOpenShareDialog}>
+                Share link with content embedded...
+              </button>
               {showVideoExport && (
                 <>
                   <div className="db-toolbar-menu-divider" />
@@ -451,6 +499,22 @@ export function ExportToolbarControls({
             onExport={handleExport}
             onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
             onClose={handleCloseDialog}
+          />
+        </Suspense>
+      )}
+
+      {shareDialogOpen && (
+        <Suspense fallback={null}>
+          <ShareDialog
+            markdown={markdownSource}
+            selectedFile={selectedFile}
+            baseUrl={
+              shareBaseUrl ??
+              (typeof window === 'undefined'
+                ? 'https://bendyline.github.io/docblocks/'
+                : window.location.href)
+            }
+            onClose={handleCloseShareDialog}
           />
         </Suspense>
       )}

@@ -41,7 +41,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
         style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
     };
   });
-  expect(chrome.height).toBe(48);
+  expect(chrome.height).toBe(32);
   expect(chrome.appRegion).toBe('drag');
 
   // The sidebar titlebar ends with a desktop-only dotted grip so the

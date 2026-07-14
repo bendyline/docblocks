@@ -947,9 +947,16 @@ body.db-resizing-sidebar * {
   background: var(--db-bg-hover);
 }
 
-.db-mobile-back-arrow {
-  font-size: 18px;
-  line-height: 1;
+.db-mobile-files-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.db-mobile-files-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
 /* In folder/empty views, the back button sits as a standalone bar */
@@ -1133,6 +1140,37 @@ body.db-resizing-sidebar * {
   margin: 0;
   cursor: pointer;
   accent-color: var(--db-accent);
+}
+
+.db-settings-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-slider + .db-settings-slider {
+  margin-top: 14px;
+}
+
+.db-settings-slider-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.db-settings-slider-value {
+  color: var(--db-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-settings-slider input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--db-accent);
+  cursor: pointer;
 }
 
 .db-settings-accent-grid {
@@ -1627,6 +1665,53 @@ body.db-resizing-sidebar * {
   color: var(--db-text-on-accent);
 }
 
+/* Shared-document links intentionally resemble export because they package a
+   bounded Markdown-only DBK; the warning is the critical distinction. */
+.db-share-dialog {
+  width: 480px;
+}
+
+.db-share-warning {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: color-mix(in srgb, var(--db-accent) 12%, var(--db-bg-subtle));
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+}
+
+.db-share-link {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px;
+  font:
+    11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  color: var(--db-text);
+  background: var(--db-bg-subtle);
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+.db-share-link:focus {
+  border-color: var(--db-accent);
+}
+
+.db-share-length-warning {
+  color: var(--db-danger, #a33a35);
+}
+
+.db-share-temporary-note {
+  color: var(--db-text-muted);
+}
+
 /* ── Squisq editor chrome separators ─────────────────────────── */
 /* Strengthen the dividers so the toolbar, tabs, and editor body
    read as three distinct zones instead of near-identical whites.  */
@@ -1943,8 +2028,9 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
 /* The gallery popover renders into document.body via createPortal, so
    neither .db-shell nor .squisq-editor-shell are ancestors. We use
    `html:has(.db-shell[data-theme='dark'])` to detect docblocks' dark
-   theme from outside the shell, then style the portaled gallery (its
-   root has id="squisq-template-gallery-portal"). */
+   theme from outside the shell, then bind the portaled dialog through
+   Squisq's stable `data-squisq-template-gallery-portal` marker. Dialog
+   and gallery ids are intentionally instance-specific. */
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
@@ -2336,7 +2422,7 @@ html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) .squisq-toolti
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='dark'] {
+  .squisq-template-gallery-dialog[data-theme='dark']:has([data-squisq-template-gallery-portal]) {
   --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(18, 14, 9, 0.58));
   --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, var(--db-bg));
   --squisq-template-gallery-panel-border: var(--db-border);
@@ -2390,7 +2476,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 html:has(.db-shell[data-theme='light'])
-  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='light'] {
+  .squisq-template-gallery-dialog[data-theme='light']:has([data-squisq-template-gallery-portal]) {
   --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(42, 36, 25, 0.24));
   --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, #fffdf7);
   --squisq-template-gallery-panel-border: var(--db-border);
@@ -4009,7 +4095,7 @@ button.db-git-file-row:hover {
    toggling the overlay chevron flips it with no JS. */
 @media (display-mode: window-controls-overlay) {
   .db-shell {
-    --db-wco-titlebar-height: 48px;
+    --db-wco-titlebar-height: env(titlebar-area-height, 32px);
   }
 
   /* The first shell row replaces the native titlebar. Empty space can drag
@@ -4025,8 +4111,34 @@ button.db-git-file-row:hover {
   }
 
   .db-shell .db-shell-sidebar-header {
+    padding-block: 0;
     padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
     cursor: grab;
+  }
+
+  /* Keep the shell controls inside the compact native caption band. These
+     overrides apply only to an installed app using Window Controls Overlay;
+     the regular browser toolbar keeps its roomier metrics. */
+  .db-shell .db-app-menu-btn,
+  .db-shell .db-workspace-picker-btn {
+    padding-block: 3px;
+  }
+
+  .db-shell .squisq-toolbar-view-tab {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .db-shell .squisq-use-mode-trigger {
+    padding-bottom: 9px;
+  }
+
+  .db-shell .squisq-toolbar-button[aria-label='Insert image'] {
+    height: 28px;
+  }
+
+  .db-shell .squisq-editor-header--image {
+    padding-block: 0;
   }
 
   /* Make the draggable header space beside the workspace gear discoverable,

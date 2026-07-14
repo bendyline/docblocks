@@ -21,10 +21,11 @@ const store = new LocalForageAdapter({
 });
 
 /**
- * Session-only transient workspaces (a loose file or `.dbk` opened from the
- * OS). Kept purely in memory — never written to the persisted list — with
- * their pre-built provider registered alongside the descriptor. Lost on
- * reload, which is the intended "transient for the app session" behaviour.
+ * Session-only transient workspaces (a loose file/`.dbk` opened from the OS,
+ * or a document copied from a shared URL). Kept purely in memory — never
+ * written to the persisted list — with their pre-built provider registered
+ * alongside the descriptor. Lost on reload, which is the intended
+ * "transient for the app session" behaviour.
  */
 interface TransientEntry {
   descriptor: WorkspaceDescriptor;

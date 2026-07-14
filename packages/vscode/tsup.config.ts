@@ -8,7 +8,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     external: ['vscode'],
-    noExternal: ['@bendyline/docblocks'],
+    noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
   },
   // Web extension host — ESM bundle for web worker
   {
@@ -17,7 +17,7 @@ export default defineConfig([
     sourcemap: true,
     platform: 'browser',
     external: ['vscode'],
-    noExternal: ['@bendyline/docblocks'],
+    noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
     define: {
       'process.env.NODE_ENV': '"production"',
     },

@@ -7,12 +7,17 @@ import type {
   DocBlocksAccentColor,
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
+  VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
-import { parseExtensionToWebviewMessage } from '@bendyline/docblocks/vscode';
+import {
+  DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
+  parseExtensionToWebviewMessage,
+} from '@bendyline/docblocks/vscode';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
+import { VscodeFindButton } from './VscodeFindButton.js';
 
 const vscode = getVscodeApi();
 
@@ -35,6 +40,7 @@ const VscodeSettingsButton = lazy(() =>
 const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
   autoSave: true,
   accentColor: 'brown',
+  writeCanvasSettings: { ...DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS },
 };
 
 export function VscodeEditor() {
@@ -45,6 +51,7 @@ export function VscodeEditor() {
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
+  const [findMode, setFindMode] = useState(false);
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
   const documentClientRef = useRef(new WebviewDocumentClient());
@@ -146,6 +153,14 @@ export function VscodeEditor() {
     vscode.postMessage({ type: 'setAccentColor', accentColor });
   }, []);
 
+  const handleWriteCanvasSettingsChange = useCallback(
+    (writeCanvasSettings: VscodeWriteCanvasSettings) => {
+      setSettings((current) => ({ ...current, writeCanvasSettings }));
+      vscode.postMessage({ type: 'setWriteCanvasSettings', settings: writeCanvasSettings });
+    },
+    [],
+  );
+
   const editorGenerationKey = editorScope
     ? `${editorScope.sessionId}:${editorScope.generation}`
     : 'loading';
@@ -180,12 +195,16 @@ export function VscodeEditor() {
             initialMarkdown={markdown}
             onChange={handleChange}
             colorScheme={theme}
+            writeCanvasSettings={settings.writeCanvasSettings}
             height="100%"
             placeholder={editorPlaceholder}
             mediaProvider={mediaBridge.mediaProvider}
             showFilesToggle={false}
+            findMode={findMode}
+            onFindModeChange={setFindMode}
             toolbarSlotRight={
               <>
+                <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
                 <VscodeExportButton
                   selectedFile={fileName}
                   mediaContainer={exportBridge.contentContainer}
@@ -197,6 +216,7 @@ export function VscodeEditor() {
                   settings={settings}
                   onAutoSaveChange={handleAutoSaveChange}
                   onAccentColorChange={handleAccentColorChange}
+                  onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 />
               </>
             }

@@ -29,7 +29,6 @@ import type {
   MemoryFileSystemProvider,
 } from '@bendyline/docblocks/filesystem';
 import {
-  createDbkWorkspaceSnapshot,
   FileSystemContentContainer,
   createFileMediaProvider,
   FsError,
@@ -48,6 +47,11 @@ import {
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
 import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
+import {
+  parseSharedDocumentHash,
+  type SharedDocumentMode,
+  type SharedDocumentPayload,
+} from '@bendyline/docblocks/share';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import {
   ensureDefaultWorkspace,
@@ -114,8 +118,15 @@ import {
   type AccentColor,
   type ThemePreference,
 } from '../preferences/theme.js';
+import {
+  loadWriteCanvasPreferences,
+  saveWriteCanvasPreferences,
+  type WriteCanvasPreferences,
+} from '../preferences/write-canvas.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
+import { decodeDbkWorkspace } from './dbk-import.js';
+import { buildIssueReportUrl } from './issue-report.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 
@@ -210,6 +221,8 @@ export interface DocBlocksShellProps {
   theme?: EditorColorScheme | 'auto';
   /** Optional logo image URL for the app menu. */
   logoUrl?: string;
+  /** Version and surface label included in prefilled issue reports, e.g. `1.1.2 web`. */
+  issueReportVersion?: string;
   /**
    * Enable document version history. Snapshots are written under
    * `<basename>_files/.versions/` next to each markdown file (i.e., the
@@ -270,14 +283,18 @@ function buildHash(workspaceId: string, filePath?: string | null): string {
 function parseHash(): { workspaceId: string; filePath: string | null } | null {
   const raw = window.location.hash.slice(1);
   if (!raw) return null;
-  const slashIdx = raw.indexOf('/');
-  if (slashIdx === -1) {
-    return { workspaceId: decodeURIComponent(raw), filePath: null };
+  try {
+    const slashIdx = raw.indexOf('/');
+    if (slashIdx === -1) {
+      return { workspaceId: decodeURIComponent(raw), filePath: null };
+    }
+    return {
+      workspaceId: decodeURIComponent(raw.slice(0, slashIdx)),
+      filePath: '/' + decodeURIComponent(raw.slice(slashIdx + 1)),
+    };
+  } catch {
+    return null;
   }
-  return {
-    workspaceId: decodeURIComponent(raw.slice(0, slashIdx)),
-    filePath: '/' + decodeURIComponent(raw.slice(slashIdx + 1)),
-  };
 }
 
 const LAST_STATE_KEY = 'docblocks:lastState';
@@ -711,6 +728,7 @@ function FileGlyph() {
 export function DocBlocksShell({
   theme: _themeProp = 'auto',
   logoUrl,
+  issueReportVersion,
   allowVersioning = true,
   versionBasename,
   versioningPrunePolicy,
@@ -724,6 +742,9 @@ export function DocBlocksShell({
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
+  const [writeCanvasSettings, setWriteCanvasSettings] = useState<WriteCanvasPreferences>(
+    loadWriteCanvasPreferences,
+  );
   // "System default" (auto) always follows the OS -- the host's theme prop
   // is kept only for API back-compat and does not override OS detection.
   const resolvedTheme: 'light' | 'dark' =
@@ -752,6 +773,11 @@ export function DocBlocksShell({
     saveAccentColor(color);
   }, []);
 
+  const handleWriteCanvasSettingsChange = useCallback((settings: WriteCanvasPreferences) => {
+    setWriteCanvasSettings(settings);
+    saveWriteCanvasPreferences(settings);
+  }, []);
+
   const [viewPreferences, setViewPreferences] = useState<ViewPreferences>(loadViewPreferences);
   const handleViewPreferencesChange = useCallback((prefs: ViewPreferences) => {
     setViewPreferences(prefs);
@@ -775,6 +801,13 @@ export function DocBlocksShell({
   const [compactLayout, setCompactLayout] = useState(false);
   const effectiveCompact = isMobile || compactLayout;
   const showBrowserStorageWarning = !isElectronHost();
+  const issueReportUrl = buildIssueReportUrl({
+    reportedAt: new Date(),
+    version: isElectronHost()
+      ? `${getDocBlocksHost().env.appVersion} desktop`
+      : (issueReportVersion ?? 'web'),
+    userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
+  });
   const [browserStoragePersistent, setBrowserStoragePersistent] = useState(false);
   // Browser PWA install prompt (Chromium only). The event is stashed when
   // the browser deems the app installable and spent on first use.
@@ -952,6 +985,7 @@ export function DocBlocksShell({
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
+  const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
   // First-run gateway over the welcome doc's Play view -- see WELCOME_GATEWAY_KEY.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   const navigationRequestRef = useRef(0);
@@ -1024,19 +1058,17 @@ export function DocBlocksShell({
             // web-dbk: package the in-memory workspace into a zip and write
             // it back through the handle, guarded by a SHA-256
             // compare-and-swap that mirrors the Electron dbk path.
-            const [{ MemoryContentContainer }, { containerToZip, zipToContainer }] =
-              await Promise.all([
-                import('@bendyline/squisq/storage'),
-                import('@bendyline/squisq-formats/container'),
-              ]);
+            const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+              import('@bendyline/squisq/storage'),
+              import('@bendyline/squisq-formats/container'),
+            ]);
             const currentBytes = await (await webOrigin.handle.getFile()).arrayBuffer();
             const currentVersion = await sha256Hex(currentBytes);
             if (webOrigin.version !== null && currentVersion !== webOrigin.version) {
               if (!isMemoryWorkspaceProvider(transientProvider)) {
                 throw new Error('A transient DBK workspace must use in-memory storage.');
               }
-              const externalContainer = await zipToContainer(currentBytes);
-              const snapshot = await createDbkWorkspaceSnapshot(externalContainer, {
+              const snapshot = await decodeDbkWorkspace(currentBytes, {
                 targetDocumentPath: filePath,
               });
               // Keep both branches intact until the user chooses -- same
@@ -1103,11 +1135,10 @@ export function DocBlocksShell({
             gitScheduleRefresh();
             return { version: result.version };
           } else {
-            const [{ MemoryContentContainer }, { containerToZip, zipToContainer }] =
-              await Promise.all([
-                import('@bendyline/squisq/storage'),
-                import('@bendyline/squisq-formats/container'),
-              ]);
+            const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+              import('@bendyline/squisq/storage'),
+              import('@bendyline/squisq-formats/container'),
+            ]);
             const container = new MemoryContentContainer();
             await copyProviderToContainer(transient.provider, container, '');
             await container.writeFile(
@@ -1123,11 +1154,10 @@ export function DocBlocksShell({
             if (result.status === 'conflict') {
               let externalContent: string | null = null;
               if (result.data) {
-                const externalContainer = await zipToContainer(result.data);
                 if (!isMemoryWorkspaceProvider(transient.provider)) {
                   throw new Error('A transient DBK workspace must use in-memory storage.');
                 }
-                const snapshot = await createDbkWorkspaceSnapshot(externalContainer, {
+                const snapshot = await decodeDbkWorkspace(result.data, {
                   targetDocumentPath: filePath,
                 });
                 externalContent = snapshot.documentContent;
@@ -1213,6 +1243,7 @@ export function DocBlocksShell({
       push: boolean,
       view?: EditorView,
       navigationRequestId?: number,
+      sharedMode: SharedDocumentMode | null = null,
     ): Promise<FileSystemProvider | null> => {
       const requestId = navigationRequestId ?? ++navigationRequestRef.current;
       if (requestId !== navigationRequestRef.current) return null;
@@ -1277,6 +1308,7 @@ export function DocBlocksShell({
           setFolderEntries([]);
           const effectiveView = view ?? 'wysiwyg';
           setInitialView(effectiveView);
+          setInitialSharedMode(sharedMode);
           // Transient workspaces are session-only; don't persist them as the
           // "last opened" state (the id won't exist after a reload).
           if (!transient) {
@@ -1286,6 +1318,7 @@ export function DocBlocksShell({
           setSelectedFile(null);
           setSelectedFolder(null);
           setFolderEntries([]);
+          setInitialSharedMode(null);
         }
 
         if (push) {
@@ -1297,6 +1330,77 @@ export function DocBlocksShell({
       }
     },
     [createDocumentTarget, documentSession, pushHash],
+  );
+
+  const adoptTransientWorkspace = useCallback(
+    async (options: {
+      id: string;
+      name: string;
+      provider: MemoryFileSystemProvider;
+      primaryFile: string;
+      origin?: WorkspaceDescriptor['origin'];
+      push: boolean;
+      navigationRequestId?: number;
+      view?: EditorView;
+      sharedMode?: SharedDocumentMode | null;
+    }): Promise<boolean> => {
+      const descriptor: WorkspaceDescriptor = {
+        id: options.id,
+        name: options.name,
+        type: 'transient',
+        lastOpened: new Date().toISOString(),
+        ...(options.origin ? { origin: options.origin } : {}),
+      };
+      let opened = false;
+      registerTransientWorkspace(descriptor, options.provider);
+      try {
+        opened =
+          (await openFromIds(
+            options.id,
+            `/${options.primaryFile.replace(/^\/+/, '')}`,
+            options.push,
+            options.view,
+            options.navigationRequestId,
+            options.sharedMode ?? null,
+          )) !== null;
+        return opened;
+      } finally {
+        if (!opened && getTransientWorkspace(options.id)?.provider === options.provider) {
+          await unregisterTransientWorkspace(options.id);
+        }
+      }
+    },
+    [openFromIds],
+  );
+
+  const openSharedDocument = useCallback(
+    async (payload: SharedDocumentPayload, navigationRequestId: number): Promise<boolean> => {
+      const id = `transient-shared-${navigationRequestId}`;
+      const mem = await createMemoryFileSystemProvider(id, 'Shared document');
+      const primaryFile = 'shared.md';
+      try {
+        const snapshot = await decodeDbkWorkspace(payload.archive, {
+          targetDocumentPath: primaryFile,
+          profile: 'shared-link',
+        });
+        mem.replaceContents(snapshot);
+      } catch (error: unknown) {
+        await getFileSystemProviderV2(mem)?.dispose();
+        throw error;
+      }
+
+      return adoptTransientWorkspace({
+        id,
+        name: 'Shared document',
+        provider: mem,
+        primaryFile,
+        push: false,
+        navigationRequestId,
+        view: payload.mode ? 'preview' : 'wysiwyg',
+        sharedMode: payload.mode,
+      });
+    },
+    [adoptTransientWorkspace],
   );
 
   const seedWelcomeFile = useCallback(
@@ -1322,6 +1426,7 @@ export function DocBlocksShell({
           if (!isCurrent()) return;
           setSelectedFile(aboutPath);
           setInitialView('preview');
+          setInitialSharedMode(null);
           setExplorerKey((k) => k + 1);
           pushHash(fs.id, aboutPath);
           saveLastState({ workspaceId: fs.id, filePath: aboutPath, view: 'preview' });
@@ -1376,6 +1481,7 @@ export function DocBlocksShell({
       if (!isCurrent()) return;
       setSelectedFile(welcomePath);
       setInitialView('preview');
+      setInitialSharedMode(null);
       setExplorerKey((k) => k + 1);
       pushHash(fs.id, welcomePath);
       saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'preview' });
@@ -1389,6 +1495,8 @@ export function DocBlocksShell({
   // changes restart initialization and supersede an OS-open navigation.
   const startupOpenFromIdsRef = useRef(openFromIds);
   startupOpenFromIdsRef.current = openFromIds;
+  const startupOpenSharedDocumentRef = useRef(openSharedDocument);
+  startupOpenSharedDocumentRef.current = openSharedDocument;
   const startupSeedWelcomeFileRef = useRef(seedWelcomeFile);
   startupSeedWelcomeFileRef.current = seedWelcomeFile;
 
@@ -1405,6 +1513,7 @@ export function DocBlocksShell({
   const handleStartWriting = useCallback(() => {
     closeWelcomeGateway();
     setInitialView('wysiwyg');
+    setInitialSharedMode(null);
     setEditorPresentationEpoch((epoch) => epoch + 1);
     if (activeWorkspaceId && selectedFile) {
       saveLastState({ workspaceId: activeWorkspaceId, filePath: selectedFile, view: 'wysiwyg' });
@@ -1450,7 +1559,33 @@ export function DocBlocksShell({
       workspaceAuthorityBarrier.markReady();
       if (!isCurrent()) return;
 
-      // Try restoring from URL hash first
+      // Shared links are a distinct, bounded wire format. Never let malformed
+      // shared input fall through and become a workspace id.
+      const sharedHash = parseSharedDocumentHash(window.location.hash);
+      if (sharedHash.kind === 'invalid') {
+        setWorkspaceStartupError(sharedHash.message);
+        return;
+      }
+      if (sharedHash.kind === 'valid') {
+        try {
+          const opened = await startupOpenSharedDocumentRef.current(sharedHash.payload, requestId);
+          if (!isCurrent()) return;
+          if (!opened) {
+            setWorkspaceStartupError('This shared document link could not be opened.');
+          }
+        } catch (error: unknown) {
+          if (isCurrent()) {
+            setWorkspaceStartupError(
+              error instanceof Error
+                ? `This shared document link could not be opened: ${error.message}`
+                : 'This shared document link could not be opened.',
+            );
+          }
+        }
+        return;
+      }
+
+      // Try restoring an ordinary workspace route from the URL hash first.
       const hashState = parseHash();
       if (hashState) {
         const migratedWorkspaceId = workspaceIdRemap[hashState.workspaceId];
@@ -1618,13 +1753,36 @@ export function DocBlocksShell({
   // Handle browser back/forward
   useEffect(() => {
     const onPopState = () => {
+      const requestedHash = window.location.hash;
+      const restoreCurrentHash = () => {
+        if (!activeWorkspaceId || window.location.hash !== requestedHash) return;
+        window.history.replaceState(null, '', buildHash(activeWorkspaceId, selectedFile));
+      };
+      const sharedHash = parseSharedDocumentHash(requestedHash);
+      if (sharedHash.kind === 'invalid') {
+        restoreCurrentHash();
+        alert(sharedHash.message);
+        return;
+      }
+      if (sharedHash.kind === 'valid') {
+        const requestId = ++navigationRequestRef.current;
+        void openSharedDocument(sharedHash.payload, requestId)
+          .then((opened) => {
+            if (!opened) restoreCurrentHash();
+          })
+          .catch((error: unknown) => {
+            restoreCurrentHash();
+            alert(
+              error instanceof Error
+                ? 'DocBlocks could not open the shared document: ' + error.message
+                : 'DocBlocks could not open the shared document.',
+            );
+          });
+        return;
+      }
+
       const hashState = parseHash();
       if (hashState) {
-        const requestedHash = window.location.hash;
-        const restoreCurrentHash = () => {
-          if (!activeWorkspaceId || window.location.hash !== requestedHash) return;
-          window.history.replaceState(null, '', buildHash(activeWorkspaceId, selectedFile));
-        };
         void openFromIds(hashState.workspaceId, hashState.filePath, false)
           .then((opened) => {
             if (!opened) restoreCurrentHash();
@@ -1641,7 +1799,7 @@ export function DocBlocksShell({
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeWorkspaceId, openFromIds, selectedFile]);
+  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile]);
 
   useEffect(() => {
     if (!showBrowserStorageWarning || typeof navigator === 'undefined') return;
@@ -2258,6 +2416,7 @@ export function DocBlocksShell({
     }
     setSelectedFile(path);
     setInitialView('wysiwyg');
+    setInitialSharedMode(null);
     setExplorerKey((k) => k + 1);
     closeWelcomeGateway();
     if (activeWorkspaceId) {
@@ -2406,6 +2565,7 @@ export function DocBlocksShell({
         setSelectedFolder(null);
         setFolderEntries([]);
         setInitialView('wysiwyg');
+        setInitialSharedMode(null);
         closeWelcomeGateway();
         pushHash(activeWorkspaceId, path);
         saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
@@ -2558,10 +2718,10 @@ export function DocBlocksShell({
             markdown = (await container.readDocument()) ?? '';
             await persistImportedMedia(container, provider, destPath);
           } else if (ext === '.dbk' || ext === '.zip') {
-            const { zipToContainer } = await import('@bendyline/squisq-formats/container');
-            const container = await zipToContainer(await file.arrayBuffer());
-            markdown = (await container.readDocument()) ?? '';
-            await persistImportedMedia(container, provider, destPath);
+            const snapshot = await decodeDbkWorkspace(await file.arrayBuffer(), {
+              targetDocumentPath: destPath,
+            });
+            markdown = snapshot.documentContent;
           } else {
             continue;
           }
@@ -2633,7 +2793,7 @@ export function DocBlocksShell({
       }
       let primaryFile: string;
       let origin: WorkspaceDescriptor['origin'];
-      let registered = false;
+      let adoptionStarted = false;
       let opened = false;
 
       try {
@@ -2654,13 +2814,9 @@ export function DocBlocksShell({
           if (!isCurrent()) return;
           const version = await sha256Hex(bytes);
           if (!isCurrent()) return;
-          const { zipToContainer } = await import('@bendyline/squisq-formats/container');
-          if (!isCurrent()) return;
-          const container = await zipToContainer(bytes);
-          if (!isCurrent()) return;
           const base = req.name.replace(/\.[^.]+$/, '');
           primaryFile = `${base}.md`;
-          const snapshot = await createDbkWorkspaceSnapshot(container, {
+          const snapshot = await decodeDbkWorkspace(bytes, {
             targetDocumentPath: primaryFile,
           });
           if (!isCurrent()) return;
@@ -2668,23 +2824,19 @@ export function DocBlocksShell({
           origin = { kind: 'dbk', resourceId: req.resourceId, version };
         }
 
-        const descriptor: WorkspaceDescriptor = {
+        adoptionStarted = true;
+        opened = await adoptTransientWorkspace({
           id,
           name: req.name,
-          type: 'transient',
-          lastOpened: new Date().toISOString(),
+          provider: mem,
+          primaryFile,
           origin,
-        };
-        registerTransientWorkspace(descriptor, mem);
-        registered = true;
-        opened =
-          (await openFromIds(id, `/${primaryFile}`, true, undefined, navigationRequestId)) !== null;
+          push: true,
+          navigationRequestId,
+        });
       } finally {
         try {
-          if (!opened && registered && getTransientWorkspace(id)?.provider === mem) {
-            await unregisterTransientWorkspace(id);
-            registered = false;
-          } else if (!registered) {
+          if (!adoptionStarted) {
             await getFileSystemProviderV2(mem)?.dispose();
           }
         } finally {
@@ -2692,7 +2844,7 @@ export function DocBlocksShell({
         }
       }
     },
-    [openFromIds],
+    [adoptTransientWorkspace],
   );
 
   // Subscribe to OS open-file / deep-link requests.
@@ -2751,36 +2903,39 @@ export function DocBlocksShell({
       const file = await handle.getFile();
       let primaryFile: string;
       let origin: WorkspaceDescriptor['origin'];
+      let adoptionStarted = false;
 
-      if (!isBundle) {
-        primaryFile = name;
-        mem.seedText(primaryFile, await file.text());
-        origin = { kind: 'web-file', handle, name };
-      } else {
-        const bytes = await file.arrayBuffer();
-        const version = await sha256Hex(bytes);
-        const { zipToContainer } = await import('@bendyline/squisq-formats/container');
-        const container = await zipToContainer(bytes);
-        const base = name.replace(/\.[^.]+$/, '');
-        primaryFile = `${base}.md`;
-        const snapshot = await createDbkWorkspaceSnapshot(container, {
-          targetDocumentPath: primaryFile,
+      try {
+        if (!isBundle) {
+          primaryFile = name;
+          mem.seedText(primaryFile, await file.text());
+          origin = { kind: 'web-file', handle, name };
+        } else {
+          const bytes = await file.arrayBuffer();
+          const version = await sha256Hex(bytes);
+          const base = name.replace(/\.[^.]+$/, '');
+          primaryFile = `${base}.md`;
+          const snapshot = await decodeDbkWorkspace(bytes, {
+            targetDocumentPath: primaryFile,
+          });
+          mem.replaceContents(snapshot);
+          origin = { kind: 'web-dbk', handle, name, version };
+        }
+
+        adoptionStarted = true;
+        await adoptTransientWorkspace({
+          id,
+          name,
+          provider: mem,
+          primaryFile,
+          origin,
+          push: true,
         });
-        mem.replaceContents(snapshot);
-        origin = { kind: 'web-dbk', handle, name, version };
+      } finally {
+        if (!adoptionStarted) await getFileSystemProviderV2(mem)?.dispose();
       }
-
-      const descriptor: WorkspaceDescriptor = {
-        id,
-        name,
-        type: 'transient',
-        lastOpened: new Date().toISOString(),
-        origin,
-      };
-      registerTransientWorkspace(descriptor, mem);
-      await openFromIds(id, `/${primaryFile}`, true);
     },
-    [openFromIds],
+    [adoptTransientWorkspace],
   );
 
   // Consume files the OS delivers to the installed PWA (Chromium desktop).
@@ -3135,6 +3290,8 @@ export function DocBlocksShell({
                   onThemeChange={handleThemeChange}
                   accentColor={accentColor}
                   onAccentColorChange={handleAccentColorChange}
+                  writeCanvasSettings={writeCanvasSettings}
+                  onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                   versioningPreference={versioningPreference}
                   onVersioningPreferenceChange={handleVersioningPreferenceChange}
                   onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
@@ -3201,6 +3358,12 @@ export function DocBlocksShell({
                 >
                   Terms of Use
                 </a>
+                <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                  &bull;
+                </span>
+                <a href={issueReportUrl} target="_blank" rel="noopener noreferrer">
+                  Issues
+                </a>
                 {showBrowserStorageWarning && (
                   <>
                     <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
@@ -3265,6 +3428,7 @@ export function DocBlocksShell({
                       fileName={selectedFile}
                       onChange={handleEditorChange}
                       colorScheme={resolvedTheme}
+                      writeCanvasSettings={writeCanvasSettings}
                       height="100%"
                       placeholder={editorPlaceholder}
                       outlineWidth={280}
@@ -3285,7 +3449,9 @@ export function DocBlocksShell({
                             onClick={() => setMobileShowEditor(false)}
                             aria-label="Show file list"
                           >
-                            <span className="db-mobile-back-arrow">&larr;</span>
+                            <span className="db-mobile-files-icon">
+                              <FolderGlyph />
+                            </span>
                           </button>
                         ) : undefined
                       }
@@ -3314,6 +3480,7 @@ export function DocBlocksShell({
                             selectedFile={selectedFile}
                             mediaContainer={mediaContainerRef.current}
                             destinationAdapter={exportDestinationAdapter}
+                            initialSharedMode={initialSharedMode}
                           />
                         </>
                       }
@@ -3343,7 +3510,9 @@ export function DocBlocksShell({
                 <div className="db-folder-view">
                   {effectiveCompact && (
                     <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                      <span className="db-mobile-back-arrow">&larr;</span>
+                      <span className="db-mobile-files-icon">
+                        <FolderGlyph />
+                      </span>
                       Back to files
                     </button>
                   )}
@@ -3376,7 +3545,9 @@ export function DocBlocksShell({
                 <div className="db-shell-empty">
                   {effectiveCompact && (
                     <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                      <span className="db-mobile-back-arrow">&larr;</span>
+                      <span className="db-mobile-files-icon">
+                        <FolderGlyph />
+                      </span>
                       Back to files
                     </button>
                   )}

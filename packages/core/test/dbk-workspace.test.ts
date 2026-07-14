@@ -26,7 +26,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 describe('DBK transient workspace reconciliation', () => {
-  it('replaces markdown and media together and deletes stale workspace entries', async () => {
+  it('replaces the Markdown tree atomically and deletes stale workspace entries', async () => {
     const provider = new MemoryFileSystemProvider('bundle', 'Bundle');
     await provider.writeFile('/bundle.md', '# local');
     await provider.writeBinary('/bundle_files/stale.png', new Uint8Array([9]));
@@ -34,8 +34,7 @@ describe('DBK transient workspace reconciliation', () => {
 
     const external = new MemoryContentContainer();
     await external.writeFile('index.md', encoded('# external'), 'text/markdown');
-    await external.writeFile('images/new.png', new Uint8Array([1, 2, 3]), 'image/png');
-    await external.writeFile('timing.json', encoded('{"duration":1}'), 'application/json');
+    await external.writeFile('appendix.md', encoded('# appendix'), 'text/markdown');
 
     const result = await replaceMemoryWorkspaceFromDbk(provider, external, {
       targetDocumentPath: '/bundle.md',
@@ -44,14 +43,7 @@ describe('DBK transient workspace reconciliation', () => {
     expect(result.assetLayout).to.equal('companion');
     expect(result.documentContent).to.equal('# external');
     expect(await provider.readFile('/bundle.md')).to.equal('# external');
-    expect([
-      ...new Uint8Array((await provider.readBinary('/bundle_files/images/new.png'))!),
-    ]).to.deep.equal([1, 2, 3]);
-    expect(
-      new TextDecoder().decode(
-        (await provider.readBinary('/bundle_files/timing.json')) ?? undefined,
-      ),
-    ).to.equal('{"duration":1}');
+    expect(await provider.readFile('/bundle_files/appendix.md')).to.equal('# appendix');
     expect(await provider.exists('/bundle_files/stale.png')).to.equal(false);
     expect(await provider.exists('/unrelated.md')).to.equal(false);
   });
@@ -60,15 +52,15 @@ describe('DBK transient workspace reconciliation', () => {
     const provider = new MemoryFileSystemProvider('bundle', 'Bundle');
     const external = new MemoryContentContainer();
     await external.writeFile('bundle.md', encoded('# external'), 'text/markdown');
-    await external.writeFile('bundle_files/images/new.png', new Uint8Array([5, 6]), 'image/png');
+    await external.writeFile('bundle_files/appendix.md', encoded('# appendix'), 'text/markdown');
 
     const result = await replaceMemoryWorkspaceFromDbk(provider, external, {
       targetDocumentPath: '/bundle.md',
     });
 
     expect(result.assetLayout).to.equal('preserve');
-    expect(await provider.exists('/bundle_files/images/new.png')).to.equal(true);
-    expect(await provider.exists('/bundle_files/bundle_files/images/new.png')).to.equal(false);
+    expect(await provider.exists('/bundle_files/appendix.md')).to.equal(true);
+    expect(await provider.exists('/bundle_files/bundle_files/appendix.md')).to.equal(false);
   });
 
   it('preserves secondary markdown as readable workspace text', async () => {
@@ -92,10 +84,10 @@ describe('DBK transient workspace reconciliation', () => {
 
     const backing = new MemoryContentContainer();
     await backing.writeFile('index.md', encoded('# replacement'), 'text/markdown');
-    await backing.writeFile('z-broken.png', new Uint8Array([1]), 'image/png');
+    await backing.writeFile('z-broken.md', encoded('# broken'), 'text/markdown');
     const failing: ContentContainer = {
       readFile: (path) =>
-        path === 'z-broken.png'
+        path === 'z-broken.md'
           ? Promise.reject(new Error('simulated DBK read failure'))
           : backing.readFile(path),
       writeFile: (path, data, mimeType) => backing.writeFile(path, data, mimeType),
@@ -121,7 +113,7 @@ describe('DBK transient workspace reconciliation', () => {
     expect([
       ...new Uint8Array((await provider.readBinary('/bundle_files/original.png'))!),
     ]).to.deep.equal([8]);
-    expect(await provider.exists('/bundle_files/z-broken.png')).to.equal(false);
+    expect(await provider.exists('/bundle_files/z-broken.md')).to.equal(false);
   });
 
   it('does not overwrite provider changes made while the DBK snapshot is being read', async () => {
@@ -170,7 +162,7 @@ describe('DBK transient workspace reconciliation', () => {
     await provider.writeFile('/bundle.md', '# original');
     const external = new MemoryContentContainer();
     await external.writeFile('index.md', encoded('# replacement'), 'text/markdown');
-    await external.writeFile('../escape.png', new Uint8Array([1]), 'image/png');
+    await external.writeFile('../escape.md', encoded('# escape'), 'text/markdown');
 
     let thrown: unknown;
     try {
@@ -183,22 +175,57 @@ describe('DBK transient workspace reconciliation', () => {
 
     expect(thrown).to.be.instanceOf(Error);
     expect(await provider.readFile('/bundle.md')).to.equal('# original');
-    expect(await provider.exists('/bundle_files/escape.png')).to.equal(false);
+    expect(await provider.exists('/bundle_files/escape.md')).to.equal(false);
+  });
+
+  it('rejects any non-Markdown member before reading or replacing the workspace', async () => {
+    const provider = new MemoryFileSystemProvider('bundle', 'Bundle');
+    await provider.writeFile('/bundle.md', '# original');
+    const external = new MemoryContentContainer();
+    await external.writeFile('index.md', encoded('# replacement'), 'text/markdown');
+    await external.writeFile('image.png', new Uint8Array([1, 2, 3]), 'image/png');
+
+    let thrown: unknown;
+    try {
+      await replaceMemoryWorkspaceFromDbk(provider, external, {
+        targetDocumentPath: '/bundle.md',
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).to.be.instanceOf(Error);
+    expect((thrown as Error).message).to.include('only Markdown (.md) files are allowed');
+    expect(await provider.readFile('/bundle.md')).to.equal('# original');
+  });
+
+  it('rejects invalid UTF-8 and NUL-bearing Markdown as corrupt text', async () => {
+    for (const bytes of [new Uint8Array([0xc3, 0x28]), encoded('# bad\0text')]) {
+      const external = new MemoryContentContainer();
+      await external.writeFile('index.md', bytes, 'text/markdown');
+      let thrown: unknown;
+      try {
+        await createDbkWorkspaceSnapshot(external, { targetDocumentPath: 'draft.md' });
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).to.be.instanceOf(Error);
+    }
   });
 
   it('can stage a deterministic snapshot without mutating the target provider', async () => {
     const external = new MemoryContentContainer();
     await external.writeFile('index.md', encoded('# staged'), 'text/markdown');
-    await external.writeFile('b.png', new Uint8Array([2]), 'image/png');
-    await external.writeFile('a.png', new Uint8Array([1]), 'image/png');
+    await external.writeFile('b.md', encoded('# B'), 'text/markdown');
+    await external.writeFile('a.md', encoded('# A'), 'text/markdown');
 
     const snapshot = await createDbkWorkspaceSnapshot(external, {
       targetDocumentPath: 'draft.md',
     });
 
     expect(snapshot.files.map((file) => file.path)).to.deep.equal([
-      'draft_files/a.png',
-      'draft_files/b.png',
+      'draft_files/a.md',
+      'draft_files/b.md',
       'draft.md',
     ]);
   });

@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import docblocksPackage from '../core/package.json';
 
 // Strips //# sourceMappingURL pragmas from upstream packages whose published
 // tarballs reference sourcemaps or sources that aren't actually shipped, so
@@ -113,6 +114,9 @@ const docblocksPwa = (): Plugin[] =>
 
 export default defineConfig({
   base: process.env.VITE_BASE || '/',
+  define: {
+    __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
+  },
   plugins: [stripBrokenSourcemapPragmas(), react(), docblocksPwa()],
   resolve: {
     preserveSymlinks: false,

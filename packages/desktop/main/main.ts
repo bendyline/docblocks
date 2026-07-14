@@ -39,7 +39,7 @@ import {
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
-const TITLE_BAR_HEIGHT = 48;
+const TITLE_BAR_HEIGHT = 32;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 
@@ -217,14 +217,11 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     title: 'DocBlocks',
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
-    titleBarOverlay:
-      process.platform === 'darwin'
-        ? true
-        : {
-            color: '#00000000',
-            symbolColor: '#6b7280',
-            height: TITLE_BAR_HEIGHT,
-          },
+    titleBarOverlay: {
+      color: '#00000000',
+      symbolColor: '#6b7280',
+      height: TITLE_BAR_HEIGHT,
+    },
     center: !useSaved,
     backgroundColor: '#1e1e1e',
     webPreferences: {

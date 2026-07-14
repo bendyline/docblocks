@@ -5,7 +5,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VersioningPreference } from '../preferences/versioning.js';
 import type { AccentColor, ThemePreference } from '../preferences/theme.js';
-import { AccentColorSettings, SettingsDialog, ThemeSettings } from '../Settings/Settings.js';
+import {
+  DEFAULT_WRITE_CANVAS_PREFERENCES,
+  type WriteCanvasPreferences,
+} from '../preferences/write-canvas.js';
+import {
+  AccentColorSettings,
+  SettingsDialog,
+  ThemeSettings,
+  WriteCanvasSettingsControls,
+} from '../Settings/Settings.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
@@ -22,6 +31,10 @@ export interface AppMenuProps {
   accentColor?: AccentColor;
   /** Called when the user changes the accent color. */
   onAccentColorChange?: (color: AccentColor) => void;
+  /** Current typography preferences for the editor's Write canvas. */
+  writeCanvasSettings?: WriteCanvasPreferences;
+  /** Called when the user changes the Write canvas typography. */
+  onWriteCanvasSettingsChange?: (settings: WriteCanvasPreferences) => void;
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -71,6 +84,8 @@ export function AppMenu({
   onThemeChange,
   accentColor = 'brown',
   onAccentColorChange,
+  writeCanvasSettings = DEFAULT_WRITE_CANVAS_PREFERENCES,
+  onWriteCanvasSettingsChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
@@ -197,6 +212,10 @@ export function AppMenu({
           <AccentColorSettings
             value={accentColor}
             onChange={(color) => onAccentColorChange?.(color)}
+          />
+          <WriteCanvasSettingsControls
+            value={writeCanvasSettings}
+            onChange={(settings) => onWriteCanvasSettingsChange?.(settings)}
           />
 
           {getStorageEstimate && (

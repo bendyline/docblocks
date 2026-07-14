@@ -6,6 +6,7 @@ import yaml from 'js-yaml';
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
 interface PackageManifest {
+  readonly dependencies?: Readonly<Record<string, string>>;
   readonly scripts?: Readonly<Record<string, string>>;
 }
 
@@ -34,10 +35,96 @@ async function workflowCommands(relativePath: string): Promise<readonly string[]
   return commands;
 }
 
+async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  const releaseTags = new Set<string>();
+  const draftCreatorJobs = new Set<string>();
+  const draftAssetUploadJobs = new Set<string>();
+  let draftCreatorCount = 0;
+  let draftAssetUploadCount = 0;
+
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    for (const step of job.steps) {
+      if (!isRecord(step) || typeof step.uses !== 'string') continue;
+      if (step.uses.startsWith('actions/upload-artifact@')) {
+        throw new Error(
+          `${relativePath}: ${jobName} exposes a directly downloadable workflow artifact`,
+        );
+      }
+      if (!step.uses.startsWith('softprops/action-gh-release@')) continue;
+      if (!isRecord(step.with) || step.with.draft !== true) {
+        throw new Error(`${relativePath}: every GitHub Release step must set draft: true`);
+      }
+      if (typeof step.with.tag_name !== 'string') {
+        throw new Error(`${relativePath}: every GitHub Release step must use an explicit tag`);
+      }
+      releaseTags.add(step.with.tag_name);
+      if (typeof step.with.files === 'string') {
+        draftAssetUploadCount += 1;
+        draftAssetUploadJobs.add(jobName);
+        if (step.with.fail_on_unmatched_files !== true) {
+          throw new Error(`${relativePath}: draft asset uploads must fail when files are missing`);
+        }
+      } else {
+        draftCreatorCount += 1;
+        draftCreatorJobs.add(jobName);
+        if (step.with.make_latest !== false) {
+          throw new Error(
+            `${relativePath}: the store draft must explicitly set make_latest: false`,
+          );
+        }
+      }
+    }
+  }
+
+  if (draftCreatorCount !== 1 || draftAssetUploadCount !== 2 || releaseTags.size !== 1) {
+    throw new Error(
+      `${relativePath}: expected one private draft creator and two uploads using the same tag`,
+    );
+  }
+
+  if (
+    !draftCreatorJobs.has('create-draft-release') ||
+    !draftAssetUploadJobs.has('build-msix') ||
+    !draftAssetUploadJobs.has('build-mas')
+  ) {
+    throw new Error(`${relativePath}: store builders must attach to create-draft-release`);
+  }
+  for (const jobName of ['create-draft-release', 'build-msix', 'build-mas']) {
+    const job = parsed.jobs[jobName];
+    if (!isRecord(job) || !isRecord(job.permissions) || job.permissions.contents !== 'write') {
+      throw new Error(`${relativePath}: ${jobName} requires contents: write`);
+    }
+    if (jobName !== 'create-draft-release') {
+      const needs = Array.isArray(job.needs) ? job.needs : [job.needs];
+      if (!needs.includes('create-draft-release')) {
+        throw new Error(`${relativePath}: ${jobName} must wait for the private draft`);
+      }
+    }
+  }
+}
+
 function requireScript(manifest: PackageManifest, name: string, fragment: string): void {
   const value = manifest.scripts?.[name];
   if (!value?.includes(fragment)) {
     throw new Error(`package script ${name} must include ${fragment}`);
+  }
+}
+
+function requireUnversionedWorkspaceDependency(
+  manifest: PackageManifest,
+  manifestPath: string,
+  dependency: string,
+): void {
+  if (manifest.dependencies?.[dependency] !== '*') {
+    throw new Error(
+      `${manifestPath}: ${dependency} must use "*" because this workspace is excluded from semantic-release version updates`,
+    );
   }
 }
 
@@ -87,6 +174,13 @@ async function main(): Promise<void> {
   const vscodePackage = await readPackage('packages/vscode/package.json');
   requireScript(vscodePackage, 'typecheck', 'typecheck:extension');
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
+  for (const dependency of ['@bendyline/docblocks', '@bendyline/docblocks-react']) {
+    requireUnversionedWorkspaceDependency(
+      vscodePackage,
+      'packages/vscode/package.json',
+      dependency,
+    );
+  }
 
   const desktopPackage = await readPackage('packages/desktop/package.json');
   requireScript(desktopPackage, 'typecheck', 'tsconfig.e2e.json');
@@ -112,6 +206,7 @@ async function main(): Promise<void> {
       requireWorkflowScript(commands, requirement, workflow);
     }
   }
+  await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
 
   const bundleCheck = await readFile(path.join(repoRoot, 'scripts/check-bundle-size.ts'), 'utf8');
   for (const requiredBudget of [

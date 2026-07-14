@@ -104,13 +104,14 @@ test.describe('VS Code web and UX integration', () => {
     page,
   }) => {
     await bootVSCode(page);
-    await runCommand(page, 'DocBlocks: Open Setup');
+    await runCommand(page, 'DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
 
     const setup = await getLatestWebviewContent(page);
     await expect(setup.locator('h2')).toHaveText('DocBlocks Setup');
     await expect(setup.locator('#check-node')).toBeVisible();
     await expect(setup.locator('#check-npm')).toBeVisible();
     await expect(setup.locator('#check-cli')).toBeVisible();
+    await expect(setup.locator('#check-mcp')).toBeVisible();
 
     const refresh = setup.getByRole('button', { name: /re-check environment/i });
     await expect(refresh).toBeVisible();
@@ -164,6 +165,31 @@ test.describe('VS Code web and UX integration', () => {
     expect(await readFixture()).toBe(untouched);
   });
 
+  test('opens Squisq Find mode from the editor toolbar', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const findButton = editor.getByRole('button', { name: 'Find in document' });
+    await expect(findButton).toBeVisible();
+    await expect(findButton).toHaveAttribute('aria-pressed', 'false');
+
+    await findButton.click();
+
+    await expect(editor.getByRole('toolbar', { name: 'Find toolbar' })).toBeVisible();
+    const findInput = editor.getByRole('searchbox', { name: 'Find in document' });
+    await expect(findInput).toBeFocused();
+    await findInput.fill('Test Document');
+    await expect(editor.locator('.squisq-find-count')).toHaveText(/^1 of [1-9]\d*$/);
+    await expect(findButton).toHaveAttribute('aria-pressed', 'true');
+
+    await editor.getByRole('button', { name: 'Close find' }).click();
+
+    await expect(editor.getByRole('toolbar', { name: 'Formatting toolbar' })).toBeVisible();
+    await expect(editor.getByRole('searchbox', { name: 'Find in document' })).toHaveCount(0);
+    await expect(findButton).toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('deletes a trailing-newline document to zero bytes without a self-conflict', async ({
     page,
   }) => {
@@ -198,6 +224,28 @@ test.describe('VS Code web and UX integration', () => {
     ).toBeVisible();
     await expect(editor.getByRole('checkbox', { name: /automatically save files/i })).toBeChecked();
     await expect(editor.getByRole('radio', { name: 'Green' })).toBeVisible();
+    const textSize = editor.getByRole('slider', { name: 'Text size' });
+    const lineSpacing = editor.getByRole('slider', { name: 'Line spacing' });
+    await expect(textSize).toHaveValue('16');
+    await expect(lineSpacing).toHaveValue('1.7');
+
+    await textSize.fill('20');
+    await lineSpacing.fill('2');
+    await expect(editor.getByText('20px', { exact: true })).toBeVisible();
+    await expect(editor.getByText('2\u00d7', { exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        editor.locator('.squisq-editor-shell').evaluate((element) => ({
+          textSize: getComputedStyle(element).getPropertyValue('--squisq-write-text-size').trim(),
+          lineSpacing: getComputedStyle(element)
+            .getPropertyValue('--squisq-write-line-spacing')
+            .trim(),
+        })),
+      )
+      .toEqual({ textSize: '20px', lineSpacing: '2' });
+
+    await textSize.fill('16');
+    await lineSpacing.fill('1.7');
     await editor.getByRole('button', { name: 'Close' }).click();
     await expect(
       editor.getByRole('dialog', { name: /docblocks for vs code settings/i }),

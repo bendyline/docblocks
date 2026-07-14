@@ -45,9 +45,25 @@ export const DOCBLOCKS_ACCENT_COLORS = [
 
 export type DocBlocksAccentColor = (typeof DOCBLOCKS_ACCENT_COLORS)[number];
 
+export const DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MIN = 12;
+export const DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MAX = 32;
+export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MIN = 1.2;
+export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MAX = 2.4;
+
+export interface VscodeWriteCanvasSettings {
+  textSize: number;
+  lineSpacing: number;
+}
+
+export const DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS: Readonly<VscodeWriteCanvasSettings> = {
+  textSize: 16,
+  lineSpacing: 1.7,
+};
+
 export interface VscodeEditorSettings {
   autoSave: boolean;
   accentColor: DocBlocksAccentColor;
+  writeCanvasSettings: VscodeWriteCanvasSettings;
 }
 
 /**
@@ -118,6 +134,7 @@ export type WebviewToExtensionMessage =
   | { type: 'ready' }
   | { type: 'setAutoSave'; enabled: boolean }
   | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
+  | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
   | {
       type: 'edit';
       content: string;
@@ -180,6 +197,11 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
         isDocBlocksAccentColor(value.accentColor)
         ? { type: 'setAccentColor', accentColor: value.accentColor }
         : null;
+    case 'setWriteCanvasSettings': {
+      if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
+      const settings = parseVscodeWriteCanvasSettings(value.settings);
+      return settings ? { type: 'setWriteCanvasSettings', settings } : null;
+    }
     case 'edit':
       return hasOnlyKeys(value, [
         'type',
@@ -550,17 +572,49 @@ function parseDocumentConflictDetails(
 function parseVscodeEditorSettings(value: unknown): VscodeEditorSettings | null {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ['autoSave', 'accentColor']) ||
+    !hasOnlyKeys(value, ['autoSave', 'accentColor', 'writeCanvasSettings']) ||
     typeof value.autoSave !== 'boolean' ||
     !isDocBlocksAccentColor(value.accentColor)
   ) {
     return null;
   }
-  return { autoSave: value.autoSave, accentColor: value.accentColor };
+  const writeCanvasSettings = parseVscodeWriteCanvasSettings(value.writeCanvasSettings);
+  return writeCanvasSettings
+    ? { autoSave: value.autoSave, accentColor: value.accentColor, writeCanvasSettings }
+    : null;
 }
 
 export function isDocBlocksAccentColor(value: unknown): value is DocBlocksAccentColor {
   return DOCBLOCKS_ACCENT_COLORS.some((color) => color === value);
+}
+
+export function isDocBlocksWriteCanvasTextSize(value: unknown): value is number {
+  return numberInRange(
+    value,
+    DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MIN,
+    DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MAX,
+  );
+}
+
+export function isDocBlocksWriteCanvasLineSpacing(value: unknown): value is number {
+  return numberInRange(
+    value,
+    DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MIN,
+    DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MAX,
+  );
+}
+
+function parseVscodeWriteCanvasSettings(value: unknown): VscodeWriteCanvasSettings | null {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ['textSize', 'lineSpacing']) &&
+    isDocBlocksWriteCanvasTextSize(value.textSize) &&
+    isDocBlocksWriteCanvasLineSpacing(value.lineSpacing)
+    ? { textSize: value.textSize, lineSpacing: value.lineSpacing }
+    : null;
+}
+
+function numberInRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 }
 
 function parseMediaEntries(value: unknown): MediaEntryMessage[] | null {

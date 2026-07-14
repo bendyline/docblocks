@@ -8,9 +8,11 @@
 # These are DIFFERENT from the public installers built by desktop-release.yml:
 #   - Auto-update is disabled at runtime (process.windowsStore / process.mas);
 #     the stores deliver updates.
-#   - They are NOT attached to a GitHub Release. The artifacts here are meant
-#     to be downloaded and uploaded manually to Partner Center / App Store
-#     Connect (or via their CLIs). See packages/desktop/RELEASING.md.
+#   - They are attached only to an unpublished draft GitHub Release. Do not use
+#     workflow artifacts here: in a public repository those are directly
+#     downloadable from the workflow run. Maintainers download the private
+#     draft assets for Partner Center / App Store Connect, then delete the
+#     draft when it is no longer needed.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
 #     a clean x.y.z version.
 #
@@ -65,13 +67,53 @@ jobs:
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
 
+  create-draft-release:
+    name: Create Private Draft Release
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read desktop version
+        id: desktop
+        shell: bash
+        run: echo "version=$(node -p \"require('./packages/desktop/package.json').version\")" >> "$GITHUB_OUTPUT"
+
+      # A unique, previously unpublished tag keeps reruns isolated. GitHub does
+      # not publish the release or its tag while the release remains a draft.
+      - name: Create unpublished store-build draft
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          target_commitish: ${{ github.sha }}
+          name: DocBlocks Store Build v${{ steps.desktop.outputs.version }} (run ${{ github.run_number }})
+          body: |
+            Private store-submission build for DocBlocks Desktop v${{ steps.desktop.outputs.version }}.
+
+            - Target: `${{ inputs.target }}`
+            - Source commit: `${{ github.sha }}`
+            - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            The store packages are attached only to this unpublished draft. Publishing
+            the release would make it and its assets public; delete the draft after the
+            packages have been submitted to the stores.
+          draft: true
+          prerelease: false
+          make_latest: false
+
   # ──────────────────────────────────────────────────────────────────────────
   # Windows — Microsoft Store MSIX (unsigned; the Store re-signs on ingestion)
   # ──────────────────────────────────────────────────────────────────────────
   build-msix:
-    needs: quality
+    needs: [quality, create-draft-release]
     if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -101,22 +143,23 @@ jobs:
           npm run build
           npx --no-install electron-builder --win appx --publish never
 
-      - name: Upload MSIX artifact
-        uses: actions/upload-artifact@v4
+      - name: Attach MSIX to private draft release
+        uses: softprops/action-gh-release@v2
         with:
-          name: microsoft-store-msix
-          path: |
-            packages/desktop/dist/artifacts/*.appx
-            packages/desktop/dist/artifacts/*.msix
-          retention-days: 14
+          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          draft: true
+          files: packages/desktop/dist/artifacts/*.{appx,msix}
+          fail_on_unmatched_files: true
 
   # ──────────────────────────────────────────────────────────────────────────
   # macOS — Mac App Store .pkg (sandboxed; signed with MAS distribution certs)
   # ──────────────────────────────────────────────────────────────────────────
   build-mas:
-    needs: quality
+    needs: [quality, create-draft-release]
     if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
     runs-on: macos-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -187,9 +230,10 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/mas-signing.keychain-db" 2>/dev/null || true
           rm -f packages/desktop/embedded.provisionprofile
 
-      - name: Upload MAS artifact
-        uses: actions/upload-artifact@v4
+      - name: Attach MAS package to private draft release
+        uses: softprops/action-gh-release@v2
         with:
-          name: mac-app-store-pkg
-          path: packages/desktop/dist/artifacts/*.pkg
-          retention-days: 14
+          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          draft: true
+          files: packages/desktop/dist/artifacts/*.pkg
+          fail_on_unmatched_files: true

@@ -2,6 +2,7 @@ export type SetupWebviewMessage =
   | { type: 'runChecks' }
   | { type: 'openNodeDownload' }
   | { type: 'installCli' }
+  | { type: 'configureMcp' }
   | { type: 'initProject' };
 
 /** Setup commands are a fixed capability list; no path, URL, or shell text crosses the boundary. */
@@ -11,6 +12,7 @@ export function parseSetupWebviewMessage(value: unknown): SetupWebviewMessage | 
     case 'runChecks':
     case 'openNodeDownload':
     case 'installCli':
+    case 'configureMcp':
     case 'initProject':
       return { type: value.type };
     default:

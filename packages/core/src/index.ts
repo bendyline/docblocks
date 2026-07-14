@@ -8,3 +8,4 @@ export * from './filesystem/index.js';
 export * from './document/index.js';
 export * from './workspace/index.js';
 export * from './host/index.js';
+export * from './share/index.js';
