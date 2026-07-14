@@ -144,7 +144,7 @@ test('content persists across relaunch', async ({ launchApp, workspaceDir }) => 
   await first.window.waitForSelector('.db-shell', { timeout: 30_000 });
   const target = path.join(workspaceDir, 'e2e-test.md');
   fs.writeFileSync(target, '# Hello from e2e\nsome body text\n', 'utf8');
-  await first.app.close();
+  await first.close();
 
   // Second launch: the file should still be there and the shell should
   // render against the same workspace.
@@ -190,7 +190,7 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
 }) => {
   const externalFile = path.join(userDataDir, 'quick-close.md');
   fs.writeFileSync(externalFile, '# Loose origin\n', 'utf8');
-  const { app, window } = await launchApp([externalFile]);
+  const { close, window } = await launchApp([externalFile]);
   const editor = window.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText('Loose origin', { timeout: 30_000 });
 
@@ -201,7 +201,7 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
   await window.keyboard.insertText(sentinel);
   await expect(editor).toContainText(sentinel);
 
-  await app.close();
+  await close();
   expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
 });
 
@@ -219,7 +219,7 @@ test('quick close repacks a DBK origin before acknowledging window destruction',
   const sourceBlob = await containerToZip(source);
   fs.writeFileSync(externalBundle, Buffer.from(await sourceBlob.arrayBuffer()));
 
-  const { app, window } = await launchApp([externalBundle]);
+  const { close, window } = await launchApp([externalBundle]);
   const editor = window.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText('Bundle origin', { timeout: 30_000 });
 
@@ -230,7 +230,7 @@ test('quick close repacks a DBK origin before acknowledging window destruction',
   await window.keyboard.insertText(sentinel);
   await expect(editor).toContainText(sentinel);
 
-  await app.close();
+  await close();
   const committed = await zipToContainer(fs.readFileSync(externalBundle));
   const committedDocument = await committed.readFile('quick-bundle.md');
   expect(new TextDecoder().decode(committedDocument ?? undefined)).toContain(sentinel);
@@ -244,7 +244,7 @@ test('keeping a local DBK conflict saves durable content without replaying the s
   const documentName = 'conflicted-bundle.md';
   await writeDbkDocument(externalBundle, documentName, '# Baseline A\n');
 
-  const { app, window } = await launchApp([externalBundle]);
+  const { close, window } = await launchApp([externalBundle]);
   const editor = window.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText('Baseline A', { timeout: 30_000 });
 
@@ -266,7 +266,7 @@ test('keeping a local DBK conflict saves durable content without replaying the s
   await expect
     .poll(async () => readDbkDocument(externalBundle, documentName), { timeout: 15_000 })
     .toContain(sentinel);
-  await app.close();
+  await close();
 });
 
 test('renderer cannot read files outside the workspace root', async ({

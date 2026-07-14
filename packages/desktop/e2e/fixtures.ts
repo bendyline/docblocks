@@ -29,11 +29,18 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const GRACEFUL_CLOSE_TIMEOUT_MS = 20_000;
 const FORCED_CLOSE_TIMEOUT_MS = 5_000;
+const closingApplications = new WeakMap<ElectronApplication, Promise<void>>();
 
 export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
-  launchApp: (extraArgs?: string[]) => Promise<{ app: ElectronApplication; window: Page }>;
+  launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
+}
+
+export interface LaunchedDocBlocksApplication {
+  app: ElectronApplication;
+  window: Page;
+  close(): Promise<void>;
 }
 
 function makeTmpDir(prefix: string): string {
@@ -77,7 +84,16 @@ async function forceCloseApplication(app: ElectronApplication): Promise<void> {
   await waitForProcessExit(app, FORCED_CLOSE_TIMEOUT_MS);
 }
 
-async function closeApplication(app: ElectronApplication): Promise<void> {
+function closeApplication(app: ElectronApplication): Promise<void> {
+  const existing = closingApplications.get(app);
+  if (existing) return existing;
+
+  const closing = closeApplicationOnce(app).finally(() => closingApplications.delete(app));
+  closingApplications.set(app, closing);
+  return closing;
+}
+
+async function closeApplicationOnce(app: ElectronApplication): Promise<void> {
   if (app.process().exitCode !== null || app.process().signalCode !== null) return;
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -123,10 +139,7 @@ export const test = base.extend<DocBlocksFixtures>({
     const appRoot = path.resolve(__dirname, '..');
     let running: ElectronApplication | undefined;
 
-    async function launch(extraArgs: string[] = []): Promise<{
-      app: ElectronApplication;
-      window: Page;
-    }> {
+    async function launch(extraArgs: string[] = []): Promise<LaunchedDocBlocksApplication> {
       const args = [
         appRoot,
         `--user-data-dir=${userDataDir}`,
@@ -140,7 +153,7 @@ export const test = base.extend<DocBlocksFixtures>({
       // GitHub Actions Linux runners don't own chrome-sandbox with the
       // setuid bit, so Electron's SUID sandbox aborts at launch. Disable
       // sandboxing in CI — safe because the runner is an isolated VM.
-      if (process.env.CI) {
+      if (process.platform === 'linux' && process.env.CI) {
         args.push('--no-sandbox');
       }
       const app = await electron.launch({
@@ -183,7 +196,11 @@ export const test = base.extend<DocBlocksFixtures>({
         const detail = error instanceof Error ? `: ${error.message}` : '';
         throw new Error(`Electron preload did not expose docBlocksHost${detail}`);
       }
-      return { app, window };
+      return {
+        app,
+        window,
+        close: () => closeApplication(app),
+      };
     }
 
     await use(launch);
