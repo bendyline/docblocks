@@ -97,13 +97,14 @@ test('default workspace folder exists on disk after first launch', async ({
 test('workspace dropdown shows the full folder path', async ({ launchApp, workspaceDir }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const canonicalWorkspaceDir = fs.realpathSync.native(workspaceDir);
 
   await window.locator('.db-workspace-picker-btn').click();
   const activeWorkspace = window.locator('.db-workspace-dropdown-item--active');
-  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveText(workspaceDir);
+  await expect(activeWorkspace.locator('.db-workspace-path')).toHaveText(canonicalWorkspaceDir);
   await expect(activeWorkspace.locator('.db-workspace-path')).toHaveAttribute(
     'title',
-    workspaceDir,
+    canonicalWorkspaceDir,
   );
 });
 
@@ -172,7 +173,14 @@ test('window close waits for the active document session to flush', async ({
   await window.keyboard.insertText(sentinel);
   await expect(editor).toContainText(sentinel);
 
-  await app.close();
+  // Exercise the guarded BrowserWindow close path directly. On macOS closing
+  // the final window intentionally leaves the application running, so the
+  // fixture owns the later app quit after this assertion has observed the
+  // renderer's save acknowledgement.
+  const browserWindow = await app.browserWindow(window);
+  const windowClosed = window.waitForEvent('close');
+  await browserWindow.evaluate((nativeWindow) => nativeWindow.close());
+  await windowClosed;
   const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
   expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
 });

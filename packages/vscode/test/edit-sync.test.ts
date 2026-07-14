@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { parseWebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
 import { WebviewDocumentClient } from '../webview/src/webviewDocumentClient.js';
 import {
+  DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS,
   HostDocumentChangedError,
   VscodeDocumentSync,
   withApplyingEditFlag,
@@ -91,6 +92,23 @@ function saveEnvelope(sync: VscodeDocumentSync) {
 }
 
 describe('VS Code edit sync', () => {
+  it('waits twenty seconds of edit inactivity before autosaving by default', async () => {
+    expect(DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS).to.equal(20_000);
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      createSessionId: () => 'session-a',
+    });
+
+    expect(sync.acceptEdit(editEnvelope(sync, 1, 'pending')).accepted).to.equal(true);
+    await wait(30);
+
+    expect(adapter.commits).to.deep.equal([]);
+    expect(sync.getSnapshot().session.status).to.equal('dirty');
+    await sync.save(saveEnvelope(sync));
+    expect(adapter.commits).to.deep.equal(['pending']);
+    sync.dispose();
+  });
+
   it('coalesces immediate complete edits and serializes the latest autosave', async () => {
     const adapter = new FakeDocumentAdapter();
     const sync = await VscodeDocumentSync.create(adapter, {

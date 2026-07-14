@@ -59,8 +59,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright runtime
+        run: npx playwright install --with-deps chromium
+
       - name: Run canonical quality gate
-        run: npm run all
+        run: xvfb-run -a npm run all
 
   # ──────────────────────────────────────────────────────────────────────────
   # Windows — Microsoft Store MSIX (unsigned; the Store re-signs on ingestion)

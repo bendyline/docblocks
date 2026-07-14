@@ -27,11 +27,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright runtime
+        run: npx playwright install --with-deps chromium
+
       # Keep local and CI assurance identical. Add mandatory build, validation,
       # or unit-test gates to the root `all` script rather than duplicating the
       # list in this workflow.
       - name: Run canonical quality gate
-        run: npm run all
+        run: xvfb-run -a npm run all
 
   desktop-build:
     name: Desktop Build (${{ matrix.os }})

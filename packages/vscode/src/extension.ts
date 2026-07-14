@@ -38,6 +38,16 @@ export function activate(context: vscode.ExtensionContext) {
       SetupViewProvider.createOrShow(context);
     }),
   );
+
+  // Internal target for the active panel's native document-status item.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      MarkdownEditorPanel.documentStatusCommand,
+      async (uriValue: unknown) => {
+        await MarkdownEditorPanel.handleDocumentStatusAction(uriValue);
+      },
+    ),
+  );
 }
 
 export async function deactivate(): Promise<void> {

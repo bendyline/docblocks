@@ -83,7 +83,7 @@ The rich-text editor itself is **Squisq**, a sister project that ships as `@bend
 ```bash
 npm install
 
-# Canonical local/CI gate — builds, shipped-artifact checks, packed consumers, guidance, static checks, and tests
+# Canonical local/CI gate — builds, checks, unit/integration tests, and every local E2E suite
 npm run all
 
 # Build everything (core → react → cli → vscode → desktop → site)
@@ -109,6 +109,7 @@ npm run test:mcp:linked
 
 ```bash
 npm test                  # Mocha unit tests across all packages
+npm run test:e2e:all      # Every site, VS Code Web, source desktop, and packaged desktop E2E suite
 npm run test:e2e          # Playwright drives the site (port 5220)
 npm run test:e2e:desktop  # Playwright launches the source-built Electron app
 npm run test:e2e:desktop:packaged # Smoke the electron-builder artifact that ships

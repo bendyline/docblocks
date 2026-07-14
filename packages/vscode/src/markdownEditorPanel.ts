@@ -15,6 +15,10 @@ import {
   type HostDocumentAdapter,
   type HostDocumentSnapshot,
 } from './editSync.js';
+import {
+  formatConflictResolutionDetail,
+  getDocumentStatusBarPresentation,
+} from './documentStatusBar.js';
 import { handleExportMessage } from './exportBridge.js';
 import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
 import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueue.js';
@@ -33,6 +37,7 @@ type EditorPanelQueueEntry =
 
 export class MarkdownEditorPanel {
   public static readonly viewType = 'docblocks.markdownPanel';
+  public static readonly documentStatusCommand = 'docblocks.documentStatusAction';
 
   private static readonly panels = new Map<string, MarkdownEditorPanel>();
   private static readonly closingSessions = new Set<Promise<void>>();
@@ -50,6 +55,8 @@ export class MarkdownEditorPanel {
   private invalidMessageWarningShown = false;
   private panelDisposed = false;
   private readonly exportGrantScope: ExportGrantScope;
+  private readonly statusBarItem: vscode.StatusBarItem;
+  private conflictPrompt: Promise<void> | null = null;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -83,6 +90,9 @@ export class MarkdownEditorPanel {
         );
       },
     });
+    this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    this.statusBarItem.name = 'DocBlocks document status';
+    this.disposables.push(this.statusBarItem);
     this.panel.webview.options = {
       enableScripts: true,
       localResourceRoots: getEditorLocalResourceRoots(this.context.extensionUri),
@@ -94,6 +104,7 @@ export class MarkdownEditorPanel {
     );
     this.panel.webview.html = getEditorHtml(this.panel.webview, this.context.extensionUri);
     this.updateTitle();
+    this.updateStatusBar();
     this.syncReady = this.initializeSync();
     this.registerEventHandlers();
   }
@@ -146,6 +157,11 @@ export class MarkdownEditorPanel {
     await Promise.allSettled([...MarkdownEditorPanel.closingSessions]);
   }
 
+  public static async handleDocumentStatusAction(uriValue: unknown): Promise<void> {
+    if (typeof uriValue !== 'string') return;
+    await MarkdownEditorPanel.panels.get(uriValue)?.handleDocumentStatusAction();
+  }
+
   private async initializeSync(): Promise<VscodeDocumentSync> {
     const adapter: HostDocumentAdapter = {
       key: this.uri.toString(),
@@ -154,15 +170,16 @@ export class MarkdownEditorPanel {
     };
     const settings = readVscodeEditorSettings(this.uri);
     const sync = await VscodeDocumentSync.create(adapter, {
-      autoSaveDelayMs: 300,
       autoSaveEnabled: settings.autoSave,
     });
     this.sync = sync;
     this.unsubscribeSync = sync.subscribe(() => {
       this.sendSessionState();
       this.updateTitle();
+      this.updateStatusBar();
     });
     this.updateTitle();
+    this.updateStatusBar();
     return sync;
   }
 
@@ -189,6 +206,8 @@ export class MarkdownEditorPanel {
       vscode.workspace.onDidChangeTextDocument((event) => {
         if (event.document.uri.toString() !== this.uri.toString() || this.isApplyingEdit) return;
         this.document = event.document;
+        this.updateTitle();
+        this.updateStatusBar();
         // TextDocument objects are live. Capture the exact event snapshot now
         // so a queued callback cannot accidentally classify a later version.
         let external: HostDocumentSnapshot;
@@ -205,9 +224,7 @@ export class MarkdownEditorPanel {
           const result = sync.observeExternal(external);
           if (result === 'applied') this.sendContent();
           if (result === 'conflict' && !wasConflicted) {
-            void vscode.window.showWarningMessage(
-              `${getUriBasename(this.uri)} changed outside DocBlocks while local edits were pending. Resolve the conflict in the DocBlocks editor.`,
-            );
+            void this.promptConflictResolution(sync, false);
           }
           this.sendSessionState();
           this.updateTitle();
@@ -217,10 +234,15 @@ export class MarkdownEditorPanel {
         if (document.uri.toString() !== this.uri.toString()) return;
         this.document = document;
         this.updateTitle();
+        this.updateStatusBar();
       }),
       vscode.workspace.onDidCloseTextDocument((document) => {
         if (document.uri.toString() !== this.uri.toString()) return;
         this.updateTitle();
+        this.updateStatusBar();
+      }),
+      this.panel.onDidChangeViewState(() => {
+        this.updateStatusBar();
       }),
       vscode.window.onDidChangeActiveColorTheme(() => {
         this.sendTheme();
@@ -367,6 +389,73 @@ export class MarkdownEditorPanel {
     }
   }
 
+  private promptConflictResolution(sync: VscodeDocumentSync, modal: boolean): Promise<void> {
+    if (this.conflictPrompt) return this.conflictPrompt;
+    const prompt = this.runConflictResolutionPrompt(sync, modal).finally(() => {
+      if (this.conflictPrompt === prompt) this.conflictPrompt = null;
+    });
+    this.conflictPrompt = prompt;
+    return prompt;
+  }
+
+  private async runConflictResolutionPrompt(
+    sync: VscodeDocumentSync,
+    modal: boolean,
+  ): Promise<void> {
+    const snapshot = sync.getSnapshot();
+    if (!snapshot.session.conflict) return;
+
+    const fileName = getUriBasename(this.uri);
+    const message = `${fileName} changed outside DocBlocks while local edits were pending.`;
+    const choice = modal
+      ? await vscode.window.showWarningMessage(
+          message,
+          {
+            modal: true,
+            detail: formatConflictResolutionDetail(snapshot.conflict),
+          },
+          KEEP_LOCAL_CHOICE,
+          USE_EXTERNAL_CHOICE,
+        )
+      : await vscode.window.showWarningMessage(message, KEEP_LOCAL_CHOICE, USE_EXTERNAL_CHOICE);
+
+    if (this.panelDisposed || !choice) return;
+    await this.handleConflictChoice(
+      snapshot.sessionId,
+      choice === KEEP_LOCAL_CHOICE ? 'use-local' : 'use-external',
+      sync,
+    );
+  }
+
+  private async handleDocumentStatusAction(): Promise<void> {
+    const sync = await this.syncReady;
+    const status = sync.getSnapshot().session.status;
+    if (status === 'conflict') {
+      await this.promptConflictResolution(sync, true);
+      return;
+    }
+    if (status !== 'dirty' && status !== 'error') return;
+
+    try {
+      await this.latestEditQueue.flush();
+      const snapshot = sync.getSnapshot();
+      if (snapshot.session.status === 'conflict') {
+        await this.promptConflictResolution(sync, true);
+        return;
+      }
+      if (snapshot.session.status !== 'dirty' && snapshot.session.status !== 'error') return;
+      await sync.save({
+        sessionId: snapshot.sessionId,
+        clientRevision: snapshot.acknowledgedClientRevision,
+        baseDocumentVersion: snapshot.baseDocumentVersion,
+      });
+    } catch (error: unknown) {
+      await vscode.window.showErrorMessage(
+        `DocBlocks could not save ${getUriBasename(this.uri)}: ${toError(error).message}`,
+      );
+    }
+  }
+
   private async handleSettingsUpdate(
     message: Extract<WebviewToExtensionMessage, { type: 'setAutoSave' | 'setAccentColor' }>,
   ): Promise<void> {
@@ -451,6 +540,9 @@ export class MarkdownEditorPanel {
       message: acknowledgement.message,
     });
     if (!acknowledgement.accepted) {
+      void vscode.window.showErrorMessage(
+        acknowledgement.message ?? `VS Code rejected an edit for ${getUriBasename(this.uri)}.`,
+      );
       this.sendContent();
       this.sendSessionState();
     }
@@ -582,6 +674,48 @@ export class MarkdownEditorPanel {
       status === 'error' ||
       status === 'conflict';
     this.panel.title = `${unsaved ? '* ' : ''}${getUriBasename(this.uri)}`;
+  }
+
+  private updateStatusBar(): void {
+    const session = this.sync?.getSnapshot().session;
+    if (!this.panel.active || !session) {
+      this.statusBarItem.hide();
+      return;
+    }
+
+    const presentation = getDocumentStatusBarPresentation(
+      session.status,
+      getUriBasename(this.uri),
+      session.error ? boundedMessage(session.error.message) : null,
+    );
+    if (!presentation) {
+      this.statusBarItem.hide();
+      return;
+    }
+
+    this.statusBarItem.text = presentation.text;
+    this.statusBarItem.tooltip = presentation.tooltip;
+    this.statusBarItem.color = undefined;
+    this.statusBarItem.backgroundColor =
+      presentation.severity === 'error'
+        ? new vscode.ThemeColor('statusBarItem.errorBackground')
+        : presentation.severity === 'warning'
+          ? new vscode.ThemeColor('statusBarItem.warningBackground')
+          : undefined;
+    this.statusBarItem.accessibilityInformation = {
+      label: presentation.accessibilityLabel,
+    };
+    this.statusBarItem.command = presentation.action
+      ? {
+          command: MarkdownEditorPanel.documentStatusCommand,
+          title:
+            presentation.action === 'save'
+              ? 'Save DocBlocks document'
+              : 'Resolve DocBlocks document conflict',
+          arguments: [this.uri.toString()],
+        }
+      : undefined;
+    this.statusBarItem.show();
   }
 
   private trackClose(): void {

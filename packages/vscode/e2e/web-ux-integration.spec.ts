@@ -134,14 +134,16 @@ test.describe('VS Code web and UX integration', () => {
     await expect(editor.getByRole('toolbar', { name: /formatting toolbar/i })).toBeVisible();
     await expect(editor.getByRole('tab', { name: /write/i })).toBeVisible();
     await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /use/i })).toBeVisible();
+    const previewTab = editor.locator('[role="tab"][data-view="preview"]');
+    await expect(previewTab).toBeVisible();
+    await expect(previewTab).toHaveAccessibleName('Slideshow');
     await expect(editor.getByRole('button', { name: /export document/i })).toBeVisible();
     await expect(editor.locator('body')).toContainText('Test Document');
 
     await editor.getByRole('tab', { name: /source/i }).click();
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
 
-    await editor.getByRole('tab', { name: /use/i }).click();
+    await previewTab.click();
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
@@ -202,7 +204,40 @@ test.describe('VS Code web and UX integration', () => {
     ).not.toBeVisible();
   });
 
-  test('edits in the webview and syncs the changed markdown document', async ({ page }) => {
+  test('shows document persistence state in the native VS Code status bar', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const settingsButton = editor.getByRole('button', { name: /docblocks settings/i });
+    await settingsButton.click();
+    const autoSave = editor.getByRole('checkbox', { name: /automatically save files/i });
+    if (await autoSave.isChecked()) await autoSave.click();
+    await editor.getByRole('button', { name: 'Close' }).click();
+    await page.waitForTimeout(300);
+
+    const finalParagraph = editor.getByText('A blockquote for testing purposes.').first();
+    await finalParagraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.insertText(' Native status indicator.');
+
+    const unsavedStatus = page
+      .locator('.statusbar-item')
+      .filter({ hasText: 'DocBlocks: Unsaved changes' });
+    await expect(unsavedStatus).toBeVisible({ timeout: 10_000 });
+    await expect(editor.getByText('Unsaved changes', { exact: true })).toHaveCount(0);
+
+    await unsavedStatus.click();
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Saved' }),
+    ).toBeVisible({ timeout: 10_000 });
+
+    await settingsButton.click();
+    if (!(await autoSave.isChecked())) await autoSave.click();
+    await editor.getByRole('button', { name: 'Close' }).click();
+  });
+
+  test('manually saves a changed markdown document before the autosave delay', async ({ page }) => {
     await bootVSCode(page);
     await openDocBlocksEditor(page);
 
@@ -214,8 +249,14 @@ test.describe('VS Code web and UX integration', () => {
     await page.keyboard.press('Enter');
     await page.keyboard.insertText(editSentinel);
 
-    await page.waitForTimeout(600);
     await expect(editor.locator('body')).toContainText(editSentinel);
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
+    ).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press('ControlOrMeta+S');
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Saved' }),
+    ).toBeVisible({ timeout: 10_000 });
 
     await openTextEditorWithOpenWith(page);
 

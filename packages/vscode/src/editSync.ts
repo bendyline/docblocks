@@ -10,6 +10,9 @@ import {
 } from '@bendyline/docblocks/document';
 import type { DocumentConflictDetailsMessage } from '@bendyline/docblocks/vscode';
 
+/** Save after twenty seconds without another accepted editor snapshot. */
+export const DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS = 20_000;
+
 export interface HostDocumentSnapshot {
   content: string;
   version: number;
@@ -123,7 +126,7 @@ export class VscodeDocumentSync {
     this.baseDocumentVersion = initial.version;
     this.documentVersion = initial.version;
     this.session = new DocumentSession({
-      autoSaveDelayMs: options.autoSaveDelayMs ?? 300,
+      autoSaveDelayMs: options.autoSaveDelayMs ?? DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS,
       autoSaveEnabled: options.autoSaveEnabled,
     });
     this.target = new VscodeCommitTarget(

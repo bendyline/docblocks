@@ -28,7 +28,7 @@
           "type": "boolean",
           "default": true,
           "scope": "window",
-          "description": "Automatically save markdown files after edits in the DocBlocks editor. Manual Save and editor close still flush pending changes when disabled."
+          "description": "Automatically save markdown files 20 seconds after the last edit in the DocBlocks editor. Manual Save and editor close still flush pending changes when disabled."
         },
         "docblocks.accentColor": {
           "type": "string",

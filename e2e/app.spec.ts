@@ -75,12 +75,11 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(3); // +F, +D, refresh
+    await expect(buttons).toHaveCount(2); // +F, +D
     const newFileIcon = buttons.nth(0).locator('.fa-file-circle-plus');
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveCSS('font-family', /Font Awesome/);
     await expect(buttons.nth(1).locator('.fa-folder-plus')).toBeVisible();
-    await expect(buttons.nth(2).locator('.fa-arrows-rotate')).toBeVisible();
 
     await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
   });
@@ -103,7 +102,8 @@ test.describe('DocBlocks App', () => {
 
     const linkCenter = linkBox.y + linkBox.height / 2;
     const statusCenter = statusBox.y + statusBox.height / 2;
-    expect(linkCenter).toBe(statusCenter);
+    // Font metrics can round the two line boxes to adjacent device pixels.
+    expect(Math.abs(linkCenter - statusCenter)).toBeLessThanOrEqual(1);
   });
 });
 

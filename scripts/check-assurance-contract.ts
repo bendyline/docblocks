@@ -66,12 +66,22 @@ async function main(): Promise<void> {
     'npm run format:check',
     'npm run typecheck',
     'npm test',
+    'npm run test:e2e:all',
   ];
   const actualGate = rootPackage.scripts?.all?.split(/\s*&&\s*/u) ?? [];
   if (JSON.stringify(actualGate) !== JSON.stringify(expectedGate)) {
     throw new Error(
       `root all script drifted\nexpected: ${expectedGate.join(' && ')}\nactual:   ${actualGate.join(' && ')}`,
     );
+  }
+  for (const requiredSuite of [
+    'test:e2e',
+    'test:e2e:offline',
+    'test:e2e:vscode',
+    'test:e2e:desktop',
+    'test:e2e:desktop:packaged',
+  ]) {
+    requireScript(rootPackage, 'test:e2e:all', `npm run ${requiredSuite}`);
   }
 
   const vscodePackage = await readPackage('packages/vscode/package.json');
@@ -116,7 +126,7 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    'Canonical gate, release workflows, E2E matrix, and shipped bundles agree.\n',
+    'Canonical all-tests gate, release workflows, E2E matrix, and shipped bundles agree.\n',
   );
 }
 
