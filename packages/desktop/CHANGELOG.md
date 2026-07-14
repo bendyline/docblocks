@@ -1,3 +1,40 @@
+## docblocks-desktop [2.0.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@1.0.2...docblocks-desktop@2.0.0) (2026-07-14)
+
+### ⚠ BREAKING CHANGES
+
+* Updated MCP and CLI APIs
+
+### Features
+
+* Updated MCP and CLI APIs ([b88fe16](https://github.com/bendyline/docblocks/commit/b88fe161523dda1107abaee25485d111cfc4d119))
+
+### Bug Fixes
+
+* App mode ([9606b8c](https://github.com/bendyline/docblocks/commit/9606b8cd55a6e07f27a724fd73381b6c0bc5815f))
+* App updates ([f92c74a](https://github.com/bendyline/docblocks/commit/f92c74ad7700544121cd23e6c861cf10af9b1fd8))
+* Bug updates ([2560098](https://github.com/bendyline/docblocks/commit/256009887c003e1c127f6cedd86b57c0b5c19211))
+* DB updates ([7c6696d](https://github.com/bendyline/docblocks/commit/7c6696da013c0b35fe83907ca47b7e0e48b7a262))
+* DocBlocks fixes ([ba2f0db](https://github.com/bendyline/docblocks/commit/ba2f0dbb12b39159db967d62afda52ca3623ec84))
+* E2E test fixes ([bedc247](https://github.com/bendyline/docblocks/commit/bedc24746c9fd33b0302e1cb79e02e34d3bb6125))
+* Git work and UX ([62e9f8a](https://github.com/bendyline/docblocks/commit/62e9f8a3e01240535819479fa1f454f18e36b610))
+* MCP updates ([f3b31d4](https://github.com/bendyline/docblocks/commit/f3b31d4b80a25f97803ca4c3055fb1453d295dd0))
+* More code review fixes ([081b7a2](https://github.com/bendyline/docblocks/commit/081b7a237642e4b8604cda0a1556b7388ce23080))
+* More code review hardening ([015196a](https://github.com/bendyline/docblocks/commit/015196a47ebbeb978e999e61e9f148b5fd344a5d))
+* More fixes ([bfa9929](https://github.com/bendyline/docblocks/commit/bfa9929424e081ce369b9d2e1426a24ecdfedc93))
+* Setup work ([3ea05a4](https://github.com/bendyline/docblocks/commit/3ea05a45da7d0c6e9c528fc38ffe9d3997f914b3))
+* Test updates ([81b4f90](https://github.com/bendyline/docblocks/commit/81b4f902c0a99758b21b9f5e8d0db0483b10fa39))
+* Test updates ([5a4c457](https://github.com/bendyline/docblocks/commit/5a4c4575c10886dde60a83d800991996eda23891))
+* Update ([a6e6e56](https://github.com/bendyline/docblocks/commit/a6e6e56ede9f64a215d682f5f2f8d895a0b5d49b))
+* Update app bar ([d96ab6b](https://github.com/bendyline/docblocks/commit/d96ab6b21869f5773135ccec59402072867fff86))
+* Update for tests ([b59da72](https://github.com/bendyline/docblocks/commit/b59da725bd7e8f5fb7e7f635b096734eec853568))
+* Use monaco as a library ([0771b4e](https://github.com/bendyline/docblocks/commit/0771b4e95f3336088e816a2376ab4d32b2e8a260))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.0.0
+* **@bendyline/docblocks-react:** upgraded to 2.0.0
+
 ## docblocks-desktop [1.0.2](https://github.com/bendyline/docblocks/compare/docblocks-desktop@1.0.1...docblocks-desktop@1.0.2) (2026-07-07)
 
 ### Bug Fixes
