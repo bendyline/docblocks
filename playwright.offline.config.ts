@@ -13,7 +13,7 @@ export default defineConfig({
   workers: 1,
   // Separate output folder so a CI run cannot clobber the default suite's
   // playwright-report/ artifact.
-  reporter: [['html', { outputFolder: 'playwright-report-offline' }]],
+  reporter: [['html', { outputFolder: 'playwright-report-offline', open: 'never' }]],
   use: {
     baseURL: 'http://localhost:5230',
     trace: 'on-first-retry',
