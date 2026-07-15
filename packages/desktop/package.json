@@ -37,6 +37,14 @@
     "test:e2e:packaged:only": "playwright test --config=e2e/playwright.packaged.config.ts"
   },
   "dependencies": {
+    "chokidar": "3.6.0",
+    "electron-updater": "6.3.9",
+    "electron-window-state": "5.0.3"
+  },
+  "optionalDependencies": {
+    "ffmpeg-static": "5.2.0"
+  },
+  "devDependencies": {
     "@bendyline/docblocks": "1.1.2",
     "@bendyline/docblocks-react": "1.1.2",
     "@bendyline/squisq": "2.1.0",
@@ -45,18 +53,6 @@
     "@bendyline/squisq-react": "2.1.0",
     "@bendyline/squisq-video": "2.0.2",
     "@bendyline/squisq-video-react": "2.0.2",
-    "chokidar": "3.6.0",
-    "electron-updater": "6.3.9",
-    "electron-window-state": "5.0.3",
-    "mocha": "11.3.0",
-    "monaco-editor": "0.53.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
-  },
-  "optionalDependencies": {
-    "ffmpeg-static": "5.2.0"
-  },
-  "devDependencies": {
     "@electron/notarize": "2.5.0",
     "@playwright/test": "1.58.2",
     "@types/node": "22.10.2",
@@ -66,9 +62,13 @@
     "concurrently": "9.1.0",
     "electron": "42.2.0",
     "electron-builder": "26.8.1",
+    "mocha": "11.3.0",
+    "monaco-editor": "0.53.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "6.4.2",
+    "vite": "6.4.3",
     "wait-on": "8.0.1"
   }
 }

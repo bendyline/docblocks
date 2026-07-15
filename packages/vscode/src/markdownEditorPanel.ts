@@ -120,9 +120,9 @@ export class MarkdownEditorPanel {
   /**
    * Open the standalone editor for a document VS Code has already resolved.
    *
-   * Panel creation is intentionally synchronous so the default custom-editor
-   * route can dispose its resource-backed panel before the next visible frame.
-   * Initialization continues through the returned promise.
+   * This path is reserved for explicit DocBlocks commands. The default custom
+   * editor route attaches directly to VS Code's resource-backed panel through
+   * {@link attachCustomEditor}.
    */
   public static openDocument(
     context: vscode.ExtensionContext,
@@ -148,7 +148,28 @@ export class MarkdownEditorPanel {
       },
     );
 
-    const editorPanel = new MarkdownEditorPanel(context, uri, document, panel);
+    return MarkdownEditorPanel.attachPanel(context, document, panel);
+  }
+
+  /** Bind DocBlocks directly to the resource-backed panel owned by VS Code. */
+  public static attachCustomEditor(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    return MarkdownEditorPanel.attachPanel(context, document, panel);
+  }
+
+  private static attachPanel(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    const key = document.uri.toString();
+    if (MarkdownEditorPanel.panels.has(key)) {
+      throw new Error(`${getUriBasename(document.uri)} is already open in DocBlocks.`);
+    }
+    const editorPanel = new MarkdownEditorPanel(context, document.uri, document, panel);
     MarkdownEditorPanel.panels.set(key, editorPanel);
     return editorPanel.syncReady.then(
       () => undefined,

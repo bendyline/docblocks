@@ -7,7 +7,7 @@ import type {
   McpDiagnostic,
 } from '@bendyline/docblocks/mcp';
 import { MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
-import { tryParseWorkspacePath } from '@bendyline/docblocks/filesystem';
+import { decodeUtf8Text, tryParseWorkspacePath } from '@bendyline/docblocks/filesystem';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
@@ -305,7 +305,12 @@ async function readAssetManifest(
     throw new Error('The document asset manifest exceeds the byte limit');
   }
   try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    const parsed: unknown = JSON.parse(
+      decodeUtf8Text(bytes, {
+        label: 'The document asset manifest',
+        path: ASSET_MANIFEST_PATH,
+      }),
+    );
     if (
       !isExactRecord(parsed, ['version', 'assets']) ||
       parsed.version !== 1 ||

@@ -1,4 +1,5 @@
 export type { WorkspaceDescriptor, TransientOrigin } from './types.js';
+export { parsePersistedWorkspaceList } from './workspace-schema.js';
 
 export {
   listWorkspaces,

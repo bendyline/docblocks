@@ -10,7 +10,7 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
@@ -19,6 +19,8 @@ import yaml from 'js-yaml';
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const configPath = path.join(repoRoot, 'packages/desktop/electron-builder.yml');
+const desktopManifestPath = path.join(repoRoot, 'packages/desktop/package.json');
+const mainPath = path.join(repoRoot, 'packages/desktop/dist/main/main.cjs');
 const preloadPath = path.join(repoRoot, 'packages/desktop/dist/preload/preload.cjs');
 
 const config = yaml.load(readFileSync(configPath, 'utf8'));
@@ -44,6 +46,77 @@ if (!validate(config)) {
 
 process.stdout.write('electron-builder.yml: schema OK\n');
 
+const configuredFiles =
+  typeof config === 'object' && config !== null && 'files' in config ? config.files : null;
+if (!Array.isArray(configuredFiles) || !configuredFiles.includes('!dist/**/*.map')) {
+  process.stderr.write(
+    'electron-builder.yml must exclude generated dist source maps from packaged artifacts.\n',
+  );
+  process.exit(1);
+}
+
+interface DesktopManifest {
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+}
+
+function collectRuntimeRequires(source: string): Set<string> {
+  const runtimeRequires = new Set<string>();
+  for (const match of source.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
+    runtimeRequires.add(match[2]);
+  }
+  return runtimeRequires;
+}
+
+function packageNameFromSpecifier(specifier: string): string {
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+// Production dependencies are copied wholesale by electron-builder. Keep that
+// list equal to the packages the built main process actually loads; renderer
+// libraries belong in devDependencies because Vite already emitted them.
+if (!existsSync(mainPath)) {
+  process.stderr.write(
+    `Desktop main artifact is missing at ${mainPath}; build desktop before validating it.\n`,
+  );
+  process.exit(1);
+}
+const desktopManifest = JSON.parse(readFileSync(desktopManifestPath, 'utf8')) as DesktopManifest;
+const declaredRuntimeDependencies = new Set([
+  ...Object.keys(desktopManifest.dependencies ?? {}),
+  ...Object.keys(desktopManifest.optionalDependencies ?? {}),
+]);
+const mainRequires = collectRuntimeRequires(readFileSync(mainPath, 'utf8'));
+const requiredPackages = new Set(
+  [...mainRequires]
+    .filter((specifier) => specifier !== 'electron' && !isBuiltin(specifier))
+    .map(packageNameFromSpecifier),
+);
+const undeclaredPackages = [...requiredPackages].filter(
+  (dependency) => !declaredRuntimeDependencies.has(dependency),
+);
+const unusedProductionDependencies = [...declaredRuntimeDependencies].filter(
+  (dependency) => !requiredPackages.has(dependency),
+);
+if (undeclaredPackages.length > 0 || unusedProductionDependencies.length > 0) {
+  process.stderr.write(
+    [
+      undeclaredPackages.length > 0
+        ? `Desktop main has undeclared runtime dependencies: ${undeclaredPackages.join(', ')}`
+        : '',
+      unusedProductionDependencies.length > 0
+        ? `Desktop production dependencies are not loaded by main: ${unusedProductionDependencies.join(', ')}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n') + '\n',
+  );
+  process.exit(1);
+}
+
+process.stdout.write('desktop production dependencies: main-runtime-only OK\n');
+
 // Electron's sandboxed preload exposes only a very small CommonJS surface.
 // Workspace/package imports that tsup leaves as runtime `require()` calls make
 // the entire preload fail before contextBridge exposes docBlocksHost. Inspect
@@ -56,10 +129,7 @@ if (!existsSync(preloadPath)) {
 }
 
 const preload = readFileSync(preloadPath, 'utf8');
-const runtimeRequires = new Set<string>();
-for (const match of preload.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
-  runtimeRequires.add(match[2]);
-}
+const runtimeRequires = collectRuntimeRequires(preload);
 const unsupportedRequires = [...runtimeRequires].filter((specifier) => specifier !== 'electron');
 if (unsupportedRequires.length > 0) {
   process.stderr.write(

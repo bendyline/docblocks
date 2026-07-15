@@ -10,27 +10,19 @@ export class MarkdownEditorLauncher implements vscode.CustomTextEditorProvider {
     document: vscode.TextDocument,
     webviewPanel: vscode.WebviewPanel,
     token: vscode.CancellationToken,
-  ): void {
-    const viewColumn = webviewPanel.viewColumn ?? vscode.ViewColumn.Active;
-
-    // The custom editor exists only to make DocBlocks the default for Markdown.
-    // VS Code must first finish resolving its webview, so perform the handoff
-    // on the next turn. Create the standalone panel before disposing the route
-    // so VS Code never observes a disposed overlay during resolution.
-    setTimeout(() => {
-      if (token.isCancellationRequested) return;
-
-      let ready: Promise<void>;
-      try {
-        ready = MarkdownEditorPanel.openDocument(this.context, document, viewColumn);
-      } catch (error: unknown) {
-        void showOpenError(document.uri, error);
-        return;
-      }
-
-      webviewPanel.dispose();
-      void ready.catch((error: unknown) => showOpenError(document.uri, error));
-    }, 0);
+  ): Thenable<void> | void {
+    if (token.isCancellationRequested) return;
+    try {
+      return MarkdownEditorPanel.attachCustomEditor(this.context, document, webviewPanel).catch(
+        async (error: unknown) => {
+          await showOpenError(document.uri, error);
+          throw error;
+        },
+      );
+    } catch (error: unknown) {
+      void showOpenError(document.uri, error);
+      throw error;
+    }
   }
 }
 

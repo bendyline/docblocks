@@ -19,45 +19,16 @@
 import { app } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
+import { SETTINGS_MAX_BYTES, parseSettings, type Settings } from './settings-schema.js';
+import { SettingsWriteQueue } from './settings-write-queue.js';
 
-export interface PersistedWorkspace {
-  id: string;
-  name: string;
-  rootPath: string;
-  /**
-   * Base64 security-scoped bookmark. Only populated in Mac App Store builds,
-   * where the sandbox otherwise loses access to user-picked folders across
-   * launches. Ignored (and never written) in non-sandboxed builds.
-   */
-  bookmark?: string;
-}
-
-/** A user-approved native export path and its optional macOS sandbox bookmark. */
-export interface PersistedExportTargetAccess {
-  path: string;
-  bookmark?: string;
-  /** Present only when the native picker explicitly approved this exact file. */
-  confirmedByPicker?: true;
-}
-
-/** Last export targets for one document, retained separately by file extension. */
-export interface PersistedExportTarget {
-  last?: PersistedExportTargetAccess;
-  byExtension?: Record<string, PersistedExportTargetAccess>;
-}
-
-export interface Settings {
-  /** Absolute path the first-launch bootstrap should use. */
-  defaultWorkspaceRoot?: string;
-  /** All folders the user has opened — rebuilt into the fs whitelist. */
-  workspaces: PersistedWorkspace[];
-  /** Whether the user has been shown the iCloud mitigation dialog. */
-  iCloudPromptShown?: boolean;
-  /** Parent directory of the most recent "Clone repository" destination. */
-  lastCloneParentDir?: string;
-  /** Native export targets keyed by a stable hash of workspace + document path. */
-  exportTargets?: Record<string, PersistedExportTarget>;
-}
+export type {
+  PersistedExportTarget,
+  PersistedExportTargetAccess,
+  PersistedWorkspace,
+  Settings,
+} from './settings-schema.js';
 
 const DEFAULT_SETTINGS: Settings = { workspaces: [] };
 
@@ -70,8 +41,6 @@ let cachedSettings: Settings | null = null;
 let pendingSettings: Settings | null = null;
 /** Timer for the debounced flush. */
 let flushTimer: NodeJS.Timeout | null = null;
-/** Promise that resolves when the current in-flight write completes. */
-let inflight: Promise<void> = Promise.resolve();
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
@@ -101,15 +70,16 @@ async function atomicWrite(file: string, contents: string): Promise<void> {
 export async function readSettings(): Promise<Settings> {
   if (cachedSettings) return cachedSettings;
   try {
-    const raw = await fs.readFile(settingsPath(), 'utf8');
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    cachedSettings = {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      workspaces: parsed.workspaces ?? [],
-    };
-  } catch {
-    cachedSettings = { ...DEFAULT_SETTINGS };
+    const file = settingsPath();
+    const bytes = await fs.readFile(file);
+    if (bytes.byteLength > SETTINGS_MAX_BYTES) {
+      throw new Error(`Desktop settings exceed the ${SETTINGS_MAX_BYTES}-byte limit`);
+    }
+    const raw = decodeUtf8Text(bytes, { label: 'Desktop settings', path: file });
+    cachedSettings = parseSettings(JSON.parse(raw) as unknown);
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    cachedSettings = { ...DEFAULT_SETTINGS, workspaces: [] };
   }
   return cachedSettings;
 }
@@ -117,6 +87,8 @@ export async function readSettings(): Promise<Settings> {
 async function commit(snapshot: Settings): Promise<void> {
   await atomicWrite(settingsPath(), JSON.stringify(snapshot, null, 2));
 }
+
+const writeQueue = new SettingsWriteQueue(commit);
 
 /** Force an immediate synchronous-looking flush. Safe to call anywhere. */
 export async function flushSettings(): Promise<void> {
@@ -127,9 +99,9 @@ export async function flushSettings(): Promise<void> {
   if (pendingSettings) {
     const snapshot = pendingSettings;
     pendingSettings = null;
-    inflight = inflight.then(() => commit(snapshot));
+    writeQueue.enqueue(snapshot);
   }
-  await inflight;
+  await writeQueue.drain();
 }
 
 /** Replace the current settings and schedule a debounced flush. */
@@ -142,7 +114,7 @@ export async function writeSettings(settings: Settings): Promise<void> {
     if (!pendingSettings) return;
     const snapshot = pendingSettings;
     pendingSettings = null;
-    inflight = inflight.then(() => commit(snapshot));
+    writeQueue.enqueue(snapshot);
   }, DEBOUNCE_MS);
 }
 

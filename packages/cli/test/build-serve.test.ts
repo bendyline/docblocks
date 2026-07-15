@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { request } from 'node:http';
 import { runBuild } from '../src/commands/build.js';
+import { renderMarkdownHtml } from '../src/render-html.js';
 import {
   isAllowedPreviewRequestAuthority,
   resolveServeTarget,
@@ -46,6 +47,40 @@ describe('CLI build and serve commands', () => {
     expect(await readFile(path.join(outputDir, 'nested', 'page.html'), 'utf-8')).to.contain(
       'Nested',
     );
+  });
+
+  it('skips missing images but surfaces non-missing embedded-asset failures', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    const sourcePath = path.join(inputDir, 'index.md');
+    await mkdir(inputDir, { recursive: true });
+    await writeFile(sourcePath, '# Assets\n\n![missing](missing.png)', 'utf-8');
+
+    const missingHtml = await renderMarkdownHtml('![missing](missing.png)', {
+      title: 'Missing asset',
+      sourcePath,
+      assetRoot: inputDir,
+    });
+    expect(missingHtml).to.contain('missing.png');
+
+    await writeFile(path.join(inputDir, 'present.png'), 'image', 'utf-8');
+    const failure = new Error('preview policy unavailable');
+    let caught: unknown;
+    try {
+      await renderMarkdownHtml('![present](present.png)', {
+        title: 'Failed policy',
+        sourcePath,
+        assetRoot: inputDir,
+        allowReferencedAsset: () => {
+          throw failure;
+        },
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('Failed to embed referenced image');
+    expect((caught as Error & { cause?: unknown }).cause).to.equal(failure);
   });
 
   it('serves markdown previews as HTML and blocks traversal', async () => {

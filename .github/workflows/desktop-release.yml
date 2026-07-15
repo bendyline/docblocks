@@ -62,7 +62,7 @@ jobs:
         run: xvfb-run -a npm run all
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Windows — Build + Authenticode sign (Azure Trusted Signing, optional)
+  # Windows — Build + required Authenticode signing (Azure Trusted Signing)
   # ──────────────────────────────────────────────────────────────────────────
   build-windows:
     needs: quality
@@ -70,7 +70,7 @@ jobs:
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
     env:
-      SIGNING_CONFIGURED: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT != '' }}
+      SIGNING_CONFIGURED: ${{ secrets.AZURE_CODE_SIGNING_ENDPOINT != '' && secrets.AZURE_CODE_SIGNING_ACCOUNT != '' && secrets.AZURE_CERT_PROFILE_NAME != '' && secrets.AZURE_TENANT_ID != '' && secrets.AZURE_CLIENT_ID != '' && secrets.AZURE_CLIENT_SECRET != '' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -88,6 +88,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Require Windows release signing
+        if: env.SIGNING_CONFIGURED != 'true'
+        shell: pwsh
+        run: throw 'Windows signing is required for release artifacts; configure every Azure Trusted Signing secret.'
 
       - name: Read version
         id: version
@@ -139,11 +144,9 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
 
       - name: Verify Windows signature (fail if unsigned)
-        if: env.SIGNING_CONFIGURED == 'true'
         shell: pwsh
         run: |
-          # Only enforced when Trusted Signing is configured. Catches the case
-          # where signing silently no-op'd and we'd otherwise ship an unsigned exe.
+          # Catch signing no-ops before an installer can reach the release job.
           $exe = Get-ChildItem packages/desktop/dist/artifacts/*.exe | Select-Object -First 1
           if (-not $exe) { throw "No .exe produced to verify" }
           $sig = Get-AuthenticodeSignature $exe.FullName
@@ -171,7 +174,7 @@ jobs:
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
     env:
-      SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' }}
+      SIGNING_CONFIGURED: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_CERTIFICATE_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_ID_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
 
     steps:
       - name: Checkout
@@ -187,6 +190,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Require macOS release signing and notarization
+        if: env.SIGNING_CONFIGURED != 'true'
+        run: |
+          echo 'macOS signing and notarization are required for release artifacts.' >&2
+          exit 1
 
       - name: Build upstream packages
         run: npm run build
@@ -227,17 +236,14 @@ jobs:
           UV_THREADPOOL_SIZE: 16
 
       - name: Verify macOS signing (fail if unsigned)
-        if: env.SIGNING_CONFIGURED == 'true'
         run: |
-          # Only enforced when a signing cert is configured. codesign --verify is
-          # the deterministic gate (fails on an unsigned app); the staple check is
-          # informational (electron-builder's notarize step staples on success).
+          # codesign and the notarization staple are both mandatory release gates.
           APP=$(find packages/desktop/dist/artifacts -maxdepth 2 -name 'DocBlocks.app' | head -n1)
           if [ -z "$APP" ]; then echo "No DocBlocks.app produced to verify"; exit 1; fi
           echo "Verifying code signature on $APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
-          echo "Notarization staple (informational):"
-          xcrun stapler validate "$APP" || echo "::warning::app not stapled — Gatekeeper will fall back to an online notarization check"
+          echo "Verifying notarization staple:"
+          xcrun stapler validate "$APP"
 
       - name: Clean up keychain
         if: always()
@@ -344,6 +350,16 @@ jobs:
 
       - name: List artifacts
         run: find artifacts -type f | sort
+
+      - name: Verify tag matches desktop package version
+        if: github.ref_type == 'tag'
+        env:
+          EXPECTED_TAG: desktop-v${{ needs.build-windows.outputs.version }}
+        run: |
+          if [ "${{ github.ref_name }}" != "$EXPECTED_TAG" ]; then
+            echo "Release tag ${{ github.ref_name }} does not match package version $EXPECTED_TAG" >&2
+            exit 1
+          fi
 
       - name: Generate SHA256SUMS
         run: |

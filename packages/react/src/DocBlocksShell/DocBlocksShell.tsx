@@ -32,6 +32,7 @@ import type {
 import {
   FileSystemContentContainer,
   createFileMediaProvider,
+  decodeUtf8Text,
   FsError,
   getFileSystemProviderV2,
   isQuotaExceededError,
@@ -489,7 +490,9 @@ async function readProviderText(
   const providerV2 = getFileSystemProviderV2(provider);
   if (!providerV2) return provider.readFile(path);
   const file = await providerV2.readFile(parseWorkspacePath(path));
-  return file ? new TextDecoder().decode(file.data) : null;
+  return file
+    ? decodeUtf8Text(file.data, { label: 'The document', path: parseWorkspacePath(path) })
+    : null;
 }
 
 async function providerEntryExists(provider: FileSystemProvider, path: string): Promise<boolean> {
@@ -537,7 +540,12 @@ async function readStableFileSnapshot(
   if (providerV2) {
     const read = await providerV2.readFile(parseWorkspacePath(path));
     return {
-      content: read ? new TextDecoder().decode(read.data) : null,
+      content: read
+        ? decodeUtf8Text(read.data, {
+            label: 'The document',
+            path: parseWorkspacePath(path),
+          })
+        : null,
       version: read?.entry.version ?? null,
     };
   }

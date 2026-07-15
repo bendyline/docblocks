@@ -2,7 +2,11 @@ import { expect } from 'chai';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runVideo, type VideoRunDependencies } from '../src/commands/video.js';
+import {
+  assertCliVideoRenderBudget,
+  runVideo,
+  type VideoRunDependencies,
+} from '../src/commands/video.js';
 
 describe('CLI video cancellation', function () {
   this.timeout(30_000);
@@ -76,5 +80,29 @@ describe('CLI video cancellation', function () {
     });
 
     expect(progress).to.deep.equal([0, 40, 100]);
+  });
+});
+
+describe('CLI video resource budget', () => {
+  it('allows 4K UHD output', () => {
+    expect(() => assertCliVideoRenderBudget({ width: 3_840, height: 2_160 })).not.to.throw();
+  });
+
+  it('rejects excessive individual dimensions', () => {
+    expect(() => assertCliVideoRenderBudget({ width: 7_680, height: 1_080 })).to.throw(
+      'dimension limit',
+    );
+  });
+
+  it('rejects excessive pixels per frame even when each dimension is below the limit', () => {
+    expect(() => assertCliVideoRenderBudget({ width: 3_840, height: 3_840 })).to.throw(
+      'pixels per frame',
+    );
+  });
+
+  it('preserves the linked H.264 dimension validation', () => {
+    expect(() => assertCliVideoRenderBudget({ width: 1_919, height: 1_080 })).to.throw(
+      'even number of pixels',
+    );
   });
 });

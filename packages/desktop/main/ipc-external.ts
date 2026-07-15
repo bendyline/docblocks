@@ -4,7 +4,7 @@ import { ipcMain } from 'electron';
 import type { WebContents } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { FileCommitResult } from '@bendyline/docblocks/filesystem';
+import { decodeUtf8Text, type FileCommitResult } from '@bendyline/docblocks/filesystem';
 import {
   HOST_WIRE_LIMITS,
   isBoundedBytePayload,
@@ -133,7 +133,10 @@ export function registerExternalIpc(): void {
     const absolutePath = await resolveExternalResource(owner.id, resourceId);
     const bytes = await readBoundedFile(absolutePath, HOST_WIRE_LIMITS.documentCharacters);
     if (!bytes) return null;
-    const content = bytes.toString('utf8');
+    const content = decodeUtf8Text(bytes, {
+      label: 'The external document',
+      path: absolutePath,
+    });
     return requireText(content, 'External document');
   });
 

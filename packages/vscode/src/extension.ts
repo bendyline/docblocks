@@ -8,6 +8,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerCustomEditorProvider(
       MarkdownEditorLauncher.viewType,
       new MarkdownEditorLauncher(context),
+      { supportsMultipleEditorsPerDocument: false },
     ),
   );
 

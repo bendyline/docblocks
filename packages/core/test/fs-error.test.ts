@@ -1,7 +1,9 @@
 import { expect } from 'chai';
 import {
   FsError,
+  decodeUtf8Text,
   fsErrorFromUnknown,
+  isSerializedFsError,
   isQuotaExceededError,
   serializeFsError,
 } from '@bendyline/docblocks/filesystem';
@@ -52,5 +54,25 @@ describe('isQuotaExceededError', () => {
     expect(isQuotaExceededError(undefined)).to.equal(false);
     expect(isQuotaExceededError('QuotaExceededError')).to.equal(false);
     expect(isQuotaExceededError(42)).to.equal(false);
+  });
+});
+
+describe('decodeUtf8Text', () => {
+  it('decodes valid UTF-8 without replacement', () => {
+    expect(decodeUtf8Text(new Uint8Array([0x63, 0x61, 0x66, 0xc3, 0xa9]))).to.equal('caf\u00e9');
+  });
+
+  it('rejects malformed UTF-8 as a serializable corruption error', () => {
+    let failure: unknown;
+    try {
+      decodeUtf8Text(new Uint8Array([0xc3, 0x28]), { path: '/broken.md' });
+    } catch (error: unknown) {
+      failure = error;
+    }
+
+    expect(failure).to.be.instanceOf(FsError);
+    expect((failure as FsError).code).to.equal('corrupt');
+    expect((failure as FsError).path).to.equal('/broken.md');
+    expect(isSerializedFsError((failure as FsError).toJSON())).to.equal(true);
   });
 });

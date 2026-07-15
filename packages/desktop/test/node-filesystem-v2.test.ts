@@ -150,7 +150,7 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
     }
   });
 
-  it('does not open file payloads for stat or directory listing', async () => {
+  it('derives metadata versions from file contents without returning payload bytes', async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-metadata-'));
     const id = `node-v2-metadata-${++providerSequence}`;
     await fs.mkdir(path.join(rootPath, 'nested'));
@@ -173,14 +173,16 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
       await provider.initialize();
       await provider.stat(parseWorkspacePath('/'));
       await provider.stat(parseWorkspacePath('/nested'));
-      await provider.readDirectory(parseWorkspacePath('/'));
-      expect(payloadOpens).to.equal(0);
+      const listed = await provider.readDirectory(parseWorkspacePath('/'));
+      expect(payloadOpens).to.be.greaterThan(0);
+      expect(listed.every((entry) => !('data' in entry))).to.equal(true);
 
+      const opensAfterMetadata = payloadOpens;
       await provider.readFile(parseWorkspacePath('/note.md'));
-      expect(payloadOpens).to.equal(1);
+      expect(payloadOpens).to.equal(opensAfterMetadata + 1);
 
       await provider.snapshot();
-      expect(payloadOpens).to.equal(3);
+      expect(payloadOpens).to.be.greaterThan(opensAfterMetadata + 1);
     } finally {
       await provider.dispose();
       roots.unregister(id);

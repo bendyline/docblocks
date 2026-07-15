@@ -34,6 +34,7 @@ export {
   type SerializedFsError,
   type FsErrorContext,
 } from './fs-error.js';
+export { decodeUtf8Text, type DecodeUtf8TextOptions } from './utf8.js';
 export type {
   FileSystemProviderV2,
   FileSystemProviderCapabilities,

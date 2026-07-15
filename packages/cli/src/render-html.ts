@@ -61,8 +61,8 @@ async function readReferencedImages(
   allowReferencedAsset: RenderMarkdownHtmlOptions['allowReferencedAsset'],
 ): Promise<Map<string, ArrayBuffer>> {
   const images = new Map<string, ArrayBuffer>();
-  const root = await realpath(path.resolve(assetRoot)).catch(() => null);
-  const baseDir = await realpath(path.dirname(path.resolve(sourcePath))).catch(() => null);
+  const root = await realpathIfPresent(path.resolve(assetRoot));
+  const baseDir = await realpathIfPresent(path.dirname(path.resolve(sourcePath)));
   if (!root || !baseDir || !isPathInside(root, baseDir)) return images;
   let totalBytes = 0;
 
@@ -97,12 +97,31 @@ async function readReferencedImages(
       const data = await readContainedFile(root, physicalPath, MAX_SINGLE_ASSET_BYTES);
       totalBytes += data.byteLength;
       images.set(imagePath, toExactArrayBuffer(data));
-    } catch {
-      // Missing assets should not prevent the document from rendering.
+    } catch (error: unknown) {
+      // A missing referenced asset is rendered as a normal broken image. Other
+      // failures must stay visible rather than silently producing incomplete HTML.
+      if (isMissingPathError(error)) continue;
+      const contextualError = new Error(`Failed to embed referenced image "${imagePath}".`);
+      (contextualError as Error & { cause?: unknown }).cause = error;
+      throw contextualError;
     }
   }
 
   return images;
+}
+
+async function realpathIfPresent(candidate: string): Promise<string | null> {
+  try {
+    return await realpath(candidate);
+  } catch (error: unknown) {
+    if (isMissingPathError(error)) return null;
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('code' in error)) return false;
+  return error.code === 'ENOENT' || error.code === 'ENOTDIR';
 }
 
 function isLocalRelativePath(candidate: string): boolean {

@@ -19,7 +19,17 @@ export default defineConfig([
     clean: true,
     shims: false,
     tsconfig: 'tsconfig.main.json',
-    external: ['electron', 'electron-updater', 'chokidar', 'electron-window-state'],
+    // The renderer's DocBlocks/Squisq graph is already emitted by Vite. Bundle
+    // the small slice of DocBlocks core used by main so electron-builder only
+    // has to copy dependencies that are genuinely loaded at runtime.
+    noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
+    external: [
+      'electron',
+      'electron-updater',
+      'chokidar',
+      'electron-window-state',
+      'ffmpeg-static',
+    ],
     outExtension: () => ({ js: '.cjs' }),
   },
   // Preload — runs in renderer sandbox with limited Node APIs + DOM.

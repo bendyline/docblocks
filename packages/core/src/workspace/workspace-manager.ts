@@ -9,6 +9,7 @@
 import { LocalForageAdapter } from '@bendyline/squisq/storage';
 import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/types.js';
 import type { WorkspaceDescriptor } from './types.js';
+import { parsePersistedWorkspaceList } from './workspace-schema.js';
 
 const DB_NAME = 'docblocks-workspaces';
 const STORE_NAME = 'workspaces';
@@ -32,6 +33,7 @@ interface TransientEntry {
   provider: FileSystemProvider;
 }
 const transientWorkspaces = new Map<string, TransientEntry>();
+let persistedMutationTail: Promise<void> = Promise.resolve();
 
 /** Register a transient workspace and its (already-built) provider. */
 export function registerTransientWorkspace(
@@ -61,9 +63,29 @@ export async function unregisterTransientWorkspace(id: string): Promise<void> {
 }
 
 /** The persisted (on-disk) workspace list only — excludes transient ones. */
+async function readPersisted(): Promise<WorkspaceDescriptor[]> {
+  const list = await store.get<unknown>(LIST_KEY);
+  return list == null ? [] : parsePersistedWorkspaceList(list);
+}
+
 async function listPersisted(): Promise<WorkspaceDescriptor[]> {
-  const list = await store.get<WorkspaceDescriptor[]>(LIST_KEY);
-  return list ?? [];
+  await persistedMutationTail;
+  return readPersisted();
+}
+
+function mutatePersisted(
+  mutation: (workspaces: WorkspaceDescriptor[]) => WorkspaceDescriptor[],
+): Promise<void> {
+  const operation = persistedMutationTail.then(async () => {
+    const current = await readPersisted();
+    const next = parsePersistedWorkspaceList(mutation([...current]));
+    await store.set(LIST_KEY, next);
+  });
+  persistedMutationTail = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 
 /**
@@ -92,14 +114,13 @@ export async function getWorkspace(id: string): Promise<WorkspaceDescriptor | nu
  */
 export async function saveWorkspace(workspace: WorkspaceDescriptor): Promise<void> {
   if (workspace.type === 'transient') return;
-  const list = await listPersisted();
-  const idx = list.findIndex((w) => w.id === workspace.id);
-  if (idx >= 0) {
-    list[idx] = workspace;
-  } else {
-    list.push(workspace);
-  }
-  await store.set(LIST_KEY, list);
+  const persisted = parsePersistedWorkspaceList([workspace])[0];
+  await mutatePersisted((list) => {
+    const idx = list.findIndex((candidate) => candidate.id === persisted.id);
+    if (idx >= 0) list[idx] = persisted;
+    else list.push(persisted);
+    return list;
+  });
 }
 
 /**
@@ -110,9 +131,7 @@ export async function removeWorkspace(id: string): Promise<void> {
     await unregisterTransientWorkspace(id);
     return;
   }
-  const list = await listPersisted();
-  const filtered = list.filter((w) => w.id !== id);
-  await store.set(LIST_KEY, filtered);
+  await mutatePersisted((list) => list.filter((workspace) => workspace.id !== id));
 }
 
 /**
@@ -125,12 +144,11 @@ export async function touchWorkspace(id: string): Promise<void> {
     transient.descriptor.lastOpened = new Date().toISOString();
     return;
   }
-  const list = await listPersisted();
-  const workspace = list.find((w) => w.id === id);
-  if (workspace) {
-    workspace.lastOpened = new Date().toISOString();
-    await store.set(LIST_KEY, list);
-  }
+  await mutatePersisted((list) => {
+    const workspace = list.find((candidate) => candidate.id === id);
+    if (workspace) workspace.lastOpened = new Date().toISOString();
+    return list;
+  });
 }
 
 /**

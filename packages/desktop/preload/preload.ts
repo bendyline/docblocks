@@ -173,8 +173,6 @@ const exportApi: DocBlocksHostExportAPI = {
 const ffmpegApi: DocBlocksHostFfmpegAPI = {
   available: () => ipcRenderer.invoke('ffmpeg:available'),
   version: () => ipcRenderer.invoke('ffmpeg:version'),
-  renderVideo: (workspaceId, p, opts) =>
-    ipcRenderer.invoke('ffmpeg:renderVideo', workspaceId, p, opts),
 };
 
 // ── git ─────────────────────────────────────────────────────────────

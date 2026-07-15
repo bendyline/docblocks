@@ -99,22 +99,27 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   providerRef.current = provider;
 
   const loadRoot = useCallback(async () => {
-    if (!providerRef.current) {
+    const sourceProvider = providerRef.current;
+    if (!sourceProvider) {
       setEntries([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
     try {
-      const root = await readProviderDirectory(providerRef.current, '');
+      const root = await readProviderDirectory(sourceProvider, '');
+      if (providerRef.current !== sourceProvider) return;
       setEntries(root);
     } finally {
-      setLoading(false);
+      if (providerRef.current === sourceProvider) setLoading(false);
     }
   }, []);
 
   const loadChildren = useCallback(async (dirPath: string) => {
-    if (!providerRef.current) return;
-    const children = await readProviderDirectory(providerRef.current, dirPath);
+    const sourceProvider = providerRef.current;
+    if (!sourceProvider) return;
+    const children = await readProviderDirectory(sourceProvider, dirPath);
+    if (providerRef.current !== sourceProvider) return;
     setChildEntries((prev) => {
       const next = new Map(prev);
       next.set(dirPath, children);
@@ -128,7 +133,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     setChildEntries(new Map());
     setSelectedPath(null);
     setSelectedKind(null);
-    loadRoot();
+    void loadRoot();
   }, [provider, loadRoot]);
 
   const toggleExpand = useCallback(
@@ -140,7 +145,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
         } else {
           next.add(path);
           // Load children when expanding
-          loadChildren(path);
+          void loadChildren(path);
         }
         return next;
       });

@@ -8,11 +8,22 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, basename, extname, resolve } from 'node:path';
 import { Command } from 'commander';
-import type { VideoQuality, VideoOrientation } from '@bendyline/squisq-video';
+import {
+  resolveDimensions,
+  validateVideoExportOptions,
+  type VideoQuality,
+  type VideoOrientation,
+} from '@bendyline/squisq-video';
 
 const VALID_QUALITIES = ['draft', 'normal', 'high'] as const;
 const VALID_ORIENTATIONS = ['landscape', 'portrait'] as const;
 const VALID_CAPTIONS = ['off', 'standard', 'social'] as const;
+
+/** Resource ceiling for direct CLI renders. 3840x2160 (4K UHD) remains supported. */
+export const CLI_VIDEO_RENDER_LIMITS = Object.freeze({
+  maximumDimension: 3_840,
+  maximumPixelsPerFrame: 8_294_400,
+});
 
 type CaptionOption = (typeof VALID_CAPTIONS)[number];
 
@@ -76,6 +87,14 @@ export async function runVideo(
   }
   const captionStyle = captions === 'off' ? undefined : (captions as 'standard' | 'social');
 
+  assertCliVideoRenderBudget({
+    fps,
+    quality,
+    orientation,
+    width: opts.width,
+    height: opts.height,
+  });
+
   // Determine output path
   const inputBasename = basename(resolvedInput);
   const inputExt = extname(inputBasename);
@@ -135,6 +154,42 @@ export async function runVideo(
     duration: renderResult.duration,
     frameCount: renderResult.frameCount,
   };
+}
+
+/** Reject unsafe dimensions before reading input or launching Playwright/FFmpeg. */
+export function assertCliVideoRenderBudget(
+  options: Pick<VideoOptions, 'fps' | 'quality' | 'orientation' | 'width' | 'height'>,
+): void {
+  validateVideoExportOptions(options);
+  const { width, height } = resolveDimensions(options);
+  for (const [label, value] of [
+    ['width', width],
+    ['height', height],
+  ] as const) {
+    if (value % 2 !== 0) {
+      throw new RangeError(
+        `Video ${label} must be an even number of pixels (got ${value}); H.264 yuv420p cannot encode odd dimensions.`,
+      );
+    }
+  }
+  const pixelsPerFrame = width * height;
+  const violations: string[] = [];
+  if (
+    width > CLI_VIDEO_RENDER_LIMITS.maximumDimension ||
+    height > CLI_VIDEO_RENDER_LIMITS.maximumDimension
+  ) {
+    violations.push(
+      `${width}x${height} exceeds the ${CLI_VIDEO_RENDER_LIMITS.maximumDimension}-pixel dimension limit`,
+    );
+  }
+  if (pixelsPerFrame > CLI_VIDEO_RENDER_LIMITS.maximumPixelsPerFrame) {
+    violations.push(
+      `${pixelsPerFrame} pixels per frame exceeds the ${CLI_VIDEO_RENDER_LIMITS.maximumPixelsPerFrame}-pixel limit`,
+    );
+  }
+  if (violations.length > 0) {
+    throw new RangeError(`Video render exceeds the CLI resource budget: ${violations.join('; ')}.`);
+  }
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

@@ -101,18 +101,12 @@ export interface DocBlocksHostExportAPI {
   ): Promise<HostExportTargetGrant | null>;
 }
 
-/** System ffmpeg detection and invocation. */
+/** System ffmpeg detection. */
 export interface DocBlocksHostFfmpegAPI {
   /** True if `ffmpeg` is available on PATH (or bundled). */
   available(): Promise<boolean>;
   /** Version string from `ffmpeg -version`, or null if unavailable. */
   version(): Promise<string | null>;
-  /** Render a physically contained workspace-relative Markdown file to MP4. */
-  renderVideo(
-    workspaceId: string,
-    markdownPath: string,
-    options: { fps?: number; quality?: 'draft' | 'normal' | 'high' },
-  ): Promise<string>;
 }
 
 /** Auto-updater control. */

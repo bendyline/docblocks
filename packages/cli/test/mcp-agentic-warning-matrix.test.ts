@@ -82,7 +82,7 @@ describe('MCP canonical linked warning matrix', function () {
     );
   });
 
-  it('projects linked PDF embedded-image degradation on Node imports', async () => {
+  it('preserves linked PDF embedded images on Node imports', async () => {
     const pdfPath = join(harness.tmpDir, 'embedded-image.pdf');
     await writeFile(pdfPath, await pdfWithEmbeddedImage());
     const rootId = await requireReadableRootId(harness.client);
@@ -105,15 +105,22 @@ describe('MCP canonical linked warning matrix', function () {
 
       expect(result.isError, result.text).to.equal(false);
       const converted = requireTarget(requireConversions(result.structuredContent?.results), 'md');
-      const warning = converted.diagnostics.find(
+      expect(converted.sourceAssetCount).to.equal(1);
+      expect(converted.sourceAssets).to.have.length(1);
+      expect(converted.sourceAssets[0]).to.include({ mimeType: 'image/png' });
+      expect(converted.sourceAssets[0]?.size).to.be.greaterThan(0);
+      const omissionWarning = converted.diagnostics.find(
         (diagnostic) =>
           diagnostic.code === 'pdf-image-omitted' &&
           diagnostic.severity === 'warning' &&
-          diagnostic.stage === 'import' &&
-          diagnostic.message.includes('PDF embedded images were skipped'),
+          diagnostic.stage === 'import',
       );
-      expect(warning).to.not.equal(undefined);
-      expect(warning?.message).to.include('image decoding requires a browser canvas');
+      expect(omissionWarning).to.equal(undefined);
+
+      const resource = await harness.client.readResource({ uri: converted.artifact.uri });
+      const content = resource.contents[0];
+      if (!content || !('text' in content)) throw new Error('Expected Markdown artifact text');
+      expect(content.text).to.include('images/image1.png');
     } finally {
       if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
       else Reflect.deleteProperty(globalThis, 'document');
