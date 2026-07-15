@@ -26,6 +26,7 @@ import {
   commitTextFile,
   withFileMutationLocks,
 } from './file-commit.js';
+import { statFileThroughDescriptor } from './file-stat.js';
 
 const boundOwners = new WeakSet<WebContents>();
 
@@ -110,7 +111,7 @@ async function assertDescriptorStillNamesGrantedFile(
   const [linkStat, physicalPath, pathStat] = await Promise.all([
     fs.lstat(lexical),
     fs.realpath(lexical),
-    fs.stat(lexical),
+    statFileThroughDescriptor(lexical),
   ]);
   const normalize = (value: string) =>
     process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);

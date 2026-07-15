@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { statFileThroughDescriptor } from './internal/file-stat.js';
 import { isPathInside } from './internal/paths.js';
 
 const CONTAINED_READ_CHUNK_BYTES = 64 * 1024;
@@ -86,7 +87,7 @@ async function assertIdentity(
   if (!isPathInside(physicalRoot, physicalCandidate)) {
     throw new Error('File escaped the authorized root while it was being read');
   }
-  const pathStat = await fs.stat(physicalCandidate);
+  const pathStat = await statFileThroughDescriptor(physicalCandidate);
   signal?.throwIfAborted();
   if (descriptorStat.dev !== pathStat.dev || descriptorStat.ino !== pathStat.ino) {
     throw new Error('File changed physical identity while it was being read');

@@ -3203,7 +3203,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell .squisq-props-badge {
-  transform: translateY(1px);
+  transform: none;
 }
 
 .db-shell .squisq-template-badge-core::after {

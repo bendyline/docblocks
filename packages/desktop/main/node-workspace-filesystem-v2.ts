@@ -774,7 +774,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         const data = copyBytes(await handle.readFile());
         const after = await handle.stat();
         const validatedAfter = await this.resolveRead(itemPath, operation);
-        const pathAfter = await fs.stat(validatedAfter, { bigint: true });
+        const pathAfter = await statNodeReadableFile(validatedAfter);
         if (
           sameFileMetadata(before, after) &&
           sameFileMetadata(after, pathAfter) &&
@@ -815,7 +815,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           : hashBytePayload(await handle.readFile());
         const after = await handle.stat();
         const validatedAfter = await this.resolveRead(itemPath, operation);
-        const pathAfter = await fs.stat(validatedAfter, { bigint: true });
+        const pathAfter = await statNodeReadableFile(validatedAfter);
         if (
           sameFileMetadata(before, after) &&
           sameFileMetadata(after, pathAfter) &&
@@ -1416,6 +1416,21 @@ async function openNodeReadableFile(absolutePath: string): Promise<NodeWorkspace
     },
     close: () => handle.close(),
   };
+}
+
+/**
+ * Observe the pathname's current target through a fresh descriptor. Node 22 on
+ * Windows reports a volume device id for fstat but zero for stat(path), which
+ * makes one unchanged file look like two identities. A second descriptor keeps
+ * the strong device/inode replacement check while using comparable metadata.
+ */
+async function statNodeReadableFile(absolutePath: string): Promise<BigIntStats> {
+  const handle = await fs.open(absolutePath, 'r');
+  try {
+    return await handle.stat({ bigint: true });
+  } finally {
+    await handle.close();
+  }
 }
 
 function sha256Bytes(data: ArrayBuffer): string {

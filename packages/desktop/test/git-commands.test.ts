@@ -80,13 +80,14 @@ describe('desktop git commands', function () {
       unwrap(await commands.init(gitBin, dir));
 
       const { detection, context } = await commands.detectRepo(gitBin, dir);
+      const canonicalDir = await fs.promises.realpath(dir);
       expect(detection.isRepo).to.equal(true);
       expect(detection.rootIsToplevel).to.equal(true);
       expect(context).to.not.equal(null);
-      expect(context?.workspaceRoot).to.equal(dir);
-      expect(context?.toplevel).to.equal(dir);
-      expect(context?.gitDir).to.equal(path.join(dir, '.git'));
-      expect(context?.commonDir).to.equal(path.join(dir, '.git'));
+      expect(context?.workspaceRoot).to.equal(canonicalDir);
+      expect(context?.toplevel).to.equal(canonicalDir);
+      expect(context?.gitDir).to.equal(path.join(canonicalDir, '.git'));
+      expect(context?.commonDir).to.equal(path.join(canonicalDir, '.git'));
     });
 
     it('treats a subdirectory workspace as non-toplevel and remaps status paths', async () => {
@@ -96,9 +97,10 @@ describe('desktop git commands', function () {
       write(repo.dir, 'outer.md', 'outer\n');
 
       const { detection, context } = await commands.detectRepo(gitBin, sub);
+      const canonicalSub = await fs.promises.realpath(sub);
       expect(detection.isRepo).to.equal(true);
       expect(detection.rootIsToplevel).to.equal(false);
-      expect(context?.workspaceRoot).to.equal(sub);
+      expect(context?.workspaceRoot).to.equal(canonicalSub);
 
       // Paths come back relative to the subdirectory workspace, and changes
       // outside the workspace are excluded.

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import { readContainedFile } from '../contained-file.js';
+import { statFileThroughDescriptor } from '../internal/file-stat.js';
 import { isLinkUnsupportedError } from '../internal/link-support.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { isPathInside } from '../internal/paths.js';
@@ -529,10 +530,14 @@ async function hashFileBounded(
     }
     signal?.throwIfAborted();
     const after = await handle.stat();
-    const current = await lstat(filePath).catch(() => null);
+    const [currentLexical, current] = await Promise.all([
+      lstat(filePath).catch(() => null),
+      statFileThroughDescriptor(filePath).catch(() => null),
+    ]);
     if (
+      !currentLexical?.isFile() ||
+      currentLexical.isSymbolicLink() ||
       !current?.isFile() ||
-      current.isSymbolicLink() ||
       after.size !== before.size ||
       after.mtimeMs !== before.mtimeMs ||
       after.ctimeMs !== before.ctimeMs ||

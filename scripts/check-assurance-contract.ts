@@ -173,6 +173,8 @@ function requireWorkflowScript(
 
 async function main(): Promise<void> {
   const rootPackage = await readPackage('package.json');
+  requireScript(rootPackage, 'preall', 'npm run check:node-version');
+  requireScript(rootPackage, 'check:node-version', 'scripts/check-node-version.ts');
   const expectedGate = [
     'npm run build',
     'npm run bundle:size',
