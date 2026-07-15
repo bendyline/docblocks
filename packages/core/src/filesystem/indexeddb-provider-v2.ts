@@ -399,6 +399,11 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     await this.ensureInitialized('remove');
     return this.withMutationLock(() =>
       this.transaction('readwrite', { operation: 'remove', path: canonical }, async (tx) => {
+        // Deleting the v2 authority under a quarantined path would leave the
+        // conflict unresolvable: 'v2' resolution then reports that there is no
+        // authority to keep. Callers that want the legacy data gone say so with
+        // discardLegacyMigrationConflict().
+        await assertNoLegacyConflictInSubtree(tx, canonical, 'remove');
         const mutation = new EntryMutation(tx);
         const existing = await mutation.get(canonical);
         const state = await readRequiredState(tx);
@@ -445,8 +450,8 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
         'readwrite',
         { operation: 'move', path: sourcePath, destinationPath },
         async (tx) => {
-          await assertNoLegacyConflict(tx, sourcePath, 'move');
-          await assertNoLegacyConflict(tx, destinationPath, 'move');
+          await assertNoLegacyConflictInSubtree(tx, sourcePath, 'move');
+          await assertNoLegacyConflictInSubtree(tx, destinationPath, 'move');
           const mutation = new EntryMutation(tx);
           const source = await mutation.get(sourcePath);
           if (!source) {
@@ -1291,7 +1296,36 @@ async function assertNoLegacyConflict(
   operation: FsOperation,
 ): Promise<void> {
   if ((await transaction.get<unknown>(legacyConflictKey(path))) === null) return;
-  throw new FsError(
+  throw legacyConflictBlocked(path, operation);
+}
+
+/**
+ * Refuse an operation that would move or delete a subtree holding quarantined
+ * legacy data.
+ *
+ * Conflict records are keyed by absolute path and nothing rewrites those keys,
+ * so relocating or deleting an ancestor strands the record: resolving it later
+ * restores the legacy bytes at a path the user no longer has, recreating the
+ * old tree around it (`createParents: true`). Descendants therefore have to
+ * block the same way the target path itself does, until the user resolves or
+ * discards the conflict.
+ */
+async function assertNoLegacyConflictInSubtree(
+  transaction: IndexedDBFileSystemTransaction,
+  path: WorkspacePath,
+  operation: FsOperation,
+): Promise<void> {
+  for (const key of await transaction.keys()) {
+    if (!key.startsWith(LEGACY_CONFLICT_PREFIX)) continue;
+    const conflictPath = parseWorkspacePath(key.slice(LEGACY_CONFLICT_PREFIX.length));
+    if (conflictPath === path || workspacePathContains(path, conflictPath, false)) {
+      throw legacyConflictBlocked(conflictPath, operation);
+    }
+  }
+}
+
+function legacyConflictBlocked(path: WorkspacePath, operation: FsOperation): FsError {
+  return new FsError(
     'conflict',
     'Resolve the legacy migration conflict before mutating this path.',
     {

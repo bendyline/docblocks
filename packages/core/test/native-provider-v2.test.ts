@@ -300,6 +300,53 @@ describe('NativeFileSystemProviderV2', () => {
   });
 });
 
+describe('NativeFileSystemProviderV2 version-token limits', () => {
+  it('cannot see an external same-size rewrite inside one mtime tick', async () => {
+    const { fileSystem, provider } = setup('coarse-mtime');
+    fileSystem.seedFile('/note.md', 'aaaaa');
+    // A FAT/exFAT volume stamps mtime at 2-second granularity, so an external
+    // rewrite can land on the same timestamp the provider already observed.
+    fileSystem.setLastModified('/note.md', 1_000);
+    const before = await provider.stat(parseWorkspacePath('/note.md'));
+
+    fileSystem.seedFile('/note.md', 'bbbbb');
+    fileSystem.setLastModified('/note.md', 1_000);
+    const after = await provider.stat(parseWorkspacePath('/note.md'));
+
+    // Documented blind spot, not desired behaviour: size + mtime are identical,
+    // so the token is identical while the bytes differ. Any change that makes
+    // the token content-derived should delete this test — and must first show
+    // that stat/list stay proportional to entry count rather than bytes.
+    expect(after?.version).to.equal(before?.version);
+    expect(
+      decoded(
+        fileSystem.readBytes('/note.md')
+          ? new Uint8Array(fileSystem.readBytes('/note.md')!).buffer
+          : null,
+      ),
+    ).to.equal('bbbbb');
+    await provider.dispose();
+  });
+
+  it('does detect an external rewrite that changes size', async () => {
+    const { fileSystem, provider } = setup('size-change');
+    fileSystem.seedFile('/note.md', 'aaaaa');
+    fileSystem.setLastModified('/note.md', 1_000);
+    const before = await provider.stat(parseWorkspacePath('/note.md'));
+
+    fileSystem.seedFile('/note.md', 'bbbbbb');
+    fileSystem.setLastModified('/note.md', 1_000);
+
+    await expectFsError(
+      provider.writeFile(parseWorkspacePath('/note.md'), encoded('ccccc'), {
+        expectedVersion: before!.version,
+      }),
+      'conflict',
+    );
+    await provider.dispose();
+  });
+});
+
 function setup(id: string): {
   readonly fileSystem: NativeFileSystemEmulator;
   readonly provider: NativeFileSystemProviderV2;

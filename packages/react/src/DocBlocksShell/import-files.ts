@@ -22,7 +22,7 @@
  *     everything it needs to tell the user what happened.
  */
 
-import type { FileSystemProvider } from '@bendyline/docblocks/filesystem';
+import type { DbkWorkspaceSnapshot, FileSystemProvider } from '@bendyline/docblocks/filesystem';
 import { FsError } from '@bendyline/docblocks/filesystem';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { removeProviderEntry, writeProviderText } from './provider-io.js';
@@ -125,7 +125,38 @@ async function readImportedMarkdown(
   const snapshot = await decodeDbkWorkspace(await file.arrayBuffer(), {
     targetDocumentPath: destPath,
   });
+  await writeDbkCompanions(snapshot, provider);
   return snapshot.documentContent;
+}
+
+/**
+ * Write a decoded DBK's *secondary* Markdown alongside the primary document.
+ *
+ * A `.dbk` is a workspace bundle, not a lone document: it can carry up to 255
+ * further Markdown files. `decodeDbkWorkspace` has already rebased them beneath
+ * `<document>_files/` -- the default `auto` layout resolves to `companion` here,
+ * because a bundle's own primary path never matches the freshly claimed target
+ * -- so the snapshot arrives ready to write. Returning only `documentContent`,
+ * as this path used to, silently dropped every one of them while reporting the
+ * drop as a complete success. (The OS-open path never had this bug: it hands
+ * the whole snapshot to `replaceContents`.)
+ *
+ * `create` mode, like every other write here: a companion landing on a file the
+ * user already has is a real conflict, and failing the import loudly beats
+ * overwriting it.
+ */
+async function writeDbkCompanions(
+  snapshot: DbkWorkspaceSnapshot,
+  provider: FileSystemProvider,
+): Promise<void> {
+  for (const entry of snapshot.files) {
+    // The caller writes the primary itself, onto the path it claimed.
+    if (entry.path === snapshot.targetDocumentPath) continue;
+    // Workspace DBKs are Markdown-only by contract: createDbkWorkspaceSnapshot
+    // fails the whole snapshot on a binary member, so this never skips data.
+    if (entry.kind !== 'text') continue;
+    await writeProviderText(provider, entry.path, entry.content, 'create');
+  }
 }
 
 const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt', '.docx', '.pdf', '.dbk', '.zip']);

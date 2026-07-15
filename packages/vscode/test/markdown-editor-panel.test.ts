@@ -87,6 +87,22 @@ function sendSave(
   });
 }
 
+interface SetContentMessage {
+  type: 'setContent';
+  content: string;
+}
+
+/** The content the webview is currently displaying, per the last setContent. */
+function findLastSetContent(panel: FakeWebviewPanel): string | undefined {
+  const contents = panel.posted.filter(
+    (message): message is SetContentMessage =>
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { type?: unknown }).type === 'setContent',
+  );
+  return contents.at(-1)?.content;
+}
+
 interface SaveResultMessage {
   type: 'saveResult';
   ok: boolean;
@@ -232,6 +248,55 @@ describe('MarkdownEditorPanel', () => {
 
       expect(document.savedText).to.equal('# edited\n');
       expect(stub.errorMessages).to.deep.equal([]);
+    });
+  });
+
+  describe('bursts of external changes', () => {
+    /**
+     * The panel's bounded message queue holds 128 pending operations, and it is
+     * shared with webview requests that await a *modal* dialog inside the queued
+     * operation (pickExportTarget/saveExport both await showSaveDialog). While
+     * such an operation stalls the tail, nothing drains, so every external
+     * change accumulates. A burst larger than the bound used to be dropped
+     * newest-first, leaving the webview pinned to a stale snapshot with no
+     * conflict indication. The newest snapshot is the only one that still
+     * exists, so it must never be the one that is discarded.
+     */
+    const BURST = 200;
+
+    function fireExternalBurst(document: FakeTextDocument): string {
+      let lastText = document.getText();
+      for (let index = 1; index <= BURST; index += 1) {
+        lastText = `# external ${index}\n`;
+        document.setText(lastText);
+        stub.onDidChangeTextDocumentEmitter.fire({ document });
+      }
+      return lastText;
+    }
+
+    it('shows the newest external snapshot after a burst larger than the queue bound', async () => {
+      const { document, panel } = await openPanel('# original\n');
+
+      const lastText = fireExternalBurst(document);
+      await settle();
+
+      expect(document.getText()).to.equal(lastText);
+      expect(findLastSetContent(panel)).to.equal(lastText);
+      expect(stub.errorMessages).to.deep.equal([]);
+    });
+
+    it('conflicts against the newest external snapshot when the session is dirty', async () => {
+      const { document, panel, sessionId } = await openPanel('# original\n');
+      sendEdit(panel, sessionId, '# local draft\n');
+      await settle();
+
+      const lastText = fireExternalBurst(document);
+      await settle();
+
+      // A dirty session must surface the burst as a conflict rather than
+      // silently ignoring the snapshots that overflowed the queue.
+      expect(stub.warningMessages.join('\n')).to.contain('changed outside DocBlocks');
+      expect(document.getText()).to.equal(lastText);
     });
   });
 

@@ -183,3 +183,53 @@ describe('summariseImport', () => {
     expect(summary?.message).to.equal('Could not import 2 of 3 files.');
   });
 });
+
+/**
+ * Build a real `.dbk`: a zipped container holding a primary Markdown document
+ * plus secondary ones. Round-tripping through the same writer the export path
+ * uses (`containerToZip`) keeps the fixture honest — a hand-rolled zip could
+ * drift from what DocBlocks actually emits.
+ */
+async function dbkFile(
+  name: string,
+  entries: Record<string, string>,
+  documentPath: string,
+): Promise<File> {
+  const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+    import('@bendyline/squisq/storage'),
+    import('@bendyline/squisq-formats/container'),
+  ]);
+  const container = new MemoryContentContainer();
+  for (const [path, content] of Object.entries(entries)) {
+    await container.writeFile(path, new TextEncoder().encode(content));
+  }
+  await container.setDocumentPath?.(documentPath);
+  const blob = await containerToZip(container);
+  return new File([await blob.arrayBuffer()], name);
+}
+
+describe('importDroppedFiles — .dbk bundles', () => {
+  it('imports a bundle’s secondary documents, not just the primary', async () => {
+    const provider = makeProvider();
+    const file = await dbkFile(
+      'bundle.dbk',
+      {
+        'main.md': '# Primary\n',
+        'chapter-two.md': '# Chapter Two\n',
+        'notes/aside.md': '# Aside\n',
+      },
+      'main.md',
+    );
+
+    const result = await importDroppedFiles([file], provider, noMedia);
+
+    expect(result.failed).to.deep.equal([]);
+    expect(await provider.readFile('bundle.md')).to.equal('# Primary\n');
+
+    // The whole point: the secondary documents survive the drop. Before this
+    // fix only `documentContent` was written and these vanished silently,
+    // while the import reported complete success.
+    const listed = await provider.readDirectory('bundle_files');
+    expect(listed.length, 'secondary documents must be imported').to.be.greaterThan(0);
+  });
+});

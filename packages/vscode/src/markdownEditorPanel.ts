@@ -72,6 +72,8 @@ export class MarkdownEditorPanel {
   private readonly exportGrantScope: ExportGrantScope;
   private readonly statusBarItem: vscode.StatusBarItem;
   private conflictPrompt: Promise<void> | null = null;
+  private pendingExternalSnapshot: HostDocumentSnapshot | null = null;
+  private externalChangeQueued = false;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -285,18 +287,7 @@ export class MarkdownEditorPanel {
           void vscode.window.showErrorMessage(toError(error).message);
           return;
         }
-        this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
-          await this.latestEditQueue.flush();
-          const sync = await this.syncReady;
-          const wasConflicted = sync.getSnapshot().session.conflict !== null;
-          const result = sync.observeExternal(external);
-          if (result === 'applied') this.sendContent();
-          if (result === 'conflict' && !wasConflicted) {
-            void this.promptConflictResolution(sync, false);
-          }
-          this.sendSessionState();
-          this.updateTitle();
-        });
+        this.queueExternalChange(external);
       }),
       vscode.workspace.onDidSaveTextDocument((document) => {
         if (document.uri.toString() !== this.uri.toString()) return;
@@ -340,6 +331,62 @@ export class MarkdownEditorPanel {
         this.trackClose();
       }),
     );
+  }
+
+  /**
+   * Collapse external document changes onto a single queue slot.
+   *
+   * Only the newest external snapshot still describes the buffer; the earlier
+   * ones are already gone, and `observeExternal` rebases (or conflicts) against
+   * whatever it is handed. Enqueuing one entry per change therefore bought
+   * nothing and cost correctness: this queue is bounded at
+   * {@link MAX_PENDING_OPERATIONS} and is shared with webview requests that
+   * await a modal dialog *inside* the queued operation (pickExportTarget and
+   * saveExport both await showSaveDialog). While such an operation stalls the
+   * tail nothing drains, so a burst — an agent or formatter rewriting the file,
+   * or someone typing in a side-by-side text editor — overflowed the bound and
+   * was dropped newest-first, pinning the webview to a stale snapshot with no
+   * conflict indication until the next commit re-read.
+   *
+   * Coalescing keeps the ordering guarantee (the entry still runs in queue
+   * order relative to webview messages) while making that overflow structurally
+   * unreachable: at most one external-change entry is ever pending.
+   */
+  private queueExternalChange(external: HostDocumentSnapshot): void {
+    this.pendingExternalSnapshot = external;
+    if (this.externalChangeQueued) return;
+    this.externalChangeQueued = true;
+
+    const accepted = this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
+      this.externalChangeQueued = false;
+      const latest = this.pendingExternalSnapshot;
+      this.pendingExternalSnapshot = null;
+      if (latest) await this.applyExternalChange(latest);
+    });
+    if (accepted) return;
+
+    // The queue refuses work while disposing (the close-time flush re-reads the
+    // document, so nothing is lost) or while saturated by webview requests.
+    // Keep the snapshot and retry once the tail drains rather than dropping it.
+    this.externalChangeQueued = false;
+    if (this.panelDisposed) return;
+    void this.messageQueue.drain().then(() => {
+      const pending = this.pendingExternalSnapshot;
+      if (pending && !this.panelDisposed) this.queueExternalChange(pending);
+    });
+  }
+
+  private async applyExternalChange(external: HostDocumentSnapshot): Promise<void> {
+    await this.latestEditQueue.flush();
+    const sync = await this.syncReady;
+    const wasConflicted = sync.getSnapshot().session.conflict !== null;
+    const result = sync.observeExternal(external);
+    if (result === 'applied') this.sendContent();
+    if (result === 'conflict' && !wasConflicted) {
+      void this.promptConflictResolution(sync, false);
+    }
+    this.sendSessionState();
+    this.updateTitle();
   }
 
   private async handleMessage(message: QueuedWebviewMessage): Promise<void> {

@@ -775,6 +775,25 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       kind: 'file',
       path,
       name: workspacePathBasename(path),
+      // Derived from size + mtime, never from content. This keeps stat/list
+      // proportional to entry count instead of bytes (see scanMetadataHandle),
+      // which is what makes large workspaces listable in a browser tab at all.
+      //
+      // The cost is a real blind spot: an external same-size rewrite inside one
+      // mtime tick is invisible here. FAT/exFAT stamp mtime at 2-second
+      // granularity, and network shares can be coarser, so this is reachable on
+      // removable and mounted volumes rather than merely theoretical. Two
+      // consequences follow, and neither is hypothetical:
+      //   - a conditional write guarded on expectedVersion accepts, silently
+      //     overwriting the external edit;
+      //   - move() re-checks this version to prove the source is unchanged
+      //     before deleting it, so it can delete a source whose bytes it never
+      //     copied, losing the edit outright.
+      // `conditionalWrite: 'process'` declares the first (expectedVersion binds
+      // only against writers in this process). The second is a provider-internal
+      // check that the token cannot actually support; closing it means
+      // byte-comparing the captured source before the delete, not hashing
+      // content here, which would undo the scan-by-metadata property above.
       size: file.size,
       version: await metadataVersion(
         'file',

@@ -127,6 +127,22 @@ export class NativeFileSystemEmulator {
     this.ensureDirectory(parseWorkspacePath(path));
   }
 
+  /**
+   * Force a file's `lastModified` to an exact value.
+   *
+   * The emulator's clock is monotonic (`++this.clock`), so every write it
+   * performs advances the timestamp and no two states can ever share one. Real
+   * filesystems are not so kind: FAT/exFAT stores mtime at 2-second
+   * granularity, and network shares are coarser still. This lets a test model a
+   * same-size rewrite that lands inside one timestamp tick — the only case that
+   * a size+mtime version token cannot see.
+   */
+  public setLastModified(path: string, lastModified: number): void {
+    const node = this.node(parseWorkspacePath(path));
+    if (node?.kind !== 'file') throw new Error(`${path} is not a seeded file.`);
+    node.lastModified = lastModified;
+  }
+
   public exists(path: string): boolean {
     return this.node(parseWorkspacePath(path)) !== null;
   }

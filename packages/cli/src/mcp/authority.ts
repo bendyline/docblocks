@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import { readContainedFile } from '../contained-file.js';
+import { isLinkUnsupportedError } from '../internal/link-support.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
 import { isPathInside } from '../internal/paths.js';
 
 export interface McpFileAuthorityOptions {
@@ -22,6 +24,8 @@ export interface McpFileAuthorityDependencies {
   afterMaterializationHashChunk?(readBytes: number, totalBytes: number): Promise<void> | void;
   /** Synchronous test notification at the irreversible publication boundary. */
   afterMaterializationPublish?(targetPath: string): void;
+  /** Test seam standing in for a filesystem whose hard links are unsupported. */
+  link?(existingPath: string, newPath: string): Promise<void>;
 }
 
 const DEFAULT_MAX_INPUT_FILE_BYTES = 100 * 1024 * 1024;
@@ -286,7 +290,7 @@ export class McpFileAuthority {
         if (ifExists === 'error') {
           // Hard-link publication is an atomic create-if-absent operation on the
           // same filesystem. The operation-owned temporary is removed below.
-          await link(temporary, target);
+          await this.publishCreateIfAbsent(temporary, target, content, signal);
         } else {
           // Node exposes atomic replacement but not a cross-platform atomic
           // compare-and-swap primitive. The process lock and post-stage hash
@@ -301,6 +305,65 @@ export class McpFileAuthority {
         await unlink(temporary).catch(() => undefined);
       }
     });
+  }
+
+  /**
+   * Publish the staged bytes only if nothing occupies the target.
+   *
+   * A hard link is the preferred primitive: it makes an already-complete,
+   * fsynced file appear at the target in one atomic step. FAT32/exFAT and some
+   * SMB mounts cannot create hard links at all, which would otherwise fail
+   * every no-replace publication on those volumes even though the write is
+   * legal. `open(target, 'wx')` is the same atomic create-if-absent primitive
+   * without hard links — the kernel still refuses an occupied name with EEXIST,
+   * so an existing file is never replaced and the no-replace contract holds.
+   *
+   * The fallback is strictly weaker in one respect: the target is created
+   * before its bytes land, so a concurrent reader can observe a short file.
+   * That window is unavoidable on a filesystem offering no link primitive, and
+   * it never costs a caller their data. The caller's TOCTOU protections are
+   * untouched: the parent identity is revalidated before this runs.
+   */
+  private async publishCreateIfAbsent(
+    temporary: string,
+    target: string,
+    content: Uint8Array,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const linkFile = this.dependencies.link ?? link;
+    try {
+      await linkFile(temporary, target);
+      return;
+    } catch (error: unknown) {
+      // A genuinely occupied target must refuse, never fall back.
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error('MCP output already exists');
+      if (!isLinkUnsupportedError(error)) throw error;
+    }
+
+    let handle: Awaited<ReturnType<typeof open>>;
+    try {
+      handle = await open(target, 'wx');
+    } catch (error: unknown) {
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error('MCP output already exists');
+      throw error;
+    }
+    try {
+      await writeFileHandle(
+        handle,
+        content,
+        signal,
+        this.dependencies.afterMaterializationWriteChunk,
+      );
+      signal?.throwIfAborted();
+      await handle.sync();
+      await handle.close();
+    } catch (error: unknown) {
+      // This process exclusively created the target, so removing the partial
+      // publication cannot destroy another writer's file.
+      await handle.close().catch(() => undefined);
+      await unlink(target).catch(() => undefined);
+      throw error;
+    }
   }
 }
 

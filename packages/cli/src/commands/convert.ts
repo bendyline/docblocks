@@ -19,6 +19,7 @@ import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { Block, Doc } from '@bendyline/squisq/schemas';
 import type { ConvertSource, FormatId, FormatRegistry } from '@bendyline/squisq-cli/api';
 import { positiveLimit } from '../internal/limits.js';
+import { isLinkUnsupportedError } from '../internal/link-support.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
@@ -342,7 +343,9 @@ function overwriteConflictMessage(conflicts: readonly string[]): string {
  * Mirrors the MCP authority's publication policy: replacement is opt-in, and
  * the default path publishes with `link()` — an atomic create-if-absent on one
  * filesystem — so a file that appears between the preflight check and this
- * moment is reported rather than destroyed.
+ * moment is reported rather than destroyed. Volumes without hard links
+ * (FAT32/exFAT, some network mounts) fall back to an exclusive create, which
+ * refuses an occupied destination just as firmly.
  */
 async function publishFile(
   outputPath: string,
@@ -368,8 +371,32 @@ async function publishFile(
     }
     try {
       await link(temporaryPath, outputPath);
+      return;
+    } catch (error: unknown) {
+      // A genuinely occupied destination must refuse, never fall back.
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
+      if (!isLinkUnsupportedError(error)) throw error;
+    }
+
+    // FAT32/exFAT and some network mounts have no hard links. `wx` is the same
+    // atomic create-if-absent primitive without them: an occupied destination
+    // still fails EEXIST, so publication stays refuse-don't-clobber.
+    let published: Awaited<ReturnType<typeof open>>;
+    try {
+      published = await open(outputPath, 'wx', 0o600);
     } catch (error: unknown) {
       if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
+      throw error;
+    }
+    try {
+      await published.writeFile(bytes);
+      await published.sync();
+      await published.close();
+    } catch (error: unknown) {
+      // This run exclusively created the destination, so removing the partial
+      // publication cannot destroy a file the caller wanted to keep.
+      await published.close().catch(() => undefined);
+      await rm(outputPath, { force: true }).catch(() => undefined);
       throw error;
     }
   } finally {

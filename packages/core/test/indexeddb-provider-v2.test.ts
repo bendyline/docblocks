@@ -274,6 +274,62 @@ describe('IndexedDBFileSystemProviderV2 migration and compatibility', () => {
     await provider.dispose();
   });
 
+  it('refuses to move a directory that strands a quarantined descendant', async () => {
+    const store = new FakeTransactionalStore();
+    store.seed('fs:dirs', ['dir']);
+    seedLegacyText(store, 'dir/child.md', 'text authority');
+    store.seed('fs:dir/child.md:binary', encode('binary authority').buffer);
+    const { provider } = createProvider(store);
+
+    expect((await provider.listLegacyMigrationConflicts()).map((item) => item.path)).to.deep.equal([
+      p('/dir/child.md'),
+    ]);
+
+    // Moving the ancestor would leave the conflict keyed to dir/child.md, so a
+    // later resolution would rebuild the very tree this move dismantled.
+    await expectFsError(provider.move(p('/dir'), p('/moved')), 'conflict');
+    expect(await provider.stat(p('/dir'))).to.not.equal(null);
+    expect(await provider.stat(p('/moved'))).to.equal(null);
+
+    // Resolving first makes the move legal, and it then carries the file along.
+    await provider.resolveLegacyMigrationConflict(p('/dir/child.md'), 'text');
+    await provider.move(p('/dir'), p('/moved'));
+    expect(decode((await provider.readFile(p('/moved/child.md')))?.data)).to.equal(
+      'text authority',
+    );
+    expect(await provider.stat(p('/dir'))).to.equal(null);
+    await provider.dispose();
+  });
+
+  it('refuses to remove the v2 authority under a quarantined path', async () => {
+    const { provider, store } = createProvider();
+    const path = p('/note.md');
+    await provider.writeFile(path, encode('authority'));
+    seedLegacyText(store, 'note.md', 'stale branch');
+
+    // Removing the authority would strand the conflict: 'v2' resolution reports
+    // that there is nothing to keep.
+    await expectFsError(provider.remove(path), 'conflict');
+    expect(decode((await provider.readFile(path))?.data)).to.equal('authority');
+
+    // Discarding the legacy candidate is the explicit way through.
+    expect(await provider.discardLegacyMigrationConflict(path)).to.equal(true);
+    expect((await provider.remove(path)).removed).to.equal(true);
+    await provider.dispose();
+  });
+
+  it('refuses to remove a directory holding a quarantined descendant', async () => {
+    const store = new FakeTransactionalStore();
+    store.seed('fs:dirs', ['dir']);
+    seedLegacyText(store, 'dir/child.md', 'text authority');
+    store.seed('fs:dir/child.md:binary', encode('binary authority').buffer);
+    const { provider } = createProvider(store);
+
+    await expectFsError(provider.remove(p('/dir'), { recursive: true }), 'conflict');
+    expect(await provider.stat(p('/dir'))).to.not.equal(null);
+    await provider.dispose();
+  });
+
   it('commits quarantine before rejecting a same-path mutation', async () => {
     const { provider, store } = createProvider();
     const path = p('/note.md');

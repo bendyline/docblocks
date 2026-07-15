@@ -15,6 +15,8 @@ on:
 permissions:
   contents: write
   pages: write
+  # Load-bearing for npm publishing, not just provenance: this repo has NO
+  # NPM_TOKEN. See the "Semantic Release" step for the full explanation.
   id-token: write
   issues: write
   pull-requests: write
@@ -56,6 +58,28 @@ jobs:
       # manifest to the released version. Packing before it produced tarballs
       # and a vsix stamped with the previous version, so the uploaded assets
       # never matched the tag or what npm actually published.
+      #
+      # npm AUTHENTICATION IS NOT IN THIS REPO. There is deliberately no
+      # NPM_TOKEN/NODE_AUTH_TOKEN here: publishing relies on npm Trusted
+      # Publishing (OIDC), which is configured OUTSIDE this repo on npmjs.com.
+      # Each published package (@bendyline/docblocks, -react, -cli) must have a
+      # trusted publisher registered pointing at:
+      #     repository: bendyline/docblocks
+      #     workflow:   .github/workflows/publish.yml
+      # (no GitHub Environment is configured on this job, so the trusted
+      # publisher must not require one either).
+      #
+      # How it works: @semantic-release/npm's verify-auth exchanges this job's
+      # GitHub OIDC token for a short-lived npm token, and only falls back to
+      # NPM_TOKEN if that exchange fails. That is why `id-token: write` above
+      # and setup-node's `registry-url` below are both required -- the exchange
+      # only runs when the resolved registry is exactly registry.npmjs.org.
+      # `provenance: true` in .releaserc.json rides on the same OIDC token.
+      #
+      # IF A RELEASE EVER FAILS WITH "No npm token specified." (ENONPMTOKEN),
+      # the trusted-publisher config on npmjs.com has been dropped or no longer
+      # matches this workflow's path/repo -- it is NOT a missing secret.
+      # Docs: https://docs.npmjs.com/trusted-publishers
       - name: Semantic Release
         if: inputs.publish_release
         env:

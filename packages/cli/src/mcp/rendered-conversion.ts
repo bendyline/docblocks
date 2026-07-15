@@ -476,8 +476,38 @@ function slideRelationshipsXml(slideNumber: number): string {
   );
 }
 
+/**
+ * Characters that XML 1.0 forbids outright, per the `Char` production:
+ *
+ *   Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+ *
+ * Unlike `&` or `<`, these cannot be rescued by escaping — a numeric entity
+ * such as `&#xB;` is *itself* invalid — so removal is the only conforming
+ * option. Tab, newline, and CR are explicitly legal and are preserved, as are
+ * accents, CJK, and astral characters (the `u` flag keeps well-formed
+ * surrogate pairs intact while dropping lone surrogates, which cannot be
+ * encoded as UTF-8 at all).
+ *
+ * This mirrors the PDF path's `asWinAnsiText` in spirit — sanitize to what the
+ * container can actually represent before emitting — but stays far narrower:
+ * WinAnsi cannot encode non-Latin-1 text, whereas XML can, so only genuinely
+ * illegal characters are dropped rather than everything outside ASCII.
+ */
+const XML_INVALID_CHARACTERS =
+  /[ --�-�￾￿]/gu;
+
+/**
+ * Escape a value for XML text and attribute contexts.
+ *
+ * Control characters reach here from real documents: `frame.label` and the
+ * hybrid path's `semanticText` both derive from authored markdown, and squisq's
+ * parser preserves C0 controls in `plainText`. Emitting one raw produces a
+ * slide part that strict XML parsers reject, which PowerPoint reports as
+ * "presentation needs repair" — so strip them before escaping.
+ */
 function escapeXml(value: string): string {
   return value
+    .replace(XML_INVALID_CHARACTERS, '')
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')

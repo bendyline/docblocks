@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
+  FsError,
   getFileSystemProviderV2,
   moveFileSystemEntry,
   parseWorkspacePath,
@@ -287,6 +288,19 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
           mode: 'create',
         });
       } else {
+        // The v2 path above uses `mode: 'create'`, which refuses to clobber.
+        // The legacy seam has no such mode, so enforce the same contract here
+        // -- otherwise "create a new document" silently truncates whatever is
+        // already at `path`. Unreachable with the first-party providers (they
+        // all expose v2), but `FileSystemProvider` is a public interface and a
+        // consumer's own provider would land here. Mirrors the same guard in
+        // `provider-io.ts`'s legacy branch.
+        if (await providerRef.current.exists(path)) {
+          throw new FsError('already-exists', 'File already exists.', {
+            operation: 'write',
+            path,
+          });
+        }
         await providerRef.current.writeFile(path, content);
       }
       await refresh();

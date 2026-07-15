@@ -210,20 +210,30 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     defaultHeight: 800,
   });
 
-  const useSaved = boundsAreVisible({
+  // Position and size fail independently. The saved position can be unusable
+  // (the display it was docked to is gone) while the saved size is still
+  // exactly what the user chose -- and dropping both to the 1280x800 default
+  // there silently resized a window they had deliberately sized. So drop only
+  // the position, letting Electron centre the window, and keep the size --
+  // clamped to the display that will actually host it, in case that display is
+  // smaller than the one the window was sized on.
+  const savedPositionUsable = boundsAreVisible({
     x: winState.x,
     y: winState.y,
     width: winState.width,
     height: winState.height,
   });
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  const restoredWidth = Math.min(winState.width, workArea.width);
+  const restoredHeight = Math.min(winState.height, workArea.height);
 
   const preloadPath = path.join(__dirname, '..', 'preload', 'preload.cjs');
 
   const win = new BrowserWindow({
-    x: useSaved ? winState.x : undefined,
-    y: useSaved ? winState.y : undefined,
-    width: useSaved ? winState.width : 1280,
-    height: useSaved ? winState.height : 800,
+    x: savedPositionUsable ? winState.x : undefined,
+    y: savedPositionUsable ? winState.y : undefined,
+    width: restoredWidth,
+    height: restoredHeight,
     minWidth: 640,
     minHeight: 480,
     show: false,
@@ -235,7 +245,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
       symbolColor: '#6b7280',
       height: TITLE_BAR_HEIGHT,
     },
-    center: !useSaved,
+    center: !savedPositionUsable,
     backgroundColor: '#1e1e1e',
     webPreferences: {
       preload: preloadPath,
