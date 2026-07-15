@@ -85,6 +85,12 @@ export function createVscodeMediaBridge(
       async resolveUrl(ref: string): Promise<string> {
         const displayableUrl = parseDisplayableUrl(ref);
         if (displayableUrl) return displayableUrl;
+        if (parseExternalHttpUrl(ref)) {
+          throw new Error(
+            'Remote media is blocked in the VS Code editor to protect your privacy. ' +
+              "Download the file into this document's media folder to display it.",
+          );
+        }
         const response = await request({ type: 'resolveMedia', ref }, 'mediaResolved');
         return response.url;
       },
@@ -131,8 +137,7 @@ export function createVscodeMediaBridge(
 function parseDisplayableUrl(ref: string): string | null {
   if (!isBoundedString(ref, HOST_WIRE_LIMITS.urlCharacters, 1)) return null;
   if (ref.startsWith('blob:') || ref.startsWith('data:')) return ref;
-  const external = parseExternalHttpUrl(ref);
-  return external?.startsWith('https:') ? external : null;
+  return null;
 }
 
 async function toBase64(data: ArrayBuffer | Blob | Uint8Array): Promise<string> {

@@ -66,9 +66,9 @@ const surfaces: BundleSurface[] = [
       {
         label: 'deferred standalone editor source',
         prefix: 'standalone-source',
-        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path
-        // and the Squisq 2.1 standalone Mermaid renderer source.
-        budgetBytes: 4_800_000,
+        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path;
+        // retain the smaller standalone source boundary restored in Squisq 2.2.
+        budgetBytes: 1_275_000,
       },
       { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 6_200_000 },
     ],
@@ -80,7 +80,7 @@ const surfaces: BundleSurface[] = [
       extensions: ['.js', '.css'],
       // Mermaid's diagram families are separate deferred chunks, but the
       // aggregate gate still accounts for their complete shipped footprint.
-      budgetBytes: 25_000_000,
+      budgetBytes: 21_250_000,
     },
   },
 ];

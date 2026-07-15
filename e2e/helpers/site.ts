@@ -29,11 +29,9 @@ export async function openInitializedSite(page: Page): Promise<void> {
     })
     .toMatch(/\/aboutDocBlocks\.md$/i);
 
-  // The gateway proves the selected welcome document branch has rendered;
-  // the status item proves the lazy Squisq shell has finished mounting.
-  await expect(page.locator('.db-welcome-gateway')).toBeVisible({
-    timeout: SITE_STARTUP_TIMEOUT_MS,
-  });
+  // The status item proves the selected document's lazy Squisq shell has
+  // finished mounting. The welcome gateway is intentionally transient and
+  // can disappear before this assertion on a warm dev server.
   await expect(page.locator('.squisq-status-item').first()).toBeVisible({
     timeout: SITE_STARTUP_TIMEOUT_MS,
   });

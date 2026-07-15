@@ -132,8 +132,11 @@ describe('MCP canonical real rendered-media integration', function () {
   this.timeout(120_000);
 
   let harness: McpHarness;
+  let previousFfmpegOverride: string | undefined;
 
   before(async function () {
+    previousFfmpegOverride = process.env.SQUISQ_FFMPEG;
+    configureWorkspaceFfmpegOverride();
     const missing = await missingRenderedMediaDependencies();
     if (missing.length === 0) return;
     console.error(`  (skipping canonical real-media tests - missing ${missing.join(' and ')})`);
@@ -145,6 +148,11 @@ describe('MCP canonical real rendered-media integration', function () {
   });
 
   afterEach(async () => harness.dispose());
+
+  after(() => {
+    if (previousFfmpegOverride === undefined) delete process.env.SQUISQ_FFMPEG;
+    else process.env.SQUISQ_FFMPEG = previousFfmpegOverride;
+  });
 
   it('projects the linked audio-omission warning from a real GIF conversion', async () => {
     const result = await callTool(harness.client, 'convert_document', {
@@ -305,5 +313,30 @@ function hasFfmpeg(): boolean {
     return probe.status === 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Linked Squisq resolves optional packages from its real checkout, not from
+ * this workspace. Point it at the desktop workspace's hoisted ffmpeg-static
+ * binary so the canonical integration test exercises the renderer that is
+ * actually installed here instead of reporting a false missing dependency.
+ */
+function configureWorkspaceFfmpegOverride(): void {
+  if (process.env.SQUISQ_FFMPEG) return;
+  const pathProbe = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['ffmpeg'], {
+    stdio: 'ignore',
+    timeout: 5_000,
+  });
+  if (pathProbe.status === 0) return;
+
+  try {
+    const workspaceRequire = createRequire(import.meta.url);
+    const bundled: unknown = workspaceRequire('ffmpeg-static');
+    if (typeof bundled !== 'string') return;
+    const probe = spawnSync(bundled, ['-version'], { stdio: 'ignore', timeout: 5_000 });
+    if (probe.status === 0) process.env.SQUISQ_FFMPEG = bundled;
+  } catch {
+    // missingRenderedMediaDependencies reports the actionable skip reason.
   }
 }

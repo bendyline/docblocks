@@ -174,6 +174,7 @@ async function main(): Promise<void> {
     'npm run format:check',
     'npm run typecheck',
     'npm run check:packages',
+    'npm run coverage:critical',
     'npm test',
     'npm run test:e2e:all',
   ];

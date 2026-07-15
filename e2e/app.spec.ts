@@ -559,7 +559,12 @@ test.describe('Simple diagram theming', () => {
     });
     await openInitializedSite(page);
     await page.locator('.db-welcome-gateway-cta').click();
-    await page.locator('[role="tab"][data-view="raw"]').click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+    const sourceTab = page.locator('[role="tab"][data-view="raw"]');
+    await sourceTab.click();
+    await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('[data-testid="raw-editor"]')).toBeVisible({ timeout: 10_000 });
 
     const markdown = [

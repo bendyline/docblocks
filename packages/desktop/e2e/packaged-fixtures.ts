@@ -116,8 +116,10 @@ async function launchPackagedApplication(
     '--noerrdialogs',
     '--disable-breakpad',
     '--disable-gpu',
+    // Packaged smoke runs inside an already isolated automation boundary.
+    // Avoid a nested Chromium sandbox launch failure on managed runners.
+    '--no-sandbox',
   ];
-  if (process.env.CI && process.platform === 'linux') args.push('--no-sandbox');
 
   const child = spawn(artifact.executablePath, args, {
     cwd: path.dirname(artifact.executablePath),
@@ -147,7 +149,14 @@ async function launchPackagedApplication(
 
     const close = async (): Promise<void> => {
       try {
-        await window.close({ runBeforeUnload: true });
+        await window.evaluate(() => {
+          const host = (
+            globalThis as {
+              docBlocksHost?: { lifecycle?: { requestWindowClose(): void } };
+            }
+          ).docBlocksHost;
+          host?.lifecycle?.requestWindowClose();
+        });
       } catch {
         // The window may already have closed as part of the assertion path.
       }

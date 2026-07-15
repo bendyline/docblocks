@@ -109,6 +109,44 @@ test.describe('a11y — initial shell', () => {
   });
 });
 
+test.describe('a11y - application dialogs', () => {
+  test('no WCAG A/AA violations in Settings and About dialogs', async ({ page }, info) => {
+    await waitForShell(page);
+
+    await page.locator('.db-app-menu-btn').click();
+    await page.getByRole('menuitem', { name: 'Settings' }).click();
+    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+    let violations = await scanAndReport(page, info, 'settings-dialog');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in Settings dialog:\n${formatViolations(violations)}`,
+    ).toBe(0);
+    await page.getByRole('button', { name: 'Close' }).click();
+
+    await page.locator('.db-app-menu-btn').click();
+    await page.getByRole('menuitem', { name: 'About' }).click();
+    await expect(page.getByRole('dialog', { name: 'About DocBlocks' })).toBeVisible();
+    violations = await scanAndReport(page, info, 'about-dialog');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in About dialog:\n${formatViolations(violations)}`,
+    ).toBe(0);
+  });
+
+  test('no WCAG A/AA violations in the Export dialog', async ({ page }, info) => {
+    await waitForShell(page);
+    await page.getByRole('button', { name: 'Export and share' }).click();
+    await page.getByRole('menuitem', { name: 'Export...' }).click();
+    await expect(page.getByRole('dialog', { name: 'Export Document' })).toBeVisible();
+
+    const violations = await scanAndReport(page, info, 'export-dialog');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in Export dialog:\n${formatViolations(violations)}`,
+    ).toBe(0);
+  });
+});
+
 test.describe('a11y — app menu open', () => {
   test('no WCAG A/AA violations with app menu dropdown visible', async ({ page }, info) => {
     await waitForShell(page);

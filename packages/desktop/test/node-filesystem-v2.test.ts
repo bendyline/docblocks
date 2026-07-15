@@ -150,6 +150,62 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
     }
   });
 
+  it('rejects in-root symlink cycles and bounded snapshot overflows', async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-budget-'));
+    const id = `node-v2-budget-${++providerSequence}`;
+    await fs.writeFile(path.join(rootPath, 'a.md'), 'a');
+    await fs.writeFile(path.join(rootPath, 'b.md'), 'b');
+    roots.register(id, rootPath);
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Traversal budget', rootPath, roots, {
+      traversalEntryLimit: 2,
+    });
+    try {
+      await provider.initialize();
+      let failure: unknown;
+      try {
+        await provider.snapshot();
+      } catch (error: unknown) {
+        failure = error;
+      }
+      expect(failure).to.be.instanceOf(FsError);
+      expect((failure as FsError).code).to.equal('quota-exceeded');
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+
+    const cycleRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-cycle-'));
+    const cycleId = `node-v2-cycle-${++providerSequence}`;
+    await fs.symlink(
+      cycleRoot,
+      path.join(cycleRoot, 'cycle'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    roots.register(cycleId, cycleRoot);
+    const cycleProvider = new NodeWorkspaceFileSystemV2(
+      cycleId,
+      'Cycle boundary',
+      cycleRoot,
+      roots,
+    );
+    try {
+      await cycleProvider.initialize();
+      let failure: unknown;
+      try {
+        await cycleProvider.snapshot();
+      } catch (error: unknown) {
+        failure = error;
+      }
+      expect(failure).to.be.instanceOf(FsError);
+      expect((failure as FsError).code).to.equal('invalid-path');
+    } finally {
+      await cycleProvider.dispose();
+      roots.unregister(cycleId);
+      await fs.rm(cycleRoot, { recursive: true, force: true });
+    }
+  });
+
   it('derives metadata versions from file contents without returning payload bytes', async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-metadata-'));
     const id = `node-v2-metadata-${++providerSequence}`;

@@ -1,7 +1,11 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SITE_PRECACHE_EXTENSIONS, SITE_PRECACHE_MAX_BYTES } from './site-precache-policy.js';
+import {
+  SITE_PRECACHE_EXTENSIONS,
+  SITE_PRECACHE_MAX_BYTES,
+  SITE_PRECACHE_MAX_TOTAL_BYTES,
+} from './site-precache-policy.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const distRoot = path.join(repoRoot, 'packages/site/dist');
@@ -34,6 +38,12 @@ async function collectEligibleFiles(directory: string): Promise<string[]> {
 }
 
 const serviceWorker = await readFile(serviceWorkerPath, 'utf8');
+if (!serviceWorker.includes('"SKIP_WAITING"') || !serviceWorker.includes('self.skipWaiting()')) {
+  throw new Error('PWA service worker does not expose the explicit user-approved update path.');
+}
+if (/\.clientsClaim\(\)/u.test(serviceWorker)) {
+  throw new Error('PWA service worker would claim clients before the user approves an update.');
+}
 const manifestUrls = new Set(
   [...serviceWorker.matchAll(/\burl:"([^"]+)"/gu)].map((match) => match[1]),
 );
@@ -45,4 +55,16 @@ if (missing.length > 0) {
   );
 }
 
-process.stdout.write(`PWA precache contains all ${eligibleFiles.length} eligible site files.\n`);
+let totalBytes = 0;
+for (const file of eligibleFiles) totalBytes += (await stat(path.join(distRoot, file))).size;
+if (totalBytes > SITE_PRECACHE_MAX_TOTAL_BYTES) {
+  throw new Error(
+    `PWA precache is ${(totalBytes / 1024 / 1024).toFixed(2)} MiB, above the ` +
+      `${SITE_PRECACHE_MAX_TOTAL_BYTES / 1024 / 1024} MiB first-install budget.`,
+  );
+}
+
+process.stdout.write(
+  `PWA precache contains all ${eligibleFiles.length} eligible site files ` +
+    `(${(totalBytes / 1024 / 1024).toFixed(2)} MiB).\n`,
+);

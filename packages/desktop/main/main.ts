@@ -237,6 +237,14 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   winState.manage(win);
   attachWindowCloseGuard(win);
 
+  if (isAutomation) {
+    win.webContents.on('render-process-gone', (_event, details) => {
+      process.stderr.write(
+        `[docblocks:e2e] renderer gone: reason=${details.reason} exitCode=${details.exitCode}\n`,
+      );
+    });
+  }
+
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

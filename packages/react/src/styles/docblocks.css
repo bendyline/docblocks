@@ -4324,6 +4324,22 @@ button.db-git-file-row:hover {
   color: var(--db-text-muted);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .db-workspace-picker-caret,
+  .db-app-menu-caret,
+  .db-ws-settings-btn,
+  .db-shell-sidebar-resizer,
+  .db-export-chip,
+  .db-git-progress-bar > span {
+    transition: none;
+  }
+
+  .db-welcome-gateway,
+  .db-save-toast {
+    animation: none;
+  }
+}
+
 /* History dialog internals added by the expanded-row layout */
 .db-git-history-toggle {
   display: block;

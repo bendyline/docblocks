@@ -1,8 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
+import { createRequire } from 'node:module';
 import path from 'path';
 
 const extensionPath = path.resolve(__dirname, '..');
 const fixturesPath = path.resolve(extensionPath, 'test-fixtures');
+const require = createRequire(__filename);
+const testWebCli = require.resolve('@vscode/test-web/out/server/index.js');
+const quoteCommandArgument = (value: string): string => `"${value.replaceAll('"', '\\"')}"`;
 // Keep the E2E runtime reproducible and let @vscode/test-web reuse its local
 // cache without first reaching the mutable "latest insiders" endpoint.
 const vscodeWebCommit =
@@ -28,9 +32,16 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npx vscode-test-web --quality=insiders --commit=${vscodeWebCommit} --extensionDevelopmentPath=${extensionPath} --browser=none --port=3100 --headless ${fixturesPath}`,
+    // Launch the actual Node CLI. On Windows an intermediate npx/cmd process
+    // does not reliably forward Playwright's termination signal, leaving the
+    // test runner hung after its browser and assertions have already closed.
+    command: `${quoteCommandArgument(process.execPath)} ${quoteCommandArgument(testWebCli)} --quality=insiders --commit=${vscodeWebCommit} --extensionDevelopmentPath=${quoteCommandArgument(extensionPath)} --browser=none --port=3100 --headless ${quoteCommandArgument(fixturesPath)}`,
     url: 'http://localhost:3100',
-    reuseExistingServer: !process.env.CI,
+    // The extension host serves mutable build output and fixture files. Reusing
+    // an orphaned local process can test stale code and, on Windows, leave a
+    // large child-process tree behind after a timed-out run. Every canonical
+    // invocation owns and tears down the server it validates.
+    reuseExistingServer: false,
     timeout: 60_000,
     stdout: 'pipe',
     stderr: 'pipe',

@@ -23,6 +23,7 @@ export type {
   HostPrepareCloseResult,
   MenuCommand,
   OpenRequest,
+  UpdateCheckResult,
   UpdateInstallResult,
   UpdaterStatus,
 } from './types.js';

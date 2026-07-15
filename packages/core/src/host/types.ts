@@ -111,8 +111,8 @@ export interface DocBlocksHostFfmpegAPI {
 
 /** Auto-updater control. */
 export interface DocBlocksHostUpdaterAPI {
-  /** Kick off a check; resolves to true if an update is available. */
-  checkForUpdates(): Promise<boolean>;
+  /** Kick off a check without collapsing a failed check into "no update". */
+  checkForUpdates(): Promise<UpdateCheckResult>;
   /** Current app version string. */
   getVersion(): Promise<string>;
   /**
@@ -127,6 +127,12 @@ export interface DocBlocksHostUpdaterAPI {
 }
 
 export type UpdateInstallResult = 'installing' | 'cancelled' | 'not-ready';
+
+export type UpdateCheckResult =
+  | { kind: 'available'; version: string }
+  | { kind: 'not-available' }
+  | { kind: 'store-managed' }
+  | { kind: 'error'; message: string };
 
 export type UpdaterStatus =
   | { kind: 'checking' }
@@ -236,6 +242,8 @@ export type HostPrepareCloseResult =
  * renderer never chooses request or window identifiers.
  */
 export interface DocBlocksHostLifecycleAPI {
+  /** Request the main-owned guarded close path for this renderer window. */
+  requestWindowClose(): void;
   onPrepareClose(
     listener: (request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>,
   ): () => void;

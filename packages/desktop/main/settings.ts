@@ -17,10 +17,9 @@
  */
 
 import { app } from 'electron';
-import fs from 'node:fs/promises';
 import path from 'node:path';
-import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
-import { SETTINGS_MAX_BYTES, parseSettings, type Settings } from './settings-schema.js';
+import { type Settings } from './settings-schema.js';
+import { atomicWriteSettingsFile, readSettingsFile } from './settings-file.js';
 import { SettingsWriteQueue } from './settings-write-queue.js';
 
 export type {
@@ -46,46 +45,17 @@ function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-async function atomicWrite(file: string, contents: string): Promise<void> {
-  const tmp = `${file}.tmp`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(tmp, contents, 'utf8');
-  // fs.rename on Windows can EPERM if the destination is held open by
-  // another process. We retry a handful of times with a small backoff;
-  // almost always the first retry succeeds.
-  const maxAttempts = 5;
-  let lastErr: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await fs.rename(tmp, file);
-      return;
-    } catch (err) {
-      lastErr = err;
-      await new Promise((r) => setTimeout(r, 50 * (i + 1)));
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
-}
-
 export async function readSettings(): Promise<Settings> {
   if (cachedSettings) return cachedSettings;
-  try {
-    const file = settingsPath();
-    const bytes = await fs.readFile(file);
-    if (bytes.byteLength > SETTINGS_MAX_BYTES) {
-      throw new Error(`Desktop settings exceed the ${SETTINGS_MAX_BYTES}-byte limit`);
-    }
-    const raw = decodeUtf8Text(bytes, { label: 'Desktop settings', path: file });
-    cachedSettings = parseSettings(JSON.parse(raw) as unknown);
-  } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    cachedSettings = { ...DEFAULT_SETTINGS, workspaces: [] };
-  }
+  cachedSettings = (await readSettingsFile(settingsPath())) ?? {
+    ...DEFAULT_SETTINGS,
+    workspaces: [],
+  };
   return cachedSettings;
 }
 
 async function commit(snapshot: Settings): Promise<void> {
-  await atomicWrite(settingsPath(), JSON.stringify(snapshot, null, 2));
+  await atomicWriteSettingsFile(settingsPath(), JSON.stringify(snapshot, null, 2));
 }
 
 const writeQueue = new SettingsWriteQueue(commit);

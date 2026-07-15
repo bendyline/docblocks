@@ -219,9 +219,15 @@ test.describe('Markdown editor panel', () => {
       await page.locator('html').getAttribute(LONGEST_DUPLICATE_TABS_ATTRIBUTE),
     );
     expect(duplicateTabDuration).toBeLessThan(250);
-    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
-      timeout: 10_000,
-    });
+    // VS Code's registered custom-editor route owns a native breadcrumb that
+    // identifies the editor type. The explicit "Open in DocBlocks" panel
+    // route below does not, so keep their expectations distinct.
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toContainText(
+      'DocBlocks Editor',
+      {
+        timeout: 10_000,
+      },
+    );
   });
 
   test('DocBlocks editor opens and shows webview', async ({ page }) => {

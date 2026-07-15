@@ -64,6 +64,9 @@ jobs:
       - name: Typecheck desktop
         run: npm run typecheck -w docblocks-desktop
 
+      - name: Verify native filesystem semantics
+        run: npx mocha --no-config --require tsx packages/desktop/test/node-filesystem-v2.test.ts
+
       - name: Build + package desktop (dir)
         run: npm run dist:dir -w docblocks-desktop
         env:

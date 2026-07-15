@@ -2,11 +2,12 @@
  * ExportDialog — modal for choosing export format and options.
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
 import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+import { Dialog } from '../components/Dialog.js';
 
 export interface ExportDialogProps {
   /** Initial options (pre-populated from last export). */
@@ -123,7 +124,6 @@ export function ExportDialog({
   const [includeLinkedDocs, setIncludeLinkedDocs] = useState<boolean>(initial.includeLinkedDocs);
   const [entryAsIndex, setEntryAsIndex] = useState<boolean>(initial.entryAsIndex);
   const [transforms, setTransforms] = useState<ExportSummaryOption[]>([]);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   const themes = getThemeSummaries();
 
@@ -207,231 +207,214 @@ export function ExportDialog({
     onExport(currentOptions);
   }, [currentOptions, onExport]);
 
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  // Close on backdrop click
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
-    },
-    [onClose],
-  );
-
   return (
-    <div className="db-dialog-overlay" onClick={handleBackdropClick}>
-      <div className="db-dialog db-export-dialog" ref={dialogRef}>
-        <div className="db-dialog-header">
-          <h2 className="db-dialog-title">Export Document</h2>
-          <button className="db-dialog-close" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
-
-        <div className="db-dialog-body">
-          {/* Format — chip radio row for fast switching */}
-          <div className="db-export-field">
-            <span className="db-export-label">Format</span>
-            <ChipRadioGroup
-              name="Format"
-              value={format}
-              options={FORMATS.map((f) => ({
-                key: f,
-                label: FORMAT_CHIP_LABELS[f],
-                title: FORMAT_LABELS[f],
-              }))}
-              onChange={setFormat}
-            />
-          </div>
-
-          {destination && (
-            <div className="db-export-field">
-              <label className="db-export-label" htmlFor="db-export-path">
-                Export to
-              </label>
-              <div className="db-export-path-row">
-                <input
-                  id="db-export-path"
-                  className="db-export-path-input"
-                  value={destination.value}
-                  readOnly
-                  disabled={exporting}
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <button
-                  type="button"
-                  className="db-export-path-pick"
-                  onClick={() => void destination.onPick(currentOptions)}
-                  disabled={exporting}
-                  aria-label="Choose export location"
-                  title="Choose export location"
-                >
-                  ...
-                </button>
-              </div>
-              {destination.hint && <span className="db-export-hint">{destination.hint}</span>}
-            </div>
-          )}
-
-          {/* HTML style + bundle (HTML only) — also chip rows */}
-          {showHtmlOptions && (
-            <>
-              <div className="db-export-field">
-                <span className="db-export-label">Style</span>
-                <ChipRadioGroup
-                  name="Style"
-                  value={htmlStyle}
-                  options={HTML_STYLE_CHIPS}
-                  onChange={setHtmlStyle}
-                />
-                <span className="db-export-hint">
-                  {HTML_STYLE_CHIPS.find((c) => c.key === htmlStyle)?.hint}
-                </span>
-              </div>
-              {showHtmlBundle && (
-                <div className="db-export-field">
-                  <span className="db-export-label">Bundle</span>
-                  <ChipRadioGroup
-                    name="Bundle"
-                    value={htmlBundle}
-                    options={HTML_BUNDLE_CHIPS}
-                    onChange={setHtmlBundle}
-                  />
-                  <span className="db-export-hint">
-                    {HTML_BUNDLE_CHIPS.find((c) => c.key === htmlBundle)?.hint}
-                  </span>
-                </div>
-              )}
-              {showIncludeLinked && (
-                <div className="db-export-field">
-                  <label className="db-export-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={includeLinkedDocs}
-                      onChange={(e) => setIncludeLinkedDocs(e.target.checked)}
-                    />
-                    <span>Include linked-to documents</span>
-                  </label>
-                  <span className="db-export-hint">
-                    {includeLinkedDocs
-                      ? 'Follows relative .md links from this page and bundles every reachable document as its own .html in a ZIP. Cross-doc links rewrite from .md to .html.'
-                      : 'Only this document is exported.'}
-                  </span>
-                </div>
-              )}
-              {showEntryAsIndex && (
-                <div className="db-export-field">
-                  <label className="db-export-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={entryAsIndex}
-                      onChange={(e) => setEntryAsIndex(e.target.checked)}
-                    />
-                    <span>Name entry page index.html</span>
-                  </label>
-                  <span className="db-export-hint">
-                    {entryAsIndex
-                      ? includeLinkedDocs
-                        ? 'Renames this page to index.html in the ZIP and rewrites any cross-doc links pointing back at it. Drops straight into a static-site host.'
-                        : 'Downloads as index.html instead of the document name. Drops straight into a static-site host.'
-                      : 'Exports under the document name.'}
-                  </span>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Theme */}
-          {showTheme && (
-            <div className="db-export-field">
-              <label className="db-export-label" htmlFor="db-export-theme">
-                Theme
-              </label>
-              <select
-                id="db-export-theme"
-                className="db-export-select"
-                value={themeId}
-                onChange={(e) => setThemeId(e.target.value)}
-              >
-                {themes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <span className="db-export-hint">
-                {themes.find((t) => t.id === themeId)?.description}
-              </span>
-            </div>
-          )}
-
-          {/* Transform (PPTX only) */}
-          {showTransform && (
-            <div className="db-export-field">
-              <label className="db-export-label" htmlFor="db-export-transform">
-                Transform
-              </label>
-              <select
-                id="db-export-transform"
-                className="db-export-select"
-                value={transformStyle}
-                onChange={(e) => setTransformStyle(e.target.value)}
-              >
-                {transforms.length === 0 ? (
-                  <option value={transformStyle}>Loading...</option>
-                ) : (
-                  transforms.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))
-                )}
-              </select>
-              <span className="db-export-hint">
-                {transforms.find((t) => t.id === transformStyle)?.description}
-              </span>
-            </div>
-          )}
-
-          {/* Page size (PDF only) */}
-          {showPageSize && (
-            <div className="db-export-field">
-              <label className="db-export-label" htmlFor="db-export-pagesize">
-                Page Size
-              </label>
-              <select
-                id="db-export-pagesize"
-                className="db-export-select"
-                value={pageSize}
-                onChange={(e) => setPageSize(e.target.value as 'letter' | 'a4')}
-              >
-                <option value="letter">US Letter</option>
-                <option value="a4">A4</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="db-export-footer">
-          <button className="db-export-btn db-export-btn--secondary" onClick={onClose}>
+    <Dialog
+      title="Export Document"
+      onClose={onClose}
+      className="db-export-dialog"
+      footerClassName="db-export-footer"
+      footer={
+        <>
+          <button
+            type="button"
+            className="db-export-btn db-export-btn--secondary"
+            onClick={onClose}
+          >
             Cancel
           </button>
           <button
+            type="button"
             className="db-export-btn db-export-btn--primary"
             onClick={handleExport}
             disabled={exporting}
           >
             {exporting ? 'Exporting...' : 'Export'}
           </button>
-        </div>
+        </>
+      }
+    >
+      {/* Format — chip radio row for fast switching */}
+      <div className="db-export-field">
+        <span className="db-export-label">Format</span>
+        <ChipRadioGroup
+          name="Format"
+          value={format}
+          options={FORMATS.map((f) => ({
+            key: f,
+            label: FORMAT_CHIP_LABELS[f],
+            title: FORMAT_LABELS[f],
+          }))}
+          onChange={setFormat}
+        />
       </div>
-    </div>
+
+      {destination && (
+        <div className="db-export-field">
+          <label className="db-export-label" htmlFor="db-export-path">
+            Export to
+          </label>
+          <div className="db-export-path-row">
+            <input
+              id="db-export-path"
+              className="db-export-path-input"
+              value={destination.value}
+              readOnly
+              disabled={exporting}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="db-export-path-pick"
+              onClick={() => void destination.onPick(currentOptions)}
+              disabled={exporting}
+              aria-label="Choose export location"
+              title="Choose export location"
+            >
+              ...
+            </button>
+          </div>
+          {destination.hint && <span className="db-export-hint">{destination.hint}</span>}
+        </div>
+      )}
+
+      {/* HTML style + bundle (HTML only) — also chip rows */}
+      {showHtmlOptions && (
+        <>
+          <div className="db-export-field">
+            <span className="db-export-label">Style</span>
+            <ChipRadioGroup
+              name="Style"
+              value={htmlStyle}
+              options={HTML_STYLE_CHIPS}
+              onChange={setHtmlStyle}
+            />
+            <span className="db-export-hint">
+              {HTML_STYLE_CHIPS.find((c) => c.key === htmlStyle)?.hint}
+            </span>
+          </div>
+          {showHtmlBundle && (
+            <div className="db-export-field">
+              <span className="db-export-label">Bundle</span>
+              <ChipRadioGroup
+                name="Bundle"
+                value={htmlBundle}
+                options={HTML_BUNDLE_CHIPS}
+                onChange={setHtmlBundle}
+              />
+              <span className="db-export-hint">
+                {HTML_BUNDLE_CHIPS.find((c) => c.key === htmlBundle)?.hint}
+              </span>
+            </div>
+          )}
+          {showIncludeLinked && (
+            <div className="db-export-field">
+              <label className="db-export-checkbox">
+                <input
+                  type="checkbox"
+                  checked={includeLinkedDocs}
+                  onChange={(e) => setIncludeLinkedDocs(e.target.checked)}
+                />
+                <span>Include linked-to documents</span>
+              </label>
+              <span className="db-export-hint">
+                {includeLinkedDocs
+                  ? 'Follows relative .md links from this page and bundles every reachable document as its own .html in a ZIP. Cross-doc links rewrite from .md to .html.'
+                  : 'Only this document is exported.'}
+              </span>
+            </div>
+          )}
+          {showEntryAsIndex && (
+            <div className="db-export-field">
+              <label className="db-export-checkbox">
+                <input
+                  type="checkbox"
+                  checked={entryAsIndex}
+                  onChange={(e) => setEntryAsIndex(e.target.checked)}
+                />
+                <span>Name entry page index.html</span>
+              </label>
+              <span className="db-export-hint">
+                {entryAsIndex
+                  ? includeLinkedDocs
+                    ? 'Renames this page to index.html in the ZIP and rewrites any cross-doc links pointing back at it. Drops straight into a static-site host.'
+                    : 'Downloads as index.html instead of the document name. Drops straight into a static-site host.'
+                  : 'Exports under the document name.'}
+              </span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Theme */}
+      {showTheme && (
+        <div className="db-export-field">
+          <label className="db-export-label" htmlFor="db-export-theme">
+            Theme
+          </label>
+          <select
+            id="db-export-theme"
+            className="db-export-select"
+            value={themeId}
+            onChange={(e) => setThemeId(e.target.value)}
+          >
+            {themes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <span className="db-export-hint">
+            {themes.find((t) => t.id === themeId)?.description}
+          </span>
+        </div>
+      )}
+
+      {/* Transform (PPTX only) */}
+      {showTransform && (
+        <div className="db-export-field">
+          <label className="db-export-label" htmlFor="db-export-transform">
+            Transform
+          </label>
+          <select
+            id="db-export-transform"
+            className="db-export-select"
+            value={transformStyle}
+            onChange={(e) => setTransformStyle(e.target.value)}
+          >
+            {transforms.length === 0 ? (
+              <option value={transformStyle}>Loading...</option>
+            ) : (
+              transforms.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))
+            )}
+          </select>
+          <span className="db-export-hint">
+            {transforms.find((t) => t.id === transformStyle)?.description}
+          </span>
+        </div>
+      )}
+
+      {/* Page size (PDF only) */}
+      {showPageSize && (
+        <div className="db-export-field">
+          <label className="db-export-label" htmlFor="db-export-pagesize">
+            Page Size
+          </label>
+          <select
+            id="db-export-pagesize"
+            className="db-export-select"
+            value={pageSize}
+            onChange={(e) => setPageSize(e.target.value as 'letter' | 'a4')}
+          >
+            <option value="letter">US Letter</option>
+            <option value="a4">A4</option>
+          </select>
+        </div>
+      )}
+    </Dialog>
   );
 }

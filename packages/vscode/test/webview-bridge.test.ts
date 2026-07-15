@@ -106,4 +106,23 @@ describe('VS Code webview request bridges', () => {
       bridge.dispose();
     }
   });
+
+  it('blocks remote media without sending a tracking request', async () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    const bridge = createVscodeMediaBridge((message) => posted.push(message));
+    try {
+      const failure = await bridge.mediaProvider
+        .resolveUrl('https://tracker.example/pixel.png')
+        .then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+      expect(failure).to.be.instanceOf(Error);
+      expect((failure as Error).message).to.contain('Remote media is blocked');
+      expect(posted).to.deep.equal([]);
+    } finally {
+      bridge.dispose();
+    }
+  });
 });

@@ -1,9 +1,9 @@
 /**
  * End-to-end smoke + key-flow tests for the DocBlocks Electron app.
  *
- * These tests launch the built app (dist/main/main.cjs) via Playwright's
- * _electron.launch() and drive the first-launch bootstrap, menu
- * commands, and the IPC path-traversal guard.
+ * These tests launch the built app (dist/main/main.cjs), attach to its
+ * renderer over CDP, and drive the first-launch bootstrap, menu commands,
+ * and the IPC path-traversal guard.
  *
  * Runtime expectations: the test runner must have already produced a
  * fresh `npm run build` beforehand (the playwright config assumes the
@@ -17,19 +17,14 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 
 test('boots and renders the shell', async ({ launchApp }) => {
-  const { app, window } = await launchApp();
+  const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await expect(window.locator('.db-shell')).toBeVisible();
   await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
-
-  const browserWindow = await app.browserWindow(window);
-  await expect
-    .poll(() => browserWindow.evaluate((nativeWindow) => nativeWindow.getTitle()))
-    .toBe('aboutDocBlocks - DocBlocks');
 });
 
 test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {
-  const { app, window } = await launchApp();
+  const { window } = await launchApp();
   const toolbar = window.locator('.squisq-toolbar');
   await expect(toolbar).toBeVisible({ timeout: 30_000 });
 
@@ -101,11 +96,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // macOS owns its global application menu outside the BrowserWindow;
   // Windows/Linux should have no in-window File/Edit/View menu row.
   if (process.platform !== 'darwin') {
-    const browserWindow = await app.browserWindow(window);
-    const menuBarVisible = await browserWindow.evaluate((nativeWindow) =>
-      nativeWindow.isMenuBarVisible(),
-    );
-    expect(menuBarVisible).toBe(false);
+    await expect(window.locator('.db-shell [role="menubar"]')).toHaveCount(0);
   }
 });
 
@@ -150,7 +141,7 @@ test('export dialog exposes a remembered native target control', async ({ launch
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await window.locator('.db-toolbar-menu-trigger').click();
-  await window.getByRole('button', { name: 'Export...' }).click();
+  await window.getByRole('menuitem', { name: 'Export...' }).click();
 
   const exportTarget = window.getByLabel('Export to');
   await expect(exportTarget).toBeVisible();
@@ -178,7 +169,7 @@ test('window close waits for the active document session to flush', async ({
   launchApp,
   workspaceDir,
 }) => {
-  const { app, window } = await launchApp();
+  const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
 
   const gateway = window.locator('.db-welcome-gateway');
@@ -196,9 +187,8 @@ test('window close waits for the active document session to flush', async ({
   // Exercise the guarded BrowserWindow close path directly. Production macOS
   // builds remain active after the final window closes, but automation mode
   // exits so a headless application cannot strand the Playwright worker.
-  const browserWindow = await app.browserWindow(window);
   const windowClosed = window.waitForEvent('close');
-  await browserWindow.evaluate((nativeWindow) => nativeWindow.close());
+  await requestWindowClose(window);
   await windowClosed;
   const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
   expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
@@ -319,6 +309,18 @@ test('renderer cannot read files outside the workspace root', async ({
 
   expect(result.ok, `path-traversal probe: ${JSON.stringify(result)}`).toBe(true);
 });
+
+async function requestWindowClose(window: import('@playwright/test').Page): Promise<void> {
+  await window.evaluate(() => {
+    const host = (
+      globalThis as {
+        docBlocksHost?: { lifecycle?: { requestWindowClose(): void } };
+      }
+    ).docBlocksHost;
+    if (!host?.lifecycle) throw new Error('Desktop lifecycle API is unavailable.');
+    host.lifecycle.requestWindowClose();
+  });
+}
 
 async function writeDbkDocument(filePath: string, documentName: string, content: string) {
   const container = new MemoryContentContainer();

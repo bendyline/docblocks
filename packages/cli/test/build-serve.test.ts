@@ -49,6 +49,32 @@ describe('CLI build and serve commands', () => {
     );
   });
 
+  it('keeps authored HTML inert in generated standalone output', async () => {
+    const html = await renderMarkdownHtml(
+      [
+        '<div onload="DOCBLOCKS_XSS_SENTINEL">',
+        '<img src="x.png" onerror="DOCBLOCKS_XSS_SENTINEL">',
+        '<script>DOCBLOCKS_XSS_SENTINEL</script>',
+        '<svg onload="DOCBLOCKS_XSS_SENTINEL"><script>sentinel</script></svg>',
+        '</div>',
+        '',
+        '[unsafe](javascript:DOCBLOCKS_XSS_SENTINEL)',
+        '',
+        '<iframe src="https://example.com/track"></iframe>',
+      ].join('\n'),
+      { title: 'Adversarial HTML' },
+    );
+
+    // Rendered HTML must be inert. The standalone player intentionally embeds
+    // an escaped source document for playback, so sentinel text may remain in
+    // JSON, but never in executable markup or a live URL attribute.
+    expect(html).not.to.match(/<[^>]+\son(?:error|load)=["'][^"']*DOCBLOCKS_XSS_SENTINEL/iu);
+    expect(html).not.to.contain('<script>DOCBLOCKS_XSS_SENTINEL');
+    expect(html.toLowerCase()).not.to.contain('href="javascript:');
+    expect(html.toLowerCase()).not.to.contain('<iframe src="https://example.com/track"');
+    expect(html.toLowerCase()).not.to.contain('<svg onload="');
+  });
+
   it('bounds build traversal and distinguishes a non-directory input', async () => {
     const inputDir = path.join(tempRoot, 'docs');
     const outputDir = path.join(tempRoot, 'dist');
@@ -67,6 +93,21 @@ describe('CLI build and serve commands', () => {
     const kindFailure = await captureFailure(runBuild({ input: fileInput, output: outputDir }));
     expect(kindFailure).to.be.instanceOf(Error);
     expect((kindFailure as Error).message).to.include('Input is not a directory');
+  });
+
+  it('does not follow directory symlinks or junction cycles during build traversal', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    const outputDir = path.join(tempRoot, 'dist');
+    await mkdir(inputDir, { recursive: true });
+    await writeFile(path.join(inputDir, 'index.md'), '# Root', 'utf8');
+    await symlink(
+      inputDir,
+      path.join(inputDir, 'cycle'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+
+    const result = await runBuild({ input: inputDir, output: outputDir });
+    expect(result.builtFiles).to.deep.equal([path.join(outputDir, 'index.html')]);
   });
 
   it('skips missing images but surfaces non-missing embedded-asset failures', async () => {

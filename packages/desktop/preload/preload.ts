@@ -300,6 +300,9 @@ ipcRenderer.on('lifecycle:cancel-close', (_event: Electron.IpcRendererEvent, req
 });
 
 const lifecycleApi: DocBlocksHostLifecycleAPI = {
+  requestWindowClose() {
+    ipcRenderer.send('lifecycle:request-window-close');
+  },
   onPrepareClose(listener) {
     prepareCloseListener = listener;
     return () => {

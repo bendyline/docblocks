@@ -15,6 +15,7 @@ import {
   ThemeSettings,
   WriteCanvasSettingsControls,
 } from '../Settings/Settings.js';
+import { Dialog } from '../components/Dialog.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
@@ -313,71 +314,48 @@ export function AppMenu({
       )}
 
       {showAbout && (
-        <div className="db-dialog-overlay" onClick={() => setShowAbout(false)}>
-          <div
-            className="db-dialog"
-            role="dialog"
-            aria-label="About DocBlocks"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="db-dialog-header">
-              <h2 className="db-dialog-title">About DocBlocks</h2>
-              <button
-                className="db-dialog-close"
-                onClick={() => setShowAbout(false)}
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="db-dialog-body">
-              <p>
-                <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
-                browser. Your files stay on your device.
-              </p>
-              <p>
-                Built with{' '}
-                <a
-                  href="https://github.com/bendyline/squisq"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  squisq
-                </a>{' '}
-                by{' '}
-                <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
-                  Bendyline
-                </a>
-                .
-              </p>
-              <p className="db-dialog-links">
-                <a
-                  href="https://github.com/bendyline/docblocks"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  GitHub
-                </a>
-                <span className="db-dialog-sep">&middot;</span>
-                <a
-                  href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  License (MIT)
-                </a>
-                <span className="db-dialog-sep">&middot;</span>
-                <a
-                  href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  &hearts; built on open source
-                </a>
-              </p>
-            </div>
-          </div>
-        </div>
+        <Dialog title="About DocBlocks" onClose={() => setShowAbout(false)}>
+          <p>
+            <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
+            browser. Your files stay on your device.
+          </p>
+          <p>
+            Built with{' '}
+            <a href="https://github.com/bendyline/squisq" target="_blank" rel="noopener noreferrer">
+              squisq
+            </a>{' '}
+            by{' '}
+            <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
+              Bendyline
+            </a>
+            .
+          </p>
+          <p className="db-dialog-links">
+            <a
+              href="https://github.com/bendyline/docblocks"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              License (MIT)
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              &hearts; built on open source
+            </a>
+          </p>
+        </Dialog>
       )}
     </>
   );

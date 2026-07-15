@@ -102,6 +102,10 @@ export interface NodeWorkspaceFileSystemV2Options {
   readonly acquireWatcher?: (rootPath: string) => WorkspaceWatcherHandle;
   /** Injectable descriptor opener for deterministic read-consistency and I/O tests. */
   readonly openReadableFile?: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
+  /** Optional lower traversal ceiling; always clamped to the host wire limit. */
+  readonly traversalEntryLimit?: number;
+  /** Optional lower snapshot byte ceiling; always clamped to the host wire limit. */
+  readonly snapshotByteLimit?: number;
 }
 
 type PendingWatchEvent =
@@ -139,6 +143,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private readonly echoBatches: EchoBatch[] = [];
   private readonly acquireWatcher: (rootPath: string) => WorkspaceWatcherHandle;
   private readonly openReadableFile: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
+  private readonly traversalEntryLimit: number;
+  private readonly snapshotByteLimit: number;
   private watchSession: WatchSession | null = null;
   private externalEventTail: Promise<void> = Promise.resolve();
   private eventSequence = 0;
@@ -158,6 +164,16 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     this.roots = roots;
     this.acquireWatcher = options.acquireWatcher ?? acquireWorkspaceWatcher;
     this.openReadableFile = options.openReadableFile ?? openNodeReadableFile;
+    this.traversalEntryLimit = boundedProviderLimit(
+      options.traversalEntryLimit,
+      HOST_WIRE_LIMITS.arrayEntries,
+      'traversal entry',
+    );
+    this.snapshotByteLimit = boundedProviderLimit(
+      options.snapshotByteLimit,
+      HOST_WIRE_LIMITS.binaryBytes,
+      'snapshot byte',
+    );
     try {
       this.rootAbs = roots.resolve(rootPath, '');
     } catch (error: unknown) {
@@ -747,7 +763,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
             'File exceeds the host message size limit.',
           );
         }
-        if (budget && budget.bytes + Number(before.size) > HOST_WIRE_LIMITS.binaryBytes) {
+        if (budget && budget.bytes + Number(before.size) > this.snapshotByteLimit) {
           throw this.error(
             'quota-exceeded',
             operation,
@@ -823,7 +839,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     budget: ScanBudget = { entries: 0, bytes: 0 },
   ): Promise<ScannedEntry> {
     budget.entries += 1;
-    if (budget.entries > HOST_WIRE_LIMITS.arrayEntries) {
+    if (budget.entries > this.traversalEntryLimit) {
       throw this.error(
         'quota-exceeded',
         operation,
@@ -1287,6 +1303,14 @@ function parentChain(itemPath: WorkspacePath): WorkspacePath[] {
     if (!current) return parents;
     current = workspacePathDirname(current);
   }
+}
+
+function boundedProviderLimit(value: number | undefined, maximum: number, label: string): number {
+  const selected = value ?? maximum;
+  if (!Number.isSafeInteger(selected) || selected < 1) {
+    throw new Error(`Invalid ${label} limit.`);
+  }
+  return Math.min(selected, maximum);
 }
 
 function versionForFile(itemPath: WorkspacePath, contentDigest: string): FileSystemVersion {

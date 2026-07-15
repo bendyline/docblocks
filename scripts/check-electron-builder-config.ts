@@ -48,9 +48,17 @@ process.stdout.write('electron-builder.yml: schema OK\n');
 
 const configuredFiles =
   typeof config === 'object' && config !== null && 'files' in config ? config.files : null;
-if (!Array.isArray(configuredFiles) || !configuredFiles.includes('!dist/**/*.map')) {
+const requiredSourceExclusions = [
+  '!dist/**/*.map',
+  '!node_modules/**/*.map',
+  '!node_modules/**/*.flow',
+];
+if (
+  !Array.isArray(configuredFiles) ||
+  requiredSourceExclusions.some((pattern) => !configuredFiles.includes(pattern))
+) {
   process.stderr.write(
-    'electron-builder.yml must exclude generated dist source maps from packaged artifacts.\n',
+    'electron-builder.yml must exclude generated and dependency source metadata from packaged artifacts.\n',
   );
   process.exit(1);
 }

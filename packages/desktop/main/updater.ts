@@ -13,8 +13,13 @@
 
 import { app, BrowserWindow } from 'electron';
 import pkg, { type UpdateInfo } from 'electron-updater';
-import type { UpdateInstallResult, UpdaterStatus } from '@bendyline/docblocks/host';
+import type {
+  UpdateCheckResult,
+  UpdateInstallResult,
+  UpdaterStatus,
+} from '@bendyline/docblocks/host';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
+import { classifyUpdateCheck, failedUpdateCheck } from './updater-result.js';
 
 const { autoUpdater } = pkg;
 
@@ -93,14 +98,16 @@ export function initAutoUpdater(): void {
 export function registerUpdaterIpc(
   prepareForInstall: () => Promise<boolean> = async () => true,
 ): void {
-  registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<boolean> => {
+  registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<UpdateCheckResult> => {
     // Store builds are updated by the store, not by electron-updater.
-    if (isStoreBuild()) return false;
+    if (isStoreBuild()) return { kind: 'store-managed' };
     try {
       const res = await autoUpdater.checkForUpdates();
-      return !!res?.updateInfo && res.updateInfo.version !== app.getVersion();
-    } catch {
-      return false;
+      return classifyUpdateCheck(app.getVersion(), res?.updateInfo.version);
+    } catch (error: unknown) {
+      const result = failedUpdateCheck(error);
+      broadcast({ kind: 'error', message: result.message });
+      return result;
     }
   });
 

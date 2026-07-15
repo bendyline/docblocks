@@ -560,6 +560,9 @@ export class SetupViewProvider {
     }
     .spinner { display: inline-block; animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .spinner { animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -567,7 +570,7 @@ export class SetupViewProvider {
   <div class="description">
     Set up your environment for the best DocBlocks experience with AI-assisted document creation.
   </div>
-  <div id="checks">
+  <div id="checks" role="status" aria-live="polite" aria-atomic="false">
     ${['node', 'npm', 'cli', 'mcp']
       .map(
         (id) => `<div class="check-item" id="check-${id}">
