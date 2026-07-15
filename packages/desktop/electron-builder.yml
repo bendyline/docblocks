@@ -15,8 +15,8 @@ files:
   - dist/main/**/*
   - dist/preload/**/*
   - dist/renderer/**/*
-  # Keep source maps in local build output for debugging, but do not ship the
-  # renderer's generated sources a second time inside app.asar.
+  # Defense in depth for opt-in diagnostic builds: source maps never belong in
+  # a distributable app.asar.
   - '!dist/**/*.map'
   - package.json
 

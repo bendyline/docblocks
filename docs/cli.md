@@ -47,7 +47,7 @@ operation timeout.
 | Command   | Existing destination                                                                                                   |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `build`   | Replaces generated HTML files.                                                                                         |
-| `convert` | Replaces converter-named files in the output directory.                                                                |
+| `convert` | Atomically replaces each converter-named file in the output directory.                                                 |
 | `video`   | Replaces the selected MP4 through FFmpeg.                                                                              |
 | `mcp`     | Creates temporary artifacts first; durable writes happen only through the explicitly conditional `save_artifact` tool. |
 
@@ -69,7 +69,9 @@ docblocks build --input ./docs --output ./dist --theme documentary
 
 The command recursively finds `.md` and `.markdown` files, sorts them, preserves
 their relative directory structure, and replaces each extension with `.html`. It
-fails when the input is not a directory or contains no Markdown files.
+fails when the input is not a directory or contains no Markdown files. Traversal
+is sequential and stops after 100,000 filesystem entries or 64 directory levels;
+permission and I/O failures remain errors rather than being reported as absence.
 
 The render path is shared with `serve`: DocBlocks asks Squisq to parse Markdown,
 project it into the Squisq document model, and export HTML, then embeds Squisq's
@@ -107,6 +109,9 @@ The preview boundary is deliberately narrow:
   requests to 16 by default;
 - responses use `nosniff`, `no-referrer`, and `no-store` headers.
 
+Missing paths produce HTTP 404, permission failures produce HTTP 403, and other
+filesystem failures produce HTTP 500 instead of being disguised as missing files.
+
 `--allow-network` changes only the bind policy. It does not add authentication or
 TLS, so expose this development server only on a network you trust. A wildcard
 `0.0.0.0` host accepts IPv4-literal Host headers, while `::` accepts IPv6-literal
@@ -138,10 +143,14 @@ PPTX, PDF, XLSX, CSV, and HTML in the current linked checkout. PPTX imports infe
 theme/layout data by default, and linked narration/audio mappings are normalized
 before conversion.
 
-DocBlocks reads the input once, then calls the linked converter for each valid target
-sequentially. Unknown or import-only format IDs are reported and skipped; the command
+After a bounded input preflight, DocBlocks loads the source through the linked reader,
+then calls the linked converter for each valid target sequentially. Unknown or import-only
+format IDs are reported and skipped; the command
 fails if no requested target is export-capable. Suggested output basenames come from
-the linked converter and existing files are replaced.
+the linked converter. Each result is flushed to a same-directory staging file and
+renamed over its converter-named destination, so a failed write does not truncate the
+previous output. Input is limited to 1 GiB and 20,000 entries; each output is limited
+to 512 MiB and all requested outputs together are limited to 1 GiB.
 
 For every Markdown-shaped input—including DBK and registry imports that reconstruct
 Markdown—DocBlocks applies transforms through its source-preserving projection. A
@@ -236,7 +245,8 @@ paragraph, `stats` is:
 The counters describe top-level document children; `document` is the complete
 linked Squisq `MarkdownDocument` syntax tree. The command is intended for UTF-8
 Markdown content but does not enforce a filename extension, unlike the broader
-linked input reader used by `convert` and `video`.
+linked input reader used by `convert` and `video`. Malformed UTF-8 is rejected.
+Input is limited to 20 MiB and serialized JSON output to 128 MiB.
 
 ## `docblocks mcp`
 

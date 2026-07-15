@@ -67,7 +67,9 @@ docblocks mcp --allow-read ./documents --allow-write ./exports
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
 import-capable linked-registry formats. Direct `build`, `convert`, and `video`
-outputs replace existing destination files. MCP conversions instead return
+outputs replace existing destination files; `convert` publishes each replacement
+atomically after enforcing bounded input and output sizes. `build` traversal and
+`parse` input/JSON output are also bounded. MCP conversions instead return
 immutable session artifacts; only explicit `save_artifact` materializes one, using
 no-replace or hash-conditional replacement semantics.
 

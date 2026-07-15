@@ -49,6 +49,26 @@ describe('CLI build and serve commands', () => {
     );
   });
 
+  it('bounds build traversal and distinguishes a non-directory input', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    const outputDir = path.join(tempRoot, 'dist');
+    await mkdir(inputDir, { recursive: true });
+    await writeFile(path.join(inputDir, 'one.md'), '# One', 'utf8');
+    await writeFile(path.join(inputDir, 'two.md'), '# Two', 'utf8');
+
+    const budgetFailure = await captureFailure(
+      runBuild({ input: inputDir, output: outputDir, maxEntries: 1 }),
+    );
+    expect(budgetFailure).to.be.instanceOf(Error);
+    expect((budgetFailure as Error).message).to.include('exceeded 1 filesystem entries');
+
+    const fileInput = path.join(tempRoot, 'not-a-directory.md');
+    await writeFile(fileInput, '# File', 'utf8');
+    const kindFailure = await captureFailure(runBuild({ input: fileInput, output: outputDir }));
+    expect(kindFailure).to.be.instanceOf(Error);
+    expect((kindFailure as Error).message).to.include('Input is not a directory');
+  });
+
   it('skips missing images but surfaces non-missing embedded-asset failures', async () => {
     const inputDir = path.join(tempRoot, 'docs');
     const sourcePath = path.join(inputDir, 'index.md');

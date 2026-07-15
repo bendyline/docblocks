@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'chai';
+import { SITE_PRECACHE_EXTENSIONS } from '../../../scripts/site-precache-policy.js';
 
 const SITE_ROOT = path.join(process.cwd(), 'packages', 'site');
 const PUBLIC_ROOT = path.join(SITE_ROOT, 'public');
@@ -95,7 +96,10 @@ describe('site SEO surface', () => {
     const config = await read('vite.config.ts');
     expect(config).to.include("appType: 'mpa'");
     expect(config).to.include('navigateFallbackAllowlist: [/^\\/$/]');
-    expect(config).to.include('webmanifest,txt,xml');
+    expect(config).to.include('SITE_PRECACHE_GLOB');
+    for (const extension of ['webmanifest', 'txt', 'xml']) {
+      expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
+    }
   });
 
   it('lets interactive development fall forward while keeping the E2E port fixed', async () => {

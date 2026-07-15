@@ -6,6 +6,7 @@ import path from 'node:path';
 import { renderMarkdownHtml } from '../render-html.js';
 import { readContainedFile } from '../contained-file.js';
 import { isAllowedPreviewPath } from '../preview-policy.js';
+import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
 
 export interface ServeOptions {
   port: number;
@@ -29,11 +30,15 @@ const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_READS = 16;
 export async function startPreviewServer(opts: ServeOptions): Promise<PreviewServer> {
   const requestedRoot = path.resolve(opts.dir);
-  const root = await realpath(requestedRoot).catch(() => requestedRoot);
-  const rootStat = await stat(root).catch(() => null);
-  if (!rootStat?.isDirectory()) {
-    throw new Error(`Directory not found: ${root}`);
+  let root: string;
+  try {
+    root = await realpath(requestedRoot);
+  } catch (error: unknown) {
+    if (!isMissingPathError(error)) throw error;
+    throw new Error(`Directory not found: ${requestedRoot}`);
   }
+  const rootStat = await stat(root);
+  if (!rootStat.isDirectory()) throw new Error(`Preview root is not a directory: ${root}`);
 
   const host = validateHost(opts.host ?? DEFAULT_HOST, opts.allowNetwork === true);
   const maxFileBytes = positiveLimit(opts.maxFileBytes, DEFAULT_MAX_FILE_BYTES, 'file size');
@@ -140,9 +145,10 @@ async function handlePreviewRequest(
   }
 
   if (target.markdown) {
-    const markdown = (await readContainedFile(root, target.filePath, maxFileBytes)).toString(
-      'utf8',
-    );
+    const markdown = decodeUtf8Text(await readContainedFile(root, target.filePath, maxFileBytes), {
+      label: 'Preview document',
+      path: target.filePath,
+    });
     const html = await renderMarkdownHtml(markdown, {
       title: path.basename(target.filePath).replace(/\.(md|markdown)$/i, ''),
       sourcePath: target.filePath,
@@ -173,8 +179,14 @@ export async function resolveServeTarget(
   maxFileBytes = DEFAULT_MAX_FILE_BYTES,
 ): Promise<ServeTarget> {
   if (requestUrl.length > 8_192 || requestUrl.includes('\0')) return { kind: 'bad-request' };
-  const physicalRoot = await realpath(path.resolve(root)).catch(() => null);
-  if (!physicalRoot) return { kind: 'missing' };
+  let physicalRoot: string;
+  try {
+    physicalRoot = await realpath(path.resolve(root));
+  } catch (error: unknown) {
+    if (isMissingPathError(error)) return { kind: 'missing' };
+    if (isPermissionError(error)) return { kind: 'forbidden' };
+    throw error;
+  }
   const decodedPath = decodeRequestPath(requestUrl);
   if (!decodedPath) return { kind: 'bad-request' };
   const requestedPath = decodedPath.replace(/^\/+/, '');
@@ -231,11 +243,19 @@ async function inspectTarget(
   let physical: string;
   try {
     physical = await realpath(candidate);
-  } catch {
-    return { kind: 'missing' };
+  } catch (error: unknown) {
+    if (isMissingPathError(error)) return { kind: 'missing' };
+    if (isPermissionError(error)) return { kind: 'forbidden' };
+    throw error;
   }
-  const info = await stat(physical).catch(() => null);
-  if (!info) return { kind: 'missing' };
+  let info;
+  try {
+    info = await stat(physical);
+  } catch (error: unknown) {
+    if (isMissingPathError(error)) return { kind: 'missing' };
+    if (isPermissionError(error)) return { kind: 'forbidden' };
+    throw error;
+  }
   if (info.isDirectory()) {
     return isAllowedPreviewPath(root, candidate, physical, 'directory')
       ? { kind: 'directory', filePath: physical }
@@ -434,4 +454,16 @@ function contentTypeFor(filePath: string): string {
     default:
       return 'application/octet-stream';
   }
+}
+
+function isNodeErrorCode(error: unknown, codes: readonly string[]): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && codes.includes(String(error.code));
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return isNodeErrorCode(error, ['ENOENT', 'ENOTDIR']);
+}
+
+function isPermissionError(error: unknown): boolean {
+  return isNodeErrorCode(error, ['EACCES', 'EPERM']);
 }

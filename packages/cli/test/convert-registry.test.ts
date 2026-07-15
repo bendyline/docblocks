@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -80,6 +80,54 @@ describe('CLI registry-backed conversion', function () {
     });
     expect(output.warnings.some((warning) => warning.includes('2 tables'))).to.equal(true);
     expect(await readFile(output.path, 'utf8')).to.include('First');
+  });
+
+  it('keeps an existing output intact when a conversion exceeds its budget', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    const outputPath = path.join(outputDir, 'tables.csv');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(outputPath, 'previous output', 'utf8');
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, { outputDir, formats: 'csv', maxOutputBytes: 1 });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('output exceeds');
+    expect(await readFile(outputPath, 'utf8')).to.equal('previous output');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('atomically replaces an existing converter-named output without leaving staging files', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    const outputPath = path.join(outputDir, 'tables.csv');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(outputPath, 'previous output', 'utf8');
+
+    await runConvert(inputPath, { outputDir, formats: 'csv' });
+
+    expect(await readFile(outputPath, 'utf8')).to.include('A');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('rejects an input that exceeds the conversion budget before importing it', async () => {
+    const inputPath = path.join(tempRoot, 'input.md');
+    await writeFile(inputPath, '# Input', 'utf8');
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, { formats: 'csv', maxInputBytes: 1 });
+    } catch (error: unknown) {
+      caught = error;
+    }
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('input exceeds');
   });
 
   it('preserves stable ConversionError metadata for unsupported format requests', async () => {

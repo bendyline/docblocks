@@ -56,6 +56,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
+    "monaco-editor": "^0.50.0",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
@@ -66,14 +67,14 @@
     "@bendyline/squisq-formats": "2.1.0",
     "@bendyline/squisq-react": "2.1.0",
     "@bendyline/squisq-video": "2.0.2",
-    "@bendyline/squisq-video-react": "2.0.2",
-    "monaco-editor": "0.50.0"
+    "@bendyline/squisq-video-react": "2.0.2"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "happy-dom": "20.9.0",
+    "monaco-editor": "0.50.0",
     "mocha": "11.3.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",

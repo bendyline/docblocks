@@ -51,7 +51,7 @@ The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configu
 
 ### Theme fonts
 
-`public/fonts/` (fonts.css + 96 woff2, latin + latin-ext subsets) is a copy of squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Regenerate upstream with squisq's `download-fonts.ps1` and re-copy; licenses live in `public/fonts/licenses/`.
+`public/fonts/` (fonts.css + 46 unique woff2 payloads, latin + latin-ext subsets) is derived from squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Several upstream weight filenames contain byte-identical variable-font payloads; DocBlocks keeps one payload and points those weight declarations at it. After regenerating upstream with squisq's `download-fonts.ps1`, deduplicate the copied files before committing; `npm run check:site-fonts` enforces this. Licenses live in `public/fonts/licenses/`.
 
 ## Deployment
 

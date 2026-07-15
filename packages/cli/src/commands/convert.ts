@@ -10,7 +10,8 @@
  * underlying squisq libraries directly.
  */
 
-import { writeFile, mkdir, stat } from 'node:fs/promises';
+import { mkdir, open, opendir, realpath, rename, rm, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
@@ -29,6 +30,14 @@ export interface ConvertOptions {
   signal?: AbortSignal;
   /** Programmatic registry override; the CLI defaults to the linked Squisq registry. */
   registry?: FormatRegistry;
+  /** Programmatic aggregate input budget; CLI callers use the safe default. */
+  maxInputBytes?: number;
+  /** Programmatic input-tree budget; CLI callers use the safe default. */
+  maxInputEntries?: number;
+  /** Programmatic per-output budget; CLI callers use the safe default. */
+  maxOutputBytes?: number;
+  /** Programmatic aggregate output budget; CLI callers use the safe default. */
+  maxTotalOutputBytes?: number;
 }
 
 export interface ConvertResult {
@@ -42,6 +51,11 @@ export interface ConvertResult {
   }[];
 }
 
+const DEFAULT_MAX_CONVERT_INPUT_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_MAX_CONVERT_INPUT_ENTRIES = 20_000;
+const DEFAULT_MAX_CONVERT_OUTPUT_BYTES = 512 * 1024 * 1024;
+const DEFAULT_MAX_CONVERT_TOTAL_OUTPUT_BYTES = 1024 * 1024 * 1024;
+
 export async function runConvert(inputPath: string, opts: ConvertOptions): Promise<ConvertResult> {
   throwIfAborted(opts.signal);
   const resolvedInput = resolve(inputPath);
@@ -49,6 +63,28 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   const inputBasename = basename(resolvedInput);
   const inputExt = extname(inputBasename);
   const baseName = inputExt ? inputBasename.slice(0, -inputExt.length) : inputBasename;
+  const maxInputBytes = positiveLimit(
+    opts.maxInputBytes,
+    DEFAULT_MAX_CONVERT_INPUT_BYTES,
+    'input byte',
+  );
+  const maxInputEntries = positiveLimit(
+    opts.maxInputEntries,
+    DEFAULT_MAX_CONVERT_INPUT_ENTRIES,
+    'input entry',
+  );
+  const maxOutputBytes = positiveLimit(
+    opts.maxOutputBytes,
+    DEFAULT_MAX_CONVERT_OUTPUT_BYTES,
+    'output byte',
+  );
+  const maxTotalOutputBytes = positiveLimit(
+    opts.maxTotalOutputBytes,
+    DEFAULT_MAX_CONVERT_TOTAL_OUTPUT_BYTES,
+    'aggregate output byte',
+  );
+
+  await assertInputWithinBudget(resolvedInput, maxInputBytes, maxInputEntries, opts.signal);
 
   const squisq = await import('@bendyline/squisq-cli/api');
   throwIfAborted(opts.signal);
@@ -122,6 +158,7 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     ? { kind: 'markdown', markdown: exportMarkdownDoc, container, baseName }
     : { kind: 'doc', doc: result.doc, container, baseName };
   const outputFiles: ConvertResult['outputFiles'] = [];
+  let totalOutputBytes = 0;
 
   for (const format of formats) {
     throwIfAborted(opts.signal);
@@ -133,9 +170,16 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
       ...(!exportMarkdownDoc && opts.transform ? { transformStyle: opts.transform } : {}),
     });
     throwIfAborted(opts.signal);
+    if (conversion.bytes.byteLength > maxOutputBytes) {
+      throw new Error(`${format} output exceeds the ${maxOutputBytes}-byte conversion limit.`);
+    }
+    totalOutputBytes += conversion.bytes.byteLength;
+    if (totalOutputBytes > maxTotalOutputBytes) {
+      throw new Error(`Conversion outputs exceed the ${maxTotalOutputBytes}-byte aggregate limit.`);
+    }
     const suggestedFilename = basename(conversion.suggestedFilename);
     const outPath = join(outputDir, suggestedFilename);
-    await writeFile(outPath, conversion.bytes);
+    await atomicReplaceFile(outPath, conversion.bytes, opts.signal);
     throwIfAborted(opts.signal);
     const info = await stat(outPath);
     throwIfAborted(opts.signal);
@@ -157,12 +201,89 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   return { outputFiles };
 }
 
+async function assertInputWithinBudget(
+  inputPath: string,
+  maxBytes: number,
+  maxEntries: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const rootInfo = await stat(inputPath);
+  if (rootInfo.isFile()) {
+    if (rootInfo.size > maxBytes) {
+      throw new Error(`Conversion input exceeds the ${maxBytes}-byte limit.`);
+    }
+    return;
+  }
+  if (!rootInfo.isDirectory()) throw new Error(`Unsupported conversion input: ${inputPath}`);
+
+  const pending = [inputPath];
+  const visitedDirectories = new Set<string>();
+  let entryCount = 0;
+  let totalBytes = 0;
+  while (pending.length > 0) {
+    throwIfAborted(signal);
+    const directory = pending.pop()!;
+    const physicalDirectory = await realpath(directory);
+    if (visitedDirectories.has(physicalDirectory)) continue;
+    visitedDirectories.add(physicalDirectory);
+    const entries = await opendir(directory);
+    for await (const entry of entries) {
+      throwIfAborted(signal);
+      entryCount += 1;
+      if (entryCount > maxEntries) {
+        throw new Error(`Conversion input exceeds the ${maxEntries}-entry limit.`);
+      }
+      const entryPath = join(directory, entry.name);
+      const info = await stat(entryPath);
+      if (info.isDirectory()) pending.push(entryPath);
+      else if (info.isFile()) {
+        totalBytes += info.size;
+        if (totalBytes > maxBytes) {
+          throw new Error(`Conversion input exceeds the ${maxBytes}-byte limit.`);
+        }
+      }
+    }
+  }
+}
+
+async function atomicReplaceFile(
+  outputPath: string,
+  bytes: Uint8Array,
+  signal?: AbortSignal,
+): Promise<void> {
+  const temporaryPath = join(
+    dirname(outputPath),
+    `.${basename(outputPath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(temporaryPath, 'wx', 0o600);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    throwIfAborted(signal);
+    await rename(temporaryPath, outputPath);
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
   if (signal.reason !== undefined) throw signal.reason;
   const error = new Error('Document conversion was cancelled');
   error.name = 'AbortError';
   throw error;
+}
+
+function positiveLimit(value: number | undefined, fallback: number, label: string): number {
+  const selected = value ?? fallback;
+  if (!Number.isSafeInteger(selected) || selected < 1) {
+    throw new Error(`Invalid conversion ${label} limit.`);
+  }
+  return selected;
 }
 
 /**

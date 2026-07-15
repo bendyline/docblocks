@@ -440,4 +440,31 @@ describe('useFileTree', () => {
     expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['current.md']);
     await handle.unmount();
   });
+
+  it('surfaces provider read failures and clears them after a successful retry', async () => {
+    const provider = makeProvider({ '': [file('recovered.md')] });
+    const normalRead = provider.readDirectory.bind(provider);
+    provider.readDirectory = async () => {
+      throw new Error('Workspace permission was revoked');
+    };
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+
+    expect(handle.result.current.loading).to.equal(false);
+    expect(handle.result.current.error).to.equal('Workspace permission was revoked');
+    expect(handle.result.current.entries).to.deep.equal([]);
+
+    provider.readDirectory = normalRead;
+    await act(async () => {
+      await handle.result.current.refresh();
+    });
+    expect(handle.result.current.error).to.equal(null);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal([
+      'recovered.md',
+    ]);
+    await handle.unmount();
+  });
 });

@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, opendir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renderMarkdownHtml } from '../render-html.js';
 
@@ -7,6 +7,10 @@ export interface BuildOptions {
   input: string;
   output: string;
   theme?: string;
+  /** Programmatic traversal budget; CLI callers use the safe default. */
+  maxEntries?: number;
+  /** Programmatic directory-depth budget; CLI callers use the safe default. */
+  maxDepth?: number;
 }
 
 export interface BuildResult {
@@ -15,16 +19,25 @@ export interface BuildResult {
   builtFiles: string[];
 }
 
+const DEFAULT_MAX_BUILD_ENTRIES = 100_000;
+const DEFAULT_MAX_BUILD_DEPTH = 64;
+
 export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
   const inputDir = path.resolve(opts.input);
   const outputDir = path.resolve(opts.output);
-  const inputStat = await stat(inputDir).catch(() => null);
-
-  if (!inputStat?.isDirectory()) {
+  let inputStat;
+  try {
+    inputStat = await stat(inputDir);
+  } catch (error: unknown) {
+    if (!isNodeErrorCode(error, 'ENOENT')) throw error;
     throw new Error(`Input directory not found: ${inputDir}`);
   }
+  if (!inputStat.isDirectory()) throw new Error(`Input is not a directory: ${inputDir}`);
 
-  const markdownFiles = await listMarkdownFiles(inputDir);
+  const markdownFiles = await listMarkdownFiles(inputDir, {
+    maxEntries: positiveLimit(opts.maxEntries, DEFAULT_MAX_BUILD_ENTRIES, 'entry'),
+    maxDepth: positiveLimit(opts.maxDepth, DEFAULT_MAX_BUILD_DEPTH, 'depth'),
+  });
   if (markdownFiles.length === 0) {
     throw new Error(`No markdown files found in ${inputDir}.`);
   }
@@ -71,17 +84,48 @@ export const buildCommand = new Command('build')
     }
   });
 
-async function listMarkdownFiles(root: string): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files = await Promise.all(
-    entries.map(async (entry) => {
-      const absolutePath = path.join(root, entry.name);
-      if (entry.isDirectory()) return listMarkdownFiles(absolutePath);
-      return isMarkdownFile(entry.name) ? [absolutePath] : [];
-    }),
-  );
+interface BuildTraversalLimits {
+  readonly maxEntries: number;
+  readonly maxDepth: number;
+}
 
-  return files.flat().sort((a, b) => a.localeCompare(b));
+async function listMarkdownFiles(root: string, limits: BuildTraversalLimits): Promise<string[]> {
+  const files: string[] = [];
+  const pending: Array<{ directory: string; depth: number }> = [{ directory: root, depth: 0 }];
+  let entryCount = 0;
+
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    const entries = await opendir(current.directory);
+    for await (const entry of entries) {
+      entryCount += 1;
+      if (entryCount > limits.maxEntries) {
+        throw new Error(`Build traversal exceeded ${limits.maxEntries} filesystem entries.`);
+      }
+      const absolutePath = path.join(current.directory, entry.name);
+      if (entry.isDirectory()) {
+        if (current.depth >= limits.maxDepth) {
+          throw new Error(`Build traversal exceeded a depth of ${limits.maxDepth}.`);
+        }
+        pending.push({ directory: absolutePath, depth: current.depth + 1 });
+      } else if (entry.isFile() && isMarkdownFile(entry.name)) {
+        files.push(absolutePath);
+      }
+    }
+  }
+
+  return files.sort((a, b) => a.localeCompare(b));
+}
+
+function positiveLimit(value: number | undefined, fallback: number, label: string): number {
+  const selected = value ?? fallback;
+  if (!Number.isSafeInteger(selected) || selected < 1)
+    throw new Error(`Invalid build ${label} limit.`);
+  return selected;
+}
+
+function isNodeErrorCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 function isMarkdownFile(fileName: string): boolean {

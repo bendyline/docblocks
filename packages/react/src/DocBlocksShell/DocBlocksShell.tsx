@@ -10,8 +10,6 @@ import type {
   EditorColorScheme,
   EditorView,
   ViewPreferences,
-  DocumentLinkProvider,
-  DocumentLinkCandidate,
 } from '@bendyline/squisq-editor-react';
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
@@ -129,7 +127,20 @@ import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { buildIssueReportUrl } from './issue-report.js';
+import { loadLastState, saveLastState } from './last-state.js';
+import {
+  isWelcomeGatewayDismissed,
+  loadSidebarWidth,
+  loadViewPreferences,
+  markWelcomeGatewayDismissed,
+  saveSidebarWidth,
+  saveViewPreferences,
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+} from './shell-preferences.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
+import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
 
@@ -321,119 +332,6 @@ function parseHash(): { workspaceId: string; filePath: string | null } | null {
   }
 }
 
-const LAST_STATE_KEY = 'docblocks:lastState';
-
-interface LastState {
-  workspaceId: string;
-  filePath: string;
-  view: EditorView;
-}
-
-function saveLastState(state: LastState): void {
-  try {
-    localStorage.setItem(LAST_STATE_KEY, JSON.stringify(state));
-  } catch {
-    // ignore quota errors
-  }
-}
-
-function loadLastState(): LastState | null {
-  try {
-    const raw = localStorage.getItem(LAST_STATE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-/** One-time first-run callout shown over the welcome doc's Play view.
- *  Once the user starts writing, switches views themselves, or dismisses
- *  it, it never comes back -- on any workspace. */
-const WELCOME_GATEWAY_KEY = 'docblocks:welcomeGatewayDismissed';
-
-function isWelcomeGatewayDismissed(): boolean {
-  try {
-    return localStorage.getItem(WELCOME_GATEWAY_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markWelcomeGatewayDismissed(): void {
-  try {
-    localStorage.setItem(WELCOME_GATEWAY_KEY, '1');
-  } catch {
-    // ignore quota errors
-  }
-}
-
-const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
-const SIDEBAR_WIDTH_DEFAULT = 320;
-const SIDEBAR_WIDTH_MIN = 320;
-const SIDEBAR_WIDTH_MAX = 600;
-/** Drag below this many pixels and the sidebar collapses entirely --
- *  the workspace pane takes the full width and offers a control to
- *  restore the side-by-side layout. */
-const SIDEBAR_COLLAPSE_THRESHOLD = SIDEBAR_WIDTH_MIN;
-
-function loadSidebarWidth(): number {
-  try {
-    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    if (raw === null) return SIDEBAR_WIDTH_DEFAULT;
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return SIDEBAR_WIDTH_DEFAULT;
-    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, n));
-  } catch {
-    return SIDEBAR_WIDTH_DEFAULT;
-  }
-}
-
-function saveSidebarWidth(px: number): void {
-  try {
-    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(px)));
-  } catch {
-    // ignore quota errors
-  }
-}
-
-const VIEW_PREFS_KEY = 'docblocks:viewPreferences';
-
-const DEFAULT_VIEW_PREFS: ViewPreferences = {
-  outline: false,
-  inlinePreview: true,
-  showStatusBar: true,
-};
-
-function loadViewPreferences(): ViewPreferences {
-  try {
-    const raw = localStorage.getItem(VIEW_PREFS_KEY);
-    if (!raw) return DEFAULT_VIEW_PREFS;
-    const parsed = JSON.parse(raw) as Partial<ViewPreferences>;
-    return {
-      outline: typeof parsed.outline === 'boolean' ? parsed.outline : DEFAULT_VIEW_PREFS.outline,
-      inlinePreview:
-        typeof parsed.inlinePreview === 'boolean'
-          ? parsed.inlinePreview
-          : DEFAULT_VIEW_PREFS.inlinePreview,
-      showStatusBar:
-        typeof parsed.showStatusBar === 'boolean'
-          ? parsed.showStatusBar
-          : DEFAULT_VIEW_PREFS.showStatusBar,
-    };
-  } catch {
-    return DEFAULT_VIEW_PREFS;
-  }
-}
-
-function saveViewPreferences(prefs: ViewPreferences): void {
-  try {
-    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // ignore quota errors
-  }
-}
-
 function dirnameOf(p: string): string {
   const clean = p.replace(/^\/+/, '');
   const idx = clean.lastIndexOf('/');
@@ -597,59 +495,6 @@ async function ensureHandleWritePermission(handle: FileSystemFileHandle): Promis
  *  from the source's directory and back down to the target so the link
  *  survives folder reshuffles (`../sibling.md`, `subfolder/child.md`,
  *  `resume.md` for siblings at the workspace root). */
-function relativeMarkdownLink(fromFile: string, toFile: string): string {
-  const fromParts = fromFile.replace(/^\/+/, '').split('/').filter(Boolean);
-  const toParts = toFile.replace(/^\/+/, '').split('/').filter(Boolean);
-  const fromDir = fromParts.slice(0, -1);
-  const toDir = toParts.slice(0, -1);
-  const toBase = toParts[toParts.length - 1] ?? '';
-  let common = 0;
-  while (common < fromDir.length && common < toDir.length && fromDir[common] === toDir[common]) {
-    common++;
-  }
-  const ups = fromDir.length - common;
-  const downs = [...toDir.slice(common), toBase];
-  const parts = [...Array(ups).fill('..'), ...downs];
-  return parts.length === 0 ? toBase : parts.join('/');
-}
-
-/** Recursively collect all `.md` files reachable from `root`. Skips
- *  Word-style `*_files/` asset companions, dotfiles, and `node_modules`
- *  so the candidate list stays workspace-meaningful. */
-async function collectMarkdownFiles(
-  fs: FileSystemProvider,
-  root: string,
-): Promise<FileSystemEntry[]> {
-  const out: FileSystemEntry[] = [];
-  const visited = new Set<string>();
-
-  async function walk(dir: string): Promise<void> {
-    if (visited.has(dir)) return;
-    visited.add(dir);
-    let entries: FileSystemEntry[];
-    try {
-      entries = await readProviderDirectory(fs, dir);
-    } catch (error: unknown) {
-      if (error instanceof FsError && error.code === 'not-found') return;
-      throw error;
-    }
-    for (const entry of entries) {
-      if (entry.kind === 'directory') {
-        const lower = entry.name.toLowerCase();
-        if (lower.startsWith('.')) continue;
-        if (lower === 'node_modules') continue;
-        if (lower.endsWith('_files')) continue;
-        await walk(entry.path);
-      } else if (entry.kind === 'file') {
-        if (entry.name.toLowerCase().endsWith('.md')) out.push(entry);
-      }
-    }
-  }
-
-  await walk(root);
-  return out;
-}
-
 /**
  * Walk a FileSystemProvider and copy every file into a content container.
  * Kept outside the component so document commit targets and backup actions
@@ -1047,9 +892,10 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
+  const [documentLinkEpoch, setDocumentLinkEpoch] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
-  // First-run gateway over the welcome doc's Play view -- see WELCOME_GATEWAY_KEY.
+  // First-run gateway over the welcome document's Play view.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
@@ -1281,13 +1127,6 @@ export function DocBlocksShell({
    */
   const versionsContainerRef = useRef<ContentContainer | null>(null);
   const [versionsContainer, setVersionsContainer] = useState<ContentContainer | null>(null);
-
-  /** Cache of .md files in the active workspace, used to power the
-   *  squisq link-dialog's document picker. Lazily populated on first
-   *  provider call; cleared whenever the backing filesystem changes so
-   *  workspace switches don't surface stale neighbours. A pending Promise
-   *  during in-flight walks lets concurrent calls share the same scan. */
-  const mdFileCacheRef = useRef<Promise<FileSystemEntry[]> | null>(null);
 
   /** Push a new history entry with the given hash. */
   const pushHash = useCallback((wsId: string, filePath?: string | null) => {
@@ -2075,43 +1914,7 @@ export function DocBlocksShell({
     };
   }, [provider, selectedFile, mediaEpoch]);
 
-  // Invalidate the document-link candidate cache when the backing
-  // workspace changes -- otherwise the link dialog would surface
-  // neighbours from a previously-open workspace.
-  useEffect(() => {
-    mdFileCacheRef.current = null;
-  }, [provider]);
-
-  /** Powers the squisq link dialog's "Browse documents" picker. Returns
-   *  workspace `.md` neighbours filtered by `query`, with paths expressed
-   *  relative to the currently-open document so the link survives folder
-   *  moves. The first call seeds an in-memory cache; subsequent calls
-   *  filter against it. */
-  const documentLinkProvider = useCallback<DocumentLinkProvider>(
-    async (query: string): Promise<DocumentLinkCandidate[]> => {
-      if (!provider || !selectedFile) return [];
-      if (!mdFileCacheRef.current) {
-        mdFileCacheRef.current = collectMarkdownFiles(provider, '').catch(() => []);
-      }
-      const entries = await mdFileCacheRef.current;
-      const q = query.trim().toLowerCase();
-      const candidates: DocumentLinkCandidate[] = [];
-      for (const entry of entries) {
-        if (entry.kind !== 'file') continue;
-        if (sameProviderPath(entry.path, selectedFile)) continue;
-        const label = entry.name.replace(/\.md$/i, '');
-        const path = relativeMarkdownLink(selectedFile, entry.path);
-        if (q && !label.toLowerCase().includes(q) && !path.toLowerCase().includes(q)) continue;
-        const dir = dirnameOf(entry.path);
-        candidates.push(dir ? { path, label, description: dir } : { path, label });
-      }
-      // Stable alphabetical order keeps the picker predictable across
-      // re-opens; the dialog can re-sort or rank on its own if needed.
-      candidates.sort((a, b) => a.label.localeCompare(b.label));
-      return candidates;
-    },
-    [provider, selectedFile],
-  );
+  const documentLinkProvider = useDocumentLinkProvider(provider, selectedFile, documentLinkEpoch);
 
   // Expose a DocumentVersionManager via versioningRef when requested.
   useEffect(() => {
@@ -2232,7 +2035,7 @@ export function DocBlocksShell({
       if (pendingDbk) {
         pendingDbk.provider.replaceContents(pendingDbk.snapshot);
         pendingDbkConflictsRef.current.delete(conflictKey!);
-        mdFileCacheRef.current = null;
+        setDocumentLinkEpoch((epoch) => epoch + 1);
         setMediaEpoch((epoch) => epoch + 1);
         setExplorerKey((key) => key + 1);
       }
@@ -2803,6 +2606,7 @@ export function DocBlocksShell({
   const handleTreeChange = useCallback(
     async (change?: FileTreeChange) => {
       if (!provider) return;
+      setDocumentLinkEpoch((epoch) => epoch + 1);
       if (change?.type === 'move' && change.oldPath && change.newPath) {
         const nextFile = selectedFile
           ? relocateProviderPath(selectedFile, change.oldPath, change.newPath)

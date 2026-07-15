@@ -7,6 +7,8 @@ type UnknownRecord = Readonly<Record<string, unknown>>;
 
 interface PackageManifest {
   readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
   readonly scripts?: Readonly<Record<string, string>>;
 }
 
@@ -33,6 +35,24 @@ async function workflowCommands(relativePath: string): Promise<readonly string[]
     }
   }
   return commands;
+}
+
+async function requirePinnedWorkflowActions(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    for (const step of job.steps) {
+      if (!isRecord(step) || typeof step.uses !== 'string' || step.uses.startsWith('./')) continue;
+      if (!/^[^@]+@[0-9a-f]{40}$/u.test(step.uses)) {
+        throw new Error(
+          `${relativePath}: ${jobName} action must use an immutable 40-character commit SHA: ${step.uses}`,
+        );
+      }
+    }
+  }
 }
 
 async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise<void> {
@@ -145,6 +165,8 @@ async function main(): Promise<void> {
   const expectedGate = [
     'npm run build',
     'npm run bundle:size',
+    'npm run check:site-precache',
+    'npm run check:site-fonts',
     'npm run check:desktop-config',
     'npm run check:agent-guidance',
     'npm run check:assurance',
@@ -187,6 +209,26 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
 
+  const reactPackage = await readPackage('packages/react/package.json');
+  const sitePackage = await readPackage('packages/site/package.json');
+  const expectedMonacoVersion = '0.50.0';
+  if (reactPackage.peerDependencies?.['monaco-editor'] !== `^${expectedMonacoVersion}`) {
+    throw new Error('packages/react must leave Monaco ownership to a ^0.50.0 consumer peer');
+  }
+  for (const [manifestPath, manifest] of [
+    ['package.json', rootPackage],
+    ['packages/react/package.json', reactPackage],
+    ['packages/site/package.json', sitePackage],
+    ['packages/desktop/package.json', desktopPackage],
+    ['packages/vscode/package.json', vscodePackage],
+  ] as const) {
+    const declaredVersion =
+      manifest.dependencies?.['monaco-editor'] ?? manifest.devDependencies?.['monaco-editor'];
+    if (declaredVersion !== expectedMonacoVersion) {
+      throw new Error(`${manifestPath}: monaco-editor must be ${expectedMonacoVersion}`);
+    }
+  }
+
   const workflowRequirements: Readonly<Record<string, readonly string[]>> = {
     '.github/workflows/ci.yml': [
       'all',
@@ -206,6 +248,7 @@ async function main(): Promise<void> {
     for (const requirement of requirements) {
       requireWorkflowScript(commands, requirement, workflow);
     }
+    await requirePinnedWorkflowActions(workflow);
   }
   await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
 

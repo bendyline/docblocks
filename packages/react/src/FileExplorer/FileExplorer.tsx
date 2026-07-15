@@ -611,6 +611,15 @@ export function FileExplorer({
         </div>
       )}
 
+      {tree.error && (
+        <div className="db-tree-error" role="alert">
+          <span>{tree.error}</span>{' '}
+          <button type="button" className="db-tree-error-retry" onClick={() => void tree.refresh()}>
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Tree — role="tree" only when there are real treeitem children; the
           loading/empty states get a status role so axe doesn't flag the
           tree as missing required children. */}
