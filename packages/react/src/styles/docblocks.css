@@ -208,6 +208,114 @@
   color: var(--db-text-secondary);
 }
 
+/* ── Transient workspace move ────────────────────────────────── */
+
+.db-transient-move {
+  flex-shrink: 0;
+  padding: 8px;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-accent-soft-08);
+}
+
+.db-transient-move-trigger {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-accent-deep);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-transient-move-trigger:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-transient-move-trigger:focus-visible,
+.db-transient-move-select:focus-visible,
+.db-transient-move-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-transient-move-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.db-transient-move-label {
+  color: var(--db-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-transient-move-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 28px 6px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+
+.db-transient-move-hint,
+.db-transient-move-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.db-transient-move-hint {
+  color: var(--db-text-muted);
+}
+
+.db-transient-move-error {
+  color: var(--db-danger);
+}
+
+.db-transient-move-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.db-transient-move-actions button {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-transient-move-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.db-transient-move-cancel {
+  border: 1px solid var(--db-border-strong);
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+}
+
+.db-transient-move-submit {
+  border: 1px solid var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-transient-move-submit:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
 /* ── New Item Input ──────────────────────────────────────────── */
 
 .db-new-item {
@@ -998,16 +1106,23 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  padding: 16px;
   background: rgba(0, 0, 0, 0.4);
 }
 
 .db-dialog {
+  box-sizing: border-box;
   background: var(--db-bg);
   border: 1px solid var(--db-border);
   border-radius: 8px;
   box-shadow: 0 8px 32px var(--db-shadow);
   width: 380px;
-  max-width: 90vw;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
 }
 
 .db-dialog-header {
@@ -1042,6 +1157,8 @@ body.db-resizing-sidebar * {
 }
 
 .db-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px 20px 20px;
   font-size: 13px;
   line-height: 1.6;
@@ -1175,8 +1292,35 @@ body.db-resizing-sidebar * {
 
 .db-settings-accent-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 6px;
+}
+
+.db-settings-action {
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-settings-action:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-settings-action:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-settings-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .db-settings-accent {
@@ -1387,15 +1531,17 @@ body.db-resizing-sidebar * {
   width: 28px;
   height: 28px;
   padding: 0;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 1px;
   line-height: 1;
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   background: none;
   color: var(--db-text-muted);
+}
+
+.db-toolbar-menu-trigger svg {
+  width: 18px;
+  height: 18px;
 }
 
 .db-toolbar-menu-trigger:hover {
@@ -1741,6 +1887,25 @@ body.db-resizing-sidebar * {
   background: var(--db-editor-canvas);
 }
 
+/* Bind Squisq's host-facing accent to the active DocBlocks appearance. */
+.db-shell .squisq-editor-shell {
+  --squisq-accent: var(--db-accent);
+  --squisq-accent-hover: var(--db-accent-hover);
+  --squisq-text-on-accent: var(--db-text-on-accent);
+}
+
+/* Simple diagrams, drawings, and layout canvases share Squisq's Scene
+   engine. Keep canvas and raised-control surfaces on the same DocBlocks
+   palette instead of falling back to slate. */
+.db-shell .squisq-editor-shell .squisq-scene-shell {
+  --squisq-surface: var(--db-editor-canvas);
+  --squisq-surface-raised: var(--db-bg-subtle);
+  --squisq-surface-hover: var(--db-bg-hover);
+  --squisq-border: var(--db-border-strong);
+  --squisq-text: var(--db-text);
+  --squisq-text-muted: var(--db-text-muted);
+}
+
 /* ── Inline preview gutter: thematic green ──────────────────── */
 /* Rebind squisq's `--squisq-preview-*` custom properties so the
    gutter chrome (vertical bracket, diagonal connector + dots,
@@ -1875,6 +2040,102 @@ body.db-resizing-sidebar * {
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark,
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark .squisq-image-viewer-stage {
   background: var(--db-bg);
+}
+
+/* Squisq's media bin ships with a fixed blue-slate palette. Bind the full
+   pane to DocBlocks' appearance tokens so its surface and controls follow
+   the selected accent in both light and dark themes. */
+.db-shell .squisq-editor-shell .squisq-media-bin {
+  background: var(--db-bg-subtle);
+  border-left-color: var(--db-border);
+  color: var(--db-text);
+  scrollbar-color: var(--db-border-strong) var(--db-bg-subtle);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-header {
+  border-bottom-color: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-title {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload {
+  background: var(--db-accent-tint-strong);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload:hover {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-empty,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-size {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item {
+  border-bottom-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:hover,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:focus-visible {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:focus-visible {
+  outline-color: var(--db-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-thumb,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-icon {
+  background: var(--db-accent-tint-strong);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target {
+  background: color-mix(in srgb, var(--db-bg-subtle) 92%, var(--db-accent));
+  border-color: var(--db-accent);
+  color: var(--db-accent-deep);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target-icon {
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target span:last-child {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow: 0 12px 28px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item:hover,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item:focus-visible {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item--danger {
+  color: var(--db-danger);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item--danger:hover,
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  .squisq-media-bin-context-menu-item--danger:focus-visible {
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
 }
 
 /* ── Squisq accent override (blue → thematic green) ──────────── */
@@ -3577,7 +3838,7 @@ html:has(.db-shell[data-theme='dark'])
 /* Dialog size modifiers (shared Dialog component) */
 .db-dialog--wide {
   width: 560px;
-  max-width: 94vw;
+  max-width: 100%;
 }
 
 .db-dialog--full {

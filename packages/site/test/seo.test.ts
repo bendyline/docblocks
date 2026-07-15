@@ -39,12 +39,26 @@ describe('site SEO surface', () => {
     expect(html).to.include('<script type="application/ld+json">');
     expect(html).to.include('"@type": "SoftwareApplication"');
     expect(html).to.include('The Markdown editor that turns one file into anything.');
+    expect(html).to.include('class="db-seo-bootstrap-sidebar"');
+    expect(html).to.include('class="db-seo-bootstrap-toolbar"');
+    expect(html).to.include('class="db-seo-bootstrap-document"');
+    expect(html).to.include('<script src="/bootstrap-theme.js"></script>');
+    expect(html).to.match(/\.db-seo-bootstrap h1\s*\{[^}]*font-size:\s*1rem;/s);
 
     const jsonLdText = html.match(
       /<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/,
     )?.[1];
     expect(jsonLdText).to.be.a('string');
     expect(() => JSON.parse(jsonLdText ?? '')).not.to.throw();
+  });
+
+  it('matches the saved appearance before the React shell mounts', async () => {
+    const bootstrap = await read('public/bootstrap-theme.js');
+    expect(bootstrap).to.include("globalThis.localStorage.getItem('docblocks:themePreference')");
+    expect(bootstrap).to.include("preference === 'light' || preference === 'dark'");
+    expect(bootstrap).to.include(
+      'globalThis.document.documentElement.dataset.dbTheme = preference',
+    );
   });
 
   it('ships unique, indexable static product and policy pages', async () => {
@@ -82,6 +96,22 @@ describe('site SEO surface', () => {
     expect(config).to.include("appType: 'mpa'");
     expect(config).to.include('navigateFallbackAllowlist: [/^\\/$/]');
     expect(config).to.include('webmanifest,txt,xml');
+  });
+
+  it('lets interactive development fall forward while keeping the E2E port fixed', async () => {
+    const [viteConfig, playwrightConfig] = await Promise.all([
+      read('vite.config.ts'),
+      readFile(path.join(process.cwd(), 'playwright.config.ts'), 'utf8'),
+    ]);
+
+    expect(viteConfig).to.include('port: 5220');
+    expect(viteConfig).to.include('strictPort: false');
+    expect(viteConfig).to.include("name: 'serve-static-directory-indexes'");
+    for (const route of MARKETING_ROUTES) {
+      expect(viteConfig).to.include(`'/${route}/'`);
+    }
+    expect(playwrightConfig).to.include('npm run dev -w docblocks-site -- --strictPort');
+    expect(playwrightConfig).to.include("url: 'http://localhost:5220'");
   });
 
   it('ships a noindex custom 404 and a correctly sized social card', async () => {

@@ -97,6 +97,7 @@ export function AppMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [storageEstimate, setStorageEstimate] = useState<{
     usage: number;
@@ -134,6 +135,16 @@ export function AppMenu({
     setIsOpen(false);
     action();
   }, []);
+
+  const handleKeepBrowserDataFromSettings = useCallback(async () => {
+    if (!onKeepBrowserData || requestingPersistentStorage) return;
+    setRequestingPersistentStorage(true);
+    try {
+      await onKeepBrowserData();
+    } finally {
+      setRequestingPersistentStorage(false);
+    }
+  }, [onKeepBrowserData, requestingPersistentStorage]);
 
   return (
     <>
@@ -234,13 +245,27 @@ export function AppMenu({
                     )} of the ${formatBytes(
                       storageEstimate.quota,
                     )} this browser allows for the site.`
-                  : 'Storage usage is not available in this browser.'}{' '}
-                {storagePersistent === undefined
-                  ? ''
-                  : storagePersistent
-                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
-                    : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
+                  : 'Storage usage is not available in this browser.'}
               </p>
+              {storagePersistent !== undefined && (
+                <p className="db-settings-hint">
+                  {storagePersistent
+                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
+                    : 'Data is not yet marked persistent.'}
+                </p>
+              )}
+              {onKeepBrowserData && (
+                <button
+                  type="button"
+                  className="db-settings-action"
+                  disabled={requestingPersistentStorage}
+                  onClick={() => void handleKeepBrowserDataFromSettings()}
+                >
+                  {requestingPersistentStorage
+                    ? 'Requesting persistent storage…'
+                    : 'Keep data in browser for longer'}
+                </button>
+              )}
             </fieldset>
           )}
 
@@ -311,7 +336,7 @@ export function AppMenu({
                 browser. Your files stay on your device.
               </p>
               <p>
-                Built on{' '}
+                Built with{' '}
                 <a
                   href="https://github.com/bendyline/squisq"
                   target="_blank"

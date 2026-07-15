@@ -31,7 +31,7 @@ export interface SettingsDialogProps {
 
 export function SettingsDialog({ title = 'Settings', onClose, children }: SettingsDialogProps) {
   return (
-    <Dialog title={title} onClose={onClose}>
+    <Dialog title={title} onClose={onClose} size="wide">
       {children}
     </Dialog>
   );

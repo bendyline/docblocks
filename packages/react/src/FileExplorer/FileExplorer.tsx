@@ -40,6 +40,11 @@ export type FileTreeMutationHandler = (
   mutate: () => Promise<void>,
 ) => Promise<void>;
 
+export interface WorkspaceMoveDestination {
+  id: string;
+  name: string;
+}
+
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
 }
@@ -115,6 +120,10 @@ export interface FileExplorerProps {
   onTreeChange?: (change?: FileTreeChange) => void;
   /** Called when supported files are dropped onto the explorer. */
   onImportFiles?: (files: File[]) => void;
+  /** Persisted workspaces that can receive the current transient workspace. */
+  moveDestinations?: readonly WorkspaceMoveDestination[];
+  /** When provided, shows the transient-workspace move action above the tree. */
+  onMoveToWorkspace?: (workspaceId: string) => Promise<void>;
   /** Optional className for the root element. */
   className?: string;
 }
@@ -126,6 +135,8 @@ export function FileExplorer({
   onTreeMutation,
   onTreeChange,
   onImportFiles,
+  moveDestinations = [],
+  onMoveToWorkspace,
   className,
 }: FileExplorerProps) {
   const tree = useFileTree(provider);
@@ -142,7 +153,16 @@ export function FileExplorer({
   const [draggedEntry, setDraggedEntry] = useState<FileSystemEntry | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [movePanelOpen, setMovePanelOpen] = useState(false);
+  const [moveDestinationId, setMoveDestinationId] = useState(moveDestinations[0]?.id ?? '');
+  const [movingToWorkspace, setMovingToWorkspace] = useState(false);
+  const [moveWorkspaceError, setMoveWorkspaceError] = useState<string | null>(null);
   const dragCounter = useRef(0);
+
+  useEffect(() => {
+    if (moveDestinations.some((destination) => destination.id === moveDestinationId)) return;
+    setMoveDestinationId(moveDestinations[0]?.id ?? '');
+  }, [moveDestinationId, moveDestinations]);
 
   useEffect(() => {
     if (activeFilePath) reveal(activeFilePath, 'file');
@@ -246,6 +266,21 @@ export function FileExplorer({
     setNewItemType(null);
     onTreeChange?.({ type: 'create', path: createdPath });
   }, [newItemName, newItemType, tree, onTreeChange]);
+
+  const handleMoveToWorkspace = useCallback(async () => {
+    if (!onMoveToWorkspace || !moveDestinationId || movingToWorkspace) return;
+    setMovingToWorkspace(true);
+    setMoveWorkspaceError(null);
+    try {
+      await onMoveToWorkspace(moveDestinationId);
+    } catch (error: unknown) {
+      setMoveWorkspaceError(
+        error instanceof Error ? error.message : 'The temporary document could not be moved.',
+      );
+    } finally {
+      setMovingToWorkspace(false);
+    }
+  }, [moveDestinationId, movingToWorkspace, onMoveToWorkspace]);
 
   const runTreeMutation = useCallback(
     async (change: FileTreeChange, mutate: () => Promise<void>) => {
@@ -464,6 +499,80 @@ export function FileExplorer({
           </button>
         </div>
       </div>
+
+      {onMoveToWorkspace && (
+        <div className="db-transient-move">
+          {!movePanelOpen ? (
+            <button
+              type="button"
+              className="db-transient-move-trigger"
+              onClick={() => {
+                setMoveWorkspaceError(null);
+                setMovePanelOpen(true);
+              }}
+            >
+              Move this into a workspace
+            </button>
+          ) : (
+            <form
+              className="db-transient-move-form"
+              aria-label="Move this into a workspace"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleMoveToWorkspace();
+              }}
+            >
+              <label className="db-transient-move-label" htmlFor="db-transient-move-destination">
+                Move this document into
+              </label>
+              <select
+                id="db-transient-move-destination"
+                className="db-transient-move-select"
+                value={moveDestinationId}
+                disabled={movingToWorkspace || moveDestinations.length === 0}
+                onChange={(event) => {
+                  setMoveDestinationId(event.currentTarget.value);
+                  setMoveWorkspaceError(null);
+                }}
+              >
+                {moveDestinations.map((destination) => (
+                  <option key={destination.id} value={destination.id}>
+                    {destination.name}
+                  </option>
+                ))}
+              </select>
+              {moveDestinations.length === 0 && (
+                <p className="db-transient-move-hint">Open or create another workspace first.</p>
+              )}
+              {moveWorkspaceError && (
+                <div className="db-transient-move-error" role="alert">
+                  {moveWorkspaceError}
+                </div>
+              )}
+              <div className="db-transient-move-actions">
+                <button
+                  type="button"
+                  className="db-transient-move-cancel"
+                  disabled={movingToWorkspace}
+                  onClick={() => {
+                    setMoveWorkspaceError(null);
+                    setMovePanelOpen(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="db-transient-move-submit"
+                  disabled={movingToWorkspace || !moveDestinationId}
+                >
+                  {movingToWorkspace ? 'Moving…' : 'Move'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* New item input */}
       {newItemType && (

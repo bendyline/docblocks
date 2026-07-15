@@ -16,6 +16,7 @@ import type {
 import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
+import type { VideoExportPalette } from '@bendyline/squisq-video-react';
 import {
   DocumentVersionManager,
   type PrunePolicy,
@@ -129,6 +130,24 @@ import { decodeDbkWorkspace } from './dbk-import.js';
 import { buildIssueReportUrl } from './issue-report.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
+import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
+
+const DOCBLOCKS_VIDEO_EXPORT_PALETTE: Partial<VideoExportPalette> = Object.freeze({
+  overlay: 'rgba(0, 0, 0, 0.72)',
+  surface: 'var(--db-bg)',
+  control: 'var(--db-bg-subtle)',
+  border: 'var(--db-border-strong)',
+  text: 'var(--db-text)',
+  heading: 'var(--db-text)',
+  label: 'var(--db-text-secondary)',
+  muted: 'var(--db-text-muted)',
+  secondary: 'var(--db-accent-tint-strong)',
+  primary: 'var(--db-accent)',
+  primaryBorder: 'var(--db-accent-hover)',
+  primaryText: 'var(--db-text-on-accent)',
+  success: 'var(--db-git-added)',
+  danger: 'var(--db-danger)',
+});
 
 let indexedDbFileSystemModule: Promise<
   typeof import('@bendyline/docblocks/filesystem/indexeddb')
@@ -914,6 +933,36 @@ export function DocBlocksShell({
       cancelled = true;
     };
   }, [activeWorkspaceId, descriptorRefreshKey]);
+  const [transientMoveDestinations, setTransientMoveDestinations] = useState<WorkspaceDescriptor[]>(
+    [],
+  );
+  useEffect(() => {
+    if (activeWorkspaceDescriptor?.type !== 'transient') {
+      setTransientMoveDestinations([]);
+      return;
+    }
+    let cancelled = false;
+    const electron = isElectronHost();
+    void listWorkspaces()
+      .then((workspaces) => {
+        if (cancelled) return;
+        setTransientMoveDestinations(
+          workspaces.filter(
+            (workspace) =>
+              workspace.type !== 'transient' &&
+              (electron
+                ? workspace.type === 'electron-native'
+                : workspace.type !== 'electron-native'),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setTransientMoveDestinations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceDescriptor]);
 
   // All git UI state/actions -- null-renders on surfaces without git.
   const gitWorkspaceId =
@@ -2303,6 +2352,124 @@ export function DocBlocksShell({
     [pushHash, transitionAwayFromDocument],
   );
 
+  const handleMoveTransientWorkspace = useCallback(
+    async (destinationWorkspaceId: string) => {
+      if (!activeWorkspaceId || !provider || !selectedFile) {
+        throw new Error('Select the temporary document before moving it.');
+      }
+      const transient = getTransientWorkspace(activeWorkspaceId);
+      if (!transient || transient.provider !== provider) {
+        throw new Error('This workspace is no longer temporary.');
+      }
+      const destination = transientMoveDestinations.find(
+        (workspace) => workspace.id === destinationWorkspaceId,
+      );
+      if (!destination) {
+        throw new Error('That destination workspace is no longer available.');
+      }
+
+      const requestId = ++navigationRequestRef.current;
+      let destinationProvider: FileSystemProvider | null = null;
+      let adoptedDestination = false;
+      const sourceTargetKey = documentSnapshot.targetKey;
+
+      try {
+        if (destination.type === 'electron-native') {
+          destinationProvider = await createElectronProviderFromWorkspace(destination);
+        } else if (destination.type === 'native') {
+          destinationProvider = await (
+            await loadNativeFileSystem()
+          ).restoreNativeFolder(destination.id);
+        } else {
+          destinationProvider = await createIndexedDbFileSystemProvider(
+            destination.id,
+            destination.name,
+          );
+        }
+        if (!destinationProvider) {
+          throw new Error(
+            `DocBlocks could not open “${destination.name}”. Open that workspace and grant access, then try again.`,
+          );
+        }
+        const openedDestination = destinationProvider;
+
+        const moved = await documentSession.transitionWithLoad(async () => {
+          if (requestId !== navigationRequestRef.current) return null;
+          const content = await readProviderText(provider, selectedFile);
+          if (content === null) {
+            throw new Error('The temporary document is no longer available.');
+          }
+          await copyTransientWorkspaceContents(provider, openedDestination);
+          return {
+            target: createDocumentTarget(openedDestination, destination.id, selectedFile),
+            content,
+          };
+        });
+        if (!moved) {
+          throw new Error('The move was interrupted by another navigation request.');
+        }
+
+        adoptedDestination = true;
+        setProvider(openedDestination);
+        setActiveWorkspaceId(destination.id);
+        setActiveWorkspaceDescriptor(destination);
+        setSelectedFile(selectedFile);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+        setInitialView('wysiwyg');
+        setInitialSharedMode(null);
+        setExplorerKey((key) => key + 1);
+        closeWelcomeGateway();
+        pushHash(destination.id, selectedFile);
+        saveLastState({
+          workspaceId: destination.id,
+          filePath: selectedFile,
+          view: 'wysiwyg',
+        });
+        if (effectiveCompact) setMobileShowEditor(true);
+        void touchWorkspace(destination.id).catch(() => undefined);
+        if (sourceTargetKey) pendingDbkConflictsRef.current.delete(sourceTargetKey);
+
+        const origin = transient.descriptor.origin;
+        if (isElectronHost() && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+          try {
+            await getDocBlocksHost().external.revoke(origin.resourceId);
+          } catch {
+            // Navigation and renderer teardown also revoke external grants.
+          }
+        }
+        try {
+          await removeWorkspace(activeWorkspaceId);
+        } catch {
+          // The transient registry forgets the entry before provider disposal;
+          // a disposal failure must not make a successful move look undone.
+        }
+        setDescriptorRefreshKey((key) => key + 1);
+      } catch (error: unknown) {
+        if (destinationProvider && !adoptedDestination) {
+          try {
+            await getFileSystemProviderV2(destinationProvider)?.dispose();
+          } catch {
+            // Preserve the move failure as the actionable error.
+          }
+        }
+        throw error;
+      }
+    },
+    [
+      activeWorkspaceId,
+      closeWelcomeGateway,
+      createDocumentTarget,
+      documentSession,
+      documentSnapshot.targetKey,
+      effectiveCompact,
+      provider,
+      pushHash,
+      selectedFile,
+      transientMoveDestinations,
+    ],
+  );
+
   const handleOpenFolder = useCallback(async () => {
     const requestId = ++navigationRequestRef.current;
     try {
@@ -3323,6 +3490,7 @@ export function DocBlocksShell({
                 />
                 <WorkspacePicker
                   activeWorkspaceId={activeWorkspaceId}
+                  refreshKey={descriptorRefreshKey}
                   onSelect={handleWorkspaceSelect}
                   onOpenFolder={handleOpenFolder}
                   onCloneRepository={
@@ -3362,6 +3530,16 @@ export function DocBlocksShell({
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
                 onImportFiles={handleImportFiles}
+                moveDestinations={
+                  activeWorkspaceDescriptor?.type === 'transient'
+                    ? transientMoveDestinations
+                    : undefined
+                }
+                onMoveToWorkspace={
+                  activeWorkspaceDescriptor?.type === 'transient'
+                    ? handleMoveTransientWorkspace
+                    : undefined
+                }
               />
               <div className="db-shell-sidebar-footer">
                 <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
@@ -3495,6 +3673,8 @@ export function DocBlocksShell({
                             selectedFile={selectedFile}
                             mediaContainer={mediaContainerRef.current}
                             destinationAdapter={exportDestinationAdapter}
+                            colorScheme={resolvedTheme}
+                            videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
                             initialSharedMode={initialSharedMode}
                           />
                         </>

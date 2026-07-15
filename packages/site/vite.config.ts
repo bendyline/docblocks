@@ -26,6 +26,45 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
   },
 });
 
+const STATIC_DIRECTORY_INDEX_ROUTES = new Set([
+  '/cli/',
+  '/desktop/',
+  '/docs/',
+  '/formats/',
+  '/privacy/',
+  '/terms/',
+  '/vscode/',
+]);
+
+function rewriteStaticDirectoryIndexUrl(requestUrl: string | undefined): string | undefined {
+  if (!requestUrl) return requestUrl;
+  const url = new URL(requestUrl, 'http://localhost');
+  if (!STATIC_DIRECTORY_INDEX_ROUTES.has(url.pathname)) return requestUrl;
+  return `${url.pathname}index.html${url.search}`;
+}
+
+/**
+ * Vite's MPA middleware serves public files by their exact path but does not
+ * resolve `/desktop/` to `/desktop/index.html`. Keep the root editor isolated
+ * while giving the real static directories normal web-server index behavior
+ * during both development and `vite preview`.
+ */
+const serveStaticDirectoryIndexes = (): Plugin => ({
+  name: 'serve-static-directory-indexes',
+  configureServer(server) {
+    server.middlewares.use((request, _response, next) => {
+      request.url = rewriteStaticDirectoryIndexUrl(request.url);
+      next();
+    });
+  },
+  configurePreviewServer(server) {
+    server.middlewares.use((request, _response, next) => {
+      request.url = rewriteStaticDirectoryIndexUrl(request.url);
+      next();
+    });
+  },
+});
+
 function isDeferredFeatureAsset(fileName: string): boolean {
   const baseName = fileName.replace(/\\/g, '/').split('/').pop() ?? fileName;
   // Keep lazy chunks out of the initial modulePreload: the export pipeline
@@ -124,7 +163,7 @@ export default defineConfig({
   define: {
     __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
   },
-  plugins: [stripBrokenSourcemapPragmas(), react(), docblocksPwa()],
+  plugins: [stripBrokenSourcemapPragmas(), serveStaticDirectoryIndexes(), react(), docblocksPwa()],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy across the graph. Without this, the
@@ -200,7 +239,10 @@ export default defineConfig({
   },
   server: {
     port: 5220,
-    strictPort: true,
+    // Interactive development should not fail just because an older local
+    // server still owns 5220. Vite will announce and open the next free port.
+    // Deterministic harnesses pass --strictPort explicitly.
+    strictPort: false,
     open: true,
     fs: {
       // Allow serving files from the symlinked squisq workspace —

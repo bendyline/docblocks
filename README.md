@@ -12,7 +12,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 | Surface     | What it is                                                                                                            | How to get it                                                                                              |
 | ----------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Web**     | Full editor in the browser — files persist locally (IndexedDB) or in folders you grant via the File System Access API | [docblocks.com](https://docblocks.com/), or `npm run dev` → http://localhost:5220                          |
+| **Web**     | Full editor in the browser — files persist locally (IndexedDB) or in folders you grant via the File System Access API | [docblocks.com](https://docblocks.com/), or `npm run dev` → http://localhost:5220 (or the next free port)  |
 | **Desktop** | Electron app for macOS / Windows / Linux with real folders, native menus, tray, and auto-update                       | Installers on [GitHub Releases](https://github.com/bendyline/docblocks/releases), or `npm run dev:desktop` |
 | **VS Code** | A default DocBlocks editor for `*.md` files plus a Setup pane — works in desktop VS Code and VS Code for the Web      | Open `packages/vscode` in VS Code and press F5, or `npm run test:web -w docblocks-vscode`                  |
 | **CLI**     | `docblocks` — build, serve, convert, video rendering, and an MCP server for AI agents                                 | `npm install -g @bendyline/docblocks-cli`                                                                  |
@@ -96,7 +96,7 @@ npm run build
 npm run package:vscode
 
 # Run a surface
-npm run dev            # site on http://localhost:5220
+npm run dev            # site, preferring http://localhost:5220 and falling forward when busy
 npm run app            # Build shared packages, then launch Electron + Vite on port 5221
 npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5

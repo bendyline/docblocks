@@ -1,8 +1,8 @@
 /**
  * ExportToolbarControls — toolbar-right slot content.
  *
- * Renders a "..." overflow menu on the right side of the toolbar
- * containing export actions (document export + video export).
+ * Renders an export/share menu on the right side of the toolbar containing
+ * document export, sharing, and video export actions.
  *
  * Must be rendered inside <EditorProvider> so useEditorContext() works.
  */
@@ -61,6 +61,10 @@ export interface ExportToolbarControlsProps {
   trigger?: 'menu' | 'button';
   /** Whether to show video export in the overflow menu. */
   showVideoExport?: boolean;
+  /** Resolved host color scheme for the video export dialog. */
+  colorScheme?: 'light' | 'dark';
+  /** Host palette overrides for the video export dialog and progress UI. */
+  videoExportPalette?: VideoExportModalProps['uiPalette'];
   /** HTTP(S) DocBlocks page used as the base of generated shared links. */
   shareBaseUrl?: string;
   /** One-time Use mode supplied by an opened shared document link. */
@@ -175,6 +179,8 @@ export function ExportToolbarControls({
   destinationAdapter,
   trigger = 'menu',
   showVideoExport = true,
+  colorScheme = 'light',
+  videoExportPalette,
   shareBaseUrl,
   initialSharedMode = null,
 }: ExportToolbarControlsProps) {
@@ -444,18 +450,23 @@ export function ExportToolbarControls({
       ) : (
         <div className="db-toolbar-menu" ref={menuRef}>
           <button
+            type="button"
             className="db-toolbar-menu-trigger"
             onClick={handleToggleMenu}
-            aria-label="More actions"
-            title="More actions"
+            aria-label="Export and share"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Export and share"
           >
-            &middot;&middot;&middot;
+            <ShareGlyph />
           </button>
 
           {menuOpen && (
-            <div className="db-toolbar-menu-dropdown">
+            <div className="db-toolbar-menu-dropdown" role="menu">
               {lastOptions && (
                 <button
+                  type="button"
+                  role="menuitem"
                   className="db-toolbar-menu-item"
                   onClick={handleQuickExport}
                   disabled={exporting}
@@ -463,16 +474,31 @@ export function ExportToolbarControls({
                   {quickLabel(lastOptions, transformSummaries)}
                 </button>
               )}
-              <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
+              <button
+                type="button"
+                role="menuitem"
+                className="db-toolbar-menu-item"
+                onClick={handleOpenDialog}
+              >
                 Export...
               </button>
-              <button className="db-toolbar-menu-item" onClick={handleOpenShareDialog}>
+              <button
+                type="button"
+                role="menuitem"
+                className="db-toolbar-menu-item"
+                onClick={handleOpenShareDialog}
+              >
                 Share link with content embedded...
               </button>
               {showVideoExport && (
                 <>
-                  <div className="db-toolbar-menu-divider" />
-                  <button className="db-toolbar-menu-item" onClick={handleOpenVideoModal}>
+                  <div className="db-toolbar-menu-divider" role="separator" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="db-toolbar-menu-item"
+                    onClick={handleOpenVideoModal}
+                  >
                     Export Video...
                   </button>
                 </>
@@ -548,6 +574,8 @@ export function ExportToolbarControls({
           <LoadedVideoExportModal
             doc={videoDoc}
             playerScript={videoModules.playerScript}
+            colorScheme={colorScheme}
+            uiPalette={videoExportPalette}
             onClose={handleCloseVideoModal}
           />
         )}
@@ -570,6 +598,24 @@ function ExportGlyph() {
       <path d="M8.75 1.75V5h3.25" />
       <path d="M6 8.75h4.5" />
       <path d="M8.75 7 10.5 8.75 8.75 10.5" />
+    </svg>
+  );
+}
+
+function ShareGlyph() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 10.5V1.75" />
+      <path d="M5.25 4.5 8 1.75l2.75 2.75" />
+      <path d="M4.25 6.75h-1a1.5 1.5 0 0 0-1.5 1.5v4.5a1.5 1.5 0 0 0 1.5 1.5h9.5a1.5 1.5 0 0 0 1.5-1.5v-4.5a1.5 1.5 0 0 0-1.5-1.5h-1" />
     </svg>
   );
 }

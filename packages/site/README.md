@@ -12,7 +12,7 @@ npm run dev
 npm run dev -w docblocks-site
 ```
 
-The dev server starts at `http://localhost:5220`.
+The dev server prefers `http://localhost:5220` and uses the next free port when it is busy.
 
 ## Build
 

@@ -65,7 +65,10 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(tabMetrics.paddingTop).toBe('4px');
   expect(tabMetrics.paddingBottom).toBe('4px');
   expect(tabMetrics.centerDelta).not.toBeNull();
-  expect(Math.abs(tabMetrics.centerDelta ?? Infinity)).toBeLessThanOrEqual(1);
+  // Chromium can place text boxes on quarter pixels, so allow the label's
+  // geometric center to differ slightly while still catching the old 48px
+  // toolbar padding override.
+  expect(Math.abs(tabMetrics.centerDelta ?? Infinity)).toBeLessThanOrEqual(1.5);
 
   // The sidebar titlebar ends with a desktop-only dotted grip so the
   // draggable space beside the workspace gear is visually discoverable.
@@ -134,19 +137,13 @@ test('workspace dropdown shows the full folder path', async ({ launchApp, worksp
 test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
-  // The shell seeds the welcome doc asynchronously; give it a moment to
-  // write + open before probing disk.
-  await window.waitForFunction(
-    () => {
-      const root = document.querySelector('.db-shell');
-      return !!root && root.textContent?.includes('Welcome to DocBlocks');
-    },
-    undefined,
-    { timeout: 15_000 },
-  );
   const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
-  expect(fs.existsSync(welcome)).toBe(true);
-  expect(fs.readFileSync(welcome, 'utf8')).toContain('Welcome to DocBlocks');
+  // The shell seeds the welcome doc asynchronously. Poll the behavior this
+  // test owns instead of coupling readiness to mutable rendered copy.
+  await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
+  expect(fs.readFileSync(welcome, 'utf8')).toContain(
+    '# DocBlocks: the local-first Markdown editor',
+  );
 });
 
 test('export dialog exposes a remembered native target control', async ({ launchApp }) => {
