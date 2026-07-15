@@ -401,6 +401,29 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           });
         }
 
+        // The version check above is necessary but NOT sufficient to authorize
+        // destroying the source. A native version token is
+        // sha256(size + '\0' + lastModified), which cannot see a same-size
+        // rewrite landing inside one coarse mtime tick -- FAT/exFAT stamp mtime
+        // at 2s granularity, network shares coarser. Deleting on the strength
+        // of that token alone can throw away an external edit this move never
+        // copied, and `conditionalWrite: 'process'` does not excuse it: that
+        // capability describes the atomicity boundary of a caller's
+        // `expectedVersion`, whereas this is the provider's own internal proof,
+        // reached with no concurrent DocBlocks writer involved.
+        //
+        // So prove it by bytes before deleting. A move already reads the whole
+        // subtree, so re-reading it here is proportionate -- which is exactly
+        // why the token itself must NOT hash content: `stat`/`readDirectory`
+        // depend on staying metadata-only.
+        if (!(await this.matchesCapturedSource(sourcePath, source))) {
+          throw new FsError('conflict', 'Source changed while the move was copied.', {
+            operation: 'move',
+            path: sourcePath,
+            destinationPath,
+          });
+        }
+
         // Recorded before the call, not after it: removing a directory is not
         // atomic, so a failure partway through still leaves the source damaged
         // and rollback must know the repair is ours to make.

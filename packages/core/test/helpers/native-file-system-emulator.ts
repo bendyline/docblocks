@@ -37,6 +37,12 @@ interface ObservedOperation {
   readonly path: string;
 }
 
+interface Interceptor {
+  readonly operation: NativeEmulatorOperation;
+  readonly path: string;
+  readonly action: () => void;
+}
+
 interface PartialRemoval {
   readonly path: string;
   readonly deletedChildNames: readonly string[];
@@ -50,6 +56,7 @@ export class NativeFileSystemEmulator {
   private readonly root: DirectoryNode;
   private readonly faults: InjectedFault[] = [];
   private readonly partialRemovals: PartialRemoval[] = [];
+  private readonly interceptors: Interceptor[] = [];
   private readonly observedOperations: ObservedOperation[] = [];
   private clock = 1;
 
@@ -269,6 +276,28 @@ export class NativeFileSystemEmulator {
     return handle as unknown as FileSystemFileHandle;
   }
 
+  /**
+   * Run `action` immediately before the next `operation` on `path`.
+   *
+   * Injected faults can only *fail* an operation; they cannot model an outside
+   * actor mutating the filesystem while a multi-step operation is midway
+   * through. That window is the whole point of some tests -- e.g. an external
+   * editor rewriting a file after a move has captured it but before the move
+   * deletes it.
+   */
+  public runBeforeNext(operation: NativeEmulatorOperation, path: string, action: () => void): void {
+    this.interceptors.push({ operation, path: parseWorkspacePath(path), action });
+  }
+
+  private consumeInterceptor(operation: NativeEmulatorOperation, path: string): void {
+    const index = this.interceptors.findIndex(
+      (candidate) => candidate.operation === operation && candidate.path === path,
+    );
+    if (index < 0) return;
+    const [interceptor] = this.interceptors.splice(index, 1);
+    interceptor.action();
+  }
+
   private consumePartialRemoval(path: string): PartialRemoval | null {
     const index = this.partialRemovals.findIndex((removal) => removal.path === path);
     if (index < 0) return null;
@@ -278,6 +307,7 @@ export class NativeFileSystemEmulator {
 
   private consumeFault(operation: NativeEmulatorOperation, path: string): void {
     this.observedOperations.push({ operation, path });
+    this.consumeInterceptor(operation, path);
     const index = this.faults.findIndex(
       (fault) => fault.operation === operation && fault.path === path,
     );

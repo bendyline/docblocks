@@ -166,10 +166,17 @@ describe('NativeFileSystemProviderV2', () => {
   it('restores source content when verification fails after source deletion', async () => {
     const { fileSystem, provider } = setup('move-post-delete-fault');
     fileSystem.seedFile('/source.md', 'source');
+    // The last `get-file` on the source in a move is the post-delete
+    // verification -- which is the failure this test is about. The ordinal is
+    // load-bearing and brittle: it moved 4 -> 5 when `move` gained its
+    // byte-compare of the captured source before deleting. If a future change
+    // to `move` shifts it again, this test starts exercising a different step
+    // (and the injected fault surfaces as `conflict` rather than
+    // `permission-denied`, which is the tell).
     fileSystem.failOnCall(
       'get-file',
       '/source.md',
-      4,
+      5,
       nativeDomError('NotAllowedError', 'verification blocked'),
     );
 
@@ -246,6 +253,33 @@ describe('NativeFileSystemProviderV2', () => {
     expect(failure).to.be.instanceOf(NativeFileSystemMoveRecoveryError);
     expect(fileSystem.readBytes('/destination/a.md')).to.deep.equal([...encoded('alpha')]);
     expect(fileSystem.readBytes('/destination/b.md')).to.deep.equal([...encoded('bravo')]);
+    await provider.dispose();
+  });
+
+  it('refuses to delete a source whose bytes changed under a blind version token', async () => {
+    const { fileSystem, provider } = setup('move-coarse-mtime-rewrite');
+    fileSystem.seedFile('/source.md', 'aaaaa');
+    fileSystem.setLastModified('/source.md', 1_000);
+
+    // An outside editor rewrites the source AFTER the move captured its bytes
+    // but BEFORE the move deletes it -- same length, and landing inside one
+    // coarse mtime tick (FAT/exFAT stamp at 2s). The version token is
+    // sha256(size + mtime), so it is identical before and after: the move's own
+    // "source is unchanged" proof is blind to this edit, and deleting on the
+    // strength of it would destroy 'bbbbb' having only ever copied 'aaaaa'.
+    fileSystem.runBeforeNext('write', '/destination.md', () => {
+      fileSystem.seedFile('/source.md', 'bbbbb');
+      fileSystem.setLastModified('/source.md', 1_000);
+    });
+
+    await expectFsError(
+      provider.move(parseWorkspacePath('/source.md'), parseWorkspacePath('/destination.md')),
+      'conflict',
+    );
+
+    // The external edit survives; nothing was silently thrown away.
+    expect(fileSystem.readBytes('/source.md')).to.deep.equal([...encoded('bbbbb')]);
+    expect(fileSystem.exists('/destination.md')).to.equal(false);
     await provider.dispose();
   });
 

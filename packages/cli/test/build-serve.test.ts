@@ -134,10 +134,13 @@ describe('CLI build and serve commands', () => {
     it(`renders the embedded standalone document inert under ${label}`, () => {
       const doc = markdownToDoc(parseMarkdown(HOSTILE_MARKDOWN));
       const nodes = doc.blocks.flatMap((block) => block.contents ?? []);
-      expect(nodes).not.to.be.empty;
+      expect(nodes.length).to.be.greaterThan(0);
 
       const markup = renderToStaticMarkup(
-        createElement(MarkdownRenderer, htmlPolicy === undefined ? { nodes } : { nodes, htmlPolicy }),
+        createElement(
+          MarkdownRenderer,
+          htmlPolicy === undefined ? { nodes } : { nodes, htmlPolicy },
+        ),
       );
 
       // Elements that can script the host, load remote resources, frame it, or
@@ -175,7 +178,10 @@ describe('CLI build and serve commands', () => {
     const nodes = doc.blocks.flatMap((block) => block.contents ?? []);
     const render = (htmlPolicy?: 'sanitize' | 'trusted'): string =>
       renderToStaticMarkup(
-        createElement(MarkdownRenderer, htmlPolicy === undefined ? { nodes } : { nodes, htmlPolicy }),
+        createElement(
+          MarkdownRenderer,
+          htmlPolicy === undefined ? { nodes } : { nodes, htmlPolicy },
+        ),
       );
 
     // Omitting the policy must be identical to asking for sanitization.

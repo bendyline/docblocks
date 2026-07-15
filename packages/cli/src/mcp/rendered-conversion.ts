@@ -493,8 +493,11 @@ function slideRelationshipsXml(slideNumber: number): string {
  * WinAnsi cannot encode non-Latin-1 text, whereas XML can, so only genuinely
  * illegal characters are dropped rather than everything outside ASCII.
  */
+/* eslint-disable no-control-regex -- Matching control characters is this
+   pattern's entire purpose; the rule exists to catch unintentional ones. */
 const XML_INVALID_CHARACTERS =
-  /[ --�-�￾￿]/gu;
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu;
+/* eslint-enable no-control-regex */
 
 /**
  * Escape a value for XML text and attribute contexts.

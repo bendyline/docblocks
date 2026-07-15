@@ -208,63 +208,57 @@ test.describe('VS Code web and UX integration', () => {
   });
 
   /**
-   * The byte-preservation test above never clicks, so it cannot see the window
-   * that opens once `armEditorEdits` fires on pointer-down. Arming happens on
-   * any pointer-down — including mere caret placement — so if Squisq emitted a
-   * normalizing snapshot from a click alone, that snapshot would be recorded as
-   * an authored edit and autosaved, rewriting the file with markdown the user
-   * never typed. This fixture is deliberately non-canonical in every way the
-   * WYSIWYG serializer is known to rewrite (asterisk bullets, a setext heading,
-   * underscore emphasis, an indented code block, `1.`-repeated ordering), so a
-   * single normalizing emission would be unmissable in the bytes.
+   * The byte-preservation test above never clicks, so it cannot observe the
+   * window that opens once `armEditorEdits` fires. Arming happens on any
+   * pointer-down — including mere caret placement — so if Squisq emitted a
+   * normalizing snapshot from a click alone, that snapshot would be accepted as
+   * an authored edit and eventually autosaved, rewriting the file with markdown
+   * the user never typed. This fixture is deliberately non-canonical in every
+   * way the WYSIWYG serializer is known to rewrite (setext heading, underscore
+   * emphasis, asterisk bullets, `1.`-repeated ordering, indented code), so any
+   * normalizing emission would be recorded as an edit here.
+   *
+   * The assertion is the *dirty state*, not the file bytes: @vscode/test-web
+   * serves the fixture folder read-only, so an `fs.readFile` of the fixture can
+   * never observe a webview write and would pass no matter what the extension
+   * did. "Autosave pending" (webview) and the "DocBlocks: Unsaved changes"
+   * status bar item both flip from absent to present on the first authored
+   * edit, which makes them real detectors for this window.
    */
-  test('places a caret in a non-canonical document without rewriting its bytes', async ({
-    page,
-  }) => {
-    const untouched = [
-      'Setext Title',
-      '============',
-      '',
-      'Some _emphasis_ and __strong__ text.',
-      '',
-      '* asterisk bullet one',
-      '* asterisk bullet two',
-      '',
-      '1. first',
-      '1. second',
-      '',
-      '    indented code block',
-      '',
-    ].join('\n');
-    await writeFixture(untouched);
+  test('places a caret in a non-canonical document without authoring an edit', async ({ page }) => {
+    await writeFixture(
+      [
+        'Setext Title',
+        '============',
+        '',
+        'Some _emphasis_ and __strong__ text.',
+        '',
+        '* asterisk bullet one',
+        '* asterisk bullet two',
+        '',
+        '1. first',
+        '1. second',
+        '',
+        '    indented code block',
+        '',
+      ].join('\n'),
+    );
     await bootVSCode(page);
     await openDocBlocksEditor(page);
 
     const editor = await getLatestWebviewContent(page);
     await expect(editor.locator('body')).toContainText('Setext Title');
+    const autosavePending = editor.getByText('Autosave pending', { exact: true });
+    const statusBarDirty = page
+      .locator('.statusbar-item')
+      .filter({ hasText: 'DocBlocks: Unsaved changes' });
 
-    // Click into the prose to place a caret. No typing, no toolbar action.
-    const pm = editor.locator('.ProseMirror');
-    console.log('ProseMirror count:', await pm.count());
-    const wys = editor.locator('.squisq-wysiwyg-editor');
-    console.log('squisq-wysiwyg-editor count:', await wys.count());
-    const ce = editor.locator('[contenteditable="true"]');
-    console.log('contenteditable count:', await ce.count());
-    if (await ce.count() > 0) {
-      await ce.first().click();
-      await page.keyboard.type('XYZZY');
-      await page.waitForTimeout(1_500);
-      const txt = await ce.first().innerText();
-      console.log('=== editor text after typing XYZZY ===');
-      console.log(JSON.stringify(txt.slice(0, 200)));
-      await page.keyboard.press('Control+s');
-      await page.waitForTimeout(25_000);
-    }
-    const after = await readFixture();
-    console.log('=== FILE BYTES AFTER ===');
-    console.log(JSON.stringify(after));
-    console.log('=== changed:', after !== untouched, '===');
-    expect(after).toBe(untouched);
+    // Place a caret in the prose. No typing, no toolbar action.
+    await editor.locator('[contenteditable="true"]').first().click();
+    await page.waitForTimeout(1_500);
+
+    await expect(autosavePending).toHaveCount(0);
+    await expect(statusBarDirty).toHaveCount(0);
   });
 
   test('opens Squisq Find mode from the editor toolbar', async ({ page }) => {

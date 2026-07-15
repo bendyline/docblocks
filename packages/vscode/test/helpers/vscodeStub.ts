@@ -240,6 +240,8 @@ export interface VscodeStub {
   statusBarItems: FakeStatusBarItem[];
   /** Every panel handed out by window.createWebviewPanel, in creation order. */
   createdWebviewPanels: FakeWebviewPanel[];
+  /** Every commands.executeCommand call, in order. */
+  executedCommands: { command: string; args: unknown[] }[];
   /** Applied to the document buffer by workspace.applyEdit. */
   module: Record<string, unknown>;
 }
@@ -274,6 +276,7 @@ function resetVscodeStub(stub: VscodeStub): void {
   stub.untitledDocuments.length = 0;
   stub.statusBarItems.length = 0;
   stub.createdWebviewPanels.length = 0;
+  stub.executedCommands.length = 0;
   stub.warningResponse = undefined;
 }
 
@@ -293,6 +296,7 @@ function createVscodeStub(): VscodeStub {
     onDidChangeActiveColorThemeEmitter: new FakeEmitter(),
     statusBarItems: [],
     createdWebviewPanels: [],
+    executedCommands: [],
     module: {},
   };
 
@@ -360,6 +364,12 @@ function createVscodeStub(): VscodeStub {
         return Promise.resolve({});
       },
       onDidChangeActiveColorTheme: stub.onDidChangeActiveColorThemeEmitter.event,
+    },
+    commands: {
+      executeCommand: (command: string, ...args: unknown[]): Promise<undefined> => {
+        stub.executedCommands.push({ command, args });
+        return Promise.resolve(undefined);
+      },
     },
     workspace: {
       get textDocuments(): FakeTextDocument[] {
