@@ -92,7 +92,14 @@ describe('CLI registry-backed conversion', function () {
 
     let caught: unknown;
     try {
-      await runConvert(inputPath, { outputDir, formats: 'csv', maxOutputBytes: 1 });
+      // Overwrite is allowed so the run reaches the budget check under test
+      // rather than stopping at the destination-conflict preflight.
+      await runConvert(inputPath, {
+        outputDir,
+        formats: 'csv',
+        maxOutputBytes: 1,
+        allowOverwrite: true,
+      });
     } catch (error: unknown) {
       caught = error;
     }
@@ -111,10 +118,107 @@ describe('CLI registry-backed conversion', function () {
     await mkdir(outputDir);
     await writeFile(outputPath, 'previous output', 'utf8');
 
-    await runConvert(inputPath, { outputDir, formats: 'csv' });
+    await runConvert(inputPath, { outputDir, formats: 'csv', allowOverwrite: true });
 
     expect(await readFile(outputPath, 'utf8')).to.include('A');
     expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('refuses to overwrite an existing output and names it without converting', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    const outputPath = path.join(outputDir, 'tables.csv');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(outputPath, 'previous output', 'utf8');
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, { outputDir, formats: 'csv' });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message).to.include('Refusing to overwrite');
+    expect(message).to.include(outputPath);
+    expect(message).to.include('--allow-overwrite');
+    expect(await readFile(outputPath, 'utf8')).to.equal('previous output');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('writes normally when no destination conflicts exist', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+
+    const result = await runConvert(inputPath, { outputDir, formats: 'csv' });
+
+    expect(result.outputFiles).to.have.length(1);
+    expect(await readFile(result.outputFiles[0].path, 'utf8')).to.include('A');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('aborts the whole multi-format run when a single destination conflicts', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(path.join(outputDir, 'tables.html'), 'hand-authored', 'utf8');
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, { outputDir, formats: 'csv,html' });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('tables.html');
+    // The clean csv destination must not be written either: one conflict
+    // refuses the run rather than producing a partial export.
+    expect(await readFile(path.join(outputDir, 'tables.html'), 'utf8')).to.equal('hand-authored');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.html']);
+  });
+
+  it('reports every conflicting destination in one refusal', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(path.join(outputDir, 'tables.csv'), 'existing csv', 'utf8');
+    await writeFile(path.join(outputDir, 'tables.html'), 'existing html', 'utf8');
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, { outputDir, formats: 'csv,html' });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    const message = (caught as Error).message;
+    expect(message).to.include('2 existing files');
+    expect(message).to.include(path.join(outputDir, 'tables.csv'));
+    expect(message).to.include(path.join(outputDir, 'tables.html'));
+  });
+
+  it('replaces every conflicting destination when overwrite is allowed', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(path.join(outputDir, 'tables.csv'), 'existing csv', 'utf8');
+
+    const result = await runConvert(inputPath, {
+      outputDir,
+      formats: 'csv,html',
+      allowOverwrite: true,
+    });
+
+    expect(result.outputFiles).to.have.length(2);
+    expect(await readFile(path.join(outputDir, 'tables.csv'), 'utf8')).to.include('A');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv', 'tables.html']);
   });
 
   it('rejects an input that exceeds the conversion budget before importing it', async () => {

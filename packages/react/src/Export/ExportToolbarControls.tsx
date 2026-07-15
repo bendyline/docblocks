@@ -33,6 +33,7 @@ import {
 } from './export-options.js';
 import type { ExportBlobSaver } from './run-export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+import { Dialog } from '../components/Dialog.js';
 
 const ExportDialog = lazy(() =>
   import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
@@ -137,6 +138,16 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
   return videoExportModulesPromise;
 }
 
+/**
+ * Turn whatever `runExport` rejected with into something a user can act on.
+ * The pipeline throws real `Error`s (unreadable image, converter failure,
+ * destination write refused) whose messages are already user-facing.
+ */
+function exportErrorMessage(caught: unknown): string {
+  const detail = caught instanceof Error ? caught.message.trim() : '';
+  return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
+}
+
 /** Build the quick-export label from saved options. */
 function quickLabel(opts: ExportOptions, transformSummaries: ExportSummaryOption[]): string {
   const baseExt = FORMAT_EXTENSIONS[opts.format].toUpperCase().replace('.', '');
@@ -195,6 +206,7 @@ export function ExportToolbarControls({
   const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const destinationRequestRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -289,12 +301,14 @@ export function ExportToolbarControls({
 
   const handleOpenDialog = useCallback(() => {
     setMenuOpen(false);
+    setExportError(null);
     setDialogOpen(true);
     void refreshDestination(dialogInitial);
   }, [dialogInitial, refreshDestination]);
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
+    setExportError(null);
   }, []);
 
   const handleOpenShareDialog = useCallback(() => {
@@ -371,6 +385,7 @@ export function ExportToolbarControls({
   const handleExport = useCallback(
     async (opts: ExportOptions) => {
       setExporting(true);
+      setExportError(null);
       try {
         const { runExport } = await loadRunExportModule();
         await runExport(
@@ -380,9 +395,13 @@ export function ExportToolbarControls({
           mediaContainer,
           destinationAdapter ? handleDestinationSaveBlob : saveBlob,
         );
+        // Only a completed export dismisses the dialog. Closing in a
+        // `finally` used to make a failure look exactly like a success.
+        setDialogOpen(false);
+      } catch (caught: unknown) {
+        setExportError(exportErrorMessage(caught));
       } finally {
         setExporting(false);
-        setDialogOpen(false);
       }
     },
     [
@@ -399,6 +418,7 @@ export function ExportToolbarControls({
     if (!lastOptions) return;
     setMenuOpen(false);
     setExporting(true);
+    setExportError(null);
     try {
       saveExportOptions(lastOptions);
       const { runExport } = await loadRunExportModule();
@@ -418,6 +438,10 @@ export function ExportToolbarControls({
           ? async (blob, filename) => saveToDestination(blob, filename, quickTarget)
           : saveBlob,
       );
+    } catch (caught: unknown) {
+      // No dialog is open on this path, so the failure gets its own —
+      // same shape as the video-export load failure below.
+      setExportError(exportErrorMessage(caught));
     } finally {
       setExporting(false);
     }
@@ -430,6 +454,10 @@ export function ExportToolbarControls({
     saveToDestination,
     selectedFile,
   ]);
+
+  const handleDismissExportError = useCallback(() => {
+    setExportError(null);
+  }, []);
 
   const LoadedVideoExportModal = videoModules?.Modal;
 
@@ -513,6 +541,7 @@ export function ExportToolbarControls({
           <ExportDialog
             initial={dialogInitial}
             exporting={exporting}
+            error={exportError}
             destination={
               destinationAdapter
                 ? {
@@ -527,6 +556,28 @@ export function ExportToolbarControls({
             onClose={handleCloseDialog}
           />
         </Suspense>
+      )}
+
+      {/* Quick export fails with no dialog open — give the failure its own,
+          mirroring the video-export load-failure surface below. */}
+      {exportError && !dialogOpen && (
+        <Dialog
+          title="Export Document"
+          onClose={handleDismissExportError}
+          footer={
+            <button
+              type="button"
+              className="db-export-btn db-export-btn--secondary"
+              onClick={handleDismissExportError}
+            >
+              Close
+            </button>
+          }
+        >
+          <p className="db-export-error" role="alert">
+            {exportError}
+          </p>
+        </Dialog>
       )}
 
       {shareDialogOpen && (

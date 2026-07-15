@@ -16,6 +16,18 @@ describe('site PWA lifecycle state', () => {
     });
   });
 
+  it('lets the user dismiss the install alert without claiming offline support', () => {
+    const store = new PwaStateStore();
+    store.markInstallFailed();
+    store.dismissInstallError();
+
+    expect(store.getSnapshot()).to.deep.equal({
+      updateAvailable: false,
+      offlineReady: false,
+      installError: null,
+    });
+  });
+
   it('publishes a promptable update without changing offline readiness', () => {
     const store = new PwaStateStore();
     let notifications = 0;

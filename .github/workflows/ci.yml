@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       # Keep local and CI assurance identical. Add mandatory build, validation,
       # or unit-test gates to the root `all` script rather than duplicating the
@@ -64,7 +64,12 @@ jobs:
       - name: Typecheck desktop
         run: npm run typecheck -w docblocks-desktop
 
+      - name: Run full desktop unit suite (Windows)
+        if: runner.os == 'Windows'
+        run: npx mocha --no-config --require tsx --require ./packages/react/test/setup.ts "packages/desktop/test/**/*.test.ts"
+
       - name: Verify native filesystem semantics
+        if: runner.os != 'Windows'
         run: npx mocha --no-config --require tsx packages/desktop/test/node-filesystem-v2.test.ts
 
       - name: Build + package desktop (dir)
@@ -156,10 +161,13 @@ jobs:
         run: npm run build
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
         run: npm run test:e2e
+
+      - name: Run Firefox and WebKit compatibility E2E tests
+        run: npm run test:e2e:browsers
 
       - name: Run offline PWA E2E tests
         run: npm run test:e2e:offline
@@ -200,6 +208,9 @@ jobs:
 
       - name: Run VS Code Web E2E tests
         run: npm run test:e2e:vscode
+
+      - name: Run VS Code desktop extension-host E2E tests
+        run: xvfb-run -a npm run test:e2e:vscode:desktop
 
       - name: Upload VS Code Playwright diagnostics
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

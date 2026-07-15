@@ -261,6 +261,24 @@ test.describe('DocBlocks App', () => {
     );
   });
 
+  test('exports the active document as an exact Markdown download', async ({ page }) => {
+    await page.getByRole('button', { name: 'Export and share' }).click();
+    await page.getByRole('menuitem', { name: 'Export...' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Export Document' });
+    await dialog.getByRole('radio', { name: 'Markdown' }).click();
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');
+    const downloadPath = await download.path();
+    if (!downloadPath) throw new Error('Browser export did not produce a downloadable file');
+    const bytes = await import('node:fs/promises').then((fs) => fs.readFile(downloadPath));
+    expect(bytes.length).toBeGreaterThan(100);
+    expect(bytes.toString('utf8')).toContain('# DocBlocks: the local-first Markdown editor');
+  });
+
   test('shows file explorer with FILES heading', async ({ page }) => {
     const title = page.locator('.db-explorer-title');
     await expect(title).toBeVisible();

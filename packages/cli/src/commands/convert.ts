@@ -10,7 +10,7 @@
  * underlying squisq libraries directly.
  */
 
-import { mkdir, open, opendir, realpath, rename, rm, stat } from 'node:fs/promises';
+import { link, lstat, mkdir, open, opendir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
@@ -26,6 +26,11 @@ export interface ConvertOptions {
   formats?: string;
   theme?: string;
   transform?: string;
+  /**
+   * Replace existing destination files. Off by default: the run is refused
+   * before any conversion work when a destination already exists.
+   */
+  allowOverwrite?: boolean;
   /** Cancel reading, transformation, conversion, or publication at a bounded boundary. */
   signal?: AbortSignal;
   /** Programmatic registry override; the CLI defaults to the linked Squisq registry. */
@@ -134,6 +139,18 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     }
   }
 
+  // Last cheap gate before reading, transforming, and converting. Every
+  // destination name is derivable up front, so a conflicting run is refused
+  // whole rather than part-way through — no format is converted and no file is
+  // touched unless every destination is clear.
+  const allowOverwrite = opts.allowOverwrite === true;
+  if (!allowOverwrite) {
+    await assertOutputsAvailable(
+      formats.map((format) => plannedOutputPath(outputDir, baseName, format, registry)),
+      opts.signal,
+    );
+  }
+
   console.error(`Reading: ${resolvedInput}`);
   const result = await squisq.readInput(resolvedInput, { signal: opts.signal });
   throwIfAborted(opts.signal);
@@ -179,7 +196,7 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     }
     const suggestedFilename = basename(conversion.suggestedFilename);
     const outPath = join(outputDir, suggestedFilename);
-    await atomicReplaceFile(outPath, conversion.bytes, opts.signal);
+    await publishFile(outPath, conversion.bytes, allowOverwrite, opts.signal);
     throwIfAborted(opts.signal);
     const info = await stat(outPath);
     throwIfAborted(opts.signal);
@@ -246,9 +263,59 @@ async function assertInputWithinBudget(
   }
 }
 
-async function atomicReplaceFile(
+/**
+ * Reproduce the linked registry's destination naming without converting.
+ *
+ * Squisq's `convert()` derives `suggestedFilename` as
+ * `<baseName>.<first extension>`, so the same inputs yield the same name here.
+ * Publication re-checks the real name, so a registry that ever diverged from
+ * this derivation still cannot silently clobber a file.
+ */
+function plannedOutputPath(
+  outputDir: string,
+  baseName: string,
+  format: FormatId,
+  registry: FormatRegistry,
+): string {
+  const extension = registry.get(format)?.extensions[0]?.replace(/^\.+/u, '') ?? format;
+  return join(outputDir, `${baseName}.${extension}`);
+}
+
+async function assertOutputsAvailable(
+  outputPaths: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  const conflicts: string[] = [];
+  for (const outputPath of outputPaths) {
+    throwIfAborted(signal);
+    if (await lstat(outputPath).catch(() => null)) conflicts.push(outputPath);
+  }
+  throwIfAborted(signal);
+  if (conflicts.length > 0) throw new Error(overwriteConflictMessage(conflicts));
+}
+
+function overwriteConflictMessage(conflicts: readonly string[]): string {
+  const noun = conflicts.length === 1 ? 'file' : 'files';
+  const pronoun = conflicts.length === 1 ? 'it' : 'them';
+  return [
+    `Refusing to overwrite ${conflicts.length} existing ${noun}:`,
+    ...conflicts.map((conflict) => `  ${conflict}`),
+    `Pass --allow-overwrite to replace ${pronoun}, or use --output-dir to write elsewhere.`,
+  ].join('\n');
+}
+
+/**
+ * Publish bounded bytes through an operation-owned sibling file.
+ *
+ * Mirrors the MCP authority's publication policy: replacement is opt-in, and
+ * the default path publishes with `link()` — an atomic create-if-absent on one
+ * filesystem — so a file that appears between the preflight check and this
+ * moment is reported rather than destroyed.
+ */
+async function publishFile(
   outputPath: string,
   bytes: Uint8Array,
+  allowOverwrite: boolean,
   signal?: AbortSignal,
 ): Promise<void> {
   const temporaryPath = join(
@@ -263,11 +330,24 @@ async function atomicReplaceFile(
     await handle.close();
     handle = null;
     throwIfAborted(signal);
-    await rename(temporaryPath, outputPath);
+    if (allowOverwrite) {
+      await rename(temporaryPath, outputPath);
+      return;
+    }
+    try {
+      await link(temporaryPath, outputPath);
+    } catch (error: unknown) {
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
+      throw error;
+    }
   } finally {
     await handle?.close().catch(() => undefined);
     await rm(temporaryPath, { force: true }).catch(() => undefined);
   }
+}
+
+function isNodeErrorCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
@@ -516,6 +596,7 @@ export const convertCommand = new Command('convert')
     '--transform <style>',
     'Transform style to apply before export (e.g., documentary, magazine, minimal)',
   )
+  .option('--allow-overwrite', 'replace existing output files instead of refusing the run')
   .action(async (inputPath: string, opts: ConvertOptions) => {
     try {
       await runConvert(inputPath, opts);

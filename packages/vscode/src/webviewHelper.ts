@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
+import { fillRandomBytes } from './random.js';
 
 /**
  * Generate a random nonce for CSP.
- * Uses globalThis.crypto which works in both Node.js and web workers.
+ * Uses the platform Web Crypto source or Node's CSPRNG in older desktop hosts.
  */
 export function getNonce(): string {
   const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
+  fillRandomBytes(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 

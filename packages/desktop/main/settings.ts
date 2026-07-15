@@ -19,7 +19,11 @@
 import { app } from 'electron';
 import path from 'node:path';
 import { type Settings } from './settings-schema.js';
-import { atomicWriteSettingsFile, readSettingsFile } from './settings-file.js';
+import {
+  atomicWriteSettingsFile,
+  readSettingsFileWithRecovery,
+  type SettingsRecovery,
+} from './settings-file.js';
 import { SettingsWriteQueue } from './settings-write-queue.js';
 
 export type {
@@ -28,6 +32,7 @@ export type {
   PersistedWorkspace,
   Settings,
 } from './settings-schema.js';
+export type { SettingsRecovery } from './settings-file.js';
 
 const DEFAULT_SETTINGS: Settings = { workspaces: [] };
 
@@ -40,18 +45,40 @@ let cachedSettings: Settings | null = null;
 let pendingSettings: Settings | null = null;
 /** Timer for the debounced flush. */
 let flushTimer: NodeJS.Timeout | null = null;
+/** Recovery performed by the read that populated the cache, until reported. */
+let unreportedRecovery: SettingsRecovery | null = null;
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
+/** Where settings live on disk — for telling the user where to look. */
+export function settingsFilePath(): string {
+  return settingsPath();
+}
+
+/**
+ * Never throws. A broken settings file degrades to defaults so that launch can
+ * continue — see `readSettingsFileWithRecovery` for how the original file is
+ * treated. Callers that can reach the user should drain `takeSettingsRecovery`
+ * afterwards so the degradation is surfaced rather than silently absorbed.
+ */
 export async function readSettings(): Promise<Settings> {
   if (cachedSettings) return cachedSettings;
-  cachedSettings = (await readSettingsFile(settingsPath())) ?? {
+  const result = await readSettingsFileWithRecovery(settingsPath());
+  if (result.recovery) unreportedRecovery = result.recovery;
+  cachedSettings = result.settings ?? {
     ...DEFAULT_SETTINGS,
     workspaces: [],
   };
   return cachedSettings;
+}
+
+/** Claim the pending recovery notice, if any. Reporting it is the caller's job. */
+export function takeSettingsRecovery(): SettingsRecovery | null {
+  const recovery = unreportedRecovery;
+  unreportedRecovery = null;
+  return recovery;
 }
 
 async function commit(snapshot: Settings): Promise<void> {

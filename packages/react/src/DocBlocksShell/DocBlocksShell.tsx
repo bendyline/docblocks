@@ -126,6 +126,9 @@ import {
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
+import { importDroppedFiles, summariseImport } from './import-files.js';
+import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
+import { usePromptDialog } from '../components/usePromptDialog.js';
 import { buildIssueReportUrl } from './issue-report.js';
 import { loadLastState, saveLastState } from './last-state.js';
 import {
@@ -391,43 +394,6 @@ async function readProviderText(
   return file
     ? decodeUtf8Text(file.data, { label: 'The document', path: parseWorkspacePath(path) })
     : null;
-}
-
-async function providerEntryExists(provider: FileSystemProvider, path: string): Promise<boolean> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  return providerV2
-    ? (await providerV2.stat(parseWorkspacePath(path))) !== null
-    : provider.exists(path);
-}
-
-async function writeProviderText(
-  provider: FileSystemProvider,
-  path: string,
-  content: string,
-  mode: 'upsert' | 'create' = 'upsert',
-): Promise<void> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  if (providerV2) {
-    await providerV2.writeFile(parseWorkspacePath(path), new TextEncoder().encode(content), {
-      mode,
-      createParents: true,
-      expectedVersion: mode === 'create' ? null : undefined,
-    });
-    return;
-  }
-  if (mode === 'create' && (await provider.exists(path))) {
-    throw new FsError('already-exists', 'File already exists.', { operation: 'write', path });
-  }
-  await provider.writeFile(path, content);
-}
-
-async function removeProviderEntry(provider: FileSystemProvider, path: string): Promise<void> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  if (providerV2) {
-    await providerV2.remove(parseWorkspacePath(path), { recursive: true, missing: 'ignore' });
-    return;
-  }
-  await provider.delete(path);
 }
 
 async function readStableFileSnapshot(
@@ -1804,6 +1770,21 @@ export function DocBlocksShell({
     message: string;
   } | null>(null);
   const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The shell's one transient-notification channel. Everything that needs to
+   * tell the user "that worked" / "that didn't" routes through here so the
+   * self-dismiss timers cannot fight each other.
+   */
+  const showToast = useCallback((kind: 'success' | 'error', message: string) => {
+    setSaveToast({ kind, message });
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
+  }, []);
+
+  // The shell's stand-in for `window.prompt()`, which Electron's renderer does
+  // not implement -- calling it there throws and the action dies silently.
+  const { prompt: promptForText, promptDialog } = usePromptDialog();
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const sKey = e.key === 's' || e.key === 'S';
@@ -1814,24 +1795,22 @@ export function DocBlocksShell({
       void (async () => {
         try {
           await documentSession.flush('manual');
-          setSaveToast({ kind: 'success', message: 'Saved. You’re all set.' });
+          showToast('success', 'Saved. You’re all set.');
         } catch (error: unknown) {
-          setSaveToast({
-            kind: 'error',
-            message: isQuotaExceededError(error)
+          showToast(
+            'error',
+            isQuotaExceededError(error)
               ? 'Could not save -- browser storage is full. Free up space or back up your work.'
               : error instanceof Error
                 ? error.message
                 : 'Could not save this document.',
-          });
+          );
         }
-        if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-        saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
       })();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [documentSession]);
+  }, [documentSession, showToast]);
   useEffect(() => {
     return () => {
       if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
@@ -2364,7 +2343,12 @@ export function DocBlocksShell({
 
   const handleNewFile = useCallback(async () => {
     if (!provider) return;
-    const name = prompt('New document name:', 'Untitled.md');
+    const name = await promptForText({
+      title: 'New document',
+      label: 'Document name',
+      initialValue: 'Untitled.md',
+      confirmLabel: 'Create',
+    });
     if (!name) return;
     const filename = /\.[a-zA-Z0-9]+$/.test(name) ? name : `${name}.md`;
     const path = '/' + filename;
@@ -2420,6 +2404,7 @@ export function DocBlocksShell({
     closeWelcomeGateway,
     createDocumentTarget,
     documentSession,
+    promptForText,
   ]);
 
   // Manifest shortcut "New document" launches `/?action=new` (installed
@@ -2690,43 +2675,16 @@ export function DocBlocksShell({
   const handleImportFiles = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      for (const file of files) {
-        const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-        const baseName = file.name.replace(/\.[^.]+$/, '');
-        const destPath = `${baseName}.md`;
-
-        try {
-          let markdown: string;
-          if (ext === '.md' || ext === '.txt') {
-            markdown = await file.text();
-          } else if (ext === '.docx') {
-            const { docxToContainer } = await import('@bendyline/squisq-formats/docx');
-            const container = await docxToContainer(await file.arrayBuffer());
-            markdown = (await container.readDocument()) ?? '';
-            await persistImportedMedia(container, provider, destPath);
-          } else if (ext === '.pdf') {
-            const { pdfToContainer } = await import('@bendyline/squisq-formats/pdf');
-            const container = await pdfToContainer(await file.arrayBuffer());
-            markdown = (await container.readDocument()) ?? '';
-            await persistImportedMedia(container, provider, destPath);
-          } else if (ext === '.dbk' || ext === '.zip') {
-            const snapshot = await decodeDbkWorkspace(await file.arrayBuffer(), {
-              targetDocumentPath: destPath,
-            });
-            markdown = snapshot.documentContent;
-          } else {
-            continue;
-          }
-
-          await writeProviderText(provider, destPath, markdown);
-        } catch (err) {
-          console.error(`Failed to import ${file.name}:`, err);
-        }
-      }
+      const result = await importDroppedFiles(files, provider, {
+        persistMedia: (source, path) => persistImportedMedia(source, provider, path),
+      });
       // Refresh file tree so the new markdown files + _files folders show up.
       setExplorerKey((k) => k + 1);
+      // A drop that failed used to be indistinguishable from no drop at all.
+      const summary = summariseImport(result);
+      if (summary) showToast(summary.kind, summary.message);
     },
-    [provider, persistImportedMedia],
+    [provider, persistImportedMedia, showToast],
   );
 
   const handleEditorChange = useCallback(
@@ -2746,11 +2704,16 @@ export function DocBlocksShell({
     if (!activeWorkspaceId) return;
     const ws = await getWorkspace(activeWorkspaceId);
     if (!ws) return;
-    const newName = prompt('Rename workspace:', ws.name);
+    const newName = await promptForText({
+      title: 'Rename workspace',
+      label: 'Workspace name',
+      initialValue: ws.name,
+      confirmLabel: 'Rename',
+    });
     if (!newName || newName === ws.name) return;
     await saveWorkspace({ ...ws, name: newName });
     setDescriptorRefreshKey((key) => key + 1);
-  }, [activeWorkspaceId]);
+  }, [activeWorkspaceId, promptForText]);
 
   /**
    * Open a loose file or `.dbk` bundle delivered by the OS into a session-only
@@ -3134,14 +3097,19 @@ export function DocBlocksShell({
 
   const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspaceId) return;
-    const confirmMsg = isElectronHost()
-      ? 'Remove this workspace from DocBlocks? The files on disk will not be deleted.'
-      : 'Remove this workspace? This cannot be undone.';
+    const ws = await getWorkspace(activeWorkspaceId);
+    // Only a browser-local workspace's documents are DocBlocks' to destroy.
+    // Folder-backed workspaces (Electron or File System Access) keep their
+    // files on the user's disk, so promising the removal is irreversible there
+    // would be a lie in the more alarming direction.
+    const confirmMsg =
+      ws?.type === 'indexeddb'
+        ? 'Remove this workspace? Its documents will be permanently deleted.'
+        : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.';
     if (!confirm(confirmMsg)) return;
     const requestId = ++navigationRequestRef.current;
     if (!(await transitionAwayFromDocument(requestId))) return;
 
-    const ws = await getWorkspace(activeWorkspaceId);
     if (ws?.type === 'electron-native') {
       try {
         await getDocBlocksHost().workspaces.unregister(activeWorkspaceId);
@@ -3159,6 +3127,13 @@ export function DocBlocksShell({
       }
     } else if (ws?.type === 'native') {
       await (await loadNativeFileSystem()).removeDirectoryHandle(activeWorkspaceId);
+    } else if (ws?.type === 'indexeddb') {
+      // A browser-local workspace's documents live in a DocBlocks-owned
+      // IndexedDB database. Dropping only the descriptor would strand them:
+      // invisible to the user, still charged against the origin quota, and
+      // ready to reappear the moment a workspace reuses this id -- which
+      // `ensureDefaultWorkspace` does on the very next launch for 'default'.
+      await (await loadIndexedDbFileSystem()).deleteIndexedDBWorkspaceData(activeWorkspaceId);
     }
     await removeWorkspace(activeWorkspaceId);
     if (requestId !== navigationRequestRef.current) return;
@@ -3206,6 +3181,7 @@ export function DocBlocksShell({
       data-document-status={documentSnapshot.status}
     >
       <GitContext.Provider value={git}>
+        {promptDialog}
         {workspaceStartupError && (
           <div className="db-save-toast db-save-toast--error" role="alert" aria-live="assertive">
             {workspaceStartupError}

@@ -1,0 +1,89 @@
+/* ── PWA install-failure alert ────────────────────────────────────
+ *
+ * This banner renders as a SIBLING of <DocBlocksShell>, so it lives outside
+ * `.db-shell`. Every `--db-*` design token in
+ * @bendyline/docblocks-react/styles is declared on `.db-shell` itself (there
+ * are no `:root` declarations), so a banner outside the shell resolves them
+ * all to their initial values — transparent background, `currentColor`
+ * border, no shadow. It therefore carries its own colors and layout rather
+ * than borrowing `.db-update-banner`, which is token-driven and owned by
+ * packages/react.
+ *
+ * The light/dark signal mirrors index.html's pre-boot chrome and
+ * public/bootstrap-theme.js: an explicit preference is stamped onto <html>
+ * as `data-db-theme`, and 'auto' falls through to the OS media query — the
+ * same resolution DocBlocksShell applies to `.db-shell[data-theme]`. Colors
+ * are the danger-toned entries from the shell's own palette so the alert
+ * reads as part of the product in both themes.
+ */
+
+.db-pwa-install-error {
+  --db-alert-bg: #fdf0ee;
+  --db-alert-border: #b22b1b;
+  --db-alert-text: #2a2419;
+  --db-alert-shadow: rgba(40, 30, 15, 0.12);
+
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 210;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 10px 12px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--db-alert-text);
+  background: var(--db-alert-bg);
+  border: 1px solid var(--db-alert-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--db-alert-shadow);
+  transform: translateX(-50%);
+}
+
+.db-pwa-install-error-dismiss {
+  flex: none;
+  padding: 5px 9px;
+  font: inherit;
+  color: var(--db-alert-text);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--db-alert-border);
+  border-radius: 5px;
+}
+
+.db-pwa-install-error-dismiss:hover {
+  background: rgb(178 43 27 / 10%);
+}
+
+.db-pwa-install-error-dismiss:focus-visible {
+  outline: 2px solid var(--db-alert-border);
+  outline-offset: 2px;
+}
+
+html[data-db-theme='dark'] .db-pwa-install-error {
+  --db-alert-bg: #1c1917;
+  --db-alert-border: #f87171;
+  --db-alert-text: #e8e2d0;
+  --db-alert-shadow: rgb(0 0 0 / 40%);
+}
+
+html[data-db-theme='dark'] .db-pwa-install-error-dismiss:hover {
+  background: rgb(248 113 113 / 15%);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-db-theme='light']) .db-pwa-install-error {
+    --db-alert-bg: #1c1917;
+    --db-alert-border: #f87171;
+    --db-alert-text: #e8e2d0;
+    --db-alert-shadow: rgb(0 0 0 / 40%);
+  }
+
+  html:not([data-db-theme='light']) .db-pwa-install-error-dismiss:hover {
+    background: rgb(248 113 113 / 15%);
+  }
+}

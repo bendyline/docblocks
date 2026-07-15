@@ -22,4 +22,13 @@ export default defineConfig([
       'process.env.NODE_ENV': '"production"',
     },
   },
+  // Desktop extension-host E2E entry loaded by @vscode/test-electron.
+  {
+    entry: { 'desktop-e2e/index': 'desktop-e2e/suite/index.ts' },
+    format: ['cjs'],
+    platform: 'node',
+    sourcemap: true,
+    external: ['vscode'],
+    outExtension: () => ({ js: '.cjs' }),
+  },
 ]);

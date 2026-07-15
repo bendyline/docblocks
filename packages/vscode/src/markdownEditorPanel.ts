@@ -17,6 +17,7 @@ import {
   withApplyingEditFlag,
   type HostDocumentAdapter,
   type HostDocumentSnapshot,
+  type SaveParticipantPolicy,
 } from './editSync.js';
 import {
   formatConflictResolutionDetail,
@@ -214,6 +215,7 @@ export class MarkdownEditorPanel {
     const settings = readVscodeEditorSettings(this.uri);
     const sync = await VscodeDocumentSync.create(adapter, {
       autoSaveEnabled: settings.autoSave,
+      readSaveParticipantPolicy: () => this.readSaveParticipantPolicy(),
     });
     this.sync = sync;
     this.unsubscribeSync = sync.subscribe(() => {
@@ -586,6 +588,17 @@ export class MarkdownEditorPanel {
     return toHostSnapshot(document);
   }
 
+  /**
+   * Resolve which of VS Code's built-in save participants will rewrite this
+   * document's text on save. Scoping by the TextDocument (not just the URI)
+   * resolves language-specific overrides such as `"[markdown]"` the same way
+   * VS Code's own participants do.
+   */
+  private readSaveParticipantPolicy(): SaveParticipantPolicy {
+    const files = vscode.workspace.getConfiguration('files', this.document);
+    return { trimTrailingWhitespace: files.get<unknown>('trimTrailingWhitespace') === true };
+  }
+
   private async applyWebviewEdit(message: WebviewEditMessage): Promise<void> {
     const sync = await this.syncReady;
     const acknowledgement = sync.acceptEdit(message);
@@ -624,7 +637,11 @@ export class MarkdownEditorPanel {
     // Keep ownership through save participants as well as applyEdit. VS Code
     // can emit document-change events while document.save() runs (formatting,
     // final-newline normalization, and similar participants); those are part
-    // of this commit and are verified by the commit target afterward.
+    // of this commit, so their change events must not be misread as external
+    // edits. Because they are suppressed here, the commit target's post-save
+    // comparison is the only external-change detector for this window: it
+    // forgives exactly the participant transformations this document is
+    // configured for (see readSaveParticipantPolicy) and conflicts on the rest.
     await withApplyingEditFlag(
       (nextIsApplyingEdit) => {
         this.isApplyingEdit = nextIsApplyingEdit;
@@ -724,6 +741,12 @@ export class MarkdownEditorPanel {
   }
 
   private updateTitle(): void {
+    // ExtHostWebviewPanel asserts on the title setter once VS Code disposes
+    // the panel. The close-time flush keeps mutating session state after
+    // onDidDispose (prepareClose emits synchronously, and the commit path
+    // calls updateTitle directly), so every panel-scoped UI write has to be
+    // gated the same way postMessage already is.
+    if (this.panelDisposed) return;
     const status = this.sync?.getSnapshot().session.status;
     const unsaved =
       this.document.isDirty ||
@@ -735,6 +758,10 @@ export class MarkdownEditorPanel {
   }
 
   private updateStatusBar(): void {
+    // `panel.active` asserts after dispose, and onDidDispose has already
+    // disposed statusBarItem through `this.disposables`, so there is no
+    // surviving surface to update once the panel is gone.
+    if (this.panelDisposed) return;
     const session = this.sync?.getSnapshot().session;
     if (!this.panel.active || !session) {
       this.statusBarItem.hide();

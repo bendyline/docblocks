@@ -25,4 +25,12 @@ program.addCommand(themesCommand);
 program.addCommand(transformsCommand);
 program.addCommand(parseCommand);
 
-program.parse();
+// Every action handler is async, and Commander does not await them from
+// parse() — an action that rejects would surface as an unhandled rejection and
+// a raw stack trace. parseAsync() plus this catch gives every command the same
+// `Error: <message>` contract that build/parse already implement internally.
+program.parseAsync().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`Error: ${message}`);
+  process.exitCode = 1;
+});

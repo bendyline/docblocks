@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -80,6 +80,87 @@ describe('CLI video cancellation', function () {
     });
 
     expect(progress).to.deep.equal([0, 40, 100]);
+  });
+});
+
+describe('CLI video output safety', function () {
+  this.timeout(30_000);
+
+  let tempRoot = '';
+
+  beforeEach(async () => {
+    tempRoot = await mkdtemp(join(tmpdir(), 'docblocks-video-overwrite-'));
+  });
+
+  afterEach(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+
+  it('refuses to overwrite an existing MP4 before rendering it', async () => {
+    const inputPath = join(tempRoot, 'input.md');
+    const outputPath = join(tempRoot, 'input.mp4');
+    await writeFile(inputPath, '# Input', 'utf8');
+    await writeFile(outputPath, 'hand-authored video', 'utf8');
+    let rendered = false;
+    const renderDocToMp4: NonNullable<VideoRunDependencies['renderDocToMp4']> = async () => {
+      rendered = true;
+      return { outputPath, duration: 1, frameCount: 2 };
+    };
+
+    let caught: unknown;
+    try {
+      await runVideo(inputPath, {}, undefined, { renderDocToMp4 });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    const message = (caught as Error).message;
+    expect(message).to.include('Refusing to overwrite');
+    expect(message).to.include(outputPath);
+    expect(message).to.include('--allow-overwrite');
+    // The refusal must precede the expensive capture/encode work entirely.
+    expect(rendered).to.equal(false);
+    expect(await readFile(outputPath, 'utf8')).to.equal('hand-authored video');
+  });
+
+  it('renders over an existing MP4 when overwrite is allowed', async () => {
+    const inputPath = join(tempRoot, 'input.md');
+    const outputPath = join(tempRoot, 'input.mp4');
+    await writeFile(inputPath, '# Input', 'utf8');
+    await writeFile(outputPath, 'hand-authored video', 'utf8');
+    let rendered = false;
+    const renderDocToMp4: NonNullable<VideoRunDependencies['renderDocToMp4']> = async () => {
+      rendered = true;
+      return { outputPath, duration: 1, frameCount: 2 };
+    };
+
+    const result = await runVideo(inputPath, { allowOverwrite: true }, undefined, {
+      renderDocToMp4,
+    });
+
+    expect(rendered).to.equal(true);
+    expect(result.outputPath).to.equal(outputPath);
+  });
+
+  it('renders normally when the default output does not exist', async () => {
+    const inputPath = join(tempRoot, 'input.md');
+    const outputPath = join(tempRoot, 'input.mp4');
+    await writeFile(inputPath, '# Input', 'utf8');
+    let receivedOutputPath: string | undefined;
+    const renderDocToMp4: NonNullable<VideoRunDependencies['renderDocToMp4']> = async (
+      _doc,
+      _container,
+      options,
+    ) => {
+      receivedOutputPath = options.outputPath;
+      return { outputPath, duration: 1, frameCount: 2 };
+    };
+
+    const result = await runVideo(inputPath, {}, undefined, { renderDocToMp4 });
+
+    expect(receivedOutputPath).to.equal(outputPath);
+    expect(result.frameCount).to.equal(2);
   });
 });
 

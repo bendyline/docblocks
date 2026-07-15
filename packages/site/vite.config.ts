@@ -146,7 +146,13 @@ const docblocksPwa = (): Plugin[] =>
       navigateFallback: 'index.html',
       // Only the root editor is an app-shell route. Static product pages,
       // crawl files, and custom 404s must resolve to their own responses.
-      navigateFallbackAllowlist: [/^\/$/],
+      // Workbox tests this against `url.pathname + url.search`, so the query
+      // string has to be allowed explicitly: the manifest's "New document"
+      // jump-list shortcut navigates to `/?action=new`, and a bare `/^\/$/`
+      // would send it to the network (a browser error page when offline).
+      // The optional group keeps the fallback pinned to the root — the
+      // static routes above still resolve to their own precached documents.
+      navigateFallbackAllowlist: [/^\/(\?.*)?$/],
       cleanupOutdatedCaches: true,
       // Paired with registerType 'prompt': the waiting SW takes over only
       // when the user accepts the reload.

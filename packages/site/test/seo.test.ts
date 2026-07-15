@@ -19,6 +19,38 @@ async function read(relativePath: string): Promise<string> {
   return readFile(path.join(SITE_ROOT, relativePath), 'utf8');
 }
 
+/** The `[...]` body of the workbox `navigateFallbackAllowlist` option. */
+function extractAllowlistSource(config: string): string {
+  const source = config.match(/navigateFallbackAllowlist:\s*\[([^\]]*)\]/)?.[1];
+  expect(source, 'navigateFallbackAllowlist literal').to.be.a('string');
+  return source ?? '';
+}
+
+/** Rebuild the regex literals written in the config as real RegExp objects. */
+function parseRegexLiterals(source: string): RegExp[] {
+  return [...source.matchAll(/\/((?:[^/\\]|\\.)+)\/([gimsuy]*)/g)].map(
+    ([, pattern, flags]) => new RegExp(pattern, flags),
+  );
+}
+
+/** Quoted string values of a manifest key, e.g. `start_url` or `url`. */
+function extractManifestValues(config: string, key: string): string[] {
+  return [...config.matchAll(new RegExp(String.raw`\b${key}:\s*'([^']+)'`, 'g'))].map(
+    ([, value]) => value,
+  );
+}
+
+/**
+ * Mirror of workbox's NavigationRoute matching: the allowlist regexes are
+ * tested against the concatenated pathname and search, not the pathname
+ * alone (workbox-routing/NavigationRoute.js).
+ */
+function matchesAllowlist(allowlist: RegExp[], url: string): boolean {
+  const parsed = new URL(url, 'https://docblocks.com');
+  const pathnameAndSearch = parsed.pathname + parsed.search;
+  return allowlist.some((pattern) => pattern.test(pathnameAndSearch));
+}
+
 function expectIndexableDocument(html: string, canonicalUrl: string): void {
   expect(html).to.include('<html lang="en">');
   expect(html).to.match(/<title>[^<]+<\/title>/);
@@ -95,10 +127,44 @@ describe('site SEO surface', () => {
   it('keeps the service-worker fallback scoped to the root editor', async () => {
     const config = await read('vite.config.ts');
     expect(config).to.include("appType: 'mpa'");
-    expect(config).to.include('navigateFallbackAllowlist: [/^\\/$/]');
     expect(config).to.include('SITE_PRECACHE_GLOB');
     for (const extension of ['webmanifest', 'txt', 'xml']) {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
+    }
+
+    const allowlist = parseRegexLiterals(extractAllowlistSource(config));
+    expect(allowlist.length, 'navigateFallbackAllowlist entries').to.be.greaterThan(0);
+
+    // The root editor is the app shell and must fall back to index.html.
+    expect(matchesAllowlist(allowlist, '/'), '/').to.equal(true);
+
+    // Everything else owns its own precached response — the fallback must
+    // never replace a static product page, a crawl file, or the custom 404.
+    for (const route of MARKETING_ROUTES) {
+      expect(matchesAllowlist(allowlist, `/${route}/`), `/${route}/`).to.equal(false);
+    }
+    for (const file of ['/robots.txt', '/sitemap.xml', '/404.html', '/og.png']) {
+      expect(matchesAllowlist(allowlist, file), file).to.equal(false);
+    }
+  });
+
+  it('resolves every manifest entry point through the navigation fallback', async () => {
+    // Regression guard: workbox matches the allowlist against
+    // `url.pathname + url.search`, so a root-only `/^\/$/` silently excludes
+    // the "New document" shortcut's `/?action=new` — the jump-list entry then
+    // hits the network and shows a browser error page offline. Any URL the
+    // manifest advertises as an entry point has to survive the allowlist.
+    const config = await read('vite.config.ts');
+    const allowlist = parseRegexLiterals(extractAllowlistSource(config));
+
+    const entryPoints = [
+      ...extractManifestValues(config, 'start_url'),
+      ...extractManifestValues(config, 'url'),
+    ];
+    expect(entryPoints, 'manifest entry points').to.include('/?action=new');
+
+    for (const entryPoint of entryPoints) {
+      expect(matchesAllowlist(allowlist, entryPoint), entryPoint).to.equal(true);
     }
   });
 

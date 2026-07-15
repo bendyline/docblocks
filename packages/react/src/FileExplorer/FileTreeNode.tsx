@@ -67,9 +67,19 @@ export function FileTreeNode({
   const [renameValue, setRenameValue] = useState(entry.name);
   const [showContext, setShowContext] = useState(false);
   const [contextPos, setContextPos] = useState({ x: 0, y: 0 });
+  /** Failure from this row's own async actions (delete/rename). */
+  const [actionError, setActionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
+  /**
+   * Latches once a rename attempt is under way. The input submits from both
+   * Enter and blur, and Enter can be followed by a blur (the row re-renders
+   * or focus moves while `onRename` is still in flight) — without this the
+   * same rename fires twice, the second against an entry that no longer
+   * exists.
+   */
+  const renameSubmittedRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
   const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
@@ -97,29 +107,51 @@ export function FileTreeNode({
   }, []);
 
   const handleRenameStart = useCallback(() => {
+    renameSubmittedRef.current = false;
+    setActionError(null);
     setRenameValue(entry.name);
     setRenaming(true);
     setShowContext(false);
   }, [entry.name]);
 
+  /** Abandon the rename and make sure a trailing blur cannot submit it. */
+  const handleRenameCancel = useCallback(() => {
+    renameSubmittedRef.current = true;
+    setRenaming(false);
+  }, []);
+
   const handleRenameSubmit = useCallback(async () => {
+    if (renameSubmittedRef.current) return;
+    renameSubmittedRef.current = true;
+
     if (renameValue && renameValue !== entry.name) {
       const parentPath = entry.path.includes('/')
         ? entry.path.slice(0, entry.path.lastIndexOf('/'))
         : '';
       const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
-      await onRename(entry.path, newPath, entry.kind);
+      try {
+        await onRename(entry.path, newPath, entry.kind);
+      } catch (caught: unknown) {
+        setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+      }
     }
     setRenaming(false);
   }, [renameValue, entry.name, entry.path, entry.kind, onRename]);
 
   const handleDeleteClick = useCallback(async () => {
     setShowContext(false);
+    setActionError(null);
     const description = entry.kind === 'directory' ? 'folder and everything inside it' : 'document';
     if (!window.confirm(`Delete the ${description} "${entry.name}"? This cannot be undone.`)) {
       return;
     }
-    await onDelete(entry.path, entry.kind);
+    try {
+      await onDelete(entry.path, entry.kind);
+    } catch (caught: unknown) {
+      // The explorer surfaces rename failures itself but lets delete
+      // failures reject; without this the row silently keeps the entry.
+      setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
+    }
   }, [entry.name, entry.path, entry.kind, onDelete]);
 
   // Close context menu on outside click or scroll
@@ -130,13 +162,20 @@ export function FileTreeNode({
         setShowContext(false);
       }
     }
+    // Named so the cleanup can actually remove it. An inline arrow left a
+    // listener behind on every menu that closed by click rather than
+    // scroll, each one firing setState on a possibly-unmounted row.
+    function handleScrollClose() {
+      setShowContext(false);
+    }
     // Use click (not mousedown) so menu button clicks register first
     document.addEventListener('click', handleClose, true);
     document.addEventListener('contextmenu', handleClose, true);
-    document.addEventListener('scroll', () => setShowContext(false), { capture: true, once: true });
+    document.addEventListener('scroll', handleScrollClose, { capture: true, once: true });
     return () => {
       document.removeEventListener('click', handleClose, true);
       document.removeEventListener('contextmenu', handleClose, true);
+      document.removeEventListener('scroll', handleScrollClose, true);
     };
   }, [showContext]);
 
@@ -192,6 +231,10 @@ export function FileTreeNode({
         aria-label={badge ? `${entry.name}, ${badge.label}` : undefined}
         tabIndex={0}
         onKeyDown={(e) => {
+          // Only the row itself activates on Enter. Keystrokes from nested
+          // controls (the rename input) must not open the row underneath —
+          // that raced a rename against a load of the pre-rename path.
+          if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter') handleClick();
         }}
       >
@@ -202,10 +245,15 @@ export function FileTreeNode({
             className="db-tree-rename-input"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRenameSubmit}
+            onBlur={() => void handleRenameSubmit()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameSubmit();
-              if (e.key === 'Escape') setRenaming(false);
+              if (e.key !== 'Enter' && e.key !== 'Escape') return;
+              // Belt and braces with the row's own target guard: the row
+              // must never see these keys.
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'Enter') void handleRenameSubmit();
+              else handleRenameCancel();
             }}
             onClick={(e) => e.stopPropagation()}
           />
@@ -234,6 +282,12 @@ export function FileTreeNode({
           </>
         )}
       </div>
+
+      {actionError && (
+        <div className="db-tree-error" role="alert">
+          {actionError}
+        </div>
+      )}
 
       {/* Context menu — portaled so ancestor overflow:hidden doesn't clip it */}
       {showContext &&

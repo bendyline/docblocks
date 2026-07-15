@@ -1,6 +1,7 @@
 import { test, expect, type FrameLocator, type Page } from '@playwright/test';
 
 const fixturePath = 'test-fixtures/test-doc.md';
+const exportFixturePath = 'test-fixtures/test-doc-export.md';
 const editSentinel = 'VS Code webview edit sync sentinel';
 
 async function bootVSCode(page: Page): Promise<void> {
@@ -85,6 +86,16 @@ async function writeFixture(content: string): Promise<void> {
   await fs.writeFile(fixturePath, content);
 }
 
+async function removeExportFixture(): Promise<void> {
+  const fs = await import('node:fs/promises');
+  await fs.rm(exportFixturePath, { force: true });
+}
+
+async function prepareExportFixture(): Promise<void> {
+  const fs = await import('node:fs/promises');
+  await fs.writeFile(exportFixturePath, '');
+}
+
 test.describe('VS Code web and UX integration', () => {
   let originalFixture = '';
 
@@ -94,10 +105,12 @@ test.describe('VS Code web and UX integration', () => {
 
   test.afterAll(async () => {
     await writeFixture(originalFixture);
+    await removeExportFixture();
   });
 
   test.beforeEach(async () => {
     await writeFixture(originalFixture);
+    await prepareExportFixture();
   });
 
   test('opens setup from the command palette and completes visible environment checks', async ({
@@ -146,6 +159,35 @@ test.describe('VS Code web and UX integration', () => {
 
     await previewTab.click();
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
+  });
+
+  test('exports Markdown bytes through the VS Code save-dialog authority boundary', async ({
+    page,
+  }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    await editor.getByRole('button', { name: /export document/i }).click();
+    const dialog = editor.getByRole('dialog', { name: 'Export Document' });
+    await dialog.getByRole('radio', { name: 'Markdown' }).click();
+    await dialog.getByRole('button', { name: 'Choose export location' }).click();
+
+    const saveDialog = page.locator('.quick-input-widget');
+    await expect(saveDialog).toBeVisible({ timeout: 10_000 });
+    const saveInput = saveDialog.locator('input').first();
+    await saveInput.fill('test-doc-export.md');
+    await saveDialog.getByRole('option', { name: 'test-doc-export.md', exact: true }).click();
+    await saveDialog.getByRole('button', { name: 'OK', exact: true }).click();
+
+    await expect(dialog.getByLabel('Export to')).toHaveValue(/test-doc-export\.md/u);
+    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+
+    await openTextEditorWithOpenWith(page, 'test-doc-export.md');
+    await expect(page.locator('.monaco-editor .view-lines')).toContainText('# Test Document', {
+      timeout: 10_000,
+    });
   });
 
   test('opens a trailing-newline document without authoring or saving a hydration edit', async ({

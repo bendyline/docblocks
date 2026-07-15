@@ -13,8 +13,10 @@
 import { test, expect } from './fixtures.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
+import { deriveWorkspaceId } from '../main/workspace-id.js';
 
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -147,6 +149,29 @@ test('export dialog exposes a remembered native target control', async ({ launch
   await expect(exportTarget).toBeVisible();
   await expect(exportTarget).toHaveValue(/aboutDocBlocks\.pdf$/);
   await expect(window.getByRole('button', { name: 'Choose export location' })).toBeVisible();
+});
+
+test('exports exact Markdown bytes through the remembered native target', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  const target = path.join(userDataDir, 'exported-about.md');
+  prepareRememberedExportTarget(userDataDir, workspaceDir, target);
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  await window.locator('.db-toolbar-menu-trigger').click();
+  await window.getByRole('menuitem', { name: 'Export...' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Export Document' });
+  await dialog.getByRole('radio', { name: 'Markdown' }).click();
+  await expect(dialog.getByLabel('Export to')).toHaveValue(target);
+  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+
+  await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
+  const exported = fs.readFileSync(target, 'utf8');
+  expect(exported.length).toBeGreaterThan(100);
+  expect(exported).toContain('# DocBlocks: the local-first Markdown editor');
 });
 
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {
@@ -338,4 +363,25 @@ async function readDbkDocument(filePath: string, documentName: string): Promise<
     // Poll through the origin's atomic replacement window.
     return '';
   }
+}
+
+function prepareRememberedExportTarget(
+  userDataDir: string,
+  workspaceDir: string,
+  target: string,
+): void {
+  const workspaceId = deriveWorkspaceId(fs.realpathSync.native(workspaceDir));
+  const access = { path: target, confirmedByPicker: true as const };
+  const exportTargets: Record<string, { last: typeof access; byExtension: { md: typeof access } }> =
+    {};
+  for (const selectedFile of ['aboutDocBlocks.md', '/aboutDocBlocks.md']) {
+    const documentId = JSON.stringify([workspaceId, selectedFile]);
+    const key = createHash('sha256').update(documentId).digest('hex');
+    exportTargets[key] = { last: access, byExtension: { md: access } };
+  }
+  fs.writeFileSync(
+    path.join(userDataDir, 'settings.json'),
+    JSON.stringify({ workspaces: [], exportTargets }),
+    'utf8',
+  );
 }

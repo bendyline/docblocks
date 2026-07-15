@@ -371,6 +371,19 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     try {
       await this.deleteUnlocked(op);
     } catch (error: unknown) {
+      // Deleting a directory is not atomic: this can fail after some children
+      // are already gone, leaving the source gutted and the copy at the
+      // destination the only complete one in existence. Rebuild the source from
+      // that copy before removing it, and if the source cannot be made whole,
+      // keep the copy — deleting it would destroy the user's only data.
+      try {
+        await this.copyDirectory(np, op);
+      } catch (restoreError: unknown) {
+        throw new NativeMoveRecoveryError(
+          `Move partially deleted the source and it could not be restored; the copy at ${newPath} was kept: ${oldPath} -> ${newPath}`,
+          [error, restoreError],
+        );
+      }
       try {
         await this.deleteUnlocked(np);
       } catch (rollbackError: unknown) {

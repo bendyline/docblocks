@@ -186,8 +186,10 @@ async function main(): Promise<void> {
   }
   for (const requiredSuite of [
     'test:e2e',
+    'test:e2e:browsers',
     'test:e2e:offline',
     'test:e2e:vscode',
+    'test:e2e:vscode:desktop',
     'test:e2e:desktop',
     'test:e2e:desktop:packaged',
   ]) {
@@ -197,6 +199,10 @@ async function main(): Promise<void> {
   const vscodePackage = await readPackage('packages/vscode/package.json');
   requireScript(vscodePackage, 'typecheck', 'typecheck:extension');
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
+  requireScript(vscodePackage, 'typecheck', 'typecheck:desktop-e2e');
+  requireScript(vscodePackage, 'test:e2e:desktop-host', 'desktop-e2e/run.ts');
+  requireScript(rootPackage, 'coverage:critical', 'coverage:desktop-critical');
+  requireScript(rootPackage, 'coverage:critical', 'coverage:core-critical');
   for (const dependency of ['@bendyline/docblocks', '@bendyline/docblocks-react']) {
     requireUnversionedWorkspaceDependency(
       vscodePackage,
@@ -234,10 +240,12 @@ async function main(): Promise<void> {
     '.github/workflows/ci.yml': [
       'all',
       'test:e2e',
+      'test:e2e:browsers',
       'test:e2e:offline',
       'test:e2e:desktop',
       'test:e2e:packaged:only',
       'test:e2e:vscode',
+      'test:e2e:vscode:desktop',
     ],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],

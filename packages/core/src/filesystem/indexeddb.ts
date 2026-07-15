@@ -1,5 +1,6 @@
 /** Browser-local persistent filesystem provider entry point. */
 export { IndexedDBFileSystemProvider } from './indexeddb-provider.js';
+export { deleteIndexedDBWorkspaceData, indexedDBWorkspaceDatabaseName } from './indexeddb-store.js';
 export {
   IndexedDBFileSystemProviderV2,
   type IndexedDBFileSystemProviderV2Options,

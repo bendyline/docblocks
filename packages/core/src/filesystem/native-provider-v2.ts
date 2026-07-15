@@ -372,7 +372,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       }
       const createdParents = await this.createDirectories(missingParents);
       let destinationVersion: FileSystemVersion | null = null;
-      let sourceDeleted = false;
+      let sourceDeleteAttempted = false;
       try {
         await this.writeTree(source, sourcePath, destinationPath);
         const copied = await this.requireSnapshot(destinationPath, 'move');
@@ -398,8 +398,11 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           });
         }
 
+        // Recorded before the call, not after it: removing a directory is not
+        // atomic, so a failure partway through still leaves the source damaged
+        // and rollback must know the repair is ours to make.
+        sourceDeleteAttempted = true;
         await this.removeEntry(sourcePath, source.root.kind === 'directory');
-        sourceDeleted = true;
         const [sourceAfter, destinationAfter] = await Promise.all([
           this.tryScanMetadata(sourcePath, 'move'),
           this.tryScanMetadata(destinationPath, 'move'),
@@ -424,7 +427,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           source,
           createdParents,
           destinationVersion,
-          sourceDeleted,
+          sourceDeleteAttempted,
           error,
         );
       }
@@ -885,32 +888,57 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
     source: SnapshotScan,
     createdParents: readonly WorkspacePath[],
     destinationVersion: FileSystemVersion | null,
-    sourceDeleted: boolean,
+    sourceDeleteAttempted: boolean,
     primary: unknown,
   ): Promise<never> {
     const primaryError = this.translateError(primary, 'move', sourcePath, destinationPath);
     const recoveryErrors: FsError[] = [];
 
-    const sourceCurrent = await this.probeScan(sourcePath);
-    if (sourceCurrent === null && sourceDeleted) {
-      try {
-        await this.writeTree(source, sourcePath, sourcePath);
-        const restored = await this.probeSnapshot(sourcePath);
-        if (!restored || !equalTreeContents(source, sourcePath, restored, sourcePath)) {
-          throw new FsError('conflict', 'Restored source does not match its captured state.', {
-            operation: 'move',
-            path: sourcePath,
-            destinationPath,
-          });
+    // Whether the source still holds everything the move captured. If this move
+    // never reached the delete, the source is untouched and is not ours to
+    // rewrite — a source that changed underneath us is the caller's conflict,
+    // and restoring the captured copy over it would destroy that change.
+    let sourceWhole = true;
+    if (sourceDeleteAttempted) {
+      sourceWhole = await this.matchesCapturedSource(sourcePath, source);
+      if (!sourceWhole) {
+        try {
+          await this.writeTree(source, sourcePath, sourcePath);
+          const restored = await this.probeSnapshot(sourcePath);
+          if (!restored || !equalTreeContents(source, sourcePath, restored, sourcePath)) {
+            throw new FsError('conflict', 'Restored source does not match its captured state.', {
+              operation: 'move',
+              path: sourcePath,
+              destinationPath,
+            });
+          }
+          sourceWhole = true;
+        } catch (error: unknown) {
+          recoveryErrors.push(this.translateError(error, 'move', sourcePath, destinationPath));
         }
-      } catch (error: unknown) {
-        recoveryErrors.push(this.translateError(error, 'move', sourcePath, destinationPath));
       }
     }
 
     const destinationCurrent = await this.probeScan(destinationPath);
     if (destinationCurrent) {
-      if (destinationVersion && destinationCurrent.root.version !== destinationVersion) {
+      if (!sourceWhole) {
+        // Removing a directory is not atomic, so the delete above can fail with
+        // the source root still present but children already gone. The copy at
+        // the destination is then the only complete one in existence: deleting
+        // it to "undo" the move would destroy the user's data outright. Keep it
+        // and report loudly instead.
+        recoveryErrors.push(
+          new FsError(
+            'conflict',
+            'Source is incomplete; rollback kept the copy at the destination.',
+            {
+              operation: 'move',
+              path: sourcePath,
+              destinationPath,
+            },
+          ),
+        );
+      } else if (destinationVersion && destinationCurrent.root.version !== destinationVersion) {
         recoveryErrors.push(
           new FsError('conflict', 'Destination changed; rollback will not delete it.', {
             operation: 'move',
@@ -946,6 +974,22 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       recoveryErrors,
       state,
     );
+  }
+
+  /**
+   * Whether the source still holds exactly the bytes the move captured.
+   *
+   * A probe that fails answers "no": rollback must never treat an unverifiable
+   * source as whole, because that is precisely what licenses deleting the copy
+   * at the destination.
+   */
+  private async matchesCapturedSource(
+    sourcePath: WorkspacePath,
+    source: SnapshotScan,
+  ): Promise<boolean> {
+    const current = await this.probeSnapshot(sourcePath);
+    if (!current) return false;
+    return equalTreeContents(source, sourcePath, current, sourcePath);
   }
 
   private async probeScan(path: WorkspacePath): Promise<MetadataScan | null | undefined> {

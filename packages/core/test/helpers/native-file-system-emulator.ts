@@ -37,12 +37,19 @@ interface ObservedOperation {
   readonly path: string;
 }
 
+interface PartialRemoval {
+  readonly path: string;
+  readonly deletedChildNames: readonly string[];
+  readonly error: unknown;
+}
+
 /** Stateful File System Access API emulator used by native-v2 conformance tests. */
 export class NativeFileSystemEmulator {
   public readonly rootHandle: FileSystemDirectoryHandle;
 
   private readonly root: DirectoryNode;
   private readonly faults: InjectedFault[] = [];
+  private readonly partialRemovals: PartialRemoval[] = [];
   private readonly observedOperations: ObservedOperation[] = [];
   private clock = 1;
 
@@ -69,6 +76,25 @@ export class NativeFileSystemEmulator {
       path: parseWorkspacePath(path),
       error,
       remainingMatches: occurrence - 1,
+    });
+  }
+
+  /**
+   * Make the next removal of `path` delete `deletedChildNames` and then fail,
+   * the way a real filesystem does when it cannot unlink one entry partway
+   * through a recursive delete. Ordinary injected faults throw before touching
+   * anything, so they cannot express the state this models: a directory that is
+   * still present but has already lost children.
+   */
+  public failRemoveAfterDeleting(
+    path: string,
+    deletedChildNames: readonly string[],
+    error: unknown,
+  ): void {
+    this.partialRemovals.push({
+      path: parseWorkspacePath(path),
+      deletedChildNames: [...deletedChildNames],
+      error,
     });
   }
 
@@ -153,6 +179,13 @@ export class NativeFileSystemEmulator {
         if (child.kind === 'directory' && child.children.size > 0 && !options.recursive) {
           throw domError('InvalidModificationError');
         }
+        const partial = this.consumePartialRemoval(childPath);
+        if (partial) {
+          if (child.kind === 'directory') {
+            for (const victim of partial.deletedChildNames) child.children.delete(victim);
+          }
+          throw partial.error;
+        }
         node.children.delete(name);
       },
       [Symbol.asyncIterator]: async function* (): AsyncGenerator<
@@ -218,6 +251,13 @@ export class NativeFileSystemEmulator {
       },
     };
     return handle as unknown as FileSystemFileHandle;
+  }
+
+  private consumePartialRemoval(path: string): PartialRemoval | null {
+    const index = this.partialRemovals.findIndex((removal) => removal.path === path);
+    if (index < 0) return null;
+    const [removal] = this.partialRemovals.splice(index, 1);
+    return removal;
   }
 
   private consumeFault(operation: NativeEmulatorOperation, path: string): void {

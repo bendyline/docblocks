@@ -5,7 +5,7 @@
  * Wraps the squisq-cli's renderDocToMp4 programmatic API.
  */
 
-import { mkdir } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
 import { dirname, basename, extname, resolve } from 'node:path';
 import { Command } from 'commander';
 import {
@@ -35,6 +35,11 @@ export interface VideoOptions {
   captions?: CaptionOption;
   width?: number;
   height?: number;
+  /**
+   * Replace an existing MP4. Off by default: the render is refused before any
+   * reading, browser capture, or FFmpeg encoding when the target exists.
+   */
+  allowOverwrite?: boolean;
   /** Cancel input preparation, browser capture, or FFmpeg encoding. */
   signal?: AbortSignal;
 }
@@ -102,6 +107,20 @@ export async function runVideo(
   const outputPath = opts.output
     ? resolve(opts.output)
     : resolve(dirname(resolvedInput), `${baseName}.mp4`);
+
+  // Refuse before reading, capturing, or encoding. The linked renderer and
+  // FFmpeg own the write itself, so this check is the only point at which an
+  // existing MP4 can be protected.
+  if (opts.allowOverwrite !== true && (await lstat(outputPath).catch(() => null))) {
+    throw new Error(
+      [
+        'Refusing to overwrite an existing file:',
+        `  ${outputPath}`,
+        'Pass --allow-overwrite to replace it, or use --output to write elsewhere.',
+      ].join('\n'),
+    );
+  }
+  throwIfAborted(opts.signal);
 
   await mkdir(dirname(outputPath), { recursive: true });
   throwIfAborted(opts.signal);
@@ -208,6 +227,7 @@ interface VideoCommandOptions {
   captions?: string;
   width?: string;
   height?: string;
+  allowOverwrite?: boolean;
 }
 
 export const videoCommand = new Command('video')
@@ -225,6 +245,7 @@ export const videoCommand = new Command('video')
   .option('--captions <style>', `Caption style: ${VALID_CAPTIONS.join(', ')}`, 'off')
   .option('--width <pixels>', 'Override video width')
   .option('--height <pixels>', 'Override video height')
+  .option('--allow-overwrite', 'replace an existing output MP4 instead of refusing the run')
   .action(async (inputPath: string, outputArg: string | undefined, opts: VideoCommandOptions) => {
     try {
       if (outputArg && !opts.output) {
@@ -238,6 +259,7 @@ export const videoCommand = new Command('video')
         captions: opts.captions as CaptionOption,
         width: opts.width ? parseNumberOption('--width', opts.width) : undefined,
         height: opts.height ? parseNumberOption('--height', opts.height) : undefined,
+        allowOverwrite: opts.allowOverwrite,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

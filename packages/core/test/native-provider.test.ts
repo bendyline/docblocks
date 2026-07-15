@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { NativeFileSystemProvider } from '../src/filesystem/native-provider.js';
+import { NativeFileSystemEmulator, nativeDomError } from './helpers/native-file-system-emulator.js';
 
 function domError(name: string, message = name): DOMException {
   return new DOMException(message, name);
@@ -164,4 +165,50 @@ describe('NativeFileSystemProvider', () => {
     expect((error as DOMException).name).to.equal('NotAllowedError');
     expect(removed).to.deep.equal(['source.md', 'destination.md']);
   });
+
+  it('restores a directory gutted by a partial delete and removes the copy', async () => {
+    const fileSystem = new NativeFileSystemEmulator();
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    // Removing a directory is not atomic: the delete takes 'a.md' and then
+    // fails, leaving the source present but missing a child.
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+
+    const provider = new NativeFileSystemProvider('native-partial-delete', fileSystem.rootHandle);
+    const error = await captureRejection(() => provider.rename('/source', '/destination'));
+
+    expect((error as DOMException).name).to.equal('NotAllowedError');
+    expect(fileSystem.readBytes('/source/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/source/b.md')).to.deep.equal([...encoded('bravo')]);
+    expect(fileSystem.exists('/destination')).to.equal(false);
+  });
+
+  it('keeps the copy when a directory gutted by a partial delete cannot be restored', async () => {
+    const fileSystem = new NativeFileSystemEmulator();
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+    // Rebuilding the source from the copy fails too, so it cannot be made whole.
+    fileSystem.failNext('write', '/source/a.md', nativeDomError('NotAllowedError', 'read-only'));
+
+    const provider = new NativeFileSystemProvider('native-partial-keep', fileSystem.rootHandle);
+    const error = await captureRejection(() => provider.rename('/source', '/destination'));
+
+    // The copy is the only complete one left; rollback must not delete it.
+    expect((error as Error).name).to.equal('NativeMoveRecoveryError');
+    expect(fileSystem.readBytes('/destination/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/destination/b.md')).to.deep.equal([...encoded('bravo')]);
+  });
 });
+
+function encoded(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}

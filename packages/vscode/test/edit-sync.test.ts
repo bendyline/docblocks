@@ -271,6 +271,68 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('accepts a configured trimTrailingWhitespace rewrite during its own save', async () => {
+    const adapter = new FakeDocumentAdapter();
+    // Markdown hard line breaks are trailing double-spaces, so this is what
+    // every save looks like for a user with files.trimTrailingWhitespace on.
+    adapter.transformOnSave = (content) => content.replace(/[^\S\n]+$/gmu, '');
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+      readSaveParticipantPolicy: () => ({ trimTrailingWhitespace: true }),
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'hard break  \nnext  \n'));
+
+    await sync.save(saveEnvelope(sync));
+
+    expect(adapter.content).to.equal('hard break\nnext\n');
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('conflicts on a trailing-whitespace rewrite when trimTrailingWhitespace is off', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.transformOnSave = (content) => content.replace(/[^\S\n]+$/gmu, '');
+    // Default policy: nothing beyond VS Code's own newline handling.
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'hard break  \nnext  \n'));
+
+    const failure = await sync.save(saveEnvelope(sync)).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('hard break  \nnext  \n');
+    sync.dispose();
+  });
+
+  it('still conflicts on a non-whitespace rewrite even with trimming configured', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.transformOnSave = () => 'someone else entirely';
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+      readSaveParticipantPolicy: () => ({ trimTrailingWhitespace: true }),
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local  \n'));
+
+    const failure = await sync.save(saveEnvelope(sync)).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('local  \n');
+    sync.dispose();
+  });
+
   it('still conflicts when save-time changes include non-newline characters', async () => {
     const adapter = new FakeDocumentAdapter();
     adapter.transformOnSave = (content) => `${content}external`;

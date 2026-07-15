@@ -5,7 +5,7 @@ export default defineConfig({
   // The offline/PWA spec needs a production build (the service worker never
   // registers on the dev server this config starts) — it runs from
   // playwright.offline.config.ts via `npm run test:e2e:offline`.
-  testIgnore: '**/offline.spec.ts',
+  testIgnore: ['**/offline.spec.ts', '**/cross-browser.spec.ts'],
   // Site tests exercise a first-run IndexedDB workspace at one origin. Keep
   // them serialized so startup, seeding, and mutation assertions are not
   // competing for browser/storage resources on high-core developer machines.

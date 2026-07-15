@@ -9,7 +9,11 @@
 import type { FileCommitResult, FileMeta, FileSystemEntry, FileSystemProvider } from './types.js';
 import { FsError, type FsOperation } from './fs-error.js';
 import { parseWorkspacePath, type WorkspacePath } from './workspace-path.js';
-import { RawIndexedDBFileSystemStore, type IndexedDBFileSystemStore } from './indexeddb-store.js';
+import {
+  RawIndexedDBFileSystemStore,
+  indexedDBWorkspaceDatabaseName,
+  type IndexedDBFileSystemStore,
+} from './indexeddb-store.js';
 import { IndexedDBFileSystemProviderV2 } from './indexeddb-provider-v2.js';
 
 export interface IndexedDBFileSystemProviderOptions {
@@ -29,7 +33,8 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
   public constructor(id: string, label: string, options: IndexedDBFileSystemProviderOptions = {}) {
     this.id = id;
     this.label = label;
-    const store = options.store ?? new RawIndexedDBFileSystemStore(`docblocks-fs-${id}`, 'files');
+    const store =
+      options.store ?? new RawIndexedDBFileSystemStore(indexedDBWorkspaceDatabaseName(id), 'files');
     this.v2 = new IndexedDBFileSystemProviderV2(id, label, {
       store,
       now: options.now,

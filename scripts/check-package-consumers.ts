@@ -46,12 +46,20 @@ const packages: readonly PackageUnderTest[] = [
       '@bendyline/docblocks/document',
       '@bendyline/docblocks/workspace',
       '@bendyline/docblocks/host',
+      '@bendyline/docblocks/share',
+      '@bendyline/docblocks/vscode',
+      '@bendyline/docblocks/mcp',
+      '@bendyline/docblocks/mcp/zod',
     ],
   },
   {
     name: '@bendyline/docblocks-react',
     directory: 'packages/react',
-    runtimeImports: ['@bendyline/docblocks-react/settings'],
+    runtimeImports: [
+      '@bendyline/docblocks-react/export',
+      '@bendyline/docblocks-react/settings',
+      '@bendyline/docblocks-react/editor',
+    ],
   },
   {
     name: '@bendyline/docblocks-cli',
@@ -369,7 +377,7 @@ async function main(): Promise<void> {
     );
     await writeFile(
       path.join(consumerRoot, 'browser.ts'),
-      "import * as docblocksReact from '@bendyline/docblocks-react';\nvoid docblocksReact;\n",
+      "import * as docblocksReact from '@bendyline/docblocks-react';\nimport '@bendyline/docblocks-react/styles';\nvoid docblocksReact;\n",
     );
     await writeFile(
       path.join(consumerRoot, 'vite.config.mjs'),

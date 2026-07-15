@@ -8,6 +8,7 @@ import {
 import { withFileCommitLock } from './commit-lock.js';
 import {
   RawIndexedDBFileSystemStore,
+  indexedDBWorkspaceDatabaseName,
   type IndexedDBFileSystemStore,
   type IndexedDBFileSystemTransaction,
   type IndexedDBFileSystemTransactionMode,
@@ -195,7 +196,8 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
   ) {
     this.id = id;
     this.label = label;
-    this.store = options.store ?? new RawIndexedDBFileSystemStore(`docblocks-fs-${id}`, 'files');
+    this.store =
+      options.store ?? new RawIndexedDBFileSystemStore(indexedDBWorkspaceDatabaseName(id), 'files');
     this.now = options.now ?? (() => new Date());
     this.closeStoreOnDispose = options.closeStoreOnDispose ?? true;
     this.versionPrefix = `idb-${encodeURIComponent(id).slice(0, 900) || 'workspace'}`;

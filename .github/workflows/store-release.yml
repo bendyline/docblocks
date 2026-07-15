@@ -81,7 +81,9 @@ jobs:
       - name: Read desktop version
         id: desktop
         shell: bash
-        run: echo "version=$(node -p \"require('./packages/desktop/package.json').version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(node --print "require('./packages/desktop/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # A unique, previously unpublished tag keeps reruns isolated. GitHub does
       # not publish the release or its tag while the release remains a draft.

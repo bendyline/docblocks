@@ -14,6 +14,12 @@ export interface ExportDialogProps {
   initial: ExportOptions;
   /** Whether the export is currently running. */
   exporting: boolean;
+  /**
+   * Message from a failed export attempt. Rendered in the dialog, which
+   * stays open so the user can adjust options and retry — a failure must
+   * never look like a success.
+   */
+  error?: string | null;
   /** Optional host-provided destination path control. */
   destination?: ExportDestinationControl;
   /** Called when the user confirms the export. */
@@ -110,6 +116,7 @@ function ChipRadioGroup<T extends string>({
 export function ExportDialog({
   initial,
   exporting,
+  error,
   destination,
   onExport,
   onOptionsChange,
@@ -414,6 +421,12 @@ export function ExportDialog({
             <option value="a4">A4</option>
           </select>
         </div>
+      )}
+
+      {error && (
+        <p className="db-export-error" role="alert">
+          {error}
+        </p>
       )}
     </Dialog>
   );

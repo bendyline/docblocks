@@ -10,6 +10,43 @@
 
 export type IndexedDBFileSystemTransactionMode = 'readonly' | 'readwrite';
 
+/** The database holding one browser-local workspace's files. */
+export function indexedDBWorkspaceDatabaseName(workspaceId: string): string {
+  return `docblocks-fs-${workspaceId}`;
+}
+
+/**
+ * Delete a database and everything in it.
+ *
+ * Open connections do not have to be closed first: deletion fires
+ * `versionchange` on them, and this module's connections close themselves in
+ * response, after which the deletion proceeds. A `blocked` event is therefore
+ * transient (an in-flight transaction) and is deliberately not treated as a
+ * failure — the deletion still completes once that transaction finishes.
+ */
+export function deleteIndexedDBDatabase(databaseName: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') {
+    return Promise.reject(new Error('IndexedDB is not available in this environment.'));
+  }
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(databaseName);
+    request.onsuccess = () => resolve();
+    request.onerror = () =>
+      reject(request.error ?? new Error(`Failed to delete the "${databaseName}" database.`));
+  });
+}
+
+/**
+ * Delete a browser-local workspace's stored files.
+ *
+ * Removing a workspace descriptor alone leaves these bytes behind: invisible to
+ * the user, still counted against the origin's quota, and ready to reappear
+ * under any later workspace that reuses the same id.
+ */
+export function deleteIndexedDBWorkspaceData(workspaceId: string): Promise<void> {
+  return deleteIndexedDBDatabase(indexedDBWorkspaceDatabaseName(workspaceId));
+}
+
 export interface IndexedDBFileSystemTransaction {
   get<T>(key: string): Promise<T | null>;
   put<T>(key: string, value: T): Promise<void>;

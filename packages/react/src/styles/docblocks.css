@@ -4174,7 +4174,8 @@ button.db-git-file-row:hover {
   box-sizing: border-box;
 }
 
-.db-git-form-error {
+.db-git-form-error,
+.db-export-error {
   margin: 8px 0 0;
   color: var(--db-danger);
   font-size: 12.5px;

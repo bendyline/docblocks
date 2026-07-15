@@ -44,6 +44,15 @@ export class PwaStateStore {
     });
   }
 
+  /**
+   * Acknowledge the install failure and hide the alert. The editor stays
+   * usable online, so this is advisory — a reload re-runs the install and
+   * surfaces the alert again if it still fails.
+   */
+  public dismissInstallError(): void {
+    this.setState({ installError: null });
+  }
+
   private setState(patch: Partial<PwaState>): void {
     const next = { ...this.state, ...patch };
     if (

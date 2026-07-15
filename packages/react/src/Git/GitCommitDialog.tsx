@@ -7,34 +7,47 @@
  * commit-selection.ts so it stays unit-testable.
  */
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Dialog } from '../components/Dialog.js';
 import { useGitContext } from './GitContext.js';
 import { BADGE_LABELS, badgeKindFor } from './git-status.js';
 import {
+  allSelected,
   canCommit,
-  initSelection,
+  isIncluded,
+  isLocked,
   isMergeCommit,
+  NO_OVERRIDES,
+  resolveSelection,
   selectedPaths,
-  setAllSelected,
-  toggleSelection,
-  type CommitSelection,
+  setAllOverrides,
+  toggleOverride,
+  type CommitOverrides,
 } from './commit-selection.js';
 
 export function GitCommitDialog({ onClose }: { onClose: () => void }) {
   const git = useGitContext();
   const status = git?.status ?? null;
   const merging = isMergeCommit(status);
+  const changes = status?.changes;
 
   const [message, setMessage] = useState('');
-  const [selection, setSelection] = useState<CommitSelection>(() =>
-    initSelection(status?.changes ?? [], merging),
-  );
+  /** Only the user's explicit choices persist across status refreshes. */
+  const [overrides, setOverrides] = useState<CommitOverrides>(NO_OVERRIDES);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+
+  // Resolved every render against the live change list: a file that appears
+  // while the dialog is open (autosave triggers a status refresh every
+  // 1.5s) is rendered checked *and* committed, rather than rendered checked
+  // and silently dropped from a mount-time snapshot.
+  const selection = useMemo(
+    () => resolveSelection(changes ?? [], merging, overrides),
+    [changes, merging, overrides],
+  );
 
   if (!git || !status) return null;
 
-  const allOn = [...selection.included.values()].every(Boolean);
+  const allOn = allSelected(selection);
   const commitDisabled = !canCommit(message, selection) || git.busy !== null;
 
   const handleCommit = async () => {
@@ -83,7 +96,7 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
         <button
           type="button"
           className="db-git-secondary-btn"
-          onClick={() => setSelection((s) => setAllSelected(s, !allOn))}
+          onClick={() => setOverrides(setAllOverrides(selection, !allOn))}
         >
           {allOn ? 'Select none' : 'Select all'}
         </button>
@@ -91,8 +104,8 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
       <ul className="db-git-file-list">
         {status.changes.map((change) => {
           const kind = badgeKindFor(change);
-          const locked = selection.locked.has(change.path);
-          const checked = locked || (selection.included.get(change.path) ?? true);
+          const locked = isLocked(selection, change.path);
+          const checked = isIncluded(selection, change.path);
           return (
             <li key={change.path} className="db-git-file-row">
               <label>
@@ -100,7 +113,7 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
                   type="checkbox"
                   checked={checked}
                   disabled={locked}
-                  onChange={() => setSelection((s) => toggleSelection(s, change.path))}
+                  onChange={() => setOverrides((o) => toggleOverride(o, selection, change.path))}
                 />
                 <span>{change.path.replace(/^\/+/, '')}</span>
               </label>

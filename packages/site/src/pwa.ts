@@ -13,6 +13,11 @@ export function getPwaState(): PwaState {
   return store.getSnapshot();
 }
 
+/** Dismiss the install-failure alert. */
+export function dismissPwaInstallError(): void {
+  store.dismissInstallError();
+}
+
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 // Registration happens at module scope on purpose: the site renders under

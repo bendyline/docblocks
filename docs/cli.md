@@ -47,8 +47,8 @@ operation timeout.
 | Command   | Existing destination                                                                                                   |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `build`   | Replaces generated HTML files.                                                                                         |
-| `convert` | Atomically replaces each converter-named file in the output directory.                                                 |
-| `video`   | Replaces the selected MP4 through FFmpeg.                                                                              |
+| `convert` | Refuses the run when any converter-named destination exists; `--allow-overwrite` atomically replaces them.             |
+| `video`   | Refuses the run when the selected MP4 exists; `--allow-overwrite` replaces it through FFmpeg.                          |
 | `mcp`     | Creates temporary artifacts first; durable writes happen only through the explicitly conditional `save_artifact` tool. |
 
 Normal progress and human-readable status go to stderr. Commands intended for
@@ -136,6 +136,7 @@ docblocks convert story.md --theme cinematic --transform documentary
 | `-f, --formats <list>`   | `docx,pptx,pdf,html,dbk` | Comma-separated linked-registry export IDs.                |
 | `-t, --theme <id>`       | unset                    | Override the document theme; otherwise Squisq resolves it. |
 | `--transform <style>`    | none                     | Squisq transform style to apply before export.             |
+| `--allow-overwrite`      | off                      | Replace existing destination files instead of refusing.    |
 
 Input is resolved by the linked Squisq CLI API. It accepts Markdown, Squisq JSON
 Doc, DBK/ZIP containers, folders, and every import-capable registry format: DOCX,
@@ -147,10 +148,22 @@ After a bounded input preflight, DocBlocks loads the source through the linked r
 then calls the linked converter for each valid target sequentially. Unknown or import-only
 format IDs are reported and skipped; the command
 fails if no requested target is export-capable. Suggested output basenames come from
-the linked converter. Each result is flushed to a same-directory staging file and
-renamed over its converter-named destination, so a failed write does not truncate the
-previous output. Input is limited to 1 GiB and 20,000 entries; each output is limited
-to 512 MiB and all requested outputs together are limited to 1 GiB.
+the linked converter. Input is limited to 1 GiB and 20,000 entries; each output is
+limited to 512 MiB and all requested outputs together are limited to 1 GiB.
+
+Because the output directory defaults to the input's own parent, `convert` never
+replaces an existing file unless you ask it to. Every destination name is derived
+before any conversion runs, so the command checks them all up front and refuses the
+entire run — naming every conflicting path — if any already exists. One conflict
+aborts all requested formats rather than exporting some and skipping others, so the
+command never reports partial success: it either writes every format or none, and a
+refusal exits with status 1. Pass `--allow-overwrite` to replace them, or send the
+run elsewhere with `--output-dir`.
+
+Each result is flushed to a same-directory staging file, so a failed write does not
+truncate a previous output. Without `--allow-overwrite` the staged bytes are published
+with an atomic create-if-absent link, which also refuses a destination that appeared
+after the preflight check; with it, the staged file is renamed over the destination.
 
 For every Markdown-shaped input—including DBK and registry imports that reconstruct
 Markdown—DocBlocks applies transforms through its source-preserving projection. A
@@ -202,10 +215,16 @@ docblocks video story.md ./story.mp4 --quality high --orientation portrait
 | `--captions <style>`    | `off`                  | `off`, `standard`, or `social`.                             |
 | `--width <pixels>`      | orientation default    | Override video width with a positive safe integer.          |
 | `--height <pixels>`     | orientation default    | Override video height with a positive safe integer.         |
+| `--allow-overwrite`     | off                    | Replace an existing output MP4 instead of refusing.         |
 
 Input uses the same linked Squisq reader as `convert`, so import-capable Office,
 PDF, spreadsheet, HTML, Markdown, JSON Doc, DBK/ZIP, and folder sources are valid.
 The linked default dimensions are 1920x1080 landscape and 1080x1920 portrait.
+
+The default output sits next to the input, so `video` matches `convert`: an existing
+MP4 is never replaced unless `--allow-overwrite` is passed. The check runs before the
+input is read and before any browser capture or FFmpeg encoding starts, and a refusal
+exits with status 1.
 
 Rendering requires Chromium and FFmpeg. Install Chromium with:
 

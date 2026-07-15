@@ -79,6 +79,26 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx multi-semantic-release --ignore-packages=packages/site,packages/vscode --sequential-prepare
 
+      # multi-semantic-release runs @semantic-release/git once per package with
+      # that package directory as cwd, so the root lockfile can never be staged
+      # by the release commits themselves. Refresh it against the freshly bumped
+      # workspace manifests here; without this, `npm ci` on main fails with
+      # "lock file does not satisfy" until someone repairs it by hand.
+      - name: Sync root lockfile
+        if: inputs.publish_release
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if git diff --quiet -- package-lock.json; then
+            echo "Root lockfile already matches the released manifests."
+            exit 0
+          fi
+          git config user.name 'semantic-release-bot'
+          git config user.email 'semantic-release-bot@martynus.net'
+          git add package-lock.json
+          git commit -m 'chore(release): sync root lockfile [skip ci]'
+          git push origin HEAD:${{ github.ref_name }}
+
       # ── Pages ────────────────────────────────────────────────────
       - name: Build site
         if: inputs.deploy_pages

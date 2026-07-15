@@ -6,7 +6,11 @@
  * (since native providers need a DirectoryHandle from user interaction).
  */
 
-import { LocalForageAdapter } from '@bendyline/squisq/storage';
+import {
+  RawIndexedDBFileSystemStore,
+  type IndexedDBFileSystemStore,
+  type IndexedDBFileSystemTransaction,
+} from '../filesystem/indexeddb-store.js';
 import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/types.js';
 import type { WorkspaceDescriptor } from './types.js';
 import { parsePersistedWorkspaceList } from './workspace-schema.js';
@@ -16,10 +20,31 @@ const STORE_NAME = 'workspaces';
 const LIST_KEY = 'workspace-list';
 const DEFAULT_WORKSPACE_ID = 'default';
 
-const store = new LocalForageAdapter({
-  name: DB_NAME,
-  storeName: STORE_NAME,
-});
+/**
+ * The registry deliberately uses the error-propagating store rather than the
+ * Squisq LocalForage adapter: that adapter converts a failed read into `null`,
+ * which this module cannot tell apart from "no workspaces yet". A single
+ * transient IndexedDB failure therefore read as an empty registry, and the next
+ * mutation persisted that emptiness over every workspace the user had.
+ *
+ * The database and object store names are unchanged, and the raw store uses the
+ * same out-of-line keys LocalForage did, so existing registries load as-is.
+ */
+let registryStore: IndexedDBFileSystemStore | null = null;
+
+function store(): IndexedDBFileSystemStore {
+  registryStore ??= new RawIndexedDBFileSystemStore(DB_NAME, STORE_NAME);
+  return registryStore;
+}
+
+/**
+ * Replace the registry's storage backend, or restore the default with `null`.
+ * Mirrors the `store` option the IndexedDB providers accept; tests inject an
+ * in-memory store through it and production code never calls it.
+ */
+export function setWorkspaceRegistryStore(next: IndexedDBFileSystemStore | null): void {
+  registryStore = next;
+}
 
 /**
  * Session-only transient workspaces (a loose file/`.dbk` opened from the OS,
@@ -62,10 +87,22 @@ export async function unregisterTransientWorkspace(id: string): Promise<void> {
   await getFileSystemProviderV2(entry.provider)?.dispose();
 }
 
-/** The persisted (on-disk) workspace list only — excludes transient ones. */
-async function readPersisted(): Promise<WorkspaceDescriptor[]> {
-  const list = await store.get<unknown>(LIST_KEY);
+/**
+ * The persisted (on-disk) workspace list only — excludes transient ones.
+ *
+ * An unreadable registry throws. Only a store that positively reports "no such
+ * key" is an empty registry; anything else is an unknown registry, and callers
+ * must not act as though the user has no workspaces.
+ */
+async function readPersistedIn(
+  transaction: IndexedDBFileSystemTransaction,
+): Promise<WorkspaceDescriptor[]> {
+  const list = await transaction.get<unknown>(LIST_KEY);
   return list == null ? [] : parsePersistedWorkspaceList(list);
+}
+
+async function readPersisted(): Promise<WorkspaceDescriptor[]> {
+  return store().transaction('readonly', readPersistedIn);
 }
 
 async function listPersisted(): Promise<WorkspaceDescriptor[]> {
@@ -77,9 +114,15 @@ function mutatePersisted(
   mutation: (workspaces: WorkspaceDescriptor[]) => WorkspaceDescriptor[],
 ): Promise<void> {
   const operation = persistedMutationTail.then(async () => {
-    const current = await readPersisted();
-    const next = parsePersistedWorkspaceList(mutation([...current]));
-    await store.set(LIST_KEY, next);
+    // Read and write in one transaction. A failed read aborts the mutation
+    // instead of rebuilding the registry from a phantom empty list, and no
+    // concurrent writer (another tab) can land between the read and the write
+    // only to be clobbered by this mutation's stale copy.
+    await store().transaction('readwrite', async (transaction) => {
+      const current = await readPersistedIn(transaction);
+      const next = parsePersistedWorkspaceList(mutation([...current]));
+      await transaction.put(LIST_KEY, next);
+    });
   });
   persistedMutationTail = operation.then(
     () => undefined,

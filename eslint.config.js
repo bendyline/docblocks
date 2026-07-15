@@ -14,7 +14,11 @@ export default tseslint.config(
       '**/*.config.ts',
       '**/*.config.js',
       '**/vitest.setup.ts',
+      // Both hold a downloaded VS Code distribution, not our source. Linting
+      // the desktop archive alone reports ~37k errors from workbench bundles
+      // and exhausts the default heap before eslint can finish.
       '**/.vscode-test-web/**',
+      '**/.vscode-test/**',
       '**/playwright-report/**',
       '**/test-results/**',
     ],

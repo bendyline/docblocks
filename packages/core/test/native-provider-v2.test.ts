@@ -202,6 +202,53 @@ describe('NativeFileSystemProviderV2', () => {
     await provider.dispose();
   });
 
+  it('restores a source that a partial delete gutted, then removes the copy', async () => {
+    const { fileSystem, provider } = setup('partial-delete-restore');
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    // Removing a directory is not atomic: the delete takes 'a.md' and then
+    // fails, leaving the source present but missing a child.
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+
+    await expectFsError(
+      provider.move(parseWorkspacePath('/source'), parseWorkspacePath('/destination')),
+      'permission-denied',
+    );
+
+    expect(fileSystem.readBytes('/source/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/source/b.md')).to.deep.equal([...encoded('bravo')]);
+    expect(fileSystem.exists('/destination')).to.equal(false);
+    await provider.dispose();
+  });
+
+  it('keeps the copy when a source gutted by a partial delete cannot be restored', async () => {
+    const { fileSystem, provider } = setup('partial-delete-unrepairable');
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+    // The repair write fails too, so the source cannot be made whole again.
+    fileSystem.failNext('write', '/source/a.md', nativeDomError('NotAllowedError', 'read-only'));
+
+    const failure = await captureFailure(
+      provider.move(parseWorkspacePath('/source'), parseWorkspacePath('/destination')),
+    );
+
+    // The copy is the only complete one left: rollback must not delete it, and
+    // the failure must be loud rather than a plain retryable error.
+    expect(failure).to.be.instanceOf(NativeFileSystemMoveRecoveryError);
+    expect(fileSystem.readBytes('/destination/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/destination/b.md')).to.deep.equal([...encoded('bravo')]);
+    await provider.dispose();
+  });
+
   it('reports authoritative compound state when destination rollback also fails', async () => {
     const { fileSystem, provider } = setup('compound-move-fault');
     fileSystem.seedFile('/source.md', 'source');
@@ -266,6 +313,15 @@ function setup(id: string): {
 
 function encoded(value: string): Uint8Array {
   return new TextEncoder().encode(value);
+}
+
+async function captureFailure(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+    return null;
+  } catch (error: unknown) {
+    return error;
+  }
 }
 
 function decoded(value: ArrayBuffer | null | undefined): string | null {

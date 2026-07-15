@@ -6,7 +6,7 @@
  * stable across updates.
  */
 
-import { app, BrowserWindow, protocol, screen, shell, net } from 'electron';
+import { app, BrowserWindow, dialog, protocol, screen, shell, net } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -24,7 +24,14 @@ import { registerGitIpc } from './ipc-git.js';
 import { killAllGitChildren } from './git/exec.js';
 import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
 import { buildMenu } from './menu.js';
-import { readSettings, updateSettings, flushSettings } from './settings.js';
+import {
+  readSettings,
+  updateSettings,
+  flushSettings,
+  takeSettingsRecovery,
+  settingsFilePath,
+  type SettingsRecovery,
+} from './settings.js';
 import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
@@ -74,6 +81,11 @@ function drainPendingOpenRequests(win: BrowserWindow): void {
 // so Windows "Open With" and docblocks:// deep links route to the same window.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
+  // `app.quit()` is asynchronous, so a losing instance keeps executing. The
+  // ready bootstrap below is therefore gated on the lock: without that gate a
+  // second launch races its own quit and can still reach createWindow(),
+  // registering duplicate IPC handlers and flashing a stray window. (A plain
+  // `return` here is not available — this is an ES module, not a CJS wrapper.)
   app.quit();
 }
 
@@ -315,7 +327,62 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
   return true;
 }
 
-app.whenReady().then(async () => {
+/**
+ * Tell the user their settings were abandoned, and where the original went.
+ *
+ * Presented after the window exists so the warning is a sheet on DocBlocks
+ * rather than a bare alert in front of nothing, and deliberately not awaited —
+ * a modal the user leaves sitting must not hold up the rest of startup.
+ */
+function reportSettingsRecovery(win: BrowserWindow, recovery: SettingsRecovery): void {
+  const detail =
+    recovery.kind === 'unreadable'
+      ? [
+          'DocBlocks could not read its settings file, so this session started with default settings.',
+          'Your settings file has been left untouched — if the problem was temporary, restarting DocBlocks should restore it. Any change you make now will overwrite it.',
+          `Location: ${settingsFilePath()}`,
+          `Reason: ${recovery.reason}`,
+        ]
+      : [
+          'DocBlocks could not understand its settings file, so this session started with default settings. Your documents are not affected, but registered workspaces may need to be opened again.',
+          recovery.quarantinePath
+            ? `The original file was not deleted — it was moved to:\n${recovery.quarantinePath}`
+            : `The original file could not be moved aside (${recovery.quarantineFailure ?? 'unknown error'}), so it may be overwritten by the next settings change.\nLocation: ${settingsFilePath()}`,
+          `Reason: ${recovery.reason}`,
+        ];
+
+  void dialog
+    .showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Continue'],
+      defaultId: 0,
+      title: 'DocBlocks settings were reset',
+      message: 'DocBlocks started with default settings.',
+      detail: detail.join('\n\n'),
+    })
+    .catch(() => undefined);
+}
+
+/**
+ * Last stop for a startup failure. Reaching here means no window exists and
+ * none is coming, so the only honest outcomes are to say so and leave.
+ */
+function reportFatalStartupFailure(error: unknown): void {
+  const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  // showErrorBox is the one dialog API that works with no owner window and no
+  // event loop assumptions — the rest of this package's dialog usage is modal
+  // on a window that, by definition, does not exist here.
+  dialog.showErrorBox(
+    'DocBlocks could not start',
+    `DocBlocks failed during startup and has to close.\n\n${message}`,
+  );
+  // Not app.quit(): that fires `before-quit`, which preventDefaults and awaits
+  // window/settings teardown this bootstrap may never have set up — a hang on
+  // top of a crash. exit() is the truthful response to an unusable process.
+  app.exit(1);
+}
+
+async function bootstrap(): Promise<void> {
   // Restrict permissions by default.
   const session = (await import('electron')).session;
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
@@ -357,7 +424,10 @@ app.whenReady().then(async () => {
   // In a MAS build, re-open security-scoped access from the saved bookmark
   // BEFORE registering — otherwise the sandbox denies node:fs on that path.
   // startAccessingBookmark is a no-op outside MAS, so this is inert elsewhere.
+  // A broken settings file yields defaults here rather than throwing: losing
+  // saved workspaces is recoverable, launching to no window at all is not.
   let settings = await readSettings();
+  const settingsRecovery = takeSettingsRecovery();
   const roots = getWorkspaceRoots();
   for (const info of settings.workspaces) {
     startAccessingBookmark(info.bookmark);
@@ -414,12 +484,24 @@ app.whenReady().then(async () => {
 
   registerTray(() => mainWindow);
 
+  if (settingsRecovery) reportSettingsRecovery(mainWindow, settingsRecovery);
+
   // Store builds (Mac App Store / Microsoft Store) must not self-update — the
   // store delivers updates. Only run the GitHub updater for direct-download builds.
   if (!isDev && !isStoreBuild()) {
     initAutoUpdater();
   }
-});
+}
+
+if (gotLock) {
+  // Without this catch V8 swallows any rejection from the bootstrap and the
+  // user is left staring at a running process with no window and no error.
+  // Scoped deliberately to the ready path rather than a blanket
+  // process-level handler: registering `process.on('unhandledRejection')`
+  // *suppresses* Node's default handling, which would silently downgrade every
+  // future hard failure in the app to a log line nobody reads.
+  app.whenReady().then(bootstrap).catch(reportFatalStartupFailure);
+}
 
 app.on('before-quit', (event) => {
   if (appExitApproved) return;
@@ -447,14 +529,26 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', async () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
-    mainWindow = await createWindow(developmentWorkspace?.id);
-    drainPendingOpenRequests(mainWindow);
-    buildMenu(mainWindow);
-    mainWindow.setMenuBarVisibility(false);
-  }
+async function reopenWindow(): Promise<void> {
+  const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
+  mainWindow = await createWindow(developmentWorkspace?.id);
+  drainPendingOpenRequests(mainWindow);
+  buildMenu(mainWindow);
+  mainWindow.setMenuBarVisibility(false);
+}
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length !== 0) return;
+  // Same failure mode as the ready path: an async listener's rejection is
+  // unhandled, so a failure to reopen would leave the user clicking the dock
+  // icon of a live, windowless app. Unlike startup this is not fatal — the
+  // process is otherwise healthy — so report and stay up.
+  void reopenWindow().catch((error: unknown) => {
+    dialog.showErrorBox(
+      'DocBlocks could not open a window',
+      error instanceof Error ? (error.stack ?? error.message) : String(error),
+    );
+  });
 });
 
 // Silence unused import warning for fileURLToPath — kept for future use.
