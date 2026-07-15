@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { DOCBLOCKS_MCP_TOOL_NAMES } from '@bendyline/docblocks/mcp';
 import { buildCommand } from '../src/commands/build.js';
 import { convertCommand } from '../src/commands/convert.js';
-import { initCommand } from '../src/commands/init.js';
 import { mcpCommand } from '../src/commands/mcp.js';
 import { parseCommand } from '../src/commands/parse.js';
 import { serveCommand } from '../src/commands/serve.js';
@@ -17,7 +16,6 @@ import { MCP_FORMAT_CAPABILITIES } from '../src/mcp/conversion-service.js';
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 const IMPLEMENTED_COMMAND_NAMES = [
-  initCommand,
   buildCommand,
   serveCommand,
   convertCommand,

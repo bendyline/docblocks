@@ -9,6 +9,8 @@ export function App() {
       theme="auto"
       logoUrl="/_res/siteimages/docblocks.webp"
       issueReportVersion={`${__DOCBLOCKS_VERSION__} web`}
+      homeDocumentPath="/aboutDocBlocks.md"
+      homeDocumentTitle="DocBlocks — Local-First Markdown Editor"
       updateAvailable={pwa.updateAvailable}
       onApplyUpdate={applyPwaUpdate}
       offlineReady={pwa.offlineReady}

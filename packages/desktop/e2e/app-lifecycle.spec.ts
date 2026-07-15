@@ -44,6 +44,29 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(chrome.height).toBe(32);
   expect(chrome.appRegion).toBe('drag');
 
+  // The shared shell lifts the tabs within its roomier 48px browser toolbar.
+  // Desktop must win that equal-specificity rule so labels stay centered in
+  // the compact 32px titlebar instead of riding against its top edge.
+  const writeTab = toolbar.getByRole('tab', { name: 'Write' });
+  const tabMetrics = await writeTab.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const label = element.querySelector('.squisq-toolbar-view-tab-label--long');
+    const labelRect = label?.getBoundingClientRect();
+    const toolbarRect = element.closest('.squisq-toolbar')?.getBoundingClientRect();
+    return {
+      paddingTop: style.paddingTop,
+      paddingBottom: style.paddingBottom,
+      centerDelta:
+        labelRect && toolbarRect
+          ? labelRect.top + labelRect.height / 2 - (toolbarRect.top + toolbarRect.height / 2)
+          : null,
+    };
+  });
+  expect(tabMetrics.paddingTop).toBe('4px');
+  expect(tabMetrics.paddingBottom).toBe('4px');
+  expect(tabMetrics.centerDelta).not.toBeNull();
+  expect(Math.abs(tabMetrics.centerDelta ?? Infinity)).toBeLessThanOrEqual(1);
+
   // The sidebar titlebar ends with a desktop-only dotted grip so the
   // draggable space beside the workspace gear is visually discoverable.
   const sidebarHeader = window.locator('.db-shell-sidebar-header');

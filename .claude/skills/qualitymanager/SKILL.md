@@ -125,19 +125,19 @@ Survey the entire suite, map it against the package layout, identify gaps. Given
 
 ### Focused Review
 
-| Focus                       | What to examine                                                                                                                      |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| "Test coverage gaps"        | Map features → tests, find untested paths (the React package is the headline gap)                                                    |
-| "Flaky tests"               | Tests with timing issues, race conditions, environmental deps                                                                        |
-| "Test quality"              | Assertion quality, isolation, naming, fixture reuse                                                                                  |
-| "Core coverage"             | The 2 existing tests in core/ — what's covered, what's missing (especially the 3 FileSystemProvider implementations)                 |
-| "React coverage"            | Currently zero — propose what to add and in what order                                                                               |
-| "CLI coverage"              | Currently only MCP forward/reverse — every other command (build, serve, convert, video, parse, themes, transforms, init) is untested |
-| "VS Code coverage"          | 2 e2e specs — what flows are missing?                                                                                                |
-| "Desktop coverage"          | 1 e2e spec — what flows are missing?                                                                                                 |
-| "IPC coverage"              | Every ipc-\*.ts channel should have at least a round-trip test                                                                       |
-| "FileSystemProvider parity" | All 3 providers should pass the same conformance suite                                                                               |
-| "Debug-test cleanup"        | Scratch tests that should be removed or promoted                                                                                     |
+| Focus                       | What to examine                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| "Test coverage gaps"        | Map features → tests, find untested paths (the React package is the headline gap)                                              |
+| "Flaky tests"               | Tests with timing issues, race conditions, environmental deps                                                                  |
+| "Test quality"              | Assertion quality, isolation, naming, fixture reuse                                                                            |
+| "Core coverage"             | The 2 existing tests in core/ — what's covered, what's missing (especially the 3 FileSystemProvider implementations)           |
+| "React coverage"            | Currently zero — propose what to add and in what order                                                                         |
+| "CLI coverage"              | Currently only MCP forward/reverse — every other command (build, serve, convert, video, parse, themes, transforms) is untested |
+| "VS Code coverage"          | 2 e2e specs — what flows are missing?                                                                                          |
+| "Desktop coverage"          | 1 e2e spec — what flows are missing?                                                                                           |
+| "IPC coverage"              | Every ipc-\*.ts channel should have at least a round-trip test                                                                 |
+| "FileSystemProvider parity" | All 3 providers should pass the same conformance suite                                                                         |
+| "Debug-test cleanup"        | Scratch tests that should be removed or promoted                                                                               |
 
 ---
 
@@ -236,7 +236,6 @@ Build a matrix of user-facing capabilities versus the test files that cover them
 | Export — MP4 (video command)                                  | —                                               | —                                            | None                         |
 | AutoSave hook                                                 | —                                               | —                                            | None                         |
 | App menu (About dialog, etc.)                                 | —                                               | root `app.spec.ts` (visibility)              | Minimal                      |
-| CLI: `init`                                                   | —                                               | —                                            | None                         |
 | CLI: `build`                                                  | —                                               | —                                            | None                         |
 | CLI: `serve`                                                  | —                                               | —                                            | None                         |
 | CLI: `convert` (docx/pdf/pptx/html/dbk round-trips)           | —                                               | —                                            | None                         |

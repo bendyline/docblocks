@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy — DocBlocks Local-First Markdown Editor</title>
+    <meta
+      name="description"
+      content="Learn how DocBlocks keeps documents local, uses browser storage and granted folders, works offline, and relies on GitHub Pages to deliver the website."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://docblocks.com/privacy/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DocBlocks" />
+    <meta property="og:title" content="DocBlocks privacy" />
+    <meta
+      property="og:description"
+      content="How a local-first editor handles documents, browser storage, granted folders, offline caching, and hosting."
+    />
+    <meta property="og:url" content="https://docblocks.com/privacy/" />
+    <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f3eede" />
+    <link rel="stylesheet" href="/marketing/marketing.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="DocBlocks home">
+        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/desktop/">Desktop</a>
+        <a href="/vscode/">VS Code</a>
+        <a href="/cli/">CLI &amp; MCP</a>
+        <a href="/formats/">Formats</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+      <a class="button" href="/">Open the web editor</a>
+    </header>
+
+    <main class="page-main" id="content">
+      <article class="prose">
+        <p class="eyebrow">Privacy · Updated July 14, 2026</p>
+        <h1>Local-first means your documents stay under your control.</h1>
+        <p class="lede">
+          DocBlocks does not require an account and does not send the documents you edit to a
+          DocBlocks application server. Storage and network behavior depend on the surface and
+          features you choose, as described below.
+        </p>
+
+        <h2>Documents in the web editor</h2>
+        <p>
+          Browser workspaces are stored on your device using browser storage. When you choose a
+          local folder through the browser’s File System Access interface, DocBlocks can access only
+          the handles you grant and the browser can ask you to renew that permission. Documents,
+          media, revisions, and workspace metadata are used to provide the editing features you
+          request.
+        </p>
+        <p>
+          Browser storage can be cleared by you, by browser settings, or sometimes by the browser
+          under storage pressure. DocBlocks therefore offers backup and persistent-storage controls,
+          but you remain responsible for keeping copies of important work.
+        </p>
+
+        <h2>Desktop, VS Code, and CLI files</h2>
+        <p>
+          The desktop app works inside folders you explicitly register. The VS Code extension edits
+          the workspace documents opened by VS Code. Direct CLI commands use the filesystem
+          authority of the process that you run. The MCP server begins without filesystem authority
+          unless you start it with explicit read or write root grants.
+        </p>
+
+        <h2>Offline files and preferences</h2>
+        <p>
+          The web app installs a service worker and caches application code, fonts, and interface
+          assets so the editor can work offline. Theme choices, workspace descriptors, dismissed
+          notices, and similar device-local preferences may be stored by the browser. DocBlocks does
+          not include advertising or behavioral analytics scripts.
+        </p>
+
+        <h2>Website hosting</h2>
+        <p>
+          DocBlocks.com is delivered through GitHub Pages. GitHub states that a visitor’s IP address
+          is logged and stored for security purposes when a GitHub Pages site is visited. That
+          hosting activity is governed by the
+          <a
+            href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+            >GitHub Privacy Statement</a
+          >.
+        </p>
+
+        <h2>External links and issue reports</h2>
+        <p>
+          Links to GitHub, npm, Bendyline, or other external services are governed by those
+          services’ policies. If you choose the DocBlocks issue-report link, your browser opens
+          GitHub with a prefilled report containing the date, DocBlocks version and surface, and
+          browser user-agent string. Review the report before submitting it. Document contents are
+          not inserted into that report automatically.
+        </p>
+
+        <h2>Questions and corrections</h2>
+        <p>
+          For a privacy question or a correction to this page, open an issue in the
+          <a href="https://github.com/bendyline/docblocks/issues">DocBlocks repository</a>. Do not
+          include private document contents or credentials in a public issue.
+        </p>
+      </article>
+    </main>
+
+    <footer class="site-footer">
+      <p>DocBlocks is open-source software by Bendyline.</p>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/privacy/" aria-current="page">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="/docs/">Documentation</a>
+        <a href="https://github.com/bendyline/docblocks">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

@@ -9,7 +9,7 @@
     "url": "https://github.com/bendyline/docblocks.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/bendyline/docblocks",
+  "homepage": "https://docblocks.com/",
   "keywords": [
     "docblocks",
     "markdown",
@@ -99,7 +99,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.0.1",
+    "@bendyline/squisq": "2.1.0",
     "zod": "3.25.76"
   }
 }

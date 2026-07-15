@@ -274,6 +274,7 @@ test.describe('VS Code web and UX integration', () => {
       .filter({ hasText: 'DocBlocks: Unsaved changes' });
     await expect(unsavedStatus).toBeVisible({ timeout: 10_000 });
     await expect(editor.getByText('Unsaved changes', { exact: true })).toHaveCount(0);
+    await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
 
     await unsavedStatus.click();
     await expect(
@@ -301,10 +302,12 @@ test.describe('VS Code web and UX integration', () => {
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(editor.getByText('Autosave pending', { exact: true })).toBeVisible();
     await page.keyboard.press('ControlOrMeta+S');
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Saved' }),
     ).toBeVisible({ timeout: 10_000 });
+    await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
 
     await openTextEditorWithOpenWith(page);
 

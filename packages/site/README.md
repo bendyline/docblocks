@@ -30,6 +30,12 @@ npm run preview -w docblocks-site
 
 This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Editor / Markdown / Play views, and multi-format export. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
 
+The editor remains the canonical, indexable experience at `/`. Lightweight product, format,
+documentation, privacy, and terms pages live under `public/`; `robots.txt`, `sitemap.xml`, the
+custom 404, canonical metadata, social metadata, and structured data are shipped with the same
+build. The service-worker navigation fallback is allowlisted to `/` so it cannot replace those
+static responses with the editor shell.
+
 ## PWA / offline
 
 The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configured in `vite.config.ts`):

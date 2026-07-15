@@ -145,7 +145,13 @@ export function AppMenu({
           aria-haspopup="true"
         >
           {logoUrl ? (
-            <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
+            <img
+              src={logoUrl}
+              alt="DocBlocks"
+              className="db-app-menu-logo"
+              width={1266}
+              height={544}
+            />
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}

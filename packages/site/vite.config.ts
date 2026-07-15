@@ -97,13 +97,16 @@ const docblocksPwa = (): Plugin[] =>
     },
     workbox: {
       // Everything in dist. CNAME has no extension so it stays out.
-      globPatterns: ['**/*.{html,js,css,png,webp,ttf,woff2,webmanifest}'],
+      globPatterns: ['**/*.{html,js,css,png,webp,ttf,woff2,webmanifest,txt,xml}'],
       // Workbox's default cap is 2 MiB, which would SILENTLY drop the main
       // bundle, the monaco chunk, and ts.worker (6 MB) from the precache.
       // Any future chunk above this cap silently falls out too — check
       // dist/sw.js after adding heavy dependencies.
       maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
       navigateFallback: 'index.html',
+      // Only the root editor is an app-shell route. Static product pages,
+      // crawl files, and custom 404s must resolve to their own responses.
+      navigateFallbackAllowlist: [/^\/$/],
       cleanupOutdatedCaches: true,
       // Paired with registerType 'prompt': the waiting SW takes over only
       // when the user accepts the reload.
@@ -113,6 +116,10 @@ const docblocksPwa = (): Plugin[] =>
   });
 
 export default defineConfig({
+  // The root remains the SPA editor, while product and policy routes are
+  // real static documents copied from public/. Do not rewrite their 404s to
+  // the editor during development or preview.
+  appType: 'mpa',
   base: process.env.VITE_BASE || '/',
   define: {
     __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),

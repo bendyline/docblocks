@@ -22,17 +22,16 @@ contract.
 
 <!-- BEGIN CLI COMMAND CATALOG -->
 
-| Command      | Purpose                                                               |
-| ------------ | --------------------------------------------------------------------- |
-| `init`       | Create the minimal `.docblocks/config.json` metadata for a directory. |
-| `build`      | Recursively build Markdown files into standalone HTML.                |
-| `serve`      | Preview a directory through a constrained local HTTP server.          |
-| `convert`    | Convert a linked-Squisq input into one or more files.                 |
-| `video`      | Render a linked-Squisq input to a configurable MP4.                   |
-| `mcp`        | Start the local artifact-first MCP server over stdio.                 |
-| `themes`     | List theme IDs from the linked Squisq registry.                       |
-| `transforms` | List transform-style IDs from the linked Squisq registry.             |
-| `parse`      | Parse UTF-8 Markdown content into Squisq's Markdown AST JSON.         |
+| Command      | Purpose                                                       |
+| ------------ | ------------------------------------------------------------- |
+| `build`      | Recursively build Markdown files into standalone HTML.        |
+| `serve`      | Preview a directory through a constrained local HTTP server.  |
+| `convert`    | Convert a linked-Squisq input into one or more files.         |
+| `video`      | Render a linked-Squisq input to a configurable MP4.           |
+| `mcp`        | Start the local artifact-first MCP server over stdio.         |
+| `themes`     | List theme IDs from the linked Squisq registry.               |
+| `transforms` | List transform-style IDs from the linked Squisq registry.     |
+| `parse`      | Parse UTF-8 Markdown content into Squisq's Markdown AST JSON. |
 
 <!-- END CLI COMMAND CATALOG -->
 
@@ -47,7 +46,6 @@ operation timeout.
 
 | Command   | Existing destination                                                                                                   |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `init`    | Refuses to continue if `.docblocks` already exists.                                                                    |
 | `build`   | Replaces generated HTML files.                                                                                         |
 | `convert` | Replaces converter-named files in the output directory.                                                                |
 | `video`   | Replaces the selected MP4 through FFmpeg.                                                                              |
@@ -56,22 +54,6 @@ operation timeout.
 Normal progress and human-readable status go to stderr. Commands intended for
 machine discovery keep their values or JSON on stdout. The MCP command reserves
 stdout for protocol messages.
-
-## `docblocks init [dir]`
-
-`dir` defaults to the current directory. The command creates missing parent
-directories and writes:
-
-```json
-{
-  "name": "directory-name",
-  "version": "0.1.0"
-}
-```
-
-to `.docblocks/config.json`. No current CLI command reads this configuration; it is
-initial workspace metadata, not a build manifest. The command refuses to replace an
-existing `.docblocks` file or directory.
 
 ## `docblocks build`
 

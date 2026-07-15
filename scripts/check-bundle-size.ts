@@ -31,7 +31,9 @@ const surfaces: BundleSurface[] = [
     // are feature/backend chunks and are checked as deferred boundaries.
     entryBudgetBytes: 2_375_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_100_000 },
+      // Squisq 2.1 adds Mermaid rendering while keeping the Mermaid runtime
+      // itself in deferred chunks.
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_225_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
     ],
   },
@@ -42,7 +44,9 @@ const surfaces: BundleSurface[] = [
     assetsDir: 'packages/desktop/dist/renderer/assets',
     entryBudgetBytes: 2_375_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_100_000 },
+      // Squisq 2.1 adds Mermaid rendering while keeping the Mermaid runtime
+      // itself in deferred chunks.
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_225_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
     ],
   },
@@ -53,15 +57,18 @@ const surfaces: BundleSurface[] = [
     assetsDir: 'packages/vscode/dist/webview/assets',
     // The webview has no shell chrome, but it still defers Squisq until the
     // extension has supplied a document and the renderer bridges are ready.
-    entryBudgetBytes: 1_350_000,
+    // Squisq 2.1's Mermaid-aware renderer adds a small amount of entry code;
+    // the diagram implementations remain deferred.
+    entryBudgetBytes: 1_425_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_125_000 },
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_250_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
       {
         label: 'deferred standalone editor source',
         prefix: 'standalone-source',
-        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path.
-        budgetBytes: 1_153_000,
+        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path
+        // and the Squisq 2.1 standalone Mermaid renderer source.
+        budgetBytes: 4_800_000,
       },
       { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 6_200_000 },
     ],
@@ -71,7 +78,9 @@ const surfaces: BundleSurface[] = [
     aggregateBudget: {
       directory: 'packages/vscode/dist/webview',
       extensions: ['.js', '.css'],
-      budgetBytes: 18_250_000,
+      // Mermaid's diagram families are separate deferred chunks, but the
+      // aggregate gate still accounts for their complete shipped footprint.
+      budgetBytes: 25_000_000,
     },
   },
 ];

@@ -113,18 +113,34 @@ export class MarkdownEditorPanel {
   }
 
   public static async open(context: vscode.ExtensionContext, uri: vscode.Uri): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(uri);
+    await MarkdownEditorPanel.openDocument(context, document);
+  }
+
+  /**
+   * Open the standalone editor for a document VS Code has already resolved.
+   *
+   * Panel creation is intentionally synchronous so the default custom-editor
+   * route can dispose its resource-backed panel before the next visible frame.
+   * Initialization continues through the returned promise.
+   */
+  public static openDocument(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active,
+  ): Promise<void> {
+    const uri = document.uri;
     const key = uri.toString();
     const existingPanel = MarkdownEditorPanel.panels.get(key);
     if (existingPanel) {
-      existingPanel.panel.reveal(vscode.ViewColumn.Active);
-      return;
+      existingPanel.panel.reveal(viewColumn);
+      return Promise.resolve();
     }
 
-    const document = await vscode.workspace.openTextDocument(uri);
     const panel = vscode.window.createWebviewPanel(
       MarkdownEditorPanel.viewType,
       getUriBasename(uri),
-      vscode.ViewColumn.Active,
+      viewColumn,
       {
         enableScripts: true,
         localResourceRoots: getEditorLocalResourceRoots(context.extensionUri),
@@ -134,13 +150,16 @@ export class MarkdownEditorPanel {
 
     const editorPanel = new MarkdownEditorPanel(context, uri, document, panel);
     MarkdownEditorPanel.panels.set(key, editorPanel);
-    try {
-      await editorPanel.syncReady;
-    } catch (error: unknown) {
-      MarkdownEditorPanel.panels.delete(key);
-      panel.dispose();
-      throw error;
-    }
+    return editorPanel.syncReady.then(
+      () => undefined,
+      (error: unknown) => {
+        if (MarkdownEditorPanel.panels.get(key) === editorPanel) {
+          MarkdownEditorPanel.panels.delete(key);
+        }
+        panel.dispose();
+        throw error;
+      },
+    );
   }
 
   public static async pickAndOpen(context: vscode.ExtensionContext): Promise<void> {

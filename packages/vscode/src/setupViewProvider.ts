@@ -121,19 +121,6 @@ export class SetupViewProvider {
         await this.runChecks(webview);
         return;
 
-      case 'initProject': {
-        if (!this.acceptAction(message.type) || !(await this.requireTrustedWorkspace())) return;
-        const folder = vscode.workspace.workspaceFolders?.[0];
-        if (folder) {
-          this.runInTerminal('npm exec -- docblocks init', folder.uri);
-        } else {
-          await vscode.window.showWarningMessage(
-            'Open a folder first to initialize a DocBlocks project.',
-          );
-        }
-        return;
-      }
-
       default:
         assertNever(message);
     }

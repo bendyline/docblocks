@@ -2,6 +2,8 @@
 
 **A markdown document editor where one file can become anything — a Word doc, a PDF, a slide deck, an e-book, or a video — and the file stays yours.**
 
+[Open DocBlocks in your browser](https://docblocks.com/) — no account required.
+
 DocBlocks is a local-first document editor and management platform. You write plain markdown; DocBlocks gives you a rich WYSIWYG editing surface (powered by [Squisq](https://github.com/bendyline/squisq)), organizes your documents into workspaces, and turns them into polished output in a dozen shapes. No account, no proprietary format, no lock-in: your documents are `.md` files on disk (or in your browser's local storage), readable by you, your tools, and your AI agents.
 
 ## Try it
@@ -10,10 +12,10 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 | Surface     | What it is                                                                                                            | How to get it                                                                                              |
 | ----------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Web**     | Full editor in the browser — files persist locally (IndexedDB) or in folders you grant via the File System Access API | `npm run dev` → http://localhost:5220, or the GitHub Pages deployment                                      |
+| **Web**     | Full editor in the browser — files persist locally (IndexedDB) or in folders you grant via the File System Access API | [docblocks.com](https://docblocks.com/), or `npm run dev` → http://localhost:5220                          |
 | **Desktop** | Electron app for macOS / Windows / Linux with real folders, native menus, tray, and auto-update                       | Installers on [GitHub Releases](https://github.com/bendyline/docblocks/releases), or `npm run dev:desktop` |
 | **VS Code** | A default DocBlocks editor for `*.md` files plus a Setup pane — works in desktop VS Code and VS Code for the Web      | Open `packages/vscode` in VS Code and press F5, or `npm run test:web -w docblocks-vscode`                  |
-| **CLI**     | `docblocks` — init, build, serve, convert, video rendering, and an MCP server for AI agents                           | `npm install -g @bendyline/docblocks-cli`                                                                  |
+| **CLI**     | `docblocks` — build, serve, convert, video rendering, and an MCP server for AI agents                                 | `npm install -g @bendyline/docblocks-cli`                                                                  |
 
 ## What it does
 
@@ -72,7 +74,7 @@ npm-workspaces monorepo, Node ≥ 22.14:
 | ------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | [`packages/core`](packages/core/README.md)       | `@bendyline/docblocks`       | Shared types and seams: filesystem providers, workspace management, host API contract                             |
 | [`packages/react`](packages/react/README.md)     | `@bendyline/docblocks-react` | `<DocBlocksShell>` and the UI component library (file explorer, workspace picker, export dialog, …)               |
-| [`packages/cli`](packages/cli/README.md)         | `@bendyline/docblocks-cli`   | The `docblocks` binary: init / build / serve / convert / video / mcp / parse / themes / transforms                |
+| [`packages/cli`](packages/cli/README.md)         | `@bendyline/docblocks-cli`   | The `docblocks` binary: build / serve / convert / video / mcp / parse / themes / transforms                       |
 | [`packages/vscode`](packages/vscode/README.md)   | `docblocks-vscode`           | VS Code extension: default DocBlocks markdown editor + Setup pane (dual build for desktop VS Code and vscode.dev) |
 | [`packages/desktop`](packages/desktop/README.md) | `docblocks-desktop`          | Electron app (main / preload / renderer), packaged with electron-builder                                          |
 | [`packages/site`](packages/site/README.md)       | `docblocks-site`             | The web app — a Vite/React site that mounts `<DocBlocksShell>`                                                    |

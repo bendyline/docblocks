@@ -52,9 +52,9 @@ Before reviewing, internalize the full system. DocBlocks ships from a single npm
 │   docblocks-react      │ │   docblocks-cli       │ │                         │
 │                        │ │                       │ │ main/  (Electron main)  │
 │ DocBlocksShell         │ │ commands/             │ │   main.ts (window,      │
-│ FileExplorer           │ │   init / build /      │ │     single-instance,    │
-│ WorkspacePicker        │ │   serve / convert /   │ │     deep-link)          │
-│ AppMenu                │ │   video / mcp /       │ │   ipc-fs.ts             │
+│ FileExplorer           │ │   build / serve /     │ │     single-instance,    │
+│ WorkspacePicker        │ │   convert / video /   │ │     deep-link)          │
+│ AppMenu                │ │   mcp /               │ │   ipc-fs.ts             │
 │ Export (Dialog +       │ │   themes / transforms │ │   ipc-workspaces.ts     │
 │   Toolbar +            │ │   / parse             │ │   ipc-shell.ts          │
 │   run-export)          │ │ converters/           │ │   ipc-ffmpeg.ts         │
@@ -142,7 +142,7 @@ Examine every package and every cross-cutting concern. Recommended quarterly or 
 | "Build system"         | tsup configs across core/react/cli, Vite configs across site/desktop/vscode-webview, the `app://` protocol, tsconfig alignment                                              |
 | "Electron host"        | The IPC surface (`ipc-fs`, `ipc-workspaces`, `ipc-shell`, `ipc-ffmpeg`, `menu`, `tray`, `updater`, `settings`, `workspace-roots`), preload contextBridge, deep-link handler |
 | "VS Code extension"    | `markdownEditorProvider`, host↔webview messages, Setup pane, web extension parity (`extension.web.ts`)                                                                      |
-| "CLI"                  | 9 commands (init / build / serve / convert / video / mcp / themes / transforms / parse), converters, MCP server tool inventory                                              |
+| "CLI"                  | 8 commands (build / serve / convert / video / mcp / themes / transforms / parse), converters, MCP server tool inventory                                                     |
 | "FileSystem providers" | The 3 implementations — interface conformance, error handling, identity (workspace IDs), media handling                                                                     |
 | "Squisq integration"   | Which surfaces import which squisq subpackages, externals in tsup/Vite, link:squisq script health                                                                           |
 | "Testing"              | Mocha density (only core + cli today), Playwright e2e across root / desktop / vscode                                                                                        |

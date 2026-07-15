@@ -9,7 +9,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **Site** (`packages/site`) — a Vite/React demo of the shell, deployed to GitHub Pages
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
-- **CLI** (`packages/cli`) — `docblocks` binary for init / build / serve / convert / video / mcp / parse / themes / transforms
+- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
 

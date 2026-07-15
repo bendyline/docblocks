@@ -3051,13 +3051,17 @@ html:has(.db-shell[data-theme='dark'])
 
 /* Status bar "✓ OK" indicator — squisq paints this in saturated emerald
    (#059669 light, #34d399 dark). Re-tone to the sage accent so the
-   parse-status indicator harmonizes with the rest of the chrome. */
+   status indicator harmonizes with the rest of the chrome. */
 .db-shell .squisq-status-ok {
   color: var(--db-accent);
 }
 
 .db-shell[data-theme='dark'] .squisq-status-ok {
   color: var(--db-accent-hover);
+}
+
+.db-autosave-pending {
+  opacity: 0.62;
 }
 
 /* Outline pane (left of the editor) — squisq paints a warm beige
@@ -3318,7 +3322,7 @@ html:has(.db-shell[data-theme='dark'])
   font-size: 13px;
   font-weight: 600;
   background: var(--db-accent);
-  color: var(--db-bg);
+  color: var(--db-text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -3352,11 +3356,9 @@ html:has(.db-shell[data-theme='dark'])
 
 @keyframes db-welcome-gateway-in {
   from {
-    opacity: 0;
     transform: translate(-50%, 8px);
   }
   to {
-    opacity: 1;
     transform: translate(-50%, 0);
   }
 }
@@ -3422,7 +3424,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 /* Browser PWA update notice. It is docked over the right side of Squisq's
-   status bar, while extra status-bar padding keeps the parse result visible.
+   status bar, while extra status-bar padding keeps its contents visible.
    If the status bar is hidden, it becomes a compact floating badge so the
    waiting update remains reachable. */
 .db-shell-editor-area--has-update .squisq-status-bar {

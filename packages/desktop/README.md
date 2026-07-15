@@ -2,6 +2,8 @@
 
 DocBlocks desktop application — an Electron shell around the DocBlocks editor for macOS, Windows, and Linux. The renderer mounts `<DocBlocksShell>` from `@bendyline/docblocks-react`, backed by real folders on disk instead of browser storage.
 
+[Desktop overview and downloads](https://docblocks.com/desktop/)
+
 ## Layout
 
 Three Electron processes, three directories:

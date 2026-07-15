@@ -246,6 +246,18 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
       throw new Error(`${packageName}: package target is missing: ${target}`);
     }
   }
+  if (manifest.name === '@bendyline/docblocks-cli') {
+    const binTarget = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.docblocks;
+    if (!binTarget) {
+      throw new Error(`${packageName}: docblocks bin target is missing`);
+    }
+    const binSource = await readFile(path.resolve(packageRoot, binTarget), 'utf8');
+    if (!binSource.startsWith('#!/usr/bin/env node')) {
+      throw new Error(
+        `${packageName}: docblocks bin target must start with a Node shebang so npm shims launch it correctly`,
+      );
+    }
+  }
   await assertDeclaredImports(packageRoot, manifest);
 }
 

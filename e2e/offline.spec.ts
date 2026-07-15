@@ -39,6 +39,22 @@ test.describe('DocBlocks offline (PWA)', () => {
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 
+    // Static product and crawl routes are precached as their own resources;
+    // the root-only navigation fallback must never replace them with the app.
+    const robotsPage = await context.newPage();
+    await robotsPage.goto('/robots.txt');
+    await expect(robotsPage.locator('body')).toContainText(
+      'Sitemap: https://docblocks.com/sitemap.xml',
+    );
+    await robotsPage.close();
+
+    const desktopPage = await context.newPage();
+    await desktopPage.goto('/desktop/');
+    await expect(desktopPage.getByRole('heading', { level: 1 })).toContainText(
+      'Your Markdown. Your folders.',
+    );
+    await desktopPage.close();
+
     // Cold start while offline: navigation falls back to the precached
     // index.html and every asset serves from the cache.
     await context.setOffline(true);

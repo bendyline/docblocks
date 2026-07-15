@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import { initCommand } from './commands/init.js';
 import { buildCommand } from './commands/build.js';
 import { serveCommand } from './commands/serve.js';
 import { convertCommand } from './commands/convert.js';
@@ -17,7 +16,6 @@ program
   .description('Build, preview, convert, render, inspect, and automate documents')
   .version(getPackageVersion());
 
-program.addCommand(initCommand);
 program.addCommand(buildCommand);
 program.addCommand(serveCommand);
 program.addCommand(convertCommand);

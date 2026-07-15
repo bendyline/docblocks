@@ -4,6 +4,8 @@ The DocBlocks command-line surface for document build and preview, linked-Squisq
 format conversion, MP4 rendering, document parsing, and a local MCP server for
 agents.
 
+[CLI and MCP overview](https://docblocks.com/cli/)
+
 ## Installation
 
 Node.js 22.14 or newer is required.
@@ -25,7 +27,6 @@ directions, overwrite behavior, MCP authority, artifact lifecycle, and assurance
 
 | Command                            | Purpose                                               |
 | ---------------------------------- | ----------------------------------------------------- |
-| `docblocks init [dir]`             | Create minimal `.docblocks/config.json` metadata.     |
 | `docblocks build`                  | Recursively build Markdown into standalone HTML.      |
 | `docblocks serve`                  | Run a constrained local preview server.               |
 | `docblocks convert <input>`        | Convert through the linked Squisq registry.           |

@@ -34,12 +34,12 @@
   padding-block: 3px;
 }
 
-.db-desktop-root .squisq-toolbar-view-tab {
+.db-desktop-root .db-shell .squisq-toolbar-view-tab {
   padding-top: 4px;
   padding-bottom: 4px;
 }
 
-.db-desktop-root .squisq-use-mode-trigger {
+.db-desktop-root .db-shell .squisq-use-mode-trigger {
   padding-bottom: 9px;
 }
 

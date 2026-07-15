@@ -311,5 +311,6 @@ describe('VS Code authority boundary', () => {
       type: 'configureMcp',
     });
     expect(parseSetupWebviewMessage({ type: 'configureMcp', path: '../mcp.json' })).to.equal(null);
+    expect(parseSetupWebviewMessage({ type: 'initProject' })).to.equal(null);
   });
 });

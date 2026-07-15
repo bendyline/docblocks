@@ -223,6 +223,10 @@ export interface DocBlocksShellProps {
   logoUrl?: string;
   /** Version and surface label included in prefilled issue reports, e.g. `1.1.2 web`. */
   issueReportVersion?: string;
+  /** Stable host title used before a document opens and for the optional home document. */
+  homeDocumentTitle?: string;
+  /** Document path that represents the host's indexable home experience. */
+  homeDocumentPath?: string;
   /**
    * Enable document version history. Snapshots are written under
    * `<basename>_files/.versions/` next to each markdown file (i.e., the
@@ -729,6 +733,8 @@ export function DocBlocksShell({
   theme: _themeProp = 'auto',
   logoUrl,
   issueReportVersion,
+  homeDocumentTitle,
+  homeDocumentPath,
   allowVersioning = true,
   versionBasename,
   versioningPrunePolicy,
@@ -947,7 +953,7 @@ export function DocBlocksShell({
     [activeWorkspaceDescriptor],
   );
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  useDocumentTitle(selectedFile);
+  useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
     if (!isElectronHost() || !activeWorkspaceId || !selectedFile) return undefined;
     const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
@@ -1439,7 +1445,7 @@ export function DocBlocksShell({
 
       const welcomePath = '/aboutDocBlocks.md';
       const welcomeContent = [
-        '# Welcome to DocBlocks',
+        '# DocBlocks: the local-first Markdown editor',
         '',
         'Your markdown can do anything.',
         '',
@@ -1462,6 +1468,13 @@ export function DocBlocksShell({
         '3. Your work is saved automatically',
         '',
         'Built on [Squiggly Square markdown extensions](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
+        '',
+        '## Explore DocBlocks',
+        '',
+        '- [Desktop app](https://docblocks.com/desktop/) for macOS, Windows, and Linux',
+        '- [VS Code extension](https://docblocks.com/vscode/) for rich editing inside your workspace',
+        '- [CLI and MCP server](https://docblocks.com/cli/) for conversion and agent workflows',
+        '- [Supported formats](https://docblocks.com/formats/) and [documentation](https://docblocks.com/docs/)',
       ].join('\n');
 
       let seededContent = welcomeContent;
@@ -3351,12 +3364,14 @@ export function DocBlocksShell({
                 onImportFiles={handleImportFiles}
               />
               <div className="db-shell-sidebar-footer">
-                <a
-                  href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Terms of Use
+                <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
+                  Docs
+                </a>
+                <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                  &bull;
+                </span>
+                <a href="https://docblocks.com/terms/" target="_blank" rel="noopener noreferrer">
+                  Terms
                 </a>
                 <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
                   &bull;
@@ -3397,7 +3412,7 @@ export function DocBlocksShell({
 
           {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
           {(!effectiveCompact || mobileShowEditor) && (
-            <div
+            <main
               className={
                 updateAvailable && onApplyUpdate && updateStatusBarVisible
                   ? 'db-shell-editor-area db-shell-editor-area--has-update'
@@ -3560,7 +3575,7 @@ export function DocBlocksShell({
                 blocked={documentSnapshot.conflict !== null || storageFull}
                 statusBarVisible={updateStatusBarVisible}
               />
-            </div>
+            </main>
           )}
         </div>
       </GitContext.Provider>

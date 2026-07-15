@@ -60,6 +60,46 @@ async function openFileByDefault(page: Page, fileName: string) {
   await page.waitForTimeout(3_000);
 }
 
+const LONGEST_DUPLICATE_TABS_ATTRIBUTE = 'data-docblocks-longest-duplicate-tabs-ms';
+
+async function monitorDuplicateTabDuration(page: Page, fileName: string): Promise<void> {
+  await page.evaluate(
+    ({ longestDurationAttribute, targetFileName }) => {
+      const root = document.documentElement;
+      root.setAttribute(longestDurationAttribute, '0');
+      let duplicateStartedAt: number | null = null;
+
+      const updateDuration = () => {
+        const matchingTabs = [...document.querySelectorAll('.tabs-container .tab')].filter((tab) =>
+          tab.textContent?.includes(targetFileName),
+        ).length;
+        if (matchingTabs > 1) {
+          duplicateStartedAt ??= performance.now();
+          return;
+        }
+        if (duplicateStartedAt === null) return;
+
+        const previousLongest = Number(root.getAttribute(longestDurationAttribute) ?? '0');
+        const duplicateDuration = performance.now() - duplicateStartedAt;
+        root.setAttribute(
+          longestDurationAttribute,
+          String(Math.max(previousLongest, duplicateDuration)),
+        );
+        duplicateStartedAt = null;
+      };
+
+      const observer = new MutationObserver(updateDuration);
+      observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+      window.setTimeout(() => observer.disconnect(), 15_000);
+      updateDuration();
+    },
+    {
+      longestDurationAttribute: LONGEST_DUPLICATE_TABS_ATTRIBUTE,
+      targetFileName: fileName,
+    },
+  );
+}
+
 // ── Extension activation ──────────────────────────────────────────
 
 test.describe('Extension activation', () => {
@@ -167,10 +207,18 @@ test.describe('Markdown editor panel', () => {
   });
 
   test('selecting markdown file opens DocBlocks by default', async ({ page }) => {
+    await monitorDuplicateTabDuration(page, 'test-doc.md');
     await openFileByDefault(page, 'test-doc.md');
 
     const webviews = page.locator('iframe.webview');
     await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+    await expect(
+      page.locator('.tabs-container .tab').filter({ hasText: 'test-doc.md' }),
+    ).toHaveCount(1);
+    const duplicateTabDuration = Number(
+      await page.locator('html').getAttribute(LONGEST_DUPLICATE_TABS_ATTRIBUTE),
+    );
+    expect(duplicateTabDuration).toBeLessThan(250);
     await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
       timeout: 10_000,
     });

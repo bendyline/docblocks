@@ -9,7 +9,8 @@ test.describe('DocBlocks App', () => {
   test('loads and shows the shell', async ({ page }) => {
     const shell = page.locator('.db-shell');
     await expect(shell).toBeVisible();
-    await expect(page).toHaveTitle('aboutDocBlocks - DocBlocks');
+    await expect(page).toHaveTitle('DocBlocks — Local-First Markdown Editor');
+    await expect(page.locator('main.db-shell-editor-area')).toBeVisible();
   });
 
   test('has a sidebar with workspace picker', async ({ page }) => {
@@ -132,11 +133,11 @@ test.describe('DocBlocks App', () => {
     const footer = page.locator('.db-shell-sidebar-footer');
     await expect(footer).toBeVisible();
 
-    const termsLink = footer.getByRole('link', { name: 'Terms of Use' });
-    await expect(termsLink).toHaveAttribute(
-      'href',
-      'https://github.com/bendyline/docblocks/blob/main/LICENSE',
-    );
+    const docsLink = footer.getByRole('link', { name: 'Docs' });
+    await expect(docsLink).toHaveAttribute('href', 'https://docblocks.com/docs/');
+
+    const termsLink = footer.getByRole('link', { name: 'Terms' });
+    await expect(termsLink).toHaveAttribute('href', 'https://docblocks.com/terms/');
 
     const issuesLink = footer.getByRole('link', { name: 'Issues' });
     const issuesHref = await issuesLink.getAttribute('href');

@@ -146,12 +146,12 @@ async function main(): Promise<void> {
     'npm run build',
     'npm run bundle:size',
     'npm run check:desktop-config',
-    'npm run check:packages',
     'npm run check:agent-guidance',
     'npm run check:assurance',
     'npm run lint',
     'npm run format:check',
     'npm run typecheck',
+    'npm run check:packages',
     'npm test',
     'npm run test:e2e:all',
   ];
@@ -199,6 +199,7 @@ async function main(): Promise<void> {
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],
     '.github/workflows/store-release.yml': ['all'],
+    '.github/workflows/vscode-release.yml': ['all'],
   };
   for (const [workflow, requirements] of Object.entries(workflowRequirements)) {
     const commands = await workflowCommands(workflow);

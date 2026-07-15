@@ -2,6 +2,8 @@
 
 VS Code extension that turns `*.md` files into rich DocBlocks documents — a default markdown editor powered by Squisq, plus a Setup tab for getting the full DocBlocks toolchain running.
 
+[DocBlocks for VS Code overview](https://docblocks.com/vscode/)
+
 ## Features
 
 ### Markdown editor

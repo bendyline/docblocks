@@ -24,6 +24,7 @@ import {
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -80,7 +81,20 @@ async function waitForProcessExit(app: ElectronApplication, timeoutMs: number): 
 
 async function forceCloseApplication(app: ElectronApplication): Promise<void> {
   const child = app.process();
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  if (child.exitCode === null && child.signalCode === null) {
+    if (process.platform === 'win32' && child.pid !== undefined) {
+      await new Promise<void>((resolve) => {
+        execFile(
+          'taskkill.exe',
+          ['/pid', String(child.pid), '/T', '/F'],
+          { windowsHide: true },
+          () => resolve(),
+        );
+      });
+    } else {
+      child.kill('SIGKILL');
+    }
+  }
   await waitForProcessExit(app, FORCED_CLOSE_TIMEOUT_MS);
 }
 
@@ -141,13 +155,14 @@ export const test = base.extend<DocBlocksFixtures>({
 
     async function launch(extraArgs: string[] = []): Promise<LaunchedDocBlocksApplication> {
       const args = [
-        appRoot,
         `--user-data-dir=${userDataDir}`,
         // Native crash dialogs block Playwright teardown and multiply across
-        // retries. Fail the process visibly in test output instead.
+        // retries. Keep these Chromium switches before the application path;
+        // arguments after it belong to the DocBlocks application instead.
         '--noerrdialogs',
         '--disable-breakpad',
         '--disable-gpu',
+        appRoot,
         ...extraArgs,
       ];
       // GitHub Actions Linux runners don't own chrome-sandbox with the
@@ -177,7 +192,14 @@ export const test = base.extend<DocBlocksFixtures>({
         const detail = error instanceof Error ? `: ${error.message}` : '';
         throw new Error(`Electron did not expose its main window${detail}`);
       }
-      await window.waitForLoadState('domcontentloaded');
+      try {
+        await window.waitForLoadState('domcontentloaded');
+      } catch (error: unknown) {
+        running = undefined;
+        await forceCloseApplication(app);
+        const detail = error instanceof Error ? `: ${error.message}` : '';
+        throw new Error(`Electron renderer failed during launch${detail}`);
+      }
       try {
         await window.waitForFunction(
           () => {

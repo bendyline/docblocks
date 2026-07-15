@@ -19,6 +19,17 @@ describe('document title', () => {
     expect(titleForSelectedFile('/')).to.equal('DocBlocks');
   });
 
+  it('keeps an indexable host title for the configured home document', () => {
+    const homeTitle = 'DocBlocks — Local-First Markdown Editor';
+    expect(titleForSelectedFile(null, homeTitle, '/aboutDocBlocks.md')).to.equal(homeTitle);
+    expect(titleForSelectedFile('/aboutDocBlocks.md', homeTitle, '/aboutDocBlocks.md')).to.equal(
+      homeTitle,
+    );
+    expect(titleForSelectedFile('/notes.md', homeTitle, '/aboutDocBlocks.md')).to.equal(
+      'notes - DocBlocks',
+    );
+  });
+
   it('keeps the host document title in sync with the selected file', async () => {
     const hook = await renderHook(
       ({ selectedFile }: { selectedFile: string | null }) => useDocumentTitle(selectedFile),

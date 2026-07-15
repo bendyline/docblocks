@@ -5,6 +5,7 @@ import '@bendyline/docblocks-react/styles';
 import { pickEmptyDocumentPrompt } from '@bendyline/docblocks-react/editor';
 import type {
   DocBlocksAccentColor,
+  DocumentSessionMessageStatus,
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
   VscodeWriteCanvasSettings,
@@ -15,6 +16,7 @@ import {
 } from '@bendyline/docblocks/vscode';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
+import { isAutoSavePending } from './autosaveStatus.js';
 import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 import { VscodeFindButton } from './VscodeFindButton.js';
@@ -51,9 +53,11 @@ export function VscodeEditor() {
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
+  const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
   const [findMode, setFindMode] = useState(false);
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const documentClientRef = useRef(new WebviewDocumentClient());
   const nextSaveRequestId = useRef(1);
 
@@ -63,6 +67,8 @@ export function VscodeEditor() {
       if (!msg) return;
       switch (msg.type) {
         case 'setContent':
+          activeSessionIdRef.current = msg.sessionId;
+          setSessionStatus('saved');
           setEditorScope(documentClientRef.current.acceptContent(msg));
           if (msg.content === markdownRef.current && msg.fileName === fileNameRef.current) return;
           markdownRef.current = msg.content;
@@ -71,10 +77,11 @@ export function VscodeEditor() {
           setFileName(msg.fileName);
           break;
         case 'editAcknowledged':
-        case 'sessionState':
         case 'saveResult':
-          // Persistence notices render in VS Code's native status bar. These
-          // revisioned responses remain in the validated host protocol.
+          // Full persistence notices render in VS Code's native status bar.
+          break;
+        case 'sessionState':
+          if (msg.sessionId === activeSessionIdRef.current) setSessionStatus(msg.status);
           break;
         case 'themeChange':
           setTheme(msg.theme);
@@ -169,6 +176,7 @@ export function VscodeEditor() {
     void editorGenerationKey;
     return pickEmptyDocumentPrompt();
   }, [editorGenerationKey]);
+  const autoSavePending = isAutoSavePending(settings.autoSave, sessionStatus);
 
   if (markdown === null || editorScope === null || mediaBridge === null || exportBridge === null) {
     return <EditorLoading />;
@@ -200,6 +208,11 @@ export function VscodeEditor() {
             placeholder={editorPlaceholder}
             mediaProvider={mediaBridge.mediaProvider}
             showFilesToggle={false}
+            statusBarSlotRight={
+              autoSavePending ? (
+                <span className="squisq-status-item db-autosave-pending">Autosave pending</span>
+              ) : undefined
+            }
             findMode={findMode}
             onFindModeChange={setFindMode}
             toolbarSlotRight={

@@ -2,6 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <title>DocBlocks — Local-First Markdown Editor</title>
+    <meta
+      name="description"
+      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. Available on the web, desktop, VS Code, and CLI."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://docblocks.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DocBlocks" />
+    <meta property="og:title" content="DocBlocks — Local-First Markdown Editor" />
+    <meta
+      property="og:description"
+      content="Write Markdown visually, keep files local, and turn one file into Word, PDF, slides, e-books, or video."
+    />
+    <meta property="og:url" content="https://docblocks.com/" />
+    <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DocBlocks — Local-First Markdown Editor" />
+    <meta
+      name="twitter:description"
+      content="Write Markdown visually, keep files local, and turn one file into Word, PDF, slides, e-books, or video."
+    />
+    <meta name="twitter:image" content="https://docblocks.com/og.png" />
+
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +45,41 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
-    <title>DocBlocks</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://docblocks.com/#organization",
+            "name": "Bendyline",
+            "url": "https://bendyline.com/",
+            "sameAs": ["https://github.com/bendyline"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://docblocks.com/#software",
+            "name": "DocBlocks",
+            "alternateName": "DocBlocks Markdown Editor",
+            "url": "https://docblocks.com/",
+            "description": "A local-first Markdown editor for the web, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
+            "applicationCategory": "ProductivityApplication",
+            "operatingSystem": "Web, Windows, macOS, Linux",
+            "isAccessibleForFree": true,
+            "license": "https://github.com/bendyline/docblocks/blob/main/LICENSE",
+            "publisher": { "@id": "https://docblocks.com/#organization" },
+            "featureList": [
+              "Local-first Markdown editing",
+              "Visual and source editing",
+              "Document workspaces",
+              "DOCX, PDF, PPTX, EPUB, HTML, MP4, and GIF export",
+              "VS Code extension",
+              "Command-line interface and local MCP server"
+            ]
+          }
+        ]
+      }
+    </script>
     <!-- Self-hosted theme fonts (Latin + Latin Extended). Copied from squisq's
          site (packages/site/public/fonts); regenerate upstream via its
          download-fonts.ps1. squisq's fontStacks expect the host page to
@@ -29,10 +95,76 @@
         width: 100%;
         overflow: hidden;
       }
+
+      .db-seo-bootstrap {
+        box-sizing: border-box;
+        display: grid;
+        min-height: 100%;
+        place-content: center;
+        gap: 18px;
+        padding: clamp(28px, 7vw, 96px);
+        background: #f3eede;
+        color: #262219;
+        font-family: 'DM Sans', system-ui, sans-serif;
+      }
+
+      .db-seo-bootstrap > * {
+        width: min(760px, 100%);
+        margin: 0;
+      }
+
+      .db-seo-bootstrap-kicker {
+        color: #79583a;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.13em;
+        text-transform: uppercase;
+      }
+
+      .db-seo-bootstrap h1 {
+        font-family: 'Cormorant Garamond', Georgia, serif;
+        font-size: clamp(2.6rem, 7vw, 5.6rem);
+        line-height: 0.95;
+      }
+
+      .db-seo-bootstrap-copy {
+        max-width: 650px;
+        font-size: clamp(1rem, 2vw, 1.25rem);
+        line-height: 1.65;
+      }
+
+      .db-seo-bootstrap nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+      }
+
+      .db-seo-bootstrap a {
+        color: #65462d;
+        font-weight: 700;
+        text-underline-offset: 3px;
+      }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="db-seo-bootstrap">
+        <p class="db-seo-bootstrap-kicker">Local-first Markdown, everywhere</p>
+        <h1>The Markdown editor that turns one file into anything.</h1>
+        <p class="db-seo-bootstrap-copy">
+          Write visually or in source, keep your files local, and publish the same Markdown as Word,
+          PDF, slides, an e-book, a web page, or video. No account and no proprietary document
+          format.
+        </p>
+        <nav aria-label="Learn about DocBlocks">
+          <a href="/desktop/">Desktop</a>
+          <a href="/vscode/">VS Code</a>
+          <a href="/cli/">CLI and MCP</a>
+          <a href="/formats/">Formats</a>
+          <a href="/docs/">Documentation</a>
+        </nav>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
