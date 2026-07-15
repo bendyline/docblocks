@@ -9,7 +9,12 @@ interface PackageManifest {
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly devDependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependenciesMeta?: Readonly<Record<string, Readonly<{ optional?: boolean }>>>;
   readonly scripts?: Readonly<Record<string, string>>;
+}
+
+interface PackageLock {
+  readonly packages?: Readonly<Record<string, PackageManifest>>;
 }
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,6 +25,12 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 async function readPackage(relativePath: string): Promise<PackageManifest> {
   return JSON.parse(await readFile(path.join(repoRoot, relativePath), 'utf8')) as PackageManifest;
+}
+
+async function readPackageLock(): Promise<PackageLock> {
+  return JSON.parse(
+    await readFile(path.join(repoRoot, 'package-lock.json'), 'utf8'),
+  ) as PackageLock;
 }
 
 async function workflowCommands(relativePath: string): Promise<readonly string[]> {
@@ -218,9 +229,19 @@ async function main(): Promise<void> {
 
   const reactPackage = await readPackage('packages/react/package.json');
   const sitePackage = await readPackage('packages/site/package.json');
+  const packageLock = await readPackageLock();
   const expectedMonacoVersion = '0.50.0';
-  if (reactPackage.peerDependencies?.['monaco-editor'] !== `^${expectedMonacoVersion}`) {
-    throw new Error('packages/react must leave Monaco ownership to a ^0.50.0 consumer peer');
+  if (reactPackage.peerDependencies?.['monaco-editor'] !== undefined) {
+    throw new Error('packages/react must leave Monaco peer ownership to Squisq');
+  }
+  const lockedSquisqEditor = packageLock.packages?.['node_modules/@bendyline/squisq-editor-react'];
+  if (
+    lockedSquisqEditor?.peerDependencies?.['monaco-editor'] !== `>=${expectedMonacoVersion}` ||
+    lockedSquisqEditor.peerDependenciesMeta?.['monaco-editor']?.optional === true
+  ) {
+    throw new Error(
+      `package-lock.json must resolve @bendyline/squisq-editor-react with a required monaco-editor >=${expectedMonacoVersion} peer`,
+    );
   }
   for (const [manifestPath, manifest] of [
     ['package.json', rootPackage],
