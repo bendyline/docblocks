@@ -1,3 +1,24 @@
+## @bendyline/docblocks [2.0.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.1.2...@bendyline/docblocks@2.0.0) (2026-07-14)
+
+### ⚠ BREAKING CHANGES
+
+* Updated MCP and CLI APIs
+
+### Features
+
+* Updated MCP and CLI APIs ([b88fe16](https://github.com/bendyline/docblocks/commit/b88fe161523dda1107abaee25485d111cfc4d119))
+
+### Bug Fixes
+
+* App mode ([9606b8c](https://github.com/bendyline/docblocks/commit/9606b8cd55a6e07f27a724fd73381b6c0bc5815f))
+* DB updates ([7c6696d](https://github.com/bendyline/docblocks/commit/7c6696da013c0b35fe83907ca47b7e0e48b7a262))
+* Git work and UX ([62e9f8a](https://github.com/bendyline/docblocks/commit/62e9f8a3e01240535819479fa1f454f18e36b610))
+* MCP updates ([f3b31d4](https://github.com/bendyline/docblocks/commit/f3b31d4b80a25f97803ca4c3055fb1453d295dd0))
+* More code review hardening ([015196a](https://github.com/bendyline/docblocks/commit/015196a47ebbeb978e999e61e9f148b5fd344a5d))
+* More fixes ([bfa9929](https://github.com/bendyline/docblocks/commit/bfa9929424e081ce369b9d2e1426a24ecdfedc93))
+* Setup work ([3ea05a4](https://github.com/bendyline/docblocks/commit/3ea05a45da7d0c6e9c528fc38ffe9d3997f914b3))
+* Update ([a6e6e56](https://github.com/bendyline/docblocks/commit/a6e6e56ede9f64a215d682f5f2f8d895a0b5d49b))
+
 ## @bendyline/docblocks [1.1.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@1.1.1...@bendyline/docblocks@1.1.2) (2026-07-07)
 
 ### Bug Fixes
