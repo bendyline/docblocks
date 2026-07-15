@@ -61,7 +61,8 @@
     "link:squisq": "tsx scripts/link-squisq.ts",
     "dev:squisq": "tsx scripts/watch-squisq.ts",
     "unlink:squisq": "npm unlink --no-save @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react && npm install",
-    "release": "multi-semantic-release"
+    "release": "multi-semantic-release",
+    "check:release-toolchain": "tsx scripts/check-release-toolchain.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",

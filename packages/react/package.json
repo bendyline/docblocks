@@ -61,24 +61,17 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "monaco-editor": "^0.50.0",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
-  "//peerDependenciesMeta": "Nothing here imports monaco-editor. It reaches the bundle only through squisq's useMonacoLoader(), which dynamic-imports it for the Git diff view and declares it optional for the same reason. Kept as a peer to document the version floor for hosts that want that view; optional so npm 7+ stops force-installing ~90MB on every consumer who never opens a diff.",
-  "peerDependenciesMeta": {
-    "monaco-editor": {
-      "optional": true
-    }
-  },
   "dependencies": {
     "@bendyline/docblocks": "2.0.0",
-    "@bendyline/squisq": "2.2.0",
-    "@bendyline/squisq-editor-react": "2.2.0",
-    "@bendyline/squisq-formats": "2.2.0",
-    "@bendyline/squisq-react": "2.2.0",
-    "@bendyline/squisq-video": "2.1.0",
-    "@bendyline/squisq-video-react": "2.1.0"
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-formats": "2.3.0",
+    "@bendyline/squisq-react": "2.3.0",
+    "@bendyline/squisq-video": "2.2.0",
+    "@bendyline/squisq-video-react": "2.2.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",

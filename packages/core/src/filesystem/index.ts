@@ -84,6 +84,10 @@ export {
   type IndexedDBLegacyConflictReason,
   type IndexedDBLegacyConflictResolution,
   type IndexedDBLegacyMigrationConflict,
+  type IndexedDBLegacyOpaqueDiscardTarget,
+  type IndexedDBLegacyOpaqueRecord,
+  type IndexedDBLegacyOpaqueRecordSummary,
+  type IndexedDBLegacyOpaqueValue,
   type IndexedDBLegacyRecoveryCandidate,
   type IndexedDBLegacyRecoveryKind,
 } from './indexeddb-provider-v2.js';

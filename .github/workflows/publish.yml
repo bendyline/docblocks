@@ -54,6 +54,13 @@ jobs:
         run: xvfb-run -a npm run all
 
       # ── Release ──────────────────────────────────────────────────
+      # multi-semantic-release deep-imports semantic-release's private
+      # internals and swallows the failure if that path ever disappears,
+      # degrading to stubs mid-release. Fail here, loudly, instead.
+      - name: Verify release toolchain
+        if: inputs.publish_release
+        run: npm run check:release-toolchain
+
       # Semantic Release runs FIRST: it is what rewrites every workspace
       # manifest to the released version. Packing before it produced tarballs
       # and a vsix stamped with the previous version, so the uploaded assets

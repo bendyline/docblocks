@@ -141,9 +141,9 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.2.0",
-    "@bendyline/squisq-editor-react": "2.2.0",
-    "@bendyline/squisq-react": "2.2.0",
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-react": "2.3.0",
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {

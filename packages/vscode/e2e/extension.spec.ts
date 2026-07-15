@@ -1,4 +1,4 @@
-import { test, expect, type Page, type FrameLocator } from '@playwright/test';
+import { test, expect, type Page, type FrameLocator, type Locator } from '@playwright/test';
 
 /**
  * Wait for VS Code for the Web to fully load.
@@ -35,21 +35,49 @@ async function openDocBlocksSetupTab(page: Page) {
 }
 
 /**
- * Right-click a file in the explorer and select "Open in DocBlocks".
+ * Open a file's Explorer context menu and wait for the DocBlocks contribution.
+ *
+ * VS Code can re-render the Explorer after the file becomes visible. A
+ * right-click that lands during that re-render is silently dropped, so retry
+ * the gesture until the menu item itself proves that the menu opened.
  */
-async function openFileInDocBlocks(page: Page, fileName: string) {
+async function openFileContextMenu(page: Page, fileName: string): Promise<Locator> {
   const explorer = page.locator('.explorer-folders-view');
   const file = explorer.getByText(fileName);
   await expect(file).toBeVisible({ timeout: 10_000 });
 
-  await file.click({ button: 'right' });
-  await page.waitForTimeout(1_000);
-
   const openInDocBlocks = page
     .locator('.context-view .action-label')
     .filter({ hasText: 'Open in DocBlocks' });
-  await openInDocBlocks.click();
-  await page.waitForTimeout(3_000);
+
+  await expect(async () => {
+    await page.keyboard.press('Escape');
+    await file.click({ button: 'right' });
+    await expect(openInDocBlocks).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return openInDocBlocks;
+}
+
+/**
+ * Right-click a file in the explorer and select "Open in DocBlocks".
+ *
+ * Selecting an action can be dropped by the same workbench re-render that
+ * affects the initial right-click. Retry the complete interaction until its
+ * observable result exists, but stop invoking the command as soon as VS Code
+ * attaches a webview so a slow first open cannot create a duplicate panel.
+ */
+async function openFileInDocBlocks(page: Page, fileName: string) {
+  const webviews = page.locator('iframe.webview');
+
+  await expect(async () => {
+    if ((await webviews.count()) === 0) {
+      const openInDocBlocks = await openFileContextMenu(page, fileName);
+      await openInDocBlocks.click();
+    }
+
+    await expect(webviews.last()).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 async function openFileByDefault(page: Page, fileName: string) {
@@ -189,18 +217,7 @@ test.describe('Markdown editor panel', () => {
   });
 
   test('can open markdown file with DocBlocks context menu', async ({ page }) => {
-    const explorer = page.locator('.explorer-folders-view');
-    const testFile = explorer.getByText('test-doc.md');
-    await expect(testFile).toBeVisible({ timeout: 10_000 });
-
-    await testFile.click({ button: 'right' });
-    await page.waitForTimeout(1_000);
-
-    const openInDocBlocks = page
-      .locator('.context-view .action-label')
-      .filter({ hasText: 'Open in DocBlocks' });
-    await expect(openInDocBlocks).toBeVisible({ timeout: 5_000 });
-    await openInDocBlocks.click();
+    await openFileInDocBlocks(page, 'test-doc.md');
 
     const webviews = page.locator('iframe.webview');
     await expect(webviews.last()).toBeVisible({ timeout: 15_000 });

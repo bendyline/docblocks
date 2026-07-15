@@ -36,6 +36,27 @@ jobs:
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
 
+      # `npm run all` already runs every E2E suite on this runner, but it used
+      # to upload nothing -- so an ubuntu failure here was undiagnosable and the
+      # only reports came from the dedicated jobs below, which rerun the very
+      # same suites on the very same OS purely to produce them. Collecting the
+      # reports here is what makes that duplication removable.
+      - name: Upload E2E diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-gate-playwright-diagnostics
+          path: |
+            playwright-report/
+            playwright-report-offline/
+            playwright-report-cross-browser/
+            test-results/
+            packages/vscode/playwright-report/
+            packages/vscode/test-results/
+            packages/desktop/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
   desktop-build:
     name: Desktop Build (${{ matrix.os }})
     needs: build-and-test
@@ -100,8 +121,12 @@ jobs:
     needs: desktop-build
     strategy:
       fail-fast: false
+      # macOS only: `build-and-test` already runs this exact suite on ubuntu as
+      # part of `npm run all`, and now uploads its reports, so an ubuntu leg
+      # here re-ran it serially (`needs:`) for no added coverage. macOS is a
+      # different Electron host and is the reason this job exists.
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:

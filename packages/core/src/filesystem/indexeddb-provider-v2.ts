@@ -51,6 +51,8 @@ const ENTRY_SCHEMA_VERSION = 1;
 const STATE_SCHEMA_VERSION = 1;
 const LEGACY_CONFLICT_SCHEMA_VERSION = 2;
 const LEGACY_CONFLICT_SCHEMA_VERSION_V1 = 1;
+const LEGACY_OPAQUE_SCHEMA_VERSION = 2;
+const LEGACY_OPAQUE_SCHEMA_VERSION_V1 = 1;
 const ENTRY_PREFIX = 'v2:entry:';
 const STATE_KEY = 'v2:state';
 const LEGACY_CONFLICT_PREFIX = 'v2:legacy-conflict:';
@@ -153,6 +155,67 @@ export type IndexedDBLegacyConflictResolution =
       readonly candidate: number;
       readonly payload: 'text' | 'binary' | 'directory';
     };
+
+interface PersistedLegacyOpaqueValue {
+  readonly value: unknown;
+  /** Null only for values upgraded from the untimestamped v1 archive shape. */
+  readonly archivedAt: string | null;
+}
+
+interface PersistedLegacyOpaqueRecord {
+  readonly schemaVersion: typeof LEGACY_OPAQUE_SCHEMA_VERSION;
+  readonly key: string;
+  readonly values: readonly PersistedLegacyOpaqueValue[];
+}
+
+/** One archived snapshot of an unrecognized legacy key's value. */
+export interface IndexedDBLegacyOpaqueValue {
+  /**
+   * The structured-clone value exactly as the legacy key held it. DocBlocks
+   * never interpreted these bytes, so the shape is whatever the writing tool
+   * chose. Callers must treat it as untrusted and narrow it themselves.
+   */
+  readonly value: unknown;
+  /** Byte size when the value is sized (bytes or string); null otherwise. */
+  readonly byteLength: number | null;
+  /** Null for values archived before archival timestamps were recorded. */
+  readonly archivedAt: string | null;
+}
+
+/** What is archived under one unrecognized legacy key, without its values. */
+export interface IndexedDBLegacyOpaqueRecordSummary {
+  /** The original legacy key, decoded (for example `fs:some-other-tool`). */
+  readonly key: string;
+  /** Archived snapshots of this key, oldest first. Never zero. */
+  readonly valueCount: number;
+  /** Total bytes across values; null when any value is not sized. */
+  readonly byteLength: number | null;
+  readonly firstArchivedAt: string | null;
+  readonly lastArchivedAt: string | null;
+}
+
+/** An archived legacy key together with every value snapshot it holds. */
+export interface IndexedDBLegacyOpaqueRecord extends IndexedDBLegacyOpaqueRecordSummary {
+  /** Oldest first. Index N here matches index N of the archival order. */
+  readonly values: readonly IndexedDBLegacyOpaqueValue[];
+}
+
+/**
+ * One record a caller has looked at and intends to destroy.
+ *
+ * Both {@link IndexedDBLegacyOpaqueRecordSummary} and
+ * {@link IndexedDBLegacyOpaqueRecord} satisfy this shape, so the value returned
+ * by a list or read can be handed straight to the discard call.
+ */
+export interface IndexedDBLegacyOpaqueDiscardTarget {
+  readonly key: string;
+  /**
+   * The number of archived values the caller saw. The discard fails if the
+   * record has since grown, so a snapshot that arrived after the caller looked
+   * is never destroyed unseen.
+   */
+  readonly valueCount: number;
+}
 
 export interface IndexedDBFileSystemProviderV2Options {
   /** Injectable store for fault, migration, and concurrency tests. */
@@ -706,6 +769,96 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     );
   }
 
+  /**
+   * List the unrecognized legacy keys this workspace archived during migration.
+   *
+   * Migration deletes the legacy `fs:` namespace, but a key it cannot interpret
+   * is copied aside first rather than dropped: those bytes belong to whatever
+   * tool wrote them against this origin, and DocBlocks is not entitled to
+   * decide they are worthless. Nothing else reads that archive, so without this
+   * call the bytes are invisible and their quota is unaccountable.
+   *
+   * Values are deliberately excluded — an archive large enough to matter is an
+   * archive too large to materialize just to count it. Use
+   * {@link readLegacyOpaqueRecord} for the values themselves.
+   */
+  public async listLegacyOpaqueRecords(): Promise<readonly IndexedDBLegacyOpaqueRecordSummary[]> {
+    this.assertOpen('read');
+    await this.ensureInitialized('read');
+    return this.transaction('readonly', { operation: 'read' }, async (tx) => {
+      const keys = (await tx.keys()).filter((key) => key.startsWith(LEGACY_OPAQUE_PREFIX));
+      const summaries: IndexedDBLegacyOpaqueRecordSummary[] = [];
+      for (const key of keys) {
+        summaries.push(
+          toOpaqueSummary(validateLegacyOpaqueRecord(await tx.get<unknown>(key), key)),
+        );
+      }
+      summaries.sort((left, right) => compareText(left.key, right.key));
+      return Object.freeze(summaries);
+    });
+  }
+
+  /** Retrieve every archived value for one unrecognized legacy key. */
+  public async readLegacyOpaqueRecord(key: string): Promise<IndexedDBLegacyOpaqueRecord | null> {
+    this.assertOpen('read');
+    await this.ensureInitialized('read');
+    return this.transaction('readonly', { operation: 'read' }, async (tx) => {
+      const archiveKey = legacyOpaqueKey(key);
+      const raw = await tx.get<unknown>(archiveKey);
+      if (raw === null) return null;
+      return toPublicOpaqueRecord(validateLegacyOpaqueRecord(raw, archiveKey));
+    });
+  }
+
+  /**
+   * Permanently destroy archived legacy values. This is the only operation that
+   * can lose data the archive exists to protect.
+   *
+   * For every target, all of that key's archived value snapshots are erased and
+   * the quota they held is reclaimed. There is no undo, no tombstone, and no
+   * other copy: migration already deleted the original `fs:` key, so the
+   * archive is the last one. Retrieve anything worth keeping with
+   * {@link readLegacyOpaqueRecord} before calling this.
+   *
+   * Each target must carry the `valueCount` the caller actually observed, which
+   * is why a target is a value returned by {@link listLegacyOpaqueRecords} or
+   * {@link readLegacyOpaqueRecord} rather than a bare key. A stale client can
+   * append a new snapshot at any time; if any target has grown since it was
+   * observed, the whole call fails with `conflict` and destroys nothing, so
+   * re-list and look again. A key that is already absent is not an error —
+   * discarding what is gone is a no-op — but a key whose count disagrees is.
+   *
+   * @returns how many records were destroyed.
+   */
+  public async discardLegacyOpaqueRecords(
+    targets: readonly IndexedDBLegacyOpaqueDiscardTarget[],
+  ): Promise<number> {
+    this.assertOpen('remove');
+    if (targets.length === 0) return 0;
+    await this.ensureInitialized('remove');
+    return this.withMutationLock(() =>
+      this.transaction('readwrite', { operation: 'remove' }, async (tx) => {
+        const doomed: string[] = [];
+        for (const target of targets) {
+          const archiveKey = legacyOpaqueKey(target.key);
+          const raw = await tx.get<unknown>(archiveKey);
+          if (raw === null) continue;
+          const record = validateLegacyOpaqueRecord(raw, archiveKey);
+          if (record.values.length !== target.valueCount) {
+            throw new FsError(
+              'conflict',
+              `Archived legacy key ${target.key} now holds ${record.values.length} values, not ${target.valueCount}. Read it again before discarding it.`,
+              { operation: 'remove', retryable: false },
+            );
+          }
+          doomed.push(archiveKey);
+        }
+        for (const archiveKey of doomed) await tx.delete(archiveKey);
+        return doomed.length;
+      }),
+    );
+  }
+
   private async ensureInitialized(operation: FsOperation): Promise<void> {
     this.assertOpen(operation);
     if (this.initialization) return this.initialization;
@@ -832,7 +985,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     for (const entry of entries.values()) {
       await tx.put(entryKey(entry.path), entry);
     }
-    await deleteLegacyNamespace(tx, keys);
+    await deleteLegacyNamespace(tx, keys, now);
     const state: PersistedState = {
       schemaVersion: STATE_SCHEMA_VERSION,
       migrationVersion: 2,
@@ -879,7 +1032,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
       );
     }
 
-    await deleteLegacyNamespace(tx, keys);
+    await deleteLegacyNamespace(tx, keys, now);
     for (const key of keys) {
       if (key.startsWith(LEGACY_IGNORED_PREFIX)) await tx.delete(key);
     }
@@ -1553,26 +1706,114 @@ function hasFileAncestor(
   return parentChainWithRoot(path).some((parent) => entries.get(parent)?.kind === 'file');
 }
 
+function legacyOpaqueKey(key: string): string {
+  return `${LEGACY_OPAQUE_PREFIX}${encodeURIComponent(key)}`;
+}
+
+/**
+ * Read an archived opaque record, upgrading the untimestamped v1 shape.
+ *
+ * v1 recorded bare values with no archival time. Those values are still the
+ * caller's data, so they are surfaced with a null `archivedAt` rather than
+ * discarded or stamped with a time nobody observed.
+ */
+function validateLegacyOpaqueRecord(
+  value: unknown,
+  archiveKey: string,
+): PersistedLegacyOpaqueRecord {
+  if (!isRecord(value) || !Array.isArray(value.values)) {
+    throw corrupt(`Archived legacy record is corrupt: ${archiveKey}.`);
+  }
+  const key = readString(value.key, 'archived legacy key');
+  if (legacyOpaqueKey(key) !== archiveKey) {
+    throw corrupt(`Archived legacy record key does not match its key: ${archiveKey}.`);
+  }
+  if (value.schemaVersion === LEGACY_OPAQUE_SCHEMA_VERSION_V1) {
+    return {
+      schemaVersion: LEGACY_OPAQUE_SCHEMA_VERSION,
+      key,
+      values: Object.freeze(
+        value.values.map(
+          (item) => ({ value: item, archivedAt: null }) satisfies PersistedLegacyOpaqueValue,
+        ),
+      ),
+    };
+  }
+  if (value.schemaVersion !== LEGACY_OPAQUE_SCHEMA_VERSION) {
+    throw corrupt(`Unsupported archived legacy record schema: ${archiveKey}.`);
+  }
+  const values = value.values.map((item) => {
+    if (!isRecord(item)) throw corrupt(`Archived legacy value is corrupt: ${archiveKey}.`);
+    return {
+      value: item.value,
+      // A v2 record legitimately carries null here for values it inherited from
+      // the untimestamped v1 shape, so this must stay nullable on the way back
+      // in or re-archiving a v1 record would make it permanently unreadable.
+      archivedAt:
+        item.archivedAt === null ? null : readString(item.archivedAt, 'archived legacy timestamp'),
+    } satisfies PersistedLegacyOpaqueValue;
+  });
+  if (values.length === 0) throw corrupt(`Archived legacy record has no values: ${archiveKey}.`);
+  return { schemaVersion: LEGACY_OPAQUE_SCHEMA_VERSION, key, values: Object.freeze(values) };
+}
+
+/** Best-effort size of an uninterpreted value; null when it is not sized. */
+function opaqueValueByteLength(value: unknown): number | null {
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  if (typeof value === 'string') return new TextEncoder().encode(value).byteLength;
+  return null;
+}
+
+function toOpaqueSummary(record: PersistedLegacyOpaqueRecord): IndexedDBLegacyOpaqueRecordSummary {
+  // A total that silently omitted unsized values would understate the quota
+  // this record holds, so an unsized value makes the whole total unknown.
+  let byteLength: number | null = 0;
+  for (const item of record.values) {
+    const size = opaqueValueByteLength(item.value);
+    byteLength = size === null || byteLength === null ? null : byteLength + size;
+  }
+  const stamps = record.values.map((item) => item.archivedAt);
+  return Object.freeze({
+    key: record.key,
+    valueCount: record.values.length,
+    byteLength,
+    firstArchivedAt: stamps[0] ?? null,
+    lastArchivedAt: stamps[stamps.length - 1] ?? null,
+  });
+}
+
+function toPublicOpaqueRecord(record: PersistedLegacyOpaqueRecord): IndexedDBLegacyOpaqueRecord {
+  return Object.freeze({
+    ...toOpaqueSummary(record),
+    values: Object.freeze(
+      record.values.map((item) =>
+        Object.freeze({
+          value: item.value instanceof ArrayBuffer ? copyBytes(item.value) : item.value,
+          byteLength: opaqueValueByteLength(item.value),
+          archivedAt: item.archivedAt,
+        }),
+      ),
+    ),
+  });
+}
+
 async function deleteLegacyNamespace(
   transaction: IndexedDBFileSystemTransaction,
   keys: readonly string[],
+  archivedAt: string,
 ): Promise<void> {
   for (const key of keys) {
     if (key.startsWith(LEGACY_PREFIX) && !isRecognizedLegacyKey(key)) {
-      const archiveKey = `${LEGACY_OPAQUE_PREFIX}${encodeURIComponent(key)}`;
+      const archiveKey = legacyOpaqueKey(key);
       const existing = await transaction.get<unknown>(archiveKey);
       const values =
-        isRecord(existing) &&
-        existing.schemaVersion === 1 &&
-        existing.key === key &&
-        Array.isArray(existing.values)
-          ? existing.values
-          : [];
+        existing === null ? [] : validateLegacyOpaqueRecord(existing, archiveKey).values;
       await transaction.put(archiveKey, {
-        schemaVersion: 1,
+        schemaVersion: LEGACY_OPAQUE_SCHEMA_VERSION,
         key,
-        values: [...values, await transaction.get<unknown>(key)],
-      });
+        values: [...values, { value: await transaction.get<unknown>(key), archivedAt }],
+      } satisfies PersistedLegacyOpaqueRecord);
     }
     if (key.startsWith(LEGACY_PREFIX) || key.startsWith(LEGACY_IGNORED_PREFIX))
       await transaction.delete(key);

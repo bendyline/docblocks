@@ -17,6 +17,7 @@ import {
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { isAutoSavePending } from './autosaveStatus.js';
+import { readVscodeBodyTheme, type VscodeColorScheme } from './vscodeBodyTheme.js';
 import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 import { VscodeWebviewRecovery } from './webviewRecovery.js';
@@ -48,7 +49,12 @@ const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  // Seed from the class VS Code stamped on <body> before this script ran, so
+  // the first painted frame already matches VS Code. The host's `themeChange`
+  // only arrives after a ready round-trip; a hardcoded default would paint the
+  // wrong theme until then and visibly flip. `themeChange` still drives live
+  // theme switches below.
+  const [theme, setTheme] = useState<VscodeColorScheme>(readVscodeBodyTheme);
   const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
