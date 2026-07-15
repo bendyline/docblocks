@@ -166,6 +166,22 @@ describe('desktop settings file I/O', () => {
     expect(diskFullFailure).to.equal(diskFull);
     expect(writes).to.equal(1);
   });
+
+  it('retries a transient rename with the default delay', async () => {
+    let renameAttempts = 0;
+    await atomicWriteSettingsFile(
+      settingsPath,
+      '{}',
+      fakeIo({
+        rename: async () => {
+          renameAttempts += 1;
+          if (renameAttempts === 1) throw nodeError('EBUSY', 'busy');
+        },
+      }),
+    );
+
+    expect(renameAttempts).to.equal(2);
+  });
 });
 
 describe('desktop settings recovery', () => {
