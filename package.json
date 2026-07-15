@@ -54,7 +54,7 @@
     "pretypecheck": "npm run build:core && npm run build:react && npm run build:cli",
     "typecheck": "npm run typecheck -w @bendyline/docblocks && npm run typecheck -w @bendyline/docblocks-react && npm run typecheck -w @bendyline/docblocks-cli && npm run typecheck -w docblocks-vscode && npm run typecheck -w docblocks-site && npm run typecheck -w docblocks-desktop",
     "clean": "rimraf packages/*/dist",
-    "lint": "eslint .",
+    "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "prettierfix": "prettier --write .",
     "format:check": "prettier --check .",

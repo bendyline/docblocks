@@ -7,7 +7,7 @@
  * acceptable for v1).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitFileChange, GitLogEntry } from '@bendyline/docblocks/host';
 import { Dialog } from '../components/Dialog.js';
 import { useGitContext } from './GitContext.js';
@@ -50,32 +50,47 @@ export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
   const [hasMore, setHasMore] = useState(false);
   const [expandedSha, setExpandedSha] = useState<string | null>(null);
   const [details, setDetails] = useState<ReadonlyMap<string, CommitDetail>>(new Map());
+  /**
+   * Bumped whenever the repository or file being logged changes. A slow
+   * page from the previous repo/file resolving afterwards would otherwise
+   * append the wrong repository's commits to the new list.
+   */
+  const generationRef = useRef(0);
 
   const loadPage = useCallback(
     async (skip: number) => {
       if (!gitApi || !repositoryId) return;
+      const generation = generationRef.current;
+      const stale = () => generation !== generationRef.current;
       setLoading(true);
       setError(null);
       try {
         const result = await gitApi.log(repositoryId, { path, maxCount: PAGE_SIZE, skip });
+        if (stale()) return;
         if (!result.ok) {
           setError(result.error.message);
           return;
         }
         setEntries((prev) => (skip === 0 ? result.value : [...prev, ...result.value]));
         setHasMore(result.value.length === PAGE_SIZE);
+      } catch (caught: unknown) {
+        // A rejected log left the dialog claiming "No commits yet".
+        if (stale()) return;
+        setError(caught instanceof Error ? caught.message : 'Could not load history');
       } finally {
-        setLoading(false);
+        if (!stale()) setLoading(false);
       }
     },
     [gitApi, repositoryId, path],
   );
 
   useEffect(() => {
+    generationRef.current += 1;
     setEntries([]);
     setExpandedSha(null);
     setDetails(new Map());
     setHasMore(false);
+    setLoading(false);
     void loadPage(0);
   }, [loadPage]);
 
@@ -86,13 +101,24 @@ export function GitHistoryDialog({ path, onClose }: GitHistoryDialogProps) {
     }
     setExpandedSha(sha);
     if (!gitApi || !repositoryId || details.has(sha)) return;
-    void gitApi.commitFiles(repositoryId, sha).then((result) => {
+    const generation = generationRef.current;
+    const record = (detail: CommitDetail) => {
+      // The row renders "Loading…" until a detail lands, so a rejection
+      // that recorded nothing left it spinning for the dialog's lifetime.
+      if (generation !== generationRef.current) return;
       setDetails((prev) => {
         const next = new Map(prev);
-        next.set(sha, result.ok ? result.value : { error: result.error.message });
+        next.set(sha, detail);
         return next;
       });
-    });
+    };
+    void gitApi.commitFiles(repositoryId, sha).then(
+      (result) => record(result.ok ? result.value : { error: result.error.message }),
+      (error: unknown) =>
+        record({
+          error: error instanceof Error ? error.message : 'Could not load this commit',
+        }),
+    );
   };
 
   if (!git) return null;

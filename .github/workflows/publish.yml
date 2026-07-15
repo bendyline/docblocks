@@ -52,6 +52,16 @@ jobs:
         run: xvfb-run -a npm run all
 
       # ── Release ──────────────────────────────────────────────────
+      # Semantic Release runs FIRST: it is what rewrites every workspace
+      # manifest to the released version. Packing before it produced tarballs
+      # and a vsix stamped with the previous version, so the uploaded assets
+      # never matched the tag or what npm actually published.
+      - name: Semantic Release
+        if: inputs.publish_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx multi-semantic-release --ignore-packages=packages/site,packages/vscode --sequential-prepare
+
       - name: Pack tarballs
         if: inputs.publish_release
         run: |
@@ -72,12 +82,6 @@ jobs:
           name: release-assets
           path: release-assets/*
           retention-days: 14
-
-      - name: Semantic Release
-        if: inputs.publish_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx multi-semantic-release --ignore-packages=packages/site,packages/vscode --sequential-prepare
 
       # multi-semantic-release runs @semantic-release/git once per package with
       # that package directory as cwd, so the root lockfile can never be staged
@@ -103,6 +107,14 @@ jobs:
       - name: Build site
         if: inputs.deploy_pages
         run: npm run build -w docblocks-site
+
+      # This is the only build whose bits reach users, and it is built here --
+      # after the version bump -- so it is NOT the build `npm run all` gated in
+      # CI. Any chunk over the 10 MiB precache cap drops out of the manifest
+      # silently, so the offline promise has to be re-verified on this artifact.
+      - name: Verify site precache manifest
+        if: inputs.deploy_pages
+        run: npm run check:site-precache
 
       - name: Upload pages artifact
         if: inputs.deploy_pages

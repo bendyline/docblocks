@@ -310,7 +310,12 @@ describe('CLI build and serve commands', () => {
         `attacker.invalid:${port}`,
       );
       expect(forged.status).to.equal(421);
-      expect(forged.body.toString('utf8')).to.equal('Misdirected request\n');
+      const explanation = forged.body.toString('utf8');
+      expect(explanation).to.match(/^Misdirected request\n/u);
+      // The refusal must explain itself rather than emitting a bare 421.
+      expect(explanation).to.include('DNS-rebinding');
+      expect(explanation).to.include('127.0.0.1.attacker.invalid');
+      expect(explanation).to.include('--allow-host');
       expect(forgedHead.status).to.equal(421);
       expect(forgedHead.body).to.have.length(0);
     } finally {

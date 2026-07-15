@@ -31,6 +31,7 @@ import type {
 } from '@bendyline/docblocks/host';
 import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem';
 import { BufferedEventChannel } from './buffered-event-channel.js';
+import { parseHostEnvironmentArguments } from '../shared/host-environment.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
 // ready-to-show, before React effects subscribe. Install this preload listener
@@ -327,10 +328,14 @@ function onOpenRequest(listener: (request: OpenRequest) => void): () => void {
 
 // ── env ─────────────────────────────────────────────────────────────
 
+// `appVersion` and `isDev` are main-owned and arrive on argv — see
+// shared/host-environment.ts. They must never be re-derived from
+// `process.env` here: `npm_package_version` exists only under an `npm run`
+// script and `NODE_ENV` is unset in a packaged app, so doing so reported
+// version 0.0.0 and isDev:true to every user of every packaged build.
 const env: HostEnvironment = {
   platform: process.platform as HostEnvironment['platform'],
-  appVersion: process.env.npm_package_version ?? '0.0.0',
-  isDev: process.env.NODE_ENV !== 'production',
+  ...parseHostEnvironmentArguments(process.argv),
 };
 
 // ── expose ──────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import { NativeFileSystemProvider } from '../src/filesystem/native-provider.js';
 import { NativeFileSystemEmulator, nativeDomError } from './helpers/native-file-system-emulator.js';
+import { defineFileSystemProviderV1Conformance } from './helpers/filesystem-v1-conformance.js';
 
 function domError(name: string, message = name): DOMException {
   return new DOMException(message, name);
@@ -212,3 +213,9 @@ describe('NativeFileSystemProvider', () => {
 function encoded(value: string): Uint8Array {
   return new TextEncoder().encode(value);
 }
+
+defineFileSystemProviderV1Conformance(
+  'NativeFileSystemProvider',
+  () =>
+    new NativeFileSystemProvider('native-conformance', new NativeFileSystemEmulator().rootHandle),
+);

@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { IndexedDBFileSystemProvider } from '../src/filesystem/indexeddb-provider.js';
 import { FsError } from '../src/filesystem/fs-error.js';
 import { parseWorkspacePath } from '../src/filesystem/workspace-path.js';
+import { defineFileSystemProviderV1Conformance } from './helpers/filesystem-v1-conformance.js';
 import type {
   IndexedDBFileSystemStore,
   IndexedDBFileSystemTransaction,
@@ -211,7 +212,7 @@ describe('IndexedDBFileSystemProvider', () => {
 
     await expectRejected(provider.writeFile('../escape.md', 'x'), /must not contain/);
     await expectRejected(provider.createDirectory('safe/./bad'), /must not contain/);
-    await expectRejected(provider.delete('/'), /root cannot be used/);
+    await expectRejected(provider.delete('/'), /root is not a file entry/);
     await expectRejected(provider.writeBinary('bad\0name', new Uint8Array()), /NUL/);
     expect(await provider.readDirectory('/')).to.deep.equal([]);
     expect(await provider.exists('/')).to.equal(true);
@@ -433,6 +434,25 @@ describe('IndexedDBFileSystemProvider', () => {
     expect(store.closeCalls).to.equal(1);
     await expectRejected(provider.readFile('/doc.md'), /disposed/);
     await expectRejected(provider.writeFile('/next.md', 'next'), /disposed/);
+
+    // Callers switch on the code, not the message. Every v2 provider reports
+    // 'disposed' for this exact condition, so this facade must not report a
+    // different code for it. ('closed' remains distinct: the Electron transport
+    // uses it for a host-side session that closed underneath the client.)
+    for (const operation of [
+      () => provider.readFile('/doc.md'),
+      () => provider.stat('/doc.md'),
+      () => provider.readDirectory('/'),
+      () => provider.writeFile('/next.md', 'next'),
+      () => provider.delete('/doc.md'),
+    ]) {
+      const error = await operation().then(
+        () => null,
+        (reason: unknown) => reason,
+      );
+      expect(error).to.be.instanceOf(FsError);
+      expect((error as FsError).code).to.equal('disposed');
+    }
   });
 
   it('waits for an already-started shared transaction before closing exactly once', async () => {
@@ -470,3 +490,8 @@ describe('IndexedDBFileSystemProvider', () => {
     expect(store.snapshot()).to.deep.equal(beforeRename);
   });
 });
+
+defineFileSystemProviderV1Conformance(
+  'IndexedDBFileSystemProvider',
+  () => createProvider().provider,
+);

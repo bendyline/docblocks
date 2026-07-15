@@ -34,8 +34,13 @@ on:
     tags:
       - 'desktop-v*'
 
+# Least privilege by default: checkout is all most jobs need, and the build
+# jobs package with `--publish never`, so nothing but `release` writes to the
+# repo. artifact upload/download authenticate with the Actions runtime token
+# rather than GITHUB_TOKEN, so they need no `contents` grant either. The
+# `release` job declares its own `contents: write` where it creates the release.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   quality:

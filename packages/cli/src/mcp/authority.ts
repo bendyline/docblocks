@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import { readContainedFile } from '../contained-file.js';
+import { isPathInside } from '../internal/paths.js';
 
 export interface McpFileAuthorityOptions {
   readRoots?: readonly string[];
@@ -407,14 +408,6 @@ function samePath(left: string, right: string): boolean {
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   };
   return normalize(left) === normalize(right);
-}
-
-function isPathInside(root: string, candidate: string): boolean {
-  const relative = path.relative(path.resolve(root), path.resolve(candidate));
-  return (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-  );
 }
 
 async function writeFileHandle(

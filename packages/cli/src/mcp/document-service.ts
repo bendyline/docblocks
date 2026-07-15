@@ -15,6 +15,7 @@ import type { ConvertSource, FormatRegistry } from '@bendyline/squisq-cli/api';
 import { ArtifactStore } from './artifact-store.js';
 import { McpFileAuthority } from './authority.js';
 import { boundWireText, isWireText } from './output-bounds.js';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const MAX_BUNDLE_ASSETS = 256;
 const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
@@ -510,11 +511,7 @@ export function sha256(bytes: Uint8Array): string {
 }
 
 export function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('MCP operation was cancelled');
-  error.name = 'AbortError';
-  throw error;
+  throwIfSignalAborted(signal, 'MCP operation was cancelled');
 }
 
 function baseNameFromName(name: string): string {

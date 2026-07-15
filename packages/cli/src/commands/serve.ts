@@ -7,6 +7,8 @@ import { renderMarkdownHtml } from '../render-html.js';
 import { readContainedFile } from '../contained-file.js';
 import { isAllowedPreviewPath } from '../preview-policy.js';
 import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
+import { positiveLimit } from '../internal/limits.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
 
 export interface ServeOptions {
   port: number;
@@ -14,6 +16,8 @@ export interface ServeOptions {
   theme?: string;
   host?: string;
   allowNetwork?: boolean;
+  /** Extra Host-header names this server answers to, beyond the bind policy. */
+  allowedHosts?: readonly string[];
   maxFileBytes?: number;
   maxConcurrentReads?: number;
 }
@@ -28,6 +32,7 @@ export interface PreviewServer {
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_READS = 16;
+const MAX_ALLOWED_HOSTS = 32;
 export async function startPreviewServer(opts: ServeOptions): Promise<PreviewServer> {
   const requestedRoot = path.resolve(opts.dir);
   let root: string;
@@ -41,18 +46,32 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
   if (!rootStat.isDirectory()) throw new Error(`Preview root is not a directory: ${root}`);
 
   const host = validateHost(opts.host ?? DEFAULT_HOST, opts.allowNetwork === true);
-  const maxFileBytes = positiveLimit(opts.maxFileBytes, DEFAULT_MAX_FILE_BYTES, 'file size');
+  const allowedHosts = validateAllowedHosts(opts.allowedHosts ?? []);
+  const maxFileBytes = positiveLimit(
+    opts.maxFileBytes,
+    DEFAULT_MAX_FILE_BYTES,
+    'preview file size',
+  );
   const maxConcurrentReads = positiveLimit(
     opts.maxConcurrentReads,
     DEFAULT_MAX_CONCURRENT_READS,
-    'concurrent request',
+    'preview concurrent request',
   );
   let activeRequests = 0;
   const server = createServer((req, res) => {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : opts.port;
-    if (!isAllowedPreviewRequestAuthority(req.headers.host, host, port)) {
-      sendText(res, 421, 'Misdirected request', req.method === 'HEAD');
+    if (!isAllowedPreviewRequestAuthority(req.headers.host, host, port, allowedHosts)) {
+      // A bare 421 is undiagnosable, and `localhost` vs `127.0.0.1` is the
+      // most common way to hit this. Explain the policy in the body instead.
+      // Rejections are deliberately not logged: on an --allow-network server
+      // any unauthenticated client could otherwise flood the terminal.
+      sendText(
+        res,
+        421,
+        misdirectedRequestMessage(req.headers.host, host, port, allowedHosts),
+        req.method === 'HEAD',
+      );
       return;
     }
     if (activeRequests >= maxConcurrentReads) {
@@ -61,7 +80,14 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
     }
     activeRequests += 1;
     handlePreviewRequest(req, res, root, opts.theme, maxFileBytes)
-      .catch(() => sendText(res, 500, 'Internal server error', req.method === 'HEAD'))
+      .catch((error: unknown) => {
+        // A dev server exists to give feedback. Swallowing the cause left a
+        // bad theme id, a parser crash, or an asset failure showing a bare
+        // "Internal server error" in the browser and nothing in the terminal.
+        reportPreviewFailure(req, error);
+        if (!res.headersSent) sendText(res, 500, 'Internal server error', req.method === 'HEAD');
+        else res.end();
+      })
       .finally(() => {
         activeRequests -= 1;
       });
@@ -87,6 +113,7 @@ export const serveCommand = new Command('serve')
   .option('-t, --theme <id>', 'Squisq theme ID to apply')
   .option('--host <host>', 'interface to bind (loopback by default)', DEFAULT_HOST)
   .option('--allow-network', 'allow a non-loopback --host')
+  .option('--allow-host <host...>', 'additional Host header names this server answers to')
   .action(
     async (opts: {
       port: string;
@@ -94,6 +121,7 @@ export const serveCommand = new Command('serve')
       theme?: string;
       host: string;
       allowNetwork?: boolean;
+      allowHost?: string[];
     }) => {
       try {
         const server = await startPreviewServer({
@@ -102,6 +130,7 @@ export const serveCommand = new Command('serve')
           theme: opts.theme,
           host: opts.host,
           allowNetwork: opts.allowNetwork,
+          allowedHosts: opts.allowHost,
         });
         console.error(`Serving ${server.root} at ${server.url}`);
       } catch (err: unknown) {
@@ -332,6 +361,15 @@ function validateHost(value: string, allowNetwork: boolean): string {
   return host;
 }
 
+function validateAllowedHosts(values: readonly string[]): readonly string[] {
+  if (values.length > MAX_ALLOWED_HOSTS) {
+    throw new Error(`At most ${MAX_ALLOWED_HOSTS} --allow-host values are supported`);
+  }
+  // Each value is an explicit grant, so it only has to be a well-formed
+  // authority name; --allow-network governs the bind, not this allowlist.
+  return Object.freeze(values.map((value) => validateHost(value, true)));
+}
+
 function isLoopbackHost(host: string): boolean {
   if (host === 'localhost' || host === '::1') return true;
   const octets = host.split('.');
@@ -342,17 +380,97 @@ function isLoopbackHost(host: string): boolean {
   );
 }
 
+function isWildcardHost(host: string): boolean {
+  return host === '0.0.0.0' || host === '::';
+}
+
+/**
+ * Host-header policy — the server's DNS-rebinding defense.
+ *
+ * A rebinding attack needs a *name*: the attacker's page is served from
+ * `evil.example`, whose DNS record is re-pointed at this server, so the browser
+ * sends `Host: evil.example` while the page's origin stays `evil.example` and
+ * can read our responses. Refusing to answer to a Host we were not reached by
+ * breaks that, and every rule below preserves it:
+ *
+ * - **Loopback binds** accept any loopback alias (`localhost`, `127.0.0.0/8`,
+ *   `::1`). These name only the local machine and cannot be pointed elsewhere
+ *   by DNS, so treating them as interchangeable grants no attacker anything —
+ *   it only stops rejecting the `localhost:3000` a user actually typed. A
+ *   public name that merely resolves to 127.0.0.1 is still refused.
+ * - **Wildcard binds** (`0.0.0.0`, `::`) cannot know their own hostnames, so
+ *   they accept IP-literal Hosts of either family plus loopback aliases. An IP
+ *   literal is not rebindable: reaching us with `Host: 192.168.1.5` requires an
+ *   origin of `http://192.168.1.5:<port>`, which the same-origin policy already
+ *   isolates from the attacker's page. Blanket-accepting any Host under
+ *   `--allow-network` was rejected: it would surrender the defense entirely on
+ *   exactly the servers that are reachable by other machines.
+ * - **A specific non-loopback bind** answers only to that exact host.
+ * - `--allow-host` adds names the operator states this server is reached by.
+ *   The grant is explicit and per-name, so an arbitrary attacker name is still
+ *   refused.
+ */
 export function isAllowedPreviewRequestAuthority(
   header: string | undefined,
   configuredHost: string,
   configuredPort: number,
+  allowedHosts: readonly string[] = [],
 ): boolean {
   const authority = parseRequestAuthority(header);
   if (!authority || authority.port !== configuredPort) return false;
-
-  if (configuredHost === '0.0.0.0') return isIP(authority.host) === 4;
-  if (configuredHost === '::') return isIP(authority.host) === 6;
+  if (allowedHosts.includes(authority.host)) return true;
+  if (isWildcardHost(configuredHost)) {
+    return isIP(authority.host) !== 0 || isLoopbackHost(authority.host);
+  }
+  if (isLoopbackHost(configuredHost)) return isLoopbackHost(authority.host);
   return authority.host === configuredHost;
+}
+
+function misdirectedRequestMessage(
+  header: string | undefined,
+  configuredHost: string,
+  configuredPort: number,
+  allowedHosts: readonly string[],
+): string {
+  // Only a parsed authority is echoed. parseRequestAuthority accepts nothing
+  // but hostname/IP characters and a numeric port, so nothing attacker-shaped
+  // reaches this text/plain, nosniff response.
+  const authority = parseRequestAuthority(header);
+  const received = authority ? `"${authority.host}:${authority.port}"` : 'malformed';
+  const accepted = isWildcardHost(configuredHost)
+    ? ['any IP-literal address of this machine', 'loopback: localhost, 127.0.0.0/8, ::1']
+    : isLoopbackHost(configuredHost)
+      ? ['loopback: localhost, 127.0.0.0/8, ::1']
+      : [configuredHost];
+  return [
+    'Misdirected request',
+    '',
+    `This preview server is bound to ${configuredHost}:${configuredPort} and does not answer to the`,
+    `Host header it received (${received}). The check blocks DNS-rebinding attacks and`,
+    'cannot be disabled.',
+    '',
+    `Accepted Host names on port ${configuredPort}:`,
+    ...[...accepted, ...allowedHosts.map((value) => `${value} (--allow-host)`)].map(
+      (value) => `  - ${value}`,
+    ),
+    '',
+    'Reach this server by one of those names, or restart it with',
+    '--allow-host <name> to add the name you are using.',
+  ].join('\n');
+}
+
+function reportPreviewFailure(req: IncomingMessage, error: unknown): void {
+  const target = (req.url ?? '/').slice(0, 200);
+  console.error(`Error: preview request failed: ${req.method ?? 'GET'} ${target}`);
+  for (let cause: unknown = error, depth = 0; cause !== undefined && depth < 5; depth += 1) {
+    console.error(`  ${describePreviewFailure(cause)}`);
+    cause = cause instanceof Error ? (cause as Error & { cause?: unknown }).cause : undefined;
+  }
+}
+
+function describePreviewFailure(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.stack ?? `${error.name}: ${error.message}`;
 }
 
 function parseRequestAuthority(header: string | undefined): { host: string; port: number } | null {
@@ -399,12 +517,6 @@ function isValidHostname(host: string): boolean {
 
 function urlHost(host: string): string {
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-}
-
-function positiveLimit(value: number | undefined, fallback: number, label: string): number {
-  const selected = value ?? fallback;
-  if (!Number.isSafeInteger(selected) || selected < 1) throw new Error(`Invalid ${label} limit`);
-  return selected;
 }
 
 function contentTypeFor(filePath: string): string {
@@ -454,10 +566,6 @@ function contentTypeFor(filePath: string): string {
     default:
       return 'application/octet-stream';
   }
-}
-
-function isNodeErrorCode(error: unknown, codes: readonly string[]): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && codes.includes(String(error.code));
 }
 
 function isMissingPathError(error: unknown): boolean {

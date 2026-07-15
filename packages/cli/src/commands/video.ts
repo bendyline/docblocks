@@ -14,6 +14,7 @@ import {
   type VideoQuality,
   type VideoOrientation,
 } from '@bendyline/squisq-video';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const VALID_QUALITIES = ['draft', 'normal', 'high'] as const;
 const VALID_ORIENTATIONS = ['landscape', 'portrait'] as const;
@@ -212,11 +213,7 @@ export function assertCliVideoRenderBudget(
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('Video rendering was cancelled');
-  error.name = 'AbortError';
-  throw error;
+  throwIfSignalAborted(signal, 'Video rendering was cancelled');
 }
 
 interface VideoCommandOptions {
@@ -248,11 +245,8 @@ export const videoCommand = new Command('video')
   .option('--allow-overwrite', 'replace an existing output MP4 instead of refusing the run')
   .action(async (inputPath: string, outputArg: string | undefined, opts: VideoCommandOptions) => {
     try {
-      if (outputArg && !opts.output) {
-        opts.output = outputArg;
-      }
       await runVideo(inputPath, {
-        output: opts.output,
+        output: selectVideoOutput(outputArg, opts.output),
         fps: parseNumberOption('--fps', opts.fps ?? '30'),
         quality: opts.quality as VideoQuality,
         orientation: opts.orientation as VideoOrientation,
@@ -272,4 +266,28 @@ function parseNumberOption(name: string, value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`${name} must be a finite number`);
   return parsed;
+}
+
+/**
+ * The destination can be named positionally or with `-o`, never both.
+ *
+ * Silently preferring one of two conflicting instructions writes a file the
+ * caller did not ask for; a render is expensive and the loser is invisible, so
+ * an ambiguous request is refused before anything is read or encoded.
+ */
+export function selectVideoOutput(
+  positional: string | undefined,
+  option: string | undefined,
+): string | undefined {
+  if (positional !== undefined && option !== undefined) {
+    throw new Error(
+      [
+        'Two output paths were requested:',
+        `  positional  ${positional}`,
+        `  --output    ${option}`,
+        'Pass the output path exactly once.',
+      ].join('\n'),
+    );
+  }
+  return option ?? positional;
 }

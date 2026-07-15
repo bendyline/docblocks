@@ -15,6 +15,7 @@ import {
   type IndexedDBFileSystemStore,
 } from './indexeddb-store.js';
 import { IndexedDBFileSystemProviderV2 } from './indexeddb-provider-v2.js';
+import { decodeUtf8Text } from './utf8.js';
 
 export interface IndexedDBFileSystemProviderOptions {
   /** Injectable transaction store for deterministic fault/concurrency tests. */
@@ -50,13 +51,14 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async readFile(path: string): Promise<string | null> {
     this.assertOpen('read');
-    const read = await this.v2.readFile(this.path(path, false, 'read'));
-    return read ? new TextDecoder().decode(read.data) : null;
+    const canonical = this.path(path);
+    const read = await this.v2.readFile(canonical);
+    return read ? this.decode(read.data, canonical, 'read') : null;
   }
 
   public async writeFile(path: string, content: string): Promise<void> {
     this.assertOpen('write');
-    await this.v2.writeFile(this.path(path, false, 'write'), new TextEncoder().encode(content), {
+    await this.v2.writeFile(this.path(path), new TextEncoder().encode(content), {
       createParents: true,
     });
   }
@@ -67,9 +69,9 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
     expectedContent: string | null,
   ): Promise<FileCommitResult> {
     this.assertOpen('write');
-    const canonical = this.path(path, false, 'write');
+    const canonical = this.path(path);
     const current = await this.v2.readFile(canonical);
-    const currentContent = current ? new TextDecoder().decode(current.data) : null;
+    const currentContent = current ? this.decode(current.data, canonical, 'write') : null;
     if (currentContent !== expectedContent && currentContent !== content) {
       return {
         status: 'conflict',
@@ -89,7 +91,7 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
       const latest = await this.v2.readFile(canonical);
       return {
         status: 'conflict',
-        content: latest ? new TextDecoder().decode(latest.data) : null,
+        content: latest ? this.decode(latest.data, canonical, 'write') : null,
         version: latest?.entry.version ?? null,
       };
     }
@@ -97,7 +99,7 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async delete(path: string): Promise<void> {
     this.assertOpen('remove');
-    await this.v2.remove(this.path(path, false, 'remove'), {
+    await this.v2.remove(this.path(path), {
       recursive: true,
       missing: 'ignore',
     });
@@ -105,7 +107,7 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async rename(oldPath: string, newPath: string): Promise<void> {
     this.assertOpen('move');
-    await this.v2.move(this.path(oldPath, false, 'move'), this.path(newPath, false, 'move'), {
+    await this.v2.move(this.path(oldPath), this.path(newPath), {
       createParents: true,
     });
   }
@@ -113,7 +115,7 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
   public async readDirectory(path: string): Promise<FileSystemEntry[]> {
     this.assertOpen('list');
     try {
-      const entries = await this.v2.readDirectory(this.path(path, true, 'list'));
+      const entries = await this.v2.readDirectory(this.path(path));
       return entries.map((entry) => ({
         kind: entry.kind,
         name: entry.name,
@@ -127,12 +129,12 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async exists(path: string): Promise<boolean> {
     this.assertOpen('stat');
-    return (await this.v2.stat(this.path(path, true, 'stat'))) !== null;
+    return (await this.v2.stat(this.path(path))) !== null;
   }
 
   public async createDirectory(path: string): Promise<void> {
     this.assertOpen('create-directory');
-    await this.v2.createDirectory(this.path(path, false, 'create-directory'), {
+    await this.v2.createDirectory(this.path(path), {
       createParents: true,
       mode: 'ensure',
     });
@@ -140,7 +142,7 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async stat(path: string): Promise<FileMeta | null> {
     this.assertOpen('stat');
-    const entry = await this.v2.stat(this.path(path, false, 'stat'));
+    const entry = await this.v2.stat(this.path(path));
     if (!entry || entry.kind !== 'file') return null;
     return {
       name: entry.name,
@@ -152,25 +154,36 @@ export class IndexedDBFileSystemProvider implements FileSystemProvider {
 
   public async readBinary(path: string): Promise<ArrayBuffer | null> {
     this.assertOpen('read');
-    return (await this.v2.readFile(this.path(path, false, 'read')))?.data ?? null;
+    return (await this.v2.readFile(this.path(path)))?.data ?? null;
   }
 
   public async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
     this.assertOpen('write');
-    await this.v2.writeFile(this.path(path, false, 'write'), data, { createParents: true });
+    await this.v2.writeFile(this.path(path), data, { createParents: true });
   }
 
-  private path(path: string, allowRoot: boolean, operation: FsOperation): WorkspacePath {
-    const canonical = parseWorkspacePath(path);
-    if (canonical || allowRoot) return canonical;
-    throw new FsError('invalid-path', 'The filesystem root cannot be used as a mutation target.', {
-      operation,
-      path,
-    });
+  /**
+   * Canonicalize only. Root policy is the v2 authority's to state: it accepts
+   * the root wherever the root is a legitimate target (`stat`, `readDirectory`,
+   * `createDirectory`) and rejects it with one consistent code and message
+   * everywhere else. Re-deriving that policy here is how this facade previously
+   * drifted from both v2 and its sibling facades.
+   */
+  private path(path: string): WorkspacePath {
+    return parseWorkspacePath(path);
+  }
+
+  /**
+   * Byte-authoritative entries may hold payloads that are not valid UTF-8. A
+   * lossy decode would hand the caller replacement characters that a later save
+   * writes back over the user's original bytes, so surface the fault instead.
+   */
+  private decode(data: ArrayBuffer, path: WorkspacePath, operation: FsOperation): string {
+    return decodeUtf8Text(data, { label: 'The file', operation, path });
   }
 
   private assertOpen(operation: FsOperation): void {
     if (!this.disposed) return;
-    throw new FsError('closed', 'The IndexedDB filesystem provider is disposed.', { operation });
+    throw new FsError('disposed', 'Filesystem provider is disposed.', { operation });
   }
 }

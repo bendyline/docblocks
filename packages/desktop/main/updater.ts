@@ -90,7 +90,12 @@ export function initAutoUpdater(): void {
     broadcast({ kind: 'error', message: err?.message ?? 'Update error' }),
   );
 
-  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+  // Not checkForUpdatesAndNotify(): that variant pops a *native OS*
+  // notification once the download finishes, which belongs to the
+  // notify-and-quit-install flow `autoInstallOnAppQuit = false` just opted out
+  // of. The 'update-downloaded' handler above already drives the in-app
+  // restart banner, so the native toast would only compete with it.
+  autoUpdater.checkForUpdates().catch((err) => {
     console.warn('[updater] initial check failed:', err);
   });
 }

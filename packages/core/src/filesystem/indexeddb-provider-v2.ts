@@ -42,6 +42,10 @@ import {
   type WorkspacePath,
 } from './workspace-path.js';
 import type { FileMeta } from './types.js';
+import { bytesEqual, copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByName, compareText } from './internal/entry-order.js';
+import { parentChainWithRoot } from './internal/parent-chain.js';
+import { isRecord } from './internal/records.js';
 
 const ENTRY_SCHEMA_VERSION = 1;
 const STATE_SCHEMA_VERSION = 1;
@@ -273,7 +277,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
           children.push(toEntrySnapshot(entry));
         }
       }
-      children.sort(compareSnapshots);
+      children.sort(compareSnapshotsByName);
       return Object.freeze(children);
     });
   }
@@ -972,7 +976,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     operation: FsOperation,
   ): Promise<WorkspacePath[]> {
     const missing: WorkspacePath[] = [];
-    for (const parent of parentChain(path)) {
+    for (const parent of parentChainWithRoot(path)) {
       const entry = await mutation.get(parent);
       if (entry?.kind === 'file') {
         throw this.error(
@@ -1007,7 +1011,7 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
     path: WorkspacePath,
     next: MutationVersion,
   ): Promise<void> {
-    for (const parent of parentChain(path)) {
+    for (const parent of parentChainWithRoot(path)) {
       const entry = await mutation.get(parent);
       if (entry?.kind === 'directory') {
         mutation.set(parent, directoryRecord(parent, next.version, next.lastModified));
@@ -1281,17 +1285,6 @@ function validateIgnoredLegacyPath(value: unknown): WorkspacePath {
   return path;
 }
 
-function bytesEqual(left: ArrayBuffer | Uint8Array, right: ArrayBuffer | Uint8Array): boolean {
-  const leftBytes = ArrayBuffer.isView(left)
-    ? new Uint8Array(left.buffer, left.byteOffset, left.byteLength)
-    : new Uint8Array(left);
-  const rightBytes = ArrayBuffer.isView(right)
-    ? new Uint8Array(right.buffer, right.byteOffset, right.byteLength)
-    : new Uint8Array(right);
-  if (leftBytes.byteLength !== rightBytes.byteLength) return false;
-  return leftBytes.every((byte, index) => byte === rightBytes[index]);
-}
-
 async function assertNoLegacyConflict(
   transaction: IndexedDBFileSystemTransaction,
   path: WorkspacePath,
@@ -1523,7 +1516,7 @@ function hasFileAncestor(
   entries: ReadonlyMap<WorkspacePath, PersistedEntry>,
   path: WorkspacePath,
 ): boolean {
-  return parentChain(path).some((parent) => entries.get(parent)?.kind === 'file');
+  return parentChainWithRoot(path).some((parent) => entries.get(parent)?.kind === 'file');
 }
 
 async function deleteLegacyNamespace(
@@ -1627,18 +1620,8 @@ function addParentDirectories(
   version: FileSystemVersion,
   lastModified: string,
 ): void {
-  for (const parent of parentChain(path)) {
+  for (const parent of parentChainWithRoot(path)) {
     if (!entries.has(parent)) entries.set(parent, directoryRecord(parent, version, lastModified));
-  }
-}
-
-function parentChain(path: WorkspacePath): WorkspacePath[] {
-  const parents: WorkspacePath[] = [];
-  let current = workspacePathDirname(path);
-  while (true) {
-    parents.unshift(current);
-    if (!current) return parents;
-    current = workspacePathDirname(current);
   }
 }
 
@@ -1704,24 +1687,6 @@ function toDirectorySnapshot(entry: PersistedDirectoryEntry): FileSystemDirector
   });
 }
 
-function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.name, right.name);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
-}
-
 function validateBytes(value: unknown, path: WorkspacePath): ArrayBuffer {
   if (value instanceof ArrayBuffer) return copyBytes(value);
   if (value instanceof Uint8Array) return copyBytes(value);
@@ -1731,10 +1696,6 @@ function validateBytes(value: unknown, path: WorkspacePath): ArrayBuffer {
 function readString(value: unknown, label: string): string {
   if (typeof value !== 'string') throw corrupt(`Invalid ${label}.`);
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function corrupt(message: string, path?: WorkspacePath): FsError {

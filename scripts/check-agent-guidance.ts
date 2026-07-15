@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,6 +128,32 @@ function assertReferencedFiles(sources: readonly [string, string][]): void {
   }
 }
 
+/**
+ * Directory references rot the same way file references do, and only the file
+ * form was checked -- which is how the guidance came to point at
+ * `packages/react/src/fonts/` for years, a directory that has never existed.
+ *
+ * A trailing slash is what marks a directory reference; without it there is no
+ * way to tell `packages/react/src` from an extension-less prose fragment.
+ */
+function assertReferencedDirectories(sources: readonly [string, string][]): void {
+  const pattern = /packages\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*\//g;
+  for (const [name, source] of sources) {
+    for (const match of source.matchAll(pattern)) {
+      const candidate = match[0].replace(/\/$/, '');
+      // Skip glob-ish or placeholder segments; they are patterns, not paths.
+      if (/[*?<>]/.test(candidate)) continue;
+      const resolved = path.join(repoRoot, candidate);
+      if (!existsSync(resolved)) {
+        throw new Error(`${name} references missing directory: ${candidate}/`);
+      }
+      if (!statSync(resolved).isDirectory()) {
+        throw new Error(`${name} references ${candidate}/ as a directory, but it is a file`);
+      }
+    }
+  }
+}
+
 async function assertWorkspaceTable(agents: string): Promise<void> {
   const packageDirectories = (
     await readdir(path.join(repoRoot, 'packages'), { withFileTypes: true })
@@ -176,6 +202,7 @@ async function main(): Promise<void> {
   assertNoStaleTokens(sources);
   assertDocumentedScripts(sources, scripts);
   assertReferencedFiles(sources);
+  assertReferencedDirectories(sources);
   await assertWorkspaceTable(currentAgents);
   process.stdout.write(
     `Agent guidance is fresh for ${skills.length} tracked skills and all workspaces.\n`,

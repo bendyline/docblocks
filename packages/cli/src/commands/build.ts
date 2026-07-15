@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { mkdir, opendir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renderMarkdownHtml } from '../render-html.js';
+import { positiveLimit } from '../internal/limits.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
 
 export interface BuildOptions {
   input: string;
@@ -35,8 +37,8 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
   if (!inputStat.isDirectory()) throw new Error(`Input is not a directory: ${inputDir}`);
 
   const markdownFiles = await listMarkdownFiles(inputDir, {
-    maxEntries: positiveLimit(opts.maxEntries, DEFAULT_MAX_BUILD_ENTRIES, 'entry'),
-    maxDepth: positiveLimit(opts.maxDepth, DEFAULT_MAX_BUILD_DEPTH, 'depth'),
+    maxEntries: positiveLimit(opts.maxEntries, DEFAULT_MAX_BUILD_ENTRIES, 'build entry'),
+    maxDepth: positiveLimit(opts.maxDepth, DEFAULT_MAX_BUILD_DEPTH, 'build depth'),
   });
   if (markdownFiles.length === 0) {
     throw new Error(`No markdown files found in ${inputDir}.`);
@@ -115,17 +117,6 @@ async function listMarkdownFiles(root: string, limits: BuildTraversalLimits): Pr
   }
 
   return files.sort((a, b) => a.localeCompare(b));
-}
-
-function positiveLimit(value: number | undefined, fallback: number, label: string): number {
-  const selected = value ?? fallback;
-  if (!Number.isSafeInteger(selected) || selected < 1)
-    throw new Error(`Invalid build ${label} limit.`);
-  return selected;
-}
-
-function isNodeErrorCode(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 function isMarkdownFile(fileName: string): boolean {

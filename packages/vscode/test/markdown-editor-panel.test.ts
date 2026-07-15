@@ -56,14 +56,50 @@ async function openPanel(initialText: string): Promise<OpenedPanel> {
 }
 
 /** Deliver an editor snapshot the way the webview would. */
-function sendEdit(panel: FakeWebviewPanel, sessionId: string, content: string): void {
+function sendEdit(
+  panel: FakeWebviewPanel,
+  sessionId: string,
+  content: string,
+  clientRevision = 1,
+): void {
   panel.onDidReceiveMessageEmitter.fire({
     type: 'edit',
     sessionId,
-    clientRevision: 1,
+    clientRevision,
     baseDocumentVersion: 1,
     content,
   });
+}
+
+/** Deliver a manual-save request the way the webview's Save control would. */
+function sendSave(
+  panel: FakeWebviewPanel,
+  sessionId: string,
+  clientRevision: number,
+  requestId = 1,
+): void {
+  panel.onDidReceiveMessageEmitter.fire({
+    type: 'save',
+    sessionId,
+    requestId,
+    clientRevision,
+    baseDocumentVersion: 1,
+  });
+}
+
+interface SaveResultMessage {
+  type: 'saveResult';
+  ok: boolean;
+  message: string | null;
+}
+
+function findSaveResult(panel: FakeWebviewPanel): SaveResultMessage | undefined {
+  return panel.posted.find(
+    (message): message is SaveResultMessage =>
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { type?: unknown }).type === 'saveResult',
+  );
 }
 
 /** Close the tab exactly as VS Code does, then await the close-time flush. */
@@ -153,6 +189,69 @@ describe('MarkdownEditorPanel', () => {
       // The close-time flush reaches a saved session and would repaint the
       // title without the guard; the panel is gone, so it must stay frozen.
       expect(panel.peekTitle()).to.equal('* notes.md');
+      expect(stub.errorMessages).to.deep.equal([]);
+    });
+  });
+
+  describe('opening an already-open document', () => {
+    it('reveals the live editor instead of failing the resolve', async () => {
+      const { panel: firstPanel } = await openPanel('# original\n');
+      const document = stub.documents[0];
+      const duplicatePanel = new FakeWebviewPanel();
+
+      // VS Code resolves its custom editor against a document DocBlocks already
+      // owns (it is open through the explicit command route, whose panel VS
+      // Code does not know about). A rejected resolve becomes an error toast on
+      // a broken tab, so this must succeed.
+      await panelModule.MarkdownEditorPanel.attachCustomEditor(
+        createContext(),
+        document,
+        duplicatePanel,
+      );
+
+      expect(stub.errorMessages).to.deep.equal([]);
+      expect(duplicatePanel.disposed).to.equal(true);
+      expect(firstPanel.disposed).to.equal(false);
+      expect(firstPanel.revealCount).to.equal(1);
+    });
+
+    it('keeps the live editor session working after the duplicate is closed', async () => {
+      const { panel, sessionId } = await openPanel('# original\n');
+      const document = stub.documents[0];
+
+      await panelModule.MarkdownEditorPanel.attachCustomEditor(
+        createContext(),
+        document,
+        new FakeWebviewPanel(),
+      );
+
+      // The duplicate must not have displaced the registered panel: the
+      // original session still owns the document and still commits.
+      sendEdit(panel, sessionId, '# edited\n');
+      await closeTab(panel);
+
+      expect(document.savedText).to.equal('# edited\n');
+      expect(stub.errorMessages).to.deep.equal([]);
+    });
+  });
+
+  describe('manual save overtaken by a newer edit', () => {
+    it('saves the latest revision instead of reporting a revision mismatch', async () => {
+      const { document, panel, sessionId } = await openPanel('# original\n');
+      sendEdit(panel, sessionId, '# at Ctrl+S\n', 1);
+      await settle();
+
+      // Ctrl+S, then the user keeps typing before the save request is
+      // processed. The edit takes the fast LatestDocumentEditQueue while the
+      // save waits in the bounded message queue, so revision 2 is acknowledged
+      // first and the save request for revision 1 arrives stale.
+      sendSave(panel, sessionId, 1);
+      sendEdit(panel, sessionId, '# typed after Ctrl+S\n', 2);
+      await settle();
+
+      const saveResult = findSaveResult(panel);
+      expect(saveResult?.ok, saveResult?.message ?? 'no saveResult was posted').to.equal(true);
+      expect(document.savedText).to.equal('# typed after Ctrl+S\n');
       expect(stub.errorMessages).to.deep.equal([]);
     });
   });

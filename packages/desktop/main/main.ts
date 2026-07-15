@@ -44,6 +44,7 @@ import {
   registerWindowLifecycleIpc,
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
+import { hostEnvironmentArguments } from '../shared/host-environment.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
 const TITLE_BAR_HEIGHT = 32;
@@ -243,6 +244,16 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
       // The preload uses only Electron's sandbox-supported bridge APIs.
       sandbox: true,
       webSecurity: true,
+      // `HostEnvironment` is read synchronously by the renderer, so these
+      // cannot be fetched over IPC. The sandboxed preload also cannot reach
+      // `app.getVersion()`/`app.isPackaged`, and a packaged app defines
+      // neither `npm_package_version` nor `NODE_ENV` — leaving the preload to
+      // report 0.0.0 and isDev:true to every user. Main owns the truth, so
+      // main stamps it onto the renderer's argv.
+      additionalArguments: hostEnvironmentArguments({
+        appVersion: app.getVersion(),
+        isDev,
+      }),
     },
   });
 

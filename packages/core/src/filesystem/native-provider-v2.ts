@@ -30,6 +30,9 @@ import {
   workspacePathJoin,
   type WorkspacePath,
 } from './workspace-path.js';
+import { bytesEqual, copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByName, compareText } from './internal/entry-order.js';
+import { parentChain } from './internal/parent-chain.js';
 
 interface ScannedEntry<TFile extends FileSystemFileSnapshot> {
   readonly root: FileSystemDirectorySnapshot | TFile;
@@ -160,7 +163,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           withoutData((await this.scanMetadataHandle(childPath, childHandle, 'list')).root),
         );
       }
-      children.sort(compareSnapshots);
+      children.sort(compareSnapshotsByName);
       return Object.freeze(children);
     });
   }
@@ -206,7 +209,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
         await this.writeBytes(canonical, ownedData);
         writeCompleted = true;
         const written = await this.requireSnapshot(canonical, 'write');
-        if (written.root.kind !== 'file' || !equalBytes(written.root.data, ownedData)) {
+        if (written.root.kind !== 'file' || !bytesEqual(written.root.data, ownedData)) {
           throw this.error(
             'conflict',
             'write',
@@ -687,7 +690,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
         await this.scanHandle(workspacePathJoin(path, name), childHandle, operation, scanFile),
       );
     }
-    const childRoots = children.map((child) => child.root).sort(compareSnapshots);
+    const childRoots = children.map((child) => child.root).sort(compareSnapshotsByName);
     const version = await metadataVersion(
       'directory',
       new TextEncoder().encode(
@@ -1086,16 +1089,6 @@ async function metadataVersion(
   return parseFileSystemVersion(`sha256:${hex}`);
 }
 
-function parentChain(path: WorkspacePath): WorkspacePath[] {
-  const parents: WorkspacePath[] = [];
-  let current = workspacePathDirname(path);
-  while (current) {
-    parents.unshift(current);
-    current = workspacePathDirname(current);
-  }
-  return parents;
-}
-
 function pathDepth(path: WorkspacePath): number {
   return path ? path.split('/').length : 0;
 }
@@ -1109,24 +1102,6 @@ function errorName(error: unknown): string | null {
 function isMissingOrKindError(error: unknown): boolean {
   const name = errorName(error);
   return name === 'NotFoundError' || name === 'TypeMismatchError';
-}
-
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
-}
-
-function equalBytes(left: ArrayBuffer, right: ArrayBuffer): boolean {
-  const leftBytes = new Uint8Array(left);
-  const rightBytes = new Uint8Array(right);
-  return (
-    leftBytes.byteLength === rightBytes.byteLength &&
-    leftBytes.every((value, index) => value === rightBytes[index])
-  );
 }
 
 function equalTreeContents(
@@ -1153,7 +1128,7 @@ function equalTreeContents(
     const counterpart = rightByRelativePath.get(relativePath);
     if (!counterpart || counterpart.kind !== entry.kind) return false;
     if (entry.kind === 'file') {
-      if (counterpart.kind !== 'file' || !equalBytes(entry.data, counterpart.data)) return false;
+      if (counterpart.kind !== 'file' || !bytesEqual(entry.data, counterpart.data)) return false;
     }
   }
   return true;
@@ -1197,13 +1172,4 @@ function newestLastModified(children: readonly FileSystemEntrySnapshot[]): strin
     if (Number.isFinite(timestamp)) newest = Math.max(newest, timestamp);
   }
   return newest ? new Date(newest).toISOString() : EPOCH;
-}
-
-function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.name, right.name);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

@@ -5,6 +5,54 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
+// Renderer surfaces run in a browser context and reach privileged capability
+// only through the two seams: FileSystemProvider for user documents, and
+// DocBlocksHostAPI (`getDocBlocksHost()`) for everything Electron exposes.
+// Reaching for `electron` or a Node builtin directly breaks the build for the
+// web surfaces and the security model for the desktop one, so these are the
+// "hard rules" from AGENTS.md expressed as lint rather than as prose.
+const NODE_BUILTIN_IMPORT_PATTERNS = [
+  {
+    group: ['node:*'],
+    message:
+      'Renderer code runs in a browser context. Use the FileSystemProvider seam or getDocBlocksHost() from @bendyline/docblocks/host.',
+  },
+];
+
+const NODE_BUILTIN_BARE_IMPORTS = [
+  'fs',
+  'fs/promises',
+  'path',
+  'os',
+  'child_process',
+  'worker_threads',
+  'module',
+];
+
+const ELECTRON_IMPORT_RESTRICTION = {
+  name: 'electron',
+  message:
+    'Renderer code must never import electron. Use getDocBlocksHost() / isElectronHost() from @bendyline/docblocks/host and degrade gracefully off-Electron.',
+};
+
+function browserContextImportRule(extraPaths = []) {
+  return [
+    'error',
+    {
+      paths: [
+        ELECTRON_IMPORT_RESTRICTION,
+        ...NODE_BUILTIN_BARE_IMPORTS.map((name) => ({
+          name,
+          message:
+            'Renderer code runs in a browser context. Use the FileSystemProvider seam or getDocBlocksHost() from @bendyline/docblocks/host.',
+        })),
+        ...extraPaths,
+      ],
+      patterns: NODE_BUILTIN_IMPORT_PATTERNS,
+    },
+  ];
+}
+
 export default tseslint.config(
   // Global ignores
   {
@@ -56,6 +104,30 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
+    },
+  },
+
+  // Renderer = site + desktop renderer. Browser context; no electron, no node:*.
+  {
+    files: ['packages/desktop/renderer/**/*.{ts,tsx}', 'packages/site/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': browserContextImportRule(),
+    },
+  },
+
+  // The VS Code webview is a sandboxed browser context on the far side of a
+  // postMessage boundary: it additionally must never import `vscode` itself.
+  // The only host contract is the discriminated union in core.
+  {
+    files: ['packages/vscode/webview/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': browserContextImportRule([
+        {
+          name: 'vscode',
+          message:
+            'The webview is a sandboxed browser context. Cross the boundary with the postMessage messages in @bendyline/docblocks/vscode instead.',
+        },
+      ]),
     },
   },
 

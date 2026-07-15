@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGitContext } from './GitContext.js';
 import { isFileDirty } from './git-status.js';
+import { useMenuKeyboard } from './useMenuKeyboard.js';
 
 export interface GitToolbarControlProps {
   /** Currently selected file path (slash-prefixed), or null. */
@@ -20,13 +21,16 @@ export interface GitToolbarControlProps {
 export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
   const git = useGitContext();
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  /** Wraps trigger + menu — the outside-click hit test, not the menu itself. */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
+    useMenuKeyboard(menuOpen, setMenuOpen);
 
   // Close on outside click (same pointerdown pattern as ExportToolbarControls).
   useEffect(() => {
     if (!menuOpen) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     };
@@ -39,25 +43,29 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
   const dirty = isFileDirty(git.status, selectedFile);
   const label = dirty ? 'Git actions (file modified)' : 'Git actions';
 
+  // Each of these replaces the menu with a dialog, so focus belongs there,
+  // not back on the trigger.
   const openDiff = () => {
-    setMenuOpen(false);
+    closeMenu(false);
     git.openDialog({ kind: 'diff', path: selectedFile });
   };
   const openHistory = () => {
-    setMenuOpen(false);
+    closeMenu(false);
     git.openDialog({ kind: 'history', path: selectedFile });
   };
   const openOnRemote = () => {
-    setMenuOpen(false);
+    closeMenu(false);
     git.openOnRemote(selectedFile);
   };
 
   return (
-    <div className="db-toolbar-menu" ref={menuRef}>
+    <div className="db-toolbar-menu" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="squisq-toolbar-button db-git-toolbar-trigger"
         onClick={() => setMenuOpen((prev) => !prev)}
+        onKeyDown={handleTriggerKeyDown}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
@@ -68,10 +76,17 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
       </button>
 
       {menuOpen && (
-        <div className="db-toolbar-menu-dropdown" role="menu">
+        <div
+          ref={menuRef}
+          className="db-toolbar-menu-dropdown"
+          role="menu"
+          aria-label={label}
+          onKeyDown={handleMenuKeyDown}
+        >
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-toolbar-menu-item"
             disabled={!dirty}
             onClick={openDiff}
@@ -81,6 +96,7 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-toolbar-menu-item"
             onClick={openHistory}
           >
@@ -90,6 +106,7 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
             <button
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="db-toolbar-menu-item"
               onClick={openOnRemote}
             >

@@ -74,7 +74,17 @@ describe('DBK transient workspace reconciliation', () => {
     });
 
     expect(await provider.readFile('/appendix.md')).to.equal('# appendix');
-    expect(await provider.readBinary('/appendix.md')).to.equal(null);
+    // Text-kind is what makes this "readable workspace text", and captureContents
+    // is where that kind is observable. readBinary is not a payload-kind probe:
+    // every stored file is bytes, so it returns them for text files too.
+    expect(provider.captureContents().files).to.deep.include({
+      kind: 'text',
+      path: 'appendix.md',
+      content: '# appendix',
+    });
+    expect([...new Uint8Array((await provider.readBinary('/appendix.md'))!)]).to.deep.equal([
+      ...encoded('# appendix'),
+    ]);
   });
 
   it('does not mutate the provider when an external DBK entry cannot be read', async () => {

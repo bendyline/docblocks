@@ -1,17 +1,18 @@
 /**
  * Tests for commit-selection — the pure selection state behind the commit
- * dialog: default all-on inclusion, locked (force-included) conflicted
- * files during a merge, toggling, bulk select, and the commit gate.
+ * dialog: default all-on inclusion, the whole-index lock while git has an
+ * operation in progress, toggling, bulk select, and the commit gate.
  *
  * The selection is resolved from the live change list on every call rather
  * than snapshotted, so files that git reports after the dialog opened are
  * covered too.
  */
 import { expect } from 'chai';
-import type { GitFileChange } from '@bendyline/docblocks/host';
+import type { GitFileChange, GitStatus } from '@bendyline/docblocks/host';
 import {
   allSelected,
   canCommit,
+  commitsWholeIndex,
   isIncluded,
   isLocked,
   isMergeCommit,
@@ -27,6 +28,21 @@ function change(path: string, conflicted = false): GitFileChange {
   return { path, worktree: 'modified', conflicted };
 }
 
+function statusWith(operation: GitStatus['operation']): GitStatus {
+  return {
+    branch: 'main',
+    detached: false,
+    unborn: false,
+    head: 'abc',
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+    changes: [],
+    truncated: false,
+    operation,
+  };
+}
+
 describe('commit-selection', () => {
   describe('resolveSelection', () => {
     it('includes every change by default', () => {
@@ -39,13 +55,25 @@ describe('commit-selection', () => {
       expect(selectedPaths(selection)).to.deep.equal(['/a.md']);
     });
 
-    it('locks conflicted files when merging', () => {
+    it('locks every change, not just the conflicted one, while mid-operation', () => {
+      // Regression (SF-3): only conflicted rows were locked, so a
+      // non-conflicted file rendered an interactive checkbox that the
+      // commit ignored — the host drops the pathspec mid-operation and
+      // records the whole index. An unticked file was committed anyway.
       const selection = resolveSelection([change('/a.md'), change('/b.md', true)], true);
       expect(isLocked(selection, '/b.md')).to.equal(true);
-      expect(isLocked(selection, '/a.md')).to.equal(false);
+      expect(isLocked(selection, '/a.md'), 'a non-conflicted file is committed too').to.equal(true);
     });
 
-    it('does not lock conflicted files outside a merge', () => {
+    it('force-includes a non-conflicted file mid-operation even when excluded', () => {
+      // The checkbox must not be able to claim an exclusion the host will
+      // not honour.
+      const overrides: CommitOverrides = new Map([['/a.md', false]]);
+      const selection = resolveSelection([change('/a.md'), change('/b.md', true)], true, overrides);
+      expect(selectedPaths(selection)).to.deep.equal(['/a.md', '/b.md']);
+    });
+
+    it('does not lock conflicted files outside an operation', () => {
       const selection = resolveSelection([change('/b.md')], false);
       expect(selection.locked.size).to.equal(0);
     });
@@ -131,10 +159,13 @@ describe('commit-selection', () => {
   });
 
   describe('setAllOverrides', () => {
-    it('deselects everything except locked paths', () => {
+    it('cannot deselect anything mid-operation — every path is locked', () => {
       const changes = [change('/a.md'), change('/b.md', true)];
       const overrides = setAllOverrides(resolveSelection(changes, true), false);
-      expect(selectedPaths(resolveSelection(changes, true, overrides))).to.deep.equal(['/b.md']);
+      expect(selectedPaths(resolveSelection(changes, true, overrides))).to.deep.equal([
+        '/a.md',
+        '/b.md',
+      ]);
     });
 
     it('selects everything back on', () => {
@@ -189,20 +220,27 @@ describe('commit-selection', () => {
   describe('isMergeCommit', () => {
     it('is true only for a merge operation', () => {
       expect(isMergeCommit(null)).to.equal(false);
-      const base = {
-        branch: 'main',
-        detached: false,
-        unborn: false,
-        head: 'abc',
-        upstream: null,
-        ahead: 0,
-        behind: 0,
-        changes: [],
-        truncated: false,
-      };
-      expect(isMergeCommit({ ...base, operation: 'merge' })).to.equal(true);
-      expect(isMergeCommit({ ...base, operation: 'rebase' })).to.equal(false);
-      expect(isMergeCommit({ ...base, operation: null })).to.equal(false);
+      expect(isMergeCommit(statusWith('merge'))).to.equal(true);
+      expect(isMergeCommit(statusWith('rebase'))).to.equal(false);
+      expect(isMergeCommit(statusWith(null))).to.equal(false);
+    });
+  });
+
+  describe('commitsWholeIndex', () => {
+    it('is true for every in-progress operation, not merge alone', () => {
+      // Mirrors the host's `if (rels && operation === null)` pathspec
+      // guard: a cherry-pick or revert drops the pathspec exactly like a
+      // merge does, so the dialog must lock those too.
+      expect(commitsWholeIndex(statusWith('merge'))).to.equal(true);
+      expect(commitsWholeIndex(statusWith('rebase'))).to.equal(true);
+      expect(commitsWholeIndex(statusWith('cherry-pick'))).to.equal(true);
+      expect(commitsWholeIndex(statusWith('revert'))).to.equal(true);
+      expect(commitsWholeIndex(statusWith('bisect'))).to.equal(true);
+    });
+
+    it('is false with no operation and with no status', () => {
+      expect(commitsWholeIndex(statusWith(null))).to.equal(false);
+      expect(commitsWholeIndex(null)).to.equal(false);
     });
   });
 });

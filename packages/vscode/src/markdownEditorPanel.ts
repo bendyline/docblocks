@@ -19,11 +19,13 @@ import {
   type HostDocumentSnapshot,
   type SaveParticipantPolicy,
 } from './editSync.js';
+import { getUriBasename } from './documentAuthority.js';
 import {
   formatConflictResolutionDetail,
   getDocumentStatusBarPresentation,
 } from './documentStatusBar.js';
 import { handleExportMessage } from './exportBridge.js';
+import { toError } from './toError.js';
 import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
 import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueue.js';
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
@@ -35,8 +37,17 @@ const USE_EXTERNAL_CHOICE = 'Use External Changes';
 const MAX_PENDING_OPERATIONS = 128;
 const MAX_PENDING_WIRE_CHARACTERS = HOST_WIRE_LIMITS.base64Characters;
 
+/**
+ * Everything the bounded message queue can carry.
+ *
+ * Edits are diverted to {@link LatestDocumentEditQueue} at ingress and never
+ * reach this queue, so excluding them here keeps the queue's handlers provably
+ * exhaustive over exactly the messages that can arrive.
+ */
+type QueuedWebviewMessage = Exclude<WebviewToExtensionMessage, { type: 'edit' }>;
+
 type EditorPanelQueueEntry =
-  | { kind: 'webview'; message: WebviewToExtensionMessage }
+  | { kind: 'webview'; message: QueuedWebviewMessage }
   | { kind: 'external-change' };
 
 export class MarkdownEditorPanel {
@@ -80,7 +91,7 @@ export class MarkdownEditorPanel {
         void vscode.window.showErrorMessage(
           error instanceof Error
             ? error.message
-            : `DocBlocks could not update ${getUriBasename(this.uri)}`,
+            : `DocBlocks could not update ${getDisplayBasename(this.uri)}`,
         );
       },
     });
@@ -90,7 +101,7 @@ export class MarkdownEditorPanel {
         void vscode.window.showErrorMessage(
           error instanceof Error
             ? error.message
-            : `DocBlocks could not accept an edit for ${getUriBasename(this.uri)}`,
+            : `DocBlocks could not accept an edit for ${getDisplayBasename(this.uri)}`,
         );
       },
     });
@@ -140,7 +151,7 @@ export class MarkdownEditorPanel {
 
     const panel = vscode.window.createWebviewPanel(
       MarkdownEditorPanel.viewType,
-      getUriBasename(uri),
+      getDisplayBasename(uri),
       viewColumn,
       {
         enableScripts: true,
@@ -167,8 +178,20 @@ export class MarkdownEditorPanel {
     panel: vscode.WebviewPanel,
   ): Promise<void> {
     const key = document.uri.toString();
-    if (MarkdownEditorPanel.panels.has(key)) {
-      throw new Error(`${getUriBasename(document.uri)} is already open in DocBlocks.`);
+    const existingPanel = MarkdownEditorPanel.panels.get(key);
+    if (existingPanel) {
+      // Opening a document DocBlocks already owns must reveal the live editor,
+      // not fail. The custom-editor route surfaces a rejected resolve as an
+      // error toast on a broken tab, so throwing here turned "click the file I
+      // already have open" into an error. The caller has handed us a duplicate
+      // panel for a document that only supports one editor, so dispose it —
+      // that closes the duplicate tab — and then reveal the real one last so it
+      // wins focus.
+      if (existingPanel.panel !== panel) {
+        panel.dispose();
+        existingPanel.panel.reveal();
+      }
+      return Promise.resolve();
     }
     const editorPanel = new MarkdownEditorPanel(context, document.uri, document, panel);
     MarkdownEditorPanel.panels.set(key, editorPanel);
@@ -319,7 +342,7 @@ export class MarkdownEditorPanel {
     );
   }
 
-  private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
+  private async handleMessage(message: QueuedWebviewMessage): Promise<void> {
     switch (message.type) {
       case 'resolveMedia':
       case 'listMedia':
@@ -358,11 +381,6 @@ export class MarkdownEditorPanel {
       case 'setWriteCanvasSettings':
         await this.handleSettingsUpdate(message);
         break;
-
-      case 'edit': {
-        await this.applyWebviewEdit(message);
-        break;
-      }
 
       case 'save':
         await this.handleSave(message, await this.syncReady);
@@ -453,7 +471,7 @@ export class MarkdownEditorPanel {
     const snapshot = sync.getSnapshot();
     if (!snapshot.session.conflict) return;
 
-    const fileName = getUriBasename(this.uri);
+    const fileName = getDisplayBasename(this.uri);
     const message = `${fileName} changed outside DocBlocks while local edits were pending.`;
     const choice = modal
       ? await vscode.window.showWarningMessage(
@@ -499,7 +517,7 @@ export class MarkdownEditorPanel {
       });
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(
-        `DocBlocks could not save ${getUriBasename(this.uri)}: ${toError(error).message}`,
+        `DocBlocks could not save ${getDisplayBasename(this.uri)}: ${toError(error).message}`,
       );
     }
   }
@@ -545,7 +563,7 @@ export class MarkdownEditorPanel {
     void vscode.window.showWarningMessage('DocBlocks ignored an invalid editor message.');
   }
 
-  private rejectBusyMessage(message: WebviewToExtensionMessage): void {
+  private rejectBusyMessage(message: QueuedWebviewMessage): void {
     if (!('requestId' in message)) return;
     const responseMessage = 'DocBlocks rejected the request because the editor queue is full.';
     switch (message.type) {
@@ -612,7 +630,7 @@ export class MarkdownEditorPanel {
     });
     if (!acknowledgement.accepted) {
       void vscode.window.showErrorMessage(
-        acknowledgement.message ?? `VS Code rejected an edit for ${getUriBasename(this.uri)}.`,
+        acknowledgement.message ?? `VS Code rejected an edit for ${getDisplayBasename(this.uri)}.`,
       );
       this.sendContent();
       this.sendSessionState();
@@ -657,7 +675,9 @@ export class MarkdownEditorPanel {
           // final snapshot verification below detects that bounded race.
           const didApply = await vscode.workspace.applyEdit(edit);
           if (!didApply) {
-            throw new Error(`VS Code rejected the DocBlocks edit for ${getUriBasename(this.uri)}`);
+            throw new Error(
+              `VS Code rejected the DocBlocks edit for ${getDisplayBasename(this.uri)}`,
+            );
           }
           document = await this.ensureDocument();
         }
@@ -665,7 +685,7 @@ export class MarkdownEditorPanel {
         if (document.isDirty) {
           const didSave = await document.save();
           if (!didSave) {
-            throw new Error(`VS Code could not save ${getUriBasename(this.uri)}`);
+            throw new Error(`VS Code could not save ${getDisplayBasename(this.uri)}`);
           }
           document = await this.ensureDocument();
         }
@@ -698,7 +718,7 @@ export class MarkdownEditorPanel {
       type: 'setContent',
       content: snapshot.session.content,
       documentVersion: snapshot.baseDocumentVersion,
-      fileName: getUriBasename(this.uri),
+      fileName: getDisplayBasename(this.uri),
       sessionId: snapshot.sessionId,
       sessionRevision: snapshot.session.revision,
       acknowledgedClientRevision: snapshot.acknowledgedClientRevision,
@@ -754,7 +774,7 @@ export class MarkdownEditorPanel {
       status === 'saving' ||
       status === 'error' ||
       status === 'conflict';
-    this.panel.title = `${unsaved ? '* ' : ''}${getUriBasename(this.uri)}`;
+    this.panel.title = `${unsaved ? '* ' : ''}${getDisplayBasename(this.uri)}`;
   }
 
   private updateStatusBar(): void {
@@ -770,7 +790,7 @@ export class MarkdownEditorPanel {
 
     const presentation = getDocumentStatusBarPresentation(
       session.status,
-      getUriBasename(this.uri),
+      getDisplayBasename(this.uri),
       session.error ? boundedMessage(session.error.message) : null,
     );
     if (!presentation) {
@@ -822,7 +842,7 @@ export class MarkdownEditorPanel {
       } catch (error: unknown) {
         if (sync.getSnapshot().session.status !== 'conflict') throw error;
         const choice = await vscode.window.showWarningMessage(
-          `${getUriBasename(this.uri)} changed outside DocBlocks. Choose which version to keep before the editor closes.`,
+          `${getDisplayBasename(this.uri)} changed outside DocBlocks. Choose which version to keep before the editor closes.`,
           { modal: true },
           KEEP_LOCAL_CHOICE,
           USE_EXTERNAL_CHOICE,
@@ -848,7 +868,7 @@ export class MarkdownEditorPanel {
         }
       }
       await vscode.window.showErrorMessage(
-        `DocBlocks could not finish saving ${getUriBasename(this.uri)}: ${toError(error).message}`,
+        `DocBlocks could not finish saving ${getDisplayBasename(this.uri)}: ${toError(error).message}`,
       );
     } finally {
       this.unsubscribeSync?.();
@@ -862,7 +882,7 @@ export class MarkdownEditorPanel {
     const draft = await vscode.workspace.openTextDocument({ content, language: 'markdown' });
     await vscode.window.showTextDocument(draft, { preview: false });
     await vscode.window.showWarningMessage(
-      `The unsaved DocBlocks draft for ${getUriBasename(this.uri)} was preserved in a new untitled editor.`,
+      `The unsaved DocBlocks draft for ${getDisplayBasename(this.uri)} was preserved in a new untitled editor.`,
     );
   }
 }
@@ -923,28 +943,25 @@ function toHostSnapshot(document: vscode.TextDocument): HostDocumentSnapshot {
   };
 }
 
-function getUriBasename(uri: vscode.Uri): string {
-  const slash = uri.path.lastIndexOf('/');
-  const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
-  try {
-    return decodeURIComponent(raw).slice(0, 255);
-  } catch {
-    return raw.slice(0, 255);
-  }
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+/**
+ * A document's name, bounded for use as a label.
+ *
+ * Truncation belongs here at the UI edge and nowhere deeper: the shared
+ * {@link getUriBasename} is lossless because the media path authority derives
+ * `<document>_files` from it (see its contract). Panel titles, toasts, and the
+ * status bar only need something a human reads, so they cap the length; a name
+ * this long is already unreadable in a tab.
+ */
+function getDisplayBasename(uri: vscode.Uri): string {
+  return getUriBasename(uri).slice(0, 255);
 }
 
 function boundedMessage(message: string): string {
   return message.slice(0, HOST_WIRE_LIMITS.messageCharacters);
 }
 
-function estimateWireCharacters(message: WebviewToExtensionMessage): number {
+function estimateWireCharacters(message: QueuedWebviewMessage): number {
   switch (message.type) {
-    case 'edit':
-      return message.content.length;
     case 'addMedia':
     case 'saveExport':
       return message.dataBase64.length;

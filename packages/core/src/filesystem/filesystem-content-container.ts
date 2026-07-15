@@ -12,31 +12,7 @@ import { findDocumentPath } from '@bendyline/squisq/storage';
 import { FsError } from './fs-error.js';
 import { getFileSystemProviderV2, type FileSystemProvider } from './types.js';
 import { parseWorkspacePath, workspacePathContains, workspacePathJoin } from './workspace-path.js';
-
-const EXTENSION_MIME_MAP: Record<string, string> = {
-  '.md': 'text/markdown',
-  '.txt': 'text/plain',
-  '.json': 'application/json',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.mp3': 'audio/mpeg',
-  '.wav': 'audio/wav',
-  '.ogg': 'audio/ogg',
-};
-
-function guessMimeType(path: string): string {
-  const dot = path.lastIndexOf('.');
-  if (dot === -1) return 'application/octet-stream';
-  const ext = path.slice(dot).toLowerCase();
-  return EXTENSION_MIME_MAP[ext] ?? 'application/octet-stream';
-}
+import { guessMimeType } from './internal/mime.js';
 
 function joinPrefix(prefix: string, p: string): string {
   return workspacePathJoin(parseWorkspacePath(prefix), p);

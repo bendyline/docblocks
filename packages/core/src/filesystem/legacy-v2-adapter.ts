@@ -34,6 +34,8 @@ import {
   workspacePathToLegacy,
   type WorkspacePath,
 } from './workspace-path.js';
+import { bytesEqual, copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByName, compareText } from './internal/entry-order.js';
 
 export type LegacyFilePayloadModel =
   | 'split'
@@ -136,7 +138,7 @@ export class LegacyFileSystemProviderV2Adapter implements FileSystemProviderV2 {
       const children = [...tree.entries.entries()]
         .filter(([entryPath]) => entryPath && workspacePathDirname(entryPath) === canonical)
         .map(([, child]) => copyEntrySnapshot(child))
-        .sort(compareSnapshots);
+        .sort(compareSnapshotsByName);
       return Object.freeze(children);
     });
   }
@@ -176,7 +178,7 @@ export class LegacyFileSystemProviderV2Adapter implements FileSystemProviderV2 {
         canonical,
       );
       const written = (await this.captureTree('write')).entries.get(canonical);
-      if (written?.kind !== 'file' || !equalBytes(written.data, ownedData)) {
+      if (written?.kind !== 'file' || !bytesEqual(written.data, ownedData)) {
         throw this.error(
           'io',
           'write',
@@ -563,7 +565,7 @@ export class LegacyFileSystemProviderV2Adapter implements FileSystemProviderV2 {
           children.push(file);
         }
       }
-      children.sort(compareSnapshots);
+      children.sort(compareSnapshotsByName);
       const version = await contentVersion(
         'directory',
         new TextEncoder().encode(
@@ -715,24 +717,6 @@ function isLegacyEntry(value: unknown): value is FileSystemEntry {
   );
 }
 
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
-}
-
-function equalBytes(left: ArrayBuffer, right: ArrayBuffer): boolean {
-  const leftBytes = new Uint8Array(left);
-  const rightBytes = new Uint8Array(right);
-  return (
-    leftBytes.byteLength === rightBytes.byteLength &&
-    leftBytes.every((value, index) => value === rightBytes[index])
-  );
-}
-
 function fileMetadata(file: FileSystemSnapshotFile): FileSystemFileSnapshot {
   return Object.freeze({
     kind: 'file',
@@ -767,13 +751,4 @@ function newestLastModified(children: readonly FileSystemSnapshotEntry[]): strin
     if (Number.isFinite(timestamp)) newest = Math.max(newest, timestamp);
   }
   return newest ? new Date(newest).toISOString() : EPOCH;
-}
-
-function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.name, right.name);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

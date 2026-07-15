@@ -49,9 +49,7 @@ export class SetupViewProvider {
   private checksInFlight: Promise<void> | null = null;
   private readonly lastActionAt = new Map<SetupWebviewMessage['type'], number>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
-
-  public static createOrShow(context: vscode.ExtensionContext): void {
+  public static createOrShow(): void {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
     if (SetupViewProvider.currentPanel) {
@@ -71,18 +69,23 @@ export class SetupViewProvider {
     );
 
     SetupViewProvider.currentPanel = panel;
+    const listener = new SetupViewProvider().attach(panel.webview);
     panel.onDidDispose(() => {
       SetupViewProvider.currentPanel = undefined;
+      // Each createOrShow builds a fresh provider bound to a fresh webview, so
+      // the listener's lifetime is the panel's, not the extension's. Parking it
+      // in context.subscriptions instead leaked one listener — and the dead
+      // webview and provider it closes over — per open/close cycle, freeing
+      // them only at deactivate.
+      listener.dispose();
     });
-
-    new SetupViewProvider(context).attach(panel.webview);
   }
 
-  public attach(webview: vscode.Webview): void {
+  public attach(webview: vscode.Webview): vscode.Disposable {
     webview.options = { enableScripts: true, localResourceRoots: [] };
     webview.html = this.getHtml(webview);
 
-    const listener = webview.onDidReceiveMessage((value: unknown) => {
+    return webview.onDidReceiveMessage((value: unknown) => {
       const message = parseSetupWebviewMessage(value);
       if (!message) return;
       void this.handleMessage(message, webview).catch((error: unknown) => {
@@ -90,7 +93,6 @@ export class SetupViewProvider {
         return vscode.window.showErrorMessage(messageText);
       });
     });
-    this.context.subscriptions.push(listener);
   }
 
   private async handleMessage(

@@ -129,6 +129,8 @@ import { decodeDbkWorkspace } from './dbk-import.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
+import { useConfirmDialog } from '../components/useConfirmDialog.js';
+import { resolveShellTheme } from './resolve-theme.js';
 import { buildIssueReportUrl } from './issue-report.js';
 import { loadLastState, saveLastState } from './last-state.js';
 import {
@@ -251,7 +253,11 @@ function isMemoryWorkspaceProvider(
 }
 
 export interface DocBlocksShellProps {
-  /** Optional theme override. Omit or pass 'auto' to follow OS preference. */
+  /**
+   * The theme to use before the user has an opinion. Omit or pass `'auto'` to
+   * follow the OS. An explicit `'light'`/`'dark'` choice the user makes in
+   * Settings outranks this — it is their app, not the host's.
+   */
   theme?: EditorColorScheme | 'auto';
   /** Optional logo image URL for the app menu. */
   logoUrl?: string;
@@ -568,7 +574,7 @@ function FileGlyph() {
 }
 
 export function DocBlocksShell({
-  theme: _themeProp = 'auto',
+  theme: hostTheme = 'auto',
   logoUrl,
   issueReportVersion,
   homeDocumentTitle,
@@ -589,10 +595,9 @@ export function DocBlocksShell({
   const [writeCanvasSettings, setWriteCanvasSettings] = useState<WriteCanvasPreferences>(
     loadWriteCanvasPreferences,
   );
-  // "System default" (auto) always follows the OS -- the host's theme prop
-  // is kept only for API back-compat and does not override OS detection.
-  const resolvedTheme: 'light' | 'dark' =
-    themePreference === 'light' || themePreference === 'dark' ? themePreference : osTheme;
+  // Settings choice > the host's `theme` prop > the OS. See resolve-theme.ts
+  // for why that order. Stamped as `data-theme` on the shell root below.
+  const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
     setThemePreference(pref);
@@ -653,6 +658,52 @@ export function DocBlocksShell({
     userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
   });
   const [browserStoragePersistent, setBrowserStoragePersistent] = useState(false);
+
+  // --- The shell's three notification channels -------------------------
+  // Declared up here because the popstate handler below is the earliest
+  // consumer; everything that talks to the user goes through one of these
+  // rather than through window.alert/confirm/prompt, which block the
+  // renderer, ignore the theme, and wear the browser's name.
+
+  // Ctrl/Cmd+S is a real acknowledgement of the session revision, not an
+  // optimistic toast. A failed commit remains dirty and is surfaced.
+  const [saveToast, setSaveToast] = useState<{
+    kind: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * The shell's one transient-notification channel. Everything that needs to
+   * tell the user "that worked" / "that didn't" routes through here so the
+   * self-dismiss timers cannot fight each other.
+   */
+  const showToast = useCallback((kind: 'success' | 'error', message: string) => {
+    setSaveToast({ kind, message });
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
+  }, []);
+
+  // The shell's stand-in for `window.prompt()`, which Electron's renderer does
+  // not implement -- calling it there throws and the action dies silently.
+  const { prompt: promptForText, promptDialog } = usePromptDialog();
+
+  // Stand-ins for `window.confirm()` (a question) and `window.alert()` (a
+  // message worth stopping for). Transient outcomes use showToast instead.
+  const { confirm: confirmAction, acknowledge, confirmDialog } = useConfirmDialog();
+
+  // The file tree asks before deleting; give it this shell's dialog so the
+  // prompt matches the product rather than falling back to its native one.
+  const confirmDeleteEntry = useCallback(
+    (message: string) =>
+      confirmAction({
+        title: 'Delete',
+        message,
+        confirmLabel: 'Delete',
+        destructive: true,
+      }),
+    [confirmAction],
+  );
+
   // Browser PWA install prompt (Chromium only). The event is stashed when
   // the browser deems the app installable and spent on first use.
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(
@@ -1636,7 +1687,7 @@ export function DocBlocksShell({
       const sharedHash = parseSharedDocumentHash(requestedHash);
       if (sharedHash.kind === 'invalid') {
         restoreCurrentHash();
-        alert(sharedHash.message);
+        showToast('error', sharedHash.message);
         return;
       }
       if (sharedHash.kind === 'valid') {
@@ -1647,7 +1698,8 @@ export function DocBlocksShell({
           })
           .catch((error: unknown) => {
             restoreCurrentHash();
-            alert(
+            showToast(
+              'error',
               error instanceof Error
                 ? 'DocBlocks could not open the shared document: ' + error.message
                 : 'DocBlocks could not open the shared document.',
@@ -1664,7 +1716,8 @@ export function DocBlocksShell({
           })
           .catch((error: unknown) => {
             restoreCurrentHash();
-            alert(
+            showToast(
+              'error',
               error instanceof Error
                 ? 'DocBlocks could not switch documents: ' + error.message
                 : 'DocBlocks could not switch documents.',
@@ -1674,7 +1727,7 @@ export function DocBlocksShell({
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile]);
+  }, [activeWorkspaceId, openFromIds, openSharedDocument, selectedFile, showToast]);
 
   useEffect(() => {
     if (!showBrowserStorageWarning || typeof navigator === 'undefined') return;
@@ -1762,28 +1815,6 @@ export function DocBlocksShell({
     window.addEventListener('click', handler, true);
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
-
-  // Ctrl/Cmd+S is a real acknowledgement of the session revision, not an
-  // optimistic toast. A failed commit remains dirty and is surfaced.
-  const [saveToast, setSaveToast] = useState<{
-    kind: 'success' | 'error';
-    message: string;
-  } | null>(null);
-  const saveToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * The shell's one transient-notification channel. Everything that needs to
-   * tell the user "that worked" / "that didn't" routes through here so the
-   * self-dismiss timers cannot fight each other.
-   */
-  const showToast = useCallback((kind: 'success' | 'error', message: string) => {
-    setSaveToast({ kind, message });
-    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-    saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
-  }, []);
-
-  // The shell's stand-in for `window.prompt()`, which Electron's renderer does
-  // not implement -- calling it there throws and the action dies silently.
-  const { prompt: promptForText, promptDialog } = usePromptDialog();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1996,7 +2027,8 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
-        alert(
+        showToast(
+          'error',
           error instanceof Error
             ? 'DocBlocks could not save this document: ' + error.message
             : 'DocBlocks could not save this document.',
@@ -2004,7 +2036,7 @@ export function DocBlocksShell({
         return false;
       }
     },
-    [documentSession],
+    [documentSession, showToast],
   );
 
   const handleUseExternalDocument = useCallback(async () => {
@@ -2386,7 +2418,7 @@ export function DocBlocksShell({
       });
       if (!transitioned) return;
     } catch (error: unknown) {
-      alert(error instanceof Error ? error.message : 'Could not create the document.');
+      showToast('error', error instanceof Error ? error.message : 'Could not create the document.');
       return;
     }
     setSelectedFile(path);
@@ -2405,6 +2437,7 @@ export function DocBlocksShell({
     createDocumentTarget,
     documentSession,
     promptForText,
+    showToast,
   ]);
 
   // Manifest shortcut "New document" launches `/?action=new` (installed
@@ -2491,16 +2524,18 @@ export function DocBlocksShell({
           });
           break;
         case 'help:about':
-          (async () => {
+          void (async () => {
             const version = await host.updater.getVersion();
-            alert(`DocBlocks ${version}`);
+            // Deliberately a dialog, not a toast: the user asked to see this
+            // and a version string they cannot read twice is useless.
+            await acknowledge({ title: 'About DocBlocks', message: `DocBlocks ${version}` });
           })();
           break;
         default:
           break;
       }
     });
-  }, [handleNewFile, handleOpenFolder, handleRevealWorkspace]);
+  }, [handleNewFile, handleOpenFolder, handleRevealWorkspace, acknowledge]);
 
   // OS open-file / deep-link handling lives after the container helpers it
   // depends on -- see the `openTransient` + onOpenRequest effect below.
@@ -2533,7 +2568,10 @@ export function DocBlocksShell({
           });
           if (!transitioned) return;
         } catch (error: unknown) {
-          alert(error instanceof Error ? error.message : 'Could not switch documents.');
+          showToast(
+            'error',
+            error instanceof Error ? error.message : 'Could not switch documents.',
+          );
           return;
         }
         if (requestId !== navigationRequestRef.current) return;
@@ -2557,6 +2595,7 @@ export function DocBlocksShell({
       createDocumentTarget,
       documentSession,
       transitionAwayFromDocument,
+      showToast,
     ],
   );
 
@@ -2827,14 +2866,15 @@ export function DocBlocksShell({
           : openTransient(req, requestId)
       ).catch((error: unknown) => {
         if (requestId !== navigationRequestRef.current) return;
-        alert(
+        showToast(
+          'error',
           error instanceof Error
             ? 'DocBlocks could not open the requested file: ' + error.message
             : 'DocBlocks could not open the requested file.',
         );
       });
     });
-  }, [openFromIds, openTransient, workspaceAuthorityBarrier]);
+  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -2904,14 +2944,15 @@ export function DocBlocksShell({
       if (params.files.length === 0) return;
       const handle = params.files[0];
       void openTransientFromHandle(handle).catch((error: unknown) => {
-        alert(
+        showToast(
+          'error',
           error instanceof Error
             ? 'DocBlocks could not open the launched file: ' + error.message
             : 'DocBlocks could not open the launched file.',
         );
       });
     });
-  }, [openTransientFromHandle]);
+  }, [openTransientFromHandle, showToast]);
 
   const updateStatusBarVisible =
     viewPreferences.showStatusBar === true && selectedFile !== null && mediaProvider !== null;
@@ -2939,9 +2980,9 @@ export function DocBlocksShell({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to download workspace', err);
-      alert('Failed to download workspace. See console for details.');
+      showToast('error', 'Failed to download workspace. See console for details.');
     }
-  }, [provider, documentSession]);
+  }, [provider, documentSession, showToast]);
 
   /**
    * Bundle every workspace the host can open without further prompting
@@ -2966,7 +3007,7 @@ export function DocBlocksShell({
           : w.type !== 'electron-native',
       );
       if (candidates.length === 0) {
-        alert('No workspaces to download.');
+        showToast('error', 'No workspaces to download.');
         return;
       }
 
@@ -3019,7 +3060,7 @@ export function DocBlocksShell({
       }
 
       if (usedFolders.size === 0) {
-        alert('No workspaces could be opened for download.');
+        showToast('error', 'No workspaces could be opened for download.');
         return;
       }
 
@@ -3033,24 +3074,34 @@ export function DocBlocksShell({
       URL.revokeObjectURL(url);
 
       if (skipped.length > 0) {
-        alert(
-          `Downloaded ${usedFolders.size} workspace(s). Skipped ${skipped.length} that require re-granting access: ${skipped.join(', ')}.`,
-        );
+        // A dialog, not a toast: this names workspaces the user now has to go
+        // re-grant one by one. A list you must act on cannot expire in 3s.
+        await acknowledge({
+          title: 'Some workspaces were skipped',
+          message: `Downloaded ${usedFolders.size} workspace(s). Skipped ${skipped.length} that require re-granting access: ${skipped.join(', ')}.`,
+        });
       }
     } catch (err) {
       console.error('Failed to download all workspaces', err);
-      alert('Failed to download all workspaces. See console for details.');
+      showToast('error', 'Failed to download all workspaces. See console for details.');
     }
-  }, [documentSession]);
+  }, [documentSession, acknowledge, showToast]);
 
   const handleKeepBrowserData = useCallback(async () => {
     if (typeof navigator === 'undefined') return;
 
+    // Every outcome here that ends in "back up your documents" is a dialog:
+    // it is standing advice about the durability of the user's work, and a
+    // toast that evaporates in 3s is the wrong channel for it. The one
+    // outcome that asks nothing of the user -- storage is already persistent
+    // -- is a plain success toast.
     const storage = navigator.storage;
     if (!storage || typeof storage.persist !== 'function') {
-      alert(
-        'This browser does not support persistent storage requests. Please back up browser docs frequently.',
-      );
+      await acknowledge({
+        title: 'Persistent storage unavailable',
+        message:
+          'This browser does not support persistent storage requests. Please back up browser docs frequently.',
+      });
       return;
     }
 
@@ -3059,27 +3110,33 @@ export function DocBlocksShell({
         typeof storage.persisted === 'function' ? await storage.persisted() : false;
       if (alreadyPersistent) {
         setBrowserStoragePersistent(true);
-        alert('DocBlocks browser data is already marked as persistent by this browser.');
+        showToast('success', 'DocBlocks browser data is already marked as persistent.');
         return;
       }
 
       const granted = await storage.persist();
       if (granted) {
         setBrowserStoragePersistent(true);
-        alert(
-          'This browser will try to keep DocBlocks data for longer. Please still back up browser docs frequently.',
-        );
+        await acknowledge({
+          title: 'Storage will be kept for longer',
+          message:
+            'This browser will try to keep DocBlocks data for longer. Please still back up browser docs frequently.',
+        });
       } else {
-        alert(
-          'The browser did not grant permanent storage for DocBlocks. Please try again in a day or two. Meanwhile, please back up browser documents frequently.',
-        );
+        await acknowledge({
+          title: 'Storage request declined',
+          message:
+            'The browser did not grant permanent storage for DocBlocks. Please try again in a day or two. Meanwhile, please back up browser documents frequently.',
+        });
       }
     } catch {
-      alert(
-        'DocBlocks could not request persistent browser storage. Please back up browser docs frequently.',
-      );
+      await acknowledge({
+        title: 'Storage request failed',
+        message:
+          'DocBlocks could not request persistent browser storage. Please back up browser docs frequently.',
+      });
     }
-  }, []);
+  }, [acknowledge, showToast]);
 
   // Settings dialog "Storage" row (browser surface): usage/quota estimate.
   const getBrowserStorageEstimate = useCallback(async () => {
@@ -3102,11 +3159,22 @@ export function DocBlocksShell({
     // Folder-backed workspaces (Electron or File System Access) keep their
     // files on the user's disk, so promising the removal is irreversible there
     // would be a lie in the more alarming direction.
-    const confirmMsg =
-      ws?.type === 'indexeddb'
+    const destroysDocuments = ws?.type === 'indexeddb';
+    const confirmed = await confirmAction({
+      title: 'Remove workspace',
+      message: destroysDocuments
         ? 'Remove this workspace? Its documents will be permanently deleted.'
-        : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.';
-    if (!confirm(confirmMsg)) return;
+        : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.',
+      confirmLabel: 'Remove',
+      // Only the browser-local case actually destroys the user's documents.
+      destructive: destroysDocuments,
+    });
+    if (!confirmed) return;
+    // No request-id re-check is needed across this await: unlike the native
+    // confirm() it replaces, nothing above claimed a navigation. The id is
+    // still taken *after* the user answers, so a navigation that happened
+    // while the dialog was open is the one this request supersedes -- exactly
+    // the ordering the synchronous version had.
     const requestId = ++navigationRequestRef.current;
     if (!(await transitionAwayFromDocument(requestId))) return;
 
@@ -3171,7 +3239,7 @@ export function DocBlocksShell({
       setSelectedFolder(null);
       setFolderEntries([]);
     }
-  }, [activeWorkspaceId, handleWorkspaceSelect, transitionAwayFromDocument]);
+  }, [activeWorkspaceId, handleWorkspaceSelect, transitionAwayFromDocument, confirmAction]);
 
   return (
     <div
@@ -3182,6 +3250,7 @@ export function DocBlocksShell({
     >
       <GitContext.Provider value={git}>
         {promptDialog}
+        {confirmDialog}
         {workspaceStartupError && (
           <div className="db-save-toast db-save-toast--error" role="alert" aria-live="assertive">
             {workspaceStartupError}
@@ -3318,6 +3387,7 @@ export function DocBlocksShell({
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
                 onImportFiles={handleImportFiles}
+                confirmDelete={confirmDeleteEntry}
                 moveDestinations={
                   activeWorkspaceDescriptor?.type === 'transient'
                     ? transientMoveDestinations

@@ -138,7 +138,7 @@ export async function convertPreparedDocument(
   const results: ConversionResult[] = [];
   const createdArtifactUris: string[] = [];
   const createdCacheKeys: string[] = [];
-  const engineVersions = conversionEngineVersions();
+  const engineVersions = await conversionEngineVersions();
   let nativePrepared: PreparedConversion | undefined;
   const nativePrepareOptions: CliConvertOptions = {
     registry: linkedRegistry,
@@ -411,21 +411,17 @@ class CompletedConversionCache {
   }
 }
 
-function conversionEngineVersions(): EngineVersion[] {
+async function conversionEngineVersions(): Promise<EngineVersion[]> {
+  const [cli, formats, squisq] = await Promise.all([
+    getDependencyRuntimeVersion('@bendyline/squisq-cli', '@bendyline/squisq-cli/api'),
+    getDependencyRuntimeVersion('@bendyline/squisq-formats'),
+    getDependencyRuntimeVersion('@bendyline/squisq'),
+  ]);
   return [
     { name: 'docblocks', version: getPackageVersion() },
-    {
-      name: '@bendyline/squisq-cli',
-      version: getDependencyRuntimeVersion('@bendyline/squisq-cli', '@bendyline/squisq-cli/api'),
-    },
-    {
-      name: '@bendyline/squisq-formats',
-      version: getDependencyRuntimeVersion('@bendyline/squisq-formats'),
-    },
-    {
-      name: '@bendyline/squisq',
-      version: getDependencyRuntimeVersion('@bendyline/squisq'),
-    },
+    { name: '@bendyline/squisq-cli', version: cli },
+    { name: '@bendyline/squisq-formats', version: formats },
+    { name: '@bendyline/squisq', version: squisq },
   ];
 }
 

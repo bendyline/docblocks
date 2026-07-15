@@ -5,7 +5,7 @@
  * for creating new files/folders.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
@@ -18,12 +18,20 @@ import {
   type FileTreeNodeBadge,
   type FileTreeNodeGitActions,
 } from './FileTreeNode.js';
+import {
+  flattenVisibleRows,
+  resolveActiveRow,
+  treeKeyAction,
+  TREE_NAV_KEYS,
+} from './tree-keyboard.js';
 import { NewFileIcon, NewFolderIcon } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
+/** Ties the new-item input to its error message for assistive tech. */
+const NEW_ITEM_ERROR_ID = 'db-new-item-error';
 
 export type FileTreeChange =
   | { type: 'create'; path: string; kind?: 'file' | 'directory' }
@@ -120,6 +128,12 @@ export interface FileExplorerProps {
   onTreeChange?: (change?: FileTreeChange) => void;
   /** Called when supported files are dropped onto the explorer. */
   onImportFiles?: (files: File[]) => void;
+  /**
+   * Ask the user to confirm an irreversible delete. Resolve `false` to abort.
+   * Hosts with their own dialog pass it here; otherwise the tree falls back to
+   * a native prompt rather than deleting unasked.
+   */
+  confirmDelete?: (message: string) => boolean | Promise<boolean>;
   /** Persisted workspaces that can receive the current transient workspace. */
   moveDestinations?: readonly WorkspaceMoveDestination[];
   /** When provided, shows the transient-workspace move action above the tree. */
@@ -135,6 +149,7 @@ export function FileExplorer({
   onTreeMutation,
   onTreeChange,
   onImportFiles,
+  confirmDelete,
   moveDestinations = [],
   onMoveToWorkspace,
   className,
@@ -149,6 +164,8 @@ export function FileExplorer({
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
+  /** Failure from the new-file/new-folder form — surfaced beside its input. */
+  const [newItemError, setNewItemError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [draggedEntry, setDraggedEntry] = useState<FileSystemEntry | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -158,6 +175,9 @@ export function FileExplorer({
   const [movingToWorkspace, setMovingToWorkspace] = useState(false);
   const [moveWorkspaceError, setMoveWorkspaceError] = useState<string | null>(null);
   const dragCounter = useRef(0);
+  /** Row holding the tree's single tab stop; null until one is resolved. */
+  const [activePath, setActivePath] = useState<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (moveDestinations.some((destination) => destination.id === moveDestinationId)) return;
@@ -248,6 +268,7 @@ export function FileExplorer({
   const handleNewItemSubmit = useCallback(async () => {
     if (!newItemName.trim()) {
       setNewItemType(null);
+      setNewItemError(null);
       return;
     }
     const name = newItemName.trim();
@@ -255,12 +276,22 @@ export function FileExplorer({
     const prefix =
       tree.selectedKind === 'directory' && tree.selectedPath ? `${tree.selectedPath}/` : '';
     let createdPath = `${prefix}${name}`;
-    if (newItemType === 'file') {
-      const filename = name.endsWith('.md') ? name : `${name}.md`;
-      createdPath = `${prefix}${filename}`;
-      await tree.createFile(createdPath, '');
-    } else if (newItemType === 'directory') {
-      await tree.createDirectory(createdPath);
+    setNewItemError(null);
+    try {
+      if (newItemType === 'file') {
+        const filename = name.endsWith('.md') ? name : `${name}.md`;
+        createdPath = `${prefix}${filename}`;
+        await tree.createFile(createdPath, '');
+      } else if (newItemType === 'directory') {
+        await tree.createDirectory(createdPath);
+      }
+    } catch (error: unknown) {
+      // `createFile`/`createDirectory` use mode:'create', which rejects
+      // with already-exists on a duplicate name. The form used to swallow
+      // this and sit there looking idle. Keep the typed name so the user
+      // can correct it rather than retype from scratch.
+      setNewItemError(error instanceof Error ? error.message : 'Unable to create this item.');
+      return;
     }
     setNewItemName('');
     setNewItemType(null);
@@ -420,13 +451,87 @@ export function FileExplorer({
     [git],
   );
 
+  // The same walk renderEntries performs, as data — so arrow keys move
+  // through exactly the rows on screen, in the order they appear.
+  const visibleRows = useMemo(
+    () =>
+      flattenVisibleRows({
+        roots: tree.entries,
+        childrenOf: (dirPath) => getEquivalentPathValue(childEntries, dirPath) ?? [],
+        isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
+        isVisible: (entry) => !isHiddenEntry(entry),
+      }),
+    [tree.entries, tree.expanded, childEntries],
+  );
+
+  // `selectedPath` can be slash-prefixed (reveal() takes the caller's form)
+  // while entry paths are not, so match it with the explorer's own
+  // equivalence rules and hand tree-keyboard an exact row path.
+  const selectedRowPath = useMemo(() => {
+    if (!tree.selectedPath) return null;
+    const target = normalisePath(tree.selectedPath);
+    return visibleRows.find((row) => normalisePath(row.path) === target)?.path ?? null;
+  }, [visibleRows, tree.selectedPath]);
+
+  // Resolved rather than stored: rows come and go (loads, deletes,
+  // collapses), and the tree must never be left without a tab stop.
+  const activeRowPath = resolveActiveRow(visibleRows, activePath, selectedRowPath);
+
+  /** Move DOM focus to a row. It already exists, so this is safe to call
+      synchronously from the keydown that decided to move. */
+  const focusRow = useCallback((path: string) => {
+    const rows = treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]');
+    for (const row of rows ?? []) {
+      if (row.dataset.path === path) {
+        row.focus();
+        return;
+      }
+    }
+  }, []);
+
+  const handleTreeKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      // React portals bubble through the component tree, so the row menu's
+      // keys would arrive here too. Only real rows navigate.
+      const target = e.target as HTMLElement;
+      if (!target.classList?.contains('db-tree-row')) return;
+      if (!TREE_NAV_KEYS.has(e.key)) return;
+
+      const action = treeKeyAction(visibleRows, activeRowPath, e.key);
+      if (action.type === 'none') {
+        // Still ours: Arrow keys must not scroll the pane out from under
+        // the user just because the move was a no-op at an edge.
+        e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      switch (action.type) {
+        case 'focus':
+          setActivePath(action.path);
+          focusRow(action.path);
+          break;
+        case 'expand':
+        case 'collapse':
+          tree.toggleExpand(action.path);
+          break;
+      }
+    },
+    [visibleRows, activeRowPath, focusRow, tree],
+  );
+
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
-      return filterVisible(entries).map((entry) => (
+      const visible = filterVisible(entries);
+      return visible.map((entry, index) => (
         <FileTreeNode
           key={entry.path}
           entry={entry}
           depth={depth}
+          focusable={entry.path === activeRowPath}
+          posInSet={index + 1}
+          setSize={visible.length}
+          onRowFocus={setActivePath}
           expanded={hasEquivalentPath(tree.expanded, entry.path)}
           selected={
             tree.selectedPath !== null &&
@@ -436,6 +541,7 @@ export function FileExplorer({
           gitActions={gitActionsFor(entry)}
           onToggle={tree.toggleExpand}
           onSelect={handleSelect}
+          confirmDelete={confirmDelete}
           onDelete={handleDelete}
           onRename={handleRename}
           draggable
@@ -455,6 +561,7 @@ export function FileExplorer({
     [
       tree,
       handleSelect,
+      confirmDelete,
       handleDelete,
       handleRename,
       childEntries,
@@ -466,6 +573,7 @@ export function FileExplorer({
       handleInternalDragEnd,
       handleEntryDragOver,
       handleEntryDrop,
+      activeRowPath,
     ],
   );
 
@@ -483,7 +591,10 @@ export function FileExplorer({
         <div className="db-explorer-actions">
           <button
             className="db-explorer-btn"
-            onClick={() => setNewItemType('file')}
+            onClick={() => {
+              setNewItemError(null);
+              setNewItemType('file');
+            }}
             title="New File"
             aria-label="New File"
           >
@@ -491,7 +602,10 @@ export function FileExplorer({
           </button>
           <button
             className="db-explorer-btn"
-            onClick={() => setNewItemType('directory')}
+            onClick={() => {
+              setNewItemError(null);
+              setNewItemType('directory');
+            }}
             title="New Folder"
             aria-label="New Folder"
           >
@@ -581,18 +695,27 @@ export function FileExplorer({
             className="db-new-item-row"
             onSubmit={(e) => {
               e.preventDefault();
-              handleNewItemSubmit();
+              void handleNewItemSubmit();
             }}
           >
             <input
               className="db-new-item-input"
               placeholder={newItemType === 'file' ? 'filename' : 'folder-name'}
               value={newItemName}
-              onChange={(e) => setNewItemName(e.target.value)}
+              aria-label={newItemType === 'file' ? 'New file name' : 'New folder name'}
+              aria-invalid={newItemError !== null}
+              aria-describedby={newItemError ? NEW_ITEM_ERROR_ID : undefined}
+              onChange={(e) => {
+                setNewItemName(e.target.value);
+                // The name changed, so the previous complaint about it no
+                // longer applies.
+                setNewItemError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   setNewItemType(null);
                   setNewItemName('');
+                  setNewItemError(null);
                 }
               }}
               autoFocus
@@ -602,6 +725,11 @@ export function FileExplorer({
               Add
             </button>
           </form>
+          {newItemError && (
+            <div id={NEW_ITEM_ERROR_ID} className="db-tree-error" role="alert">
+              {newItemError}
+            </div>
+          )}
         </div>
       )}
 
@@ -633,10 +761,13 @@ export function FileExplorer({
         </div>
       ) : (
         <div
+          ref={treeRef}
           className={`db-tree ${dropTarget === '' ? 'db-tree--drop-target' : ''}`}
           role="tree"
+          aria-label="Files"
           onDragOver={handleRootDragOver}
           onDrop={handleRootDrop}
+          onKeyDown={handleTreeKeyDown}
         >
           {renderEntries(tree.entries, 0)}
         </div>

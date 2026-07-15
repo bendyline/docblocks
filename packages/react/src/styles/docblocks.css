@@ -27,6 +27,11 @@
   --db-accent-hover: #5e4f37;
   --db-text-on-accent: #ffffff;
   --db-text-on-selected: #ffffff;
+  /* Keyboard focus ring. Deliberately darker than --db-accent: the accent
+     is also the *selected row* fill, so an accent ring vanished against
+     it. Any surface that paints itself --db-bg-selected re-points this
+     token at a contrasting value (see .db-tree-row--selected). */
+  --db-focus: #3d3220;
   --db-accent-soft-08: rgba(125, 105, 72, 0.08);
   --db-accent-soft-10: rgba(125, 105, 72, 0.1);
   --db-accent-soft-12: rgba(125, 105, 72, 0.12);
@@ -45,6 +50,7 @@
   --db-input-border: #c4b693;
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
+  --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
   /* Git status colors — file badges, sync chips. Deleted/conflicted reuse
      the danger hue on purpose; renamed gets the one cool accent. */
@@ -72,6 +78,7 @@
   --db-accent-hover: #dec79d;
   --db-text-on-accent: #1a1812;
   --db-text-on-selected: #e8e2d0;
+  --db-focus: #e8e2d0;
   --db-accent-soft-08: rgba(200, 180, 143, 0.08);
   --db-accent-soft-10: rgba(200, 180, 143, 0.1);
   --db-accent-soft-12: rgba(200, 180, 143, 0.12);
@@ -86,6 +93,7 @@
   --db-input-border: #c8b48f;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
+  --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
   /* In dark mode, "lighter than the toolbar" means brighter — so this
      sits a step above `--db-accent-tint-strong` instead of between it
@@ -116,6 +124,7 @@
     --db-accent-hover: #dec79d;
     --db-text-on-accent: #1a1812;
     --db-text-on-selected: #e8e2d0;
+    --db-focus: #e8e2d0;
     --db-accent-soft-08: rgba(200, 180, 143, 0.08);
     --db-accent-soft-12: rgba(200, 180, 143, 0.12);
     --db-accent-soft-15: rgba(200, 180, 143, 0.18);
@@ -125,6 +134,7 @@
     --db-input-border: #c8b48f;
     --db-danger: #f87171;
     --db-danger-bg: #1c1917;
+    --db-text-on-danger: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
     --db-gutter-bg: #4a4538;
     --db-git-modified: #e5b567;
@@ -342,6 +352,25 @@
   outline: none;
 }
 
+/* The UA outline is suppressed above, so this is the *only* focus
+   indicator on an input a keyboard user has to type into (WCAG 2.4.7).
+   :focus-visible rather than :focus so a pointer user placing a caret
+   doesn't get a ring. */
+.db-new-item-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+  border-color: var(--db-accent);
+}
+
+.db-new-item-input[aria-invalid='true'] {
+  border-color: var(--db-danger);
+}
+
+.db-new-item-add:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
 .db-new-item-suffix {
   font-size: 12px;
   color: var(--db-text-muted);
@@ -417,6 +446,22 @@
   background: var(--db-bg-hover);
 }
 
+/* The roving-tabindex row is the tree's single tab stop, so its focus ring
+   is the only thing telling a keyboard user where they are. Inset offset
+   keeps the ring inside the scroll container instead of being clipped. */
+.db-tree-row:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+/* A selected/drop-target row is filled with --db-bg-selected, which in
+   light mode *is* the accent brown — the default ring would disappear
+   into it. Re-point the token rather than duplicating the rule. */
+.db-tree-row--selected,
+.db-tree-row--drop-target {
+  --db-focus: #ffffff;
+}
+
 .db-tree-row--dragging {
   opacity: 0.45;
 }
@@ -467,6 +512,15 @@
   outline: none;
 }
 
+/* Same WCAG 2.4.7 gap as .db-new-item-input: the rename input is focused
+   programmatically the moment it appears, so with `outline: none` and no
+   replacement a keyboard user had no idea where they were typing. */
+.db-tree-rename-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+  border-color: var(--db-accent);
+}
+
 .db-tree-more {
   flex-shrink: 0;
   display: inline-flex;
@@ -496,6 +550,11 @@
 .db-tree-more:hover {
   background: var(--db-bg-hover);
   color: var(--db-text);
+}
+
+.db-tree-more:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-tree-more--active {
@@ -532,8 +591,16 @@
   color: var(--db-text-secondary);
 }
 
-.db-tree-context-item:hover {
+.db-tree-context-item:hover,
+.db-tree-context-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Menu items are reached with Arrow keys (they are not tab stops), so the
+   ring is the only cue to which item Enter will fire. */
+.db-tree-context-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-tree-context-item--danger {
@@ -1606,8 +1673,15 @@ body.db-resizing-sidebar * {
   white-space: nowrap;
 }
 
-.db-toolbar-menu-item:hover {
+.db-toolbar-menu-item:hover,
+.db-toolbar-menu-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Arrow-reachable, not a tab stop — see .db-git-menu-item:focus-visible. */
+.db-toolbar-menu-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-toolbar-menu-item:disabled {
@@ -2326,6 +2400,7 @@ html:has(.db-shell[data-theme='dark']) {
   --db-text-muted: #a89a7c;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
+  --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
@@ -2346,6 +2421,7 @@ html:has(.db-shell[data-theme='light']) {
   --db-text-muted: #6b614a;
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
+  --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
@@ -3896,6 +3972,19 @@ html:has(.db-shell[data-theme='dark'])
   cursor: default;
 }
 
+/* Destructive confirmation (delete, remove workspace). The foreground comes
+   from a token rather than a literal because the two themes need opposite ink:
+   light's danger is deep red and carries white at ~6.5:1, while dark's is a
+   light red where white would fall to ~2.8:1 and fail WCAG AA. */
+.db-git-primary-btn--danger {
+  background: var(--db-danger);
+  color: var(--db-text-on-danger);
+}
+
+.db-git-primary-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--db-danger) 85%, black);
+}
+
 .db-git-secondary-btn {
   padding: 6px 14px;
   border: 1px solid var(--db-border-strong);
@@ -4002,8 +4091,16 @@ html:has(.db-shell[data-theme='dark'])
   cursor: pointer;
 }
 
-.db-git-menu-item:hover:not(:disabled) {
+.db-git-menu-item:hover:not(:disabled),
+.db-git-menu-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Items are arrow-reachable rather than tab stops, so the ring is the only
+   cue to which one Enter will fire. */
+.db-git-menu-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-git-menu-item:disabled {

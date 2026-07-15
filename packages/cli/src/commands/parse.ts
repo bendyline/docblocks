@@ -6,6 +6,7 @@ import { open } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
+import { positiveLimit } from '../internal/limits.js';
 
 const DEFAULT_MAX_PARSE_INPUT_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_PARSE_OUTPUT_BYTES = 128 * 1024 * 1024;
@@ -22,12 +23,12 @@ export async function runParse(inputPath: string, options: ParseOptions = {}): P
   const maxInputBytes = positiveLimit(
     options.maxInputBytes,
     DEFAULT_MAX_PARSE_INPUT_BYTES,
-    'input byte',
+    'parse input byte',
   );
   const maxOutputBytes = positiveLimit(
     options.maxOutputBytes,
     DEFAULT_MAX_PARSE_OUTPUT_BYTES,
-    'output byte',
+    'parse output byte',
   );
   const bytes = await readBoundedFile(resolvedInput, maxInputBytes);
   const content = decodeUtf8Text(bytes, { label: 'Parse input', path: resolvedInput });
@@ -92,10 +93,3 @@ export const parseCommand = new Command('parse')
       process.exitCode = 1;
     }
   });
-
-function positiveLimit(value: number | undefined, fallback: number, label: string): number {
-  const selected = value ?? fallback;
-  if (!Number.isSafeInteger(selected) || selected < 1)
-    throw new Error(`Invalid parse ${label} limit.`);
-  return selected;
-}

@@ -10,7 +10,9 @@ export default defineConfig([
     external: ['vscode'],
     noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
   },
-  // Web extension host — ESM bundle for web worker
+  // Web extension host (vscode.dev) — browser-targeted CJS. The web extension
+  // host loads `browser` entries as CommonJS inside its worker, so this is CJS
+  // like the desktop bundle; only the platform and NODE_ENV define differ.
   {
     entry: { 'extension.web': 'src/extension.ts' },
     format: ['cjs'],

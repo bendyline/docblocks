@@ -9,6 +9,7 @@ import {
   type DocumentSessionSnapshot,
 } from '@bendyline/docblocks/document';
 import type { DocumentConflictDetailsMessage } from '@bendyline/docblocks/vscode';
+import { toError } from './toError.js';
 
 /** Save after twenty seconds without another accepted editor snapshot. */
 export const DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS = 20_000;
@@ -234,11 +235,27 @@ export class VscodeDocumentSync {
     }
   }
 
-  /** Persist through the latest accepted client revision or report failure. */
+  /**
+   * Persist through the latest accepted client revision or report failure.
+   *
+   * A save request only names the revision the user could see when they asked;
+   * it is not a compare-and-swap. Edits reach this session through a separate,
+   * faster ingress than save requests do (LatestDocumentEditQueue vs the
+   * bounded message queue), so typing immediately after Ctrl+S routinely lands
+   * a newer accepted revision before the save request is processed. Since every
+   * edit is a complete snapshot on the same branch, flushing then persists a
+   * superset of what the user asked to save — exactly this method's contract —
+   * so a stale-but-lower request must flush rather than drop the save intent.
+   *
+   * A request *ahead* of the acknowledged revision is still a real failure:
+   * the session does not hold that content and cannot persist it. Branch
+   * identity (sessionId + baseDocumentVersion) is enforced by validateEnvelope,
+   * so a lower revision here can only be this session's own older request.
+   */
   public async save(save: WebviewSaveEnvelope): Promise<DocumentSessionSnapshot> {
     const invalid = this.validateEnvelope(save);
     if (invalid) throw new Error(invalid);
-    if (save.clientRevision !== this.acknowledgedClientRevision) {
+    if (save.clientRevision > this.acknowledgedClientRevision) {
       throw new Error(
         `Cannot save client revision ${save.clientRevision}; revision ${this.acknowledgedClientRevision} is acknowledged.`,
       );
@@ -576,8 +593,4 @@ function createSessionId(): string {
 
 function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
 }

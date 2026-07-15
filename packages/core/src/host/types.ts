@@ -208,10 +208,25 @@ export type ExternalBinaryCommitResult =
   | { status: 'committed'; version: string }
   | { status: 'conflict'; version: string | null; data: ArrayBuffer | null };
 
-/** Environment metadata provided by the host. */
+/**
+ * Environment metadata provided by the host.
+ *
+ * Read synchronously by the renderer, so a host implementation must have
+ * these values in hand before it exposes the bridge — they cannot be awaited.
+ *
+ * Every field is main-process authority. A host must derive them from what it
+ * actually knows about itself (in Electron: `app.getVersion()` and
+ * `app.isPackaged`) and never from renderer-visible environment variables:
+ * `npm_package_version` exists only under an `npm run` script and `NODE_ENV`
+ * is unset in a packaged app, so both silently lie in exactly the builds users
+ * install. `appVersion` in particular reaches users through the About surface
+ * and issue-report URLs.
+ */
 export interface HostEnvironment {
   platform: 'darwin' | 'win32' | 'linux';
+  /** Real, user-facing app version. Never a placeholder like '0.0.0'. */
   appVersion: string;
+  /** True only in an unpackaged development run. */
   isDev: boolean;
 }
 

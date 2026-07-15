@@ -19,7 +19,7 @@ function change(path: string, conflicted = false): GitFileChange {
   return { path, worktree: 'modified', conflicted };
 }
 
-function statusWith(changes: GitFileChange[]): GitStatus {
+function statusWith(changes: GitFileChange[], operation: GitStatus['operation'] = null): GitStatus {
   return {
     branch: 'main',
     detached: false,
@@ -30,7 +30,7 @@ function statusWith(changes: GitFileChange[]): GitStatus {
     behind: 0,
     changes,
     truncated: false,
-    operation: null,
+    operation,
   };
 }
 
@@ -189,6 +189,79 @@ describe('GitCommitDialog', () => {
     await act(async () => commitButton!.click());
 
     expect(committed?.paths).to.deep.equal(['/b.md', '/late.md']);
+  });
+
+  describe('while git has an operation in progress', () => {
+    /** Mount the dialog against a status carrying `operation`. */
+    async function renderDuring(
+      operation: GitStatus['operation'],
+      changes: GitFileChange[],
+    ): Promise<void> {
+      await act(async () =>
+        root.render(
+          createElement(
+            GitContext.Provider,
+            { value: gitValue(statusWith(changes, operation), commit) },
+            createElement(GitCommitDialog, { onClose: () => undefined }),
+          ),
+        ),
+      );
+    }
+
+    it('locks a non-conflicted row during a merge instead of letting it lie', async () => {
+      // Regression (SF-3): the host drops the pathspec mid-merge and
+      // commits the whole index, but only conflicted rows were disabled.
+      // A live checkbox on /a.md promised an exclusion that never happened.
+      await renderDuring('merge', [change('/a.md'), change('/conflict.md', true)]);
+
+      const plain = rowFor(container, '/a.md');
+      expect(plain.checked).to.equal(true);
+      expect(
+        plain.disabled,
+        'a non-conflicted row must not offer a choice it cannot honour',
+      ).to.equal(true);
+      expect(rowFor(container, '/conflict.md').disabled).to.equal(true);
+    });
+
+    it('commits a non-conflicted file during a merge even after a click at it', async () => {
+      await renderDuring('merge', [change('/a.md'), change('/conflict.md', true)]);
+
+      // A disabled input ignores clicks, so this asserts the *outcome*:
+      // what the dialog shows is what gets committed.
+      await act(async () => rowFor(container, '/a.md').click());
+      expect(rowFor(container, '/a.md').checked).to.equal(true);
+
+      const message = container.querySelector<HTMLTextAreaElement>('textarea');
+      await act(async () => typeInto(message!, 'merge: resolve'));
+      const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === 'Commit',
+      );
+      await act(async () => commitButton!.click());
+
+      expect(committed?.paths).to.deep.equal(['/a.md', '/conflict.md']);
+    });
+
+    it('explains why nothing can be excluded, and hides the dead bulk toggle', async () => {
+      await renderDuring('merge', [change('/a.md')]);
+
+      expect(container.textContent).to.include('cannot be left out');
+      const bulk = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+        ['Select all', 'Select none'].includes(button.textContent?.trim() ?? ''),
+      );
+      expect(bulk, 'a bulk toggle that cannot change anything must not render').to.equal(undefined);
+    });
+
+    it('locks rows during a cherry-pick too — the pathspec is dropped the same way', async () => {
+      // isMergeCommit() only covered 'merge', so a cherry-pick left every
+      // checkbox interactive while the host still ignored them.
+      await renderDuring('cherry-pick', [change('/a.md')]);
+      expect(rowFor(container, '/a.md').disabled).to.equal(true);
+    });
+
+    it('leaves rows interactive when no operation is in progress', async () => {
+      await renderDuring(null, [change('/a.md')]);
+      expect(rowFor(container, '/a.md').disabled).to.equal(false);
+    });
   });
 
   it('drops a file from the commit once git stops reporting it', async () => {

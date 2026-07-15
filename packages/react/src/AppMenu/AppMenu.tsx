@@ -20,8 +20,6 @@ import { Dialog } from '../components/Dialog.js';
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
 export interface AppMenuProps {
-  /** URL for the about page. */
-  aboutUrl?: string;
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
   /** Current theme preference. */
@@ -79,7 +77,6 @@ function formatBytes(bytes: number): string {
 }
 
 export function AppMenu({
-  aboutUrl: _aboutUrl = '#about',
   logoUrl,
   themePreference = 'auto',
   onThemeChange,

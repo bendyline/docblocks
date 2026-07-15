@@ -5,8 +5,32 @@ import { join } from 'node:path';
 import {
   assertCliVideoRenderBudget,
   runVideo,
+  selectVideoOutput,
   type VideoRunDependencies,
 } from '../src/commands/video.js';
+
+describe('CLI video output selection', () => {
+  it('accepts the destination from either the positional argument or --output', () => {
+    expect(selectVideoOutput('positional.mp4', undefined)).to.equal('positional.mp4');
+    expect(selectVideoOutput(undefined, 'option.mp4')).to.equal('option.mp4');
+    expect(selectVideoOutput(undefined, undefined)).to.equal(undefined);
+  });
+
+  it('refuses two ways of naming one destination rather than silently losing one', () => {
+    // `-o` used to win silently, writing a file the caller never named.
+    expect(() => selectVideoOutput('positional.mp4', 'option.mp4')).to.throw(
+      'Two output paths were requested',
+    );
+    expect(() => selectVideoOutput('positional.mp4', 'option.mp4')).to.throw('positional.mp4');
+    expect(() => selectVideoOutput('positional.mp4', 'option.mp4')).to.throw('option.mp4');
+  });
+
+  it('refuses a redundant repeat too, so the contract has no ambiguous corner', () => {
+    expect(() => selectVideoOutput('same.mp4', 'same.mp4')).to.throw(
+      'Two output paths were requested',
+    );
+  });
+});
 
 describe('CLI video cancellation', function () {
   this.timeout(30_000);

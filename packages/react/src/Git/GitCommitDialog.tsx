@@ -1,9 +1,11 @@
 /**
  * GitCommitDialog — message + per-file selection for committing changes.
  *
- * All changed files are included by default; while a merge is being
- * concluded, conflicted files are force-included (locked) because a commit
- * that omits them would not resolve the merge. Selection logic lives in
+ * All changed files are included by default. While git has an operation in
+ * progress (merge, rebase, cherry-pick, revert) the host must record the
+ * whole index — git forbids a pathspec commit mid-operation — so every row
+ * is locked and the dialog says so, rather than offering checkboxes whose
+ * state the commit would ignore. Selection logic lives in
  * commit-selection.ts so it stays unit-testable.
  */
 
@@ -14,6 +16,7 @@ import { BADGE_LABELS, badgeKindFor } from './git-status.js';
 import {
   allSelected,
   canCommit,
+  commitsWholeIndex,
   isIncluded,
   isLocked,
   isMergeCommit,
@@ -25,10 +28,21 @@ import {
   type CommitOverrides,
 } from './commit-selection.js';
 
+/** Human-readable name for the in-progress operation, for the hint line. */
+const OPERATION_LABELS: Record<string, string> = {
+  merge: 'merge',
+  rebase: 'rebase',
+  'cherry-pick': 'cherry-pick',
+  revert: 'revert',
+  bisect: 'bisect',
+};
+
 export function GitCommitDialog({ onClose }: { onClose: () => void }) {
   const git = useGitContext();
   const status = git?.status ?? null;
   const merging = isMergeCommit(status);
+  /** Mid-operation: the commit records the index whole, so nothing unticks. */
+  const wholeIndex = commitsWholeIndex(status);
   const changes = status?.changes;
 
   const [message, setMessage] = useState('');
@@ -41,8 +55,8 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
   // 1.5s) is rendered checked *and* committed, rather than rendered checked
   // and silently dropped from a mount-time snapshot.
   const selection = useMemo(
-    () => resolveSelection(changes ?? [], merging, overrides),
-    [changes, merging, overrides],
+    () => resolveSelection(changes ?? [], wholeIndex, overrides),
+    [changes, wholeIndex, overrides],
   );
 
   if (!git || !status) return null;
@@ -78,9 +92,13 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      {merging && (
+      {wholeIndex && (
         <p className="db-settings-hint">
-          You&rsquo;re completing a merge. Committing will conclude it.
+          {merging
+            ? 'You’re completing a merge. Committing will conclude it.'
+            : `A ${OPERATION_LABELS[status.operation ?? ''] ?? 'git operation'} is in progress.`}{' '}
+          Git records every change below in this commit — files cannot be left out until the{' '}
+          {merging ? 'merge' : 'operation'} is finished.
         </p>
       )}
       <textarea
@@ -92,15 +110,19 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
         aria-label="Commit message"
         rows={3}
       />
-      <div className="db-git-form-row">
-        <button
-          type="button"
-          className="db-git-secondary-btn"
-          onClick={() => setOverrides(setAllOverrides(selection, !allOn))}
-        >
-          {allOn ? 'Select none' : 'Select all'}
-        </button>
-      </div>
+      {/* Nothing is selectable mid-operation, so the bulk toggle would be a
+          no-op control. Hide it rather than render a dead button. */}
+      {!wholeIndex && (
+        <div className="db-git-form-row">
+          <button
+            type="button"
+            className="db-git-secondary-btn"
+            onClick={() => setOverrides(setAllOverrides(selection, !allOn))}
+          >
+            {allOn ? 'Select none' : 'Select all'}
+          </button>
+        </div>
+      )}
       <ul className="db-git-file-list">
         {status.changes.map((change) => {
           const kind = badgeKindFor(change);
@@ -113,6 +135,11 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
                   type="checkbox"
                   checked={checked}
                   disabled={locked}
+                  title={
+                    locked
+                      ? `Included automatically while the ${merging ? 'merge' : 'operation'} is in progress`
+                      : undefined
+                  }
                   onChange={() => setOverrides((o) => toggleOverride(o, selection, change.path))}
                 />
                 <span>{change.path.replace(/^\/+/, '')}</span>

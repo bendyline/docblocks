@@ -8,11 +8,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGitContext } from './GitContext.js';
 import { formatAheadBehind, summarizeDirty } from './git-status.js';
+import { useMenuKeyboard } from './useMenuKeyboard.js';
 
 export function GitStatusBar() {
   const git = useGitContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
+    useMenuKeyboard(menuOpen, setMenuOpen);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -25,10 +28,14 @@ export function GitStatusBar() {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
 
-  const runItem = useCallback((action: () => void) => {
-    setMenuOpen(false);
-    action();
-  }, []);
+  const runItem = useCallback(
+    (action: () => void) => {
+      // The item is going away; don't yank focus back to the trigger.
+      closeMenu(false);
+      action();
+    },
+    [closeMenu],
+  );
 
   if (!git || !git.repo || !git.status) return null;
 
@@ -49,9 +56,11 @@ export function GitStatusBar() {
   return (
     <div ref={rootRef} className="db-git-statusbar">
       <button
+        ref={triggerRef}
         type="button"
         className="db-git-statusbar-chip"
         onClick={() => setMenuOpen((open) => !open)}
+        onKeyDown={handleTriggerKeyDown}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         aria-label={chipLabelParts.join(', ')}
@@ -72,10 +81,17 @@ export function GitStatusBar() {
       </button>
 
       {menuOpen && (
-        <div className="db-git-menu" role="menu" aria-label="Git actions">
+        <div
+          ref={menuRef}
+          className="db-git-menu"
+          role="menu"
+          aria-label="Git actions"
+          onKeyDown={handleMenuKeyDown}
+        >
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             disabled={status.changes.length === 0 && !merging}
             onClick={() => runItem(() => git.openDialog({ kind: 'commit' }))}
@@ -85,6 +101,7 @@ export function GitStatusBar() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             disabled={git.busy !== null}
             onClick={() => runItem(() => void git.push())}
@@ -94,6 +111,7 @@ export function GitStatusBar() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             disabled={git.busy !== null}
             onClick={() => runItem(() => void git.pull())}
@@ -103,6 +121,7 @@ export function GitStatusBar() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             disabled={git.busy !== null}
             onClick={() => runItem(() => void git.fetchRemote())}
@@ -113,6 +132,7 @@ export function GitStatusBar() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             onClick={() => runItem(() => git.openDialog({ kind: 'branches' }))}
           >
@@ -121,6 +141,7 @@ export function GitStatusBar() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className="db-git-menu-item"
             onClick={() => runItem(() => git.openDialog({ kind: 'history' }))}
           >
@@ -133,6 +154,7 @@ export function GitStatusBar() {
             <button
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="db-git-menu-item"
               onClick={() => runItem(() => git.openOnRemote())}
             >
@@ -143,6 +165,7 @@ export function GitStatusBar() {
             <button
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="db-git-menu-item"
               disabled={git.busy !== null}
               onClick={() => runItem(() => void git.createPullRequest())}

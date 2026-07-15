@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isPathInside } from './internal/paths.js';
 
 const CONTAINED_READ_CHUNK_BYTES = 64 * 1024;
 
@@ -90,12 +91,4 @@ async function assertIdentity(
   if (descriptorStat.dev !== pathStat.dev || descriptorStat.ino !== pathStat.ino) {
     throw new Error('File changed physical identity while it was being read');
   }
-}
-
-function isPathInside(rootAbs: string, candidateAbs: string): boolean {
-  const relative = path.relative(path.resolve(rootAbs), path.resolve(candidateAbs));
-  return (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-  );
 }

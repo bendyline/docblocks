@@ -18,6 +18,9 @@ import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { Block, Doc } from '@bendyline/squisq/schemas';
 import type { ConvertSource, FormatId, FormatRegistry } from '@bendyline/squisq-cli/api';
+import { positiveLimit } from '../internal/limits.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const DEFAULT_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
 
@@ -71,22 +74,22 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   const maxInputBytes = positiveLimit(
     opts.maxInputBytes,
     DEFAULT_MAX_CONVERT_INPUT_BYTES,
-    'input byte',
+    'conversion input byte',
   );
   const maxInputEntries = positiveLimit(
     opts.maxInputEntries,
     DEFAULT_MAX_CONVERT_INPUT_ENTRIES,
-    'input entry',
+    'conversion input entry',
   );
   const maxOutputBytes = positiveLimit(
     opts.maxOutputBytes,
     DEFAULT_MAX_CONVERT_OUTPUT_BYTES,
-    'output byte',
+    'conversion output byte',
   );
   const maxTotalOutputBytes = positiveLimit(
     opts.maxTotalOutputBytes,
     DEFAULT_MAX_CONVERT_TOTAL_OUTPUT_BYTES,
-    'aggregate output byte',
+    'conversion aggregate output byte',
   );
 
   await assertInputWithinBudget(resolvedInput, maxInputBytes, maxInputEntries, opts.signal);
@@ -99,28 +102,57 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     .filter((definition) => definition.exportDoc !== undefined)
     .map((definition) => definition.id);
   const exportable = new Set<FormatId>(exportableIds);
-  const requested = opts.formats
-    ? opts.formats
+  const registryHint = 'Choose a format reported by the linked Squisq CLI registry.';
+  // An explicit `--formats` list is a precise instruction, so every entry in it
+  // must be honored exactly. The built-in default set is DocBlocks' own choice
+  // rather than the caller's, so a registry that no longer exports one of those
+  // IDs degrades to a warning instead of failing an unqualified `convert`.
+  const requestedList = opts.formats;
+  const explicitFormats = requestedList !== undefined;
+  const requested = explicitFormats
+    ? requestedList
         .split(',')
         .map((format) => format.trim().toLowerCase())
         .filter(Boolean)
     : [...DEFAULT_FORMATS];
-  const formats = requested.filter((format): format is FormatId => exportable.has(format));
-  const unknown = requested.filter((format) => !exportable.has(format));
 
-  if (unknown.length > 0) {
-    console.warn(
-      `Unknown or non-exportable format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}" — skipping. Valid: ${exportableIds.join(', ')}`,
+  if (explicitFormats) {
+    // Matches the MCP conversion service, which refuses duplicate targets. A
+    // repeated format would otherwise convert and publish the same destination
+    // twice, and the second write would trip the overwrite refusal anyway.
+    const duplicate = firstDuplicate(requested);
+    if (duplicate) {
+      throw new squisq.ConversionError(
+        'unknown-format',
+        `Duplicate conversion target: ${duplicate}. List each requested format once.`,
+        { format: duplicate, hint: registryHint },
+      );
+    }
+  }
+
+  const unknown = requested.filter((format) => !exportable.has(format));
+  if (unknown.length > 0 && explicitFormats) {
+    // Exiting 0 after skipping a requested format lets a typo in CI produce no
+    // output under a success status. Refuse the run instead, before converting
+    // anything, so `convert` keeps its all-or-nothing contract.
+    throw new squisq.ConversionError(
+      'unknown-format',
+      `Unknown or non-exportable format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}". Valid: ${exportableIds.join(', ')}`,
+      { format: unknown[0], hint: registryHint },
     );
   }
+  if (unknown.length > 0) {
+    console.warn(
+      `Unknown or non-exportable default format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}" — skipping. Valid: ${exportableIds.join(', ')}`,
+    );
+  }
+
+  const formats = requested.filter((format): format is FormatId => exportable.has(format));
   if (formats.length === 0) {
     throw new squisq.ConversionError(
       'unknown-format',
       `No valid formats specified. Valid: ${exportableIds.join(', ')}`,
-      {
-        format: requested[0],
-        hint: 'Choose a format reported by the linked Squisq CLI registry.',
-      },
+      { format: requested[0], hint: registryHint },
     );
   }
 
@@ -346,24 +378,17 @@ async function publishFile(
   }
 }
 
-function isNodeErrorCode(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && error.code === code;
+function firstDuplicate(values: readonly string[]): string | undefined {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+  }
+  return undefined;
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('Document conversion was cancelled');
-  error.name = 'AbortError';
-  throw error;
-}
-
-function positiveLimit(value: number | undefined, fallback: number, label: string): number {
-  const selected = value ?? fallback;
-  if (!Number.isSafeInteger(selected) || selected < 1) {
-    throw new Error(`Invalid conversion ${label} limit.`);
-  }
-  return selected;
+  throwIfSignalAborted(signal, 'Document conversion was cancelled');
 }
 
 /**

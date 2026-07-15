@@ -47,7 +47,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register the open setup command.
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openSetup', () => {
-      SetupViewProvider.createOrShow(context);
+      SetupViewProvider.createOrShow();
     }),
   );
 

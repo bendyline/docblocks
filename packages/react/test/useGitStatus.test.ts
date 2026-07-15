@@ -12,15 +12,19 @@
  *   5. Disabled / null gitApi / null rootPath → never subscribes.
  *   6. refresh() calls gitApi.status and applies an ok result (and
  *      ignores an error result).
+ *   7. Nothing from a previous repository can land on the new one: neither
+ *      a pending scheduleRefresh debounce nor an in-flight refresh().
  *
- * scheduleRefresh's 1500 ms trailing debounce is not timed here — the
- * harness uses real timers, so we only assert it doesn't fire a status
- * call synchronously; the applied-result path is covered via refresh().
+ * The scheduleRefresh debounce is real-timer based, so the timing tests
+ * below wait it out for real (SCHEDULE_REFRESH_MS + a margin).
  */
 import { expect } from 'chai';
 import type { DocBlocksHostGitAPI, GitResult, GitStatus } from '@bendyline/docblocks/host';
 import { useGitStatus } from '../src/Git/useGitStatus.js';
 import { act, advanceTime, renderHook } from './helpers/renderHook.js';
+
+/** Mirrors SCHEDULE_REFRESH_MS in useGitStatus, plus a scheduling margin. */
+const PAST_DEBOUNCE_MS = 1700;
 
 function makeStatus(extra: Partial<GitStatus> = {}): GitStatus {
   return {
@@ -67,6 +71,47 @@ function makeFakeGit(statusResult: GitResult<GitStatus>): FakeGit {
     },
   } as unknown as DocBlocksHostGitAPI;
   return { api, subscriptions, statusCalls };
+}
+
+interface DeferredGit {
+  api: DocBlocksHostGitAPI;
+  subscriptions: Subscription[];
+  statusCalls: string[];
+  /** Settle the status() call outstanding for `rootPath`. */
+  resolveStatus: (rootPath: string, status: GitStatus) => void;
+  rejectStatus: (rootPath: string, error: Error) => void;
+}
+
+/** Like makeFakeGit, but status() stays pending until the test settles it —
+    which is the only way to interleave a workspace switch with it. */
+function makeDeferredGit(): DeferredGit {
+  const subscriptions: Subscription[] = [];
+  const statusCalls: string[] = [];
+  const resolvers = new Map<string, (result: GitResult<GitStatus>) => void>();
+  const rejecters = new Map<string, (error: unknown) => void>();
+  const api = {
+    onStatusChanged(rootPath: string, listener: (status: GitStatus) => void) {
+      const sub: Subscription = { rootPath, listener, unsubscribeCalls: 0 };
+      subscriptions.push(sub);
+      return () => {
+        sub.unsubscribeCalls += 1;
+      };
+    },
+    status(rootPath: string) {
+      statusCalls.push(rootPath);
+      return new Promise<GitResult<GitStatus>>((resolve, reject) => {
+        resolvers.set(rootPath, resolve);
+        rejecters.set(rootPath, reject);
+      });
+    },
+  } as unknown as DocBlocksHostGitAPI;
+  return {
+    api,
+    subscriptions,
+    statusCalls,
+    resolveStatus: (rootPath, status) => resolvers.get(rootPath)?.({ ok: true, value: status }),
+    rejectStatus: (rootPath, error) => rejecters.get(rootPath)?.(error),
+  };
 }
 
 interface HookProps {
@@ -270,5 +315,128 @@ describe('useGitStatus', () => {
     });
     expect(fake.statusCalls).to.deep.equal([]);
     await handle.unmount();
+  });
+
+  it('scheduleRefresh() does fire once the debounce elapses', async () => {
+    // Guards the tests below: if the debounce never fired at all, "no stale
+    // call after a switch" would pass vacuously.
+    const fake = makeDeferredGit();
+    const handle = await renderHook(useGitStatusHook, {
+      gitApi: fake.api,
+      rootPath: '/root-a',
+      enabled: true,
+    });
+    await act(async () => {
+      handle.result.current.scheduleRefresh();
+    });
+    await advanceTime(PAST_DEBOUNCE_MS);
+    expect(fake.statusCalls).to.deep.equal(['/root-a']);
+    await handle.unmount();
+  });
+
+  describe('switching workspace mid-flight', () => {
+    it('does not fire a pending debounced refresh at the workspace just left', async () => {
+      // Regression (SF-4): the debounce timer was only cleared on unmount,
+      // so a switch inside the 1.5s window let the *old* repo's refresh
+      // fire and paint its branch/badges/dirty count onto the new one.
+      const fake = makeDeferredGit();
+      const handle = await renderHook(useGitStatusHook, {
+        gitApi: fake.api,
+        rootPath: '/root-a',
+        enabled: true,
+      });
+      await act(async () => {
+        handle.result.current.scheduleRefresh();
+      });
+
+      // The user switches workspace well inside the debounce window.
+      await handle.rerender({ gitApi: fake.api, rootPath: '/root-b', enabled: true });
+      await advanceTime(PAST_DEBOUNCE_MS);
+
+      expect(
+        fake.statusCalls,
+        'the debounce from the previous workspace must not query it',
+      ).to.deep.equal([]);
+      expect(handle.result.current.status).to.equal(null);
+      await handle.unmount();
+    });
+
+    it('drops an in-flight refresh() that resolves after the switch', async () => {
+      // refresh()'s .then(apply) had no cancellation, so a slow status from
+      // the old repo landed on the new workspace.
+      const fake = makeDeferredGit();
+      const handle = await renderHook(useGitStatusHook, {
+        gitApi: fake.api,
+        rootPath: '/root-a',
+        enabled: true,
+      });
+      await act(async () => {
+        handle.result.current.refresh();
+      });
+      expect(fake.statusCalls).to.deep.equal(['/root-a']);
+
+      await handle.rerender({ gitApi: fake.api, rootPath: '/root-b', enabled: true });
+
+      // /root-a's status finally arrives, after the workspace moved on.
+      await act(async () => {
+        fake.resolveStatus('/root-a', makeStatus({ branch: 'old-repo-branch' }));
+      });
+      await advanceTime(1);
+
+      expect(
+        handle.result.current.status,
+        "the previous repo's status must not paint the new workspace",
+      ).to.equal(null);
+      await handle.unmount();
+    });
+
+    it('still applies a refresh() belonging to the current workspace', async () => {
+      // The generation guard must not throw away legitimate results.
+      const fake = makeDeferredGit();
+      const handle = await renderHook(useGitStatusHook, {
+        gitApi: fake.api,
+        rootPath: '/root-a',
+        enabled: true,
+      });
+      await handle.rerender({ gitApi: fake.api, rootPath: '/root-b', enabled: true });
+      await act(async () => {
+        handle.result.current.refresh();
+      });
+      const fresh = makeStatus({ branch: 'new-repo-branch' });
+      await act(async () => {
+        fake.resolveStatus('/root-b', fresh);
+      });
+      await advanceTime(1);
+
+      expect(handle.result.current.status).to.equal(fresh);
+      await handle.unmount();
+    });
+  });
+
+  it('swallows a rejected status() rather than leaving an unhandled rejection', async () => {
+    const seen: unknown[] = [];
+    const onUnhandled = (reason: unknown) => seen.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const fake = makeDeferredGit();
+    try {
+      const handle = await renderHook(useGitStatusHook, {
+        gitApi: fake.api,
+        rootPath: '/root-a',
+        enabled: true,
+      });
+      await act(async () => {
+        handle.result.current.refresh();
+      });
+      await act(async () => {
+        fake.rejectStatus('/root-a', new Error('IPC channel closed'));
+      });
+      await advanceTime(20);
+
+      expect(seen, 'a rejected status must be handled').to.deep.equal([]);
+      expect(handle.result.current.status).to.equal(null);
+      await handle.unmount();
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });

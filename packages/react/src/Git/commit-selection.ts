@@ -1,9 +1,13 @@
 /**
  * Commit-dialog selection state — pure helpers, unit-testable.
  *
- * All changed files are included by default. While a merge is being
- * concluded, conflicted files are force-included: committing a subset that
- * omits them would not resolve the merge.
+ * All changed files are included by default, *except* while git has an
+ * operation in progress (merge, rebase, cherry-pick, revert, bisect). Git
+ * forbids a pathspec commit mid-operation, so the host drops the pathspec
+ * and records the whole index — see `commit()` in
+ * desktop/main/git/commands.ts. Every changed file is therefore committed
+ * whatever the user ticks, and the whole list is locked rather than
+ * rendering checkboxes that silently do nothing.
  *
  * The selection is *derived* from the live change list on every render
  * rather than snapshotted when the dialog mounts. Git status refreshes
@@ -40,7 +44,7 @@ export interface CommitSelection {
    * what `selectedPaths` returns cannot drift apart.
    */
   included: Map<string, boolean>;
-  /** Paths the user cannot exclude (conflicted files during a merge). */
+  /** Paths the user cannot exclude (every change while mid-operation). */
   locked: Set<string>;
 }
 
@@ -53,19 +57,23 @@ export const NO_OVERRIDES: CommitOverrides = new Map<string, boolean>();
 /**
  * Resolve the live change list plus the user's choices into the selection
  * the dialog renders and commits. Pure — call it on every render.
+ *
+ * `wholeIndex` (see `commitsWholeIndex`) locks *every* changed file, not
+ * just the conflicted ones: the host cannot honour a pathspec while an
+ * operation is in progress, so an unticked file would be committed anyway.
+ * Locking the whole list is what makes the checkboxes honest.
  */
 export function resolveSelection(
   changes: readonly GitFileChange[],
-  merging: boolean,
+  wholeIndex: boolean,
   overrides: CommitOverrides = NO_OVERRIDES,
 ): CommitSelection {
   const included = new Map<string, boolean>();
   const locked = new Set<string>();
   for (const change of changes) {
     const path = normalise(change.path);
-    const isLocked = merging && Boolean(change.conflicted);
-    if (isLocked) locked.add(path);
-    included.set(path, isLocked ? true : (overrides.get(path) ?? INCLUDED_BY_DEFAULT));
+    if (wholeIndex) locked.add(path);
+    included.set(path, wholeIndex ? true : (overrides.get(path) ?? INCLUDED_BY_DEFAULT));
   }
   return { included, locked };
 }
@@ -126,4 +134,15 @@ export function canCommit(message: string, selection: CommitSelection): boolean 
 /** True when committing concludes an in-progress merge. */
 export function isMergeCommit(status: GitStatus | null): boolean {
   return status?.operation === 'merge';
+}
+
+/**
+ * True when the commit will record the entire index regardless of the
+ * paths passed to it — i.e. git has an operation in progress. Mirrors the
+ * host's `if (rels && operation === null)` pathspec guard, so it is *any*
+ * operation and not merge alone: a cherry-pick or revert drops the
+ * pathspec exactly the same way.
+ */
+export function commitsWholeIndex(status: GitStatus | null): boolean {
+  return status !== null && status.operation !== null;
 }

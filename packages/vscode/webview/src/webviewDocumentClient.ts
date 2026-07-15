@@ -1,5 +1,4 @@
 import type {
-  DocumentConflictChoice,
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
@@ -79,17 +78,6 @@ export class WebviewDocumentClient {
       clientRevision: session.clientRevision,
       baseDocumentVersion: session.baseDocumentVersion,
     };
-  }
-
-  public createConflictResolution(
-    choice: DocumentConflictChoice,
-  ): Extract<WebviewToExtensionMessage, { type: 'resolveConflict' }> | null {
-    const session = this.session;
-    return session ? { type: 'resolveConflict', sessionId: session.sessionId, choice } : null;
-  }
-
-  public isCurrentSession(sessionId: string): boolean {
-    return this.session?.sessionId === sessionId;
   }
 }
 

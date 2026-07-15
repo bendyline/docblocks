@@ -118,6 +118,7 @@ export class FakeTextDocument {
 
 export class FakeWebviewPanel {
   public disposed = false;
+  public revealCount = 0;
   public readonly posted: unknown[] = [];
   public readonly onDidDisposeEmitter = new FakeEmitter<void>();
   public readonly onDidChangeViewStateEmitter = new FakeEmitter<void>();
@@ -171,6 +172,7 @@ export class FakeWebviewPanel {
 
   public reveal(): void {
     this.assertNotDisposed();
+    this.revealCount += 1;
   }
 
   public dispose(): void {
@@ -236,6 +238,8 @@ export interface VscodeStub {
   onDidChangeConfigurationEmitter: FakeEmitter<unknown>;
   onDidChangeActiveColorThemeEmitter: FakeEmitter<unknown>;
   statusBarItems: FakeStatusBarItem[];
+  /** Every panel handed out by window.createWebviewPanel, in creation order. */
+  createdWebviewPanels: FakeWebviewPanel[];
   /** Applied to the document buffer by workspace.applyEdit. */
   module: Record<string, unknown>;
 }
@@ -269,6 +273,7 @@ function resetVscodeStub(stub: VscodeStub): void {
   stub.shownTextDocuments.length = 0;
   stub.untitledDocuments.length = 0;
   stub.statusBarItems.length = 0;
+  stub.createdWebviewPanels.length = 0;
   stub.warningResponse = undefined;
 }
 
@@ -287,6 +292,7 @@ function createVscodeStub(): VscodeStub {
     onDidChangeConfigurationEmitter: new FakeEmitter(),
     onDidChangeActiveColorThemeEmitter: new FakeEmitter(),
     statusBarItems: [],
+    createdWebviewPanels: [],
     module: {},
   };
 
@@ -335,6 +341,11 @@ function createVscodeStub(): VscodeStub {
         const item = new FakeStatusBarItem();
         stub.statusBarItems.push(item);
         return item;
+      },
+      createWebviewPanel: (): FakeWebviewPanel => {
+        const panel = new FakeWebviewPanel();
+        stub.createdWebviewPanels.push(panel);
+        return panel;
       },
       showErrorMessage: (message: string): Promise<undefined> => {
         stub.errorMessages.push(message);
