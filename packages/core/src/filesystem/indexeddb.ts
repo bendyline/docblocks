@@ -1,11 +1,16 @@
 /** Browser-local persistent filesystem provider entry point. */
 export { IndexedDBFileSystemProvider } from './indexeddb-provider.js';
+export { deleteIndexedDBWorkspaceData, indexedDBWorkspaceDatabaseName } from './indexeddb-store.js';
 export {
   IndexedDBFileSystemProviderV2,
   type IndexedDBFileSystemProviderV2Options,
   type IndexedDBLegacyConflictReason,
   type IndexedDBLegacyConflictResolution,
   type IndexedDBLegacyMigrationConflict,
+  type IndexedDBLegacyOpaqueDiscardTarget,
+  type IndexedDBLegacyOpaqueRecord,
+  type IndexedDBLegacyOpaqueRecordSummary,
+  type IndexedDBLegacyOpaqueValue,
   type IndexedDBLegacyRecoveryCandidate,
   type IndexedDBLegacyRecoveryKind,
 } from './indexeddb-provider-v2.js';

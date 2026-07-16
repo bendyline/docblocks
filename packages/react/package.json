@@ -9,7 +9,7 @@
     "url": "https://github.com/bendyline/docblocks.git",
     "directory": "packages/react"
   },
-  "homepage": "https://github.com/bendyline/docblocks",
+  "homepage": "https://docblocks.com/",
   "keywords": [
     "docblocks",
     "react",
@@ -24,9 +24,13 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "//sideEffects": "Not `false`: `./styles` is a side-effect-only CSS import and `false` would let bundlers tree-shake it away entirely. The JS entries do carry one top-level side effect (the shell imports squisq's stylesheet), but that is preserved whenever the module is retained -- this flag only lets a bundler drop an entry whose exports are wholly unused, which is exactly when its styles are not wanted either.",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "files": [
     "dist",
-    "src"
+    "src/styles"
   ],
   "exports": {
     ".": {
@@ -49,7 +53,8 @@
       "import": "./dist/editor.js",
       "default": "./dist/editor.js"
     },
-    "./styles": "./src/styles/docblocks.css"
+    "./styles": "./src/styles/docblocks.css",
+    "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsup",
@@ -61,24 +66,24 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.0.0",
-    "@bendyline/squisq": "2.0.1",
-    "@bendyline/squisq-editor-react": "2.0.1",
-    "@bendyline/squisq-formats": "2.0.1",
-    "@bendyline/squisq-react": "2.0.1",
-    "@bendyline/squisq-video": "2.0.1",
-    "@bendyline/squisq-video-react": "2.0.1",
-    "monaco-editor": "0.50.0"
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-formats": "2.3.0",
+    "@bendyline/squisq-react": "2.3.0",
+    "@bendyline/squisq-video": "2.2.0",
+    "@bendyline/squisq-video-react": "2.2.0"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "happy-dom": "20.9.0",
+    "monaco-editor": "0.50.0",
     "mocha": "11.3.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "6.4.2"
+    "vite": "6.4.3"
   }
 }

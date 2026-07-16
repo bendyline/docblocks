@@ -74,6 +74,12 @@ import {
 } from '@bendyline/docblocks-react/export';
 ```
 
+The shell overflow also offers **Share link with content embedded**. It creates
+a bounded `#shared(<base64>)` URL containing a compressed, Markdown-only copy
+and an optional initial Use mode. Opening the URL creates a session-only
+workspace; generated links warn after 4,096 characters and are capped at
+32,768 characters.
+
 The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, HTML, Markdown), visual theme, and page size.
 
 ## Hooks

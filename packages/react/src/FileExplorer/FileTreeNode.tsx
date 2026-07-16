@@ -1,5 +1,20 @@
 /**
  * FileTreeNode — recursive tree node for the file explorer.
+ *
+ * Keyboard contract (WAI-ARIA tree-view pattern). The tree is a single tab
+ * stop: FileExplorer owns the roving tabindex and arrow-key navigation
+ * across rows, this node owns the keys that act on the row itself.
+ *
+ *   Enter        activate (open file / toggle folder)
+ *   F2           rename in place
+ *   Delete       delete (with the same confirm as the menu item)
+ *   Shift+F10 /
+ *   ContextMenu  open the row's actions menu, focused on its first item
+ *   Escape       close the menu and hand focus back to the row
+ *
+ * The "More actions" button stays out of the tab order on purpose — one
+ * tab stop per row would make tabbing through a large tree unusable, which
+ * is precisely what the tree pattern's roving tabindex exists to avoid.
  */
 
 import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react';
@@ -21,6 +36,17 @@ export interface FileTreeNodeGitActions {
   openOnRemote?: () => void;
 }
 
+/**
+ * Last-resort confirmation for a host that supplies none. Native `confirm` is
+ * the wrong look for the product -- `<DocBlocksShell>` passes its own dialog --
+ * but silently destroying a document because no host wired one up would be
+ * worse than an ugly prompt.
+ */
+function defaultConfirmDelete(message: string): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.confirm(message);
+}
+
 export interface FileTreeNodeProps {
   entry: FileSystemEntry;
   depth: number;
@@ -29,8 +55,28 @@ export interface FileTreeNodeProps {
   badge?: FileTreeNodeBadge;
   gitActions?: FileTreeNodeGitActions;
   children?: FileSystemEntry[];
+  /**
+   * Roving tabindex: true only for the tree's single tab stop. Defaults to
+   * true so a node rendered on its own is still reachable.
+   */
+  focusable?: boolean;
+  /** 1-based position among siblings, for aria-posinset. */
+  posInSet?: number;
+  /** Number of siblings, for aria-setsize. */
+  setSize?: number;
+  /** The row took focus (click or arrow key) — move the roving tab stop. */
+  onRowFocus?: (path: string) => void;
   onToggle: (path: string) => void;
   onSelect: (path: string) => void;
+  /**
+   * Ask the user to confirm an irreversible delete. Resolve `false` to abort.
+   *
+   * Optional so a standalone `<FileTreeNode>` still asks before destroying
+   * something; hosts that have their own dialog (as `<DocBlocksShell>` does)
+   * pass it here so the prompt matches the product instead of being a native
+   * browser/Electron dialog.
+   */
+  confirmDelete?: (message: string) => boolean | Promise<boolean>;
   onDelete: (path: string, kind: 'file' | 'directory') => Promise<void>;
   onRename: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
   draggable?: boolean;
@@ -50,8 +96,13 @@ export function FileTreeNode({
   selected,
   badge,
   gitActions,
+  focusable = true,
+  posInSet,
+  setSize,
+  onRowFocus,
   onToggle,
   onSelect,
+  confirmDelete = defaultConfirmDelete,
   onDelete,
   onRename,
   draggable = false,
@@ -67,9 +118,26 @@ export function FileTreeNode({
   const [renameValue, setRenameValue] = useState(entry.name);
   const [showContext, setShowContext] = useState(false);
   const [contextPos, setContextPos] = useState({ x: 0, y: 0 });
+  /** Failure from this row's own async actions (delete/rename). */
+  const [actionError, setActionError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const contextRef = useRef<HTMLDivElement>(null);
   const nodeRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  /**
+   * Whether the open menu was summoned by keyboard. A pointer user's focus
+   * should stay where they clicked; a keyboard user must land inside the
+   * menu, and be returned to the row when it closes.
+   */
+  const keyboardMenuRef = useRef(false);
+  /**
+   * Latches once a rename attempt is under way. The input submits from both
+   * Enter and blur, and Enter can be followed by a blur (the row re-renders
+   * or focus moves while `onRename` is still in flight) — without this the
+   * same rename fires twice, the second against an entry that no longer
+   * exists.
+   */
+  const renameSubmittedRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
   const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
@@ -84,6 +152,7 @@ export function FileTreeNode({
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    keyboardMenuRef.current = false;
     setContextPos({ x: e.clientX, y: e.clientY });
     setShowContext(true);
   }, []);
@@ -91,36 +160,135 @@ export function FileTreeNode({
   const handleMoreClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    keyboardMenuRef.current = false;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setContextPos({ x: rect.right, y: rect.bottom });
     setShowContext(true);
   }, []);
 
+  /** Shift+F10 / the ContextMenu key — anchor the menu under the row. */
+  const openMenuByKeyboard = useCallback(() => {
+    const rect = rowRef.current?.getBoundingClientRect();
+    keyboardMenuRef.current = true;
+    setContextPos({ x: rect ? rect.left + 16 : 0, y: rect ? rect.bottom : 0 });
+    setShowContext(true);
+  }, []);
+
+  /** Close, optionally handing focus back to the row that owns the menu. */
+  const closeMenu = useCallback((returnFocus: boolean) => {
+    setShowContext(false);
+    keyboardMenuRef.current = false;
+    if (returnFocus) rowRef.current?.focus();
+  }, []);
+
+  const menuItems = useCallback(
+    () =>
+      [
+        ...(contextRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []),
+      ].filter((item) => !item.disabled),
+    [],
+  );
+
+  const focusMenuItem = useCallback(
+    (index: number) => {
+      const items = menuItems();
+      if (items.length === 0) return;
+      // Wrap, so Up from the first item lands on the last.
+      const target = items[((index % items.length) + items.length) % items.length];
+      // preventScroll: the menu's own scroll listener closes it, and
+      // focus()'s default scroll-into-view would trip that immediately.
+      target?.focus({ preventScroll: true });
+    },
+    [menuItems],
+  );
+
+  const handleMenuKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'Tab') {
+        // Escape must not also reach a dialog/shell handler behind us.
+        e.preventDefault();
+        e.stopPropagation();
+        closeMenu(true);
+        return;
+      }
+      const items = menuItems();
+      if (items.length === 0) return;
+      const current = items.indexOf(document.activeElement as HTMLButtonElement);
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          focusMenuItem(current + 1);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          // -1 (nothing focused yet) wraps to the last item, as it should.
+          focusMenuItem(current - 1);
+          break;
+        case 'Home':
+          e.preventDefault();
+          focusMenuItem(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          focusMenuItem(items.length - 1);
+          break;
+        default:
+          break;
+      }
+    },
+    [closeMenu, focusMenuItem, menuItems],
+  );
+
   const handleRenameStart = useCallback(() => {
+    renameSubmittedRef.current = false;
+    setActionError(null);
     setRenameValue(entry.name);
     setRenaming(true);
-    setShowContext(false);
-  }, [entry.name]);
+    // The rename input focuses itself, so don't pull focus back to the row.
+    closeMenu(false);
+  }, [entry.name, closeMenu]);
+
+  /** Abandon the rename and make sure a trailing blur cannot submit it. */
+  const handleRenameCancel = useCallback(() => {
+    renameSubmittedRef.current = true;
+    setRenaming(false);
+  }, []);
 
   const handleRenameSubmit = useCallback(async () => {
+    if (renameSubmittedRef.current) return;
+    renameSubmittedRef.current = true;
+
     if (renameValue && renameValue !== entry.name) {
       const parentPath = entry.path.includes('/')
         ? entry.path.slice(0, entry.path.lastIndexOf('/'))
         : '';
       const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
-      await onRename(entry.path, newPath, entry.kind);
+      try {
+        await onRename(entry.path, newPath, entry.kind);
+      } catch (caught: unknown) {
+        setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+      }
     }
     setRenaming(false);
   }, [renameValue, entry.name, entry.path, entry.kind, onRename]);
 
   const handleDeleteClick = useCallback(async () => {
-    setShowContext(false);
+    closeMenu(false);
+    setActionError(null);
     const description = entry.kind === 'directory' ? 'folder and everything inside it' : 'document';
-    if (!window.confirm(`Delete the ${description} "${entry.name}"? This cannot be undone.`)) {
+    if (
+      !(await confirmDelete(`Delete the ${description} "${entry.name}"? This cannot be undone.`))
+    ) {
       return;
     }
-    await onDelete(entry.path, entry.kind);
-  }, [entry.name, entry.path, entry.kind, onDelete]);
+    try {
+      await onDelete(entry.path, entry.kind);
+    } catch (caught: unknown) {
+      // The explorer surfaces rename failures itself but lets delete
+      // failures reject; without this the row silently keeps the entry.
+      setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
+    }
+  }, [entry.name, entry.path, entry.kind, confirmDelete, onDelete, closeMenu]);
 
   // Close context menu on outside click or scroll
   useEffect(() => {
@@ -130,13 +298,20 @@ export function FileTreeNode({
         setShowContext(false);
       }
     }
+    // Named so the cleanup can actually remove it. An inline arrow left a
+    // listener behind on every menu that closed by click rather than
+    // scroll, each one firing setState on a possibly-unmounted row.
+    function handleScrollClose() {
+      setShowContext(false);
+    }
     // Use click (not mousedown) so menu button clicks register first
     document.addEventListener('click', handleClose, true);
     document.addEventListener('contextmenu', handleClose, true);
-    document.addEventListener('scroll', () => setShowContext(false), { capture: true, once: true });
+    document.addEventListener('scroll', handleScrollClose, { capture: true, once: true });
     return () => {
       document.removeEventListener('click', handleClose, true);
       document.removeEventListener('contextmenu', handleClose, true);
+      document.removeEventListener('scroll', handleScrollClose, true);
     };
   }, [showContext]);
 
@@ -147,6 +322,13 @@ export function FileTreeNode({
       inputRef.current.select();
     }
   }, [renaming]);
+
+  // A keyboard-opened menu must take focus, or the keys that operate it
+  // would go to the row underneath and the menu would be unreachable.
+  useEffect(() => {
+    if (!showContext || !keyboardMenuRef.current) return;
+    focusMenuItem(0);
+  }, [showContext, focusMenuItem]);
 
   // Active documents can be revealed after asynchronous ancestor loads. Keep
   // the selected row inside the explorer's scroll viewport once it mounts.
@@ -177,6 +359,7 @@ export function FileTreeNode({
   return (
     <div className="db-tree-node" ref={nodeRef}>
       <div
+        ref={rowRef}
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
         style={{ paddingLeft: depth * 16 + 4 }}
         onClick={handleClick}
@@ -187,12 +370,45 @@ export function FileTreeNode({
         onDragOver={(event) => onDragOverEntry?.(event, entry)}
         onDrop={(event) => onDropEntry?.(event, entry)}
         role="treeitem"
+        data-path={entry.path}
         aria-expanded={isDir ? expanded : undefined}
         aria-selected={selected}
         aria-label={badge ? `${entry.name}, ${badge.label}` : undefined}
-        tabIndex={0}
+        // The intermediate .db-tree-node wrapper means nesting alone does
+        // not convey depth to assistive tech — state it outright.
+        aria-level={depth + 1}
+        aria-posinset={posInSet}
+        aria-setsize={setSize}
+        tabIndex={focusable ? 0 : -1}
+        onFocus={(e) => {
+          // Ignore focus bubbling out of the More button / rename input.
+          if (e.target !== e.currentTarget) return;
+          onRowFocus?.(entry.path);
+        }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') handleClick();
+          // Only the row itself acts. Keystrokes from nested controls (the
+          // rename input) must not open the row underneath — that raced a
+          // rename against a load of the pre-rename path.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter') {
+            handleClick();
+            return;
+          }
+          if (e.key === 'F2') {
+            e.preventDefault();
+            handleRenameStart();
+            return;
+          }
+          if (e.key === 'Delete') {
+            e.preventDefault();
+            void handleDeleteClick();
+            return;
+          }
+          // The platform gestures for "open this row's context menu".
+          if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+            e.preventDefault();
+            openMenuByKeyboard();
+          }
         }}
       >
         <span className="db-tree-icon">{icon}</span>
@@ -202,10 +418,15 @@ export function FileTreeNode({
             className="db-tree-rename-input"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
-            onBlur={handleRenameSubmit}
+            onBlur={() => void handleRenameSubmit()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleRenameSubmit();
-              if (e.key === 'Escape') setRenaming(false);
+              if (e.key !== 'Enter' && e.key !== 'Escape') return;
+              // Belt and braces with the row's own target guard: the row
+              // must never see these keys.
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.key === 'Enter') void handleRenameSubmit();
+              else handleRenameCancel();
             }}
             onClick={(e) => e.stopPropagation()}
           />
@@ -227,6 +448,9 @@ export function FileTreeNode({
               aria-label="More actions"
               aria-haspopup="menu"
               aria-expanded={showContext}
+              // Advertise the keyboard route, since the tree's roving
+              // tabindex deliberately keeps this button out of the tab order.
+              aria-keyshortcuts="Shift+F10"
               tabIndex={-1}
             >
               <MoreIcon />
@@ -235,6 +459,12 @@ export function FileTreeNode({
         )}
       </div>
 
+      {actionError && (
+        <div className="db-tree-error" role="alert">
+          {actionError}
+        </div>
+      )}
+
       {/* Context menu — portaled so ancestor overflow:hidden doesn't clip it */}
       {showContext &&
         createPortal(
@@ -242,8 +472,17 @@ export function FileTreeNode({
             ref={contextRef}
             className="db-tree-context"
             style={{ left: contextPos.x, top: contextPos.y }}
+            role="menu"
+            aria-label={`Actions for ${entry.name}`}
+            onKeyDown={handleMenuKeyDown}
           >
-            <button className="db-tree-context-item" onClick={handleRenameStart}>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="db-tree-context-item"
+              onClick={handleRenameStart}
+            >
               Rename
             </button>
             {gitActions && (gitActions.viewChanges || gitActions.fileHistory) && (
@@ -251,9 +490,12 @@ export function FileTreeNode({
                 <div className="db-tree-context-divider" role="separator" />
                 {gitActions.viewChanges && (
                   <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
                     className="db-tree-context-item"
                     onClick={() => {
-                      setShowContext(false);
+                      closeMenu(false);
                       gitActions.viewChanges?.();
                     }}
                   >
@@ -262,9 +504,12 @@ export function FileTreeNode({
                 )}
                 {gitActions.fileHistory && (
                   <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
                     className="db-tree-context-item"
                     onClick={() => {
-                      setShowContext(false);
+                      closeMenu(false);
                       gitActions.fileHistory?.();
                     }}
                   >
@@ -273,9 +518,12 @@ export function FileTreeNode({
                 )}
                 {gitActions.openOnRemote && (
                   <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
                     className="db-tree-context-item"
                     onClick={() => {
-                      setShowContext(false);
+                      closeMenu(false);
                       gitActions.openOnRemote?.();
                     }}
                   >
@@ -286,8 +534,11 @@ export function FileTreeNode({
               </>
             )}
             <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
               className="db-tree-context-item db-tree-context-item--danger"
-              onClick={handleDeleteClick}
+              onClick={() => void handleDeleteClick()}
             >
               Delete
             </button>

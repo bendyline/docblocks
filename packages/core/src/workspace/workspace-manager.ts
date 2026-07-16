@@ -6,31 +6,59 @@
  * (since native providers need a DirectoryHandle from user interaction).
  */
 
-import { LocalForageAdapter } from '@bendyline/squisq/storage';
+import {
+  RawIndexedDBFileSystemStore,
+  type IndexedDBFileSystemStore,
+  type IndexedDBFileSystemTransaction,
+} from '../filesystem/indexeddb-store.js';
 import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/types.js';
 import type { WorkspaceDescriptor } from './types.js';
+import { parsePersistedWorkspaceList } from './workspace-schema.js';
 
 const DB_NAME = 'docblocks-workspaces';
 const STORE_NAME = 'workspaces';
 const LIST_KEY = 'workspace-list';
 const DEFAULT_WORKSPACE_ID = 'default';
 
-const store = new LocalForageAdapter({
-  name: DB_NAME,
-  storeName: STORE_NAME,
-});
+/**
+ * The registry deliberately uses the error-propagating store rather than the
+ * Squisq LocalForage adapter: that adapter converts a failed read into `null`,
+ * which this module cannot tell apart from "no workspaces yet". A single
+ * transient IndexedDB failure therefore read as an empty registry, and the next
+ * mutation persisted that emptiness over every workspace the user had.
+ *
+ * The database and object store names are unchanged, and the raw store uses the
+ * same out-of-line keys LocalForage did, so existing registries load as-is.
+ */
+let registryStore: IndexedDBFileSystemStore | null = null;
+
+function store(): IndexedDBFileSystemStore {
+  registryStore ??= new RawIndexedDBFileSystemStore(DB_NAME, STORE_NAME);
+  return registryStore;
+}
 
 /**
- * Session-only transient workspaces (a loose file or `.dbk` opened from the
- * OS). Kept purely in memory — never written to the persisted list — with
- * their pre-built provider registered alongside the descriptor. Lost on
- * reload, which is the intended "transient for the app session" behaviour.
+ * Replace the registry's storage backend, or restore the default with `null`.
+ * Mirrors the `store` option the IndexedDB providers accept; tests inject an
+ * in-memory store through it and production code never calls it.
+ */
+export function setWorkspaceRegistryStore(next: IndexedDBFileSystemStore | null): void {
+  registryStore = next;
+}
+
+/**
+ * Session-only transient workspaces (a loose file/`.dbk` opened from the OS,
+ * or a document copied from a shared URL). Kept purely in memory — never
+ * written to the persisted list — with their pre-built provider registered
+ * alongside the descriptor. Lost on reload, which is the intended
+ * "transient for the app session" behaviour.
  */
 interface TransientEntry {
   descriptor: WorkspaceDescriptor;
   provider: FileSystemProvider;
 }
 const transientWorkspaces = new Map<string, TransientEntry>();
+let persistedMutationTail: Promise<void> = Promise.resolve();
 
 /** Register a transient workspace and its (already-built) provider. */
 export function registerTransientWorkspace(
@@ -59,10 +87,48 @@ export async function unregisterTransientWorkspace(id: string): Promise<void> {
   await getFileSystemProviderV2(entry.provider)?.dispose();
 }
 
-/** The persisted (on-disk) workspace list only — excludes transient ones. */
+/**
+ * The persisted (on-disk) workspace list only — excludes transient ones.
+ *
+ * An unreadable registry throws. Only a store that positively reports "no such
+ * key" is an empty registry; anything else is an unknown registry, and callers
+ * must not act as though the user has no workspaces.
+ */
+async function readPersistedIn(
+  transaction: IndexedDBFileSystemTransaction,
+): Promise<WorkspaceDescriptor[]> {
+  const list = await transaction.get<unknown>(LIST_KEY);
+  return list == null ? [] : parsePersistedWorkspaceList(list);
+}
+
+async function readPersisted(): Promise<WorkspaceDescriptor[]> {
+  return store().transaction('readonly', readPersistedIn);
+}
+
 async function listPersisted(): Promise<WorkspaceDescriptor[]> {
-  const list = await store.get<WorkspaceDescriptor[]>(LIST_KEY);
-  return list ?? [];
+  await persistedMutationTail;
+  return readPersisted();
+}
+
+function mutatePersisted(
+  mutation: (workspaces: WorkspaceDescriptor[]) => WorkspaceDescriptor[],
+): Promise<void> {
+  const operation = persistedMutationTail.then(async () => {
+    // Read and write in one transaction. A failed read aborts the mutation
+    // instead of rebuilding the registry from a phantom empty list, and no
+    // concurrent writer (another tab) can land between the read and the write
+    // only to be clobbered by this mutation's stale copy.
+    await store().transaction('readwrite', async (transaction) => {
+      const current = await readPersistedIn(transaction);
+      const next = parsePersistedWorkspaceList(mutation([...current]));
+      await transaction.put(LIST_KEY, next);
+    });
+  });
+  persistedMutationTail = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 
 /**
@@ -91,14 +157,13 @@ export async function getWorkspace(id: string): Promise<WorkspaceDescriptor | nu
  */
 export async function saveWorkspace(workspace: WorkspaceDescriptor): Promise<void> {
   if (workspace.type === 'transient') return;
-  const list = await listPersisted();
-  const idx = list.findIndex((w) => w.id === workspace.id);
-  if (idx >= 0) {
-    list[idx] = workspace;
-  } else {
-    list.push(workspace);
-  }
-  await store.set(LIST_KEY, list);
+  const persisted = parsePersistedWorkspaceList([workspace])[0];
+  await mutatePersisted((list) => {
+    const idx = list.findIndex((candidate) => candidate.id === persisted.id);
+    if (idx >= 0) list[idx] = persisted;
+    else list.push(persisted);
+    return list;
+  });
 }
 
 /**
@@ -109,9 +174,7 @@ export async function removeWorkspace(id: string): Promise<void> {
     await unregisterTransientWorkspace(id);
     return;
   }
-  const list = await listPersisted();
-  const filtered = list.filter((w) => w.id !== id);
-  await store.set(LIST_KEY, filtered);
+  await mutatePersisted((list) => list.filter((workspace) => workspace.id !== id));
 }
 
 /**
@@ -124,12 +187,11 @@ export async function touchWorkspace(id: string): Promise<void> {
     transient.descriptor.lastOpened = new Date().toISOString();
     return;
   }
-  const list = await listPersisted();
-  const workspace = list.find((w) => w.id === id);
-  if (workspace) {
-    workspace.lastOpened = new Date().toISOString();
-    await store.set(LIST_KEY, list);
-  }
+  await mutatePersisted((list) => {
+    const workspace = list.find((candidate) => candidate.id === id);
+    if (workspace) workspace.lastOpened = new Date().toISOString();
+    return list;
+  });
 }
 
 /**

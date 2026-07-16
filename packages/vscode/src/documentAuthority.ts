@@ -42,6 +42,18 @@ export function getDocumentDirectoryUri(documentUri: vscode.Uri): vscode.Uri | n
   return documentUri.with({ path: directoryPath, query: '', fragment: '' });
 }
 
+/**
+ * Decode a URI's final path segment losslessly.
+ *
+ * This is the media path authority's own view of a document's name: it feeds
+ * {@link mediaSidecarFolder} and {@link parseDocumentResourcePath}, so it must
+ * never truncate. Shortening a long name here would silently retarget the
+ * `<document>_files` sidecar — two documents sharing a 255-character prefix
+ * would resolve to one folder, and the resolved key would no longer match the
+ * document on disk. Length is bounded where it is a policy question instead:
+ * `parseMediaRef` rejects a basename over 255 characters outright. Callers that
+ * only need a label for the UI truncate at their own edge.
+ */
 export function getUriBasename(uri: vscode.Uri): string {
   const slash = uri.path.lastIndexOf('/');
   const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);

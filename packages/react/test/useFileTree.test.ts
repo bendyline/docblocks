@@ -412,4 +412,59 @@ describe('useFileTree', () => {
     expect(handle.result.current.entries[0]?.name).to.equal('b.md');
     await handle.unmount();
   });
+
+  it('does not publish a delayed root read from the previous provider', async () => {
+    let releaseFirst!: () => void;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const first = makeProvider({ '': [file('stale.md')] });
+    first.readDirectory = async (path: string) => {
+      first.readDirCalls.push(path);
+      await firstReleased;
+      return first.tree[path] ?? [];
+    };
+    const second = makeProvider({ '': [file('current.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: first as FileSystemProvider },
+    );
+    await advanceTime(0);
+
+    await handle.rerender({ provider: second as FileSystemProvider });
+    await advanceTime(SETTLE);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['current.md']);
+
+    releaseFirst();
+    await advanceTime(SETTLE);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['current.md']);
+    await handle.unmount();
+  });
+
+  it('surfaces provider read failures and clears them after a successful retry', async () => {
+    const provider = makeProvider({ '': [file('recovered.md')] });
+    const normalRead = provider.readDirectory.bind(provider);
+    provider.readDirectory = async () => {
+      throw new Error('Workspace permission was revoked');
+    };
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+
+    expect(handle.result.current.loading).to.equal(false);
+    expect(handle.result.current.error).to.equal('Workspace permission was revoked');
+    expect(handle.result.current.entries).to.deep.equal([]);
+
+    provider.readDirectory = normalRead;
+    await act(async () => {
+      await handle.result.current.refresh();
+    });
+    expect(handle.result.current.error).to.equal(null);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal([
+      'recovered.md',
+    ]);
+    await handle.unmount();
+  });
 });

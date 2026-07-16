@@ -37,12 +37,26 @@ interface ObservedOperation {
   readonly path: string;
 }
 
+interface Interceptor {
+  readonly operation: NativeEmulatorOperation;
+  readonly path: string;
+  readonly action: () => void;
+}
+
+interface PartialRemoval {
+  readonly path: string;
+  readonly deletedChildNames: readonly string[];
+  readonly error: unknown;
+}
+
 /** Stateful File System Access API emulator used by native-v2 conformance tests. */
 export class NativeFileSystemEmulator {
   public readonly rootHandle: FileSystemDirectoryHandle;
 
   private readonly root: DirectoryNode;
   private readonly faults: InjectedFault[] = [];
+  private readonly partialRemovals: PartialRemoval[] = [];
+  private readonly interceptors: Interceptor[] = [];
   private readonly observedOperations: ObservedOperation[] = [];
   private clock = 1;
 
@@ -69,6 +83,25 @@ export class NativeFileSystemEmulator {
       path: parseWorkspacePath(path),
       error,
       remainingMatches: occurrence - 1,
+    });
+  }
+
+  /**
+   * Make the next removal of `path` delete `deletedChildNames` and then fail,
+   * the way a real filesystem does when it cannot unlink one entry partway
+   * through a recursive delete. Ordinary injected faults throw before touching
+   * anything, so they cannot express the state this models: a directory that is
+   * still present but has already lost children.
+   */
+  public failRemoveAfterDeleting(
+    path: string,
+    deletedChildNames: readonly string[],
+    error: unknown,
+  ): void {
+    this.partialRemovals.push({
+      path: parseWorkspacePath(path),
+      deletedChildNames: [...deletedChildNames],
+      error,
     });
   }
 
@@ -99,6 +132,22 @@ export class NativeFileSystemEmulator {
 
   public seedDirectory(path: string): void {
     this.ensureDirectory(parseWorkspacePath(path));
+  }
+
+  /**
+   * Force a file's `lastModified` to an exact value.
+   *
+   * The emulator's clock is monotonic (`++this.clock`), so every write it
+   * performs advances the timestamp and no two states can ever share one. Real
+   * filesystems are not so kind: FAT/exFAT stores mtime at 2-second
+   * granularity, and network shares are coarser still. This lets a test model a
+   * same-size rewrite that lands inside one timestamp tick — the only case that
+   * a size+mtime version token cannot see.
+   */
+  public setLastModified(path: string, lastModified: number): void {
+    const node = this.node(parseWorkspacePath(path));
+    if (node?.kind !== 'file') throw new Error(`${path} is not a seeded file.`);
+    node.lastModified = lastModified;
   }
 
   public exists(path: string): boolean {
@@ -152,6 +201,13 @@ export class NativeFileSystemEmulator {
         if (!child) throw domError('NotFoundError');
         if (child.kind === 'directory' && child.children.size > 0 && !options.recursive) {
           throw domError('InvalidModificationError');
+        }
+        const partial = this.consumePartialRemoval(childPath);
+        if (partial) {
+          if (child.kind === 'directory') {
+            for (const victim of partial.deletedChildNames) child.children.delete(victim);
+          }
+          throw partial.error;
         }
         node.children.delete(name);
       },
@@ -220,8 +276,38 @@ export class NativeFileSystemEmulator {
     return handle as unknown as FileSystemFileHandle;
   }
 
+  /**
+   * Run `action` immediately before the next `operation` on `path`.
+   *
+   * Injected faults can only *fail* an operation; they cannot model an outside
+   * actor mutating the filesystem while a multi-step operation is midway
+   * through. That window is the whole point of some tests -- e.g. an external
+   * editor rewriting a file after a move has captured it but before the move
+   * deletes it.
+   */
+  public runBeforeNext(operation: NativeEmulatorOperation, path: string, action: () => void): void {
+    this.interceptors.push({ operation, path: parseWorkspacePath(path), action });
+  }
+
+  private consumeInterceptor(operation: NativeEmulatorOperation, path: string): void {
+    const index = this.interceptors.findIndex(
+      (candidate) => candidate.operation === operation && candidate.path === path,
+    );
+    if (index < 0) return;
+    const [interceptor] = this.interceptors.splice(index, 1);
+    interceptor.action();
+  }
+
+  private consumePartialRemoval(path: string): PartialRemoval | null {
+    const index = this.partialRemovals.findIndex((removal) => removal.path === path);
+    if (index < 0) return null;
+    const [removal] = this.partialRemovals.splice(index, 1);
+    return removal;
+  }
+
   private consumeFault(operation: NativeEmulatorOperation, path: string): void {
     this.observedOperations.push({ operation, path });
+    this.consumeInterceptor(operation, path);
     const index = this.faults.findIndex(
       (fault) => fault.operation === operation && fault.path === path,
     );

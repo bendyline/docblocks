@@ -9,6 +9,7 @@ import {
   type DocumentSessionSnapshot,
 } from '@bendyline/docblocks/document';
 import type { DocumentConflictDetailsMessage } from '@bendyline/docblocks/vscode';
+import { toError } from './toError.js';
 
 /** Save after twenty seconds without another accepted editor snapshot. */
 export const DEFAULT_VSCODE_AUTO_SAVE_DELAY_MS = 20_000;
@@ -53,11 +54,34 @@ export class HostDocumentChangedError extends Error {
   }
 }
 
+/**
+ * The subset of VS Code's built-in save participants whose effect on our own
+ * write is exactly characterizable, resolved for the target document (so
+ * language-specific overrides such as `"[markdown]"` are honored).
+ *
+ * Only transformations the user has actually enabled are forgiven; everything
+ * else stays a conflict.
+ */
+export interface SaveParticipantPolicy {
+  /** `files.trimTrailingWhitespace` */
+  trimTrailingWhitespace: boolean;
+}
+
+/** Forgive nothing beyond VS Code's unconditional EOL/final-newline handling. */
+export const STRICT_SAVE_PARTICIPANT_POLICY: SaveParticipantPolicy = Object.freeze({
+  trimTrailingWhitespace: false,
+});
+
 export interface VscodeDocumentSyncOptions {
   autoSaveDelayMs?: number;
   autoSaveEnabled?: boolean;
   createSessionId?: () => string;
   now?: () => number;
+  /**
+   * Read at every commit rather than captured once, so toggling
+   * `files.trimTrailingWhitespace` takes effect without reopening the editor.
+   */
+  readSaveParticipantPolicy?: () => SaveParticipantPolicy;
 }
 
 export interface VscodeDocumentSyncSnapshot {
@@ -139,6 +163,7 @@ export class VscodeDocumentSync {
       (observed) => {
         this.rememberExternalSnapshot(observed);
       },
+      options.readSaveParticipantPolicy ?? (() => STRICT_SAVE_PARTICIPANT_POLICY),
     );
     this.unsubscribeSession = this.session.subscribe(() => this.emit());
   }
@@ -210,11 +235,27 @@ export class VscodeDocumentSync {
     }
   }
 
-  /** Persist through the latest accepted client revision or report failure. */
+  /**
+   * Persist through the latest accepted client revision or report failure.
+   *
+   * A save request only names the revision the user could see when they asked;
+   * it is not a compare-and-swap. Edits reach this session through a separate,
+   * faster ingress than save requests do (LatestDocumentEditQueue vs the
+   * bounded message queue), so typing immediately after Ctrl+S routinely lands
+   * a newer accepted revision before the save request is processed. Since every
+   * edit is a complete snapshot on the same branch, flushing then persists a
+   * superset of what the user asked to save — exactly this method's contract —
+   * so a stale-but-lower request must flush rather than drop the save intent.
+   *
+   * A request *ahead* of the acknowledged revision is still a real failure:
+   * the session does not hold that content and cannot persist it. Branch
+   * identity (sessionId + baseDocumentVersion) is enforced by validateEnvelope,
+   * so a lower revision here can only be this session's own older request.
+   */
   public async save(save: WebviewSaveEnvelope): Promise<DocumentSessionSnapshot> {
     const invalid = this.validateEnvelope(save);
     if (invalid) throw new Error(invalid);
-    if (save.clientRevision !== this.acknowledgedClientRevision) {
+    if (save.clientRevision > this.acknowledgedClientRevision) {
       throw new Error(
         `Cannot save client revision ${save.clientRevision}; revision ${this.acknowledgedClientRevision} is acknowledged.`,
       );
@@ -400,15 +441,17 @@ class VscodeCommitTarget implements DocumentCommitTarget {
     initial: HostDocumentSnapshot,
     private readonly onCommitted: (snapshot: HostDocumentSnapshot) => void,
     private readonly onExternalSnapshot: (snapshot: HostDocumentSnapshot) => void,
+    private readonly readSaveParticipantPolicy: () => SaveParticipantPolicy,
   ) {
     this.key = adapter.key;
     this.baseline = initial;
   }
 
   public async commit(request: DocumentCommitRequest): Promise<{ version: number }> {
+    const policy = this.readSaveParticipantPolicy();
     const actual = await this.adapter.read();
     if (actual.version !== this.baseline.version || actual.content !== this.baseline.content) {
-      if (hasEquivalentHostText(actual.content, request.content)) {
+      if (hasEquivalentSavedHostText(actual.content, request.content, policy)) {
         // VS Code already contains the complete local snapshot. This can
         // happen when an equivalent save/change notification wins the race,
         // including VS Code's line-ending and final-newline normalization.
@@ -449,13 +492,13 @@ class VscodeCommitTarget implements DocumentCommitTarget {
       // Rebase that host-owned partial application so an honest retry saves it
       // instead of misclassifying it as an external conflict.
       const afterFailure = await this.adapter.read();
-      if (hasEquivalentHostText(afterFailure.content, request.content)) {
+      if (hasEquivalentSavedHostText(afterFailure.content, request.content, policy)) {
         this.baseline = afterFailure;
       }
       throw error;
     }
 
-    if (!hasEquivalentHostText(committed.content, request.content)) {
+    if (!hasEquivalentSavedHostText(committed.content, request.content, policy)) {
       this.onExternalSnapshot(committed);
       throw new DocumentCommitConflictError(
         'The VS Code document was changed while the DocBlocks revision was being saved.',
@@ -478,18 +521,65 @@ class VscodeCommitTarget implements DocumentCommitTarget {
 }
 
 /**
- * VS Code and save participants may rewrite line endings or enforce a final
- * newline while applying a DocBlocks snapshot. Those transformations do not
- * represent a competing edit. Every other character difference remains a
- * conflict so an extension-owned save window cannot hide an external change.
+ * Compare two independent host observations. Only VS Code's unconditional
+ * line-ending and final-newline handling is absorbed; a save participant never
+ * runs between two reads, so nothing else may be forgiven here.
  */
 function hasEquivalentHostText(left: string, right: string): boolean {
   if (left === right) return true;
   return normalizeHostText(left) === normalizeHostText(right);
 }
 
+/**
+ * Compare a host snapshot taken after `document.save()` against the text this
+ * extension asked VS Code to write.
+ *
+ * `replaceAndSave` holds the applying-edit flag across both applyEdit and
+ * save(), so VS Code's save participants rewrite our own bytes inside that
+ * window and their document-change events are deliberately suppressed. This
+ * comparison is therefore the only external-change detector for the window,
+ * and it must not mistake a participant's rewrite of our write for a hostile
+ * edit: `files.trimTrailingWhitespace` alone would otherwise fail every save
+ * of a markdown document that uses trailing-double-space hard line breaks.
+ *
+ * We forgive exactly the transformations that VS Code is *configured* to
+ * perform on this document, and nothing else. Any difference in a
+ * non-whitespace character, or whitespace anywhere but the end of a line,
+ * still raises a conflict, so a real concurrent edit is still caught.
+ *
+ * Known limits:
+ * - With `files.trimTrailingWhitespace` enabled, a concurrent external edit
+ *   that *only* adds or removes trailing whitespace is absorbed silently. In
+ *   markdown that whitespace is semantic (hard line breaks), but VS Code is
+ *   already configured to destroy it on save, so nothing is lost that the
+ *   user's own setting would have kept.
+ * - `editor.formatOnSave` with a real markdown formatter rewrites content
+ *   arbitrarily. That is not characterizable, so it still surfaces as a
+ *   conflict rather than silently adopting a formatter's output as if the
+ *   user's draft had been persisted verbatim.
+ */
+function hasEquivalentSavedHostText(
+  left: string,
+  right: string,
+  policy: SaveParticipantPolicy,
+): boolean {
+  if (left === right) return true;
+  return normalizeSavedHostText(left, policy) === normalizeSavedHostText(right, policy);
+}
+
 function normalizeHostText(content: string): string {
   return content.replace(/\r\n?/gu, '\n').replace(/\n+$/u, '');
+}
+
+function normalizeSavedHostText(content: string, policy: SaveParticipantPolicy): string {
+  const lineEndingsNormalized = content.replace(/\r\n?/gu, '\n');
+  // Trim per line before collapsing the tail so a whitespace-only final line
+  // reduces to nothing, exactly as trimTrailingWhitespace + trimFinalNewlines
+  // would leave it.
+  const trimmed = policy.trimTrailingWhitespace
+    ? lineEndingsNormalized.replace(/[^\S\n]+$/gmu, '')
+    : lineEndingsNormalized;
+  return trimmed.replace(/\n+$/u, '');
 }
 
 let sessionSequence = 0;
@@ -503,8 +593,4 @@ function createSessionId(): string {
 
 function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
 }

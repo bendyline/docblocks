@@ -8,6 +8,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerCustomEditorProvider(
       MarkdownEditorLauncher.viewType,
       new MarkdownEditorLauncher(context),
+      {
+        supportsMultipleEditorsPerDocument: false,
+        // The default *.md route must retain the same webview context as the
+        // command-opened route (MarkdownEditorPanel.openDocument). Without
+        // this, hiding the tab destroys the iframe: the host session and the
+        // recovery journal still carry the content, but the Squisq shell
+        // remounts from setContent, so undo history, selection, scroll, and
+        // find state are lost on every tab switch and Monaco is re-downloaded
+        // and re-parsed. Retaining costs the hidden editor's memory, which is
+        // the right trade for a document editor whose undo stack is user data.
+        webviewOptions: { retainContextWhenHidden: true },
+      },
     ),
   );
 
@@ -35,7 +47,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Register the open setup command.
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.openSetup', () => {
-      SetupViewProvider.createOrShow(context);
+      SetupViewProvider.createOrShow();
     }),
   );
 

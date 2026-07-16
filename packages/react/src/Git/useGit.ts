@@ -24,12 +24,31 @@ import { buildBadgeMap, conflictedPaths } from './git-status.js';
 import { useGitStatus } from './useGitStatus.js';
 import type { GitBusyKind, GitDialogState, GitInlineResult, GitValue } from './GitContext.js';
 
-/** Capabilities can't change within a session — probe once per page load. */
+/**
+ * Capabilities can't change within a session — probe once per page load.
+ *
+ * Only a *fulfilled* probe is cached. Caching the rejected promise meant a
+ * single transient IPC failure pinned `available` to false for the life of
+ * the page, hiding every git surface with no way back short of a reload.
+ */
 let capabilitiesPromise: Promise<GitCapabilities> | null = null;
 function capabilitiesOnce(gitApi: DocBlocksHostGitAPI): Promise<GitCapabilities> {
-  capabilitiesPromise ??= gitApi.capabilities();
+  capabilitiesPromise ??= gitApi.capabilities().catch((error: unknown) => {
+    capabilitiesPromise = null;
+    throw error;
+  });
   return capabilitiesPromise;
 }
+
+/** Test seam — drops the memoised probe so each test starts clean. */
+export function resetGitCapabilitiesCache(): void {
+  capabilitiesPromise = null;
+}
+
+/** Bounded retry for the capabilities probe — a transient IPC failure
+    must not permanently hide the git UI. */
+const CAPABILITIES_RETRIES = 2;
+const CAPABILITIES_RETRY_MS = 1000;
 
 function describeError(error: GitError): string {
   return error.message || 'Git operation failed';
@@ -48,11 +67,30 @@ export function useGit(
   useEffect(() => {
     if (!gitApi) return;
     let cancelled = false;
-    void capabilitiesOnce(gitApi).then((caps) => {
-      if (!cancelled) setCapabilities(caps);
-    });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // `available` gates every git surface, so a probe that fails must be
+    // retried rather than silently leaving the UI switched off.
+    const attempt = (remaining: number) => {
+      void capabilitiesOnce(gitApi).then(
+        (caps) => {
+          if (!cancelled) setCapabilities(caps);
+        },
+        (error: unknown) => {
+          if (cancelled) return;
+          if (remaining > 0) {
+            timer = setTimeout(() => attempt(remaining - 1), CAPABILITIES_RETRY_MS);
+            return;
+          }
+          console.warn('DocBlocks: git capabilities probe failed; git UI stays hidden', error);
+        },
+      );
+    };
+    attempt(CAPABILITIES_RETRIES);
+
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
     };
   }, [gitApi]);
 
@@ -65,17 +103,25 @@ export function useGit(
     setRemoteWeb(null);
     if (!gitApi || !workspaceId || !available) return;
     let cancelled = false;
-    void gitApi.detectRepo(workspaceId).then((result) => {
-      if (cancelled || !result.ok || !result.value.isRepo || !result.value.repositoryId) {
-        return;
-      }
-      setRepo(result.value);
-      void gitApi.listRemotes(result.value.repositoryId).then((remotes) => {
-        if (cancelled || !remotes.ok) return;
-        const first: GitRemoteInfo | undefined = remotes.value[0];
-        setRemoteWeb(first?.web ?? null);
-      });
-    });
+    void gitApi.detectRepo(workspaceId).then(
+      (result) => {
+        if (cancelled || !result.ok || !result.value.isRepo || !result.value.repositoryId) {
+          return;
+        }
+        setRepo(result.value);
+        void gitApi.listRemotes(result.value.repositoryId).then(
+          (remotes) => {
+            if (cancelled || !remotes.ok) return;
+            const first: GitRemoteInfo | undefined = remotes.value[0];
+            setRemoteWeb(first?.web ?? null);
+          },
+          // No remote is a supported state; a failed probe degrades to it
+          // rather than surfacing an unhandled rejection.
+          () => undefined,
+        );
+      },
+      /* detection failure → not a repo, which is the default state */ () => undefined,
+    );
     return () => {
       cancelled = true;
     };
@@ -90,7 +136,15 @@ export function useGit(
   const [lastResult, setLastResult] = useState<GitInlineResult | null>(null);
   const [dialog, setDialog] = useState<GitDialogState>({ kind: 'none' });
 
-  const openDialog = useCallback((next: GitDialogState) => setDialog(next), []);
+  const openDialog = useCallback((next: GitDialogState) => {
+    // `lastResult` is a single shared slot rendered as a role="alert" by
+    // whichever dialog is open. Without this, yesterday's failed pull
+    // greets the user inside today's commit dialog. Operations that open a
+    // dialog *to report* an outcome (routeError, the conflicts dialog) set
+    // the dialog directly and are unaffected.
+    setLastResult(null);
+    setDialog(next);
+  }, []);
   const closeDialog = useCallback(() => setDialog({ kind: 'none' }), []);
 
   // Route a failed operation somewhere useful.
@@ -109,8 +163,13 @@ export function useGit(
     [],
   );
 
+  // Mirrored in an effect, not during render: a render-phase ref write is
+  // impure and can be torn by a discarded concurrent render. Only the
+  // action callbacks read it, and they run after commit.
   const statusRef = useRef(status);
-  statusRef.current = status;
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   const runAction = useCallback(
     async <T>(
@@ -249,31 +308,64 @@ export function useGit(
     }
   }, [gitApi, repositoryId, routeError]);
 
-  return {
-    available,
-    capabilities,
-    repo,
-    repositoryId,
-    remoteWeb,
-    gitApi,
-    provider,
-    theme,
-    status,
-    badges,
-    busy,
-    lastResult,
-    refresh,
-    scheduleRefresh,
-    commit,
-    push,
-    pull,
-    fetchRemote,
-    createBranch,
-    switchBranch,
-    openOnRemote,
-    createPullRequest,
-    dialog,
-    openDialog,
-    closeDialog,
-  };
+  // This object *is* the GitContext.Provider value (DocBlocksShell passes it
+  // straight through). Rebuilding it every render re-rendered the status
+  // bar, toolbar, tree badges and any open dialog on every shell render,
+  // which also negated useGitStatus's payload dedupe.
+  return useMemo(
+    () => ({
+      available,
+      capabilities,
+      repo,
+      repositoryId,
+      remoteWeb,
+      gitApi,
+      provider,
+      theme,
+      status,
+      badges,
+      busy,
+      lastResult,
+      refresh,
+      scheduleRefresh,
+      commit,
+      push,
+      pull,
+      fetchRemote,
+      createBranch,
+      switchBranch,
+      openOnRemote,
+      createPullRequest,
+      dialog,
+      openDialog,
+      closeDialog,
+    }),
+    [
+      available,
+      capabilities,
+      repo,
+      repositoryId,
+      remoteWeb,
+      gitApi,
+      provider,
+      theme,
+      status,
+      badges,
+      busy,
+      lastResult,
+      refresh,
+      scheduleRefresh,
+      commit,
+      push,
+      pull,
+      fetchRemote,
+      createBranch,
+      switchBranch,
+      openOnRemote,
+      createPullRequest,
+      dialog,
+      openDialog,
+      closeDialog,
+    ],
+  );
 }

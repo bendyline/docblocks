@@ -31,7 +31,9 @@ const surfaces: BundleSurface[] = [
     // are feature/backend chunks and are checked as deferred boundaries.
     entryBudgetBytes: 2_375_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_100_000 },
+      // Squisq 2.3's editor update remains isolated to this deferred chunk;
+      // the diagram runtimes are still split out separately.
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_355_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
     ],
   },
@@ -42,7 +44,9 @@ const surfaces: BundleSurface[] = [
     assetsDir: 'packages/desktop/dist/renderer/assets',
     entryBudgetBytes: 2_375_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_100_000 },
+      // Squisq 2.3's editor update remains isolated to this deferred chunk;
+      // the diagram runtimes are still split out separately.
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_355_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
     ],
   },
@@ -53,15 +57,17 @@ const surfaces: BundleSurface[] = [
     assetsDir: 'packages/vscode/dist/webview/assets',
     // The webview has no shell chrome, but it still defers Squisq until the
     // extension has supplied a document and the renderer bridges are ready.
-    entryBudgetBytes: 1_350_000,
+    // Squisq's editor and diagram implementations remain deferred.
+    entryBudgetBytes: 1_425_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_125_000 },
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_700_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
       {
         label: 'deferred standalone editor source',
         prefix: 'standalone-source',
-        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path.
-        budgetBytes: 1_153_000,
+        // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path;
+        // retain the smaller standalone source boundary restored in Squisq 2.2.
+        budgetBytes: 1_275_000,
       },
       { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 6_200_000 },
     ],
@@ -71,7 +77,9 @@ const surfaces: BundleSurface[] = [
     aggregateBudget: {
       directory: 'packages/vscode/dist/webview',
       extensions: ['.js', '.css'],
-      budgetBytes: 18_250_000,
+      // Mermaid's diagram families are separate deferred chunks, but the
+      // aggregate gate still accounts for their complete shipped footprint.
+      budgetBytes: 21_250_000,
     },
   },
 ];

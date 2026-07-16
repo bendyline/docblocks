@@ -1,5 +1,7 @@
 import { defineConfig } from 'tsup';
 
+const emitSourceMaps = process.env.DOCBLOCKS_SOURCEMAPS === 'true';
+
 /**
  * Builds the Electron main process and preload script to CommonJS.
  *
@@ -15,11 +17,23 @@ export default defineConfig([
     format: ['cjs'],
     platform: 'node',
     target: 'node20',
-    sourcemap: true,
+    // Production builds are distributed without source maps. Opt in for a
+    // local diagnostic build with DOCBLOCKS_SOURCEMAPS=true.
+    sourcemap: emitSourceMaps,
     clean: true,
     shims: false,
     tsconfig: 'tsconfig.main.json',
-    external: ['electron', 'electron-updater', 'chokidar', 'electron-window-state'],
+    // The renderer's DocBlocks/Squisq graph is already emitted by Vite. Bundle
+    // the small slice of DocBlocks core used by main so electron-builder only
+    // has to copy dependencies that are genuinely loaded at runtime.
+    noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
+    external: [
+      'electron',
+      'electron-updater',
+      'chokidar',
+      'electron-window-state',
+      'ffmpeg-static',
+    ],
     outExtension: () => ({ js: '.cjs' }),
   },
   // Preload — runs in renderer sandbox with limited Node APIs + DOM.
@@ -29,7 +43,7 @@ export default defineConfig([
     format: ['cjs'],
     platform: 'node',
     target: 'node20',
-    sourcemap: true,
+    sourcemap: emitSourceMaps,
     clean: true,
     shims: false,
     tsconfig: 'tsconfig.preload.json',

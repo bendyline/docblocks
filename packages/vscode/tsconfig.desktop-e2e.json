@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vscode"],
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["desktop-e2e/**/*.ts"]
+}

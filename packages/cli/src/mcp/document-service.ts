@@ -7,7 +7,7 @@ import type {
   McpDiagnostic,
 } from '@bendyline/docblocks/mcp';
 import { MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
-import { tryParseWorkspacePath } from '@bendyline/docblocks/filesystem';
+import { decodeUtf8Text, tryParseWorkspacePath } from '@bendyline/docblocks/filesystem';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
@@ -15,6 +15,7 @@ import type { ConvertSource, FormatRegistry } from '@bendyline/squisq-cli/api';
 import { ArtifactStore } from './artifact-store.js';
 import { McpFileAuthority } from './authority.js';
 import { boundWireText, isWireText } from './output-bounds.js';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const MAX_BUNDLE_ASSETS = 256;
 const MAX_BUNDLE_BYTES = 100 * 1024 * 1024;
@@ -305,7 +306,12 @@ async function readAssetManifest(
     throw new Error('The document asset manifest exceeds the byte limit');
   }
   try {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    const parsed: unknown = JSON.parse(
+      decodeUtf8Text(bytes, {
+        label: 'The document asset manifest',
+        path: ASSET_MANIFEST_PATH,
+      }),
+    );
     if (
       !isExactRecord(parsed, ['version', 'assets']) ||
       parsed.version !== 1 ||
@@ -505,11 +511,7 @@ export function sha256(bytes: Uint8Array): string {
 }
 
 export function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('MCP operation was cancelled');
-  error.name = 'AbortError';
-  throw error;
+  throwIfSignalAborted(signal, 'MCP operation was cancelled');
 }
 
 function baseNameFromName(name: string): string {

@@ -44,6 +44,14 @@ export function registerWindowLifecycleIpc(): void {
     if (!pending || pending.webContentsId !== event.sender.id) return;
     settlePending(pending, payload.result);
   });
+  ipcMain.on('lifecycle:request-window-close', (event) => {
+    try {
+      assertTrustedIpcSender(event);
+    } catch {
+      return;
+    }
+    BrowserWindow.fromWebContents(event.sender)?.close();
+  });
 }
 
 export function attachWindowCloseGuard(win: BrowserWindow): void {

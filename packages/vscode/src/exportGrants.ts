@@ -1,4 +1,5 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import { fillRandomBytes } from './random.js';
 import type { ExportTargetGrantMessage } from '@bendyline/docblocks/vscode';
 
 const DEFAULT_GRANT_TTL_MS = 30 * 60 * 1_000;
@@ -146,6 +147,6 @@ function invalidGrantError(): Error {
 
 function createRandomGrantId(): string {
   const bytes = new Uint8Array(24);
-  globalThis.crypto.getRandomValues(bytes);
+  fillRandomBytes(bytes);
   return `export_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
 }

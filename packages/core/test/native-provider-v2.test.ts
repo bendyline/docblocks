@@ -166,10 +166,17 @@ describe('NativeFileSystemProviderV2', () => {
   it('restores source content when verification fails after source deletion', async () => {
     const { fileSystem, provider } = setup('move-post-delete-fault');
     fileSystem.seedFile('/source.md', 'source');
+    // The last `get-file` on the source in a move is the post-delete
+    // verification -- which is the failure this test is about. The ordinal is
+    // load-bearing and brittle: it moved 4 -> 5 when `move` gained its
+    // byte-compare of the captured source before deleting. If a future change
+    // to `move` shifts it again, this test starts exercising a different step
+    // (and the injected fault surfaces as `conflict` rather than
+    // `permission-denied`, which is the tell).
     fileSystem.failOnCall(
       'get-file',
       '/source.md',
-      4,
+      5,
       nativeDomError('NotAllowedError', 'verification blocked'),
     );
 
@@ -199,6 +206,80 @@ describe('NativeFileSystemProviderV2', () => {
     expect(fileSystem.exists('/source/a.md')).to.equal(true);
     expect(fileSystem.exists('/source/b.md')).to.equal(true);
     expect(fileSystem.exists('/destination')).to.equal(false);
+    await provider.dispose();
+  });
+
+  it('restores a source that a partial delete gutted, then removes the copy', async () => {
+    const { fileSystem, provider } = setup('partial-delete-restore');
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    // Removing a directory is not atomic: the delete takes 'a.md' and then
+    // fails, leaving the source present but missing a child.
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+
+    await expectFsError(
+      provider.move(parseWorkspacePath('/source'), parseWorkspacePath('/destination')),
+      'permission-denied',
+    );
+
+    expect(fileSystem.readBytes('/source/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/source/b.md')).to.deep.equal([...encoded('bravo')]);
+    expect(fileSystem.exists('/destination')).to.equal(false);
+    await provider.dispose();
+  });
+
+  it('keeps the copy when a source gutted by a partial delete cannot be restored', async () => {
+    const { fileSystem, provider } = setup('partial-delete-unrepairable');
+    fileSystem.seedFile('/source/a.md', 'alpha');
+    fileSystem.seedFile('/source/b.md', 'bravo');
+    fileSystem.failRemoveAfterDeleting(
+      '/source',
+      ['a.md'],
+      nativeDomError('NotAllowedError', 'entry locked'),
+    );
+    // The repair write fails too, so the source cannot be made whole again.
+    fileSystem.failNext('write', '/source/a.md', nativeDomError('NotAllowedError', 'read-only'));
+
+    const failure = await captureFailure(
+      provider.move(parseWorkspacePath('/source'), parseWorkspacePath('/destination')),
+    );
+
+    // The copy is the only complete one left: rollback must not delete it, and
+    // the failure must be loud rather than a plain retryable error.
+    expect(failure).to.be.instanceOf(NativeFileSystemMoveRecoveryError);
+    expect(fileSystem.readBytes('/destination/a.md')).to.deep.equal([...encoded('alpha')]);
+    expect(fileSystem.readBytes('/destination/b.md')).to.deep.equal([...encoded('bravo')]);
+    await provider.dispose();
+  });
+
+  it('refuses to delete a source whose bytes changed under a blind version token', async () => {
+    const { fileSystem, provider } = setup('move-coarse-mtime-rewrite');
+    fileSystem.seedFile('/source.md', 'aaaaa');
+    fileSystem.setLastModified('/source.md', 1_000);
+
+    // An outside editor rewrites the source AFTER the move captured its bytes
+    // but BEFORE the move deletes it -- same length, and landing inside one
+    // coarse mtime tick (FAT/exFAT stamp at 2s). The version token is
+    // sha256(size + mtime), so it is identical before and after: the move's own
+    // "source is unchanged" proof is blind to this edit, and deleting on the
+    // strength of it would destroy 'bbbbb' having only ever copied 'aaaaa'.
+    fileSystem.runBeforeNext('write', '/destination.md', () => {
+      fileSystem.seedFile('/source.md', 'bbbbb');
+      fileSystem.setLastModified('/source.md', 1_000);
+    });
+
+    await expectFsError(
+      provider.move(parseWorkspacePath('/source.md'), parseWorkspacePath('/destination.md')),
+      'conflict',
+    );
+
+    // The external edit survives; nothing was silently thrown away.
+    expect(fileSystem.readBytes('/source.md')).to.deep.equal([...encoded('bbbbb')]);
+    expect(fileSystem.exists('/destination.md')).to.equal(false);
     await provider.dispose();
   });
 
@@ -253,6 +334,53 @@ describe('NativeFileSystemProviderV2', () => {
   });
 });
 
+describe('NativeFileSystemProviderV2 version-token limits', () => {
+  it('cannot see an external same-size rewrite inside one mtime tick', async () => {
+    const { fileSystem, provider } = setup('coarse-mtime');
+    fileSystem.seedFile('/note.md', 'aaaaa');
+    // A FAT/exFAT volume stamps mtime at 2-second granularity, so an external
+    // rewrite can land on the same timestamp the provider already observed.
+    fileSystem.setLastModified('/note.md', 1_000);
+    const before = await provider.stat(parseWorkspacePath('/note.md'));
+
+    fileSystem.seedFile('/note.md', 'bbbbb');
+    fileSystem.setLastModified('/note.md', 1_000);
+    const after = await provider.stat(parseWorkspacePath('/note.md'));
+
+    // Documented blind spot, not desired behaviour: size + mtime are identical,
+    // so the token is identical while the bytes differ. Any change that makes
+    // the token content-derived should delete this test — and must first show
+    // that stat/list stay proportional to entry count rather than bytes.
+    expect(after?.version).to.equal(before?.version);
+    expect(
+      decoded(
+        fileSystem.readBytes('/note.md')
+          ? new Uint8Array(fileSystem.readBytes('/note.md')!).buffer
+          : null,
+      ),
+    ).to.equal('bbbbb');
+    await provider.dispose();
+  });
+
+  it('does detect an external rewrite that changes size', async () => {
+    const { fileSystem, provider } = setup('size-change');
+    fileSystem.seedFile('/note.md', 'aaaaa');
+    fileSystem.setLastModified('/note.md', 1_000);
+    const before = await provider.stat(parseWorkspacePath('/note.md'));
+
+    fileSystem.seedFile('/note.md', 'bbbbbb');
+    fileSystem.setLastModified('/note.md', 1_000);
+
+    await expectFsError(
+      provider.writeFile(parseWorkspacePath('/note.md'), encoded('ccccc'), {
+        expectedVersion: before!.version,
+      }),
+      'conflict',
+    );
+    await provider.dispose();
+  });
+});
+
 function setup(id: string): {
   readonly fileSystem: NativeFileSystemEmulator;
   readonly provider: NativeFileSystemProviderV2;
@@ -266,6 +394,15 @@ function setup(id: string): {
 
 function encoded(value: string): Uint8Array {
   return new TextEncoder().encode(value);
+}
+
+async function captureFailure(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+    return null;
+  } catch (error: unknown) {
+    return error;
+  }
 }
 
 function decoded(value: ArrayBuffer | null | undefined): string | null {

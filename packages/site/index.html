@@ -2,6 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <title>DocBlocks — Local-First Markdown Editor</title>
+    <meta
+      name="description"
+      content="Write Markdown visually, keep files local, and export to Word, PDF, slides, e-books, or video. Available on the web, desktop, VS Code, and CLI."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://docblocks.com/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DocBlocks" />
+    <meta property="og:title" content="DocBlocks — Local-First Markdown Editor" />
+    <meta
+      property="og:description"
+      content="Write Markdown visually, keep files local, and turn one file into Word, PDF, slides, e-books, or video."
+    />
+    <meta property="og:url" content="https://docblocks.com/" />
+    <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DocBlocks — Local-First Markdown Editor" />
+    <meta
+      name="twitter:description"
+      content="Write Markdown visually, keep files local, and turn one file into Word, PDF, slides, e-books, or video."
+    />
+    <meta name="twitter:image" content="https://docblocks.com/og.png" />
+
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +45,42 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
-    <title>DocBlocks</title>
+    <script src="/bootstrap-theme.js"></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://docblocks.com/#organization",
+            "name": "Bendyline",
+            "url": "https://bendyline.com/",
+            "sameAs": ["https://github.com/bendyline"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://docblocks.com/#software",
+            "name": "DocBlocks",
+            "alternateName": "DocBlocks Markdown Editor",
+            "url": "https://docblocks.com/",
+            "description": "A local-first Markdown editor for the web, desktop, VS Code, and CLI that converts one source document into Word, PDF, slides, e-books, video, and more.",
+            "applicationCategory": "ProductivityApplication",
+            "operatingSystem": "Web, Windows, macOS, Linux",
+            "isAccessibleForFree": true,
+            "license": "https://github.com/bendyline/docblocks/blob/main/LICENSE",
+            "publisher": { "@id": "https://docblocks.com/#organization" },
+            "featureList": [
+              "Local-first Markdown editing",
+              "Visual and source editing",
+              "Document workspaces",
+              "DOCX, PDF, PPTX, EPUB, HTML, MP4, and GIF export",
+              "VS Code extension",
+              "Command-line interface and local MCP server"
+            ]
+          }
+        ]
+      }
+    </script>
     <!-- Self-hosted theme fonts (Latin + Latin Extended). Copied from squisq's
          site (packages/site/public/fonts); regenerate upstream via its
          download-fonts.ps1. squisq's fontStacks expect the host page to
@@ -29,10 +96,346 @@
         width: 100%;
         overflow: hidden;
       }
+
+      :root {
+        --db-boot-bg: #ffffff;
+        --db-boot-bg-subtle: #f3eede;
+        --db-boot-bg-toolbar: #d8d0b5;
+        --db-boot-bg-selected: #7d6948;
+        --db-boot-border: #d6cdb0;
+        --db-boot-border-strong: #b5a985;
+        --db-boot-text: #2a2419;
+        --db-boot-text-secondary: #3d3528;
+        --db-boot-text-muted: #6b614a;
+        --db-boot-text-selected: #ffffff;
+        --db-boot-canvas: #ffffff;
+      }
+
+      html[data-db-theme='dark'] {
+        --db-boot-bg: #1a1812;
+        --db-boot-bg-subtle: #262219;
+        --db-boot-bg-toolbar: #3a382e;
+        --db-boot-bg-selected: #3a3528;
+        --db-boot-border: #4d4636;
+        --db-boot-border-strong: #6b6448;
+        --db-boot-text: #e8e2d0;
+        --db-boot-text-secondary: #d4ccb0;
+        --db-boot-text-muted: #a89a7c;
+        --db-boot-text-selected: #e8e2d0;
+        --db-boot-canvas: #16110b;
+      }
+
+      .db-seo-bootstrap {
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        height: 100%;
+        background: var(--db-boot-bg);
+        color: var(--db-boot-text);
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+      }
+
+      .db-seo-bootstrap-sidebar {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        border-right: 1px solid var(--db-boot-border-strong);
+        background: var(--db-boot-bg);
+      }
+
+      .db-seo-bootstrap-sidebar-header {
+        box-sizing: border-box;
+        display: flex;
+        min-height: 49px;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border-bottom: 1px solid var(--db-boot-border-strong);
+        background: var(--db-boot-bg-subtle);
+      }
+
+      .db-seo-bootstrap-logo {
+        display: block;
+        width: 80px;
+        height: 24px;
+        object-fit: contain;
+        object-position: left center;
+      }
+
+      .db-seo-bootstrap-workspace {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        padding: 6px 8px;
+        border: 1px solid var(--db-boot-border);
+        border-radius: 4px;
+        color: var(--db-boot-text-secondary);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .db-seo-bootstrap-files-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 12px 7px;
+        border-bottom: 1px solid var(--db-boot-border);
+        color: var(--db-boot-text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .db-seo-bootstrap-files-actions {
+        letter-spacing: 0.18em;
+      }
+
+      .db-seo-bootstrap-file {
+        margin-top: 2px;
+        padding: 7px 12px 7px 18px;
+        overflow: hidden;
+        background: var(--db-boot-bg-selected);
+        color: var(--db-boot-text-selected);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .db-seo-bootstrap-file::before {
+        content: '▤';
+        margin-right: 7px;
+        opacity: 0.8;
+      }
+
+      .db-seo-bootstrap-spacer {
+        flex: 1;
+      }
+
+      .db-seo-bootstrap-sidebar-nav {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 23px;
+        padding: 0 12px 0 18px;
+        border-top: 1px solid var(--db-boot-border-strong);
+        font-size: 10px;
+      }
+
+      .db-seo-bootstrap-sidebar-nav a,
+      .db-seo-bootstrap-document-nav a {
+        color: var(--db-boot-text-muted);
+        text-underline-offset: 3px;
+      }
+
+      .db-seo-bootstrap-editor {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        background: var(--db-boot-canvas);
+      }
+
+      .db-seo-bootstrap-toolbar {
+        box-sizing: border-box;
+        display: flex;
+        min-height: 49px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--db-boot-border-strong);
+        background: var(--db-boot-bg-toolbar);
+        color: var(--db-boot-text-secondary);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .db-seo-bootstrap-tabs,
+      .db-seo-bootstrap-tools {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        white-space: nowrap;
+      }
+
+      .db-seo-bootstrap-tab-active {
+        padding: 16px 2px 13px;
+        border-bottom: 3px solid var(--db-boot-bg-selected);
+        color: var(--db-boot-text);
+      }
+
+      .db-seo-bootstrap-tools {
+        color: var(--db-boot-text-muted);
+        font-size: 17px;
+        letter-spacing: 0.08em;
+      }
+
+      .db-seo-bootstrap-document-scroll {
+        flex: 1;
+        overflow: hidden;
+        background: var(--db-boot-canvas);
+      }
+
+      .db-seo-bootstrap-document {
+        box-sizing: border-box;
+        width: min(900px, calc(100% - 64px));
+        margin: 0 auto;
+        padding: clamp(42px, 7vh, 76px) 0 72px;
+        color: var(--db-boot-text);
+      }
+
+      .db-seo-bootstrap-document > * {
+        margin-top: 0;
+      }
+
+      .db-seo-bootstrap-kicker {
+        margin-bottom: 12px;
+        color: var(--db-boot-text-muted);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .db-seo-bootstrap h1 {
+        max-width: 760px;
+        margin-bottom: 12px;
+        font-family: 'DM Sans', system-ui, sans-serif;
+        font-size: 1rem;
+        font-weight: 600;
+        line-height: 1.5;
+      }
+
+      .db-seo-bootstrap-copy {
+        max-width: 720px;
+        margin-bottom: 26px;
+        color: var(--db-boot-text-secondary);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        font-size: clamp(0.95rem, 1.5vw, 1.12rem);
+        line-height: 1.65;
+      }
+
+      .db-seo-bootstrap-document-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--db-boot-border);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        html:not([data-db-theme='light']) {
+          --db-boot-bg: #1a1812;
+          --db-boot-bg-subtle: #262219;
+          --db-boot-bg-toolbar: #3a382e;
+          --db-boot-bg-selected: #3a3528;
+          --db-boot-border: #4d4636;
+          --db-boot-border-strong: #6b6448;
+          --db-boot-text: #e8e2d0;
+          --db-boot-text-secondary: #d4ccb0;
+          --db-boot-text-muted: #a89a7c;
+          --db-boot-text-selected: #e8e2d0;
+          --db-boot-canvas: #16110b;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .db-seo-bootstrap {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .db-seo-bootstrap-sidebar {
+          display: none;
+        }
+
+        .db-seo-bootstrap-toolbar {
+          padding-inline: 12px;
+        }
+
+        .db-seo-bootstrap-tabs {
+          gap: 12px;
+        }
+
+        .db-seo-bootstrap-tools {
+          gap: 10px;
+        }
+
+        .db-seo-bootstrap-tools span:nth-child(-n + 2) {
+          display: none;
+        }
+
+        .db-seo-bootstrap-document {
+          width: calc(100% - 36px);
+          padding-top: 34px;
+        }
+      }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="db-seo-bootstrap">
+        <aside class="db-seo-bootstrap-sidebar" aria-label="Document workspace">
+          <div class="db-seo-bootstrap-sidebar-header">
+            <img
+              class="db-seo-bootstrap-logo"
+              src="/_res/siteimages/docblocks.webp"
+              alt="DocBlocks"
+            />
+            <span class="db-seo-bootstrap-workspace">Browser workspace&nbsp;⌄</span>
+          </div>
+          <div class="db-seo-bootstrap-files-header">
+            <span>Files</span>
+            <span class="db-seo-bootstrap-files-actions" aria-hidden="true">＋ ▯</span>
+          </div>
+          <div class="db-seo-bootstrap-file">aboutDocBlocks.md</div>
+          <div class="db-seo-bootstrap-spacer"></div>
+          <nav class="db-seo-bootstrap-sidebar-nav" aria-label="DocBlocks policies">
+            <a href="/docs/">Docs</a><span aria-hidden="true">·</span> <a href="/terms/">Terms</a
+            ><span aria-hidden="true">·</span>
+            <a href="https://github.com/bendyline/docblocks">Issues</a>
+          </nav>
+        </aside>
+        <section class="db-seo-bootstrap-editor" aria-label="DocBlocks editor">
+          <div class="db-seo-bootstrap-toolbar" aria-hidden="true">
+            <div class="db-seo-bootstrap-tabs">
+              <span class="db-seo-bootstrap-tab-active">Write</span>
+              <span>Source</span>
+              <span>Slideshow⌄</span>
+            </div>
+            <div class="db-seo-bootstrap-tools">
+              <span>B&nbsp;&nbsp;I&nbsp;&nbsp;H1</span><span>☷</span><span>◉</span><span>↥</span>
+            </div>
+          </div>
+          <div class="db-seo-bootstrap-document-scroll">
+            <article class="db-seo-bootstrap-document">
+              <p class="db-seo-bootstrap-kicker">Local-first Markdown, everywhere</p>
+              <h1>The Markdown editor that turns one file into anything.</h1>
+              <p class="db-seo-bootstrap-copy">
+                Write visually or in source, keep your files local, and publish the same Markdown as
+                Word, PDF, slides, an e-book, a web page, or video. No account and no proprietary
+                document format.
+              </p>
+              <nav class="db-seo-bootstrap-document-nav" aria-label="Learn about DocBlocks">
+                <a href="/desktop/">Desktop</a>
+                <a href="/vscode/">VS Code</a>
+                <a href="/cli/">CLI and MCP</a>
+                <a href="/formats/">Formats</a>
+                <a href="/docs/">Documentation</a>
+              </nav>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

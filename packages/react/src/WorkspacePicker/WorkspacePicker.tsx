@@ -28,6 +28,8 @@ export interface WorkspacePickerProps {
    * the desktop when git is available — omitted, the item is hidden.
    */
   onCloneRepository?: () => void;
+  /** Forces a list refresh after an external workspace-registry mutation. */
+  refreshKey?: number;
   /** Optional className. */
   className?: string;
 }
@@ -46,6 +48,7 @@ export function WorkspacePicker({
   onSelect,
   onOpenFolder,
   onCloneRepository,
+  refreshKey,
   className,
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
@@ -68,16 +71,18 @@ export function WorkspacePicker({
 
   const refresh = useCallback(async () => {
     const list = await listWorkspaces();
-    // On desktop, hide web-only workspaces (indexeddb/native).
+    // Hide persisted workspaces from the other delivery surface, but retain
+    // session-only documents so loose files and DBKs have a visible current
+    // workspace and can be revisited until they are moved or closed.
     const filtered = electron
-      ? list.filter((w) => w.type === 'electron-native')
+      ? list.filter((w) => w.type === 'electron-native' || w.type === 'transient')
       : list.filter((w) => w.type !== 'electron-native');
     setWorkspaces(filtered);
   }, [electron]);
 
   useEffect(() => {
     refresh();
-  }, [refresh, activeWorkspaceId]);
+  }, [refresh, activeWorkspaceId, refreshKey]);
 
   const handleSelect = useCallback(
     async (ws: WorkspaceDescriptor) => {

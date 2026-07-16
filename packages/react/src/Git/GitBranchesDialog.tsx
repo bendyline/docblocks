@@ -31,11 +31,19 @@ export function GitBranchesDialog({
   useEffect(() => {
     if (!gitApi || !repositoryId) return;
     let cancelled = false;
-    void gitApi.listBranches(repositoryId).then((result) => {
-      if (cancelled) return;
-      if (result.ok) setBranches(result.value);
-      else setLoadError(result.error.message || 'Could not list branches');
-    });
+    void gitApi.listBranches(repositoryId).then(
+      (result) => {
+        if (cancelled) return;
+        if (result.ok) setBranches(result.value);
+        else setLoadError(result.error.message || 'Could not list branches');
+      },
+      // A rejected call (the host went away) left the dialog on
+      // "Loading branches…" forever. Fail visibly instead.
+      (error: unknown) => {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : 'Could not list branches');
+      },
+    );
     return () => {
       cancelled = true;
     };

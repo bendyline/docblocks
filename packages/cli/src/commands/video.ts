@@ -5,14 +5,26 @@
  * Wraps the squisq-cli's renderDocToMp4 programmatic API.
  */
 
-import { mkdir } from 'node:fs/promises';
+import { lstat, mkdir } from 'node:fs/promises';
 import { dirname, basename, extname, resolve } from 'node:path';
 import { Command } from 'commander';
-import type { VideoQuality, VideoOrientation } from '@bendyline/squisq-video';
+import {
+  resolveDimensions,
+  validateVideoExportOptions,
+  type VideoQuality,
+  type VideoOrientation,
+} from '@bendyline/squisq-video';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const VALID_QUALITIES = ['draft', 'normal', 'high'] as const;
 const VALID_ORIENTATIONS = ['landscape', 'portrait'] as const;
 const VALID_CAPTIONS = ['off', 'standard', 'social'] as const;
+
+/** Resource ceiling for direct CLI renders. 3840x2160 (4K UHD) remains supported. */
+export const CLI_VIDEO_RENDER_LIMITS = Object.freeze({
+  maximumDimension: 3_840,
+  maximumPixelsPerFrame: 8_294_400,
+});
 
 type CaptionOption = (typeof VALID_CAPTIONS)[number];
 
@@ -24,6 +36,11 @@ export interface VideoOptions {
   captions?: CaptionOption;
   width?: number;
   height?: number;
+  /**
+   * Replace an existing MP4. Off by default: the render is refused before any
+   * reading, browser capture, or FFmpeg encoding when the target exists.
+   */
+  allowOverwrite?: boolean;
   /** Cancel input preparation, browser capture, or FFmpeg encoding. */
   signal?: AbortSignal;
 }
@@ -76,6 +93,14 @@ export async function runVideo(
   }
   const captionStyle = captions === 'off' ? undefined : (captions as 'standard' | 'social');
 
+  assertCliVideoRenderBudget({
+    fps,
+    quality,
+    orientation,
+    width: opts.width,
+    height: opts.height,
+  });
+
   // Determine output path
   const inputBasename = basename(resolvedInput);
   const inputExt = extname(inputBasename);
@@ -83,6 +108,20 @@ export async function runVideo(
   const outputPath = opts.output
     ? resolve(opts.output)
     : resolve(dirname(resolvedInput), `${baseName}.mp4`);
+
+  // Refuse before reading, capturing, or encoding. The linked renderer and
+  // FFmpeg own the write itself, so this check is the only point at which an
+  // existing MP4 can be protected.
+  if (opts.allowOverwrite !== true && (await lstat(outputPath).catch(() => null))) {
+    throw new Error(
+      [
+        'Refusing to overwrite an existing file:',
+        `  ${outputPath}`,
+        'Pass --allow-overwrite to replace it, or use --output to write elsewhere.',
+      ].join('\n'),
+    );
+  }
+  throwIfAborted(opts.signal);
 
   await mkdir(dirname(outputPath), { recursive: true });
   throwIfAborted(opts.signal);
@@ -137,12 +176,44 @@ export async function runVideo(
   };
 }
 
+/** Reject unsafe dimensions before reading input or launching Playwright/FFmpeg. */
+export function assertCliVideoRenderBudget(
+  options: Pick<VideoOptions, 'fps' | 'quality' | 'orientation' | 'width' | 'height'>,
+): void {
+  validateVideoExportOptions(options);
+  const { width, height } = resolveDimensions(options);
+  for (const [label, value] of [
+    ['width', width],
+    ['height', height],
+  ] as const) {
+    if (value % 2 !== 0) {
+      throw new RangeError(
+        `Video ${label} must be an even number of pixels (got ${value}); H.264 yuv420p cannot encode odd dimensions.`,
+      );
+    }
+  }
+  const pixelsPerFrame = width * height;
+  const violations: string[] = [];
+  if (
+    width > CLI_VIDEO_RENDER_LIMITS.maximumDimension ||
+    height > CLI_VIDEO_RENDER_LIMITS.maximumDimension
+  ) {
+    violations.push(
+      `${width}x${height} exceeds the ${CLI_VIDEO_RENDER_LIMITS.maximumDimension}-pixel dimension limit`,
+    );
+  }
+  if (pixelsPerFrame > CLI_VIDEO_RENDER_LIMITS.maximumPixelsPerFrame) {
+    violations.push(
+      `${pixelsPerFrame} pixels per frame exceeds the ${CLI_VIDEO_RENDER_LIMITS.maximumPixelsPerFrame}-pixel limit`,
+    );
+  }
+  if (violations.length > 0) {
+    throw new RangeError(`Video render exceeds the CLI resource budget: ${violations.join('; ')}.`);
+  }
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('Video rendering was cancelled');
-  error.name = 'AbortError';
-  throw error;
+  throwIfSignalAborted(signal, 'Video rendering was cancelled');
 }
 
 interface VideoCommandOptions {
@@ -153,6 +224,7 @@ interface VideoCommandOptions {
   captions?: string;
   width?: string;
   height?: string;
+  allowOverwrite?: boolean;
 }
 
 export const videoCommand = new Command('video')
@@ -170,19 +242,18 @@ export const videoCommand = new Command('video')
   .option('--captions <style>', `Caption style: ${VALID_CAPTIONS.join(', ')}`, 'off')
   .option('--width <pixels>', 'Override video width')
   .option('--height <pixels>', 'Override video height')
+  .option('--allow-overwrite', 'replace an existing output MP4 instead of refusing the run')
   .action(async (inputPath: string, outputArg: string | undefined, opts: VideoCommandOptions) => {
     try {
-      if (outputArg && !opts.output) {
-        opts.output = outputArg;
-      }
       await runVideo(inputPath, {
-        output: opts.output,
+        output: selectVideoOutput(outputArg, opts.output),
         fps: parseNumberOption('--fps', opts.fps ?? '30'),
         quality: opts.quality as VideoQuality,
         orientation: opts.orientation as VideoOrientation,
         captions: opts.captions as CaptionOption,
         width: opts.width ? parseNumberOption('--width', opts.width) : undefined,
         height: opts.height ? parseNumberOption('--height', opts.height) : undefined,
+        allowOverwrite: opts.allowOverwrite,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -195,4 +266,28 @@ function parseNumberOption(name: string, value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) throw new Error(`${name} must be a finite number`);
   return parsed;
+}
+
+/**
+ * The destination can be named positionally or with `-o`, never both.
+ *
+ * Silently preferring one of two conflicting instructions writes a file the
+ * caller did not ask for; a render is expensive and the loser is invisible, so
+ * an ambiguous request is refused before anything is read or encoded.
+ */
+export function selectVideoOutput(
+  positional: string | undefined,
+  option: string | undefined,
+): string | undefined {
+  if (positional !== undefined && option !== undefined) {
+    throw new Error(
+      [
+        'Two output paths were requested:',
+        `  positional  ${positional}`,
+        `  --output    ${option}`,
+        'Pass the output path exactly once.',
+      ].join('\n'),
+    );
+  }
+  return option ?? positional;
 }

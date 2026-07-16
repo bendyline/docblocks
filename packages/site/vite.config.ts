@@ -2,6 +2,8 @@ import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import docblocksPackage from '../core/package.json';
+import { SITE_PRECACHE_GLOB, SITE_PRECACHE_MAX_BYTES } from '../../scripts/site-precache-policy.js';
 
 // Strips //# sourceMappingURL pragmas from upstream packages whose published
 // tarballs reference sourcemaps or sources that aren't actually shipped, so
@@ -22,6 +24,45 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
       };
     }
     return null;
+  },
+});
+
+const STATIC_DIRECTORY_INDEX_ROUTES = new Set([
+  '/cli/',
+  '/desktop/',
+  '/docs/',
+  '/formats/',
+  '/privacy/',
+  '/terms/',
+  '/vscode/',
+]);
+
+function rewriteStaticDirectoryIndexUrl(requestUrl: string | undefined): string | undefined {
+  if (!requestUrl) return requestUrl;
+  const url = new URL(requestUrl, 'http://localhost');
+  if (!STATIC_DIRECTORY_INDEX_ROUTES.has(url.pathname)) return requestUrl;
+  return `${url.pathname}index.html${url.search}`;
+}
+
+/**
+ * Vite's MPA middleware serves public files by their exact path but does not
+ * resolve `/desktop/` to `/desktop/index.html`. Keep the root editor isolated
+ * while giving the real static directories normal web-server index behavior
+ * during both development and `vite preview`.
+ */
+const serveStaticDirectoryIndexes = (): Plugin => ({
+  name: 'serve-static-directory-indexes',
+  configureServer(server) {
+    server.middlewares.use((request, _response, next) => {
+      request.url = rewriteStaticDirectoryIndexUrl(request.url);
+      next();
+    });
+  },
+  configurePreviewServer(server) {
+    server.middlewares.use((request, _response, next) => {
+      request.url = rewriteStaticDirectoryIndexUrl(request.url);
+      next();
+    });
   },
 });
 
@@ -96,13 +137,22 @@ const docblocksPwa = (): Plugin[] =>
     },
     workbox: {
       // Everything in dist. CNAME has no extension so it stays out.
-      globPatterns: ['**/*.{html,js,css,png,webp,ttf,woff2,webmanifest}'],
+      globPatterns: [SITE_PRECACHE_GLOB],
       // Workbox's default cap is 2 MiB, which would SILENTLY drop the main
       // bundle, the monaco chunk, and ts.worker (6 MB) from the precache.
-      // Any future chunk above this cap silently falls out too — check
-      // dist/sw.js after adding heavy dependencies.
-      maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+      // The post-build precache gate fails if an eligible file exceeds this
+      // cap or is absent from the generated manifest.
+      maximumFileSizeToCacheInBytes: SITE_PRECACHE_MAX_BYTES,
       navigateFallback: 'index.html',
+      // Only the root editor is an app-shell route. Static product pages,
+      // crawl files, and custom 404s must resolve to their own responses.
+      // Workbox tests this against `url.pathname + url.search`, so the query
+      // string has to be allowed explicitly: the manifest's "New document"
+      // jump-list shortcut navigates to `/?action=new`, and a bare `/^\/$/`
+      // would send it to the network (a browser error page when offline).
+      // The optional group keeps the fallback pinned to the root — the
+      // static routes above still resolve to their own precached documents.
+      navigateFallbackAllowlist: [/^\/(\?.*)?$/],
       cleanupOutdatedCaches: true,
       // Paired with registerType 'prompt': the waiting SW takes over only
       // when the user accepts the reload.
@@ -112,8 +162,15 @@ const docblocksPwa = (): Plugin[] =>
   });
 
 export default defineConfig({
+  // The root remains the SPA editor, while product and policy routes are
+  // real static documents copied from public/. Do not rewrite their 404s to
+  // the editor during development or preview.
+  appType: 'mpa',
   base: process.env.VITE_BASE || '/',
-  plugins: [stripBrokenSourcemapPragmas(), react(), docblocksPwa()],
+  define: {
+    __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
+  },
+  plugins: [stripBrokenSourcemapPragmas(), serveStaticDirectoryIndexes(), react(), docblocksPwa()],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy across the graph. Without this, the
@@ -189,7 +246,10 @@ export default defineConfig({
   },
   server: {
     port: 5220,
-    strictPort: true,
+    // Interactive development should not fail just because an older local
+    // server still owns 5220. Vite will announce and open the next free port.
+    // Deterministic harnesses pass --strictPort explicitly.
+    strictPort: false,
     open: true,
     fs: {
       // Allow serving files from the symlinked squisq workspace —

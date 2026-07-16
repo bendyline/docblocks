@@ -5,6 +5,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
+  FsError,
   getFileSystemProviderV2,
   moveFileSystemEntry,
   parseWorkspacePath,
@@ -64,6 +65,8 @@ export interface FileTreeState {
   selectedKind: 'file' | 'directory' | null;
   /** Whether the tree is loading. */
   loading: boolean;
+  /** Latest provider/read/watch failure, cleared by a successful refresh. */
+  error: string | null;
 }
 
 export interface FileTreeActions {
@@ -91,6 +94,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useState<'file' | 'directory' | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Track child entries for expanded directories
   const [childEntries, setChildEntries] = useState<Map<string, FileSystemEntry[]>>(new Map());
@@ -98,37 +102,58 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const providerRef = useRef(provider);
   providerRef.current = provider;
 
+  const reportError = useCallback((caught: unknown) => {
+    setError(caught instanceof Error ? caught.message : 'Unable to read this workspace.');
+  }, []);
+
   const loadRoot = useCallback(async () => {
-    if (!providerRef.current) {
+    const sourceProvider = providerRef.current;
+    if (!sourceProvider) {
       setEntries([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
+    setError(null);
     try {
-      const root = await readProviderDirectory(providerRef.current, '');
+      const root = await readProviderDirectory(sourceProvider, '');
+      if (providerRef.current !== sourceProvider) return;
       setEntries(root);
+    } catch (caught: unknown) {
+      if (providerRef.current === sourceProvider) reportError(caught);
     } finally {
-      setLoading(false);
+      if (providerRef.current === sourceProvider) setLoading(false);
     }
-  }, []);
+  }, [reportError]);
 
-  const loadChildren = useCallback(async (dirPath: string) => {
-    if (!providerRef.current) return;
-    const children = await readProviderDirectory(providerRef.current, dirPath);
-    setChildEntries((prev) => {
-      const next = new Map(prev);
-      next.set(dirPath, children);
-      return next;
-    });
-  }, []);
+  const loadChildren = useCallback(
+    async (dirPath: string) => {
+      const sourceProvider = providerRef.current;
+      if (!sourceProvider) return;
+      try {
+        const children = await readProviderDirectory(sourceProvider, dirPath);
+        if (providerRef.current !== sourceProvider) return;
+        setChildEntries((prev) => {
+          const next = new Map(prev);
+          next.set(dirPath, children);
+          return next;
+        });
+      } catch (caught: unknown) {
+        if (providerRef.current === sourceProvider) reportError(caught);
+      }
+    },
+    [reportError],
+  );
 
   // Load root on provider change
   useEffect(() => {
+    setEntries([]);
     setExpanded(new Set());
     setChildEntries(new Map());
     setSelectedPath(null);
     setSelectedKind(null);
-    loadRoot();
+    setError(null);
+    void loadRoot();
   }, [provider, loadRoot]);
 
   const toggleExpand = useCallback(
@@ -140,7 +165,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
         } else {
           next.add(path);
           // Load children when expanding
-          loadChildren(path);
+          void loadChildren(path);
         }
         return next;
       });
@@ -210,8 +235,8 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
             refreshAgain = false;
             await refreshRef.current();
           } while (refreshAgain && !disposed);
-        } catch {
-          // A later watcher event or window resume will retry the read.
+        } catch (caught: unknown) {
+          reportError(caught);
         } finally {
           refreshing = false;
           if (refreshAgain && !disposed) requestRefresh();
@@ -219,13 +244,21 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       })();
     };
 
-    const subscription = providerV2.watch(requestRefresh, { onError: requestRefresh });
-    void subscription.ready.catch(() => undefined);
+    const subscription = providerV2.watch(requestRefresh, {
+      onError: (caught) => {
+        if (disposed) return;
+        reportError(caught);
+        requestRefresh();
+      },
+    });
+    void subscription.ready.catch((caught: unknown) => {
+      if (!disposed) reportError(caught);
+    });
     return () => {
       disposed = true;
       void subscription.dispose();
     };
-  }, [provider]);
+  }, [provider, reportError]);
 
   // File System Access and IndexedDB do not expose a dependable external
   // watcher. Refreshing on resume catches changes made while this surface was
@@ -233,7 +266,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   useEffect(() => {
     if (!provider) return;
     const refreshOnFocus = () => {
-      void refreshRef.current().catch(() => undefined);
+      void refreshRef.current().catch(reportError);
     };
     const refreshOnVisibility = () => {
       if (document.visibilityState === 'visible') refreshOnFocus();
@@ -244,7 +277,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisibility);
     };
-  }, [provider]);
+  }, [provider, reportError]);
 
   const createFile = useCallback(
     async (path: string, content = '') => {
@@ -255,6 +288,19 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
           mode: 'create',
         });
       } else {
+        // The v2 path above uses `mode: 'create'`, which refuses to clobber.
+        // The legacy seam has no such mode, so enforce the same contract here
+        // -- otherwise "create a new document" silently truncates whatever is
+        // already at `path`. Unreachable with the first-party providers (they
+        // all expose v2), but `FileSystemProvider` is a public interface and a
+        // consumer's own provider would land here. Mirrors the same guard in
+        // `provider-io.ts`'s legacy branch.
+        if (await providerRef.current.exists(path)) {
+          throw new FsError('already-exists', 'File already exists.', {
+            operation: 'write',
+            path,
+          });
+        }
         await providerRef.current.writeFile(path, content);
       }
       await refresh();
@@ -338,6 +384,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     selectedPath,
     selectedKind,
     loading,
+    error,
     toggleExpand,
     select,
     reveal,

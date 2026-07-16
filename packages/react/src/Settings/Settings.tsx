@@ -3,6 +3,13 @@
 import type { ReactNode } from 'react';
 import { Dialog } from '../components/Dialog.js';
 import { ACCENT_COLORS, type AccentColor, type ThemePreference } from '../preferences/theme.js';
+import {
+  WRITE_CANVAS_LINE_SPACING_MAX,
+  WRITE_CANVAS_LINE_SPACING_MIN,
+  WRITE_CANVAS_TEXT_SIZE_MAX,
+  WRITE_CANVAS_TEXT_SIZE_MIN,
+  type WriteCanvasPreferences,
+} from '../preferences/write-canvas.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
@@ -24,7 +31,7 @@ export interface SettingsDialogProps {
 
 export function SettingsDialog({ title = 'Settings', onClose, children }: SettingsDialogProps) {
   return (
-    <Dialog title={title} onClose={onClose}>
+    <Dialog title={title} onClose={onClose} size="wide">
       {children}
     </Dialog>
   );
@@ -115,4 +122,62 @@ export function AccentColorSettings({
       </div>
     </fieldset>
   );
+}
+
+export interface WriteCanvasSettingsControlsProps {
+  value: WriteCanvasPreferences;
+  onChange: (settings: WriteCanvasPreferences) => void;
+}
+
+export function WriteCanvasSettingsControls({ value, onChange }: WriteCanvasSettingsControlsProps) {
+  return (
+    <fieldset className="db-settings-fieldset">
+      <legend className="db-settings-legend">Write canvas</legend>
+      <p className="db-settings-hint">
+        Adjust the writing view without changing the document or its exported text.
+      </p>
+      <label className="db-settings-slider">
+        <span className="db-settings-slider-header">
+          <span>Text size</span>
+          <output className="db-settings-slider-value" aria-hidden="true">
+            {value.textSize}px
+          </output>
+        </span>
+        <input
+          type="range"
+          min={WRITE_CANVAS_TEXT_SIZE_MIN}
+          max={WRITE_CANVAS_TEXT_SIZE_MAX}
+          step={1}
+          value={value.textSize}
+          aria-label="Text size"
+          aria-valuetext={`${value.textSize} pixels`}
+          onChange={(event) => onChange({ ...value, textSize: Number(event.currentTarget.value) })}
+        />
+      </label>
+      <label className="db-settings-slider">
+        <span className="db-settings-slider-header">
+          <span>Line spacing</span>
+          <output className="db-settings-slider-value" aria-hidden="true">
+            {formatLineSpacing(value.lineSpacing)}
+          </output>
+        </span>
+        <input
+          type="range"
+          min={WRITE_CANVAS_LINE_SPACING_MIN}
+          max={WRITE_CANVAS_LINE_SPACING_MAX}
+          step={0.1}
+          value={value.lineSpacing}
+          aria-label="Line spacing"
+          aria-valuetext={`${value.lineSpacing} times`}
+          onChange={(event) =>
+            onChange({ ...value, lineSpacing: Number(event.currentTarget.value) })
+          }
+        />
+      </label>
+    </fieldset>
+  );
+}
+
+function formatLineSpacing(value: number): string {
+  return `${value.toFixed(1).replace(/\.0$/, '')}\u00d7`;
 }

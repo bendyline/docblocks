@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import type {
   ArtifactRef,
+  EngineVersion,
   McpDiagnostic,
   PreviewItem,
   PreviewItemKind,
@@ -32,6 +33,25 @@ export interface PreviewRequestOptions {
   maxItems?: number;
   width?: number;
   height?: number;
+}
+
+/**
+ * Fingerprinting the linked runtime is I/O-bound, so it is awaited rather than
+ * computed inline: a preview is served by the same stdio server that must stay
+ * responsive to progress and cancellation traffic. The result is cached in
+ * `version.ts`, so only the first call per process pays for the walk.
+ */
+async function previewEngineVersions(): Promise<EngineVersion[]> {
+  return [
+    { name: 'docblocks', version: getPackageVersion() },
+    {
+      name: '@bendyline/squisq-cli',
+      version: await getDependencyRuntimeVersion(
+        '@bendyline/squisq-cli',
+        '@bendyline/squisq-cli/api',
+      ),
+    },
+  ];
 }
 
 export interface CapturedPreview {
@@ -128,6 +148,7 @@ export async function previewPreparedDocument(
   const itemKind = previewItemKind(prepared.sourceFormat);
   const items: PreviewItem[] = [];
   const createdArtifactUris: string[] = [];
+  const engineVersions = await previewEngineVersions();
   try {
     for (const captured of rendered.captures) {
       throwIfAborted(signal);
@@ -144,16 +165,7 @@ export async function previewPreparedDocument(
             { name: 'height', value: captured.height },
             { name: 'itemIndex', value: captured.index },
           ],
-          engineVersions: [
-            { name: 'docblocks', version: getPackageVersion() },
-            {
-              name: '@bendyline/squisq-cli',
-              version: getDependencyRuntimeVersion(
-                '@bendyline/squisq-cli',
-                '@bendyline/squisq-cli/api',
-              ),
-            },
-          ],
+          engineVersions,
         },
         signal,
       );
@@ -263,16 +275,7 @@ export async function previewVideoSource(
           { name: 'height', value: options.height },
           { name: 'itemIndex', value: 0 },
         ],
-        engineVersions: [
-          { name: 'docblocks', version: getPackageVersion() },
-          {
-            name: '@bendyline/squisq-cli',
-            version: getDependencyRuntimeVersion(
-              '@bendyline/squisq-cli',
-              '@bendyline/squisq-cli/api',
-            ),
-          },
-        ],
+        engineVersions: await previewEngineVersions(),
       },
       signal,
     );

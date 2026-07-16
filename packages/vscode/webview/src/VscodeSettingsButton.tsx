@@ -1,17 +1,27 @@
 import { useState } from 'react';
-import type { DocBlocksAccentColor, VscodeEditorSettings } from '@bendyline/docblocks/vscode';
-import { AccentColorSettings, SettingsDialog } from '@bendyline/docblocks-react/settings';
+import type {
+  DocBlocksAccentColor,
+  VscodeEditorSettings,
+  VscodeWriteCanvasSettings,
+} from '@bendyline/docblocks/vscode';
+import {
+  AccentColorSettings,
+  SettingsDialog,
+  WriteCanvasSettingsControls,
+} from '@bendyline/docblocks-react/settings';
 
 export interface VscodeSettingsButtonProps {
   settings: VscodeEditorSettings;
   onAutoSaveChange: (enabled: boolean) => void;
   onAccentColorChange: (color: DocBlocksAccentColor) => void;
+  onWriteCanvasSettingsChange: (settings: VscodeWriteCanvasSettings) => void;
 }
 
 export function VscodeSettingsButton({
   settings,
   onAutoSaveChange,
   onAccentColorChange,
+  onWriteCanvasSettingsChange,
 }: VscodeSettingsButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -33,6 +43,10 @@ export function VscodeSettingsButton({
             value={settings.accentColor}
             name="vscode-accent-color"
             onChange={onAccentColorChange}
+          />
+          <WriteCanvasSettingsControls
+            value={settings.writeCanvasSettings}
+            onChange={onWriteCanvasSettingsChange}
           />
 
           <fieldset className="db-settings-fieldset">

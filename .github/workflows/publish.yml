@@ -15,6 +15,8 @@ on:
 permissions:
   contents: write
   pages: write
+  # Load-bearing for npm publishing, not just provenance: this repo has NO
+  # NPM_TOKEN. See the "Semantic Release" step for the full explanation.
   id-token: write
   issues: write
   pull-requests: write
@@ -31,12 +33,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -52,6 +54,45 @@ jobs:
         run: xvfb-run -a npm run all
 
       # ── Release ──────────────────────────────────────────────────
+      # multi-semantic-release deep-imports semantic-release's private
+      # internals and swallows the failure if that path ever disappears,
+      # degrading to stubs mid-release. Fail here, loudly, instead.
+      - name: Verify release toolchain
+        if: inputs.publish_release
+        run: npm run check:release-toolchain
+
+      # Semantic Release runs FIRST: it is what rewrites every workspace
+      # manifest to the released version. Packing before it produced tarballs
+      # and a vsix stamped with the previous version, so the uploaded assets
+      # never matched the tag or what npm actually published.
+      #
+      # npm AUTHENTICATION IS NOT IN THIS REPO. There is deliberately no
+      # NPM_TOKEN/NODE_AUTH_TOKEN here: publishing relies on npm Trusted
+      # Publishing (OIDC), which is configured OUTSIDE this repo on npmjs.com.
+      # Each published package (@bendyline/docblocks, -react, -cli) must have a
+      # trusted publisher registered pointing at:
+      #     repository: bendyline/docblocks
+      #     workflow:   .github/workflows/publish.yml
+      # (no GitHub Environment is configured on this job, so the trusted
+      # publisher must not require one either).
+      #
+      # How it works: @semantic-release/npm's verify-auth exchanges this job's
+      # GitHub OIDC token for a short-lived npm token, and only falls back to
+      # NPM_TOKEN if that exchange fails. That is why `id-token: write` above
+      # and setup-node's `registry-url` below are both required -- the exchange
+      # only runs when the resolved registry is exactly registry.npmjs.org.
+      # `provenance: true` in .releaserc.json rides on the same OIDC token.
+      #
+      # IF A RELEASE EVER FAILS WITH "No npm token specified." (ENONPMTOKEN),
+      # the trusted-publisher config on npmjs.com has been dropped or no longer
+      # matches this workflow's path/repo -- it is NOT a missing secret.
+      # Docs: https://docs.npmjs.com/trusted-publishers
+      - name: Semantic Release
+        if: inputs.publish_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx multi-semantic-release --ignore-packages=packages/site,packages/vscode --sequential-prepare
+
       - name: Pack tarballs
         if: inputs.publish_release
         run: |
@@ -67,26 +108,48 @@ jobs:
 
       - name: Upload release assets
         if: inputs.publish_release
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-assets
           path: release-assets/*
           retention-days: 14
 
-      - name: Semantic Release
+      # multi-semantic-release runs @semantic-release/git once per package with
+      # that package directory as cwd, so the root lockfile can never be staged
+      # by the release commits themselves. Refresh it against the freshly bumped
+      # workspace manifests here; without this, `npm ci` on main fails with
+      # "lock file does not satisfy" until someone repairs it by hand.
+      - name: Sync root lockfile
         if: inputs.publish_release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx multi-semantic-release --ignore-packages=packages/site,packages/vscode --sequential-prepare
+        shell: bash
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if git diff --quiet -- package-lock.json; then
+            echo "Root lockfile already matches the released manifests."
+            exit 0
+          fi
+          git config user.name 'semantic-release-bot'
+          git config user.email 'semantic-release-bot@martynus.net'
+          git add package-lock.json
+          git commit -m 'chore(release): sync root lockfile [skip ci]'
+          git push origin HEAD:${{ github.ref_name }}
 
       # ── Pages ────────────────────────────────────────────────────
       - name: Build site
         if: inputs.deploy_pages
         run: npm run build -w docblocks-site
 
+      # This is the only build whose bits reach users, and it is built here --
+      # after the version bump -- so it is NOT the build `npm run all` gated in
+      # CI. Any chunk over the 10 MiB precache cap drops out of the manifest
+      # silently, so the offline promise has to be re-verified on this artifact.
+      - name: Verify site precache manifest
+        if: inputs.deploy_pages
+        run: npm run check:site-precache
+
       - name: Upload pages artifact
         if: inputs.deploy_pages
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: packages/site/dist
 
@@ -102,4 +165,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

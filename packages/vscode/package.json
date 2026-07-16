@@ -11,6 +11,7 @@
     "url": "https://github.com/bendyline/docblocks.git",
     "directory": "packages/vscode"
   },
+  "homepage": "https://docblocks.com/vscode/",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -53,6 +54,23 @@
             "Gray accent"
           ],
           "description": "Accent color used by DocBlocks editor controls in both light and dark VS Code themes."
+        },
+        "docblocks.writeCanvasTextSize": {
+          "type": "number",
+          "default": 16,
+          "minimum": 12,
+          "maximum": 32,
+          "scope": "window",
+          "description": "Base text size in CSS pixels for the DocBlocks Write canvas."
+        },
+        "docblocks.writeCanvasLineSpacing": {
+          "type": "number",
+          "default": 1.7,
+          "minimum": 1.2,
+          "maximum": 2.4,
+          "multipleOf": 0.1,
+          "scope": "window",
+          "description": "Line-height multiplier for body text in the DocBlocks Write canvas."
         }
       }
     },
@@ -69,7 +87,7 @@
       },
       {
         "command": "docblocks.openSetup",
-        "title": "DocBlocks: Open Setup",
+        "title": "Open DocBlocks Tools (CLI+MCP) Setup",
         "category": "DocBlocks"
       }
     ],
@@ -112,29 +130,33 @@
     "build": "tsup && npm run build:webview",
     "build:webview": "vite build --config webview/vite.config.ts",
     "package:vsix": "npm run build && vsce package --no-dependencies",
-    "typecheck": "npm run typecheck:extension && npm run typecheck:webview",
+    "typecheck": "npm run typecheck:extension && npm run typecheck:webview && npm run typecheck:desktop-e2e",
     "typecheck:extension": "tsc --noEmit -p tsconfig.json",
     "typecheck:webview": "tsc --noEmit -p webview/tsconfig.json",
+    "typecheck:desktop-e2e": "tsc --noEmit -p tsconfig.desktop-e2e.json",
     "test:web": "vscode-test-web --extensionDevelopmentPath=. --browser=none --port=3100",
-    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts"
+    "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
+    "test:e2e:desktop-host": "npm run build && tsx desktop-e2e/run.ts"
   },
   "dependencies": {
-    "@bendyline/docblocks": "1.1.2",
-    "@bendyline/docblocks-react": "1.1.2",
-    "@bendyline/squisq": "2.0.1",
-    "@bendyline/squisq-editor-react": "2.0.1",
-    "@bendyline/squisq-react": "2.0.1"
+    "@bendyline/docblocks": "*",
+    "@bendyline/docblocks-react": "*",
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-react": "2.3.0",
+    "jsonc-parser": "3.3.1"
   },
   "devDependencies": {
     "@types/vscode": "1.85.0",
     "@vitejs/plugin-react": "4.7.0",
+    "@vscode/test-electron": "3.0.0",
     "@vscode/test-web": "0.0.80",
     "@vscode/vsce": "3.9.2",
-    "monaco-editor": "0.53.0",
+    "monaco-editor": "0.50.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "6.4.2"
+    "vite": "6.4.3"
   }
 }

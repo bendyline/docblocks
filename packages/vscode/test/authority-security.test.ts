@@ -114,20 +114,47 @@ describe('VS Code authority boundary', () => {
     expect(
       parseWebviewToExtensionMessage({ type: 'setAccentColor', accentColor: 'chartreuse' }),
     ).to.equal(null);
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'setWriteCanvasSettings',
+        settings: { textSize: 20, lineSpacing: 1.8 },
+      }),
+    ).to.deep.equal({
+      type: 'setWriteCanvasSettings',
+      settings: { textSize: 20, lineSpacing: 1.8 },
+    });
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'setWriteCanvasSettings',
+        settings: { textSize: 100, lineSpacing: 1.8 },
+      }),
+    ).to.equal(null);
 
     expect(
       parseExtensionToWebviewMessage({
         type: 'editorSettings',
-        settings: { autoSave: true, accentColor: 'purple' },
+        settings: {
+          autoSave: true,
+          accentColor: 'purple',
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+        },
       }),
     ).to.deep.equal({
       type: 'editorSettings',
-      settings: { autoSave: true, accentColor: 'purple' },
+      settings: {
+        autoSave: true,
+        accentColor: 'purple',
+        writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+      },
     });
     expect(
       parseExtensionToWebviewMessage({
         type: 'editorSettings',
-        settings: { autoSave: 'yes', accentColor: 'purple' },
+        settings: {
+          autoSave: 'yes',
+          accentColor: 'purple',
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+        },
       }),
     ).to.equal(null);
   });
@@ -280,5 +307,10 @@ describe('VS Code authority boundary', () => {
     expect(parseSetupWebviewMessage({ type: 'installCli', command: 'malicious command' })).to.equal(
       null,
     );
+    expect(parseSetupWebviewMessage({ type: 'configureMcp' })).to.deep.equal({
+      type: 'configureMcp',
+    });
+    expect(parseSetupWebviewMessage({ type: 'configureMcp', path: '../mcp.json' })).to.equal(null);
+    expect(parseSetupWebviewMessage({ type: 'initProject' })).to.equal(null);
   });
 });

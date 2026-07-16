@@ -17,47 +17,22 @@
  */
 
 import { app } from 'electron';
-import fs from 'node:fs/promises';
 import path from 'node:path';
+import { type Settings } from './settings-schema.js';
+import {
+  atomicWriteSettingsFile,
+  readSettingsFileWithRecovery,
+  type SettingsRecovery,
+} from './settings-file.js';
+import { SettingsWriteQueue } from './settings-write-queue.js';
 
-export interface PersistedWorkspace {
-  id: string;
-  name: string;
-  rootPath: string;
-  /**
-   * Base64 security-scoped bookmark. Only populated in Mac App Store builds,
-   * where the sandbox otherwise loses access to user-picked folders across
-   * launches. Ignored (and never written) in non-sandboxed builds.
-   */
-  bookmark?: string;
-}
-
-/** A user-approved native export path and its optional macOS sandbox bookmark. */
-export interface PersistedExportTargetAccess {
-  path: string;
-  bookmark?: string;
-  /** Present only when the native picker explicitly approved this exact file. */
-  confirmedByPicker?: true;
-}
-
-/** Last export targets for one document, retained separately by file extension. */
-export interface PersistedExportTarget {
-  last?: PersistedExportTargetAccess;
-  byExtension?: Record<string, PersistedExportTargetAccess>;
-}
-
-export interface Settings {
-  /** Absolute path the first-launch bootstrap should use. */
-  defaultWorkspaceRoot?: string;
-  /** All folders the user has opened — rebuilt into the fs whitelist. */
-  workspaces: PersistedWorkspace[];
-  /** Whether the user has been shown the iCloud mitigation dialog. */
-  iCloudPromptShown?: boolean;
-  /** Parent directory of the most recent "Clone repository" destination. */
-  lastCloneParentDir?: string;
-  /** Native export targets keyed by a stable hash of workspace + document path. */
-  exportTargets?: Record<string, PersistedExportTarget>;
-}
+export type {
+  PersistedExportTarget,
+  PersistedExportTargetAccess,
+  PersistedWorkspace,
+  Settings,
+} from './settings-schema.js';
+export type { SettingsRecovery } from './settings-file.js';
 
 const DEFAULT_SETTINGS: Settings = { workspaces: [] };
 
@@ -70,53 +45,47 @@ let cachedSettings: Settings | null = null;
 let pendingSettings: Settings | null = null;
 /** Timer for the debounced flush. */
 let flushTimer: NodeJS.Timeout | null = null;
-/** Promise that resolves when the current in-flight write completes. */
-let inflight: Promise<void> = Promise.resolve();
+/** Recovery performed by the read that populated the cache, until reported. */
+let unreportedRecovery: SettingsRecovery | null = null;
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
-async function atomicWrite(file: string, contents: string): Promise<void> {
-  const tmp = `${file}.tmp`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(tmp, contents, 'utf8');
-  // fs.rename on Windows can EPERM if the destination is held open by
-  // another process. We retry a handful of times with a small backoff;
-  // almost always the first retry succeeds.
-  const maxAttempts = 5;
-  let lastErr: unknown;
-  for (let i = 0; i < maxAttempts; i++) {
-    try {
-      await fs.rename(tmp, file);
-      return;
-    } catch (err) {
-      lastErr = err;
-      await new Promise((r) => setTimeout(r, 50 * (i + 1)));
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+/** Where settings live on disk — for telling the user where to look. */
+export function settingsFilePath(): string {
+  return settingsPath();
 }
 
+/**
+ * Never throws. A broken settings file degrades to defaults so that launch can
+ * continue — see `readSettingsFileWithRecovery` for how the original file is
+ * treated. Callers that can reach the user should drain `takeSettingsRecovery`
+ * afterwards so the degradation is surfaced rather than silently absorbed.
+ */
 export async function readSettings(): Promise<Settings> {
   if (cachedSettings) return cachedSettings;
-  try {
-    const raw = await fs.readFile(settingsPath(), 'utf8');
-    const parsed = JSON.parse(raw) as Partial<Settings>;
-    cachedSettings = {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      workspaces: parsed.workspaces ?? [],
-    };
-  } catch {
-    cachedSettings = { ...DEFAULT_SETTINGS };
-  }
+  const result = await readSettingsFileWithRecovery(settingsPath());
+  if (result.recovery) unreportedRecovery = result.recovery;
+  cachedSettings = result.settings ?? {
+    ...DEFAULT_SETTINGS,
+    workspaces: [],
+  };
   return cachedSettings;
 }
 
-async function commit(snapshot: Settings): Promise<void> {
-  await atomicWrite(settingsPath(), JSON.stringify(snapshot, null, 2));
+/** Claim the pending recovery notice, if any. Reporting it is the caller's job. */
+export function takeSettingsRecovery(): SettingsRecovery | null {
+  const recovery = unreportedRecovery;
+  unreportedRecovery = null;
+  return recovery;
 }
+
+async function commit(snapshot: Settings): Promise<void> {
+  await atomicWriteSettingsFile(settingsPath(), JSON.stringify(snapshot, null, 2));
+}
+
+const writeQueue = new SettingsWriteQueue(commit);
 
 /** Force an immediate synchronous-looking flush. Safe to call anywhere. */
 export async function flushSettings(): Promise<void> {
@@ -127,9 +96,9 @@ export async function flushSettings(): Promise<void> {
   if (pendingSettings) {
     const snapshot = pendingSettings;
     pendingSettings = null;
-    inflight = inflight.then(() => commit(snapshot));
+    writeQueue.enqueue(snapshot);
   }
-  await inflight;
+  await writeQueue.drain();
 }
 
 /** Replace the current settings and schedule a debounced flush. */
@@ -142,7 +111,7 @@ export async function writeSettings(settings: Settings): Promise<void> {
     if (!pendingSettings) return;
     const snapshot = pendingSettings;
     pendingSettings = null;
-    inflight = inflight.then(() => commit(snapshot));
+    writeQueue.enqueue(snapshot);
   }, DEBOUNCE_MS);
 }
 

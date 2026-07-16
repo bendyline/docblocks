@@ -46,7 +46,7 @@ export function UpdateStatusBanner() {
   switch (status.kind) {
     case 'available':
       return (
-        <div className="db-update-banner db-update-banner--info">
+        <div className="db-update-banner db-update-banner--info" role="status" aria-live="polite">
           <span>
             Update available — DocBlocks {status.version} is downloading in the background.
           </span>
@@ -66,14 +66,14 @@ export function UpdateStatusBanner() {
 
     case 'downloading':
       return (
-        <div className="db-update-banner db-update-banner--info">
+        <div className="db-update-banner db-update-banner--info" role="status" aria-live="polite">
           <span>Downloading update… {Math.round(status.percent)}%</span>
         </div>
       );
 
     case 'downloaded':
       return (
-        <div className="db-update-banner db-update-banner--ready" aria-live="polite">
+        <div className="db-update-banner db-update-banner--ready" role="status" aria-live="polite">
           <span>
             {installError ??
               (installing
@@ -105,7 +105,11 @@ export function UpdateStatusBanner() {
     case 'error':
       if (dismissedError === status.message) return null;
       return (
-        <div className="db-update-banner db-update-banner--error">
+        <div
+          className="db-update-banner db-update-banner--error"
+          role="alert"
+          aria-live="assertive"
+        >
           <span>Update check failed: {status.message}</span>
           <button
             type="button"

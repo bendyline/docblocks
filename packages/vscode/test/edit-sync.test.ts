@@ -167,6 +167,64 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('flushes the latest revision when a save request is overtaken by a newer edit', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+
+    // Ctrl+S captures revision 1, then the user keeps typing. Edits reach the
+    // session through a faster ingress than save requests, so revision 2 is
+    // acknowledged before the save request for revision 1 is processed.
+    const staleSave = saveEnvelope(sync);
+    expect(sync.acceptEdit(editEnvelope(sync, 1, 'at Ctrl+S')).accepted).to.equal(true);
+    const overtakenSave = saveEnvelope(sync);
+    expect(sync.acceptEdit(editEnvelope(sync, 2, 'typed after Ctrl+S')).accepted).to.equal(true);
+    expect(sync.getSnapshot().acknowledgedClientRevision).to.equal(2);
+
+    // The save intent must survive: revision 2 is a complete snapshot of the
+    // same branch, so persisting it honours the request rather than dropping it.
+    const saved = await sync.save(overtakenSave);
+    expect(saved.status).to.equal('saved');
+    expect(adapter.commits).to.deep.equal(['typed after Ctrl+S']);
+    expect(adapter.content).to.equal('typed after Ctrl+S');
+
+    // Even a request from before any edit only asks for "save what I can see".
+    expect(staleSave.clientRevision).to.equal(0);
+    await sync.save(staleSave);
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    sync.dispose();
+  });
+
+  it('refuses to save a client revision the host has never accepted', async () => {
+    const adapter = new FakeDocumentAdapter();
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local'));
+
+    // Ahead of the acknowledged revision is still a real failure: the session
+    // does not hold that content and must not claim to have persisted it.
+    const failure = await sync.save({ ...saveEnvelope(sync), clientRevision: 7 }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).to.be.instanceOf(Error);
+    expect((failure as Error).message).to.contain('Cannot save client revision 7');
+    expect(adapter.commits).to.deep.equal([]);
+
+    // Branch identity is still enforced independently of the revision.
+    const staleBranch = await sync.save({ ...saveEnvelope(sync), sessionId: 'obsolete' }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(staleBranch).to.be.instanceOf(Error);
+    expect((staleBranch as Error).message).to.contain('obsolete document session');
+    sync.dispose();
+  });
+
   it('reports manual-save failure and succeeds honestly when retried', async () => {
     const adapter = new FakeDocumentAdapter();
     const sync = await VscodeDocumentSync.create(adapter, {
@@ -268,6 +326,68 @@ describe('VS Code edit sync', () => {
     expect(adapter.content).to.equal('\r\n\r\n');
     expect(sync.getSnapshot().session.status).to.equal('saved');
     expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('accepts a configured trimTrailingWhitespace rewrite during its own save', async () => {
+    const adapter = new FakeDocumentAdapter();
+    // Markdown hard line breaks are trailing double-spaces, so this is what
+    // every save looks like for a user with files.trimTrailingWhitespace on.
+    adapter.transformOnSave = (content) => content.replace(/[^\S\n]+$/gmu, '');
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+      readSaveParticipantPolicy: () => ({ trimTrailingWhitespace: true }),
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'hard break  \nnext  \n'));
+
+    await sync.save(saveEnvelope(sync));
+
+    expect(adapter.content).to.equal('hard break\nnext\n');
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    expect(sync.getSnapshot().session.conflict).to.equal(null);
+    sync.dispose();
+  });
+
+  it('conflicts on a trailing-whitespace rewrite when trimTrailingWhitespace is off', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.transformOnSave = (content) => content.replace(/[^\S\n]+$/gmu, '');
+    // Default policy: nothing beyond VS Code's own newline handling.
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'hard break  \nnext  \n'));
+
+    const failure = await sync.save(saveEnvelope(sync)).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('hard break  \nnext  \n');
+    sync.dispose();
+  });
+
+  it('still conflicts on a non-whitespace rewrite even with trimming configured', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.transformOnSave = () => 'someone else entirely';
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 1_000,
+      createSessionId: () => 'session-a',
+      readSaveParticipantPolicy: () => ({ trimTrailingWhitespace: true }),
+    });
+    sync.acceptEdit(editEnvelope(sync, 1, 'local  \n'));
+
+    const failure = await sync.save(saveEnvelope(sync)).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(failure).to.be.instanceOf(Error);
+    expect(sync.getSnapshot().session.status).to.equal('conflict');
+    expect(sync.getSnapshot().session.content).to.equal('local  \n');
     sync.dispose();
   });
 

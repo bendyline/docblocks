@@ -19,6 +19,9 @@ import {
   workspacePathDirname,
   type WorkspacePath,
 } from './workspace-path.js';
+import { copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByPath, compareText } from './internal/entry-order.js';
+import { isRecord } from './internal/records.js';
 import {
   parseFileSystemVersion,
   type FileSystemCreateDirectoryOptions,
@@ -421,7 +424,7 @@ function normalizeDirectoryListing(
     if (seen.has(entry.path)) throw new TypeError('Filesystem listing contained a duplicate path.');
     seen.add(entry.path);
   }
-  const ordered = [...entries].sort(compareDirectoryEntries);
+  const ordered = [...entries].sort(compareSnapshotsByPath);
   if (ordered.some((entry, index) => entry.path !== entries[index]?.path)) {
     throw new TypeError('Filesystem listing was not in canonical deterministic order.');
   }
@@ -553,18 +556,6 @@ function assertCapabilities(value: FileSystemProviderCapabilities, operation: Fs
   }
 }
 
-function compareDirectoryEntries(
-  left: FileSystemEntrySnapshot,
-  right: FileSystemEntrySnapshot,
-): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.path, right.path);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
 function isWatchOrigin(value: unknown): value is FileSystemWatchEvent['origin'] {
   return value === 'local' || value === 'external' || value === 'unknown';
 }
@@ -581,10 +572,6 @@ function isNonNegativeSafeInteger(value: unknown): value is number {
 
 function isPositiveSafeInteger(value: unknown): value is number {
   return isNonNegativeSafeInteger(value) && value > 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function invalidTransport(operation: FsOperation, message: string): FsError {
@@ -604,15 +591,6 @@ function withOperation(error: FsError, operation: FsOperation): FsError {
     destinationPath: error.destinationPath ?? undefined,
     retryable: error.retryable,
   });
-}
-
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
 }
 
 function copyWireBuffer(data: ArrayBuffer): ArrayBuffer {

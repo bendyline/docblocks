@@ -5,6 +5,8 @@ import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { collectImagePaths, docToHtml } from '@bendyline/squisq-formats/html';
 import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import { readContainedFile } from './contained-file.js';
+import { isPathInside } from './internal/paths.js';
+import { isNodeErrorCode } from './internal/node-error.js';
 
 export interface ReferencedAssetPath {
   assetRoot: string;
@@ -21,6 +23,8 @@ export interface RenderMarkdownHtmlOptions {
   maxAssetBytes?: number;
   /** Optional surface policy applied after mandatory physical containment. */
   allowReferencedAsset?: (asset: ReferencedAssetPath) => boolean;
+  /** Test/programmatic seam; the CLI reports dropped assets on stderr. */
+  onWarning?: (message: string) => void;
 }
 
 const MAX_REFERENCED_IMAGES = 100;
@@ -41,6 +45,7 @@ export async function renderMarkdownHtml(
           options.assetRoot,
           options.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES,
           options.allowReferencedAsset,
+          options.onWarning ?? ((message) => console.warn(message)),
         )
       : undefined;
 
@@ -59,14 +64,26 @@ async function readReferencedImages(
   assetRoot: string,
   maxAssetBytes: number,
   allowReferencedAsset: RenderMarkdownHtmlOptions['allowReferencedAsset'],
+  warn: (message: string) => void,
 ): Promise<Map<string, ArrayBuffer>> {
   const images = new Map<string, ArrayBuffer>();
-  const root = await realpath(path.resolve(assetRoot)).catch(() => null);
-  const baseDir = await realpath(path.dirname(path.resolve(sourcePath))).catch(() => null);
+  const root = await realpathIfPresent(path.resolve(assetRoot));
+  const baseDir = await realpathIfPresent(path.dirname(path.resolve(sourcePath)));
   if (!root || !baseDir || !isPathInside(root, baseDir)) return images;
   let totalBytes = 0;
 
-  for (const imagePath of [...collectImagePaths(doc)].slice(0, MAX_REFERENCED_IMAGES)) {
+  // The budget stands; only its silence was the defect. Dropping images past
+  // the cap produced valid-looking HTML with invisibly broken images.
+  const referenced = [...collectImagePaths(doc)];
+  const embeddable = referenced.slice(0, MAX_REFERENCED_IMAGES);
+  const dropped = referenced.slice(MAX_REFERENCED_IMAGES);
+  if (dropped.length > 0) {
+    warn(
+      `Skipped ${dropped.length} of ${referenced.length} referenced images: the render embeds at most ${MAX_REFERENCED_IMAGES}. Not embedded: ${describeList(dropped)}`,
+    );
+  }
+
+  for (const imagePath of embeddable) {
     if (!isLocalRelativePath(imagePath)) continue;
 
     const normalizedPath = stripUrlSuffix(imagePath);
@@ -87,22 +104,55 @@ async function readReferencedImages(
         continue;
       }
       const info = await stat(physicalPath);
-      if (
-        !info.isFile() ||
-        info.size > MAX_SINGLE_ASSET_BYTES ||
-        totalBytes + info.size > maxAssetBytes
-      ) {
+      if (!info.isFile()) {
+        warn(`Skipped referenced image "${imagePath}": it is not a regular file.`);
+        continue;
+      }
+      if (info.size > MAX_SINGLE_ASSET_BYTES) {
+        warn(
+          `Skipped referenced image "${imagePath}": ${info.size} bytes exceeds the ${MAX_SINGLE_ASSET_BYTES}-byte per-image embed limit.`,
+        );
+        continue;
+      }
+      if (totalBytes + info.size > maxAssetBytes) {
+        warn(
+          `Skipped referenced image "${imagePath}": embedding ${info.size} more bytes would exceed the ${maxAssetBytes}-byte total image budget (${totalBytes} bytes already embedded).`,
+        );
         continue;
       }
       const data = await readContainedFile(root, physicalPath, MAX_SINGLE_ASSET_BYTES);
       totalBytes += data.byteLength;
       images.set(imagePath, toExactArrayBuffer(data));
-    } catch {
-      // Missing assets should not prevent the document from rendering.
+    } catch (error: unknown) {
+      // A missing referenced asset is rendered as a normal broken image. Other
+      // failures must stay visible rather than silently producing incomplete HTML.
+      if (isMissingPathError(error)) continue;
+      const contextualError = new Error(`Failed to embed referenced image "${imagePath}".`);
+      (contextualError as Error & { cause?: unknown }).cause = error;
+      throw contextualError;
     }
   }
 
   return images;
+}
+
+async function realpathIfPresent(candidate: string): Promise<string | null> {
+  try {
+    return await realpath(candidate);
+  } catch (error: unknown) {
+    if (isMissingPathError(error)) return null;
+    throw error;
+  }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return isNodeErrorCode(error, ['ENOENT', 'ENOTDIR']);
+}
+
+function describeList(values: readonly string[], shown = 5): string {
+  const head = values.slice(0, shown).map((value) => `"${value}"`);
+  const remaining = values.length - head.length;
+  return remaining > 0 ? `${head.join(', ')} (and ${remaining} more)` : head.join(', ');
 }
 
 function isLocalRelativePath(candidate: string): boolean {
@@ -116,11 +166,6 @@ function isLocalRelativePath(candidate: string): boolean {
 
 function stripUrlSuffix(candidate: string): string {
   return candidate.split(/[?#]/, 1)[0] ?? candidate;
-}
-
-function isPathInside(rootAbs: string, candidateAbs: string): boolean {
-  const rel = path.relative(path.resolve(rootAbs), path.resolve(candidateAbs));
-  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
 }
 
 function toExactArrayBuffer(data: Uint8Array): ArrayBuffer {

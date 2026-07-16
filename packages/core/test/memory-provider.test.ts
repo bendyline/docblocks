@@ -8,6 +8,7 @@ import {
   parseWorkspacePath,
   type FileSystemWatchEvent,
 } from '../src/filesystem/index.js';
+import { defineFileSystemProviderV1Conformance } from './helpers/filesystem-v1-conformance.js';
 
 describe('MemoryFileSystemProvider', () => {
   let fs: MemoryFileSystemProvider;
@@ -45,10 +46,14 @@ describe('MemoryFileSystemProvider', () => {
   it('keeps compatibility payload kind coupled to the bytes read', async () => {
     await fs.writeFile('/race.dat', 'text baseline');
 
+    // The read is issued before the overwrite, so it must observe the bytes that
+    // were current when it was issued rather than the ones that replace them.
     const textReadAsBinary = fs.readBinary('/race.dat');
     await fs.writeBinary('/race.dat', new Uint8Array([9, 8, 7]));
 
-    expect(await textReadAsBinary).to.equal(null);
+    expect([...new Uint8Array((await textReadAsBinary)!)]).to.deep.equal([
+      ...new TextEncoder().encode('text baseline'),
+    ]);
     expect([...new Uint8Array((await fs.readBinary('/race.dat'))!)]).to.deep.equal([9, 8, 7]);
   });
 
@@ -98,8 +103,10 @@ describe('MemoryFileSystemProvider', () => {
     expect(await fs.readFile('/img/a.png')).to.equal(
       new TextDecoder().decode(new Uint8Array([1, 2, 3, 4])),
     );
+    // Files written through the text API are still bytes, and readBinary is the
+    // byte view of any file — reporting null here would read as "no such file".
     await fs.writeFile('/t.md', 'x');
-    expect(await fs.readBinary('/t.md')).to.equal(null);
+    expect([...new Uint8Array((await fs.readBinary('/t.md'))!)]).to.deep.equal([0x78]);
   });
 
   it('atomically replaces the complete tree and removes stale entries', async () => {
@@ -319,3 +326,8 @@ describe('MemoryFileSystemProvider', () => {
       .with.property('code', 'disposed');
   });
 });
+
+defineFileSystemProviderV1Conformance(
+  'MemoryFileSystemProvider',
+  () => new MemoryFileSystemProvider('conformance', 'Conformance'),
+);

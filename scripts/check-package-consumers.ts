@@ -46,12 +46,20 @@ const packages: readonly PackageUnderTest[] = [
       '@bendyline/docblocks/document',
       '@bendyline/docblocks/workspace',
       '@bendyline/docblocks/host',
+      '@bendyline/docblocks/share',
+      '@bendyline/docblocks/vscode',
+      '@bendyline/docblocks/mcp',
+      '@bendyline/docblocks/mcp/zod',
     ],
   },
   {
     name: '@bendyline/docblocks-react',
     directory: 'packages/react',
-    runtimeImports: ['@bendyline/docblocks-react/settings'],
+    runtimeImports: [
+      '@bendyline/docblocks-react/export',
+      '@bendyline/docblocks-react/settings',
+      '@bendyline/docblocks-react/editor',
+    ],
   },
   {
     name: '@bendyline/docblocks-cli',
@@ -246,6 +254,18 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
       throw new Error(`${packageName}: package target is missing: ${target}`);
     }
   }
+  if (manifest.name === '@bendyline/docblocks-cli') {
+    const binTarget = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.docblocks;
+    if (!binTarget) {
+      throw new Error(`${packageName}: docblocks bin target is missing`);
+    }
+    const binSource = await readFile(path.resolve(packageRoot, binTarget), 'utf8');
+    if (!binSource.startsWith('#!/usr/bin/env node')) {
+      throw new Error(
+        `${packageName}: docblocks bin target must start with a Node shebang so npm shims launch it correctly`,
+      );
+    }
+  }
   await assertDeclaredImports(packageRoot, manifest);
 }
 
@@ -357,7 +377,7 @@ async function main(): Promise<void> {
     );
     await writeFile(
       path.join(consumerRoot, 'browser.ts'),
-      "import * as docblocksReact from '@bendyline/docblocks-react';\nvoid docblocksReact;\n",
+      "import * as docblocksReact from '@bendyline/docblocks-react';\nimport '@bendyline/docblocks-react/styles';\nvoid docblocksReact;\n",
     );
     await writeFile(
       path.join(consumerRoot, 'vite.config.mjs'),

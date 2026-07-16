@@ -82,7 +82,7 @@ describe('MCP canonical linked warning matrix', function () {
     );
   });
 
-  it('projects linked PDF embedded-image degradation on Node imports', async () => {
+  it('preserves linked PDF embedded images on Node imports', async () => {
     const pdfPath = join(harness.tmpDir, 'embedded-image.pdf');
     await writeFile(pdfPath, await pdfWithEmbeddedImage());
     const rootId = await requireReadableRootId(harness.client);
@@ -105,15 +105,22 @@ describe('MCP canonical linked warning matrix', function () {
 
       expect(result.isError, result.text).to.equal(false);
       const converted = requireTarget(requireConversions(result.structuredContent?.results), 'md');
-      const warning = converted.diagnostics.find(
+      expect(converted.sourceAssetCount).to.equal(1);
+      expect(converted.sourceAssets).to.have.length(1);
+      expect(converted.sourceAssets[0]).to.include({ mimeType: 'image/png' });
+      expect(converted.sourceAssets[0]?.size).to.be.greaterThan(0);
+      const omissionWarning = converted.diagnostics.find(
         (diagnostic) =>
           diagnostic.code === 'pdf-image-omitted' &&
           diagnostic.severity === 'warning' &&
-          diagnostic.stage === 'import' &&
-          diagnostic.message.includes('PDF embedded images were skipped'),
+          diagnostic.stage === 'import',
       );
-      expect(warning).to.not.equal(undefined);
-      expect(warning?.message).to.include('image decoding requires a browser canvas');
+      expect(omissionWarning).to.equal(undefined);
+
+      const resource = await harness.client.readResource({ uri: converted.artifact.uri });
+      const content = resource.contents[0];
+      if (!content || !('text' in content)) throw new Error('Expected Markdown artifact text');
+      expect(content.text).to.include('images/image1.png');
     } finally {
       if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
       else Reflect.deleteProperty(globalThis, 'document');
@@ -125,8 +132,11 @@ describe('MCP canonical real rendered-media integration', function () {
   this.timeout(120_000);
 
   let harness: McpHarness;
+  let previousFfmpegOverride: string | undefined;
 
   before(async function () {
+    previousFfmpegOverride = process.env.SQUISQ_FFMPEG;
+    configureWorkspaceFfmpegOverride();
     const missing = await missingRenderedMediaDependencies();
     if (missing.length === 0) return;
     console.error(`  (skipping canonical real-media tests - missing ${missing.join(' and ')})`);
@@ -138,6 +148,11 @@ describe('MCP canonical real rendered-media integration', function () {
   });
 
   afterEach(async () => harness.dispose());
+
+  after(() => {
+    if (previousFfmpegOverride === undefined) delete process.env.SQUISQ_FFMPEG;
+    else process.env.SQUISQ_FFMPEG = previousFfmpegOverride;
+  });
 
   it('projects the linked audio-omission warning from a real GIF conversion', async () => {
     const result = await callTool(harness.client, 'convert_document', {
@@ -298,5 +313,30 @@ function hasFfmpeg(): boolean {
     return probe.status === 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Linked Squisq resolves optional packages from its real checkout, not from
+ * this workspace. Point it at the desktop workspace's hoisted ffmpeg-static
+ * binary so the canonical integration test exercises the renderer that is
+ * actually installed here instead of reporting a false missing dependency.
+ */
+function configureWorkspaceFfmpegOverride(): void {
+  if (process.env.SQUISQ_FFMPEG) return;
+  const pathProbe = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['ffmpeg'], {
+    stdio: 'ignore',
+    timeout: 5_000,
+  });
+  if (pathProbe.status === 0) return;
+
+  try {
+    const workspaceRequire = createRequire(import.meta.url);
+    const bundled: unknown = workspaceRequire('ffmpeg-static');
+    if (typeof bundled !== 'string') return;
+    const probe = spawnSync(bundled, ['-version'], { stdio: 'ignore', timeout: 5_000 });
+    if (probe.status === 0) process.env.SQUISQ_FFMPEG = bundled;
+  } catch {
+    // missingRenderedMediaDependencies reports the actionable skip reason.
   }
 }

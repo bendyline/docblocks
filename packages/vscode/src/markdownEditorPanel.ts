@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
+  DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   isDocBlocksAccentColor,
+  isDocBlocksWriteCanvasLineSpacing,
+  isDocBlocksWriteCanvasTextSize,
   parseWebviewToExtensionMessage,
   type DocumentConflictChoice,
   type ExtensionToWebviewMessage,
@@ -14,12 +17,15 @@ import {
   withApplyingEditFlag,
   type HostDocumentAdapter,
   type HostDocumentSnapshot,
+  type SaveParticipantPolicy,
 } from './editSync.js';
+import { getUriBasename } from './documentAuthority.js';
 import {
   formatConflictResolutionDetail,
   getDocumentStatusBarPresentation,
 } from './documentStatusBar.js';
 import { handleExportMessage } from './exportBridge.js';
+import { toError } from './toError.js';
 import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
 import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueue.js';
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
@@ -31,8 +37,17 @@ const USE_EXTERNAL_CHOICE = 'Use External Changes';
 const MAX_PENDING_OPERATIONS = 128;
 const MAX_PENDING_WIRE_CHARACTERS = HOST_WIRE_LIMITS.base64Characters;
 
+/**
+ * Everything the bounded message queue can carry.
+ *
+ * Edits are diverted to {@link LatestDocumentEditQueue} at ingress and never
+ * reach this queue, so excluding them here keeps the queue's handlers provably
+ * exhaustive over exactly the messages that can arrive.
+ */
+type QueuedWebviewMessage = Exclude<WebviewToExtensionMessage, { type: 'edit' }>;
+
 type EditorPanelQueueEntry =
-  | { kind: 'webview'; message: WebviewToExtensionMessage }
+  | { kind: 'webview'; message: QueuedWebviewMessage }
   | { kind: 'external-change' };
 
 export class MarkdownEditorPanel {
@@ -57,6 +72,8 @@ export class MarkdownEditorPanel {
   private readonly exportGrantScope: ExportGrantScope;
   private readonly statusBarItem: vscode.StatusBarItem;
   private conflictPrompt: Promise<void> | null = null;
+  private pendingExternalSnapshot: HostDocumentSnapshot | null = null;
+  private externalChangeQueued = false;
 
   private constructor(
     private readonly context: vscode.ExtensionContext,
@@ -76,7 +93,7 @@ export class MarkdownEditorPanel {
         void vscode.window.showErrorMessage(
           error instanceof Error
             ? error.message
-            : `DocBlocks could not update ${getUriBasename(this.uri)}`,
+            : `DocBlocks could not update ${getDisplayBasename(this.uri)}`,
         );
       },
     });
@@ -86,7 +103,7 @@ export class MarkdownEditorPanel {
         void vscode.window.showErrorMessage(
           error instanceof Error
             ? error.message
-            : `DocBlocks could not accept an edit for ${getUriBasename(this.uri)}`,
+            : `DocBlocks could not accept an edit for ${getDisplayBasename(this.uri)}`,
         );
       },
     });
@@ -110,18 +127,34 @@ export class MarkdownEditorPanel {
   }
 
   public static async open(context: vscode.ExtensionContext, uri: vscode.Uri): Promise<void> {
+    const document = await vscode.workspace.openTextDocument(uri);
+    await MarkdownEditorPanel.openDocument(context, document);
+  }
+
+  /**
+   * Open the standalone editor for a document VS Code has already resolved.
+   *
+   * This path is reserved for explicit DocBlocks commands. The default custom
+   * editor route attaches directly to VS Code's resource-backed panel through
+   * {@link attachCustomEditor}.
+   */
+  public static openDocument(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active,
+  ): Promise<void> {
+    const uri = document.uri;
     const key = uri.toString();
     const existingPanel = MarkdownEditorPanel.panels.get(key);
     if (existingPanel) {
-      existingPanel.panel.reveal(vscode.ViewColumn.Active);
-      return;
+      existingPanel.panel.reveal(viewColumn);
+      return Promise.resolve();
     }
 
-    const document = await vscode.workspace.openTextDocument(uri);
     const panel = vscode.window.createWebviewPanel(
       MarkdownEditorPanel.viewType,
-      getUriBasename(uri),
-      vscode.ViewColumn.Active,
+      getDisplayBasename(uri),
+      viewColumn,
       {
         enableScripts: true,
         localResourceRoots: getEditorLocalResourceRoots(context.extensionUri),
@@ -129,15 +162,51 @@ export class MarkdownEditorPanel {
       },
     );
 
-    const editorPanel = new MarkdownEditorPanel(context, uri, document, panel);
-    MarkdownEditorPanel.panels.set(key, editorPanel);
-    try {
-      await editorPanel.syncReady;
-    } catch (error: unknown) {
-      MarkdownEditorPanel.panels.delete(key);
-      panel.dispose();
-      throw error;
+    return MarkdownEditorPanel.attachPanel(context, document, panel);
+  }
+
+  /** Bind DocBlocks directly to the resource-backed panel owned by VS Code. */
+  public static attachCustomEditor(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    return MarkdownEditorPanel.attachPanel(context, document, panel);
+  }
+
+  private static attachPanel(
+    context: vscode.ExtensionContext,
+    document: vscode.TextDocument,
+    panel: vscode.WebviewPanel,
+  ): Promise<void> {
+    const key = document.uri.toString();
+    const existingPanel = MarkdownEditorPanel.panels.get(key);
+    if (existingPanel) {
+      // Opening a document DocBlocks already owns must reveal the live editor,
+      // not fail. The custom-editor route surfaces a rejected resolve as an
+      // error toast on a broken tab, so throwing here turned "click the file I
+      // already have open" into an error. The caller has handed us a duplicate
+      // panel for a document that only supports one editor, so dispose it —
+      // that closes the duplicate tab — and then reveal the real one last so it
+      // wins focus.
+      if (existingPanel.panel !== panel) {
+        panel.dispose();
+        existingPanel.panel.reveal();
+      }
+      return Promise.resolve();
     }
+    const editorPanel = new MarkdownEditorPanel(context, document.uri, document, panel);
+    MarkdownEditorPanel.panels.set(key, editorPanel);
+    return editorPanel.syncReady.then(
+      () => undefined,
+      (error: unknown) => {
+        if (MarkdownEditorPanel.panels.get(key) === editorPanel) {
+          MarkdownEditorPanel.panels.delete(key);
+        }
+        panel.dispose();
+        throw error;
+      },
+    );
   }
 
   public static async pickAndOpen(context: vscode.ExtensionContext): Promise<void> {
@@ -171,6 +240,7 @@ export class MarkdownEditorPanel {
     const settings = readVscodeEditorSettings(this.uri);
     const sync = await VscodeDocumentSync.create(adapter, {
       autoSaveEnabled: settings.autoSave,
+      readSaveParticipantPolicy: () => this.readSaveParticipantPolicy(),
     });
     this.sync = sync;
     this.unsubscribeSync = sync.subscribe(() => {
@@ -217,18 +287,7 @@ export class MarkdownEditorPanel {
           void vscode.window.showErrorMessage(toError(error).message);
           return;
         }
-        this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
-          await this.latestEditQueue.flush();
-          const sync = await this.syncReady;
-          const wasConflicted = sync.getSnapshot().session.conflict !== null;
-          const result = sync.observeExternal(external);
-          if (result === 'applied') this.sendContent();
-          if (result === 'conflict' && !wasConflicted) {
-            void this.promptConflictResolution(sync, false);
-          }
-          this.sendSessionState();
-          this.updateTitle();
-        });
+        this.queueExternalChange(external);
       }),
       vscode.workspace.onDidSaveTextDocument((document) => {
         if (document.uri.toString() !== this.uri.toString()) return;
@@ -250,7 +309,9 @@ export class MarkdownEditorPanel {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
           !event.affectsConfiguration('docblocks.autoSave', this.uri) &&
-          !event.affectsConfiguration('docblocks.accentColor', this.uri)
+          !event.affectsConfiguration('docblocks.accentColor', this.uri) &&
+          !event.affectsConfiguration('docblocks.writeCanvasTextSize', this.uri) &&
+          !event.affectsConfiguration('docblocks.writeCanvasLineSpacing', this.uri)
         ) {
           return;
         }
@@ -272,7 +333,63 @@ export class MarkdownEditorPanel {
     );
   }
 
-  private async handleMessage(message: WebviewToExtensionMessage): Promise<void> {
+  /**
+   * Collapse external document changes onto a single queue slot.
+   *
+   * Only the newest external snapshot still describes the buffer; the earlier
+   * ones are already gone, and `observeExternal` rebases (or conflicts) against
+   * whatever it is handed. Enqueuing one entry per change therefore bought
+   * nothing and cost correctness: this queue is bounded at
+   * {@link MAX_PENDING_OPERATIONS} and is shared with webview requests that
+   * await a modal dialog *inside* the queued operation (pickExportTarget and
+   * saveExport both await showSaveDialog). While such an operation stalls the
+   * tail nothing drains, so a burst — an agent or formatter rewriting the file,
+   * or someone typing in a side-by-side text editor — overflowed the bound and
+   * was dropped newest-first, pinning the webview to a stale snapshot with no
+   * conflict indication until the next commit re-read.
+   *
+   * Coalescing keeps the ordering guarantee (the entry still runs in queue
+   * order relative to webview messages) while making that overflow structurally
+   * unreachable: at most one external-change entry is ever pending.
+   */
+  private queueExternalChange(external: HostDocumentSnapshot): void {
+    this.pendingExternalSnapshot = external;
+    if (this.externalChangeQueued) return;
+    this.externalChangeQueued = true;
+
+    const accepted = this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
+      this.externalChangeQueued = false;
+      const latest = this.pendingExternalSnapshot;
+      this.pendingExternalSnapshot = null;
+      if (latest) await this.applyExternalChange(latest);
+    });
+    if (accepted) return;
+
+    // The queue refuses work while disposing (the close-time flush re-reads the
+    // document, so nothing is lost) or while saturated by webview requests.
+    // Keep the snapshot and retry once the tail drains rather than dropping it.
+    this.externalChangeQueued = false;
+    if (this.panelDisposed) return;
+    void this.messageQueue.drain().then(() => {
+      const pending = this.pendingExternalSnapshot;
+      if (pending && !this.panelDisposed) this.queueExternalChange(pending);
+    });
+  }
+
+  private async applyExternalChange(external: HostDocumentSnapshot): Promise<void> {
+    await this.latestEditQueue.flush();
+    const sync = await this.syncReady;
+    const wasConflicted = sync.getSnapshot().session.conflict !== null;
+    const result = sync.observeExternal(external);
+    if (result === 'applied') this.sendContent();
+    if (result === 'conflict' && !wasConflicted) {
+      void this.promptConflictResolution(sync, false);
+    }
+    this.sendSessionState();
+    this.updateTitle();
+  }
+
+  private async handleMessage(message: QueuedWebviewMessage): Promise<void> {
     switch (message.type) {
       case 'resolveMedia':
       case 'listMedia':
@@ -308,13 +425,9 @@ export class MarkdownEditorPanel {
 
       case 'setAutoSave':
       case 'setAccentColor':
+      case 'setWriteCanvasSettings':
         await this.handleSettingsUpdate(message);
         break;
-
-      case 'edit': {
-        await this.applyWebviewEdit(message);
-        break;
-      }
 
       case 'save':
         await this.handleSave(message, await this.syncReady);
@@ -405,7 +518,7 @@ export class MarkdownEditorPanel {
     const snapshot = sync.getSnapshot();
     if (!snapshot.session.conflict) return;
 
-    const fileName = getUriBasename(this.uri);
+    const fileName = getDisplayBasename(this.uri);
     const message = `${fileName} changed outside DocBlocks while local edits were pending.`;
     const choice = modal
       ? await vscode.window.showWarningMessage(
@@ -451,22 +564,34 @@ export class MarkdownEditorPanel {
       });
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(
-        `DocBlocks could not save ${getUriBasename(this.uri)}: ${toError(error).message}`,
+        `DocBlocks could not save ${getDisplayBasename(this.uri)}: ${toError(error).message}`,
       );
     }
   }
 
   private async handleSettingsUpdate(
-    message: Extract<WebviewToExtensionMessage, { type: 'setAutoSave' | 'setAccentColor' }>,
+    message: Extract<
+      WebviewToExtensionMessage,
+      { type: 'setAutoSave' | 'setAccentColor' | 'setWriteCanvasSettings' }
+    >,
   ): Promise<void> {
     const configuration = vscode.workspace.getConfiguration('docblocks', this.uri);
-    const key = message.type === 'setAutoSave' ? 'autoSave' : 'accentColor';
-    const value = message.type === 'setAutoSave' ? message.enabled : message.accentColor;
+    const updates: ReadonlyArray<[VscodeEditorConfigurationKey, boolean | string | number]> =
+      message.type === 'setAutoSave'
+        ? [['autoSave', message.enabled]]
+        : message.type === 'setAccentColor'
+          ? [['accentColor', message.accentColor]]
+          : [
+              ['writeCanvasTextSize', message.settings.textSize],
+              ['writeCanvasLineSpacing', message.settings.lineSpacing],
+            ];
     try {
-      await configuration.update(key, value, getConfigurationTarget(configuration, key));
+      for (const [key, value] of updates) {
+        await configuration.update(key, value, getConfigurationTarget(configuration, key));
+      }
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(
-        `DocBlocks could not update ${key}: ${toError(error).message}`,
+        `DocBlocks could not update its editor settings: ${toError(error).message}`,
       );
     }
     await this.applyEditorSettings();
@@ -485,7 +610,7 @@ export class MarkdownEditorPanel {
     void vscode.window.showWarningMessage('DocBlocks ignored an invalid editor message.');
   }
 
-  private rejectBusyMessage(message: WebviewToExtensionMessage): void {
+  private rejectBusyMessage(message: QueuedWebviewMessage): void {
     if (!('requestId' in message)) return;
     const responseMessage = 'DocBlocks rejected the request because the editor queue is full.';
     switch (message.type) {
@@ -528,6 +653,17 @@ export class MarkdownEditorPanel {
     return toHostSnapshot(document);
   }
 
+  /**
+   * Resolve which of VS Code's built-in save participants will rewrite this
+   * document's text on save. Scoping by the TextDocument (not just the URI)
+   * resolves language-specific overrides such as `"[markdown]"` the same way
+   * VS Code's own participants do.
+   */
+  private readSaveParticipantPolicy(): SaveParticipantPolicy {
+    const files = vscode.workspace.getConfiguration('files', this.document);
+    return { trimTrailingWhitespace: files.get<unknown>('trimTrailingWhitespace') === true };
+  }
+
   private async applyWebviewEdit(message: WebviewEditMessage): Promise<void> {
     const sync = await this.syncReady;
     const acknowledgement = sync.acceptEdit(message);
@@ -541,7 +677,7 @@ export class MarkdownEditorPanel {
     });
     if (!acknowledgement.accepted) {
       void vscode.window.showErrorMessage(
-        acknowledgement.message ?? `VS Code rejected an edit for ${getUriBasename(this.uri)}.`,
+        acknowledgement.message ?? `VS Code rejected an edit for ${getDisplayBasename(this.uri)}.`,
       );
       this.sendContent();
       this.sendSessionState();
@@ -566,7 +702,11 @@ export class MarkdownEditorPanel {
     // Keep ownership through save participants as well as applyEdit. VS Code
     // can emit document-change events while document.save() runs (formatting,
     // final-newline normalization, and similar participants); those are part
-    // of this commit and are verified by the commit target afterward.
+    // of this commit, so their change events must not be misread as external
+    // edits. Because they are suppressed here, the commit target's post-save
+    // comparison is the only external-change detector for this window: it
+    // forgives exactly the participant transformations this document is
+    // configured for (see readSaveParticipantPolicy) and conflicts on the rest.
     await withApplyingEditFlag(
       (nextIsApplyingEdit) => {
         this.isApplyingEdit = nextIsApplyingEdit;
@@ -582,7 +722,9 @@ export class MarkdownEditorPanel {
           // final snapshot verification below detects that bounded race.
           const didApply = await vscode.workspace.applyEdit(edit);
           if (!didApply) {
-            throw new Error(`VS Code rejected the DocBlocks edit for ${getUriBasename(this.uri)}`);
+            throw new Error(
+              `VS Code rejected the DocBlocks edit for ${getDisplayBasename(this.uri)}`,
+            );
           }
           document = await this.ensureDocument();
         }
@@ -590,7 +732,7 @@ export class MarkdownEditorPanel {
         if (document.isDirty) {
           const didSave = await document.save();
           if (!didSave) {
-            throw new Error(`VS Code could not save ${getUriBasename(this.uri)}`);
+            throw new Error(`VS Code could not save ${getDisplayBasename(this.uri)}`);
           }
           document = await this.ensureDocument();
         }
@@ -623,7 +765,7 @@ export class MarkdownEditorPanel {
       type: 'setContent',
       content: snapshot.session.content,
       documentVersion: snapshot.baseDocumentVersion,
-      fileName: getUriBasename(this.uri),
+      fileName: getDisplayBasename(this.uri),
       sessionId: snapshot.sessionId,
       sessionRevision: snapshot.session.revision,
       acknowledgedClientRevision: snapshot.acknowledgedClientRevision,
@@ -666,6 +808,12 @@ export class MarkdownEditorPanel {
   }
 
   private updateTitle(): void {
+    // ExtHostWebviewPanel asserts on the title setter once VS Code disposes
+    // the panel. The close-time flush keeps mutating session state after
+    // onDidDispose (prepareClose emits synchronously, and the commit path
+    // calls updateTitle directly), so every panel-scoped UI write has to be
+    // gated the same way postMessage already is.
+    if (this.panelDisposed) return;
     const status = this.sync?.getSnapshot().session.status;
     const unsaved =
       this.document.isDirty ||
@@ -673,10 +821,14 @@ export class MarkdownEditorPanel {
       status === 'saving' ||
       status === 'error' ||
       status === 'conflict';
-    this.panel.title = `${unsaved ? '* ' : ''}${getUriBasename(this.uri)}`;
+    this.panel.title = `${unsaved ? '* ' : ''}${getDisplayBasename(this.uri)}`;
   }
 
   private updateStatusBar(): void {
+    // `panel.active` asserts after dispose, and onDidDispose has already
+    // disposed statusBarItem through `this.disposables`, so there is no
+    // surviving surface to update once the panel is gone.
+    if (this.panelDisposed) return;
     const session = this.sync?.getSnapshot().session;
     if (!this.panel.active || !session) {
       this.statusBarItem.hide();
@@ -685,7 +837,7 @@ export class MarkdownEditorPanel {
 
     const presentation = getDocumentStatusBarPresentation(
       session.status,
-      getUriBasename(this.uri),
+      getDisplayBasename(this.uri),
       session.error ? boundedMessage(session.error.message) : null,
     );
     if (!presentation) {
@@ -737,7 +889,7 @@ export class MarkdownEditorPanel {
       } catch (error: unknown) {
         if (sync.getSnapshot().session.status !== 'conflict') throw error;
         const choice = await vscode.window.showWarningMessage(
-          `${getUriBasename(this.uri)} changed outside DocBlocks. Choose which version to keep before the editor closes.`,
+          `${getDisplayBasename(this.uri)} changed outside DocBlocks. Choose which version to keep before the editor closes.`,
           { modal: true },
           KEEP_LOCAL_CHOICE,
           USE_EXTERNAL_CHOICE,
@@ -763,7 +915,7 @@ export class MarkdownEditorPanel {
         }
       }
       await vscode.window.showErrorMessage(
-        `DocBlocks could not finish saving ${getUriBasename(this.uri)}: ${toError(error).message}`,
+        `DocBlocks could not finish saving ${getDisplayBasename(this.uri)}: ${toError(error).message}`,
       );
     } finally {
       this.unsubscribeSync?.();
@@ -777,7 +929,7 @@ export class MarkdownEditorPanel {
     const draft = await vscode.workspace.openTextDocument({ content, language: 'markdown' });
     await vscode.window.showTextDocument(draft, { preview: false });
     await vscode.window.showWarningMessage(
-      `The unsaved DocBlocks draft for ${getUriBasename(this.uri)} was preserved in a new untitled editor.`,
+      `The unsaved DocBlocks draft for ${getDisplayBasename(this.uri)} was preserved in a new untitled editor.`,
     );
   }
 }
@@ -786,15 +938,31 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const configuration = vscode.workspace.getConfiguration('docblocks', uri);
   const autoSave = configuration.get<unknown>('autoSave');
   const accentColor = configuration.get<unknown>('accentColor');
+  const textSize = configuration.get<unknown>('writeCanvasTextSize');
+  const lineSpacing = configuration.get<unknown>('writeCanvasLineSpacing');
   return {
     autoSave: typeof autoSave === 'boolean' ? autoSave : true,
     accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
+    writeCanvasSettings: {
+      textSize: isDocBlocksWriteCanvasTextSize(textSize)
+        ? textSize
+        : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.textSize,
+      lineSpacing: isDocBlocksWriteCanvasLineSpacing(lineSpacing)
+        ? lineSpacing
+        : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.lineSpacing,
+    },
   };
 }
 
+type VscodeEditorConfigurationKey =
+  | 'autoSave'
+  | 'accentColor'
+  | 'writeCanvasTextSize'
+  | 'writeCanvasLineSpacing';
+
 function getConfigurationTarget(
   configuration: vscode.WorkspaceConfiguration,
-  key: 'autoSave' | 'accentColor',
+  key: VscodeEditorConfigurationKey,
 ): vscode.ConfigurationTarget {
   const inspected = configuration.inspect<unknown>(key);
   if (inspected?.workspaceFolderValue !== undefined) {
@@ -822,28 +990,25 @@ function toHostSnapshot(document: vscode.TextDocument): HostDocumentSnapshot {
   };
 }
 
-function getUriBasename(uri: vscode.Uri): string {
-  const slash = uri.path.lastIndexOf('/');
-  const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
-  try {
-    return decodeURIComponent(raw).slice(0, 255);
-  } catch {
-    return raw.slice(0, 255);
-  }
-}
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+/**
+ * A document's name, bounded for use as a label.
+ *
+ * Truncation belongs here at the UI edge and nowhere deeper: the shared
+ * {@link getUriBasename} is lossless because the media path authority derives
+ * `<document>_files` from it (see its contract). Panel titles, toasts, and the
+ * status bar only need something a human reads, so they cap the length; a name
+ * this long is already unreadable in a tab.
+ */
+function getDisplayBasename(uri: vscode.Uri): string {
+  return getUriBasename(uri).slice(0, 255);
 }
 
 function boundedMessage(message: string): string {
   return message.slice(0, HOST_WIRE_LIMITS.messageCharacters);
 }
 
-function estimateWireCharacters(message: WebviewToExtensionMessage): number {
+function estimateWireCharacters(message: QueuedWebviewMessage): number {
   switch (message.type) {
-    case 'edit':
-      return message.content.length;
     case 'addMedia':
     case 'saveExport':
       return message.dataBase64.length;

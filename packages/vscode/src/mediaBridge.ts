@@ -4,6 +4,7 @@ import type { MediaEntryMessage, WebviewToExtensionMessage } from '@bendyline/do
 import {
   assertNoSymbolicLinkComponents,
   getDocumentSidecarUri,
+  getUriBasename,
   isFileNotFound,
   readAuthorizedMediaFile,
   resolveAuthorizedDocumentResource,
@@ -208,16 +209,6 @@ async function postMediaResult(
       HOST_WIRE_LIMITS.messageCharacters,
     );
     await webview.postMessage({ type: 'mediaError', requestId, message });
-  }
-}
-
-function getUriBasename(uri: vscode.Uri): string {
-  const slash = uri.path.lastIndexOf('/');
-  const raw = slash === -1 ? uri.path : uri.path.slice(slash + 1);
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
   }
 }
 

@@ -12,7 +12,7 @@ npm run dev
 npm run dev -w docblocks-site
 ```
 
-The dev server starts at `http://localhost:5220`.
+The dev server prefers `http://localhost:5220` and uses the next free port when it is busy.
 
 ## Build
 
@@ -30,6 +30,12 @@ npm run preview -w docblocks-site
 
 This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Editor / Markdown / Play views, and multi-format export. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
 
+The editor remains the canonical, indexable experience at `/`. Lightweight product, format,
+documentation, privacy, and terms pages live under `public/`; `robots.txt`, `sitemap.xml`, the
+custom 404, canonical metadata, social metadata, and structured data are shipped with the same
+build. The service-worker navigation fallback is allowlisted to `/` so it cannot replace those
+static responses with the editor shell.
+
 ## PWA / offline
 
 The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configured in `vite.config.ts`):
@@ -45,7 +51,7 @@ The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configu
 
 ### Theme fonts
 
-`public/fonts/` (fonts.css + 96 woff2, latin + latin-ext subsets) is a copy of squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Regenerate upstream with squisq's `download-fonts.ps1` and re-copy; licenses live in `public/fonts/licenses/`.
+`public/fonts/` (fonts.css + 46 unique woff2 payloads, latin + latin-ext subsets) is derived from squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Several upstream weight filenames contain byte-identical variable-font payloads; DocBlocks keeps one payload and points those weight declarations at it. After regenerating upstream with squisq's `download-fonts.ps1`, deduplicate the copied files before committing; `npm run check:site-fonts` enforces this. Licenses live in `public/fonts/licenses/`.
 
 ## Deployment
 

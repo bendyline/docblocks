@@ -10,6 +10,8 @@ import type { FileCommitResult, FileSystemProvider, FileSystemEntry, FileMeta } 
 import { withFileCommitLock } from './commit-lock.js';
 import { NativeFileSystemProviderV2 } from './native-provider-v2.js';
 import { parseWorkspacePath } from './workspace-path.js';
+import { FsError, type FsOperation } from './fs-error.js';
+import { decodeUtf8Text } from './utf8.js';
 
 // ── Feature detection ──────────────────────────────────────────────
 
@@ -107,6 +109,35 @@ function errorName(error: unknown): string | undefined {
 function isMissingEntryError(error: unknown): boolean {
   const name = errorName(error);
   return name === 'NotFoundError' || name === 'TypeMismatchError';
+}
+
+function isKindMismatchError(error: unknown): boolean {
+  return errorName(error) === 'TypeMismatchError';
+}
+
+/**
+ * Root policy, mirrored from the v2 authority so all three v1 facades agree.
+ *
+ * The File System Access API has no handle for "the empty name", so the root
+ * must be answered before reaching it — otherwise it raises a raw TypeError
+ * where the other providers raise a typed FsError.
+ *
+ * v2 splits the root into two cases, and the split is meaningful: a mutation can
+ * never legitimately target the root, so it is an invalid *path*; a read finds
+ * something real that is simply the wrong *kind*.
+ */
+function rootIsNotAMutationTarget(operation: FsOperation, path: string): FsError {
+  return new FsError('invalid-path', 'The workspace root is not a file entry.', {
+    operation,
+    path,
+  });
+}
+
+function notAFile(operation: FsOperation, path: string): FsError {
+  return new FsError('type-mismatch', 'Expected a file but found a directory.', {
+    operation,
+    path,
+  });
 }
 
 function isPermissionError(error: unknown): boolean {
@@ -235,16 +266,12 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   async readFile(path: string): Promise<string | null> {
     const p = normalisePath(path);
-    const dir = await resolveDir(this.root, parentDir(p));
-    if (!dir) return null;
-    try {
-      const fileHandle = await dir.getFileHandle(baseName(p));
-      const file = await fileHandle.getFile();
-      return file.text();
-    } catch (error: unknown) {
-      if (isMissingEntryError(error)) return null;
-      throw error;
-    }
+    const data = await this.readBinary(p);
+    if (data === null) return null;
+    // `File.text()` decodes leniently: invalid bytes become U+FFFD, and a later
+    // save would write those replacement characters back over the user's
+    // original bytes. Fail the read instead, like every other provider.
+    return decodeUtf8Text(data, { label: 'The file', operation: 'read', path: p });
   }
 
   async writeFile(path: string, content: string): Promise<void> {
@@ -253,6 +280,9 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   private async writeFileUnlocked(path: string, content: string): Promise<void> {
     const p = normalisePath(path);
+    // Without this the root's empty basename reaches getFileHandle('', {create:true}),
+    // which creates a junk empty-named entry instead of rejecting the write.
+    if (!p) throw rootIsNotAMutationTarget('write', path);
     const dir = await resolveDirCreate(this.root, parentDir(p));
     const fileHandle = await dir.getFileHandle(baseName(p), { create: true });
     const writable = await fileHandle.createWritable();
@@ -287,7 +317,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   private async deleteUnlocked(path: string): Promise<void> {
     const p = normalisePath(path);
-    if (!p) throw new Error('Cannot delete the filesystem root');
+    if (!p) throw rootIsNotAMutationTarget('remove', path);
     const parent = parentDir(p);
     const name = baseName(p);
     const dir = await resolveDir(this.root, parent);
@@ -308,9 +338,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     const op = normalisePath(oldPath);
     const np = normalisePath(newPath);
     if (op === np) return;
-    if (!op || !np) {
-      throw new Error('Cannot rename the filesystem root');
-    }
+    if (!op || !np) throw rootIsNotAMutationTarget('move', !op ? oldPath : newPath);
     if (np.startsWith(op + '/')) {
       throw new Error('Cannot move a directory into itself');
     }
@@ -371,6 +399,19 @@ export class NativeFileSystemProvider implements FileSystemProvider {
     try {
       await this.deleteUnlocked(op);
     } catch (error: unknown) {
+      // Deleting a directory is not atomic: this can fail after some children
+      // are already gone, leaving the source gutted and the copy at the
+      // destination the only complete one in existence. Rebuild the source from
+      // that copy before removing it, and if the source cannot be made whole,
+      // keep the copy — deleting it would destroy the user's only data.
+      try {
+        await this.copyDirectory(np, op);
+      } catch (restoreError: unknown) {
+        throw new NativeMoveRecoveryError(
+          `Move partially deleted the source and it could not be restored; the copy at ${newPath} was kept: ${oldPath} -> ${newPath}`,
+          [error, restoreError],
+        );
+      }
       try {
         await this.deleteUnlocked(np);
       } catch (rollbackError: unknown) {
@@ -411,6 +452,8 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   async exists(path: string): Promise<boolean> {
     const p = normalisePath(path);
+    // The granted root handle always exists; there is no entry to look up.
+    if (!p) return true;
     const parent = parentDir(p);
     const name = baseName(p);
     const dir = await resolveDir(this.root, parent);
@@ -440,6 +483,9 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   async stat(path: string): Promise<FileMeta | null> {
     const p = normalisePath(path);
+    // stat() reports files only; the root is a directory, so it has no FileMeta.
+    // Every provider returns null rather than throwing for a non-file path.
+    if (!p) return null;
     const dir = await resolveDir(this.root, parentDir(p));
     if (!dir) return null;
 
@@ -460,6 +506,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   async readBinary(path: string): Promise<ArrayBuffer | null> {
     const p = normalisePath(path);
+    if (!p) throw notAFile('read', p);
     const dir = await resolveDir(this.root, parentDir(p));
     if (!dir) return null;
     try {
@@ -467,6 +514,10 @@ export class NativeFileSystemProvider implements FileSystemProvider {
       const file = await fileHandle.getFile();
       return file.arrayBuffer();
     } catch (error: unknown) {
+      // A directory is not an absent file: reporting null here made callers
+      // conclude the path was free. IndexedDB and memory both raise
+      // type-mismatch, so raise it here too.
+      if (isKindMismatchError(error)) throw notAFile('read', p);
       if (isMissingEntryError(error)) return null;
       throw error;
     }
@@ -478,6 +529,7 @@ export class NativeFileSystemProvider implements FileSystemProvider {
 
   private async writeBinaryUnlocked(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
     const p = normalisePath(path);
+    if (!p) throw rootIsNotAMutationTarget('write', path);
     const dir = await resolveDirCreate(this.root, parentDir(p));
     const fileHandle = await dir.getFileHandle(baseName(p), { create: true });
     const writable = await fileHandle.createWritable();

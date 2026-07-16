@@ -5,7 +5,7 @@
    packages/react/src/styles/docblocks.css. Keep the two blocks in sync. */
 
 .db-desktop-root {
-  --db-desktop-titlebar-height: 48px;
+  --db-desktop-titlebar-height: env(titlebar-area-height, 32px);
 }
 
 /* The first shell row replaces the native titlebar. Empty space can drag
@@ -21,8 +21,34 @@
 }
 
 .db-desktop-root .db-shell-sidebar-header {
+  padding-block: 0;
   padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
   cursor: grab;
+}
+
+/* Keep the shell controls inside the compact native caption band. These
+   overrides are desktop-only; the regular browser and VS Code toolbars keep
+   their roomier metrics. */
+.db-desktop-root .db-app-menu-btn,
+.db-desktop-root .db-workspace-picker-btn {
+  padding-block: 3px;
+}
+
+.db-desktop-root .db-shell .squisq-toolbar-view-tab {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.db-desktop-root .db-shell .squisq-use-mode-trigger {
+  padding-bottom: 9px;
+}
+
+.db-desktop-root .squisq-toolbar-button[aria-label='Insert image'] {
+  height: 28px;
+}
+
+.db-desktop-root .squisq-editor-header--image {
+  padding-block: 0;
 }
 
 /* Make the draggable header space discoverable without turning it into a

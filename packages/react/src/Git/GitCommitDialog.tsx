@@ -1,40 +1,67 @@
 /**
  * GitCommitDialog — message + per-file selection for committing changes.
  *
- * All changed files are included by default; while a merge is being
- * concluded, conflicted files are force-included (locked) because a commit
- * that omits them would not resolve the merge. Selection logic lives in
+ * All changed files are included by default. While git has an operation in
+ * progress (merge, rebase, cherry-pick, revert) the host must record the
+ * whole index — git forbids a pathspec commit mid-operation — so every row
+ * is locked and the dialog says so, rather than offering checkboxes whose
+ * state the commit would ignore. Selection logic lives in
  * commit-selection.ts so it stays unit-testable.
  */
 
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Dialog } from '../components/Dialog.js';
 import { useGitContext } from './GitContext.js';
 import { BADGE_LABELS, badgeKindFor } from './git-status.js';
 import {
+  allSelected,
   canCommit,
-  initSelection,
+  commitsWholeIndex,
+  isIncluded,
+  isLocked,
   isMergeCommit,
+  NO_OVERRIDES,
+  resolveSelection,
   selectedPaths,
-  setAllSelected,
-  toggleSelection,
-  type CommitSelection,
+  setAllOverrides,
+  toggleOverride,
+  type CommitOverrides,
 } from './commit-selection.js';
+
+/** Human-readable name for the in-progress operation, for the hint line. */
+const OPERATION_LABELS: Record<string, string> = {
+  merge: 'merge',
+  rebase: 'rebase',
+  'cherry-pick': 'cherry-pick',
+  revert: 'revert',
+  bisect: 'bisect',
+};
 
 export function GitCommitDialog({ onClose }: { onClose: () => void }) {
   const git = useGitContext();
   const status = git?.status ?? null;
   const merging = isMergeCommit(status);
+  /** Mid-operation: the commit records the index whole, so nothing unticks. */
+  const wholeIndex = commitsWholeIndex(status);
+  const changes = status?.changes;
 
   const [message, setMessage] = useState('');
-  const [selection, setSelection] = useState<CommitSelection>(() =>
-    initSelection(status?.changes ?? [], merging),
-  );
+  /** Only the user's explicit choices persist across status refreshes. */
+  const [overrides, setOverrides] = useState<CommitOverrides>(NO_OVERRIDES);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+
+  // Resolved every render against the live change list: a file that appears
+  // while the dialog is open (autosave triggers a status refresh every
+  // 1.5s) is rendered checked *and* committed, rather than rendered checked
+  // and silently dropped from a mount-time snapshot.
+  const selection = useMemo(
+    () => resolveSelection(changes ?? [], wholeIndex, overrides),
+    [changes, wholeIndex, overrides],
+  );
 
   if (!git || !status) return null;
 
-  const allOn = [...selection.included.values()].every(Boolean);
+  const allOn = allSelected(selection);
   const commitDisabled = !canCommit(message, selection) || git.busy !== null;
 
   const handleCommit = async () => {
@@ -65,9 +92,13 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      {merging && (
+      {wholeIndex && (
         <p className="db-settings-hint">
-          You&rsquo;re completing a merge. Committing will conclude it.
+          {merging
+            ? 'You’re completing a merge. Committing will conclude it.'
+            : `A ${OPERATION_LABELS[status.operation ?? ''] ?? 'git operation'} is in progress.`}{' '}
+          Git records every change below in this commit — files cannot be left out until the{' '}
+          {merging ? 'merge' : 'operation'} is finished.
         </p>
       )}
       <textarea
@@ -79,20 +110,24 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
         aria-label="Commit message"
         rows={3}
       />
-      <div className="db-git-form-row">
-        <button
-          type="button"
-          className="db-git-secondary-btn"
-          onClick={() => setSelection((s) => setAllSelected(s, !allOn))}
-        >
-          {allOn ? 'Select none' : 'Select all'}
-        </button>
-      </div>
+      {/* Nothing is selectable mid-operation, so the bulk toggle would be a
+          no-op control. Hide it rather than render a dead button. */}
+      {!wholeIndex && (
+        <div className="db-git-form-row">
+          <button
+            type="button"
+            className="db-git-secondary-btn"
+            onClick={() => setOverrides(setAllOverrides(selection, !allOn))}
+          >
+            {allOn ? 'Select none' : 'Select all'}
+          </button>
+        </div>
+      )}
       <ul className="db-git-file-list">
         {status.changes.map((change) => {
           const kind = badgeKindFor(change);
-          const locked = selection.locked.has(change.path);
-          const checked = locked || (selection.included.get(change.path) ?? true);
+          const locked = isLocked(selection, change.path);
+          const checked = isIncluded(selection, change.path);
           return (
             <li key={change.path} className="db-git-file-row">
               <label>
@@ -100,7 +135,12 @@ export function GitCommitDialog({ onClose }: { onClose: () => void }) {
                   type="checkbox"
                   checked={checked}
                   disabled={locked}
-                  onChange={() => setSelection((s) => toggleSelection(s, change.path))}
+                  title={
+                    locked
+                      ? `Included automatically while the ${merging ? 'merge' : 'operation'} is in progress`
+                      : undefined
+                  }
+                  onChange={() => setOverrides((o) => toggleOverride(o, selection, change.path))}
                 />
                 <span>{change.path.replace(/^\/+/, '')}</span>
               </label>

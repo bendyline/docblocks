@@ -34,6 +34,7 @@ export {
   type SerializedFsError,
   type FsErrorContext,
 } from './fs-error.js';
+export { decodeUtf8Text, type DecodeUtf8TextOptions } from './utf8.js';
 export type {
   FileSystemProviderV2,
   FileSystemProviderCapabilities,
@@ -83,6 +84,10 @@ export {
   type IndexedDBLegacyConflictReason,
   type IndexedDBLegacyConflictResolution,
   type IndexedDBLegacyMigrationConflict,
+  type IndexedDBLegacyOpaqueDiscardTarget,
+  type IndexedDBLegacyOpaqueRecord,
+  type IndexedDBLegacyOpaqueRecordSummary,
+  type IndexedDBLegacyOpaqueValue,
   type IndexedDBLegacyRecoveryCandidate,
   type IndexedDBLegacyRecoveryKind,
 } from './indexeddb-provider-v2.js';

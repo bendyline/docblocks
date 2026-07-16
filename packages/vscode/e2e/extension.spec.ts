@@ -1,4 +1,4 @@
-import { test, expect, type Page, type FrameLocator } from '@playwright/test';
+import { test, expect, type Page, type FrameLocator, type Locator } from '@playwright/test';
 
 /**
  * Wait for VS Code for the Web to fully load.
@@ -28,28 +28,56 @@ async function getWebviewContent(page: Page): Promise<FrameLocator> {
 async function openDocBlocksSetupTab(page: Page) {
   await page.keyboard.press('F1');
   await page.waitForTimeout(500);
-  await page.keyboard.type('DocBlocks: Open Setup');
+  await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
   await page.waitForTimeout(1_000);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(3_000);
 }
 
 /**
- * Right-click a file in the explorer and select "Open in DocBlocks".
+ * Open a file's Explorer context menu and wait for the DocBlocks contribution.
+ *
+ * VS Code can re-render the Explorer after the file becomes visible. A
+ * right-click that lands during that re-render is silently dropped, so retry
+ * the gesture until the menu item itself proves that the menu opened.
  */
-async function openFileInDocBlocks(page: Page, fileName: string) {
+async function openFileContextMenu(page: Page, fileName: string): Promise<Locator> {
   const explorer = page.locator('.explorer-folders-view');
   const file = explorer.getByText(fileName);
   await expect(file).toBeVisible({ timeout: 10_000 });
 
-  await file.click({ button: 'right' });
-  await page.waitForTimeout(1_000);
-
   const openInDocBlocks = page
     .locator('.context-view .action-label')
     .filter({ hasText: 'Open in DocBlocks' });
-  await openInDocBlocks.click();
-  await page.waitForTimeout(3_000);
+
+  await expect(async () => {
+    await page.keyboard.press('Escape');
+    await file.click({ button: 'right' });
+    await expect(openInDocBlocks).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return openInDocBlocks;
+}
+
+/**
+ * Right-click a file in the explorer and select "Open in DocBlocks".
+ *
+ * Selecting an action can be dropped by the same workbench re-render that
+ * affects the initial right-click. Retry the complete interaction until its
+ * observable result exists, but stop invoking the command as soon as VS Code
+ * attaches a webview so a slow first open cannot create a duplicate panel.
+ */
+async function openFileInDocBlocks(page: Page, fileName: string) {
+  const webviews = page.locator('iframe.webview');
+
+  await expect(async () => {
+    if ((await webviews.count()) === 0) {
+      const openInDocBlocks = await openFileContextMenu(page, fileName);
+      await openInDocBlocks.click();
+    }
+
+    await expect(webviews.last()).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
 }
 
 async function openFileByDefault(page: Page, fileName: string) {
@@ -58,6 +86,46 @@ async function openFileByDefault(page: Page, fileName: string) {
   await expect(file).toBeVisible({ timeout: 10_000 });
   await file.click();
   await page.waitForTimeout(3_000);
+}
+
+const LONGEST_DUPLICATE_TABS_ATTRIBUTE = 'data-docblocks-longest-duplicate-tabs-ms';
+
+async function monitorDuplicateTabDuration(page: Page, fileName: string): Promise<void> {
+  await page.evaluate(
+    ({ longestDurationAttribute, targetFileName }) => {
+      const root = document.documentElement;
+      root.setAttribute(longestDurationAttribute, '0');
+      let duplicateStartedAt: number | null = null;
+
+      const updateDuration = () => {
+        const matchingTabs = [...document.querySelectorAll('.tabs-container .tab')].filter((tab) =>
+          tab.textContent?.includes(targetFileName),
+        ).length;
+        if (matchingTabs > 1) {
+          duplicateStartedAt ??= performance.now();
+          return;
+        }
+        if (duplicateStartedAt === null) return;
+
+        const previousLongest = Number(root.getAttribute(longestDurationAttribute) ?? '0');
+        const duplicateDuration = performance.now() - duplicateStartedAt;
+        root.setAttribute(
+          longestDurationAttribute,
+          String(Math.max(previousLongest, duplicateDuration)),
+        );
+        duplicateStartedAt = null;
+      };
+
+      const observer = new MutationObserver(updateDuration);
+      observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+      window.setTimeout(() => observer.disconnect(), 15_000);
+      updateDuration();
+    },
+    {
+      longestDurationAttribute: LONGEST_DUPLICATE_TABS_ATTRIBUTE,
+      targetFileName: fileName,
+    },
+  );
 }
 
 // ── Extension activation ──────────────────────────────────────────
@@ -77,10 +145,12 @@ test.describe('Extension activation', () => {
     const quickInput = page.locator('.quick-input-widget');
     await expect(quickInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.type('DocBlocks: Open Setup');
+    await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await page.waitForTimeout(1_000);
 
-    await expect(quickInput.getByText('DocBlocks: Open Setup')).toBeVisible({
+    await expect(
+      quickInput.getByText('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup'),
+    ).toBeVisible({
       timeout: 5_000,
     });
   });
@@ -116,6 +186,7 @@ test.describe('Setup tab', () => {
     await expect(content.locator('#check-node')).toBeVisible();
     await expect(content.locator('#check-npm')).toBeVisible();
     await expect(content.locator('#check-cli')).toBeVisible();
+    await expect(content.locator('#check-mcp')).toBeVisible();
   });
 
   test('setup tab has re-check button', async ({ page }) => {
@@ -146,31 +217,34 @@ test.describe('Markdown editor panel', () => {
   });
 
   test('can open markdown file with DocBlocks context menu', async ({ page }) => {
-    const explorer = page.locator('.explorer-folders-view');
-    const testFile = explorer.getByText('test-doc.md');
-    await expect(testFile).toBeVisible({ timeout: 10_000 });
-
-    await testFile.click({ button: 'right' });
-    await page.waitForTimeout(1_000);
-
-    const openInDocBlocks = page
-      .locator('.context-view .action-label')
-      .filter({ hasText: 'Open in DocBlocks' });
-    await expect(openInDocBlocks).toBeVisible({ timeout: 5_000 });
-    await openInDocBlocks.click();
+    await openFileInDocBlocks(page, 'test-doc.md');
 
     const webviews = page.locator('iframe.webview');
     await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
   });
 
   test('selecting markdown file opens DocBlocks by default', async ({ page }) => {
+    await monitorDuplicateTabDuration(page, 'test-doc.md');
     await openFileByDefault(page, 'test-doc.md');
 
     const webviews = page.locator('iframe.webview');
     await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('.part.editor .breadcrumbs-control')).toBeHidden({
-      timeout: 10_000,
-    });
+    await expect(
+      page.locator('.tabs-container .tab').filter({ hasText: 'test-doc.md' }),
+    ).toHaveCount(1);
+    const duplicateTabDuration = Number(
+      await page.locator('html').getAttribute(LONGEST_DUPLICATE_TABS_ATTRIBUTE),
+    );
+    expect(duplicateTabDuration).toBeLessThan(250);
+    // VS Code's registered custom-editor route owns a native breadcrumb that
+    // identifies the editor type. The explicit "Open in DocBlocks" panel
+    // route below does not, so keep their expectations distinct.
+    await expect(page.locator('.part.editor .breadcrumbs-control')).toContainText(
+      'DocBlocks Editor',
+      {
+        timeout: 10_000,
+      },
+    );
   });
 
   test('DocBlocks editor opens and shows webview', async ({ page }) => {
@@ -222,10 +296,10 @@ test.describe('Commands', () => {
     const quickInput = page.locator('.quick-input-widget');
     await expect(quickInput).toBeVisible({ timeout: 5_000 });
 
-    await page.keyboard.type('DocBlocks: Open Setup');
+    await page.keyboard.type('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await page.waitForTimeout(1_000);
 
-    const setupCmd = quickInput.getByText('DocBlocks: Open Setup');
+    const setupCmd = quickInput.getByText('DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup');
     await expect(setupCmd).toBeVisible({ timeout: 5_000 });
   });
 });

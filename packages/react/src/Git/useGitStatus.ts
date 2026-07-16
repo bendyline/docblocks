@@ -4,6 +4,11 @@
  * Dedupes identical payloads so a permanently-dirty working tree (normal
  * under the manual-commit model) doesn't repaint the tree on every push
  * from the main process.
+ *
+ * Every asynchronous path is generation-guarded. Switching workspaces
+ * while a `scheduleRefresh` debounce is pending, or while a `refresh()`
+ * request is in flight, must not paint the previous repository's branch,
+ * badges, and dirty count onto the new one.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -31,6 +36,12 @@ export function useGitStatus(
   const [status, setStatus] = useState<GitStatus | null>(null);
   const lastKeyRef = useRef<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Bumped every time the subscribed repository changes. An in-flight
+   * `status()` that resolves after the switch belongs to the old repo and
+   * is dropped instead of being painted onto the new workspace.
+   */
+  const generationRef = useRef(0);
 
   const apply = useCallback((next: GitStatus) => {
     const key = statusKey(next);
@@ -40,6 +51,13 @@ export function useGitStatus(
   }, []);
 
   useEffect(() => {
+    generationRef.current += 1;
+    // A refresh debounced against the previous repository must not land on
+    // the new one: the timer outlives the effect that scheduled it.
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
     lastKeyRef.current = null;
     setStatus(null);
     if (!gitApi || !repositoryId || !enabled) return;
@@ -55,9 +73,17 @@ export function useGitStatus(
 
   const refresh = useCallback(() => {
     if (!gitApi || !repositoryId || !enabled) return;
-    void gitApi.status(repositoryId).then((result) => {
-      if (result.ok) apply(result.value);
-    });
+    const generation = generationRef.current;
+    void gitApi.status(repositoryId).then(
+      (result) => {
+        if (generation !== generationRef.current) return;
+        if (result.ok) apply(result.value);
+      },
+      // A rejected status (IPC torn down mid-switch) is not actionable
+      // here — the subscription stays the source of truth. Swallow it
+      // rather than leave an unhandled rejection.
+      () => undefined,
+    );
   }, [gitApi, repositoryId, enabled, apply]);
 
   const scheduleRefresh = useCallback(() => {

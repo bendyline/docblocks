@@ -1,3 +1,5 @@
+import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+
 const MEDIA_MIME_TYPES: Record<string, string> = {
   avif: 'image/avif',
   gif: 'image/gif',
@@ -110,4 +112,3 @@ function hasControlCharacter(value: string): boolean {
   }
   return false;
 }
-import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';

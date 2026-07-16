@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown Conversion Formats — Word, PDF, Slides &amp; More | DocBlocks</title>
+    <meta
+      name="description"
+      content="See the current DocBlocks import and export directions for Markdown, Word, PDF, PowerPoint, Excel, CSV, HTML, EPUB, DBK, MP4, and GIF."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://docblocks.com/formats/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DocBlocks" />
+    <meta property="og:title" content="DocBlocks conversion formats" />
+    <meta
+      property="og:description"
+      content="One Markdown workflow for Word, PDF, slides, spreadsheets, web pages, e-books, bundles, and video."
+    />
+    <meta property="og:url" content="https://docblocks.com/formats/" />
+    <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f3eede" />
+    <link rel="stylesheet" href="/marketing/marketing.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="DocBlocks home">
+        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/desktop/">Desktop</a>
+        <a href="/vscode/">VS Code</a>
+        <a href="/cli/">CLI &amp; MCP</a>
+        <a href="/formats/" aria-current="page">Formats</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+      <a class="button" href="/">Open the web editor</a>
+    </header>
+
+    <main class="page-main" id="content">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Format registry</p>
+          <h1>Write once. Keep Markdown. Publish almost anywhere.</h1>
+          <p class="lede">
+            DocBlocks uses the linked Squisq format registry as its source of truth. Import and
+            export are directional: a format appears here only when the current toolchain has an
+            explicit conversion path for it.
+          </p>
+          <div class="hero-actions">
+            <a class="button" href="/">Open the editor</a>
+            <a class="button button--secondary" href="/cli/">Use the CLI</a>
+          </div>
+        </div>
+        <aside class="hero-aside" aria-label="Format highlights">
+          <h2>One source, many outcomes</h2>
+          <p>
+            Create Word documents, PDFs, slide decks, web pages, e-books, portable DBK bundles, and
+            video while retaining Markdown as the editable source whenever the workflow allows.
+          </p>
+        </aside>
+      </section>
+
+      <section class="section" aria-labelledby="format-directions">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Current linked capabilities</p>
+            <h2 id="format-directions">Import and export directions</h2>
+          </div>
+          <p class="section-copy">
+            The table reflects the current linked registry. HTML ZIP, EPUB, MP4, and GIF are
+            export-only. For runtime discovery, use <code>docblocks mcp</code> and
+            <code>list_formats</code> or consult the authoritative CLI reference.
+          </p>
+        </div>
+        <div class="table-wrap">
+          <table class="format-table">
+            <thead>
+              <tr>
+                <th scope="col">Format</th>
+                <th scope="col">Import</th>
+                <th scope="col">Export</th>
+                <th scope="col">Typical use</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Markdown (MD)</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Portable editable source</td>
+              </tr>
+              <tr>
+                <td>Word (DOCX)</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Business documents and review</td>
+              </tr>
+              <tr>
+                <td>PDF</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Fixed-layout sharing</td>
+              </tr>
+              <tr>
+                <td>PowerPoint (PPTX)</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Slide decks and presentations</td>
+              </tr>
+              <tr>
+                <td>Excel (XLSX)</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Structured spreadsheet content</td>
+              </tr>
+              <tr>
+                <td>CSV</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Tabular data interchange</td>
+              </tr>
+              <tr>
+                <td>HTML</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Web pages and standalone output</td>
+              </tr>
+              <tr>
+                <td>HTML ZIP</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+                <td>Packaged web delivery</td>
+              </tr>
+              <tr>
+                <td>EPUB</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+                <td>E-books</td>
+              </tr>
+              <tr>
+                <td>DocBlocks bundle (DBK)</td>
+                <td class="yes">Yes</td>
+                <td class="yes">Yes</td>
+                <td>Markdown plus media assets</td>
+              </tr>
+              <tr>
+                <td>MP4</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+                <td>Rendered video</td>
+              </tr>
+              <tr>
+                <td>GIF</td>
+                <td class="no">No</td>
+                <td class="yes">Yes</td>
+                <td>Short animated output</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <article class="card">
+            <h3>Visual export</h3>
+            <p>
+              Use the web or desktop editor for common document exports without leaving the writing
+              surface.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Batch conversion</h3>
+            <p>
+              Use the CLI to select one or more output formats and write documented results
+              directly.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Agent workflows</h3>
+            <p>
+              Use MCP to produce immutable session artifacts, inspect fidelity, and save only the
+              result you choose.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>DocBlocks is open-source software by Bendyline.</p>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="/docs/">Documentation</a>
+        <a href="https://github.com/bendyline/docblocks">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

@@ -28,6 +28,7 @@ import {
   commitTextFile,
   withFileMutationLocks,
 } from './file-commit.js';
+import { statFileThroughDescriptor } from './file-stat.js';
 import { deleteWorkspaceEntry } from './workspace-file-operations.js';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { bindOwnerGrantRevocation } from './owner-revocation.js';
@@ -112,7 +113,7 @@ async function assertWorkspaceDescriptorIdentity(
   descriptorStat: Awaited<ReturnType<fs.FileHandle['stat']>>,
 ): Promise<void> {
   const validatedPath = await roots.resolvePhysical(rootPath, itemPath);
-  const pathStat = await fs.stat(validatedPath);
+  const pathStat = await statFileThroughDescriptor(validatedPath);
   if (descriptorStat.dev !== pathStat.dev || descriptorStat.ino !== pathStat.ino) {
     throw new Error('Workspace resource changed physical identity while it was being read');
   }

@@ -196,6 +196,48 @@ Revenue increased by eighteen percent while operating costs declined by seven pe
     expect(firstImage).to.deep.equal(ONE_PIXEL_PNG);
   });
 
+  it('strips XML-invalid control characters from PPTX slide parts without mangling text', async () => {
+    // XML 1.0 forbids most C0 controls outright (Char production) — they cannot
+    // be escaped as numeric entities, so a raw one makes the slide part
+    // unparseable and PowerPoint reports "presentation needs repair". These
+    // reach the emitter from real documents: squisq's parser preserves C0
+    // controls in `plainText`, which feeds `semanticText`, and `frame.label`
+    // is interpolated into the image `descr` attribute.
+    const control = (code: number): string => String.fromCharCode(code);
+    const VT = control(0x0b);
+    const FF = control(0x0c);
+    const BEL = control(0x07);
+    const NUL = control(0x00);
+
+    const labelled: CapturedPreview = {
+      ...frame(0),
+      label: `Label ${VT} with café 中文 \u{1F600}`,
+    };
+    const bytes = await packageRenderedPptx(
+      [labelled],
+      [`Body ${FF} and ${BEL} and ${NUL} plus\ttab & <amp>`],
+      true,
+    );
+    const archive = await JSZip.loadAsync(bytes);
+    const slide = await archive.file('ppt/slides/slide1.xml')?.async('string');
+    expect(slide).to.be.a('string');
+    const xml = slide as string;
+
+    // No XML-1.0-invalid character survives, in the attribute or the text node.
+    for (const code of [0x00, 0x07, 0x0b, 0x0c, 0x01, 0x1f]) {
+      expect(xml, `control char 0x${code.toString(16)} reached the slide XML`).not.to.contain(
+        control(code),
+      );
+    }
+
+    // Legitimate text must not be collateral damage: tab is valid in XML 1.0,
+    // and accents / CJK / astral characters are ordinary content.
+    expect(xml).to.contain('plus\ttab');
+    expect(xml).to.contain('café 中文 \u{1F600}');
+    // Ordinary escaping still applies.
+    expect(xml).to.contain('&amp; &lt;amp&gt;');
+  });
+
   it('matches PPTX slide and image geometry to wide and portrait capture aspect ratios', async () => {
     for (const dimensions of [
       { width: 1_920, height: 1_080, expectedWidth: 12_192_000, expectedHeight: 6_858_000 },

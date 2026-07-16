@@ -17,6 +17,7 @@ pids
 
 playwright-report/
 playwright-report-offline/
+playwright-report-cross-browser/
 test-results/
 
 .vscode-test-web/

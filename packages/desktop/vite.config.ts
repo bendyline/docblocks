@@ -109,7 +109,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
-    sourcemap: true,
+    // Keep production artifacts lean and avoid publishing renderer sources.
+    // Vite's dev server still provides normal debugging support; a release-like
+    // diagnostic build can opt in explicitly.
+    sourcemap: process.env.DOCBLOCKS_SOURCEMAPS === 'true',
     // Known large chunks have surface-specific limits in
     // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
     chunkSizeWarningLimit: 4_000,

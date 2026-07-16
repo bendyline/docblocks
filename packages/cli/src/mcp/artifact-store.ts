@@ -10,6 +10,10 @@ import {
   type ConversionResult,
   type EngineVersion,
 } from '@bendyline/docblocks/mcp';
+import {
+  cancellationError,
+  throwIfAborted as throwIfSignalAborted,
+} from '../internal/cancellation.js';
 
 const DEFAULT_MAX_ARTIFACT_BYTES = 500 * 1024 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
@@ -461,7 +465,9 @@ export class ArtifactStore {
     throwIfAborted(externalSignal);
     const controller = new AbortController();
     const forwardCancellation = (): void =>
-      controller.abort(externalSignal?.reason ?? cancellationError());
+      controller.abort(
+        externalSignal?.reason ?? cancellationError('MCP artifact I/O was cancelled'),
+      );
     if (externalSignal)
       externalSignal.addEventListener('abort', forwardCancellation, { once: true });
     let resolveDone: () => void = () => undefined;
@@ -672,12 +678,5 @@ async function waitForIoDrain(
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  throw signal.reason ?? cancellationError();
-}
-
-function cancellationError(): Error {
-  const error = new Error('MCP artifact I/O was cancelled');
-  error.name = 'AbortError';
-  return error;
+  throwIfSignalAborted(signal, 'MCP artifact I/O was cancelled');
 }

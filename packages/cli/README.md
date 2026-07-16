@@ -4,6 +4,8 @@ The DocBlocks command-line surface for document build and preview, linked-Squisq
 format conversion, MP4 rendering, document parsing, and a local MCP server for
 agents.
 
+[CLI and MCP overview](https://docblocks.com/cli/)
+
 ## Installation
 
 Node.js 22.14 or newer is required.
@@ -25,7 +27,6 @@ directions, overwrite behavior, MCP authority, artifact lifecycle, and assurance
 
 | Command                            | Purpose                                               |
 | ---------------------------------- | ----------------------------------------------------- |
-| `docblocks init [dir]`             | Create minimal `.docblocks/config.json` metadata.     |
 | `docblocks build`                  | Recursively build Markdown into standalone HTML.      |
 | `docblocks serve`                  | Run a constrained local preview server.               |
 | `docblocks convert <input>`        | Convert through the linked Squisq registry.           |
@@ -66,7 +67,9 @@ docblocks mcp --allow-read ./documents --allow-write ./exports
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
 import-capable linked-registry formats. Direct `build`, `convert`, and `video`
-outputs replace existing destination files. MCP conversions instead return
+outputs replace existing destination files; `convert` publishes each replacement
+atomically after enforcing bounded input and output sizes. `build` traversal and
+`parse` input/JSON output are also bounded. MCP conversions instead return
 immutable session artifacts; only explicit `save_artifact` materializes one, using
 no-replace or hash-conditional replacement semantics.
 
@@ -77,17 +80,3 @@ CLI reference or MCP `list_formats` rather than assuming every format imports.
 MP4/GIF rendering requires Chromium and FFmpeg. Install Chromium with
 `npx playwright install chromium`; Squisq resolves FFmpeg from `SQUISQ_FFMPEG`,
 `PATH`, or `ffmpeg-static`, in that order.
-
-## Development with linked Squisq
-
-From the DocBlocks repository root:
-
-```bash
-npm run link:squisq
-npm run check:squisq-linked
-npm run test:mcp:linked
-npm run all
-```
-
-The linked assurance commands use the sibling `..\squisq` source checkout, not the
-npm package copy.

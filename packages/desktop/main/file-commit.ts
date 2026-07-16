@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { FileCommitResult } from '@bendyline/docblocks/filesystem';
+import { decodeUtf8Text, type FileCommitResult } from '@bendyline/docblocks/filesystem';
 import type { ExternalBinaryCommitResult } from '@bendyline/docblocks/host';
 
 const mutationTails = new Map<string, Promise<void>>();
@@ -34,7 +34,10 @@ export async function withFileMutationLocks<T>(
 
 export async function readTextOrNull(absolutePath: string): Promise<string | null> {
   try {
-    return await fs.readFile(absolutePath, 'utf8');
+    return decodeUtf8Text(await fs.readFile(absolutePath), {
+      label: 'The external document',
+      path: absolutePath,
+    });
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;

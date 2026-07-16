@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DocBlocks CLI &amp; MCP — Build, Convert and Automate Markdown</title>
+    <meta
+      name="description"
+      content="Build, preview, convert, render, inspect, and automate Markdown with the DocBlocks CLI and its local artifact-first MCP server for AI agents."
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://docblocks.com/cli/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="DocBlocks" />
+    <meta property="og:title" content="DocBlocks CLI &amp; MCP" />
+    <meta
+      property="og:description"
+      content="Build, convert, render, and automate local documents from the command line or an artifact-first MCP server."
+    />
+    <meta property="og:url" content="https://docblocks.com/cli/" />
+    <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f3eede" />
+    <link rel="stylesheet" href="/marketing/marketing.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="DocBlocks home">
+        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+      </a>
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="/desktop/">Desktop</a>
+        <a href="/vscode/">VS Code</a>
+        <a href="/cli/" aria-current="page">CLI &amp; MCP</a>
+        <a href="/formats/">Formats</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+      <a class="button" href="/">Open the web editor</a>
+    </header>
+
+    <main class="page-main" id="content">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">DocBlocks CLI and MCP</p>
+          <h1>Documents that work at the command line—and with agents.</h1>
+          <p class="lede">
+            Build Markdown sites, preview local documents, convert between formats, render video,
+            parse source, and expose a bounded local MCP server for artifact-first agent workflows.
+          </p>
+          <code class="install-command"
+            >npm install -g @bendyline/docblocks-cli docblocks --help</code
+          >
+          <div class="hero-actions">
+            <a class="button" href="https://github.com/bendyline/docblocks/blob/main/docs/cli.md"
+              >CLI reference</a
+            >
+            <a
+              class="button button--secondary"
+              href="https://github.com/bendyline/docblocks/blob/main/docs/mcp.md"
+              >MCP guide</a
+            >
+          </div>
+        </div>
+        <aside class="hero-aside" aria-label="CLI highlights">
+          <h2>Nine focused commands</h2>
+          <ul>
+            <li>Build and serve Markdown</li>
+            <li>Convert across the linked format registry</li>
+            <li>Render configurable MP4 video</li>
+            <li>Run a local, artifact-first MCP server</li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="section" aria-labelledby="cli-workflows">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Direct when you want it, bounded when you need it</p>
+            <h2 id="cli-workflows">One toolchain, two authority models.</h2>
+          </div>
+          <p class="section-copy">
+            Direct CLI commands use the invoking process’s filesystem authority and write their
+            documented outputs. MCP starts with no filesystem grants, keeps results as temporary
+            session artifacts, and materializes a file only through an explicit save operation.
+          </p>
+        </div>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Build and preview</h3>
+            <p>
+              Recursively turn Markdown into standalone HTML or serve a constrained local preview
+              with contained asset reads and an allowlisted set of file types.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Convert and render</h3>
+            <p>
+              Convert one source into Word, PowerPoint, PDF, HTML, DBK, and other supported targets,
+              or render Markdown and imported documents as MP4 or GIF.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Work with AI agents</h3>
+            <p>
+              Inspect, validate, preview, compare, and convert through strict MCP tools. Explicit
+              root grants remain separate from artifact creation and durable output.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="callout">
+          <div>
+            <h2>See every supported direction.</h2>
+            <p>
+              Format capabilities come from the linked Squisq registry and distinguish import from
+              export.
+            </p>
+          </div>
+          <a class="button" href="/formats/">Explore formats</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>DocBlocks is open-source software by Bendyline.</p>
+      <nav class="footer-nav" aria-label="Footer navigation">
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+        <a href="/docs/">Documentation</a>
+        <a href="https://github.com/bendyline/docblocks">GitHub</a>
+      </nav>
+    </footer>
+  </body>
+</html>

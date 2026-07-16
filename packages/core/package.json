@@ -9,7 +9,7 @@
     "url": "https://github.com/bendyline/docblocks.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/bendyline/docblocks",
+  "homepage": "https://docblocks.com/",
   "keywords": [
     "docblocks",
     "markdown",
@@ -24,8 +24,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "exports": {
     ".": {
@@ -73,6 +72,11 @@
       "import": "./dist/host/index.js",
       "default": "./dist/host/index.js"
     },
+    "./share": {
+      "types": "./dist/share/index.d.ts",
+      "import": "./dist/share/index.js",
+      "default": "./dist/share/index.js"
+    },
     "./vscode": {
       "types": "./dist/vscode/index.d.ts",
       "import": "./dist/vscode/index.js",
@@ -94,7 +98,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.0.1",
+    "@bendyline/squisq": "2.3.0",
     "zod": "3.25.76"
   }
 }

@@ -29,6 +29,10 @@ import {
   workspacePathDirname,
   type WorkspacePath,
 } from './workspace-path.js';
+import { copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByName, compareText } from './internal/entry-order.js';
+import { parentChainWithRoot } from './internal/parent-chain.js';
+import { decodeUtf8Text } from './utf8.js';
 
 interface MemoryEntryBase {
   readonly version: FileSystemVersion;
@@ -226,7 +230,7 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
           'Replacement path has conflicting file and directory kinds.',
         );
       }
-      for (const parent of parentChain(path)) {
+      for (const parent of parentChainWithRoot(path)) {
         if (parent && stagedFiles.has(parent)) {
           throw this.error('type-mismatch', 'write', parent, 'A replacement parent is a file.');
         }
@@ -302,14 +306,21 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
     if (existing?.kind === 'directory') {
       throw this.error('type-mismatch', 'write', canonical, 'Cannot replace a directory.');
     }
+    // Every file is bytes, so the baseline is decided by the bytes, not by the
+    // compatibility kind. Gating on `payloadKind === 'binary'` reported
+    // `conflict` with a null `content`, which callers read as "deleted
+    // externally" — a phantom deletion for a file that is plainly still there.
+    // Undecodable bytes are a real fault and are raised as one, matching the
+    // IndexedDB facade and the v2 commit target.
     const currentContent =
-      existing?.kind === 'file' && existing.payloadKind === 'text'
-        ? new TextDecoder().decode(existing.data)
+      existing?.kind === 'file'
+        ? decodeUtf8Text(existing.data, {
+            label: 'The stored file',
+            operation: 'write',
+            path: canonical,
+          })
         : null;
-    if (
-      (existing?.kind === 'file' && existing.payloadKind === 'binary') ||
-      (currentContent !== expectedContent && currentContent !== content)
-    ) {
+    if (currentContent !== expectedContent && currentContent !== content) {
       return {
         status: 'conflict',
         content: currentContent,
@@ -373,7 +384,7 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
         children.push(this.toEntrySnapshot(entryPath, entry));
       }
     }
-    children.sort(compareSnapshots);
+    children.sort(compareSnapshotsByName);
     return Object.freeze(children);
   }
 
@@ -721,7 +732,7 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
     operation: FsOperation,
   ): WorkspacePath[] {
     const missing: WorkspacePath[] = [];
-    for (const parent of parentChain(path)) {
+    for (const parent of parentChainWithRoot(path)) {
       if (!parent) continue;
       const entry = this.entries.get(parent);
       if (entry?.kind === 'file') {
@@ -759,7 +770,7 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
     version: FileSystemVersion,
     lastModified: string,
   ): void {
-    for (const parent of parentChain(path)) {
+    for (const parent of parentChainWithRoot(path)) {
       const entry = target.get(parent);
       if (entry?.kind === 'directory') {
         target.set(parent, { kind: 'directory', version, lastModified });
@@ -857,40 +868,12 @@ export class MemoryFileSystemProviderV2 implements FileSystemProviderV2 {
   }
 }
 
-function parentChain(path: WorkspacePath): WorkspacePath[] {
-  const parents: WorkspacePath[] = [];
-  let current = workspacePathDirname(path);
-  while (true) {
-    parents.unshift(current);
-    if (!current) return parents;
-    current = workspacePathDirname(current);
-  }
-}
-
 function addParentPaths(target: Set<WorkspacePath>, path: WorkspacePath): void {
-  for (const parent of parentChain(path)) {
+  for (const parent of parentChainWithRoot(path)) {
     if (parent) target.add(parent);
   }
 }
 
 function isMemoryFilePayloadKind(value: unknown): value is MemoryFilePayloadKind {
   return value === 'text' || value === 'binary';
-}
-
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
-}
-
-function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.name, right.name);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

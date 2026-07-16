@@ -15,6 +15,11 @@ files:
   - dist/main/**/*
   - dist/preload/**/*
   - dist/renderer/**/*
+  # Defense in depth for opt-in diagnostic builds: source maps never belong in
+  # a distributable app.asar.
+  - '!dist/**/*.map'
+  - '!node_modules/**/*.map'
+  - '!node_modules/**/*.flow'
   - package.json
 
 # Lock production binaries to the signed ASAR and disable Node/Electron

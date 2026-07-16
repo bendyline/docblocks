@@ -13,27 +13,29 @@ A markdown document editor and management platform that ships from one npm-works
 - **Site** (`packages/site`) — a Vite/React demo of the shell, deployed to GitHub Pages
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
-- **CLI** (`packages/cli`) — `docblocks` binary for init / build / serve / convert / video / mcp / parse / themes / transforms
+- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, a sister project that lives in `..\squisq` and ships as `@bendyline/squisq*` npm packages.
 
 ## Packages
 
-| Package            | npm name                     | Purpose                                                                                                                                                                                                                                                       |
-| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                          |
-| `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`, 17 woff2 fonts. Consumed by site + desktop renderer. (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                             |
-| `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                             |
-| `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                            |
-| `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                            |
+| Package            | npm name                     | Purpose                                                                                                                                                                                                                                                                                                             |
+| ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                                                                                |
+| `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`. Consumed by site + desktop renderer. (Ships no fonts — theme fonts live in `packages/site/public/fonts/`.) (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 8 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                                                                                   |
+| `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
+| `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
+| `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
 
 ## Build, test, dev commands
 
 Node ≥22.14.0 required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
 
 ```bash
-# The big green button — build + lint + format:check + typecheck + test
+# The big green button — build, bundle-size, site precache + fonts, desktop config,
+# agent guidance, the assurance contract, lint, format:check, typecheck, package
+# consumers, critical coverage, unit/integration tests, and every E2E suite
 npm run all
 
 # Build
@@ -48,13 +50,16 @@ npm run dev:desktop         # Electron + Vite concurrently on 5221
 
 # Test
 npm test                    # Mocha across all packages/*/test/**/*.test.ts (tsx loader)
-npm test -w @bendyline/docblocks         # one package
+# No package defines its own `test` script — `npm test -w <pkg>` fails with
+# "Missing script". The root .mocharc.yml globs every package, and a positional
+# path is ADDED to that glob rather than replacing it. To run one file:
+npx mocha --no-config --require tsx --require ./packages/react/test/setup.ts <file>
 npm run test:e2e            # Playwright drives the site (root config, port 5220)
 npm run test:e2e:desktop    # Playwright + Electron launcher
 npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
 
 # Quality gates
-npm run typecheck           # tsc -b core react cli + desktop
+npm run typecheck           # six independent `tsc --noEmit` runs (no project references)
 npm run lint                # eslint flat config
 npm run format:check        # prettier
 npm run format              # prettier --write
@@ -68,7 +73,7 @@ npm run unlink:squisq       # restore registry versions
 npm run release
 ```
 
-Commits must follow Conventional Commits — commitlint enforces this.
+Commits must follow Conventional Commits — commitlint enforces this in CI (pull requests and pushes to `main`); there is no local hook.
 
 ## Architecture: the seams that matter
 
@@ -107,9 +112,9 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **No `any`.** `@typescript-eslint/no-explicit-any: error` outside test files. Use proper types, generics, or `unknown` + a type guard.
 - **No `console.log`.** `no-console: error` outside test files and CJS scripts. Surface errors through proper channels (VS Code `OutputChannel`, host API, CLI stderr).
 - **No renderer-side Electron / Node imports.** Renderer = `packages/desktop/renderer/` + `packages/site/src/` + `packages/vscode/webview/`. These run in a browser context; importing `electron` or `node:fs` breaks the build for some surfaces and the security model for others.
-- **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/vscode/src/messages.ts` (discriminated unions) over `postMessage`.
+- **No `vscode` import in the webview.** The VS Code webview is a sandboxed browser context. The host ↔ webview boundary is `packages/core/src/vscode/messages.ts` (runtime-validated discriminated unions) over `postMessage`.
 - **Wire types live in `packages/core`.** Anything that crosses IPC, postMessage, HTTP, or MCP boundaries belongs in `core` — usually under `host/types.ts` or `filesystem/types.ts`. Surface packages should not define their own copy.
-- **Conventional Commits.** commitlint runs on every commit.
+- **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
 ## Gotchas worth knowing
@@ -137,12 +142,12 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                     |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts` |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                     |
-| Add a VS Code message      | `packages/vscode/src/messages.ts` (discriminated union) — handle on both sides             |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                        |
-| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure            |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes   |
+| Task                       | Start with                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
+| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                       |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |

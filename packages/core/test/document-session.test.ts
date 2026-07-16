@@ -6,7 +6,7 @@ import {
   type DocumentCommitRequest,
   type DocumentCommitTarget,
 } from '../src/document/index.js';
-import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
+import { MemoryFileSystemProvider, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
 import {
   FileSystemMoveRecoveryError,
   FileSystemPartialMoveError,
@@ -692,6 +692,36 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot().status).to.equal('conflict');
     expect(session.getSnapshot().conflict?.externalContent).to.equal('external');
     expect(await provider.readFile('/a.md')).to.equal('external');
+  });
+
+  it('refuses to replace malformed UTF-8 from an external document', async () => {
+    const provider = new MemoryFileSystemProvider('memory-invalid-utf8', 'Memory');
+    await provider.v2.writeFile(parseWorkspacePath('/a.md'), new Uint8Array([0xc3, 0x28]), {
+      mode: 'create',
+      createParents: true,
+      expectedVersion: null,
+    });
+    const commitTarget = createFileSystemDocumentTarget(provider, '/a.md');
+
+    let failure: unknown;
+    try {
+      await commitTarget.commit({
+        targetKey: commitTarget.key,
+        revision: 2,
+        persistedRevision: 1,
+        persistedContent: 'initial',
+        content: 'local',
+        reason: 'manual',
+      });
+    } catch (error: unknown) {
+      failure = error;
+    }
+
+    expect(failure).to.have.property('name', 'FsError');
+    expect(failure).to.have.property('code', 'corrupt');
+    expect(new Uint8Array((await provider.v2.readFile(parseWorkspacePath('/a.md')))!.data)).to.eql(
+      new Uint8Array([0xc3, 0x28]),
+    );
   });
 
   it('lets only one conditional backend commit win for the same baseline', async () => {

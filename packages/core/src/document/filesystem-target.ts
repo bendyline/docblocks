@@ -1,6 +1,7 @@
 import { getFileSystemProviderV2, type FileSystemProvider } from '../filesystem/types.js';
 import { FsError } from '../filesystem/fs-error.js';
 import { parseWorkspacePath } from '../filesystem/workspace-path.js';
+import { decodeUtf8Text } from '../filesystem/utf8.js';
 import { DocumentCommitConflictError } from './document-session.js';
 import type { DocumentCommitTarget, DocumentExternalVersion } from './types.js';
 
@@ -31,7 +32,12 @@ export function createFileSystemDocumentTarget(
     async commit(request) {
       if (providerV2 && providerV2.capabilities.conditionalWrite !== 'none') {
         const current = await providerV2.readFile(canonicalPath);
-        const currentContent = current ? new TextDecoder().decode(current.data) : null;
+        const currentContent = current
+          ? decodeUtf8Text(current.data, {
+              label: 'The external document',
+              path: canonicalPath,
+            })
+          : null;
         if (currentContent !== request.persistedContent && currentContent !== request.content) {
           throw new DocumentCommitConflictError(
             'The document changed outside DocBlocks: ' + path,
@@ -66,7 +72,12 @@ export function createFileSystemDocumentTarget(
             const external = await providerV2.readFile(canonicalPath);
             throw new DocumentCommitConflictError(
               'The document changed outside DocBlocks: ' + path,
-              external ? new TextDecoder().decode(external.data) : null,
+              external
+                ? decodeUtf8Text(external.data, {
+                    label: 'The external document',
+                    path: canonicalPath,
+                  })
+                : null,
               external?.entry.version ?? null,
             );
           }

@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -28,13 +28,34 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       # Keep local and CI assurance identical. Add mandatory build, validation,
       # or unit-test gates to the root `all` script rather than duplicating the
       # list in this workflow.
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
+
+      # `npm run all` already runs every E2E suite on this runner, but it used
+      # to upload nothing -- so an ubuntu failure here was undiagnosable and the
+      # only reports came from the dedicated jobs below, which rerun the very
+      # same suites on the very same OS purely to produce them. Collecting the
+      # reports here is what makes that duplication removable.
+      - name: Upload E2E diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-gate-playwright-diagnostics
+          path: |
+            playwright-report/
+            playwright-report-offline/
+            playwright-report-cross-browser/
+            test-results/
+            packages/vscode/playwright-report/
+            packages/vscode/test-results/
+            packages/desktop/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
 
   desktop-build:
     name: Desktop Build (${{ matrix.os }})
@@ -47,10 +68,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -63,6 +84,14 @@ jobs:
 
       - name: Typecheck desktop
         run: npm run typecheck -w docblocks-desktop
+
+      - name: Run full desktop unit suite (Windows)
+        if: runner.os == 'Windows'
+        run: npx mocha --no-config --require tsx --require ./packages/react/test/setup.ts "packages/desktop/test/**/*.test.ts"
+
+      - name: Verify native filesystem semantics
+        if: runner.os != 'Windows'
+        run: npx mocha --no-config --require tsx packages/desktop/test/node-filesystem-v2.test.ts
 
       - name: Build + package desktop (dir)
         run: npm run dist:dir -w docblocks-desktop
@@ -79,7 +108,7 @@ jobs:
         run: npm run test:e2e:packaged:only -w docblocks-desktop
 
       - name: Upload packaged desktop diagnostics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: packaged-desktop-diagnostics-${{ matrix.os }}
@@ -92,16 +121,20 @@ jobs:
     needs: desktop-build
     strategy:
       fail-fast: false
+      # macOS only: `build-and-test` already runs this exact suite on ubuntu as
+      # part of `npm run all`, and now uploads its reports, so an ubuntu leg
+      # here re-ran it serially (`needs:`) for no added coverage. macOS is a
+      # different Electron host and is the reason this job exists.
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -124,7 +157,7 @@ jobs:
         run: npm run test:e2e:desktop
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: desktop-playwright-report-${{ matrix.os }}
@@ -138,10 +171,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -153,16 +186,19 @@ jobs:
         run: npm run build
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
         run: npm run test:e2e
+
+      - name: Run Firefox and WebKit compatibility E2E tests
+        run: npm run test:e2e:browsers
 
       - name: Run offline PWA E2E tests
         run: npm run test:e2e:offline
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
@@ -178,10 +214,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -198,8 +234,11 @@ jobs:
       - name: Run VS Code Web E2E tests
         run: npm run test:e2e:vscode
 
+      - name: Run VS Code desktop extension-host E2E tests
+        run: xvfb-run -a npm run test:e2e:vscode:desktop
+
       - name: Upload VS Code Playwright diagnostics
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:
           name: vscode-playwright-diagnostics
@@ -210,18 +249,17 @@ jobs:
           retention-days: 14
 
   commitlint:
-    name: Lint PR Title
+    name: Lint Commit Messages
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
@@ -229,5 +267,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate PR commits
+      - name: Validate pull request commits
+        if: github.event_name == 'pull_request'
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+
+      # Pushes to main were previously unvalidated, yet these are exactly the
+      # messages multi-semantic-release reads to compute each package's version
+      # bump -- an unlintable push could silently mis-version or skip a release.
+      - name: Validate pushed commits
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          # A new branch or a force-push over rewritten history reports an
+          # all-zero (or unreachable) "before", leaving no range to walk.
+          if [ -z "$BEFORE_SHA" ] ||
+             [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] ||
+             ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+            npx commitlint --last --verbose
+          else
+            npx commitlint --from "$BEFORE_SHA" --to "$HEAD_SHA" --verbose
+          fi

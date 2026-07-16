@@ -30,6 +30,9 @@ import {
   workspacePathJoin,
   type WorkspacePath,
 } from './workspace-path.js';
+import { bytesEqual, copyBytes } from './internal/bytes.js';
+import { compareSnapshotsByName, compareText } from './internal/entry-order.js';
+import { parentChain } from './internal/parent-chain.js';
 
 interface ScannedEntry<TFile extends FileSystemFileSnapshot> {
   readonly root: FileSystemDirectorySnapshot | TFile;
@@ -160,7 +163,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           withoutData((await this.scanMetadataHandle(childPath, childHandle, 'list')).root),
         );
       }
-      children.sort(compareSnapshots);
+      children.sort(compareSnapshotsByName);
       return Object.freeze(children);
     });
   }
@@ -206,7 +209,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
         await this.writeBytes(canonical, ownedData);
         writeCompleted = true;
         const written = await this.requireSnapshot(canonical, 'write');
-        if (written.root.kind !== 'file' || !equalBytes(written.root.data, ownedData)) {
+        if (written.root.kind !== 'file' || !bytesEqual(written.root.data, ownedData)) {
           throw this.error(
             'conflict',
             'write',
@@ -372,7 +375,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       }
       const createdParents = await this.createDirectories(missingParents);
       let destinationVersion: FileSystemVersion | null = null;
-      let sourceDeleted = false;
+      let sourceDeleteAttempted = false;
       try {
         await this.writeTree(source, sourcePath, destinationPath);
         const copied = await this.requireSnapshot(destinationPath, 'move');
@@ -398,8 +401,34 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           });
         }
 
+        // The version check above is necessary but NOT sufficient to authorize
+        // destroying the source. A native version token is
+        // sha256(size + '\0' + lastModified), which cannot see a same-size
+        // rewrite landing inside one coarse mtime tick -- FAT/exFAT stamp mtime
+        // at 2s granularity, network shares coarser. Deleting on the strength
+        // of that token alone can throw away an external edit this move never
+        // copied, and `conditionalWrite: 'process'` does not excuse it: that
+        // capability describes the atomicity boundary of a caller's
+        // `expectedVersion`, whereas this is the provider's own internal proof,
+        // reached with no concurrent DocBlocks writer involved.
+        //
+        // So prove it by bytes before deleting. A move already reads the whole
+        // subtree, so re-reading it here is proportionate -- which is exactly
+        // why the token itself must NOT hash content: `stat`/`readDirectory`
+        // depend on staying metadata-only.
+        if (!(await this.matchesCapturedSource(sourcePath, source))) {
+          throw new FsError('conflict', 'Source changed while the move was copied.', {
+            operation: 'move',
+            path: sourcePath,
+            destinationPath,
+          });
+        }
+
+        // Recorded before the call, not after it: removing a directory is not
+        // atomic, so a failure partway through still leaves the source damaged
+        // and rollback must know the repair is ours to make.
+        sourceDeleteAttempted = true;
         await this.removeEntry(sourcePath, source.root.kind === 'directory');
-        sourceDeleted = true;
         const [sourceAfter, destinationAfter] = await Promise.all([
           this.tryScanMetadata(sourcePath, 'move'),
           this.tryScanMetadata(destinationPath, 'move'),
@@ -424,7 +453,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
           source,
           createdParents,
           destinationVersion,
-          sourceDeleted,
+          sourceDeleteAttempted,
           error,
         );
       }
@@ -684,7 +713,7 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
         await this.scanHandle(workspacePathJoin(path, name), childHandle, operation, scanFile),
       );
     }
-    const childRoots = children.map((child) => child.root).sort(compareSnapshots);
+    const childRoots = children.map((child) => child.root).sort(compareSnapshotsByName);
     const version = await metadataVersion(
       'directory',
       new TextEncoder().encode(
@@ -769,6 +798,25 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       kind: 'file',
       path,
       name: workspacePathBasename(path),
+      // Derived from size + mtime, never from content. This keeps stat/list
+      // proportional to entry count instead of bytes (see scanMetadataHandle),
+      // which is what makes large workspaces listable in a browser tab at all.
+      //
+      // The cost is a real blind spot: an external same-size rewrite inside one
+      // mtime tick is invisible here. FAT/exFAT stamp mtime at 2-second
+      // granularity, and network shares can be coarser, so this is reachable on
+      // removable and mounted volumes rather than merely theoretical. Two
+      // consequences follow, and neither is hypothetical:
+      //   - a conditional write guarded on expectedVersion accepts, silently
+      //     overwriting the external edit;
+      //   - move() re-checks this version to prove the source is unchanged
+      //     before deleting it, so it can delete a source whose bytes it never
+      //     copied, losing the edit outright.
+      // `conditionalWrite: 'process'` declares the first (expectedVersion binds
+      // only against writers in this process). The second is a provider-internal
+      // check that the token cannot actually support; closing it means
+      // byte-comparing the captured source before the delete, not hashing
+      // content here, which would undo the scan-by-metadata property above.
       size: file.size,
       version: await metadataVersion(
         'file',
@@ -885,32 +933,57 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
     source: SnapshotScan,
     createdParents: readonly WorkspacePath[],
     destinationVersion: FileSystemVersion | null,
-    sourceDeleted: boolean,
+    sourceDeleteAttempted: boolean,
     primary: unknown,
   ): Promise<never> {
     const primaryError = this.translateError(primary, 'move', sourcePath, destinationPath);
     const recoveryErrors: FsError[] = [];
 
-    const sourceCurrent = await this.probeScan(sourcePath);
-    if (sourceCurrent === null && sourceDeleted) {
-      try {
-        await this.writeTree(source, sourcePath, sourcePath);
-        const restored = await this.probeSnapshot(sourcePath);
-        if (!restored || !equalTreeContents(source, sourcePath, restored, sourcePath)) {
-          throw new FsError('conflict', 'Restored source does not match its captured state.', {
-            operation: 'move',
-            path: sourcePath,
-            destinationPath,
-          });
+    // Whether the source still holds everything the move captured. If this move
+    // never reached the delete, the source is untouched and is not ours to
+    // rewrite — a source that changed underneath us is the caller's conflict,
+    // and restoring the captured copy over it would destroy that change.
+    let sourceWhole = true;
+    if (sourceDeleteAttempted) {
+      sourceWhole = await this.matchesCapturedSource(sourcePath, source);
+      if (!sourceWhole) {
+        try {
+          await this.writeTree(source, sourcePath, sourcePath);
+          const restored = await this.probeSnapshot(sourcePath);
+          if (!restored || !equalTreeContents(source, sourcePath, restored, sourcePath)) {
+            throw new FsError('conflict', 'Restored source does not match its captured state.', {
+              operation: 'move',
+              path: sourcePath,
+              destinationPath,
+            });
+          }
+          sourceWhole = true;
+        } catch (error: unknown) {
+          recoveryErrors.push(this.translateError(error, 'move', sourcePath, destinationPath));
         }
-      } catch (error: unknown) {
-        recoveryErrors.push(this.translateError(error, 'move', sourcePath, destinationPath));
       }
     }
 
     const destinationCurrent = await this.probeScan(destinationPath);
     if (destinationCurrent) {
-      if (destinationVersion && destinationCurrent.root.version !== destinationVersion) {
+      if (!sourceWhole) {
+        // Removing a directory is not atomic, so the delete above can fail with
+        // the source root still present but children already gone. The copy at
+        // the destination is then the only complete one in existence: deleting
+        // it to "undo" the move would destroy the user's data outright. Keep it
+        // and report loudly instead.
+        recoveryErrors.push(
+          new FsError(
+            'conflict',
+            'Source is incomplete; rollback kept the copy at the destination.',
+            {
+              operation: 'move',
+              path: sourcePath,
+              destinationPath,
+            },
+          ),
+        );
+      } else if (destinationVersion && destinationCurrent.root.version !== destinationVersion) {
         recoveryErrors.push(
           new FsError('conflict', 'Destination changed; rollback will not delete it.', {
             operation: 'move',
@@ -946,6 +1019,22 @@ export class NativeFileSystemProviderV2 implements FileSystemProviderV2 {
       recoveryErrors,
       state,
     );
+  }
+
+  /**
+   * Whether the source still holds exactly the bytes the move captured.
+   *
+   * A probe that fails answers "no": rollback must never treat an unverifiable
+   * source as whole, because that is precisely what licenses deleting the copy
+   * at the destination.
+   */
+  private async matchesCapturedSource(
+    sourcePath: WorkspacePath,
+    source: SnapshotScan,
+  ): Promise<boolean> {
+    const current = await this.probeSnapshot(sourcePath);
+    if (!current) return false;
+    return equalTreeContents(source, sourcePath, current, sourcePath);
   }
 
   private async probeScan(path: WorkspacePath): Promise<MetadataScan | null | undefined> {
@@ -1042,16 +1131,6 @@ async function metadataVersion(
   return parseFileSystemVersion(`sha256:${hex}`);
 }
 
-function parentChain(path: WorkspacePath): WorkspacePath[] {
-  const parents: WorkspacePath[] = [];
-  let current = workspacePathDirname(path);
-  while (current) {
-    parents.unshift(current);
-    current = workspacePathDirname(current);
-  }
-  return parents;
-}
-
 function pathDepth(path: WorkspacePath): number {
   return path ? path.split('/').length : 0;
 }
@@ -1065,24 +1144,6 @@ function errorName(error: unknown): string | null {
 function isMissingOrKindError(error: unknown): boolean {
   const name = errorName(error);
   return name === 'NotFoundError' || name === 'TypeMismatchError';
-}
-
-function copyBytes(data: ArrayBuffer | Uint8Array): ArrayBuffer {
-  const source = ArrayBuffer.isView(data)
-    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
-    : new Uint8Array(data);
-  const copy = new Uint8Array(source.byteLength);
-  copy.set(source);
-  return copy.buffer as ArrayBuffer;
-}
-
-function equalBytes(left: ArrayBuffer, right: ArrayBuffer): boolean {
-  const leftBytes = new Uint8Array(left);
-  const rightBytes = new Uint8Array(right);
-  return (
-    leftBytes.byteLength === rightBytes.byteLength &&
-    leftBytes.every((value, index) => value === rightBytes[index])
-  );
 }
 
 function equalTreeContents(
@@ -1109,7 +1170,7 @@ function equalTreeContents(
     const counterpart = rightByRelativePath.get(relativePath);
     if (!counterpart || counterpart.kind !== entry.kind) return false;
     if (entry.kind === 'file') {
-      if (counterpart.kind !== 'file' || !equalBytes(entry.data, counterpart.data)) return false;
+      if (counterpart.kind !== 'file' || !bytesEqual(entry.data, counterpart.data)) return false;
     }
   }
   return true;
@@ -1153,13 +1214,4 @@ function newestLastModified(children: readonly FileSystemEntrySnapshot[]): strin
     if (Number.isFinite(timestamp)) newest = Math.max(newest, timestamp);
   }
   return newest ? new Date(newest).toISOString() : EPOCH;
-}
-
-function compareSnapshots(left: FileSystemEntrySnapshot, right: FileSystemEntrySnapshot): number {
-  if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1;
-  return compareText(left.name, right.name);
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }

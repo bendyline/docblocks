@@ -10,13 +10,18 @@
  * underlying squisq libraries directly.
  */
 
-import { writeFile, mkdir, stat } from 'node:fs/promises';
+import { link, lstat, mkdir, open, opendir, realpath, rename, rm, stat } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { Block, Doc } from '@bendyline/squisq/schemas';
 import type { ConvertSource, FormatId, FormatRegistry } from '@bendyline/squisq-cli/api';
+import { positiveLimit } from '../internal/limits.js';
+import { isLinkUnsupportedError } from '../internal/link-support.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
+import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 
 const DEFAULT_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
 
@@ -25,10 +30,23 @@ export interface ConvertOptions {
   formats?: string;
   theme?: string;
   transform?: string;
+  /**
+   * Replace existing destination files. Off by default: the run is refused
+   * before any conversion work when a destination already exists.
+   */
+  allowOverwrite?: boolean;
   /** Cancel reading, transformation, conversion, or publication at a bounded boundary. */
   signal?: AbortSignal;
   /** Programmatic registry override; the CLI defaults to the linked Squisq registry. */
   registry?: FormatRegistry;
+  /** Programmatic aggregate input budget; CLI callers use the safe default. */
+  maxInputBytes?: number;
+  /** Programmatic input-tree budget; CLI callers use the safe default. */
+  maxInputEntries?: number;
+  /** Programmatic per-output budget; CLI callers use the safe default. */
+  maxOutputBytes?: number;
+  /** Programmatic aggregate output budget; CLI callers use the safe default. */
+  maxTotalOutputBytes?: number;
 }
 
 export interface ConvertResult {
@@ -42,6 +60,11 @@ export interface ConvertResult {
   }[];
 }
 
+const DEFAULT_MAX_CONVERT_INPUT_BYTES = 1024 * 1024 * 1024;
+const DEFAULT_MAX_CONVERT_INPUT_ENTRIES = 20_000;
+const DEFAULT_MAX_CONVERT_OUTPUT_BYTES = 512 * 1024 * 1024;
+const DEFAULT_MAX_CONVERT_TOTAL_OUTPUT_BYTES = 1024 * 1024 * 1024;
+
 export async function runConvert(inputPath: string, opts: ConvertOptions): Promise<ConvertResult> {
   throwIfAborted(opts.signal);
   const resolvedInput = resolve(inputPath);
@@ -49,6 +72,28 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   const inputBasename = basename(resolvedInput);
   const inputExt = extname(inputBasename);
   const baseName = inputExt ? inputBasename.slice(0, -inputExt.length) : inputBasename;
+  const maxInputBytes = positiveLimit(
+    opts.maxInputBytes,
+    DEFAULT_MAX_CONVERT_INPUT_BYTES,
+    'conversion input byte',
+  );
+  const maxInputEntries = positiveLimit(
+    opts.maxInputEntries,
+    DEFAULT_MAX_CONVERT_INPUT_ENTRIES,
+    'conversion input entry',
+  );
+  const maxOutputBytes = positiveLimit(
+    opts.maxOutputBytes,
+    DEFAULT_MAX_CONVERT_OUTPUT_BYTES,
+    'conversion output byte',
+  );
+  const maxTotalOutputBytes = positiveLimit(
+    opts.maxTotalOutputBytes,
+    DEFAULT_MAX_CONVERT_TOTAL_OUTPUT_BYTES,
+    'conversion aggregate output byte',
+  );
+
+  await assertInputWithinBudget(resolvedInput, maxInputBytes, maxInputEntries, opts.signal);
 
   const squisq = await import('@bendyline/squisq-cli/api');
   throwIfAborted(opts.signal);
@@ -58,28 +103,57 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     .filter((definition) => definition.exportDoc !== undefined)
     .map((definition) => definition.id);
   const exportable = new Set<FormatId>(exportableIds);
-  const requested = opts.formats
-    ? opts.formats
+  const registryHint = 'Choose a format reported by the linked Squisq CLI registry.';
+  // An explicit `--formats` list is a precise instruction, so every entry in it
+  // must be honored exactly. The built-in default set is DocBlocks' own choice
+  // rather than the caller's, so a registry that no longer exports one of those
+  // IDs degrades to a warning instead of failing an unqualified `convert`.
+  const requestedList = opts.formats;
+  const explicitFormats = requestedList !== undefined;
+  const requested = explicitFormats
+    ? requestedList
         .split(',')
         .map((format) => format.trim().toLowerCase())
         .filter(Boolean)
     : [...DEFAULT_FORMATS];
-  const formats = requested.filter((format): format is FormatId => exportable.has(format));
-  const unknown = requested.filter((format) => !exportable.has(format));
 
-  if (unknown.length > 0) {
-    console.warn(
-      `Unknown or non-exportable format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}" — skipping. Valid: ${exportableIds.join(', ')}`,
+  if (explicitFormats) {
+    // Matches the MCP conversion service, which refuses duplicate targets. A
+    // repeated format would otherwise convert and publish the same destination
+    // twice, and the second write would trip the overwrite refusal anyway.
+    const duplicate = firstDuplicate(requested);
+    if (duplicate) {
+      throw new squisq.ConversionError(
+        'unknown-format',
+        `Duplicate conversion target: ${duplicate}. List each requested format once.`,
+        { format: duplicate, hint: registryHint },
+      );
+    }
+  }
+
+  const unknown = requested.filter((format) => !exportable.has(format));
+  if (unknown.length > 0 && explicitFormats) {
+    // Exiting 0 after skipping a requested format lets a typo in CI produce no
+    // output under a success status. Refuse the run instead, before converting
+    // anything, so `convert` keeps its all-or-nothing contract.
+    throw new squisq.ConversionError(
+      'unknown-format',
+      `Unknown or non-exportable format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}". Valid: ${exportableIds.join(', ')}`,
+      { format: unknown[0], hint: registryHint },
     );
   }
+  if (unknown.length > 0) {
+    console.warn(
+      `Unknown or non-exportable default format${unknown.length === 1 ? '' : 's'} "${unknown.join(', ')}" — skipping. Valid: ${exportableIds.join(', ')}`,
+    );
+  }
+
+  const formats = requested.filter((format): format is FormatId => exportable.has(format));
   if (formats.length === 0) {
     throw new squisq.ConversionError(
       'unknown-format',
       `No valid formats specified. Valid: ${exportableIds.join(', ')}`,
-      {
-        format: requested[0],
-        hint: 'Choose a format reported by the linked Squisq CLI registry.',
-      },
+      { format: requested[0], hint: registryHint },
     );
   }
 
@@ -96,6 +170,18 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
         `Unknown transform style "${opts.transform}". Available: ${styles.join(', ')}`,
       );
     }
+  }
+
+  // Last cheap gate before reading, transforming, and converting. Every
+  // destination name is derivable up front, so a conflicting run is refused
+  // whole rather than part-way through — no format is converted and no file is
+  // touched unless every destination is clear.
+  const allowOverwrite = opts.allowOverwrite === true;
+  if (!allowOverwrite) {
+    await assertOutputsAvailable(
+      formats.map((format) => plannedOutputPath(outputDir, baseName, format, registry)),
+      opts.signal,
+    );
   }
 
   console.error(`Reading: ${resolvedInput}`);
@@ -122,6 +208,7 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     ? { kind: 'markdown', markdown: exportMarkdownDoc, container, baseName }
     : { kind: 'doc', doc: result.doc, container, baseName };
   const outputFiles: ConvertResult['outputFiles'] = [];
+  let totalOutputBytes = 0;
 
   for (const format of formats) {
     throwIfAborted(opts.signal);
@@ -133,9 +220,16 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
       ...(!exportMarkdownDoc && opts.transform ? { transformStyle: opts.transform } : {}),
     });
     throwIfAborted(opts.signal);
+    if (conversion.bytes.byteLength > maxOutputBytes) {
+      throw new Error(`${format} output exceeds the ${maxOutputBytes}-byte conversion limit.`);
+    }
+    totalOutputBytes += conversion.bytes.byteLength;
+    if (totalOutputBytes > maxTotalOutputBytes) {
+      throw new Error(`Conversion outputs exceed the ${maxTotalOutputBytes}-byte aggregate limit.`);
+    }
     const suggestedFilename = basename(conversion.suggestedFilename);
     const outPath = join(outputDir, suggestedFilename);
-    await writeFile(outPath, conversion.bytes);
+    await publishFile(outPath, conversion.bytes, allowOverwrite, opts.signal);
     throwIfAborted(opts.signal);
     const info = await stat(outPath);
     throwIfAborted(opts.signal);
@@ -157,12 +251,171 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   return { outputFiles };
 }
 
+async function assertInputWithinBudget(
+  inputPath: string,
+  maxBytes: number,
+  maxEntries: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const rootInfo = await stat(inputPath);
+  if (rootInfo.isFile()) {
+    if (rootInfo.size > maxBytes) {
+      throw new Error(`Conversion input exceeds the ${maxBytes}-byte limit.`);
+    }
+    return;
+  }
+  if (!rootInfo.isDirectory()) throw new Error(`Unsupported conversion input: ${inputPath}`);
+
+  const pending = [inputPath];
+  const visitedDirectories = new Set<string>();
+  let entryCount = 0;
+  let totalBytes = 0;
+  while (pending.length > 0) {
+    throwIfAborted(signal);
+    const directory = pending.pop()!;
+    const physicalDirectory = await realpath(directory);
+    if (visitedDirectories.has(physicalDirectory)) continue;
+    visitedDirectories.add(physicalDirectory);
+    const entries = await opendir(directory);
+    for await (const entry of entries) {
+      throwIfAborted(signal);
+      entryCount += 1;
+      if (entryCount > maxEntries) {
+        throw new Error(`Conversion input exceeds the ${maxEntries}-entry limit.`);
+      }
+      const entryPath = join(directory, entry.name);
+      const info = await stat(entryPath);
+      if (info.isDirectory()) pending.push(entryPath);
+      else if (info.isFile()) {
+        totalBytes += info.size;
+        if (totalBytes > maxBytes) {
+          throw new Error(`Conversion input exceeds the ${maxBytes}-byte limit.`);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Reproduce the linked registry's destination naming without converting.
+ *
+ * Squisq's `convert()` derives `suggestedFilename` as
+ * `<baseName>.<first extension>`, so the same inputs yield the same name here.
+ * Publication re-checks the real name, so a registry that ever diverged from
+ * this derivation still cannot silently clobber a file.
+ */
+function plannedOutputPath(
+  outputDir: string,
+  baseName: string,
+  format: FormatId,
+  registry: FormatRegistry,
+): string {
+  const extension = registry.get(format)?.extensions[0]?.replace(/^\.+/u, '') ?? format;
+  return join(outputDir, `${baseName}.${extension}`);
+}
+
+async function assertOutputsAvailable(
+  outputPaths: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  const conflicts: string[] = [];
+  for (const outputPath of outputPaths) {
+    throwIfAborted(signal);
+    if (await lstat(outputPath).catch(() => null)) conflicts.push(outputPath);
+  }
+  throwIfAborted(signal);
+  if (conflicts.length > 0) throw new Error(overwriteConflictMessage(conflicts));
+}
+
+function overwriteConflictMessage(conflicts: readonly string[]): string {
+  const noun = conflicts.length === 1 ? 'file' : 'files';
+  const pronoun = conflicts.length === 1 ? 'it' : 'them';
+  return [
+    `Refusing to overwrite ${conflicts.length} existing ${noun}:`,
+    ...conflicts.map((conflict) => `  ${conflict}`),
+    `Pass --allow-overwrite to replace ${pronoun}, or use --output-dir to write elsewhere.`,
+  ].join('\n');
+}
+
+/**
+ * Publish bounded bytes through an operation-owned sibling file.
+ *
+ * Mirrors the MCP authority's publication policy: replacement is opt-in, and
+ * the default path publishes with `link()` — an atomic create-if-absent on one
+ * filesystem — so a file that appears between the preflight check and this
+ * moment is reported rather than destroyed. Volumes without hard links
+ * (FAT32/exFAT, some network mounts) fall back to an exclusive create, which
+ * refuses an occupied destination just as firmly.
+ */
+async function publishFile(
+  outputPath: string,
+  bytes: Uint8Array,
+  allowOverwrite: boolean,
+  signal?: AbortSignal,
+): Promise<void> {
+  const temporaryPath = join(
+    dirname(outputPath),
+    `.${basename(outputPath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  try {
+    handle = await open(temporaryPath, 'wx', 0o600);
+    await handle.writeFile(bytes);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    throwIfAborted(signal);
+    if (allowOverwrite) {
+      await rename(temporaryPath, outputPath);
+      return;
+    }
+    try {
+      await link(temporaryPath, outputPath);
+      return;
+    } catch (error: unknown) {
+      // A genuinely occupied destination must refuse, never fall back.
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
+      if (!isLinkUnsupportedError(error)) throw error;
+    }
+
+    // FAT32/exFAT and some network mounts have no hard links. `wx` is the same
+    // atomic create-if-absent primitive without them: an occupied destination
+    // still fails EEXIST, so publication stays refuse-don't-clobber.
+    let published: Awaited<ReturnType<typeof open>>;
+    try {
+      published = await open(outputPath, 'wx', 0o600);
+    } catch (error: unknown) {
+      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
+      throw error;
+    }
+    try {
+      await published.writeFile(bytes);
+      await published.sync();
+      await published.close();
+    } catch (error: unknown) {
+      // This run exclusively created the destination, so removing the partial
+      // publication cannot destroy a file the caller wanted to keep.
+      await published.close().catch(() => undefined);
+      await rm(outputPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await handle?.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
+}
+
+function firstDuplicate(values: readonly string[]): string | undefined {
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+  }
+  return undefined;
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  if (signal.reason !== undefined) throw signal.reason;
-  const error = new Error('Document conversion was cancelled');
-  error.name = 'AbortError';
-  throw error;
+  throwIfSignalAborted(signal, 'Document conversion was cancelled');
 }
 
 /**
@@ -395,6 +648,7 @@ export const convertCommand = new Command('convert')
     '--transform <style>',
     'Transform style to apply before export (e.g., documentary, magazine, minimal)',
   )
+  .option('--allow-overwrite', 'replace existing output files instead of refusing the run')
   .action(async (inputPath: string, opts: ConvertOptions) => {
     try {
       await runConvert(inputPath, opts);

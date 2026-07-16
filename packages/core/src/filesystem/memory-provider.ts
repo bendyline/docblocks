@@ -12,6 +12,7 @@ import {
 } from './memory-provider-v2.js';
 import type { FileCommitResult, FileSystemEntry, FileSystemProvider, FileMeta } from './types.js';
 import { parseWorkspacePath, type WorkspacePath } from './workspace-path.js';
+import { decodeUtf8Text } from './utf8.js';
 
 export type MemoryFileSystemSnapshotFile =
   | {
@@ -35,6 +36,14 @@ function canonicalPath(path: string): WorkspacePath {
   return parseWorkspacePath(path);
 }
 
+/**
+ * Canonicalize and reject the root eagerly.
+ *
+ * Only the synchronous staging entry points need this: they must validate every
+ * input before `replaceState` swaps the tree, so they cannot rely on the v2
+ * authority to reject the root mid-swap. The async provider methods pass paths
+ * straight through, letting v2 state root policy once for every facade.
+ */
 function entryPath(path: string, operation: FsOperation): WorkspacePath {
   const canonical = canonicalPath(path);
   if (!canonical) {
@@ -46,8 +55,13 @@ function entryPath(path: string, operation: FsOperation): WorkspacePath {
   return canonical;
 }
 
-function decode(data: ArrayBuffer): string {
-  return new TextDecoder().decode(data);
+/**
+ * Byte-authoritative entries may hold payloads that are not valid UTF-8. A
+ * lossy decode would hand the caller replacement characters that a later save
+ * writes back over the user's original bytes, so surface the fault instead.
+ */
+function decode(data: ArrayBuffer, path?: WorkspacePath): string {
+  return decodeUtf8Text(data, { label: 'The file', operation: 'read', path });
 }
 
 /**
@@ -78,7 +92,7 @@ export class MemoryFileSystemProvider implements FileSystemProvider {
     return {
       files: state.files.map((file) =>
         file.payloadKind === 'text'
-          ? { kind: 'text' as const, path: file.path, content: decode(file.data) }
+          ? { kind: 'text' as const, path: file.path, content: decode(file.data, file.path) }
           : { kind: 'binary' as const, path: file.path, data: file.data.slice(0) },
       ),
       directories: [...state.directories],
@@ -104,12 +118,13 @@ export class MemoryFileSystemProvider implements FileSystemProvider {
   }
 
   public async readFile(path: string): Promise<string | null> {
-    const file = await this.v2.readFile(entryPath(path, 'read'));
-    return file ? decode(file.data) : null;
+    const canonical = canonicalPath(path);
+    const file = await this.v2.readFile(canonical);
+    return file ? decode(file.data, canonical) : null;
   }
 
   public async writeFile(path: string, content: string): Promise<void> {
-    await this.v2.writeText(entryPath(path, 'write'), content, { createParents: true });
+    await this.v2.writeText(canonicalPath(path), content, { createParents: true });
   }
 
   public commitFile(
@@ -117,15 +132,15 @@ export class MemoryFileSystemProvider implements FileSystemProvider {
     content: string,
     expectedContent: string | null,
   ): Promise<FileCommitResult> {
-    return this.v2.commitText(entryPath(path, 'write'), content, expectedContent);
+    return this.v2.commitText(canonicalPath(path), content, expectedContent);
   }
 
   public async delete(path: string): Promise<void> {
-    await this.v2.remove(entryPath(path, 'remove'), { recursive: true, missing: 'ignore' });
+    await this.v2.remove(canonicalPath(path), { recursive: true, missing: 'ignore' });
   }
 
   public async rename(oldPath: string, newPath: string): Promise<void> {
-    await this.v2.move(entryPath(oldPath, 'move'), entryPath(newPath, 'move'), {
+    await this.v2.move(canonicalPath(oldPath), canonicalPath(newPath), {
       createParents: true,
     });
   }
@@ -155,9 +170,7 @@ export class MemoryFileSystemProvider implements FileSystemProvider {
   }
 
   public async stat(path: string): Promise<FileMeta | null> {
-    const canonical = canonicalPath(path);
-    if (!canonical) return null;
-    const entry = await this.v2.stat(canonical);
+    const entry = await this.v2.stat(canonicalPath(path));
     if (!entry || entry.kind !== 'file') return null;
     return {
       name: entry.name,
@@ -167,14 +180,17 @@ export class MemoryFileSystemProvider implements FileSystemProvider {
     };
   }
 
+  /**
+   * Every stored file is bytes, so every stored file is readable as binary.
+   * `payloadKind` records how a file was written for DBK export fidelity; it is
+   * not a filter. Gating on it made `readBinary` report an existing text file as
+   * missing, which no other provider does and which callers read as "no file".
+   */
   public async readBinary(path: string): Promise<ArrayBuffer | null> {
-    const canonical = entryPath(path, 'read');
-    const file = this.v2.readCompatibilityFile(canonical);
-    if (!file || file.payloadKind !== 'binary') return null;
-    return file.data;
+    return this.v2.readCompatibilityFile(canonicalPath(path))?.data ?? null;
   }
 
   public async writeBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
-    await this.v2.writeBinary(entryPath(path, 'write'), data, { createParents: true });
+    await this.v2.writeBinary(canonicalPath(path), data, { createParents: true });
   }
 }

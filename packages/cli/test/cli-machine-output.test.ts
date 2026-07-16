@@ -45,6 +45,23 @@ describe('CLI machine-readable output contracts', function () {
     }
   });
 
+  it('refuses two conflicting video output paths instead of silently dropping one', async () => {
+    let failure: unknown;
+    try {
+      // `-o` used to win silently, writing a file the caller never named.
+      await runCli(['video', 'unused.md', 'positional.mp4', '-o', 'option.mp4']);
+    } catch (caught: unknown) {
+      failure = caught;
+    }
+
+    expect(failure, 'an ambiguous destination must fail').to.be.instanceOf(Error);
+    expect(readExitCode(failure)).to.equal(1);
+    const stderr = readStderr(failure);
+    expect(stderr).to.include('Two output paths were requested');
+    expect(stderr).to.include('positional.mp4');
+    expect(stderr).to.include('option.mp4');
+  });
+
   it('rejects numeric prefixes instead of silently truncating video options', async () => {
     let failure: unknown;
     try {
@@ -72,4 +89,9 @@ function readLines(value: string): string[] {
 function readStderr(error: unknown): string {
   if (!error || typeof error !== 'object' || !('stderr' in error)) return '';
   return typeof error.stderr === 'string' ? error.stderr : '';
+}
+
+function readExitCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null;
+  return typeof error.code === 'number' ? error.code : null;
 }

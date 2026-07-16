@@ -1,8 +1,8 @@
 /**
  * ExportToolbarControls — toolbar-right slot content.
  *
- * Renders a "..." overflow menu on the right side of the toolbar
- * containing export actions (document export + video export).
+ * Renders an export/share menu on the right side of the toolbar containing
+ * document export, sharing, and video export actions.
  *
  * Must be rendered inside <EditorProvider> so useEditorContext() works.
  */
@@ -17,10 +17,12 @@ import {
   useMemo,
   type ComponentType,
 } from 'react';
-import { useEditorContext } from '@bendyline/squisq-editor-react';
+import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-react';
+import type { SharedDocumentMode } from '@bendyline/docblocks/share';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type { DisplayMode } from '@bendyline/squisq-react';
 import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
 import type { ExportOptions } from './export-options.js';
 import {
@@ -31,9 +33,13 @@ import {
 } from './export-options.js';
 import type { ExportBlobSaver } from './run-export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+import { Dialog } from '../components/Dialog.js';
 
 const ExportDialog = lazy(() =>
   import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
+);
+const ShareDialog = lazy(() =>
+  import('./ShareDialog.js').then((module) => ({ default: module.ShareDialog })),
 );
 
 let runExportModulePromise: Promise<typeof import('./run-export.js')> | null = null;
@@ -56,6 +62,14 @@ export interface ExportToolbarControlsProps {
   trigger?: 'menu' | 'button';
   /** Whether to show video export in the overflow menu. */
   showVideoExport?: boolean;
+  /** Resolved host color scheme for the video export dialog. */
+  colorScheme?: 'light' | 'dark';
+  /** Host palette overrides for the video export dialog and progress UI. */
+  videoExportPalette?: VideoExportModalProps['uiPalette'];
+  /** HTTP(S) DocBlocks page used as the base of generated shared links. */
+  shareBaseUrl?: string;
+  /** One-time Use mode supplied by an opened shared document link. */
+  initialSharedMode?: SharedDocumentMode | null;
 }
 
 /** Host-specific operations behind the shared export destination control. */
@@ -86,6 +100,29 @@ interface VideoExportModules {
   playerScript: string;
 }
 
+const SHARED_USE_MODES: Readonly<Record<SharedDocumentMode, DisplayMode>> = Object.freeze({
+  slideshow: 'slideshow',
+  video: 'video',
+  page: 'linear',
+  document: 'page',
+  narrate: 'narrate',
+});
+
+function SharedModeInitializer({ mode }: { mode: SharedDocumentMode }) {
+  const appliedRef = useRef(false);
+  const { setActiveView } = useEditorContext();
+  const { setSelectedDisplayMode } = usePreviewSettings();
+
+  useEffect(() => {
+    if (appliedRef.current) return;
+    appliedRef.current = true;
+    setSelectedDisplayMode(SHARED_USE_MODES[mode]);
+    setActiveView('preview');
+  }, [mode, setActiveView, setSelectedDisplayMode]);
+
+  return null;
+}
+
 let videoExportModulesPromise: Promise<VideoExportModules> | null = null;
 
 function loadVideoExportModules(): Promise<VideoExportModules> {
@@ -99,6 +136,16 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
     playerScript: playerModule.PLAYER_BUNDLE,
   }));
   return videoExportModulesPromise;
+}
+
+/**
+ * Turn whatever `runExport` rejected with into something a user can act on.
+ * The pipeline throws real `Error`s (unreadable image, converter failure,
+ * destination write refused) whose messages are already user-facing.
+ */
+function exportErrorMessage(caught: unknown): string {
+  const detail = caught instanceof Error ? caught.message.trim() : '';
+  return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
 }
 
 /** Build the quick-export label from saved options. */
@@ -143,10 +190,15 @@ export function ExportToolbarControls({
   destinationAdapter,
   trigger = 'menu',
   showVideoExport = true,
+  colorScheme = 'light',
+  videoExportPalette,
+  shareBaseUrl,
+  initialSharedMode = null,
 }: ExportToolbarControlsProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
@@ -154,6 +206,7 @@ export function ExportToolbarControls({
   const [videoDoc, setVideoDoc] = useState<VideoExportModalProps['doc'] | null>(null);
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const destinationRequestRef = useRef(0);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -248,12 +301,23 @@ export function ExportToolbarControls({
 
   const handleOpenDialog = useCallback(() => {
     setMenuOpen(false);
+    setExportError(null);
     setDialogOpen(true);
     void refreshDestination(dialogInitial);
   }, [dialogInitial, refreshDestination]);
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
+    setExportError(null);
+  }, []);
+
+  const handleOpenShareDialog = useCallback(() => {
+    setMenuOpen(false);
+    setShareDialogOpen(true);
+  }, []);
+
+  const handleCloseShareDialog = useCallback(() => {
+    setShareDialogOpen(false);
   }, []);
 
   const handleOpenVideoModal = useCallback(async () => {
@@ -321,6 +385,7 @@ export function ExportToolbarControls({
   const handleExport = useCallback(
     async (opts: ExportOptions) => {
       setExporting(true);
+      setExportError(null);
       try {
         const { runExport } = await loadRunExportModule();
         await runExport(
@@ -330,9 +395,13 @@ export function ExportToolbarControls({
           mediaContainer,
           destinationAdapter ? handleDestinationSaveBlob : saveBlob,
         );
+        // Only a completed export dismisses the dialog. Closing in a
+        // `finally` used to make a failure look exactly like a success.
+        setDialogOpen(false);
+      } catch (caught: unknown) {
+        setExportError(exportErrorMessage(caught));
       } finally {
         setExporting(false);
-        setDialogOpen(false);
       }
     },
     [
@@ -349,6 +418,7 @@ export function ExportToolbarControls({
     if (!lastOptions) return;
     setMenuOpen(false);
     setExporting(true);
+    setExportError(null);
     try {
       saveExportOptions(lastOptions);
       const { runExport } = await loadRunExportModule();
@@ -368,6 +438,10 @@ export function ExportToolbarControls({
           ? async (blob, filename) => saveToDestination(blob, filename, quickTarget)
           : saveBlob,
       );
+    } catch (caught: unknown) {
+      // No dialog is open on this path, so the failure gets its own —
+      // same shape as the video-export load failure below.
+      setExportError(exportErrorMessage(caught));
     } finally {
       setExporting(false);
     }
@@ -381,10 +455,15 @@ export function ExportToolbarControls({
     selectedFile,
   ]);
 
+  const handleDismissExportError = useCallback(() => {
+    setExportError(null);
+  }, []);
+
   const LoadedVideoExportModal = videoModules?.Modal;
 
   return (
     <>
+      {initialSharedMode && <SharedModeInitializer mode={initialSharedMode} />}
       {trigger === 'button' ? (
         <button
           type="button"
@@ -399,18 +478,23 @@ export function ExportToolbarControls({
       ) : (
         <div className="db-toolbar-menu" ref={menuRef}>
           <button
+            type="button"
             className="db-toolbar-menu-trigger"
             onClick={handleToggleMenu}
-            aria-label="More actions"
-            title="More actions"
+            aria-label="Export and share"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Export and share"
           >
-            &middot;&middot;&middot;
+            <ShareGlyph />
           </button>
 
           {menuOpen && (
-            <div className="db-toolbar-menu-dropdown">
+            <div className="db-toolbar-menu-dropdown" role="menu">
               {lastOptions && (
                 <button
+                  type="button"
+                  role="menuitem"
                   className="db-toolbar-menu-item"
                   onClick={handleQuickExport}
                   disabled={exporting}
@@ -418,13 +502,31 @@ export function ExportToolbarControls({
                   {quickLabel(lastOptions, transformSummaries)}
                 </button>
               )}
-              <button className="db-toolbar-menu-item" onClick={handleOpenDialog}>
+              <button
+                type="button"
+                role="menuitem"
+                className="db-toolbar-menu-item"
+                onClick={handleOpenDialog}
+              >
                 Export...
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="db-toolbar-menu-item"
+                onClick={handleOpenShareDialog}
+              >
+                Share link with content embedded...
               </button>
               {showVideoExport && (
                 <>
-                  <div className="db-toolbar-menu-divider" />
-                  <button className="db-toolbar-menu-item" onClick={handleOpenVideoModal}>
+                  <div className="db-toolbar-menu-divider" role="separator" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="db-toolbar-menu-item"
+                    onClick={handleOpenVideoModal}
+                  >
                     Export Video...
                   </button>
                 </>
@@ -439,6 +541,7 @@ export function ExportToolbarControls({
           <ExportDialog
             initial={dialogInitial}
             exporting={exporting}
+            error={exportError}
             destination={
               destinationAdapter
                 ? {
@@ -451,6 +554,44 @@ export function ExportToolbarControls({
             onExport={handleExport}
             onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
             onClose={handleCloseDialog}
+          />
+        </Suspense>
+      )}
+
+      {/* Quick export fails with no dialog open — give the failure its own,
+          mirroring the video-export load-failure surface below. */}
+      {exportError && !dialogOpen && (
+        <Dialog
+          title="Export Document"
+          onClose={handleDismissExportError}
+          footer={
+            <button
+              type="button"
+              className="db-export-btn db-export-btn--secondary"
+              onClick={handleDismissExportError}
+            >
+              Close
+            </button>
+          }
+        >
+          <p className="db-export-error" role="alert">
+            {exportError}
+          </p>
+        </Dialog>
+      )}
+
+      {shareDialogOpen && (
+        <Suspense fallback={null}>
+          <ShareDialog
+            markdown={markdownSource}
+            selectedFile={selectedFile}
+            baseUrl={
+              shareBaseUrl ??
+              (typeof window === 'undefined'
+                ? 'https://bendyline.github.io/docblocks/'
+                : window.location.href)
+            }
+            onClose={handleCloseShareDialog}
           />
         </Suspense>
       )}
@@ -484,6 +625,8 @@ export function ExportToolbarControls({
           <LoadedVideoExportModal
             doc={videoDoc}
             playerScript={videoModules.playerScript}
+            colorScheme={colorScheme}
+            uiPalette={videoExportPalette}
             onClose={handleCloseVideoModal}
           />
         )}
@@ -506,6 +649,24 @@ function ExportGlyph() {
       <path d="M8.75 1.75V5h3.25" />
       <path d="M6 8.75h4.5" />
       <path d="M8.75 7 10.5 8.75 8.75 10.5" />
+    </svg>
+  );
+}
+
+function ShareGlyph() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 10.5V1.75" />
+      <path d="M5.25 4.5 8 1.75l2.75 2.75" />
+      <path d="M4.25 6.75h-1a1.5 1.5 0 0 0-1.5 1.5v4.5a1.5 1.5 0 0 0 1.5 1.5h9.5a1.5 1.5 0 0 0 1.5-1.5v-4.5a1.5 1.5 0 0 0-1.5-1.5h-1" />
     </svg>
   );
 }

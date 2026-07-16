@@ -93,6 +93,8 @@ interface WatchSession {
 export interface NodeWorkspaceReadableFile {
   stat(): Promise<BigIntStats>;
   readFile(): Promise<Uint8Array>;
+  /** Hash the descriptor payload without materializing the complete file. */
+  hashFile?(): Promise<{ readonly digest: string; readonly byteLength: number }>;
   close(): Promise<void>;
 }
 
@@ -100,6 +102,10 @@ export interface NodeWorkspaceFileSystemV2Options {
   readonly acquireWatcher?: (rootPath: string) => WorkspaceWatcherHandle;
   /** Injectable descriptor opener for deterministic read-consistency and I/O tests. */
   readonly openReadableFile?: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
+  /** Optional lower traversal ceiling; always clamped to the host wire limit. */
+  readonly traversalEntryLimit?: number;
+  /** Optional lower snapshot byte ceiling; always clamped to the host wire limit. */
+  readonly snapshotByteLimit?: number;
 }
 
 type PendingWatchEvent =
@@ -116,8 +122,11 @@ const MAX_STABLE_READ_ATTEMPTS = 3;
  * Every renderer path is parsed as a canonical WorkspacePath and then passes
  * the physical workspace-root resolver. All local mutations share the same
  * root lock as the v1 IPC handlers. Conditional versions are stable opaque
- * identities derived from high-resolution filesystem metadata; payload bytes
- * are read only for readFile/snapshot and are coupled to descriptor metadata.
+ * identities derived from file contents. Content-derived versions cost an
+ * additional streaming read for metadata-only observations, but prevent a
+ * same-size external edit with restored timestamps from bypassing optimistic
+ * concurrency. Payload bytes returned by readFile/snapshot remain coupled to
+ * one stable descriptor observation.
  */
 export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   public readonly id: string;
@@ -134,6 +143,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private readonly echoBatches: EchoBatch[] = [];
   private readonly acquireWatcher: (rootPath: string) => WorkspaceWatcherHandle;
   private readonly openReadableFile: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
+  private readonly traversalEntryLimit: number;
+  private readonly snapshotByteLimit: number;
   private watchSession: WatchSession | null = null;
   private externalEventTail: Promise<void> = Promise.resolve();
   private eventSequence = 0;
@@ -153,6 +164,16 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     this.roots = roots;
     this.acquireWatcher = options.acquireWatcher ?? acquireWorkspaceWatcher;
     this.openReadableFile = options.openReadableFile ?? openNodeReadableFile;
+    this.traversalEntryLimit = boundedProviderLimit(
+      options.traversalEntryLimit,
+      HOST_WIRE_LIMITS.arrayEntries,
+      'traversal entry',
+    );
+    this.snapshotByteLimit = boundedProviderLimit(
+      options.snapshotByteLimit,
+      HOST_WIRE_LIMITS.binaryBytes,
+      'snapshot byte',
+    );
     try {
       this.rootAbs = roots.resolve(rootPath, '');
     } catch (error: unknown) {
@@ -742,7 +763,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
             'File exceeds the host message size limit.',
           );
         }
-        if (budget && budget.bytes + Number(before.size) > HOST_WIRE_LIMITS.binaryBytes) {
+        if (budget && budget.bytes + Number(before.size) > this.snapshotByteLimit) {
           throw this.error(
             'quota-exceeded',
             operation,
@@ -753,13 +774,13 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         const data = copyBytes(await handle.readFile());
         const after = await handle.stat();
         const validatedAfter = await this.resolveRead(itemPath, operation);
-        const pathAfter = await fs.stat(validatedAfter, { bigint: true });
+        const pathAfter = await statNodeReadableFile(validatedAfter);
         if (
           sameFileMetadata(before, after) &&
           sameFileMetadata(after, pathAfter) &&
           after.size === BigInt(data.byteLength)
         ) {
-          stable = scannedFile(itemPath, after, data, operation);
+          stable = scannedFile(itemPath, after, data, operation, sha256Bytes(data));
           if (budget) budget.bytes += data.byteLength;
         }
       } finally {
@@ -770,6 +791,46 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     throw this.error('busy', operation, itemPath, 'File kept changing while it was being read.');
   }
 
+  /** Compute a content-derived version while retaining no payload bytes. */
+  private async statStableFile(
+    itemPath: WorkspacePath,
+    operation: FsOperation,
+  ): Promise<ScannedFile> {
+    for (let attempt = 1; attempt <= MAX_STABLE_READ_ATTEMPTS; attempt += 1) {
+      const abs = await this.resolveRead(itemPath, operation);
+      const handle = await this.openReadableFile(abs);
+      let stable: ScannedFile | null = null;
+      try {
+        const before = await handle.stat();
+        if (!before.isFile()) {
+          throw this.error(
+            'type-mismatch',
+            operation,
+            itemPath,
+            'Expected a file, found a directory.',
+          );
+        }
+        const hashed = handle.hashFile
+          ? await handle.hashFile()
+          : hashBytePayload(await handle.readFile());
+        const after = await handle.stat();
+        const validatedAfter = await this.resolveRead(itemPath, operation);
+        const pathAfter = await statNodeReadableFile(validatedAfter);
+        if (
+          sameFileMetadata(before, after) &&
+          sameFileMetadata(after, pathAfter) &&
+          after.size === BigInt(hashed.byteLength)
+        ) {
+          stable = scannedFile(itemPath, after, null, operation, hashed.digest);
+        }
+      } finally {
+        await handle.close();
+      }
+      if (stable) return stable;
+    }
+    throw this.error('busy', operation, itemPath, 'File kept changing while it was hashed.');
+  }
+
   private async scanEntry(
     itemPath: WorkspacePath,
     includeData: boolean,
@@ -778,7 +839,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     budget: ScanBudget = { entries: 0, bytes: 0 },
   ): Promise<ScannedEntry> {
     budget.entries += 1;
-    if (budget.entries > HOST_WIRE_LIMITS.arrayEntries) {
+    if (budget.entries > this.traversalEntryLimit) {
       throw this.error(
         'quota-exceeded',
         operation,
@@ -791,7 +852,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     if (stat.isFile()) {
       return includeData
         ? this.readStableFile(itemPath, operation, budget)
-        : scannedFile(itemPath, stat, null, operation);
+        : this.statStableFile(itemPath, operation);
     }
     if (!stat.isDirectory()) {
       throw this.error('not-supported', operation, itemPath, 'Unsupported filesystem entry type.');
@@ -1244,12 +1305,20 @@ function parentChain(itemPath: WorkspacePath): WorkspacePath[] {
   }
 }
 
-function versionForFile(itemPath: WorkspacePath, stat: BigIntStats): FileSystemVersion {
+function boundedProviderLimit(value: number | undefined, maximum: number, label: string): number {
+  const selected = value ?? maximum;
+  if (!Number.isSafeInteger(selected) || selected < 1) {
+    throw new Error(`Invalid ${label} limit.`);
+  }
+  return Math.min(selected, maximum);
+}
+
+function versionForFile(itemPath: WorkspacePath, contentDigest: string): FileSystemVersion {
   const hash = createHash('sha256');
-  hash.update('file-metadata-v1\0');
+  hash.update('file-content-v1\0');
   hash.update(itemPath);
   hash.update('\0');
-  hash.update(stableMetadataIdentity(stat));
+  hash.update(contentDigest);
   return parseFileSystemVersion(`sha256:${hash.digest('hex')}`);
 }
 
@@ -1279,6 +1348,7 @@ function scannedFile(
   stat: BigIntStats,
   data: ArrayBuffer | null,
   operation: FsOperation,
+  contentDigest: string,
 ): ScannedFile {
   const size = Number(stat.size);
   if (!Number.isSafeInteger(size) || size < 0) {
@@ -1292,7 +1362,7 @@ function scannedFile(
     path: itemPath,
     name: workspacePathBasename(itemPath),
     size,
-    version: versionForFile(itemPath, stat),
+    version: versionForFile(itemPath, contentDigest),
     lastModified: stat.mtime.toISOString(),
   });
   const root: FileSystemSnapshotFile = Object.freeze({
@@ -1330,7 +1400,53 @@ async function openNodeReadableFile(absolutePath: string): Promise<NodeWorkspace
   return {
     stat: () => handle.stat({ bigint: true }),
     readFile: () => handle.readFile(),
+    hashFile: async () => {
+      const hash = createHash('sha256');
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      let byteLength = 0;
+      let position = 0;
+      while (true) {
+        const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, position);
+        if (bytesRead === 0) break;
+        hash.update(buffer.subarray(0, bytesRead));
+        byteLength += bytesRead;
+        position += bytesRead;
+      }
+      return { digest: hash.digest('hex'), byteLength };
+    },
     close: () => handle.close(),
+  };
+}
+
+/**
+ * Observe the pathname's current target through a fresh descriptor. Node 22 on
+ * Windows reports a volume device id for fstat but zero for stat(path), which
+ * makes one unchanged file look like two identities. A second descriptor keeps
+ * the strong device/inode replacement check while using comparable metadata.
+ */
+async function statNodeReadableFile(absolutePath: string): Promise<BigIntStats> {
+  const handle = await fs.open(absolutePath, 'r');
+  try {
+    return await handle.stat({ bigint: true });
+  } finally {
+    await handle.close();
+  }
+}
+
+function sha256Bytes(data: ArrayBuffer): string {
+  return createHash('sha256').update(new Uint8Array(data)).digest('hex');
+}
+
+function hashBytePayload(data: ArrayBuffer | Uint8Array): {
+  readonly digest: string;
+  readonly byteLength: number;
+} {
+  const bytes = ArrayBuffer.isView(data)
+    ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    : new Uint8Array(data);
+  return {
+    digest: createHash('sha256').update(bytes).digest('hex'),
+    byteLength: bytes.byteLength,
   };
 }
 

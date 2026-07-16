@@ -20,6 +20,8 @@ export interface DetectedTool {
 /** Minimum git version — we rely on `git restore` / `git switch` (2.23, 2019). */
 const MIN_GIT_MAJOR = 2;
 const MIN_GIT_MINOR = 23;
+const VERSION_PROBE_TIMEOUT_MS = 5_000;
+const MAX_VERSION_OUTPUT_BYTES = 4 * 1024;
 
 let cachedGit: DetectedTool | null | undefined;
 let cachedGh: DetectedTool | null | undefined;
@@ -43,21 +45,49 @@ function candidatesFor(tool: 'git' | 'gh'): string[] {
 
 function probeVersion(bin: string): Promise<string | null> {
   return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(value);
+    };
     try {
       const child = spawn(bin, ['--version'], {
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       });
       let out = '';
+      let outputBytes = 0;
+      const terminate = (): void => {
+        child.kill();
+        const forceKill = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+        }, 1_000);
+        forceKill.unref();
+      };
       child.stdout.on('data', (chunk: Buffer) => {
+        if (settled) return;
+        outputBytes += chunk.byteLength;
+        if (outputBytes > MAX_VERSION_OUTPUT_BYTES) {
+          terminate();
+          finish(null);
+          return;
+        }
         out += chunk.toString('utf8');
       });
-      child.on('error', () => resolve(null));
+      child.on('error', () => finish(null));
       child.on('close', (code) => {
-        resolve(code === 0 ? (out.split('\n')[0]?.trim() ?? null) : null);
+        finish(code === 0 ? (out.split('\n')[0]?.trim() ?? null) : null);
       });
+      timer = setTimeout(() => {
+        terminate();
+        finish(null);
+      }, VERSION_PROBE_TIMEOUT_MS);
+      timer.unref();
     } catch {
-      resolve(null);
+      finish(null);
     }
   });
 }

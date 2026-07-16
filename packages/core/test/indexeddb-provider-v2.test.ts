@@ -274,6 +274,62 @@ describe('IndexedDBFileSystemProviderV2 migration and compatibility', () => {
     await provider.dispose();
   });
 
+  it('refuses to move a directory that strands a quarantined descendant', async () => {
+    const store = new FakeTransactionalStore();
+    store.seed('fs:dirs', ['dir']);
+    seedLegacyText(store, 'dir/child.md', 'text authority');
+    store.seed('fs:dir/child.md:binary', encode('binary authority').buffer);
+    const { provider } = createProvider(store);
+
+    expect((await provider.listLegacyMigrationConflicts()).map((item) => item.path)).to.deep.equal([
+      p('/dir/child.md'),
+    ]);
+
+    // Moving the ancestor would leave the conflict keyed to dir/child.md, so a
+    // later resolution would rebuild the very tree this move dismantled.
+    await expectFsError(provider.move(p('/dir'), p('/moved')), 'conflict');
+    expect(await provider.stat(p('/dir'))).to.not.equal(null);
+    expect(await provider.stat(p('/moved'))).to.equal(null);
+
+    // Resolving first makes the move legal, and it then carries the file along.
+    await provider.resolveLegacyMigrationConflict(p('/dir/child.md'), 'text');
+    await provider.move(p('/dir'), p('/moved'));
+    expect(decode((await provider.readFile(p('/moved/child.md')))?.data)).to.equal(
+      'text authority',
+    );
+    expect(await provider.stat(p('/dir'))).to.equal(null);
+    await provider.dispose();
+  });
+
+  it('refuses to remove the v2 authority under a quarantined path', async () => {
+    const { provider, store } = createProvider();
+    const path = p('/note.md');
+    await provider.writeFile(path, encode('authority'));
+    seedLegacyText(store, 'note.md', 'stale branch');
+
+    // Removing the authority would strand the conflict: 'v2' resolution reports
+    // that there is nothing to keep.
+    await expectFsError(provider.remove(path), 'conflict');
+    expect(decode((await provider.readFile(path))?.data)).to.equal('authority');
+
+    // Discarding the legacy candidate is the explicit way through.
+    expect(await provider.discardLegacyMigrationConflict(path)).to.equal(true);
+    expect((await provider.remove(path)).removed).to.equal(true);
+    await provider.dispose();
+  });
+
+  it('refuses to remove a directory holding a quarantined descendant', async () => {
+    const store = new FakeTransactionalStore();
+    store.seed('fs:dirs', ['dir']);
+    seedLegacyText(store, 'dir/child.md', 'text authority');
+    store.seed('fs:dir/child.md:binary', encode('binary authority').buffer);
+    const { provider } = createProvider(store);
+
+    await expectFsError(provider.remove(p('/dir'), { recursive: true }), 'conflict');
+    expect(await provider.stat(p('/dir'))).to.not.equal(null);
+    await provider.dispose();
+  });
+
   it('commits quarantine before rejecting a same-path mutation', async () => {
     const { provider, store } = createProvider();
     const path = p('/note.md');
@@ -406,6 +462,226 @@ describe('IndexedDBFileSystemProviderV2 migration and compatibility', () => {
 
     expect(store.closeCalls).to.equal(1);
     expect(store.snapshot().has('v2:entry:closing.md')).to.equal(true);
+  });
+
+  it('surfaces archived third-party legacy keys instead of hiding them forever', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:some-other-tool', 'third-party payload');
+
+    // The archive is written during quarantine, which any read triggers.
+    await provider.readFile(p('/other.md'));
+
+    const records = await provider.listLegacyOpaqueRecords();
+    expect(records).to.have.length(1);
+    expect(records[0]).to.deep.equal({
+      key: 'fs:some-other-tool',
+      valueCount: 1,
+      byteLength: encode('third-party payload').byteLength,
+      firstArchivedAt: '2026-07-11T12:00:00.000Z',
+      lastArchivedAt: '2026-07-11T12:00:00.000Z',
+    });
+    expect([...store.snapshot().keys()].some((key) => key.startsWith('fs:'))).to.equal(false);
+
+    await provider.dispose();
+  });
+
+  it('round-trips every appended archive value out intact and distinguishable', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+
+    // Re-quarantine appends rather than de-duplicates, because each snapshot is
+    // genuinely different data that DocBlocks could not interpret.
+    for (const round of [1, 2, 3]) {
+      store.seed('fs:some-other-tool', `n:${round}`);
+      await provider.readFile(p('/other.md'));
+    }
+
+    const summary = (await provider.listLegacyOpaqueRecords())[0]!;
+    expect(summary.valueCount).to.equal(3);
+
+    const record = await provider.readLegacyOpaqueRecord('fs:some-other-tool');
+    // The second and third values must both come back, and be told apart.
+    expect(record?.values.map((item) => item.value)).to.deep.equal(['n:1', 'n:2', 'n:3']);
+    expect(record?.values[1]?.value).to.equal('n:2');
+    expect(record?.values[2]?.value).to.equal('n:3');
+    expect(record?.values.map((item) => item.byteLength)).to.deep.equal([3, 3, 3]);
+
+    await provider.dispose();
+  });
+
+  it('round-trips archived binary payloads byte-for-byte', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:some-other-tool', new Uint8Array([0, 1, 255]).buffer);
+
+    await provider.readFile(p('/other.md'));
+
+    const record = await provider.readLegacyOpaqueRecord('fs:some-other-tool');
+    expect(bytes(record?.values[0]?.value)).to.deep.equal([0, 1, 255]);
+    expect(record?.byteLength).to.equal(3);
+
+    await provider.dispose();
+  });
+
+  it('reports an unknown total rather than understating an unsized archive', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:some-other-tool', { arbitrary: 'structured clone' });
+
+    await provider.readFile(p('/other.md'));
+
+    const summary = (await provider.listLegacyOpaqueRecords())[0]!;
+    expect(summary.byteLength).to.equal(null);
+    expect(summary.valueCount).to.equal(1);
+    const record = await provider.readLegacyOpaqueRecord('fs:some-other-tool');
+    expect(record?.values[0]?.value).to.deep.equal({ arbitrary: 'structured clone' });
+    expect(record?.values[0]?.byteLength).to.equal(null);
+
+    await provider.dispose();
+  });
+
+  it('discards exactly the archived records it claims and reclaims their keys', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:tool-a', 'payload a');
+    store.seed('fs:tool-b', 'payload b');
+    await provider.readFile(p('/other.md'));
+
+    const records = await provider.listLegacyOpaqueRecords();
+    expect(records.map((item) => item.key)).to.deep.equal(['fs:tool-a', 'fs:tool-b']);
+
+    const discarded = await provider.discardLegacyOpaqueRecords(
+      records.filter((item) => item.key === 'fs:tool-a'),
+    );
+    expect(discarded).to.equal(1);
+
+    // Exactly one record left, the untouched one, and the quota is released.
+    expect((await provider.listLegacyOpaqueRecords()).map((item) => item.key)).to.deep.equal([
+      'fs:tool-b',
+    ]);
+    expect(await provider.readLegacyOpaqueRecord('fs:tool-a')).to.equal(null);
+    expect((await provider.readLegacyOpaqueRecord('fs:tool-b'))?.values[0]?.value).to.equal(
+      'payload b',
+    );
+    expect(
+      [...store.snapshot().keys()].filter((key) => key.startsWith('v2:legacy-opaque:')),
+    ).to.deep.equal(['v2:legacy-opaque:fs%3Atool-b']);
+
+    await provider.dispose();
+  });
+
+  it('refuses to destroy an archive that grew since the caller looked at it', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:some-other-tool', 'seen');
+    await provider.readFile(p('/other.md'));
+    const stale = await provider.listLegacyOpaqueRecords();
+
+    // A stale client appends a snapshot the caller has never seen.
+    store.seed('fs:some-other-tool', 'never seen by the caller');
+    await provider.readFile(p('/other.md'));
+
+    await expectFsError(provider.discardLegacyOpaqueRecords(stale), 'conflict');
+    const survived = await provider.readLegacyOpaqueRecord('fs:some-other-tool');
+    expect(survived?.values.map((item) => item.value)).to.deep.equal([
+      'seen',
+      'never seen by the caller',
+    ]);
+
+    // Looking again is the way through.
+    await provider.discardLegacyOpaqueRecords(await provider.listLegacyOpaqueRecords());
+    expect(await provider.listLegacyOpaqueRecords()).to.deep.equal([]);
+    await provider.dispose();
+  });
+
+  it('destroys nothing when any target in a batch is stale', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('fs:tool-a', 'payload a');
+    store.seed('fs:tool-b', 'payload b');
+    await provider.readFile(p('/other.md'));
+    const stale = await provider.listLegacyOpaqueRecords();
+
+    store.seed('fs:tool-b', 'payload b prime');
+    await provider.readFile(p('/other.md'));
+
+    await expectFsError(provider.discardLegacyOpaqueRecords(stale), 'conflict');
+    // tool-a was valid but must survive: the batch is all-or-nothing.
+    expect((await provider.listLegacyOpaqueRecords()).map((item) => item.key)).to.deep.equal([
+      'fs:tool-a',
+      'fs:tool-b',
+    ]);
+
+    await provider.dispose();
+  });
+
+  it('treats discarding an already-absent archive as a no-op', async () => {
+    const { provider } = createProvider();
+    await provider.snapshot();
+
+    expect(
+      await provider.discardLegacyOpaqueRecords([{ key: 'fs:never', valueCount: 1 }]),
+    ).to.equal(0);
+    expect(await provider.readLegacyOpaqueRecord('fs:never')).to.equal(null);
+
+    await provider.dispose();
+  });
+
+  it('stays inert when nothing was ever archived', async () => {
+    const { provider } = createProvider();
+    await provider.writeFile(p('/note.md'), encode('authority'));
+
+    expect(await provider.listLegacyOpaqueRecords()).to.deep.equal([]);
+    expect(await provider.readLegacyOpaqueRecord('fs:some-other-tool')).to.equal(null);
+    expect(await provider.discardLegacyOpaqueRecords([])).to.equal(0);
+
+    await provider.dispose();
+  });
+
+  it('surfaces untimestamped v1 archive records without inventing a time', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('v2:legacy-opaque:fs%3Aold-tool', {
+      schemaVersion: 1,
+      key: 'fs:old-tool',
+      values: ['archived by an older build'],
+    });
+
+    const summary = (await provider.listLegacyOpaqueRecords())[0]!;
+    expect(summary).to.deep.include({ key: 'fs:old-tool', valueCount: 1, firstArchivedAt: null });
+    const record = await provider.readLegacyOpaqueRecord('fs:old-tool');
+    expect(record?.values[0]?.value).to.equal('archived by an older build');
+    expect(record?.values[0]?.archivedAt).to.equal(null);
+
+    // A v1 record is still discardable through the same guarded path.
+    expect(await provider.discardLegacyOpaqueRecords([summary])).to.equal(1);
+    await provider.dispose();
+  });
+
+  it('appends onto a v1 archive record without losing its earlier values', async () => {
+    const { provider, store } = createProvider();
+    await provider.snapshot();
+    store.seed('v2:legacy-opaque:fs%3Aold-tool', {
+      schemaVersion: 1,
+      key: 'fs:old-tool',
+      values: ['from the older build'],
+    });
+    store.seed('fs:old-tool', 'from this build');
+
+    await provider.readFile(p('/other.md'));
+
+    const record = await provider.readLegacyOpaqueRecord('fs:old-tool');
+    expect(record?.values.map((item) => item.value)).to.deep.equal([
+      'from the older build',
+      'from this build',
+    ]);
+    expect(record?.values.map((item) => item.archivedAt)).to.deep.equal([
+      null,
+      '2026-07-11T12:00:00.000Z',
+    ]);
+
+    await provider.dispose();
   });
 
   it('exposes a legacy facade that writes only the shared v2 authority', async () => {

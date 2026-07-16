@@ -8,6 +8,7 @@ export type FsErrorCode =
   | 'not-empty'
   | 'permission-denied'
   | 'conflict'
+  | 'corrupt'
   | 'quota-exceeded'
   | 'not-supported'
   | 'busy'
@@ -57,6 +58,7 @@ const FS_ERROR_CODES: ReadonlySet<string> = new Set<FsErrorCode>([
   'not-empty',
   'permission-denied',
   'conflict',
+  'corrupt',
   'quota-exceeded',
   'not-supported',
   'busy',

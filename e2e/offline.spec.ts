@@ -5,6 +5,33 @@ import { test, expect } from '@playwright/test';
 // config's header comment.
 
 test.describe('DocBlocks offline (PWA)', () => {
+  test('reports a first-install cache quota failure without breaking the online editor', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(90_000);
+    const devtools = await context.newCDPSession(page);
+    await devtools.send('Storage.overrideQuotaForOrigin', {
+      origin: 'http://localhost:5230',
+      // Enough for normal IndexedDB startup, deliberately below the checked
+      // ~25 MiB application precache.
+      quotaSize: 4 * 1024 * 1024,
+    });
+    try {
+      await page.goto('/');
+      await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator('.db-pwa-install-error')).toContainText(
+        'could not finish caching the app for offline use',
+        { timeout: 45_000 },
+      );
+      await expect(page.locator('.db-pwa-install-error')).toContainText(
+        'The online editor still works',
+      );
+    } finally {
+      await devtools.detach();
+    }
+  });
+
   test('precaches the full app and works offline end-to-end', async ({ page, context }) => {
     // The first visit downloads the whole ~22 MB precache in the background.
     test.setTimeout(180_000);
@@ -38,6 +65,22 @@ test.describe('DocBlocks offline (PWA)', () => {
     await page.reload();
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 10_000 });
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+
+    // Static product and crawl routes are precached as their own resources;
+    // the root-only navigation fallback must never replace them with the app.
+    const robotsPage = await context.newPage();
+    await robotsPage.goto('/robots.txt');
+    await expect(robotsPage.locator('body')).toContainText(
+      'Sitemap: https://docblocks.com/sitemap.xml',
+    );
+    await robotsPage.close();
+
+    const desktopPage = await context.newPage();
+    await desktopPage.goto('/desktop/');
+    await expect(desktopPage.getByRole('heading', { level: 1 })).toContainText(
+      'Your Markdown. Your folders.',
+    );
+    await desktopPage.close();
 
     // Cold start while offline: navigation falls back to the precached
     // index.html and every asset serves from the cache.

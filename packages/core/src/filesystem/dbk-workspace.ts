@@ -13,9 +13,9 @@ export interface DbkWorkspaceSnapshotOptions {
   targetDocumentPath: string;
   /**
    * `preserve` treats the DBK as a serialized workspace tree. `companion`
-   * rebases non-document files beneath `<document>_files/`. `auto` preserves
-   * a DBK whose primary path already matches the target, otherwise rebasing
-   * imported media into the companion directory.
+   * rebases secondary Markdown files beneath `<document>_files/`. `auto`
+   * preserves a DBK whose primary path already matches the target, otherwise
+   * rebasing the secondary documents into the companion directory.
    */
   assetLayout?: DbkWorkspaceAssetLayout;
 }
@@ -28,7 +28,14 @@ export interface DbkWorkspaceSnapshot extends MemoryFileSystemSnapshot {
 }
 
 function normaliseRelativePath(path: string, label: string): string {
-  if (path.includes('\\') || path.includes('\0')) {
+  if (
+    path.includes('\\') ||
+    /^[a-zA-Z]:/u.test(path) ||
+    [...path].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || codePoint === 0x7f;
+    })
+  ) {
     throw new Error(`DBK ${label} must use a safe forward-slash path: ${path}`);
   }
   const normalized = path.replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
@@ -39,13 +46,28 @@ function normaliseRelativePath(path: string, label: string): string {
   return segments.join('/');
 }
 
+function decodeMarkdownFile(data: ArrayBuffer, path: string): string {
+  let content: string;
+  try {
+    content = new TextDecoder('utf-8', { fatal: true }).decode(data);
+  } catch {
+    throw new Error(`The external DBK contains invalid UTF-8 Markdown: ${path}`);
+  }
+  if (content.includes('\0')) {
+    throw new Error(`The external DBK contains a NUL character in Markdown: ${path}`);
+  }
+  return content;
+}
+
 function joinPath(parent: string, child: string): string {
   return `${parent.replace(/\/+$/g, '')}/${child.replace(/^\/+/, '')}`;
 }
 
 /**
  * Fully materialize and validate a DBK container before touching its target
- * provider. A missing or unreadable entry fails the snapshot as a whole.
+ * provider. Transient workspace DBKs are intentionally Markdown-only: every
+ * member must be a valid UTF-8 `.md` file. A missing, unreadable, binary, or
+ * differently typed entry fails the snapshot as a whole.
  */
 export async function createDbkWorkspaceSnapshot(
   source: ContentContainer,
@@ -74,6 +96,7 @@ export async function createDbkWorkspaceSnapshot(
   const listed = await source.listFiles();
   const entries = [...listed].sort((a, b) => a.path.localeCompare(b.path));
   const seenSourcePaths = new Set<string>();
+  const validatedEntries: Array<{ sourcePath: string; containerPath: string }> = [];
   const files: MemoryFileSystemSnapshotFile[] = [];
   let documentContent: string | null = null;
 
@@ -83,24 +106,30 @@ export async function createDbkWorkspaceSnapshot(
       throw new Error(`The external DBK contains duplicate paths: ${sourcePath}`);
     }
     seenSourcePaths.add(sourcePath);
+    if (!/\.md$/iu.test(sourcePath)) {
+      throw new Error(
+        `The external DBK is corrupt: only Markdown (.md) files are allowed (${sourcePath}).`,
+      );
+    }
+    validatedEntries.push({ sourcePath, containerPath: entry.path });
+  }
 
-    const data = await source.readFile(entry.path);
+  for (const entry of validatedEntries) {
+    const { sourcePath } = entry;
+    const data = await source.readFile(entry.containerPath);
     if (data === null) {
       throw new Error(`The external DBK changed while reading: ${sourcePath}`);
     }
+    const content = decodeMarkdownFile(data, sourcePath);
     if (sourcePath === sourceDocumentPath) {
-      documentContent = new TextDecoder().decode(data);
+      documentContent = content;
       files.push({ kind: 'text', path: targetDocumentPath, content: documentContent });
       continue;
     }
 
     const targetPath =
       assetLayout === 'preserve' ? sourcePath : joinPath(companionPath, sourcePath);
-    if (/\.(?:md|mdx|txt)$/i.test(sourcePath)) {
-      files.push({ kind: 'text', path: targetPath, content: new TextDecoder().decode(data) });
-    } else {
-      files.push({ kind: 'binary', path: targetPath, data });
-    }
+    files.push({ kind: 'text', path: targetPath, content });
   }
 
   if (documentContent === null) {

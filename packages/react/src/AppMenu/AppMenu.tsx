@@ -5,13 +5,21 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VersioningPreference } from '../preferences/versioning.js';
 import type { AccentColor, ThemePreference } from '../preferences/theme.js';
-import { AccentColorSettings, SettingsDialog, ThemeSettings } from '../Settings/Settings.js';
+import {
+  DEFAULT_WRITE_CANVAS_PREFERENCES,
+  type WriteCanvasPreferences,
+} from '../preferences/write-canvas.js';
+import {
+  AccentColorSettings,
+  SettingsDialog,
+  ThemeSettings,
+  WriteCanvasSettingsControls,
+} from '../Settings/Settings.js';
+import { Dialog } from '../components/Dialog.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
 export interface AppMenuProps {
-  /** URL for the about page. */
-  aboutUrl?: string;
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
   /** Current theme preference. */
@@ -22,6 +30,10 @@ export interface AppMenuProps {
   accentColor?: AccentColor;
   /** Called when the user changes the accent color. */
   onAccentColorChange?: (color: AccentColor) => void;
+  /** Current typography preferences for the editor's Write canvas. */
+  writeCanvasSettings?: WriteCanvasPreferences;
+  /** Called when the user changes the Write canvas typography. */
+  onWriteCanvasSettingsChange?: (settings: WriteCanvasPreferences) => void;
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -65,12 +77,13 @@ function formatBytes(bytes: number): string {
 }
 
 export function AppMenu({
-  aboutUrl: _aboutUrl = '#about',
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
   accentColor = 'brown',
   onAccentColorChange,
+  writeCanvasSettings = DEFAULT_WRITE_CANVAS_PREFERENCES,
+  onWriteCanvasSettingsChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
@@ -82,6 +95,7 @@ export function AppMenu({
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [storageEstimate, setStorageEstimate] = useState<{
     usage: number;
@@ -120,6 +134,16 @@ export function AppMenu({
     action();
   }, []);
 
+  const handleKeepBrowserDataFromSettings = useCallback(async () => {
+    if (!onKeepBrowserData || requestingPersistentStorage) return;
+    setRequestingPersistentStorage(true);
+    try {
+      await onKeepBrowserData();
+    } finally {
+      setRequestingPersistentStorage(false);
+    }
+  }, [onKeepBrowserData, requestingPersistentStorage]);
+
   return (
     <>
       <div ref={menuRef} className="db-app-menu">
@@ -130,7 +154,13 @@ export function AppMenu({
           aria-haspopup="true"
         >
           {logoUrl ? (
-            <img src={logoUrl} alt="docblocks" className="db-app-menu-logo" />
+            <img
+              src={logoUrl}
+              alt="DocBlocks"
+              className="db-app-menu-logo"
+              width={1266}
+              height={544}
+            />
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
@@ -198,6 +228,10 @@ export function AppMenu({
             value={accentColor}
             onChange={(color) => onAccentColorChange?.(color)}
           />
+          <WriteCanvasSettingsControls
+            value={writeCanvasSettings}
+            onChange={(settings) => onWriteCanvasSettingsChange?.(settings)}
+          />
 
           {getStorageEstimate && (
             <fieldset className="db-settings-fieldset">
@@ -209,13 +243,27 @@ export function AppMenu({
                     )} of the ${formatBytes(
                       storageEstimate.quota,
                     )} this browser allows for the site.`
-                  : 'Storage usage is not available in this browser.'}{' '}
-                {storagePersistent === undefined
-                  ? ''
-                  : storagePersistent
-                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
-                    : 'Data is not yet marked persistent — use “Keep data in browser for longer” in the app menu.'}
+                  : 'Storage usage is not available in this browser.'}
               </p>
+              {storagePersistent !== undefined && (
+                <p className="db-settings-hint">
+                  {storagePersistent
+                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
+                    : 'Data is not yet marked persistent.'}
+                </p>
+              )}
+              {onKeepBrowserData && (
+                <button
+                  type="button"
+                  className="db-settings-action"
+                  disabled={requestingPersistentStorage}
+                  onClick={() => void handleKeepBrowserDataFromSettings()}
+                >
+                  {requestingPersistentStorage
+                    ? 'Requesting persistent storage…'
+                    : 'Keep data in browser for longer'}
+                </button>
+              )}
             </fieldset>
           )}
 
@@ -263,71 +311,48 @@ export function AppMenu({
       )}
 
       {showAbout && (
-        <div className="db-dialog-overlay" onClick={() => setShowAbout(false)}>
-          <div
-            className="db-dialog"
-            role="dialog"
-            aria-label="About DocBlocks"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="db-dialog-header">
-              <h2 className="db-dialog-title">About DocBlocks</h2>
-              <button
-                className="db-dialog-close"
-                onClick={() => setShowAbout(false)}
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="db-dialog-body">
-              <p>
-                <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
-                browser. Your files stay on your device.
-              </p>
-              <p>
-                Built on{' '}
-                <a
-                  href="https://github.com/bendyline/squisq"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  squisq
-                </a>{' '}
-                by{' '}
-                <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
-                  Bendyline
-                </a>
-                .
-              </p>
-              <p className="db-dialog-links">
-                <a
-                  href="https://github.com/bendyline/docblocks"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  GitHub
-                </a>
-                <span className="db-dialog-sep">&middot;</span>
-                <a
-                  href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  License (MIT)
-                </a>
-                <span className="db-dialog-sep">&middot;</span>
-                <a
-                  href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  &hearts; built on open source
-                </a>
-              </p>
-            </div>
-          </div>
-        </div>
+        <Dialog title="About DocBlocks" onClose={() => setShowAbout(false)}>
+          <p>
+            <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
+            browser. Your files stay on your device.
+          </p>
+          <p>
+            Built with{' '}
+            <a href="https://github.com/bendyline/squisq" target="_blank" rel="noopener noreferrer">
+              squisq
+            </a>{' '}
+            by{' '}
+            <a href="https://bendyline.com" target="_blank" rel="noopener noreferrer">
+              Bendyline
+            </a>
+            .
+          </p>
+          <p className="db-dialog-links">
+            <a
+              href="https://github.com/bendyline/docblocks"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              GitHub
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              License (MIT)
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              &hearts; built on open source
+            </a>
+          </p>
+        </Dialog>
       )}
     </>
   );

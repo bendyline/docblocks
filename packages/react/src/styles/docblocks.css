@@ -27,6 +27,11 @@
   --db-accent-hover: #5e4f37;
   --db-text-on-accent: #ffffff;
   --db-text-on-selected: #ffffff;
+  /* Keyboard focus ring. Deliberately darker than --db-accent: the accent
+     is also the *selected row* fill, so an accent ring vanished against
+     it. Any surface that paints itself --db-bg-selected re-points this
+     token at a contrasting value (see .db-tree-row--selected). */
+  --db-focus: #3d3220;
   --db-accent-soft-08: rgba(125, 105, 72, 0.08);
   --db-accent-soft-10: rgba(125, 105, 72, 0.1);
   --db-accent-soft-12: rgba(125, 105, 72, 0.12);
@@ -45,6 +50,7 @@
   --db-input-border: #c4b693;
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
+  --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
   /* Git status colors — file badges, sync chips. Deleted/conflicted reuse
      the danger hue on purpose; renamed gets the one cool accent. */
@@ -72,6 +78,7 @@
   --db-accent-hover: #dec79d;
   --db-text-on-accent: #1a1812;
   --db-text-on-selected: #e8e2d0;
+  --db-focus: #e8e2d0;
   --db-accent-soft-08: rgba(200, 180, 143, 0.08);
   --db-accent-soft-10: rgba(200, 180, 143, 0.1);
   --db-accent-soft-12: rgba(200, 180, 143, 0.12);
@@ -86,6 +93,7 @@
   --db-input-border: #c8b48f;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
+  --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
   /* In dark mode, "lighter than the toolbar" means brighter — so this
      sits a step above `--db-accent-tint-strong` instead of between it
@@ -116,6 +124,7 @@
     --db-accent-hover: #dec79d;
     --db-text-on-accent: #1a1812;
     --db-text-on-selected: #e8e2d0;
+    --db-focus: #e8e2d0;
     --db-accent-soft-08: rgba(200, 180, 143, 0.08);
     --db-accent-soft-12: rgba(200, 180, 143, 0.12);
     --db-accent-soft-15: rgba(200, 180, 143, 0.18);
@@ -125,6 +134,7 @@
     --db-input-border: #c8b48f;
     --db-danger: #f87171;
     --db-danger-bg: #1c1917;
+    --db-text-on-danger: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
     --db-gutter-bg: #4a4538;
     --db-git-modified: #e5b567;
@@ -208,6 +218,114 @@
   color: var(--db-text-secondary);
 }
 
+/* ── Transient workspace move ────────────────────────────────── */
+
+.db-transient-move {
+  flex-shrink: 0;
+  padding: 8px;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-accent-soft-08);
+}
+
+.db-transient-move-trigger {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-accent-deep);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-transient-move-trigger:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-transient-move-trigger:focus-visible,
+.db-transient-move-select:focus-visible,
+.db-transient-move-actions button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-transient-move-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.db-transient-move-label {
+  color: var(--db-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-transient-move-select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 28px 6px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+
+.db-transient-move-hint,
+.db-transient-move-error {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.db-transient-move-hint {
+  color: var(--db-text-muted);
+}
+
+.db-transient-move-error {
+  color: var(--db-danger);
+}
+
+.db-transient-move-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.db-transient-move-actions button {
+  padding: 5px 10px;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-transient-move-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.db-transient-move-cancel {
+  border: 1px solid var(--db-border-strong);
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+}
+
+.db-transient-move-submit {
+  border: 1px solid var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-transient-move-submit:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
 /* ── New Item Input ──────────────────────────────────────────── */
 
 .db-new-item {
@@ -232,6 +350,25 @@
   border: 1px solid var(--db-input-border);
   border-radius: 3px;
   outline: none;
+}
+
+/* The UA outline is suppressed above, so this is the *only* focus
+   indicator on an input a keyboard user has to type into (WCAG 2.4.7).
+   :focus-visible rather than :focus so a pointer user placing a caret
+   doesn't get a ring. */
+.db-new-item-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+  border-color: var(--db-accent);
+}
+
+.db-new-item-input[aria-invalid='true'] {
+  border-color: var(--db-danger);
+}
+
+.db-new-item-add:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
 }
 
 .db-new-item-suffix {
@@ -279,6 +416,17 @@
   font-size: 12px;
 }
 
+.db-tree-error-retry {
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .db-tree--drop-target {
   box-shadow: inset 0 0 0 2px var(--db-accent);
   background: var(--db-accent-soft-08);
@@ -296,6 +444,22 @@
 
 .db-tree-row:hover {
   background: var(--db-bg-hover);
+}
+
+/* The roving-tabindex row is the tree's single tab stop, so its focus ring
+   is the only thing telling a keyboard user where they are. Inset offset
+   keeps the ring inside the scroll container instead of being clipped. */
+.db-tree-row:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+/* A selected/drop-target row is filled with --db-bg-selected, which in
+   light mode *is* the accent brown — the default ring would disappear
+   into it. Re-point the token rather than duplicating the rule. */
+.db-tree-row--selected,
+.db-tree-row--drop-target {
+  --db-focus: #ffffff;
 }
 
 .db-tree-row--dragging {
@@ -348,6 +512,15 @@
   outline: none;
 }
 
+/* Same WCAG 2.4.7 gap as .db-new-item-input: the rename input is focused
+   programmatically the moment it appears, so with `outline: none` and no
+   replacement a keyboard user had no idea where they were typing. */
+.db-tree-rename-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+  border-color: var(--db-accent);
+}
+
 .db-tree-more {
   flex-shrink: 0;
   display: inline-flex;
@@ -377,6 +550,11 @@
 .db-tree-more:hover {
   background: var(--db-bg-hover);
   color: var(--db-text);
+}
+
+.db-tree-more:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-tree-more--active {
@@ -413,8 +591,16 @@
   color: var(--db-text-secondary);
 }
 
-.db-tree-context-item:hover {
+.db-tree-context-item:hover,
+.db-tree-context-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Menu items are reached with Arrow keys (they are not tab stops), so the
+   ring is the only cue to which item Enter will fire. */
+.db-tree-context-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-tree-context-item--danger {
@@ -947,9 +1133,16 @@ body.db-resizing-sidebar * {
   background: var(--db-bg-hover);
 }
 
-.db-mobile-back-arrow {
-  font-size: 18px;
-  line-height: 1;
+.db-mobile-files-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.db-mobile-files-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
 /* In folder/empty views, the back button sits as a standalone bar */
@@ -991,16 +1184,23 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  padding: 16px;
   background: rgba(0, 0, 0, 0.4);
 }
 
 .db-dialog {
+  box-sizing: border-box;
   background: var(--db-bg);
   border: 1px solid var(--db-border);
   border-radius: 8px;
   box-shadow: 0 8px 32px var(--db-shadow);
   width: 380px;
-  max-width: 90vw;
+  max-width: 100%;
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
 }
 
 .db-dialog-header {
@@ -1035,6 +1235,8 @@ body.db-resizing-sidebar * {
 }
 
 .db-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
   padding: 16px 20px 20px;
   font-size: 13px;
   line-height: 1.6;
@@ -1135,10 +1337,68 @@ body.db-resizing-sidebar * {
   accent-color: var(--db-accent);
 }
 
+.db-settings-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-slider + .db-settings-slider {
+  margin-top: 14px;
+}
+
+.db-settings-slider-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.db-settings-slider-value {
+  color: var(--db-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.db-settings-slider input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--db-accent);
+  cursor: pointer;
+}
+
 .db-settings-accent-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 6px;
+}
+
+.db-settings-action {
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-settings-action:hover:not(:disabled) {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-settings-action:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
+.db-settings-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .db-settings-accent {
@@ -1349,15 +1609,17 @@ body.db-resizing-sidebar * {
   width: 28px;
   height: 28px;
   padding: 0;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 1px;
   line-height: 1;
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   background: none;
   color: var(--db-text-muted);
+}
+
+.db-toolbar-menu-trigger svg {
+  width: 18px;
+  height: 18px;
 }
 
 .db-toolbar-menu-trigger:hover {
@@ -1411,8 +1673,15 @@ body.db-resizing-sidebar * {
   white-space: nowrap;
 }
 
-.db-toolbar-menu-item:hover {
+.db-toolbar-menu-item:hover,
+.db-toolbar-menu-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Arrow-reachable, not a tab stop — see .db-git-menu-item:focus-visible. */
+.db-toolbar-menu-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-toolbar-menu-item:disabled {
@@ -1627,6 +1896,53 @@ body.db-resizing-sidebar * {
   color: var(--db-text-on-accent);
 }
 
+/* Shared-document links intentionally resemble export because they package a
+   bounded Markdown-only DBK; the warning is the critical distinction. */
+.db-share-dialog {
+  width: 480px;
+}
+
+.db-share-warning {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  color: var(--db-text);
+  background: color-mix(in srgb, var(--db-accent) 12%, var(--db-bg-subtle));
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+}
+
+.db-share-link {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px;
+  font:
+    11px/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  color: var(--db-text);
+  background: var(--db-bg-subtle);
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+.db-share-link:focus {
+  border-color: var(--db-accent);
+}
+
+.db-share-length-warning {
+  color: var(--db-danger, #a33a35);
+}
+
+.db-share-temporary-note {
+  color: var(--db-text-muted);
+}
+
 /* ── Squisq editor chrome separators ─────────────────────────── */
 /* Strengthen the dividers so the toolbar, tabs, and editor body
    read as three distinct zones instead of near-identical whites.  */
@@ -1654,6 +1970,25 @@ body.db-resizing-sidebar * {
 
 .db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
   background: var(--db-editor-canvas);
+}
+
+/* Bind Squisq's host-facing accent to the active DocBlocks appearance. */
+.db-shell .squisq-editor-shell {
+  --squisq-accent: var(--db-accent);
+  --squisq-accent-hover: var(--db-accent-hover);
+  --squisq-text-on-accent: var(--db-text-on-accent);
+}
+
+/* Simple diagrams, drawings, and layout canvases share Squisq's Scene
+   engine. Keep canvas and raised-control surfaces on the same DocBlocks
+   palette instead of falling back to slate. */
+.db-shell .squisq-editor-shell .squisq-scene-shell {
+  --squisq-surface: var(--db-editor-canvas);
+  --squisq-surface-raised: var(--db-bg-subtle);
+  --squisq-surface-hover: var(--db-bg-hover);
+  --squisq-border: var(--db-border-strong);
+  --squisq-text: var(--db-text);
+  --squisq-text-muted: var(--db-text-muted);
 }
 
 /* ── Inline preview gutter: thematic green ──────────────────── */
@@ -1790,6 +2125,102 @@ body.db-resizing-sidebar * {
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark,
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark .squisq-image-viewer-stage {
   background: var(--db-bg);
+}
+
+/* Squisq's media bin ships with a fixed blue-slate palette. Bind the full
+   pane to DocBlocks' appearance tokens so its surface and controls follow
+   the selected accent in both light and dark themes. */
+.db-shell .squisq-editor-shell .squisq-media-bin {
+  background: var(--db-bg-subtle);
+  border-left-color: var(--db-border);
+  color: var(--db-text);
+  scrollbar-color: var(--db-border-strong) var(--db-bg-subtle);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-header {
+  border-bottom-color: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-title {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload {
+  background: var(--db-accent-tint-strong);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload:hover {
+  background: var(--db-bg-hover);
+  border-color: var(--db-border-strong);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-empty,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-size {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item {
+  border-bottom-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:hover,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:focus-visible {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-item:focus-visible {
+  outline-color: var(--db-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-thumb,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-icon {
+  background: var(--db-accent-tint-strong);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target {
+  background: color-mix(in srgb, var(--db-bg-subtle) 92%, var(--db-accent));
+  border-color: var(--db-accent);
+  color: var(--db-accent-deep);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target-icon {
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-drop-target span:last-child {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow: 0 12px 28px var(--db-shadow);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item {
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item:hover,
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item:focus-visible {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item--danger {
+  color: var(--db-danger);
+}
+
+.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu-item--danger:hover,
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  .squisq-media-bin-context-menu-item--danger:focus-visible {
+  background: var(--db-danger-bg);
+  color: var(--db-danger);
 }
 
 /* ── Squisq accent override (blue → thematic green) ──────────── */
@@ -1943,8 +2374,9 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
 /* The gallery popover renders into document.body via createPortal, so
    neither .db-shell nor .squisq-editor-shell are ancestors. We use
    `html:has(.db-shell[data-theme='dark'])` to detect docblocks' dark
-   theme from outside the shell, then style the portaled gallery (its
-   root has id="squisq-template-gallery-portal"). */
+   theme from outside the shell, then bind the portaled dialog through
+   Squisq's stable `data-squisq-template-gallery-portal` marker. Dialog
+   and gallery ids are intentionally instance-specific. */
 
 .db-shell[data-theme='dark']
   .squisq-editor-shell[data-theme='dark']
@@ -1968,6 +2400,7 @@ html:has(.db-shell[data-theme='dark']) {
   --db-text-muted: #a89a7c;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
+  --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
@@ -1988,6 +2421,7 @@ html:has(.db-shell[data-theme='light']) {
   --db-text-muted: #6b614a;
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
+  --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
@@ -2336,7 +2770,7 @@ html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) .squisq-toolti
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='dark'] {
+  .squisq-template-gallery-dialog[data-theme='dark']:has([data-squisq-template-gallery-portal]) {
   --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(18, 14, 9, 0.58));
   --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, var(--db-bg));
   --squisq-template-gallery-panel-border: var(--db-border);
@@ -2390,7 +2824,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 html:has(.db-shell[data-theme='light'])
-  #squisq-template-gallery-dialog.squisq-template-gallery-dialog[data-theme='light'] {
+  .squisq-template-gallery-dialog[data-theme='light']:has([data-squisq-template-gallery-portal]) {
   --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(42, 36, 25, 0.24));
   --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, #fffdf7);
   --squisq-template-gallery-panel-border: var(--db-border);
@@ -2769,7 +3203,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell .squisq-props-badge {
-  transform: translateY(1px);
+  transform: none;
 }
 
 .db-shell .squisq-template-badge-core::after {
@@ -2965,13 +3399,17 @@ html:has(.db-shell[data-theme='dark'])
 
 /* Status bar "✓ OK" indicator — squisq paints this in saturated emerald
    (#059669 light, #34d399 dark). Re-tone to the sage accent so the
-   parse-status indicator harmonizes with the rest of the chrome. */
+   status indicator harmonizes with the rest of the chrome. */
 .db-shell .squisq-status-ok {
   color: var(--db-accent);
 }
 
 .db-shell[data-theme='dark'] .squisq-status-ok {
   color: var(--db-accent-hover);
+}
+
+.db-autosave-pending {
+  opacity: 0.62;
 }
 
 /* Outline pane (left of the editor) — squisq paints a warm beige
@@ -3232,7 +3670,7 @@ html:has(.db-shell[data-theme='dark'])
   font-size: 13px;
   font-weight: 600;
   background: var(--db-accent);
-  color: var(--db-bg);
+  color: var(--db-text-on-accent);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -3266,11 +3704,9 @@ html:has(.db-shell[data-theme='dark'])
 
 @keyframes db-welcome-gateway-in {
   from {
-    opacity: 0;
     transform: translate(-50%, 8px);
   }
   to {
-    opacity: 1;
     transform: translate(-50%, 0);
   }
 }
@@ -3336,7 +3772,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 /* Browser PWA update notice. It is docked over the right side of Squisq's
-   status bar, while extra status-bar padding keeps the parse result visible.
+   status bar, while extra status-bar padding keeps its contents visible.
    If the status bar is hidden, it becomes a compact floating badge so the
    waiting update remains reachable. */
 .db-shell-editor-area--has-update .squisq-status-bar {
@@ -3489,7 +3925,7 @@ html:has(.db-shell[data-theme='dark'])
 /* Dialog size modifiers (shared Dialog component) */
 .db-dialog--wide {
   width: 560px;
-  max-width: 94vw;
+  max-width: 100%;
 }
 
 .db-dialog--full {
@@ -3534,6 +3970,19 @@ html:has(.db-shell[data-theme='dark'])
 .db-git-primary-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Destructive confirmation (delete, remove workspace). The foreground comes
+   from a token rather than a literal because the two themes need opposite ink:
+   light's danger is deep red and carries white at ~6.5:1, while dark's is a
+   light red where white would fall to ~2.8:1 and fail WCAG AA. */
+.db-git-primary-btn--danger {
+  background: var(--db-danger);
+  color: var(--db-text-on-danger);
+}
+
+.db-git-primary-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--db-danger) 85%, black);
 }
 
 .db-git-secondary-btn {
@@ -3642,8 +4091,16 @@ html:has(.db-shell[data-theme='dark'])
   cursor: pointer;
 }
 
-.db-git-menu-item:hover:not(:disabled) {
+.db-git-menu-item:hover:not(:disabled),
+.db-git-menu-item:focus-visible {
   background: var(--db-bg-hover);
+}
+
+/* Items are arrow-reachable rather than tab stops, so the ring is the only
+   cue to which one Enter will fire. */
+.db-git-menu-item:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
 }
 
 .db-git-menu-item:disabled {
@@ -3814,7 +4271,8 @@ button.db-git-file-row:hover {
   box-sizing: border-box;
 }
 
-.db-git-form-error {
+.db-git-form-error,
+.db-export-error {
   margin: 8px 0 0;
   color: var(--db-danger);
   font-size: 12.5px;
@@ -3964,6 +4422,22 @@ button.db-git-file-row:hover {
   color: var(--db-text-muted);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .db-workspace-picker-caret,
+  .db-app-menu-caret,
+  .db-ws-settings-btn,
+  .db-shell-sidebar-resizer,
+  .db-export-chip,
+  .db-git-progress-bar > span {
+    transition: none;
+  }
+
+  .db-welcome-gateway,
+  .db-save-toast {
+    animation: none;
+  }
+}
+
 /* History dialog internals added by the expanded-row layout */
 .db-git-history-toggle {
   display: block;
@@ -4009,7 +4483,7 @@ button.db-git-file-row:hover {
    toggling the overlay chevron flips it with no JS. */
 @media (display-mode: window-controls-overlay) {
   .db-shell {
-    --db-wco-titlebar-height: 48px;
+    --db-wco-titlebar-height: env(titlebar-area-height, 32px);
   }
 
   /* The first shell row replaces the native titlebar. Empty space can drag
@@ -4025,8 +4499,34 @@ button.db-git-file-row:hover {
   }
 
   .db-shell .db-shell-sidebar-header {
+    padding-block: 0;
     padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));
     cursor: grab;
+  }
+
+  /* Keep the shell controls inside the compact native caption band. These
+     overrides apply only to an installed app using Window Controls Overlay;
+     the regular browser toolbar keeps its roomier metrics. */
+  .db-shell .db-app-menu-btn,
+  .db-shell .db-workspace-picker-btn {
+    padding-block: 3px;
+  }
+
+  .db-shell .squisq-toolbar-view-tab {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  .db-shell .squisq-use-mode-trigger {
+    padding-bottom: 9px;
+  }
+
+  .db-shell .squisq-toolbar-button[aria-label='Insert image'] {
+    height: 28px;
+  }
+
+  .db-shell .squisq-editor-header--image {
+    padding-block: 0;
   }
 
   /* Make the draggable header space beside the workspace gear discoverable,

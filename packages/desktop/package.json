@@ -5,7 +5,7 @@
   "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
   "author": "Bendyline",
   "license": "MIT",
-  "homepage": "https://github.com/bendyline/docblocks",
+  "homepage": "https://docblocks.com/desktop/",
   "repository": {
     "type": "git",
     "url": "https://github.com/bendyline/docblocks.git",
@@ -37,26 +37,22 @@
     "test:e2e:packaged:only": "playwright test --config=e2e/playwright.packaged.config.ts"
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.0.0",
-    "@bendyline/docblocks-react": "2.0.0",
-    "@bendyline/squisq": "2.0.1",
-    "@bendyline/squisq-editor-react": "2.0.1",
-    "@bendyline/squisq-formats": "2.0.1",
-    "@bendyline/squisq-react": "2.0.1",
-    "@bendyline/squisq-video": "2.0.1",
-    "@bendyline/squisq-video-react": "2.0.1",
     "chokidar": "3.6.0",
     "electron-updater": "6.3.9",
-    "electron-window-state": "5.0.3",
-    "mocha": "11.3.0",
-    "monaco-editor": "0.53.0",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "electron-window-state": "5.0.3"
   },
   "optionalDependencies": {
     "ffmpeg-static": "5.2.0"
   },
   "devDependencies": {
+    "@bendyline/docblocks": "2.0.0",
+    "@bendyline/docblocks-react": "2.0.0",
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-formats": "2.3.0",
+    "@bendyline/squisq-react": "2.3.0",
+    "@bendyline/squisq-video": "2.2.0",
+    "@bendyline/squisq-video-react": "2.2.0",
     "@electron/notarize": "2.5.0",
     "@playwright/test": "1.58.2",
     "@types/node": "22.10.2",
@@ -66,9 +62,13 @@
     "concurrently": "9.1.0",
     "electron": "42.2.0",
     "electron-builder": "26.8.1",
+    "mocha": "11.3.0",
+    "monaco-editor": "0.50.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
-    "vite": "6.4.2",
+    "vite": "6.4.3",
     "wait-on": "8.0.1"
   }
 }

@@ -1,0 +1,112 @@
+##
+# VS Code Extension Release Workflow
+#
+# Packages the extension version declared in packages/vscode/package.json and
+# creates a GitHub Release with the VSIX attached. Marketplace publishing is an
+# explicit opt-in and requires a repository secret named VSCE_PAT.
+##
+
+name: Release VS Code Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_marketplace:
+        description: 'Publish the VSIX to the Visual Studio Marketplace'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: 'vscode-release'
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    name: Canonical Quality Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Run canonical quality gate
+        run: xvfb-run -a npm run all
+
+  release:
+    name: Package and Release VSIX
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read extension version
+        id: extension
+        shell: bash
+        run: |
+          version="$(node --print "require('./packages/vscode/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=vscode-v$version" >> "$GITHUB_OUTPUT"
+          echo "vsix=packages/vscode/docblocks-vscode-$version.vsix" >> "$GITHUB_OUTPUT"
+
+      - name: Require Marketplace publishing token
+        if: inputs.publish_marketplace
+        shell: bash
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [[ -z "$VSCE_PAT" ]]; then
+            echo '::error::VSCE_PAT must be configured to publish to the Visual Studio Marketplace.'
+            exit 1
+          fi
+
+      - name: Package VS Code extension
+        run: npm run package:vscode
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.extension.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: DocBlocks for VS Code v${{ steps.extension.outputs.version }}
+          generate_release_notes: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: ${{ steps.extension.outputs.vsix }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to Visual Studio Marketplace
+        if: inputs.publish_marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+          VSIX_PATH: ${{ steps.extension.outputs.vsix }}
+        run: npm exec --workspace docblocks-vscode -- vsce publish --packagePath "$VSIX_PATH" --skip-duplicate

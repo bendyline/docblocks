@@ -12,13 +12,13 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.0.1",
-    "@bendyline/squisq-editor-react": "2.0.1",
-    "@bendyline/squisq-formats": "2.0.1",
-    "@bendyline/squisq-react": "2.0.1",
-    "@bendyline/squisq-video": "2.0.1",
-    "@bendyline/squisq-video-react": "2.0.1",
-    "monaco-editor": "0.53.0",
+    "@bendyline/squisq": "2.3.0",
+    "@bendyline/squisq-editor-react": "2.3.1",
+    "@bendyline/squisq-formats": "2.3.0",
+    "@bendyline/squisq-react": "2.3.0",
+    "@bendyline/squisq-video": "2.2.0",
+    "@bendyline/squisq-video-react": "2.2.0",
+    "monaco-editor": "0.50.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -27,7 +27,7 @@
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
     "typescript": "5.9.3",
-    "vite": "6.4.2",
+    "vite": "6.4.3",
     "vite-plugin-pwa": "1.3.0"
   }
 }
