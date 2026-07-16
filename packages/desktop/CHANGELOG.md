@@ -1,3 +1,15 @@
+## docblocks-desktop [2.1.2](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.1.1...docblocks-desktop@2.1.2) (2026-07-16)
+
+### Bug Fixes
+
+* More fixes ([#12](https://github.com/bendyline/docblocks/issues/12)) ([64a147a](https://github.com/bendyline/docblocks/commit/64a147a9d67426e9afd5155d1303e0fb07fb69c4))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.1.1
+* **@bendyline/docblocks-react:** upgraded to 2.1.1
+
 ## docblocks-desktop [2.1.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.1.0...docblocks-desktop@2.1.1) (2026-07-16)
 
 ### Bug Fixes

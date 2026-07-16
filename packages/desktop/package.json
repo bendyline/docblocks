@@ -1,6 +1,6 @@
 {
   "name": "docblocks-desktop",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "private": true,
   "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
   "author": "Bendyline",
@@ -45,8 +45,8 @@
     "ffmpeg-static": "5.2.0"
   },
   "devDependencies": {
-    "@bendyline/docblocks": "2.1.0",
-    "@bendyline/docblocks-react": "2.1.0",
+    "@bendyline/docblocks": "2.1.1",
+    "@bendyline/docblocks-react": "2.1.1",
     "@bendyline/squisq": "2.3.1",
     "@bendyline/squisq-editor-react": "2.3.2",
     "@bendyline/squisq-formats": "2.3.1",
