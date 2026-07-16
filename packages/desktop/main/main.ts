@@ -47,7 +47,7 @@ import { developmentUserDataPath, isDevelopmentRuntime } from './development-run
 import { hostEnvironmentArguments } from '../shared/host-environment.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
-const TITLE_BAR_HEIGHT = 32;
+const TITLE_BAR_HEIGHT = 42;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 

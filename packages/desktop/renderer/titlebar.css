@@ -5,7 +5,7 @@
    packages/react/src/styles/docblocks.css. Keep the two blocks in sync. */
 
 .db-desktop-root {
-  --db-desktop-titlebar-height: env(titlebar-area-height, 32px);
+  --db-desktop-titlebar-height: max(42px, env(titlebar-area-height, 32px));
 }
 
 /* The first shell row replaces the native titlebar. Empty space can drag
@@ -36,11 +36,11 @@
 
 .db-desktop-root .db-shell .squisq-toolbar-view-tab {
   padding-top: 4px;
-  padding-bottom: 4px;
+  padding-bottom: 7px;
 }
 
 .db-desktop-root .db-shell .squisq-use-mode-trigger {
-  padding-bottom: 9px;
+  padding-bottom: 12px;
 }
 
 .db-desktop-root .squisq-toolbar-button[aria-label='Insert image'] {

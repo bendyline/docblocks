@@ -112,7 +112,7 @@ describe('site SEO surface', () => {
     const robots = await read('public/robots.txt');
     const sitemap = await read('public/sitemap.xml');
 
-    expect(robots).to.equal(
+    expect(robots.replace(/\r\n?/gu, '\n')).to.equal(
       'User-agent: *\nAllow: /\n\nSitemap: https://docblocks.com/sitemap.xml\n',
     );
     expect(sitemap).to.include('<loc>https://docblocks.com/</loc>');

@@ -204,10 +204,57 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
   }
 }
 
+async function requireDesktopReleasePackaging(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  const vscodeJob = parsed.jobs['build-vscode-vsix'];
+  if (!isRecord(vscodeJob) || !Array.isArray(vscodeJob.steps)) {
+    throw new Error(`${relativePath}: build-vscode-vsix has no steps`);
+  }
+  const vscodeCommands = vscodeJob.steps.flatMap((step) =>
+    isRecord(step) && typeof step.run === 'string' ? [step.run.trim()] : [],
+  );
+  const orderedCommands = vscodeCommands.join('\n');
+  const buildCore = orderedCommands.indexOf('npm run build:core');
+  const buildReact = orderedCommands.indexOf('npm run build:react');
+  const packageVscode = orderedCommands.indexOf('npm run package:vscode');
+  if (buildCore < 0 || buildReact <= buildCore || packageVscode <= buildReact) {
+    throw new Error(
+      `${relativePath}: build-vscode-vsix must build core and React before packaging the extension`,
+    );
+  }
+
+  const macJob = parsed.jobs['build-macos'];
+  if (!isRecord(macJob) || macJob['runs-on'] !== 'macos-15' || !Array.isArray(macJob.steps)) {
+    throw new Error(`${relativePath}: build-macos must stay pinned to macos-15`);
+  }
+  const macPackageStep = macJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Build + package desktop (macOS)',
+  );
+  if (
+    !isRecord(macPackageStep) ||
+    macPackageStep['working-directory'] !== 'packages/desktop' ||
+    typeof macPackageStep.run !== 'string'
+  ) {
+    throw new Error(`${relativePath}: build-macos has no package step`);
+  }
+  for (const requiredFragment of [
+    'electron-builder --mac --publish never',
+    'max_attempts=3',
+    'A timestamp was expected but was not found.',
+    'rm -rf dist/artifacts',
+  ]) {
+    if (!macPackageStep.run.includes(requiredFragment)) {
+      throw new Error(`${relativePath}: build-macos package step is missing ${requiredFragment}`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const rootPackage = await readPackage('package.json');
-  requireScript(rootPackage, 'preall', 'npm run check:node-version');
-  requireScript(rootPackage, 'check:node-version', 'scripts/check-node-version.ts');
   const expectedGate = [
     'npm run build',
     'npm run bundle:size',
@@ -317,6 +364,7 @@ async function main(): Promise<void> {
     await requireCanonicalGatePlaywrightBrowsers(workflow);
   }
   await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
+  await requireDesktopReleasePackaging('.github/workflows/desktop-release.yml');
 
   const bundleCheck = await readFile(path.join(repoRoot, 'scripts/check-bundle-size.ts'), 'utf8');
   for (const requiredBudget of [

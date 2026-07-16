@@ -68,6 +68,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build upstream packages
+        run: npm run build:core && npm run build:react
+
       - name: Read extension version
         id: extension
         shell: bash
