@@ -288,6 +288,33 @@ describe('MarkdownEditorPanel', () => {
       expect(stub.executedCommands).to.deep.equal([]);
     });
 
+    it('opens a scheme-less web domain externally when no matching workspace file exists', async () => {
+      const { panel } = await openPanel('# links\n');
+
+      panel.onDidReceiveMessageEmitter.fire({ type: 'openLink', href: 'docblocks.com' });
+      await settle();
+
+      expect(stub.externalUris.map((uri) => uri.toString())).to.deep.equal([
+        'https://docblocks.com/',
+      ]);
+      expect(stub.executedCommands).to.deep.equal([]);
+    });
+
+    it('gives an existing local file precedence over a domain-shaped href', async () => {
+      stub.workspaceFiles.add('/workspace/docblocks.com');
+      const { panel } = await openPanel('# links\n');
+
+      panel.onDidReceiveMessageEmitter.fire({ type: 'openLink', href: 'docblocks.com' });
+      await settle();
+
+      expect(stub.externalUris).to.deep.equal([]);
+      expect(stub.executedCommands).to.have.length(1);
+      expect(stub.executedCommands[0]?.command).to.equal('vscode.open');
+      expect((stub.executedCommands[0]?.args[0] as FakeUri).path).to.equal(
+        '/workspace/docblocks.com',
+      );
+    });
+
     it('rejects local links that escape the workspace', async () => {
       const { panel } = await openPanel('# links\n');
 

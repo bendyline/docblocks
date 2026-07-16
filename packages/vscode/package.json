@@ -2,6 +2,7 @@
   "name": "docblocks-vscode",
   "displayName": "DocBlocks",
   "description": "DocBlocks markdown editor powered by Squisq",
+  "icon": "resources/extension-icon.png",
   "version": "0.1.0",
   "license": "MIT",
   "publisher": "bendyline",

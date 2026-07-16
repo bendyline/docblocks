@@ -332,13 +332,13 @@ test.describe('DocBlocks App', () => {
     const termsLink = footer.getByRole('link', { name: 'Terms' });
     await expect(termsLink).toHaveAttribute('href', 'https://docblocks.com/terms/');
 
-    const issuesLink = footer.getByRole('link', { name: 'Issues' });
-    const issuesHref = await issuesLink.getAttribute('href');
-    if (!issuesHref) throw new Error('Issues link did not have an href');
-    const issuesUrl = new URL(issuesHref);
-    const issueBody = issuesUrl.searchParams.get('body');
-    expect(issuesUrl.origin).toBe('https://github.com');
-    expect(issuesUrl.pathname).toBe('/bendyline/docblocks/issues/new');
+    const reportIssueLink = footer.getByRole('link', { name: 'Report issue' });
+    const reportIssueHref = await reportIssueLink.getAttribute('href');
+    if (!reportIssueHref) throw new Error('Report issue link did not have an href');
+    const reportIssueUrl = new URL(reportIssueHref);
+    const issueBody = reportIssueUrl.searchParams.get('body');
+    expect(reportIssueUrl.origin).toBe('https://github.com');
+    expect(reportIssueUrl.pathname).toBe('/bendyline/docblocks/issues/new');
     expect(issueBody).toMatch(/^- Date: \d{4}-\d{2}-\d{2}$/m);
     expect(issueBody).toMatch(/^- DocBlocks: \d+\.\d+\.\d+ web$/m);
     expect(issueBody).toContain('- User agent: Mozilla/5.0');
@@ -803,7 +803,7 @@ test.describe('Video export dialog theming', () => {
     ).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
 
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export Animated GIF...' }).click();
+    await page.getByRole('menuitem', { name: 'Export animated gif...' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Export Animated GIF' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
@@ -825,7 +825,7 @@ test.describe('Video export dialog theming', () => {
     });
 
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export Video...' }).click();
+    await page.getByRole('menuitem', { name: 'Export video...' }).click();
 
     const overlay = page.locator('[data-color-scheme="dark"]', { hasText: 'Export Video' });
     await expect(overlay).toBeVisible({ timeout: 30_000 });
@@ -949,6 +949,71 @@ test.describe('Squisq block type picker theming', () => {
 
     expect(colors.selectedBorder).toBe(colors.expectedAccent);
     expect(colors.newBlockTypeColor).toBe(colors.expectedAccent);
+  });
+});
+
+test.describe('Squisq custom layout theming', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test('uses the active DocBlocks accent in the portaled layout manager', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('docblocks:themePreference', 'dark');
+      localStorage.setItem('docblocks:accentColor', 'green');
+    });
+    await openInitializedSite(page);
+    await expect(page.locator('.db-shell[data-theme="dark"][data-accent="green"]')).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.locator('.db-welcome-gateway-cta').click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: 'Custom layouts' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Custom layouts' });
+    await expect(dialog).toBeVisible();
+
+    const colors = await dialog.evaluate((element) => {
+      const shell = document.querySelector<HTMLElement>('.db-shell');
+      const newLayout = element.querySelector<HTMLElement>('.squisq-layout-manager-new--active');
+      const primary = element.querySelector<HTMLElement>('.squisq-template-designer-btn--primary');
+      const paletteTitle = element.querySelector<HTMLElement>(
+        '.squisq-template-designer-palette-title',
+      );
+      if (!shell || !newLayout || !primary || !paletteTitle) {
+        throw new Error('Custom layout accent probes were not found');
+      }
+
+      const probe = document.createElement('div');
+      probe.style.cssText = [
+        'position:absolute',
+        'visibility:hidden',
+        'background:var(--db-accent)',
+        'border:1px solid var(--db-accent-tint-strong)',
+        'color:var(--db-text-on-accent)',
+        'outline:1px solid var(--db-accent-hover)',
+      ].join(';');
+      shell.appendChild(probe);
+
+      const result = {
+        expectedAccent: getComputedStyle(probe).backgroundColor,
+        expectedAccentSoft: getComputedStyle(probe).borderTopColor,
+        expectedAccentText: getComputedStyle(probe).color,
+        expectedAccentHover: getComputedStyle(probe).outlineColor,
+        newLayoutBackground: getComputedStyle(newLayout).backgroundColor,
+        primaryBackground: getComputedStyle(primary).backgroundColor,
+        primaryColor: getComputedStyle(primary).color,
+        paletteTitleColor: getComputedStyle(paletteTitle).color,
+      };
+      probe.remove();
+      return result;
+    });
+
+    expect(colors.newLayoutBackground).toBe(colors.expectedAccentSoft);
+    expect(colors.primaryBackground).toBe(colors.expectedAccent);
+    expect(colors.primaryColor).toBe(colors.expectedAccentText);
+    expect(colors.paletteTitleColor).toBe(colors.expectedAccentHover);
   });
 });
 

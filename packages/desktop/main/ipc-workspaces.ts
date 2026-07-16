@@ -19,14 +19,7 @@ import {
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { allocateWorkspaceId, deriveWorkspaceId } from './workspace-id.js';
 import { developmentWorkspacePath, isDevelopmentRuntime } from './development-runtime.js';
-
-function samePath(left: string, right: string): boolean {
-  const normalize = (value: string) => {
-    const resolved = path.resolve(value);
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-  };
-  return normalize(left) === normalize(right);
-}
+import { ensurePersistedDefaultWorkspace, sameWorkspacePath } from './default-workspace.js';
 
 async function ensureFolder(absPath: string): Promise<void> {
   await fs.mkdir(absPath, { recursive: true });
@@ -45,7 +38,7 @@ export async function registerAndPersistWorkspace(
   if (!(await fs.stat(physicalRoot)).isDirectory()) throw new Error('Workspace is not a directory');
   const settings = await readSettings();
   const existingByPath = settings.workspaces.find((workspace) =>
-    samePath(workspace.rootPath, physicalRoot),
+    sameWorkspacePath(workspace.rootPath, physicalRoot),
   );
   const id = existingByPath?.id ?? allocateWorkspaceId(physicalRoot, settings.workspaces);
   const name = existingByPath?.name ?? (path.basename(physicalRoot) || 'Folder');
@@ -216,6 +209,7 @@ export function registerWorkspaceIpc(): void {
       );
     }
 
+    await ensurePersistedDefaultWorkspace(persisted.rootPath, settings.defaultWorkspaceRoot);
     roots.register(persisted.id, persisted.rootPath);
   });
 

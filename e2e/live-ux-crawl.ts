@@ -242,7 +242,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       };
     });
     health.deployedVersion = await page
-      .locator('.db-shell-sidebar-footer a', { hasText: 'Issues' })
+      .locator('.db-shell-sidebar-footer a', { hasText: 'Report issue' })
       .getAttribute('href')
       .then((href) => {
         if (!href) return null;
@@ -374,7 +374,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
 
   await step('export video dialog (dark)', async () => {
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export Video...' }).click();
+    await page.getByRole('menuitem', { name: 'Export video...' }).click();
     await page
       .locator('[data-squisq-video-export-modal]')
       .waitFor({ state: 'visible', timeout: 30_000 });

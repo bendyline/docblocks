@@ -2808,6 +2808,7 @@ html:has(.db-shell[data-theme='dark']) {
   --db-shadow: rgba(0, 0, 0, 0.4);
   --db-accent: #c8b48f;
   --db-accent-hover: #dec79d;
+  --db-text-on-accent: #1a1812;
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
   --db-accent-soft-25: rgba(200, 180, 143, 0.28);
   --db-accent-tint-strong: #3a382e;
@@ -2829,6 +2830,7 @@ html:has(.db-shell[data-theme='light']) {
   --db-shadow: rgba(40, 30, 15, 0.12);
   --db-accent: #7d6948;
   --db-accent-hover: #5e4f37;
+  --db-text-on-accent: #ffffff;
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
   --db-accent-soft-25: rgba(125, 105, 72, 0.25);
   --db-accent-tint-strong: #d8d0b5;
@@ -3161,6 +3163,34 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-badge-bg: #333333;
   --db-badge-text: #eeeeee;
   --db-badge-text-hover: #ffffff;
+}
+
+/* Custom layout authoring is portaled to document.body. Bind its host-facing
+   accent tokens at that portal boundary so selected layouts, palette states,
+   primary actions, and focus rings follow the active DocBlocks accent instead
+   of Squisq's standalone indigo defaults. */
+html:has(.db-shell) :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay) {
+  --squisq-layout-accent-text: var(--db-accent-hover);
+  --squisq-layout-accent-bg: var(--db-accent);
+  --squisq-layout-accent-bg-hover: var(--db-accent-hover);
+  --squisq-layout-accent-border: var(--db-accent);
+  --squisq-layout-accent-soft: var(--db-accent-tint-strong);
+  --squisq-layout-accent-soft-hover: var(--db-bg-hover);
+  --squisq-layout-accent-soft-border: var(--db-accent);
+  --squisq-layout-accent-hover-border: var(--db-accent-hover);
+}
+
+html:has(.db-shell)
+  :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay)
+  .squisq-template-designer-btn--primary {
+  color: var(--db-text-on-accent);
+}
+
+html:has(.db-shell)
+  :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay)
+  .squisq-template-designer-field
+  input:focus {
+  box-shadow: 0 0 0 3px var(--db-accent-soft-25);
 }
 
 /* Convert/Insert is portaled to document.body, so the editor shell's Squisq
@@ -4950,6 +4980,13 @@ button.db-git-file-row:hover {
   .db-shell .squisq-toolbar-view-tab {
     padding-top: 4px;
     padding-bottom: 2px;
+  }
+
+  /* The native 32px caption band leaves the labels slightly above its visual
+     center. Move only the text down; the tab hit area and active underline
+     stay anchored to the titlebar edges. */
+  .db-shell .squisq-toolbar-view-tab-label {
+    transform: translateY(4px);
   }
 
   .db-shell .squisq-use-mode-trigger {

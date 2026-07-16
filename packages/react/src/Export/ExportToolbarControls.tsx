@@ -554,7 +554,7 @@ export function ExportToolbarControls({
                     className="db-toolbar-menu-item"
                     onClick={() => void handleOpenVideoModal('mp4')}
                   >
-                    Export Video...
+                    Export video...
                   </button>
                   {showAnimatedGifExport && (
                     <button
@@ -563,7 +563,7 @@ export function ExportToolbarControls({
                       className="db-toolbar-menu-item"
                       onClick={() => void handleOpenVideoModal('gif')}
                     >
-                      Export Animated GIF...
+                      Export animated gif...
                     </button>
                   )}
                 </>

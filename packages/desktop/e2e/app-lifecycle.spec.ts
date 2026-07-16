@@ -36,7 +36,7 @@ test('cross-origin isolates the renderer and offers Animated GIF export', async 
   expect(runtime).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
 
   await window.getByRole('button', { name: 'Export and share' }).click();
-  await window.getByRole('menuitem', { name: 'Export Animated GIF...' }).click();
+  await window.getByRole('menuitem', { name: 'Export animated gif...' }).click();
   const dialog = window.getByRole('dialog', { name: 'Export Animated GIF' });
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await expect(dialog.getByLabel('Format')).toHaveValue('gif');

@@ -62,7 +62,7 @@ describe('Animated GIF export availability', () => {
 
   it('only advertises GIF export when the host supplies ffmpeg.wasm', async () => {
     await renderToolbar();
-    expect(buttonByText(container, 'Export Animated GIF...')).to.equal(undefined);
+    expect(buttonByText(container, 'Export animated gif...')).to.equal(undefined);
 
     await act(async () => {
       root.unmount();
@@ -70,7 +70,7 @@ describe('Animated GIF export availability', () => {
     root = createRoot(container);
 
     await renderToolbar('/ffmpeg-core/ffmpeg-core.js');
-    expect(buttonByText(container, 'Export Animated GIF...')).not.to.equal(undefined);
+    expect(buttonByText(container, 'Export animated gif...')).not.to.equal(undefined);
   });
 
   it('surfaces the richer GIF flow from the built-in export dialog', async () => {
@@ -97,7 +97,7 @@ describe('Animated GIF export availability', () => {
 
   it('opens the video modal with Animated GIF preselected', async () => {
     await renderToolbar('/ffmpeg-core/ffmpeg-core.js');
-    await act(async () => buttonByText(container, 'Export Animated GIF...')?.click());
+    await act(async () => buttonByText(container, 'Export animated gif...')?.click());
     await waitFor(
       () => document.body.querySelector('select[aria-label="Format"]') !== null,
       'the Animated GIF format selector',

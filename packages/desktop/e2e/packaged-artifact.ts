@@ -46,30 +46,58 @@ function unpackedDirectories(artifactsDir: string, prefix: string): string[] {
     .map((entry) => path.join(artifactsDir, entry.name));
 }
 
-function candidateExecutables(artifactsDir: string): string[] {
-  if (process.platform === 'win32') {
-    return unpackedDirectories(artifactsDir, 'win-').map((directory) =>
-      path.join(directory, 'DocBlocks.exe'),
+function unpackedDirectoryRank(
+  directory: string,
+  platform: NodeJS.Platform,
+  architecture: string,
+): number | null {
+  const name = path.basename(directory);
+
+  if (platform === 'darwin' && name.includes('universal')) return 1;
+  if (architecture === 'x64') {
+    const unsuffixedName = platform === 'win32' ? 'win-unpacked' : `${platform}-unpacked`;
+    const nativeUnsuffixedName = platform === 'darwin' ? 'mac' : unsuffixedName;
+    return name === nativeUnsuffixedName || name.includes('x64') ? 0 : null;
+  }
+  return name.includes(`-${architecture}`) ? 0 : null;
+}
+
+function compatibleUnpackedDirectories(
+  artifactsDir: string,
+  prefix: string,
+  platform: NodeJS.Platform,
+  architecture: string,
+): string[] {
+  return unpackedDirectories(artifactsDir, prefix)
+    .map((directory) => ({
+      directory,
+      rank: unpackedDirectoryRank(directory, platform, architecture),
+    }))
+    .filter((entry): entry is { directory: string; rank: number } => entry.rank !== null)
+    .sort((left, right) => left.rank - right.rank || left.directory.localeCompare(right.directory))
+    .map((entry) => entry.directory);
+}
+
+export function candidateExecutables(
+  artifactsDir: string,
+  platform: NodeJS.Platform = process.platform,
+  architecture: string = process.arch,
+): string[] {
+  if (platform === 'win32') {
+    return compatibleUnpackedDirectories(artifactsDir, 'win-', platform, architecture).map(
+      (directory) => path.join(directory, 'DocBlocks.exe'),
     );
   }
 
-  if (process.platform === 'darwin') {
-    const directories = unpackedDirectories(artifactsDir, 'mac');
-    const rank = (directory: string): number => {
-      const name = path.basename(directory);
-      if (name.includes('universal')) return 1;
-      if (process.arch === 'arm64') return name.includes('arm64') ? 0 : 2;
-      return name === 'mac' || name.includes('x64') ? 0 : 2;
-    };
-    directories.sort((left, right) => rank(left) - rank(right));
-    return directories.map((directory) =>
-      path.join(directory, 'DocBlocks.app', 'Contents', 'MacOS', 'DocBlocks'),
+  if (platform === 'darwin') {
+    return compatibleUnpackedDirectories(artifactsDir, 'mac', platform, architecture).map(
+      (directory) => path.join(directory, 'DocBlocks.app', 'Contents', 'MacOS', 'DocBlocks'),
     );
   }
 
   const names = ['docblocks-desktop', 'docblocks', 'DocBlocks'];
-  return unpackedDirectories(artifactsDir, 'linux-').flatMap((directory) =>
-    names.map((name) => path.join(directory, name)),
+  return compatibleUnpackedDirectories(artifactsDir, 'linux-', platform, architecture).flatMap(
+    (directory) => names.map((name) => path.join(directory, name)),
   );
 }
 
