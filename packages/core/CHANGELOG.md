@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.1.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.1.0...@bendyline/docblocks@2.1.1) (2026-07-16)
+
+### Bug Fixes
+
+* More fixes ([#12](https://github.com/bendyline/docblocks/issues/12)) ([64a147a](https://github.com/bendyline/docblocks/commit/64a147a9d67426e9afd5155d1303e0fb07fb69c4))
+
 ## @bendyline/docblocks [2.1.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.0.0...@bendyline/docblocks@2.1.0) (2026-07-16)
 
 ### Features
