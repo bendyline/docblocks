@@ -99,8 +99,8 @@ describe('Animated GIF export availability', () => {
     await renderToolbar('/ffmpeg-core/ffmpeg-core.js');
     await act(async () => buttonByText(container, 'Export Animated GIF...')?.click());
     await waitFor(
-      () => document.body.textContent?.includes('Export Animated GIF') === true,
-      'the Animated GIF modal',
+      () => document.body.querySelector('select[aria-label="Format"]') !== null,
+      'the Animated GIF format selector',
     );
 
     const format = document.body.querySelector<HTMLSelectElement>('select[aria-label="Format"]');
