@@ -62,7 +62,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all

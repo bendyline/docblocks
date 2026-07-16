@@ -212,10 +212,15 @@
   justify-content: center;
 }
 
-.db-explorer-btn:hover {
+.db-explorer-btn:hover:not(:disabled) {
   background: var(--db-bg-hover);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
+}
+
+.db-explorer-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 /* ── Transient workspace move ────────────────────────────────── */
@@ -388,8 +393,14 @@
   cursor: pointer;
 }
 
-.db-new-item-add:hover {
+.db-new-item-add:hover:not(:disabled) {
   background: var(--db-accent-hover);
+}
+
+.db-new-item-input:disabled,
+.db-new-item-add:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 /* ── Tree ────────────────────────────────────────────────────── */
