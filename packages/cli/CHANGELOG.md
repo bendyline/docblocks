@@ -1,3 +1,27 @@
+## @bendyline/docblocks-cli [2.1.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.0.0...@bendyline/docblocks-cli@2.1.0) (2026-07-16)
+
+### Features
+
+* VSC and polish ([8820011](https://github.com/bendyline/docblocks/commit/8820011b0e545fe4e8a91aa65dc9b45138cab84a))
+
+### Bug Fixes
+
+* Another round of bug fixes ([0b22698](https://github.com/bendyline/docblocks/commit/0b2269828f427cd391d029eff4cb3492e9238978))
+* Another round of bug fixing ([ed2c426](https://github.com/bendyline/docblocks/commit/ed2c4266b48ea51a3f97457a9367e25c2d2cee7e))
+* Bug fixes from review ([47ed183](https://github.com/bendyline/docblocks/commit/47ed18362f765960475635629d4ded6959505f6c))
+* Code fixes after review ([e4e7ac2](https://github.com/bendyline/docblocks/commit/e4e7ac2f8ddfe1e91eb5272540730dbfea273ae8))
+* More debug work fixes ([77bc8e7](https://github.com/bendyline/docblocks/commit/77bc8e76653468ee081fd7a010f68bd408b15d8a))
+* More fixes from review ([7a76aab](https://github.com/bendyline/docblocks/commit/7a76aab612f81bc30af1769749ee7ff2e9f6cd44))
+* Node pinning ([b3aee17](https://github.com/bendyline/docblocks/commit/b3aee17aabe8bb4c73f2a6fa59d64bd58cf55800))
+* Test and bug fixes from audit ([0e11ba8](https://github.com/bendyline/docblocks/commit/0e11ba8bf71e5de442d1cab77d32bddb5aba941c))
+* Test updates ([1e86080](https://github.com/bendyline/docblocks/commit/1e860802001089cf07119dd5ab621c4ca6d7ca3c))
+* WIP publishing fixes ([e20a04d](https://github.com/bendyline/docblocks/commit/e20a04d90a4bf1eac0a88439ff803325739cb5f6))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.1.0
+
 ## @bendyline/docblocks-cli [2.0.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@1.1.2...@bendyline/docblocks-cli@2.0.0) (2026-07-14)
 
 ### ⚠ BREAKING CHANGES
