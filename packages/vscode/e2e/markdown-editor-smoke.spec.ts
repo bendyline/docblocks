@@ -19,14 +19,22 @@ async function waitForVSCode(page: Page) {
 
 async function getWebviewContent(page: Page): Promise<FrameLocator> {
   const webviews = page.locator('iframe.webview');
-  const count = await webviews.count();
-  const outerFrame = webviews.nth(count - 1).contentFrame();
-  return outerFrame.locator('iframe#active-frame').contentFrame();
+  await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+
+  // Keep this locator live. VS Code selects the new tab before it appends the
+  // corresponding webview iframe, so capturing `count - 1` here can pin the
+  // caller to the previous document for the rest of an assertion's timeout.
+  const outerFrame = webviews.last().contentFrame();
+  const activeFrame = outerFrame.locator('iframe#active-frame');
+  await expect(activeFrame).toBeVisible({ timeout: 15_000 });
+  return activeFrame.contentFrame();
 }
 
 test.describe('DocBlocks markdown editor — full bootstrap', () => {
   const consoleErrors: string[] = [];
   const networkFailures: string[] = [];
+  const sourceFixturePath = path.join('test-fixtures', 'test-doc.md');
+  const linkedFixturePath = path.join('test-fixtures', 'linked-document.md');
 
   test.beforeEach(async ({ page }) => {
     consoleErrors.length = 0;
@@ -103,12 +111,42 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
 
     const exportPath = content.getByLabel('Export to');
     await expect(exportPath).toBeVisible();
-    // A fresh panel has no host-issued target grant. The filename is offered
-    // only inside VS Code's native save dialog; the webview must not receive a
-    // synthesized absolute path or sibling-directory authority beforehand.
-    await expect(exportPath).toHaveValue('');
-    await expect(content.getByText('VS Code owns and validates this destination.')).toBeVisible();
+    // A fresh panel has no host-issued target grant. The editable basename is
+    // only a save-dialog suggestion; the webview still receives no absolute
+    // path or sibling-directory authority beforehand.
+    await expect(exportPath).not.toHaveValue('');
+    await expect(exportPath).toBeEditable();
     await expect(content.getByRole('button', { name: 'Choose export location' })).toBeVisible();
+  });
+
+  test('opens a linked workspace document in a new VS Code tab', async ({ page }) => {
+    const originalSource = fs.readFileSync(sourceFixturePath, 'utf8');
+    fs.writeFileSync(linkedFixturePath, '# Linked Document\n\nOpened from a DocBlocks link.\n');
+    fs.writeFileSync(
+      sourceFixturePath,
+      `${originalSource.trimEnd()}\n\n[Open linked document](linked-document.md)\n`,
+    );
+
+    try {
+      const explorer = page.locator('.explorer-folders-view');
+      await explorer.getByText('test-doc.md').click();
+      const sourceEditor = await getWebviewContent(page);
+      const link = sourceEditor.getByRole('link', { name: 'Open linked document' });
+      await expect(link).toBeVisible({ timeout: 15_000 });
+      await link.click();
+
+      await expect(page.locator('.tabs-container .tab.active')).toContainText(
+        'linked-document.md',
+        { timeout: 15_000 },
+      );
+      const linkedEditor = await getWebviewContent(page);
+      await expect(linkedEditor.locator('body')).toContainText('Linked Document', {
+        timeout: 15_000,
+      });
+    } finally {
+      fs.writeFileSync(sourceFixturePath, originalSource);
+      fs.rmSync(linkedFixturePath, { force: true });
+    }
   });
 
   test.afterEach(async ({ page }, testInfo) => {

@@ -23,6 +23,7 @@ import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { DisplayMode } from '@bendyline/squisq-react';
+import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
 import type { ExportOptions } from './export-options.js';
 import {
@@ -62,6 +63,8 @@ export interface ExportToolbarControlsProps {
   trigger?: 'menu' | 'button';
   /** Whether to show video export in the overflow menu. */
   showVideoExport?: boolean;
+  /** Self-hosted ffmpeg.wasm core. Supplying it enables Animated GIF export. */
+  ffmpegWasm?: FfmpegWasmLoadConfig;
   /** Resolved host color scheme for the video export dialog. */
   colorScheme?: 'light' | 'dark';
   /** Host palette overrides for the video export dialog and progress UI. */
@@ -190,6 +193,7 @@ export function ExportToolbarControls({
   destinationAdapter,
   trigger = 'menu',
   showVideoExport = true,
+  ffmpegWasm,
   colorScheme = 'light',
   videoExportPalette,
   shareBaseUrl,
@@ -200,6 +204,7 @@ export function ExportToolbarControls({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoOutputFormat, setVideoOutputFormat] = useState<'mp4' | 'gif'>('mp4');
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
   const [videoModules, setVideoModules] = useState<VideoExportModules | null>(null);
@@ -320,22 +325,41 @@ export function ExportToolbarControls({
     setShareDialogOpen(false);
   }, []);
 
-  const handleOpenVideoModal = useCallback(async () => {
-    setMenuOpen(false);
-    setVideoModalOpen(true);
-    setVideoLoading(true);
-    setVideoLoadError(null);
+  const handleOpenVideoModal = useCallback(
+    async (outputFormat: 'mp4' | 'gif') => {
+      setMenuOpen(false);
+      setVideoOutputFormat(outputFormat);
+      setVideoModalOpen(true);
+      setVideoLoadError(null);
 
-    try {
-      const modules = videoModules ?? (await loadVideoExportModules());
-      setVideoModules(modules);
-      setVideoDoc(modules.markdownToDoc(parseMarkdown(markdownSource)));
-    } catch {
-      setVideoLoadError('Video export could not be loaded.');
-    } finally {
-      setVideoLoading(false);
-    }
-  }, [markdownSource, videoModules]);
+      if (outputFormat === 'gif' && typeof SharedArrayBuffer === 'undefined') {
+        setVideoLoading(false);
+        setVideoLoadError(
+          'Animated GIF export needs cross-origin isolation. If this app just finished ' +
+            'installing for offline use, reload it once and try again.',
+        );
+        return;
+      }
+
+      setVideoLoading(true);
+
+      try {
+        const modules = videoModules ?? (await loadVideoExportModules());
+        setVideoModules(modules);
+        setVideoDoc(modules.markdownToDoc(parseMarkdown(markdownSource)));
+      } catch {
+        setVideoLoadError('Video export could not be loaded.');
+      } finally {
+        setVideoLoading(false);
+      }
+    },
+    [markdownSource, videoModules],
+  );
+
+  const handleOpenAnimatedGifFromDialog = useCallback(() => {
+    setDialogOpen(false);
+    void handleOpenVideoModal('gif');
+  }, [handleOpenVideoModal]);
 
   const handleCloseVideoModal = useCallback(() => {
     setVideoModalOpen(false);
@@ -460,6 +484,8 @@ export function ExportToolbarControls({
   }, []);
 
   const LoadedVideoExportModal = videoModules?.Modal;
+  const showAnimatedGifExport =
+    showVideoExport && typeof ffmpegWasm?.coreURL === 'string' && ffmpegWasm.coreURL.length > 0;
 
   return (
     <>
@@ -487,6 +513,7 @@ export function ExportToolbarControls({
             title="Export and share"
           >
             <ShareGlyph />
+            <span className="db-toolbar-menu-trigger-label">Export</span>
           </button>
 
           {menuOpen && (
@@ -525,10 +552,20 @@ export function ExportToolbarControls({
                     type="button"
                     role="menuitem"
                     className="db-toolbar-menu-item"
-                    onClick={handleOpenVideoModal}
+                    onClick={() => void handleOpenVideoModal('mp4')}
                   >
                     Export Video...
                   </button>
+                  {showAnimatedGifExport && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="db-toolbar-menu-item"
+                      onClick={() => void handleOpenVideoModal('gif')}
+                    >
+                      Export Animated GIF...
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -553,6 +590,9 @@ export function ExportToolbarControls({
             }
             onExport={handleExport}
             onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
+            onAnimatedGifExport={
+              showAnimatedGifExport ? handleOpenAnimatedGifFromDialog : undefined
+            }
             onClose={handleCloseDialog}
           />
         </Suspense>
@@ -597,23 +637,14 @@ export function ExportToolbarControls({
       )}
 
       {videoModalOpen && (videoLoading || videoLoadError) && (
-        <div className="db-dialog-overlay">
-          <div className="db-dialog">
-            <div className="db-dialog-header">
-              <h2 className="db-dialog-title">Export Video</h2>
-              <button
-                className="db-dialog-close"
-                onClick={handleCloseVideoModal}
-                aria-label="Close"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="db-dialog-body">
-              <p className="db-export-hint">{videoLoadError ?? 'Loading...'}</p>
-            </div>
-          </div>
-        </div>
+        <Dialog
+          title={videoOutputFormat === 'gif' ? 'Export Animated GIF' : 'Export Video'}
+          onClose={handleCloseVideoModal}
+        >
+          <p className="db-export-hint" role={videoLoadError ? 'alert' : undefined}>
+            {videoLoadError ?? 'Loading...'}
+          </p>
+        </Dialog>
       )}
 
       {videoModalOpen &&
@@ -627,6 +658,11 @@ export function ExportToolbarControls({
             playerScript={videoModules.playerScript}
             colorScheme={colorScheme}
             uiPalette={videoExportPalette}
+            defaultConfig={{
+              audioPolicy: 'best-effort',
+              ...(ffmpegWasm ? { ffmpegWasm } : {}),
+              outputFormat: videoOutputFormat,
+            }}
             onClose={handleCloseVideoModal}
           />
         )}

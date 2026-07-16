@@ -251,6 +251,57 @@ describe('MarkdownEditorPanel', () => {
     });
   });
 
+  describe('link navigation', () => {
+    beforeEach(() => {
+      stub.workspaceFolders.push({ uri: new FakeUri('/workspace'), name: 'workspace', index: 0 });
+    });
+
+    it('opens a workspace-relative file in a non-preview VS Code tab', async () => {
+      const { panel } = await openPanel('# links\n');
+
+      panel.onDidReceiveMessageEmitter.fire({
+        type: 'openLink',
+        href: 'docs-src/guide/agent-loop.md#the-loop',
+      });
+      await settle();
+
+      expect(stub.executedCommands).to.have.length(1);
+      expect(stub.executedCommands[0]?.command).to.equal('vscode.open');
+      expect((stub.executedCommands[0]?.args[0] as FakeUri).path).to.equal(
+        '/workspace/docs-src/guide/agent-loop.md',
+      );
+      expect(stub.executedCommands[0]?.args[1]).to.deep.equal({ preview: false });
+    });
+
+    it('opens canonical HTTP(S) links through VS Code', async () => {
+      const { panel } = await openPanel('# links\n');
+
+      panel.onDidReceiveMessageEmitter.fire({
+        type: 'openLink',
+        href: 'https://example.com/docs/../guide',
+      });
+      await settle();
+
+      expect(stub.externalUris.map((uri) => uri.toString())).to.deep.equal([
+        'https://example.com/guide',
+      ]);
+      expect(stub.executedCommands).to.deep.equal([]);
+    });
+
+    it('rejects local links that escape the workspace', async () => {
+      const { panel } = await openPanel('# links\n');
+
+      panel.onDidReceiveMessageEmitter.fire({ type: 'openLink', href: '../outside.md' });
+      await settle();
+
+      expect(stub.executedCommands).to.deep.equal([]);
+      expect(stub.externalUris).to.deep.equal([]);
+      expect(stub.warningMessages).to.deep.equal([
+        'DocBlocks only opens HTTP(S) links or files inside the current workspace.',
+      ]);
+    });
+  });
+
   describe('bursts of external changes', () => {
     /**
      * The panel's bounded message queue holds 128 pending operations, and it is
@@ -269,7 +320,10 @@ describe('MarkdownEditorPanel', () => {
       for (let index = 1; index <= BURST; index += 1) {
         lastText = `# external ${index}\n`;
         document.setText(lastText);
-        stub.onDidChangeTextDocumentEmitter.fire({ document });
+        stub.onDidChangeTextDocumentEmitter.fire({
+          document,
+          contentChanges: [{ text: lastText }],
+        });
       }
       return lastText;
     }
@@ -295,8 +349,41 @@ describe('MarkdownEditorPanel', () => {
 
       // A dirty session must surface the burst as a conflict rather than
       // silently ignoring the snapshots that overflowed the queue.
-      expect(stub.warningMessages.join('\n')).to.contain('changed outside DocBlocks');
+      expect(stub.warningMessages.join('\n')).to.contain(
+        'VS Code buffer changed outside this DocBlocks editor',
+      );
       expect(document.getText()).to.equal(lastText);
+    });
+
+    it('confirms the live VS Code buffer before reporting a queued conflict', async () => {
+      const { document, panel, sessionId } = await openPanel('# original\n');
+      sendEdit(panel, sessionId, '# local draft\n');
+      await settle();
+
+      document.setText('# transient external snapshot\n');
+      stub.onDidChangeTextDocumentEmitter.fire({
+        document,
+        contentChanges: [{ text: '# transient external snapshot\n' }],
+      });
+      // The buffer converges before the queued observer runs. The observer
+      // must verify the live document instead of prompting from the obsolete
+      // event snapshot.
+      document.setText('# original\n');
+      await settle();
+
+      expect(stub.warningMessages).to.deep.equal([]);
+      expect(document.getText()).to.equal('# original\n');
+    });
+
+    it('ignores VS Code document events with no content changes', async () => {
+      const { document, panel, sessionId } = await openPanel('# original\n');
+      sendEdit(panel, sessionId, '# local draft\n');
+      await settle();
+
+      stub.onDidChangeTextDocumentEmitter.fire({ document, contentChanges: [] });
+      await settle();
+
+      expect(stub.warningMessages).to.deep.equal([]);
     });
   });
 
@@ -350,7 +437,9 @@ describe('MarkdownEditorPanel', () => {
 
       // Forgiving trailing whitespace must not forgive a competing edit: the
       // user is asked, and the draft is preserved rather than dropped.
-      expect(stub.warningMessages.join('\n')).to.contain('changed outside DocBlocks');
+      expect(stub.warningMessages.join('\n')).to.contain(
+        'VS Code buffer changed outside this DocBlocks editor',
+      );
       expect(stub.untitledDocuments.map((draft) => draft.getText())).to.deep.equal(['# edited\n']);
     });
 
@@ -365,7 +454,9 @@ describe('MarkdownEditorPanel', () => {
       stub.warningResponse = undefined;
       await closeTab(panel);
 
-      expect(stub.warningMessages.join('\n')).to.contain('changed outside DocBlocks');
+      expect(stub.warningMessages.join('\n')).to.contain(
+        'VS Code buffer changed outside this DocBlocks editor',
+      );
     });
   });
 });

@@ -62,7 +62,7 @@ export function getDocumentStatusBarPresentation(
     case 'conflict':
       return {
         text: '$(warning) DocBlocks: Resolve conflict',
-        tooltip: `${fileName} changed outside DocBlocks while local changes were pending. Select to resolve.`,
+        tooltip: `${fileName}'s VS Code buffer changed outside this DocBlocks editor while local changes were pending. Select to resolve.`,
         accessibilityLabel: `DocBlocks: ${fileName} has conflicting changes. Select to resolve`,
         action: 'resolve-conflict',
         severity: 'warning',

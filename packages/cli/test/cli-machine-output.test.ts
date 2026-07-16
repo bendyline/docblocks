@@ -9,7 +9,7 @@ import { getAvailableThemes } from '@bendyline/squisq/schemas';
 import { getTransformStyleIds } from '@bendyline/squisq/transform';
 
 const execFileAsync = promisify(execFile);
-const CLI_ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+const CLI_ENTRY = fileURLToPath(new URL('../src/bin.ts', import.meta.url));
 
 describe('CLI machine-readable output contracts', function () {
   this.timeout(20_000);

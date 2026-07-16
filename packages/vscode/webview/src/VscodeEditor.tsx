@@ -1,6 +1,5 @@
 import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { MediaContext } from '@bendyline/squisq-react';
-import '@bendyline/squisq-editor-react/styles';
 import '@bendyline/docblocks-react/styles';
 import { pickEmptyDocumentPrompt } from '@bendyline/docblocks-react/editor';
 import type {
@@ -46,6 +45,11 @@ const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
   accentColor: 'brown',
   writeCanvasSettings: { ...DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS },
 };
+
+// Keep host capability decisions together at the EditorShell boundary. VS Code
+// webviews cannot reliably grant microphone, camera, or screen-capture
+// permission, while ordinary file-backed images and media still work.
+const VSCODE_EDITOR_MEDIA_CAPABILITIES = Object.freeze({ allowRecording: false });
 
 export function VscodeEditor() {
   const [markdown, setMarkdown] = useState<string | null>(null);
@@ -213,6 +217,12 @@ export function VscodeEditor() {
     [],
   );
 
+  const handleLinkClick = useCallback((href: string): boolean => {
+    if (href.startsWith('#')) return false;
+    vscode.postMessage({ type: 'openLink', href });
+    return true;
+  }, []);
+
   const editorGenerationKey = editorScope
     ? `${editorScope.sessionId}:${editorScope.generation}`
     : 'loading';
@@ -274,11 +284,13 @@ export function VscodeEditor() {
             key={`${editorScope.sessionId}:${editorScope.generation}`}
             initialMarkdown={markdown}
             onChange={handleChange}
+            onLinkClick={handleLinkClick}
             colorScheme={theme}
             writeCanvasSettings={settings.writeCanvasSettings}
             height="100%"
             placeholder={editorPlaceholder}
             mediaProvider={mediaBridge.mediaProvider}
+            allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
             showFilesToggle={false}
             statusBarSlotRight={
               autoSavePending ? (
@@ -287,6 +299,14 @@ export function VscodeEditor() {
             }
             findMode={findMode}
             onFindModeChange={setFindMode}
+            toolbarSlotLeft={
+              <VscodeSettingsButton
+                settings={settings}
+                onAutoSaveChange={handleAutoSaveChange}
+                onAccentColorChange={handleAccentColorChange}
+                onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
+              />
+            }
             toolbarSlotRight={
               <>
                 <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
@@ -296,12 +316,6 @@ export function VscodeEditor() {
                   saveBlob={exportBridge.saveBlob}
                   resolveExportTarget={exportBridge.resolveExportTarget}
                   pickExportTarget={exportBridge.pickExportTarget}
-                />
-                <VscodeSettingsButton
-                  settings={settings}
-                  onAutoSaveChange={handleAutoSaveChange}
-                  onAccentColorChange={handleAccentColorChange}
-                  onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 />
               </>
             }

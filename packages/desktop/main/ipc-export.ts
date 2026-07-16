@@ -118,6 +118,8 @@ function extensionLabel(extension: string): string {
       return 'PDF';
     case 'pptx':
       return 'PowerPoint';
+    case 'epub':
+      return 'EPUB e-book';
     case 'html':
       return 'HTML';
     case 'md':

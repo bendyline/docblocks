@@ -1,6 +1,7 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import { isSafeExportFilename } from '@bendyline/docblocks/vscode';
 
-const EXPORT_EXTENSIONS = new Set(['docx', 'pdf', 'pptx', 'html', 'md', 'zip']);
+const EXPORT_EXTENSIONS = new Set(['docx', 'pdf', 'pptx', 'epub', 'html', 'md', 'zip']);
 
 export interface StoredExportTarget {
   lastUri?: string;
@@ -55,6 +56,18 @@ export function getAllowedExportExtension(filename: string): string | null {
   if (dot === -1 || dot === filename.length - 1) return null;
   const extension = filename.slice(dot + 1).toLowerCase();
   return isAllowedExportExtension(extension) ? extension : null;
+}
+
+/** Accept a user-edited basename only when it still matches the generated export format. */
+export function isMatchingExportTargetFilename(
+  generatedFilename: string,
+  targetFilename: string,
+): boolean {
+  if (!isSafeExportFilename(targetFilename)) return false;
+  const generatedExtension = getAllowedExportExtension(generatedFilename);
+  return (
+    generatedExtension !== null && getAllowedExportExtension(targetFilename) === generatedExtension
+  );
 }
 
 function filenameFromSerializedUri(serialized: string): string | null {

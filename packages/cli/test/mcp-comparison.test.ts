@@ -104,6 +104,29 @@ describe('MCP semantic and media comparison', () => {
     expect(result.changes.every((change) => change.status === 'retained')).to.equal(true);
   });
 
+  it('includes descendant text in word metrics for hierarchical documents', async () => {
+    const documents = new DocumentService(await McpFileAuthority.create(), artifacts);
+    const left = await documents.prepare({
+      kind: 'markdown',
+      markdown: '# Parent\n\nShort parent text.\n\n## Child\n\n| Value |\n| --- |\n| same |',
+      name: null,
+    });
+    const right = await documents.prepare({
+      kind: 'markdown',
+      markdown:
+        '# Parent\n\nMuch longer parent text with additional meaningful words.\n\n## Child\n\n| Value |\n| --- |\n| same |',
+      name: null,
+    });
+
+    const result = await comparePreparedDocuments(documents, left, right);
+    const words = result.metrics.find((metric) => metric.name === 'words');
+    const blocks = result.metrics.find((metric) => metric.name === 'blocks');
+
+    expect(words?.leftValue).to.be.greaterThan(1);
+    expect(words?.rightValue).to.be.greaterThan(words?.leftValue ?? 0);
+    expect(blocks).to.include({ leftValue: 2, rightValue: 2 });
+  });
+
   it('compares semantic content beyond the bounded inspection page', async () => {
     const documents = new DocumentService(await McpFileAuthority.create(), artifacts);
     const prefix = Array.from(

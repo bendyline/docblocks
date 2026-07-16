@@ -88,6 +88,38 @@ describe('VS Code webview request bridges', () => {
     }
   });
 
+  it('sends an edited basename separately from the opaque target grant', async () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    const bridge = createVscodeExportBridge(
+      (message) => posted.push(message),
+      () => '# document',
+      () => 'document.md',
+      { requestTimeoutMs: 100 },
+    );
+    try {
+      const pending = bridge.saveBlob(
+        new Blob(['pdf'], { type: 'application/pdf' }),
+        'document.pdf',
+        { grantId: 'export_123', displayLabel: 'C:\\Exports\\document.pdf' },
+        'renamed.pdf',
+      );
+      await waitForPostedMessage(posted);
+      const request = posted[0];
+      if (!request || request.type !== 'saveExport') {
+        throw new Error('Expected a saveExport request');
+      }
+      expect(request.targetFilename).to.equal('renamed.pdf');
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'exportSaved', requestId: request.requestId, target: null },
+        }),
+      );
+      expect(await pending).to.equal(null);
+    } finally {
+      bridge.dispose();
+    }
+  });
+
   it('times out an unanswered media request', async () => {
     const posted: WebviewToExtensionMessage[] = [];
     const bridge = createVscodeMediaBridge((message) => posted.push(message), {
@@ -126,3 +158,10 @@ describe('VS Code webview request bridges', () => {
     }
   });
 });
+
+async function waitForPostedMessage(messages: WebviewToExtensionMessage[]): Promise<void> {
+  for (let attempt = 0; attempt < 20 && messages.length === 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  if (messages.length === 0) throw new Error('Timed out waiting for a webview request');
+}

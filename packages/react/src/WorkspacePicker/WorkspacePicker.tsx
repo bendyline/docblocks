@@ -53,6 +53,10 @@ export function WorkspacePicker({
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [newWorkspaceError, setNewWorkspaceError] = useState<string | null>(null);
+  const [newWorkspacePending, setNewWorkspacePending] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -61,6 +65,8 @@ export function WorkspacePicker({
     function handleOutsideClick(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setCreatingNew(false);
+        setNewWorkspaceError(null);
       }
     }
     document.addEventListener('mousedown', handleOutsideClick);
@@ -93,8 +99,37 @@ export function WorkspacePicker({
     [onSelect],
   );
 
+  const handleStartCreateNew = useCallback(() => {
+    const existingNames = new Set(workspaces.map((workspace) => workspace.name.toLowerCase()));
+    let suffix = workspaces.length + 1;
+    while (existingNames.has(`workspace ${suffix}`.toLowerCase())) suffix += 1;
+    setNewWorkspaceName(`Workspace ${suffix}`);
+    setNewWorkspaceError(null);
+    setCreatingNew(true);
+  }, [workspaces]);
+
+  const handleCancelCreateNew = useCallback(() => {
+    setCreatingNew(false);
+    setNewWorkspaceName('');
+    setNewWorkspaceError(null);
+  }, []);
+
   const handleCreateNew = useCallback(async () => {
-    const name = `Workspace ${workspaces.length + 1}`;
+    if (newWorkspacePending) return;
+    const name = newWorkspaceName.trim();
+    if (!name) {
+      setNewWorkspaceError('Enter a workspace name.');
+      return;
+    }
+    if (name.length > 80) {
+      setNewWorkspaceError('Workspace names must be 80 characters or fewer.');
+      return;
+    }
+    if (workspaces.some((workspace) => workspace.name.toLowerCase() === name.toLowerCase())) {
+      setNewWorkspaceError('A workspace with that name already exists.');
+      return;
+    }
+
     const id = `ws-${Date.now()}`;
     const descriptor: WorkspaceDescriptor = {
       id,
@@ -102,11 +137,21 @@ export function WorkspacePicker({
       type: 'indexeddb',
       lastOpened: new Date().toISOString(),
     };
-    await saveWorkspace(descriptor);
-    await refresh();
-    onSelect(descriptor);
-    setIsOpen(false);
-  }, [workspaces.length, onSelect, refresh]);
+    setNewWorkspacePending(true);
+    setNewWorkspaceError(null);
+    try {
+      await saveWorkspace(descriptor);
+      await refresh();
+      onSelect(descriptor);
+      setCreatingNew(false);
+      setNewWorkspaceName('');
+      setIsOpen(false);
+    } catch {
+      setNewWorkspaceError('The workspace could not be created. Try again.');
+    } finally {
+      setNewWorkspacePending(false);
+    }
+  }, [newWorkspaceName, newWorkspacePending, onSelect, refresh, workspaces]);
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
   const activeWorkspaceName = activeWs?.name ?? 'No workspace';
@@ -115,7 +160,11 @@ export function WorkspacePicker({
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>
       <button
         className="db-workspace-picker-btn"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          const nextOpen = !isOpen;
+          setIsOpen(nextOpen);
+          if (!nextOpen) handleCancelCreateNew();
+        }}
         title="Switch workspace"
         aria-label={`Switch workspace, current: ${activeWorkspaceName}`}
       >
@@ -157,14 +206,63 @@ export function WorkspacePicker({
 
           <div className="db-workspace-dropdown-divider" />
 
-          {!electron && (
-            <button className="db-workspace-dropdown-item" onClick={handleCreateNew}>
-              <span className="db-workspace-dropdown-action-label">
-                <NewFolderIcon />
-                <span>New Workspace</span>
-              </span>
-            </button>
-          )}
+          {!electron &&
+            (creatingNew ? (
+              <form
+                className="db-workspace-create"
+                aria-busy={newWorkspacePending}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleCreateNew();
+                }}
+              >
+                <label className="db-workspace-create-label" htmlFor="db-new-workspace-name">
+                  Workspace name
+                </label>
+                <input
+                  id="db-new-workspace-name"
+                  className="db-workspace-create-input"
+                  value={newWorkspaceName}
+                  maxLength={80}
+                  disabled={newWorkspacePending}
+                  aria-invalid={newWorkspaceError !== null}
+                  aria-describedby={newWorkspaceError ? 'db-new-workspace-error' : undefined}
+                  autoFocus
+                  onChange={(event) => {
+                    setNewWorkspaceName(event.target.value);
+                    setNewWorkspaceError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') handleCancelCreateNew();
+                  }}
+                />
+                {newWorkspaceError && (
+                  <p id="db-new-workspace-error" className="db-workspace-create-error" role="alert">
+                    {newWorkspaceError}
+                  </p>
+                )}
+                <div className="db-workspace-create-actions">
+                  <button
+                    type="button"
+                    className="db-workspace-create-cancel"
+                    disabled={newWorkspacePending}
+                    onClick={handleCancelCreateNew}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={newWorkspacePending}>
+                    {newWorkspacePending ? 'Creatingâ€¦' : 'Create'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button className="db-workspace-dropdown-item" onClick={handleStartCreateNew}>
+                <span className="db-workspace-dropdown-action-label">
+                  <NewFolderIcon />
+                  <span>New Workspace</span>
+                </span>
+              </button>
+            ))}
 
           {(electron || isNativeFileSystemSupported()) && (
             <button

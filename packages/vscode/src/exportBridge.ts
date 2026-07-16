@@ -9,11 +9,13 @@ import {
   assertNoSymbolicLinkComponents,
   getDocumentDirectoryUri,
   getUriBasename,
+  isFileNotFound,
   readAuthorizedMediaFile,
 } from './documentAuthority.js';
 import type { ExportGrantScope, ExportTargetGrantRegistry } from './exportGrants.js';
 import {
   getAllowedExportExtension,
+  isMatchingExportTargetFilename,
   parseStoredExportTarget,
   selectRememberedExactExportTarget,
   type StoredExportTarget,
@@ -57,13 +59,23 @@ export async function handleExportMessage(
     case 'saveExport':
       await postExportResult(webview, msg.requestId, 'exportError', async () => {
         const bytes = decodeBoundedBase64(msg.dataBase64);
+        const requestedFilename = validateRequestedFilename(msg.filename, msg.targetFilename);
         let target: vscode.Uri | undefined;
         if (msg.grantId) {
-          target = authority.grants.consume(authority.scope, msg.grantId);
+          if (msg.targetFilename) {
+            const grantedTarget = authority.grants.peek(authority.scope, msg.grantId);
+            target = await applyEditedFilename(grantedTarget, msg.targetFilename, msg.filename);
+            if (!target) {
+              return { type: 'exportSaved' as const, requestId: msg.requestId, target: null };
+            }
+            authority.grants.consume(authority.scope, msg.grantId);
+          } else {
+            target = authority.grants.consume(authority.scope, msg.grantId);
+          }
         } else {
           target = await vscode.window.showSaveDialog({
-            defaultUri: getDialogDefaultExportUri(context, document.uri, msg.filename),
-            filters: getSaveFilters(msg.filename),
+            defaultUri: getDialogDefaultExportUri(context, document.uri, requestedFilename),
+            filters: getSaveFilters(requestedFilename),
           });
         }
 
@@ -146,6 +158,48 @@ async function readContainerFile(
 
 function issueGrant(authority: ExportAuthority, target: vscode.Uri): ExportTargetGrantMessage {
   return authority.grants.issue(authority.scope, target, pathForDisplay(target));
+}
+
+function validateRequestedFilename(
+  generatedFilename: string,
+  editedFilename: string | null,
+): string {
+  if (editedFilename === null) return generatedFilename;
+  if (!isMatchingExportTargetFilename(generatedFilename, editedFilename)) {
+    throw new Error('The edited export filename must use the selected format extension');
+  }
+  return editedFilename;
+}
+
+async function applyEditedFilename(
+  grantedTarget: vscode.Uri,
+  editedFilename: string | null,
+  generatedFilename: string,
+): Promise<vscode.Uri | undefined> {
+  if (editedFilename === null || editedFilename === getUriBasename(grantedTarget)) {
+    return grantedTarget;
+  }
+
+  validateRequestedFilename(generatedFilename, editedFilename);
+  const directory = getDocumentDirectoryUri(grantedTarget);
+  if (!directory) throw new Error('The selected export target cannot be renamed');
+  const editedTarget = vscode.Uri.joinPath(directory, editedFilename);
+
+  if (!(await exportTargetExists(editedTarget))) return editedTarget;
+  return vscode.window.showSaveDialog({
+    defaultUri: editedTarget,
+    filters: getSaveFilters(editedFilename),
+  });
+}
+
+async function exportTargetExists(target: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(target);
+    return true;
+  } catch (error: unknown) {
+    if (isFileNotFound(error)) return false;
+    throw error;
+  }
 }
 
 function getDialogDefaultExportUri(
@@ -244,6 +298,8 @@ function extensionLabel(extension: string): string {
       return 'PDF';
     case 'pptx':
       return 'PowerPoint';
+    case 'epub':
+      return 'EPUB e-book';
     case 'html':
       return 'HTML';
     case 'md':

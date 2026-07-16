@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { ConversionFidelity } from '@bendyline/docblocks/mcp';
 import type { FormatDefinition, NormalizedInput } from '@bendyline/squisq-cli/api';
 import type { PreparedDocument } from './document-service.js';
+import { analyzeDocumentBlocks } from './block-analysis.js';
 import { throwIfAborted } from './document-service.js';
 import {
   capturePreparedDocumentFrames,
@@ -396,8 +397,7 @@ async function semanticTextByFrame(
   prepared: PreparedDocument,
   frames: readonly CapturedPreview[],
 ): Promise<string[]> {
-  const { analyzeBlocks } = await import('@bendyline/squisq/transform');
-  const analyzed = analyzeBlocks(prepared.doc.blocks);
+  const analyzed = await analyzeDocumentBlocks(prepared.doc.blocks);
   return frames.map((frame) => {
     const analyzedBlock = analyzed[frame.index];
     return `${frame.label ?? ''}\n${analyzedBlock?.plainText ?? ''}`

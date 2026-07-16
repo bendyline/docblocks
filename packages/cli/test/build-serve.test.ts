@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { request } from 'node:http';
@@ -88,6 +88,31 @@ describe('CLI build and serve commands', () => {
     );
   });
 
+  it('rejects an unknown theme before creating build output or starting a server', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    const outputDir = path.join(tempRoot, 'dist');
+    await mkdir(inputDir);
+    await writeFile(path.join(inputDir, 'index.md'), '# Theme', 'utf8');
+
+    const buildFailure = await captureFailure(
+      runBuild({ input: inputDir, output: outputDir, theme: 'not-a-real-theme' }),
+    );
+    expect(buildFailure).to.be.instanceOf(Error);
+    expect((buildFailure as Error).message).to.include('Unknown theme "not-a-real-theme"');
+    expect(
+      await stat(outputDir).then(
+        () => true,
+        () => false,
+      ),
+    ).to.equal(false);
+
+    const serveFailure = await captureFailure(
+      startPreviewServer({ dir: inputDir, port: 0, theme: 'not-a-real-theme' }),
+    );
+    expect(serveFailure).to.be.instanceOf(Error);
+    expect((serveFailure as Error).message).to.include('Available:');
+  });
+
   it('keeps authored HTML inert in generated standalone output', async () => {
     const html = await renderMarkdownHtml(HOSTILE_MARKDOWN, { title: 'Adversarial HTML' });
 
@@ -97,12 +122,14 @@ describe('CLI build and serve commands', () => {
     // script context. These assertions cover exactly that containment; the
     // runtime inertness of the embedded document is pinned by the test below.
     //
-    // The page owns precisely two <script> elements (player bundle + mount
-    // call). Any additional script boundary, or any `<!--` (which flips the
-    // tokenizer into script-data-escaped state and can swallow the rest of the
-    // page), means authored content broke out of the JSON string.
-    expect(countMatches(html, /<script/giu)).to.equal(2);
-    expect(countMatches(html, /<\/script/giu)).to.equal(2);
+    // The page owns precisely three <script> elements: inert document JSON,
+    // the player bundle, and the mount call. Any additional script boundary,
+    // or any `<!--` (which flips the tokenizer into script-data-escaped state
+    // and can swallow the rest of the page), means authored content broke out
+    // of the JSON string.
+    expect(html).to.contain('<script type="application/json" id="squisq-doc" data-squisq-doc="1">');
+    expect(countMatches(html, /<script/giu)).to.equal(3);
+    expect(countMatches(html, /<\/script/giu)).to.equal(3);
     expect(countMatches(html, /<!--/gu)).to.equal(0);
 
     // The dangerous sequences must be present only in their escaped form.
@@ -211,6 +238,71 @@ describe('CLI build and serve commands', () => {
     const kindFailure = await captureFailure(runBuild({ input: fileInput, output: outputDir }));
     expect(kindFailure).to.be.instanceOf(Error);
     expect((kindFailure as Error).message).to.include('Input is not a directory');
+  });
+
+  it('bounds per-file and aggregate build input and output bytes', async () => {
+    const inputDir = path.join(tempRoot, 'docs');
+    await mkdir(inputDir);
+    await writeFile(path.join(inputDir, 'one.md'), '# One', 'utf8');
+    await writeFile(path.join(inputDir, 'two.md'), '# Two', 'utf8');
+
+    const perInputOutput = path.join(tempRoot, 'per-input');
+    const perInputFailure = await captureFailure(
+      runBuild({ input: inputDir, output: perInputOutput, maxInputBytes: 1 }),
+    );
+    expect((perInputFailure as Error).message).to.include('per-file limit');
+    expect(
+      await stat(perInputOutput).then(
+        () => true,
+        () => false,
+      ),
+    ).to.equal(false);
+
+    const totalInputOutput = path.join(tempRoot, 'total-input');
+    const totalInputFailure = await captureFailure(
+      runBuild({
+        input: inputDir,
+        output: totalInputOutput,
+        maxInputBytes: 100,
+        maxTotalInputBytes: 6,
+      }),
+    );
+    expect((totalInputFailure as Error).message).to.include('aggregate limit');
+    expect(
+      await stat(totalInputOutput).then(
+        () => true,
+        () => false,
+      ),
+    ).to.equal(false);
+
+    const perOutputPath = path.join(tempRoot, 'per-output');
+    const perOutputFailure = await captureFailure(
+      runBuild({ input: inputDir, output: perOutputPath, maxOutputBytes: 1 }),
+    );
+    expect((perOutputFailure as Error).message).to.include('per-file limit');
+    expect(
+      await stat(path.join(perOutputPath, 'one.html')).then(
+        () => true,
+        () => false,
+      ),
+    ).to.equal(false);
+
+    const totalOutputPath = path.join(tempRoot, 'total-output');
+    const totalOutputFailure = await captureFailure(
+      runBuild({
+        input: inputDir,
+        output: totalOutputPath,
+        maxOutputBytes: Number.MAX_SAFE_INTEGER,
+        maxTotalOutputBytes: 1,
+      }),
+    );
+    expect((totalOutputFailure as Error).message).to.include('aggregate limit');
+    expect(
+      await stat(path.join(totalOutputPath, 'one.html')).then(
+        () => true,
+        () => false,
+      ),
+    ).to.equal(false);
   });
 
   it('does not follow directory symlinks or junction cycles during build traversal', async () => {

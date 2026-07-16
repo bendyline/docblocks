@@ -27,6 +27,7 @@ import {
   conversionResultSchema,
   documentSourceSchema,
   inspectionResultSchema,
+  materializationOptionsSchema,
   previewResultSchema,
   toolOutputSchema,
 } from '../src/mcp/zod.js';
@@ -389,6 +390,32 @@ describe('DocBlocks MCP wire contracts', () => {
       };
       expect(documentSourceSchema.safeParse(canonical).success).to.equal(true);
       expect(parseDocumentSource(canonical)).to.deep.equal(canonical);
+
+      const conciseSources: Array<[unknown, unknown]> = [
+        [
+          { kind: 'markdown', markdown: '# Unnamed' },
+          { kind: 'markdown', markdown: '# Unnamed', name: null },
+        ],
+        [
+          { kind: 'file', rootId: 'source-root', path: 'documents/report.md' },
+          {
+            kind: 'file',
+            rootId: 'source-root',
+            path: 'documents/report.md',
+            format: null,
+          },
+        ],
+        [
+          { kind: 'bundle', markdown: '# Unnamed', assets: [] },
+          { kind: 'bundle', markdown: '# Unnamed', assets: [], name: null },
+        ],
+      ];
+      for (const [concise, expected] of conciseSources) {
+        expect(documentSourceSchema.safeParse(concise).success, JSON.stringify(concise)).to.equal(
+          true,
+        );
+        expect(parseDocumentSource(concise)).to.deep.equal(expected);
+      }
     });
   });
 
@@ -1070,6 +1097,17 @@ describe('DocBlocks MCP wire contracts', () => {
         path: 'exports/report.pdf',
         ifExists: 'replace',
         expectedSha256: ARTIFACT_HASH,
+      });
+
+      const concise = {
+        rootId: 'output-root',
+        path: 'exports/concise.pdf',
+        ifExists: 'error',
+      };
+      expect(materializationOptionsSchema.safeParse(concise).success).to.equal(true);
+      expect(parseMaterializationOptions(concise)).to.deep.equal({
+        ...concise,
+        expectedSha256: null,
       });
     });
 

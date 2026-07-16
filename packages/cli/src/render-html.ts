@@ -7,6 +7,7 @@ import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import { readContainedFile } from './contained-file.js';
 import { isPathInside } from './internal/paths.js';
 import { isNodeErrorCode } from './internal/node-error.js';
+import { assertKnownThemeId } from './internal/theme.js';
 
 export interface ReferencedAssetPath {
   assetRoot: string;
@@ -35,6 +36,7 @@ export async function renderMarkdownHtml(
   markdown: string,
   options: RenderMarkdownHtmlOptions,
 ): Promise<string> {
+  await assertKnownThemeId(options.themeId);
   const markdownDoc = parseMarkdown(markdown);
   const doc = markdownToDoc(markdownDoc);
   const images =

@@ -14,7 +14,7 @@ import {
 import { callTool } from './mcp-helpers.js';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const CLI_ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+const CLI_ENTRY = fileURLToPath(new URL('../src/bin.ts', import.meta.url));
 
 interface CliStdioHarness {
   client: Client;

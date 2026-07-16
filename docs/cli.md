@@ -61,16 +61,24 @@ stdout for protocol messages.
 docblocks build --input ./docs --output ./dist --theme documentary
 ```
 
-| Option               | Default | Meaning                                                    |
-| -------------------- | ------- | ---------------------------------------------------------- |
-| `-i, --input <dir>`  | `.`     | Source directory.                                          |
-| `-o, --output <dir>` | `dist`  | Generated HTML directory.                                  |
-| `-t, --theme <id>`   | unset   | Override the document theme; otherwise Squisq resolves it. |
+| Option                             | Default | Meaning                                                     |
+| ---------------------------------- | ------- | ----------------------------------------------------------- |
+| `-i, --input <dir>`                | `.`     | Source directory.                                           |
+| `-o, --output <dir>`               | `dist`  | Generated HTML directory.                                   |
+| `-t, --theme <id>`                 | unset   | Override the document theme; otherwise Squisq resolves it.  |
+| `--max-input-bytes <bytes>`        | 20 MiB  | Maximum bytes in one Markdown input.                        |
+| `--max-total-input-bytes <bytes>`  | 512 MiB | Maximum aggregate Markdown input bytes.                     |
+| `--max-output-bytes <bytes>`       | 128 MiB | Maximum bytes in one generated HTML file.                   |
+| `--max-total-output-bytes <bytes>` | 1 GiB   | Maximum aggregate generated HTML bytes.                     |
+| `--allow-large-build`              | off     | Disable default byte budgets for an explicitly trusted run. |
 
 The command recursively finds `.md` and `.markdown` files, sorts them, preserves
 their relative directory structure, and replaces each extension with `.html`. It
 fails when the input is not a directory or contains no Markdown files. Traversal
-is sequential and stops after 100,000 filesystem entries or 64 directory levels;
+is sequential and stops after 100,000 filesystem entries or 64 directory levels.
+Input sizes are preflighted before the output directory is created, and generated
+HTML is checked before each write. Explicit numeric limits still apply when
+`--allow-large-build` is present; the flag only disables the defaults. Traversal,
 permission and I/O failures remain errors rather than being reported as absence.
 
 The render path is shared with `serve`: DocBlocks asks Squisq to parse Markdown,
@@ -204,10 +212,13 @@ command never reports partial success: it either writes every format or none, an
 refusal exits with status 1. Pass `--allow-overwrite` to replace them, or send the
 run elsewhere with `--output-dir`.
 
-Each result is flushed to a same-directory staging file, so a failed write does not
-truncate a previous output. Without `--allow-overwrite` the staged bytes are published
-with an atomic create-if-absent link, which also refuses a destination that appeared
-after the preflight check; with it, the staged file is renamed over the destination.
+Every target is converted before publication begins. The complete bounded batch is
+then flushed into a private same-filesystem staging directory. Without
+`--allow-overwrite`, staged files are published with atomic create-if-absent links,
+which also refuse a destination that appeared after preflight. With overwrite enabled,
+existing destinations are first moved to recoverable backups. A later commit failure
+or cancellation removes newly published files and restores every backup; if restoration
+itself fails, the error names the preserved recovery directory.
 
 For every Markdown-shaped input—including DBK and registry imports that reconstruct
 Markdown—DocBlocks applies transforms through its source-preserving projection. A

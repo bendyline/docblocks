@@ -156,7 +156,7 @@ export const bundleDocumentSourceSchema = z
       .max(MAX_MARKDOWN_CHARACTERS)
       .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire'),
     assets: z.array(bundleAssetSchema).max(MCP_WIRE_LIMITS.bundleAssets),
-    name: labelSchema.nullable(),
+    name: labelSchema.nullable().optional().default(null),
   })
   .strict();
 
@@ -168,7 +168,7 @@ export const documentSourceSchema = z.discriminatedUnion('kind', [
         .string()
         .max(MAX_MARKDOWN_CHARACTERS)
         .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire'),
-      name: labelSchema.nullable(),
+      name: labelSchema.nullable().optional().default(null),
     })
     .strict(),
   z
@@ -176,7 +176,7 @@ export const documentSourceSchema = z.discriminatedUnion('kind', [
       kind: z.literal('file'),
       rootId: idSchema,
       path: workspacePathSchema,
-      format: formatSchema.nullable(),
+      format: formatSchema.nullable().optional().default(null),
     })
     .strict(),
   z.object({ kind: z.literal('artifact'), uri: artifactUriSchema }).strict(),
@@ -868,7 +868,7 @@ export const materializationOptionsSchema = z.discriminatedUnion('ifExists', [
       rootId: idSchema,
       path: workspacePathSchema,
       ifExists: z.literal('error'),
-      expectedSha256: z.null(),
+      expectedSha256: z.null().optional().default(null),
     })
     .strict(),
   z

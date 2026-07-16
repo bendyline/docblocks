@@ -227,6 +227,74 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
     );
   }
 
+  const windowsJob = parsed.jobs['build-windows'];
+  if (!isRecord(windowsJob) || !Array.isArray(windowsJob.steps)) {
+    throw new Error(`${relativePath}: build-windows has no steps`);
+  }
+  const windowsPackageStep = windowsJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Build + package desktop (Windows)',
+  );
+  if (
+    !isRecord(windowsPackageStep) ||
+    windowsPackageStep['working-directory'] !== 'packages/desktop' ||
+    typeof windowsPackageStep.run !== 'string' ||
+    !windowsPackageStep.run.includes('electron-builder --win --publish never')
+  ) {
+    throw new Error(`${relativePath}: build-windows has no package step`);
+  }
+  const windowsVerifyStep = windowsJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Verify Windows signature (fail if unsigned)',
+  );
+  if (!isRecord(windowsVerifyStep) || typeof windowsVerifyStep.run !== 'string') {
+    throw new Error(`${relativePath}: build-windows has no signature verification step`);
+  }
+  for (const requiredFragment of [
+    "@('x64', 'arm64')",
+    'Get-ChildItem packages/desktop/dist/artifacts/*.exe',
+    'foreach ($installer in $installers)',
+  ]) {
+    if (!windowsVerifyStep.run.includes(requiredFragment)) {
+      throw new Error(
+        `${relativePath}: build-windows signature verification is missing ${requiredFragment}`,
+      );
+    }
+  }
+
+  const linuxJob = parsed.jobs['build-linux'];
+  if (!isRecord(linuxJob) || !Array.isArray(linuxJob.steps)) {
+    throw new Error(`${relativePath}: build-linux has no steps`);
+  }
+  const linuxVerifyStep = linuxJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Verify Linux architecture artifacts',
+  );
+  if (!isRecord(linuxVerifyStep) || typeof linuxVerifyStep.run !== 'string') {
+    throw new Error(`${relativePath}: build-linux has no artifact verification step`);
+  }
+  for (const requiredFragment of [
+    '*-linux-x86_64.AppImage',
+    '*-linux-arm64.AppImage',
+    '*-linux-amd64.deb',
+    '*-linux-arm64.deb',
+    'latest-linux-arm64.yml',
+  ]) {
+    if (!linuxVerifyStep.run.includes(requiredFragment)) {
+      throw new Error(
+        `${relativePath}: build-linux artifact verification is missing ${requiredFragment}`,
+      );
+    }
+  }
+  const linuxUploadStep = linuxJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Upload Linux artifacts',
+  );
+  if (
+    !isRecord(linuxUploadStep) ||
+    !isRecord(linuxUploadStep.with) ||
+    typeof linuxUploadStep.with.path !== 'string' ||
+    !linuxUploadStep.with.path.includes('latest-linux-arm64.yml')
+  ) {
+    throw new Error(`${relativePath}: build-linux must upload the arm64 updater manifest`);
+  }
+
   const macJob = parsed.jobs['build-macos'];
   if (!isRecord(macJob) || macJob['runs-on'] !== 'macos-15' || !Array.isArray(macJob.steps)) {
     throw new Error(`${relativePath}: build-macos must stay pinned to macos-15`);
@@ -318,11 +386,11 @@ async function main(): Promise<void> {
   }
   const lockedSquisqEditor = packageLock.packages?.['node_modules/@bendyline/squisq-editor-react'];
   if (
-    lockedSquisqEditor?.peerDependencies?.['monaco-editor'] !== `>=${expectedMonacoVersion}` ||
+    lockedSquisqEditor?.peerDependencies?.['monaco-editor'] !== `~${expectedMonacoVersion}` ||
     lockedSquisqEditor.peerDependenciesMeta?.['monaco-editor']?.optional === true
   ) {
     throw new Error(
-      `package-lock.json must resolve @bendyline/squisq-editor-react with a required monaco-editor >=${expectedMonacoVersion} peer`,
+      `package-lock.json must resolve @bendyline/squisq-editor-react with a required monaco-editor ~${expectedMonacoVersion} peer`,
     );
   }
   for (const [manifestPath, manifest] of [

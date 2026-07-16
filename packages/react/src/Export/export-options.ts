@@ -2,7 +2,7 @@
  * Export option types and localStorage persistence for quick-export.
  */
 
-export type ExportFormat = 'docx' | 'pdf' | 'pptx' | 'md' | 'html';
+export type ExportFormat = 'docx' | 'pdf' | 'pptx' | 'epub' | 'md' | 'html';
 
 /** Visual style for HTML export. */
 export type HtmlStyle =
@@ -54,6 +54,7 @@ export const FORMAT_LABELS: Record<ExportFormat, string> = {
   docx: 'Word Document (.docx)',
   pdf: 'PDF (.pdf)',
   pptx: 'PowerPoint (.pptx)',
+  epub: 'EPUB e-book (.epub)',
   md: 'Markdown (.md)',
   html: 'HTML (.html)',
 };
@@ -62,6 +63,7 @@ export const FORMAT_EXTENSIONS: Record<ExportFormat, string> = {
   docx: '.docx',
   pdf: '.pdf',
   pptx: '.pptx',
+  epub: '.epub',
   md: '.md',
   html: '.html',
 };

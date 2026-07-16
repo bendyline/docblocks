@@ -14,4 +14,5 @@ export {
 } from './export-options.js';
 export type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
 export { buildExportFilename, runExport } from './run-export.js';
-export type { ExportBlobSaver } from './run-export.js';
+export { updateExportTargetExtension } from './export-destination.js';
+export type { ExportBlobSaver, ExportConverterOverrides } from './run-export.js';

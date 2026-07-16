@@ -60,6 +60,7 @@ win:
     - target: nsis
       arch:
         - x64
+        - arm64
   icon: resources/icon.png
   executableName: DocBlocks
   # electron-builder 26 moved signtool options under `signtoolOptions`.
@@ -151,7 +152,7 @@ dmg:
       type: link
       path: /Applications
 
-# Linux configuration — ship AppImage (universal) and .deb (Debian/Ubuntu).
+# Linux configuration — ship AppImage and .deb (Debian/Ubuntu) for x64 and arm64.
 # Snap and Flatpak are available on-demand via `--linux snap` / `--linux flatpak`;
 # they require extra host tooling (snapcraft / flatpak-builder) and are therefore
 # not in the default targets list.
@@ -160,9 +161,11 @@ linux:
     - target: AppImage
       arch:
         - x64
+        - arm64
     - target: deb
       arch:
         - x64
+        - arm64
   icon: resources/icon.png
   category: Office
   # Required by the .deb (fpm) target. Kept here rather than as an author email

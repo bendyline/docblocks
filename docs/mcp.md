@@ -144,8 +144,9 @@ looser local copy.
 
 ## Exact document-source model
 
-Every source is exactly one member of this union. Fields shown as `null` are required
-nullable keys, not omitted optionals.
+Every source is exactly one member of this union. Unknown keys are rejected. The
+nullable `name` on Markdown/bundle sources and nullable `format` on file sources may
+be omitted; omission is canonicalized to `null`.
 
 ```json
 {
@@ -434,6 +435,10 @@ created by a failed call.
   }
 }
 ```
+
+For the no-replace (`"ifExists": "error"`) shape, `expectedSha256` may be omitted;
+the server canonicalizes omission to `null`. Conditional replacement continues to
+require the current SHA-256.
 
 or conditional replacement:
 

@@ -135,6 +135,7 @@ export type WebviewToExtensionMessage =
   | { type: 'setAutoSave'; enabled: boolean }
   | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
   | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
+  | { type: 'openLink'; href: string }
   | {
       type: 'edit';
       content: string;
@@ -161,6 +162,8 @@ export type WebviewToExtensionMessage =
       dataBase64: string;
       mimeType: string;
       grantId: string | null;
+      /** Optional validated basename edit; the host derives it from the opaque grant. */
+      targetFilename: string | null;
     }
   | { type: 'resolveExportTarget'; requestId: number; filename: string }
   | {
@@ -202,6 +205,11 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       const settings = parseVscodeWriteCanvasSettings(value.settings);
       return settings ? { type: 'setWriteCanvasSettings', settings } : null;
     }
+    case 'openLink':
+      return hasOnlyKeys(value, ['type', 'href']) &&
+        hasBoundedString(value, 'href', HOST_WIRE_LIMITS.urlCharacters, 1)
+        ? { type: 'openLink', href: value.href }
+        : null;
     case 'edit':
       return hasOnlyKeys(value, [
         'type',
@@ -282,12 +290,14 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
         'dataBase64',
         'mimeType',
         'grantId',
+        'targetFilename',
       ]) &&
         hasRequestId(value) &&
         hasSafeFilename(value, 'filename') &&
         hasBoundedString(value, 'dataBase64', HOST_WIRE_LIMITS.base64Characters) &&
         hasMimeType(value, 'mimeType') &&
-        hasNullableBoundedString(value, 'grantId', HOST_WIRE_LIMITS.identifierCharacters, 1)
+        hasNullableBoundedString(value, 'grantId', HOST_WIRE_LIMITS.identifierCharacters, 1) &&
+        hasNullableSafeFilename(value, 'targetFilename')
         ? {
             type: 'saveExport',
             requestId: value.requestId,
@@ -295,6 +305,7 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
             dataBase64: value.dataBase64,
             mimeType: value.mimeType,
             grantId: value.grantId,
+            targetFilename: value.targetFilename,
           }
         : null;
     case 'resolveExportTarget':
@@ -718,6 +729,13 @@ function hasSafeFilename<K extends string>(
   key: K,
 ): value is Record<string, unknown> & Record<K, string> {
   return isSafeExportFilename(value[key]);
+}
+
+function hasNullableSafeFilename<K extends string>(
+  value: Record<string, unknown>,
+  key: K,
+): value is Record<string, unknown> & Record<K, string | null> {
+  return value[key] === null || isSafeExportFilename(value[key]);
 }
 
 export function isSafeExportFilename(value: unknown): value is string {

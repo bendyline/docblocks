@@ -26,17 +26,23 @@ export interface ExportDialogProps {
   onExport: (options: ExportOptions) => void;
   /** Called whenever the currently selected options change. */
   onOptionsChange?: (options: ExportOptions) => void;
+  /** Opens the richer animated-GIF export flow when the host supports ffmpeg.wasm. */
+  onAnimatedGifExport?: () => void;
   /** Called when the dialog is dismissed. */
   onClose: () => void;
 }
 
 export interface ExportDestinationControl {
   value: string;
+  /** Enables host-validated edits. Omit to render the destination as read-only. */
+  onChange?: (value: string, options: ExportOptions) => void;
   onPick: (options: ExportOptions) => void | Promise<void>;
   hint?: string;
+  /** A host-supplied validation error for the current destination value. */
+  error?: string | null;
 }
 
-const FORMATS: ExportFormat[] = ['pdf', 'docx', 'pptx', 'html', 'md'];
+const FORMATS: ExportFormat[] = ['pdf', 'docx', 'pptx', 'epub', 'html', 'md'];
 
 /** Short labels for the Format chip row. The fuller `FORMAT_LABELS` list
  *  is still used as a tooltip so users can confirm the file extension. */
@@ -44,6 +50,7 @@ const FORMAT_CHIP_LABELS: Record<ExportFormat, string> = {
   pdf: 'PDF',
   docx: 'Word',
   pptx: 'PowerPoint',
+  epub: 'EPUB',
   html: 'HTML',
   md: 'Markdown',
 };
@@ -120,6 +127,7 @@ export function ExportDialog({
   destination,
   onExport,
   onOptionsChange,
+  onAnimatedGifExport,
   onClose,
 }: ExportDialogProps) {
   const [format, setFormat] = useState<ExportFormat>(initial.format);
@@ -139,7 +147,12 @@ export function ExportDialog({
   // `markdownDocToPlainHtml` which emits theme-driven CSS variables
   // and Google Fonts links. Show the dropdown for any export format
   // whose pipeline actually applies the picked theme.
-  const showTheme = format === 'docx' || format === 'pdf' || format === 'pptx' || format === 'html';
+  const showTheme =
+    format === 'docx' ||
+    format === 'pdf' ||
+    format === 'pptx' ||
+    format === 'epub' ||
+    format === 'html';
   const showTransform = format === 'pptx';
   const showPageSize = format === 'pdf';
   const showHtmlOptions = format === 'html';
@@ -210,9 +223,10 @@ export function ExportDialog({
   }, [currentOptions, onOptionsChange]);
 
   const handleExport = useCallback(() => {
+    if (destination?.error) return;
     saveExportOptions(currentOptions);
     onExport(currentOptions);
-  }, [currentOptions, onExport]);
+  }, [currentOptions, destination?.error, onExport]);
 
   return (
     <Dialog
@@ -233,7 +247,7 @@ export function ExportDialog({
             type="button"
             className="db-export-btn db-export-btn--primary"
             onClick={handleExport}
-            disabled={exporting}
+            disabled={exporting || Boolean(destination?.error)}
           >
             {exporting ? 'Exporting...' : 'Export'}
           </button>
@@ -265,10 +279,17 @@ export function ExportDialog({
               id="db-export-path"
               className="db-export-path-input"
               value={destination.value}
-              readOnly
+              onChange={
+                destination.onChange
+                  ? (event) => destination.onChange?.(event.target.value, currentOptions)
+                  : undefined
+              }
+              readOnly={!destination.onChange}
               disabled={exporting}
               spellCheck={false}
               autoComplete="off"
+              aria-invalid={Boolean(destination.error)}
+              aria-describedby={destination.error ? 'db-export-path-error' : undefined}
             />
             <button
               type="button"
@@ -281,6 +302,15 @@ export function ExportDialog({
               ...
             </button>
           </div>
+          {destination.error && (
+            <span
+              id="db-export-path-error"
+              className="db-export-hint db-export-hint--error"
+              role="alert"
+            >
+              {destination.error}
+            </span>
+          )}
           {destination.hint && <span className="db-export-hint">{destination.hint}</span>}
         </div>
       )}
@@ -422,6 +452,31 @@ export function ExportDialog({
           </select>
         </div>
       )}
+
+      {onAnimatedGifExport && (
+        <div className="db-export-field">
+          <span className="db-export-label">Animated media</span>
+          <button
+            type="button"
+            className="db-export-btn db-export-btn--secondary"
+            onClick={onAnimatedGifExport}
+          >
+            Animated GIF...
+          </button>
+          <span className="db-export-hint">
+            Opens timing, orientation, captions, looping, and color controls.
+          </span>
+        </div>
+      )}
+
+      <p className="db-export-more-formats">
+        Need spreadsheets, {onAnimatedGifExport ? '' : 'animated media, '}portable bundles, or
+        automation?{' '}
+        <a href="https://docblocks.com/cli/" target="_blank" rel="noopener noreferrer">
+          More formats with the DocBlocks CLI
+        </a>
+        .
+      </p>
 
       {error && (
         <p className="db-export-error" role="alert">

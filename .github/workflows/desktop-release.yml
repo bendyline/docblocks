@@ -151,13 +151,21 @@ jobs:
       - name: Verify Windows signature (fail if unsigned)
         shell: pwsh
         run: |
-          # Catch signing no-ops before an installer can reach the release job.
-          $exe = Get-ChildItem packages/desktop/dist/artifacts/*.exe | Select-Object -First 1
-          if (-not $exe) { throw "No .exe produced to verify" }
-          $sig = Get-AuthenticodeSignature $exe.FullName
-          Write-Host "Signature status for $($exe.Name): $($sig.Status)"
-          if ($sig.Status -ne 'Valid') {
-            throw "Expected a valid Authenticode signature but got '$($sig.Status)'"
+          # Catch missing architecture builds and signing no-ops before an
+          # installer can reach the release job. electron-builder also emits a
+          # combined installer when both architectures are configured.
+          foreach ($arch in @('x64', 'arm64')) {
+            $architectureInstaller = Get-ChildItem "packages/desktop/dist/artifacts/*-win-$arch.exe"
+            if (-not $architectureInstaller) { throw "No Windows $arch installer produced" }
+          }
+          $installers = Get-ChildItem packages/desktop/dist/artifacts/*.exe
+          if (-not $installers) { throw "No .exe produced to verify" }
+          foreach ($installer in $installers) {
+            $sig = Get-AuthenticodeSignature $installer.FullName
+            Write-Host "Signature status for $($installer.Name): $($sig.Status)"
+            if ($sig.Status -ne 'Valid') {
+              throw "Expected a valid Authenticode signature for $($installer.Name) but got '$($sig.Status)'"
+            }
           }
 
       - name: Upload Windows artifacts
@@ -323,6 +331,22 @@ jobs:
       - name: Build + package desktop (Linux)
         run: npm run dist:linux -w docblocks-desktop -- --publish never
 
+      - name: Verify Linux architecture artifacts
+        shell: bash
+        run: |
+          require_artifact() {
+            if ! compgen -G "$1" > /dev/null; then
+              echo "Missing Linux release artifact: $1" >&2
+              exit 1
+            fi
+          }
+          require_artifact 'packages/desktop/dist/artifacts/*-linux-x86_64.AppImage'
+          require_artifact 'packages/desktop/dist/artifacts/*-linux-arm64.AppImage'
+          require_artifact 'packages/desktop/dist/artifacts/*-linux-amd64.deb'
+          require_artifact 'packages/desktop/dist/artifacts/*-linux-arm64.deb'
+          require_artifact 'packages/desktop/dist/artifacts/latest-linux.yml'
+          require_artifact 'packages/desktop/dist/artifacts/latest-linux-arm64.yml'
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -331,6 +355,7 @@ jobs:
             packages/desktop/dist/artifacts/*.AppImage
             packages/desktop/dist/artifacts/*.deb
             packages/desktop/dist/artifacts/latest-linux.yml
+            packages/desktop/dist/artifacts/latest-linux-arm64.yml
           retention-days: 14
 
   # ──────────────────────────────────────────────────────────────────────────

@@ -141,8 +141,14 @@ export function parseDocumentSource(value: unknown): DocumentSource | null {
 
   switch (value.kind) {
     case 'markdown': {
-      if (!hasExactKeys(value, ['kind', 'markdown', 'name'])) return null;
-      const { markdown, name } = value;
+      if (
+        !hasExactKeys(value, ['kind', 'markdown']) &&
+        !hasExactKeys(value, ['kind', 'markdown', 'name'])
+      ) {
+        return null;
+      }
+      const { markdown } = value;
+      const name = Object.prototype.hasOwnProperty.call(value, 'name') ? value.name : null;
       if (
         !isBoundedString(markdown, MCP_WIRE_LIMITS.documentCharacters) ||
         !isNullableBoundedString(name, MCP_WIRE_LIMITS.labelCharacters)
@@ -152,8 +158,14 @@ export function parseDocumentSource(value: unknown): DocumentSource | null {
       return { kind: 'markdown', markdown, name };
     }
     case 'file': {
-      if (!hasExactKeys(value, ['kind', 'rootId', 'path', 'format'])) return null;
-      const { rootId, path, format } = value;
+      if (
+        !hasExactKeys(value, ['kind', 'rootId', 'path']) &&
+        !hasExactKeys(value, ['kind', 'rootId', 'path', 'format'])
+      ) {
+        return null;
+      }
+      const { rootId, path } = value;
+      const format = Object.prototype.hasOwnProperty.call(value, 'format') ? value.format : null;
       const parsedPath = parseNonRootWorkspacePath(path);
       if (!isIdentifier(rootId) || parsedPath === null || !(format === null || isFormat(format))) {
         return null;
@@ -165,8 +177,14 @@ export function parseDocumentSource(value: unknown): DocumentSource | null {
       return { kind: 'artifact', uri: value.uri };
     }
     case 'bundle': {
-      if (!hasExactKeys(value, ['kind', 'markdown', 'assets', 'name'])) return null;
-      const { markdown, name } = value;
+      if (
+        !hasExactKeys(value, ['kind', 'markdown', 'assets']) &&
+        !hasExactKeys(value, ['kind', 'markdown', 'assets', 'name'])
+      ) {
+        return null;
+      }
+      const { markdown } = value;
+      const name = Object.prototype.hasOwnProperty.call(value, 'name') ? value.name : null;
       if (
         !isBoundedString(markdown, MCP_WIRE_LIMITS.documentCharacters) ||
         !isNullableBoundedString(name, MCP_WIRE_LIMITS.labelCharacters)
@@ -597,7 +615,8 @@ export function parseComparisonResult(value: unknown): ComparisonResult | null {
 export function parseMaterializationOptions(value: unknown): MaterializationOptions | null {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ['rootId', 'path', 'ifExists', 'expectedSha256']) ||
+    (!hasExactKeys(value, ['rootId', 'path', 'ifExists']) &&
+      !hasExactKeys(value, ['rootId', 'path', 'ifExists', 'expectedSha256'])) ||
     !isIdentifier(value.rootId)
   ) {
     return null;
@@ -605,7 +624,11 @@ export function parseMaterializationOptions(value: unknown): MaterializationOpti
   const path = parseNonRootWorkspacePath(value.path);
   if (path === null) return null;
 
-  if (value.ifExists === 'error' && value.expectedSha256 === null) {
+  if (
+    value.ifExists === 'error' &&
+    (value.expectedSha256 === null ||
+      !Object.prototype.hasOwnProperty.call(value, 'expectedSha256'))
+  ) {
     return { rootId: value.rootId, path, ifExists: 'error', expectedSha256: null };
   }
   if (value.ifExists === 'replace' && isSha256(value.expectedSha256)) {

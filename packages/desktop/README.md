@@ -27,6 +27,7 @@ Key main-process modules:
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.
 - **The renderer never imports `electron` or `node:*`.** It's a browser context; everything native goes through the host API.
 - **The `app://` custom protocol is load-bearing.** It gives IndexedDB a stable origin (workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
+- **Animated GIF uses the packaged browser core.** The renderer build copies the pinned ffmpeg.wasm core and its GPL notices under `dist/renderer/ffmpeg-core/`; main adds COOP/COEP to trusted renderer responses so `SharedArrayBuffer` is available. The VS Code extension deliberately does not ship these assets.
 
 ## Development
 
@@ -56,6 +57,9 @@ npm run dist:dir       # unpacked build for local inspection
 ```
 
 electron-builder config is in `electron-builder.yml` (appId `com.bendyline.docblocks`, product name **DocBlocks**); artifacts land in `dist/artifacts/` named `DocBlocks-<version>-<os>-<arch>.<ext>`. App icons are regenerated with `npm run icons`.
+
+Direct-download releases include x64 and arm64 builds for macOS, Windows, and
+Linux. Linux ships both AppImage and Debian packages for each architecture.
 
 ## Testing
 

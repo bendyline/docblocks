@@ -9,6 +9,7 @@ import { isAllowedPreviewPath } from '../preview-policy.js';
 import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
 import { positiveLimit } from '../internal/limits.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
+import { assertKnownThemeId } from '../internal/theme.js';
 
 export interface ServeOptions {
   port: number;
@@ -34,6 +35,7 @@ const DEFAULT_MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT_READS = 16;
 const MAX_ALLOWED_HOSTS = 32;
 export async function startPreviewServer(opts: ServeOptions): Promise<PreviewServer> {
+  await assertKnownThemeId(opts.theme);
   const requestedRoot = path.resolve(opts.dir);
   let root: string;
   try {

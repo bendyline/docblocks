@@ -9,6 +9,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { constants as fsConstants } from 'node:fs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 export interface DetectedTool {
   /** Binary path or name suitable for spawn(). */
@@ -22,6 +25,9 @@ const MIN_GIT_MAJOR = 2;
 const MIN_GIT_MINOR = 23;
 const VERSION_PROBE_TIMEOUT_MS = 5_000;
 const MAX_VERSION_OUTPUT_BYTES = 4 * 1024;
+const APPLE_GIT_SHIM = '/usr/bin/git';
+const XCODE_SELECT = '/usr/bin/xcode-select';
+const DARWIN_GIT_LOCATIONS = ['/opt/homebrew/bin/git', '/usr/local/bin/git'] as const;
 
 let cachedGit: DetectedTool | null | undefined;
 let cachedGh: DetectedTool | null | undefined;
@@ -33,6 +39,9 @@ export function gitFeaturesDisabled(): boolean {
 
 function candidatesFor(tool: 'git' | 'gh'): string[] {
   if (process.platform === 'darwin') {
+    // Git has a dedicated path-only discovery flow below; never let this
+    // generic version probe reach Apple's `/usr/bin/git` installer shim.
+    if (tool === 'git') return [];
     return [tool, `/opt/homebrew/bin/${tool}`, `/usr/local/bin/${tool}`, `/usr/bin/${tool}`];
   }
   if (process.platform === 'win32') {
@@ -43,7 +52,7 @@ function candidatesFor(tool: 'git' | 'gh'): string[] {
   return [tool];
 }
 
-function probeVersion(bin: string): Promise<string | null> {
+function probeFirstLine(bin: string, args: readonly string[]): Promise<string | null> {
   return new Promise((resolve) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
@@ -54,7 +63,7 @@ function probeVersion(bin: string): Promise<string | null> {
       resolve(value);
     };
     try {
-      const child = spawn(bin, ['--version'], {
+      const child = spawn(bin, args, {
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       });
@@ -92,6 +101,10 @@ function probeVersion(bin: string): Promise<string | null> {
   });
 }
 
+function probeVersion(bin: string): Promise<string | null> {
+  return probeFirstLine(bin, ['--version']);
+}
+
 async function probeCandidates(
   tool: 'git' | 'gh',
   accept: (firstLine: string) => string | null,
@@ -123,10 +136,76 @@ function acceptGhVersion(firstLine: string): string | null {
   return match ? match[1] : null;
 }
 
+export interface DarwinGitDetectionDependencies {
+  readonly pathEnvironment: string | undefined;
+  resolveExecutable(candidate: string): Promise<string | null>;
+  probeFirstLine(bin: string, args: readonly string[]): Promise<string | null>;
+}
+
+async function resolveExecutable(candidate: string): Promise<string | null> {
+  try {
+    await fs.access(candidate, fsConstants.X_OK);
+    return await fs.realpath(candidate);
+  } catch {
+    return null;
+  }
+}
+
+function darwinPathCandidates(pathEnvironment: string | undefined): string[] {
+  if (!pathEnvironment) return [];
+  return pathEnvironment
+    .split(':')
+    .filter((entry) => path.posix.isAbsolute(entry))
+    .map((entry) => path.posix.join(entry, 'git'));
+}
+
+/**
+ * Detect Git on macOS without ever executing `/usr/bin/git`.
+ *
+ * Apple's system binary is a shim that opens the Command Line Tools installer
+ * on a clean Mac. Third-party binaries are resolved to an executable realpath
+ * before probing. Apple's Git is reached only through the active developer
+ * directory reported by the non-interactive `xcode-select --print-path` check.
+ */
+export async function detectDarwinGit(
+  dependencies: DarwinGitDetectionDependencies = {
+    pathEnvironment: process.env.PATH,
+    resolveExecutable,
+    probeFirstLine,
+  },
+): Promise<DetectedTool | null> {
+  const seen = new Set<string>();
+
+  const probeCandidate = async (candidate: string): Promise<DetectedTool | null> => {
+    const resolved = await dependencies.resolveExecutable(candidate);
+    if (resolved === null || resolved === APPLE_GIT_SHIM || seen.has(resolved)) return null;
+    seen.add(resolved);
+    const firstLine = await dependencies.probeFirstLine(resolved, ['--version']);
+    if (firstLine === null) return null;
+    const version = acceptGitVersion(firstLine);
+    return version === null ? null : { path: resolved, version };
+  };
+
+  for (const candidate of [
+    ...DARWIN_GIT_LOCATIONS,
+    ...darwinPathCandidates(dependencies.pathEnvironment),
+  ]) {
+    const detected = await probeCandidate(candidate);
+    if (detected !== null) return detected;
+  }
+
+  const developerDirectory = await dependencies.probeFirstLine(XCODE_SELECT, ['--print-path']);
+  if (developerDirectory === null || !path.posix.isAbsolute(developerDirectory)) return null;
+  return probeCandidate(path.posix.join(developerDirectory, 'usr/bin/git'));
+}
+
 export async function detectGit(): Promise<DetectedTool | null> {
   if (gitFeaturesDisabled()) return null;
   if (cachedGit !== undefined) return cachedGit;
-  cachedGit = await probeCandidates('git', acceptGitVersion);
+  cachedGit =
+    process.platform === 'darwin'
+      ? await detectDarwinGit()
+      : await probeCandidates('git', acceptGitVersion);
   return cachedGit;
 }
 

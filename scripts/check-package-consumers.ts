@@ -30,6 +30,7 @@ interface InstalledManifest {
   readonly exports?: unknown;
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly engines?: Readonly<Record<string, string>>;
 }
 
 const packages: readonly PackageUnderTest[] = [
@@ -56,6 +57,7 @@ const packages: readonly PackageUnderTest[] = [
     name: '@bendyline/docblocks-react',
     directory: 'packages/react',
     runtimeImports: [
+      '@bendyline/docblocks-react',
       '@bendyline/docblocks-react/export',
       '@bendyline/docblocks-react/settings',
       '@bendyline/docblocks-react/editor',
@@ -64,7 +66,7 @@ const packages: readonly PackageUnderTest[] = [
   {
     name: '@bendyline/docblocks-cli',
     directory: 'packages/cli',
-    runtimeImports: [],
+    runtimeImports: ['@bendyline/docblocks-cli'],
   },
 ];
 
@@ -265,6 +267,23 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
         `${packageName}: docblocks bin target must start with a Node shebang so npm shims launch it correctly`,
       );
     }
+    if (manifest.main === binTarget) {
+      throw new Error(`${packageName}: package root and executable must use separate entry points`);
+    }
+    if (manifest.engines?.node !== '>=22.14.0') {
+      throw new Error(`${packageName}: Node >=22.14.0 must be encoded in engines`);
+    }
+    if (manifest.dependencies?.['@bendyline/squisq-editor-react'] !== undefined) {
+      throw new Error(`${packageName}: CLI must not install the browser-only Squisq editor stack`);
+    }
+  }
+  if (manifest.name?.startsWith('@bendyline/docblocks')) {
+    const sourceMaps = (await listFiles(path.join(packageRoot, 'dist'))).filter((file) =>
+      file.endsWith('.map'),
+    );
+    if (sourceMaps.length > 0) {
+      throw new Error(`${packageName}: production dist must not publish source maps`);
+    }
   }
   await assertDeclaredImports(packageRoot, manifest);
 }
@@ -400,7 +419,7 @@ async function main(): Promise<void> {
     await run(
       process.execPath,
       [
-        path.join(consumerRoot, 'node_modules', '@bendyline', 'docblocks-cli', 'dist', 'index.js'),
+        path.join(consumerRoot, 'node_modules', '@bendyline', 'docblocks-cli', 'dist', 'bin.js'),
         '--help',
       ],
       consumerRoot,

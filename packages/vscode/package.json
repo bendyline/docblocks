@@ -130,9 +130,10 @@
     "build": "tsup && npm run build:webview",
     "build:webview": "vite build --config webview/vite.config.ts",
     "package:vsix": "npm run build && vsce package --no-dependencies",
-    "typecheck": "npm run typecheck:extension && npm run typecheck:webview && npm run typecheck:desktop-e2e",
+    "typecheck": "npm run typecheck:extension && npm run typecheck:webview && npm run typecheck:web-e2e && npm run typecheck:desktop-e2e",
     "typecheck:extension": "tsc --noEmit -p tsconfig.json",
     "typecheck:webview": "tsc --noEmit -p webview/tsconfig.json",
+    "typecheck:web-e2e": "tsc --noEmit -p tsconfig.e2e-web.json",
     "typecheck:desktop-e2e": "tsc --noEmit -p tsconfig.desktop-e2e.json",
     "test:web": "vscode-test-web --extensionDevelopmentPath=. --browser=none --port=3100",
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
@@ -141,9 +142,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.3.0",
-    "@bendyline/squisq-editor-react": "2.3.1",
-    "@bendyline/squisq-react": "2.3.0",
+    "@bendyline/squisq": "2.3.1",
+    "@bendyline/squisq-editor-react": "2.3.2",
+    "@bendyline/squisq-formats": "2.3.1",
+    "@bendyline/squisq-react": "2.3.1",
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {

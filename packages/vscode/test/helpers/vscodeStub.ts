@@ -41,10 +41,18 @@ export class FakeEmitter<T> {
 }
 
 export class FakeUri {
-  public constructor(public readonly path: string) {}
+  public constructor(
+    public readonly path: string,
+    private readonly serialized?: string,
+  ) {}
 
   public static file(path: string): FakeUri {
     return new FakeUri(path);
+  }
+
+  public static parse(value: string): FakeUri {
+    const url = new URL(value);
+    return new FakeUri(url.pathname, url.href);
   }
 
   public static joinPath(base: FakeUri, ...segments: string[]): FakeUri {
@@ -52,7 +60,7 @@ export class FakeUri {
   }
 
   public get scheme(): string {
-    return 'file';
+    return this.serialized?.slice(0, this.serialized.indexOf(':')) ?? 'file';
   }
 
   public get fsPath(): string {
@@ -60,7 +68,7 @@ export class FakeUri {
   }
 
   public toString(): string {
-    return `file://${this.path}`;
+    return this.serialized ?? `file://${this.path}`;
   }
 }
 
@@ -230,9 +238,15 @@ export interface VscodeStub {
   warningMessages: string[];
   shownTextDocuments: FakeTextDocument[];
   untitledDocuments: FakeTextDocument[];
+  workspaceFolders: { uri: FakeUri; name: string; index: number }[];
+  externalUris: FakeUri[];
   /** Reply used by showWarningMessage, e.g. a modal conflict choice. */
   warningResponse: string | undefined;
-  onDidChangeTextDocumentEmitter: FakeEmitter<{ document: FakeTextDocument }>;
+  onDidChangeTextDocumentEmitter: FakeEmitter<{
+    document: FakeTextDocument;
+    contentChanges: readonly unknown[];
+    reason?: number;
+  }>;
   onDidSaveTextDocumentEmitter: FakeEmitter<FakeTextDocument>;
   onDidCloseTextDocumentEmitter: FakeEmitter<FakeTextDocument>;
   onDidChangeConfigurationEmitter: FakeEmitter<unknown>;
@@ -274,6 +288,8 @@ function resetVscodeStub(stub: VscodeStub): void {
   stub.warningMessages.length = 0;
   stub.shownTextDocuments.length = 0;
   stub.untitledDocuments.length = 0;
+  stub.workspaceFolders.length = 0;
+  stub.externalUris.length = 0;
   stub.statusBarItems.length = 0;
   stub.createdWebviewPanels.length = 0;
   stub.executedCommands.length = 0;
@@ -288,6 +304,8 @@ function createVscodeStub(): VscodeStub {
     warningMessages: [],
     shownTextDocuments: [],
     untitledDocuments: [],
+    workspaceFolders: [],
+    externalUris: [],
     warningResponse: undefined,
     onDidChangeTextDocumentEmitter: new FakeEmitter(),
     onDidSaveTextDocumentEmitter: new FakeEmitter(),
@@ -371,7 +389,37 @@ function createVscodeStub(): VscodeStub {
         return Promise.resolve(undefined);
       },
     },
+    env: {
+      openExternal: (uri: FakeUri): Promise<boolean> => {
+        stub.externalUris.push(uri);
+        return Promise.resolve(true);
+      },
+    },
     workspace: {
+      get workspaceFolders(): { uri: FakeUri; name: string; index: number }[] {
+        return stub.workspaceFolders;
+      },
+      getWorkspaceFolder: (
+        target: FakeUri,
+      ): { uri: FakeUri; name: string; index: number } | undefined =>
+        [...stub.workspaceFolders]
+          .filter(
+            (folder) =>
+              folder.uri.scheme === target.scheme &&
+              (target.path === folder.uri.path || target.path.startsWith(`${folder.uri.path}/`)),
+          )
+          .sort((left, right) => right.uri.path.length - left.uri.path.length)[0],
+      asRelativePath: (target: FakeUri): string => {
+        const folder = [...stub.workspaceFolders]
+          .filter(
+            (candidate) =>
+              candidate.uri.scheme === target.scheme &&
+              (target.path === candidate.uri.path ||
+                target.path.startsWith(`${candidate.uri.path}/`)),
+          )
+          .sort((left, right) => right.uri.path.length - left.uri.path.length)[0];
+        return folder ? target.path.slice(folder.uri.path.length).replace(/^\//, '') : target.path;
+      },
       get textDocuments(): FakeTextDocument[] {
         return stub.documents;
       },
@@ -400,7 +448,10 @@ function createVscodeStub(): VscodeStub {
           const document = findDocument(entry.uri);
           if (!document) return Promise.resolve(false);
           document.setText(entry.content);
-          stub.onDidChangeTextDocumentEmitter.fire({ document });
+          stub.onDidChangeTextDocumentEmitter.fire({
+            document,
+            contentChanges: [{ text: entry.content }],
+          });
         }
         return Promise.resolve(true);
       },

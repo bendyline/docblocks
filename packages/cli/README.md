@@ -66,12 +66,17 @@ docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
-import-capable linked-registry formats. Direct `build`, `convert`, and `video`
-outputs replace existing destination files; `convert` publishes each replacement
-atomically after enforcing bounded input and output sizes. `build` traversal and
-`parse` input/JSON output are also bounded. MCP conversions instead return
+import-capable linked-registry formats. `build` replaces generated HTML files;
+`convert` and `video` refuse existing destinations unless `--allow-overwrite` is
+passed. Multi-target conversion stages the complete batch and rolls back replacements
+if publication fails. Build traversal, input bytes, and output bytes are bounded, as
+are parse input and JSON output. MCP conversions instead return
 immutable session artifacts; only explicit `save_artifact` materializes one, using
 no-replace or hash-conditional replacement semantics.
+
+The package root is a side-effect-free programmatic API for `runBuild`, `runConvert`,
+`runVideo`, and `runParse`. Importing it never starts Commander; the executable is
+the separate `docblocks` bin entry.
 
 The live linked registry currently covers Markdown, DOCX, PDF, PPTX, XLSX, CSV,
 HTML, HTML ZIP, EPUB, DBK, MP4, and GIF. Direction varies by format, so use the

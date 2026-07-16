@@ -603,24 +603,24 @@ export function FileExplorer({
             disabled={newItemCreationPending}
             onClick={() => {
               setNewItemError(null);
-              setNewItemType('file');
-            }}
-            title="New File"
-            aria-label="New File"
-          >
-            <NewFileIcon />
-          </button>
-          <button
-            className="db-explorer-btn"
-            disabled={newItemCreationPending}
-            onClick={() => {
-              setNewItemError(null);
               setNewItemType('directory');
             }}
             title="New Folder"
             aria-label="New Folder"
           >
             <NewFolderIcon />
+          </button>
+          <button
+            className="db-explorer-btn"
+            disabled={newItemCreationPending}
+            onClick={() => {
+              setNewItemError(null);
+              setNewItemType('file');
+            }}
+            title="New File"
+            aria-label="New File"
+          >
+            <NewFileIcon />
           </button>
         </div>
       </div>

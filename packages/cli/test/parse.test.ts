@@ -35,6 +35,18 @@ describe('CLI parse budgets', () => {
     expect((caught as Error).message).to.include('input exceeds');
   });
 
+  it('reports a missing input without exposing a raw ENOENT', async () => {
+    let caught: unknown;
+    try {
+      await runParse(path.join(directory, 'missing.md'));
+    } catch (error: unknown) {
+      caught = error;
+    }
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('Parse input not found:');
+    expect((caught as Error).message).not.to.include('ENOENT');
+  });
+
   it('rejects JSON that exceeds the output budget', async () => {
     const input = path.join(directory, 'input.md');
     await writeFile(input, '# Heading', 'utf8');

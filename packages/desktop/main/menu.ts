@@ -8,14 +8,13 @@
 import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { MenuCommand } from '@bendyline/docblocks/host';
 import { isStoreBuild } from './updater.js';
-import { gitFeaturesDisabled } from './git/detect.js';
 import { reloadWindowWithPreparation } from './window-lifecycle.js';
 
 function send(win: BrowserWindow, cmd: MenuCommand): void {
   win.webContents.send('menu:command', cmd);
 }
 
-export function buildMenu(win: BrowserWindow): void {
+export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
   const isMac = process.platform === 'darwin';
   // Store-distributed builds update through the store, so the manual
   // "Check for Updates" affordance would be misleading — omit it.
@@ -82,10 +81,10 @@ export function buildMenu(win: BrowserWindow): void {
         { role: 'selectAll' },
       ],
     },
-    // Git features spawn the user's system git, which the Mac App Store
-    // sandbox forbids — hide the whole menu there. Items are always enabled;
-    // the renderer explains when the active workspace isn't a repository.
-    ...(gitFeaturesDisabled()
+    // Keep native Git commands in sync with the renderer's process-lifetime
+    // capability. Once Git is available, the renderer explains when the active
+    // workspace is not a repository.
+    ...(!gitAvailable
       ? []
       : ([
           {

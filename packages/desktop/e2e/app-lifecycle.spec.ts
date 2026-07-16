@@ -25,6 +25,23 @@ test('boots and renders the shell', async ({ launchApp }) => {
   await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
 });
 
+test('cross-origin isolates the renderer and offers Animated GIF export', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  const runtime = await window.evaluate(() => ({
+    crossOriginIsolated: globalThis.crossOriginIsolated,
+    sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+  }));
+  expect(runtime).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
+
+  await window.getByRole('button', { name: 'Export and share' }).click();
+  await window.getByRole('menuitem', { name: 'Export Animated GIF...' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Export Animated GIF' });
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await expect(dialog.getByLabel('Format')).toHaveValue('gif');
+});
+
 test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {
   const { window } = await launchApp();
   const toolbar = window.locator('.squisq-toolbar');
@@ -60,7 +77,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     };
   });
   expect(tabMetrics.paddingTop).toBe('4px');
-  expect(tabMetrics.paddingBottom).toBe('7px');
+  expect(tabMetrics.paddingBottom).toBe('9px');
   expect(tabMetrics.centerDelta).not.toBeNull();
   // Chromium can place text boxes on quarter pixels, so allow the label's
   // geometric center to differ slightly while still catching the old 48px

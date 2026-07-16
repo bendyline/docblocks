@@ -1,7 +1,11 @@
 import { expect } from 'chai';
+import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { UpdateAvailableNotice } from '../src/DocBlocksShell/UpdateAvailableNotice.js';
+
+// The root Mocha/tsx loader does not inherit the package's react-jsx setting.
+(globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 describe('UpdateAvailableNotice', () => {
   let container: HTMLDivElement;
@@ -25,24 +29,18 @@ describe('UpdateAvailableNotice', () => {
     await act(async () => root.unmount());
   });
 
-  it('starts as a status notice and opens the existing update prompt on click', async () => {
+  it('starts with a prominent update prompt and keeps the status notice available', async () => {
     const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
     expect(notice?.textContent).to.equal('Update available');
-    expect(container.querySelector('.db-update-banner')).to.equal(null);
-
-    await act(async () => notice?.click());
-
     const prompt = container.querySelector('.db-update-banner');
     expect(prompt?.textContent).to.contain('A new version of DocBlocks is available.');
+    expect(prompt?.textContent).to.contain('site pages');
     expect(prompt?.textContent).to.contain('Reload');
     expect(prompt?.textContent).to.contain('Later');
     expect(notice?.getAttribute('aria-expanded')).to.equal('true');
   });
 
   it('closes the prompt with Later while keeping the status notice available', async () => {
-    const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
-    await act(async () => notice?.click());
-
     const later = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Later',
     );
@@ -66,8 +64,6 @@ describe('UpdateAvailableNotice', () => {
       );
     });
 
-    const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
-    await act(async () => notice?.click());
     const reload = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Reload',
     );

@@ -20,7 +20,10 @@ export function UpdateAvailableNotice({
   blocked = false,
   statusBarVisible,
 }: UpdateAvailableNoticeProps) {
-  const [promptOpen, setPromptOpen] = useState(false);
+  // Updates that affect routing or cached application code must not depend on
+  // a user noticing a tiny status-bar label. Start with the actionable card;
+  // "Later" deliberately collapses it back to the persistent notice.
+  const [promptOpen, setPromptOpen] = useState(true);
 
   if (!available || !onApplyUpdate) return null;
 
@@ -44,9 +47,11 @@ export function UpdateAvailableNotice({
       </button>
       {promptVisible && (
         <div id={UPDATE_PROMPT_ID} className="db-update-banner" role="alert">
-          <span>A new version of DocBlocks is available.</span>
+          <span>
+            A new version of DocBlocks is available. Reload to update the editor and site pages.
+          </span>
           <div className="db-update-banner-actions">
-            <button type="button" onClick={onApplyUpdate}>
+            <button type="button" onClick={onApplyUpdate} disabled={blocked}>
               Reload
             </button>
             <button type="button" onClick={() => setPromptOpen(false)}>

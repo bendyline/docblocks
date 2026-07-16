@@ -3,6 +3,40 @@ import { parseInspectionResult } from '@bendyline/docblocks/mcp';
 import { callTool, startMcpHarness } from './mcp-helpers.js';
 
 describe('MCP detailed inspection pagination', () => {
+  it('counts and outlines parent and descendant blocks consistently', async () => {
+    const harness = await startMcpHarness();
+    try {
+      const source = {
+        kind: 'markdown',
+        markdown: [
+          '# Parent',
+          '',
+          'Parent body words are counted.',
+          '',
+          '## Child',
+          '',
+          '| Value |',
+          '| --- |',
+          '| nested |',
+        ].join('\n'),
+      };
+      const result = await callTool(harness.client, 'inspect_document', {
+        source,
+        maxBlocks: 10,
+      });
+      expect(result.isError, result.text).to.equal(false);
+      const inspection = parseInspectionResult(result.structuredContent);
+      expect(inspection).to.not.equal(null);
+      expect(inspection?.statistics.blockCount).to.equal(2);
+      expect(inspection?.statistics.wordCount).to.be.greaterThan(1);
+      expect(inspection?.blocks).to.have.length(2);
+      expect(inspection?.outline.map((entry) => entry.level)).to.deep.equal([1, 2]);
+      expect(inspection?.outline.map((entry) => entry.title)).to.deep.equal(['Parent', 'Child']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it('returns cursored block provenance plus bounded table, link, and item details', async () => {
     const harness = await startMcpHarness();
     try {

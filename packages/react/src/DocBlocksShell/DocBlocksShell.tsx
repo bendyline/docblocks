@@ -11,9 +11,9 @@ import type {
   EditorView,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
-import '@bendyline/squisq-editor-react/styles';
 import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
+import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
 import {
   DocumentVersionManager,
@@ -88,14 +88,21 @@ import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
 // The editor is only needed after a document and its media container are
 // ready. Workspace chrome stays interactive while this large feature loads.
-const EditorShell = lazy(async () => {
-  const workersReady = (globalThis as { docBlocksMonacoWorkersReady?: Promise<unknown> })
-    .docBlocksMonacoWorkersReady;
-  // Worker setup is an enhancement; a host that cannot install language
-  // workers must not make the document editor unavailable.
-  await workersReady?.catch(() => undefined);
-  return import('./LazyEditorShell.js');
-});
+let editorShellModulePromise: Promise<typeof import('./LazyEditorShell.js')> | null = null;
+
+function loadEditorShell(): Promise<typeof import('./LazyEditorShell.js')> {
+  editorShellModulePromise ??= (async () => {
+    const workersReady = (globalThis as { docBlocksMonacoWorkersReady?: Promise<unknown> })
+      .docBlocksMonacoWorkersReady;
+    // Worker setup is an enhancement; a host that cannot install language
+    // workers must not make the document editor unavailable.
+    await workersReady?.catch(() => undefined);
+    return import('./LazyEditorShell.js');
+  })();
+  return editorShellModulePromise;
+}
+
+const EditorShell = lazy(loadEditorShell);
 // The git dialogs/status bar only ever render under the Electron host, so
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
@@ -263,6 +270,10 @@ export interface DocBlocksShellProps {
   logoUrl?: string;
   /** Version and surface label included in prefilled issue reports, e.g. `1.1.2 web`. */
   issueReportVersion?: string;
+  /** ISO build date shown in About, e.g. `2026-07-15`. */
+  appBuildDate?: string;
+  /** Self-hosted ffmpeg.wasm core. Supplying it enables Animated GIF export. */
+  ffmpegWasm?: FfmpegWasmLoadConfig;
   /** Stable host title used before a document opens and for the optional home document. */
   homeDocumentTitle?: string;
   /** Document path that represents the host's indexable home experience. */
@@ -577,6 +588,8 @@ export function DocBlocksShell({
   theme: hostTheme = 'auto',
   logoUrl,
   issueReportVersion,
+  appBuildDate,
+  ffmpegWasm,
   homeDocumentTitle,
   homeDocumentPath,
   allowVersioning = true,
@@ -633,7 +646,15 @@ export function DocBlocksShell({
     saveViewPreferences(prefs);
   }, []);
   const isMobile = useIsMobile();
-  const [mobileShowEditor, setMobileShowEditor] = useState(false);
+  // Keep a true first visit in the compact file pane so the product can
+  // explain itself before opening a document. Once the one-time welcome has
+  // been acknowledged, returning mobile users go straight back to the editor.
+  const [mobileShowEditor, setMobileShowEditor] = useState(
+    () => isMobile && isWelcomeGatewayDismissed(),
+  );
+  useEffect(() => {
+    if (isMobile) void loadEditorShell();
+  }, [isMobile]);
   // Sidebar width -- persisted across sessions, dragged via the resizer
   // between sidebar and editor area. We track the "live" width during a
   // drag in a ref so each mousemove doesn't trigger a state update; only
@@ -650,11 +671,12 @@ export function DocBlocksShell({
   const [compactLayout, setCompactLayout] = useState(false);
   const effectiveCompact = isMobile || compactLayout;
   const showBrowserStorageWarning = !isElectronHost();
+  const appVersion = isElectronHost()
+    ? `${getDocBlocksHost().env.appVersion} desktop`
+    : (issueReportVersion ?? 'web');
   const issueReportUrl = buildIssueReportUrl({
     reportedAt: new Date(),
-    version: isElectronHost()
-      ? `${getDocBlocksHost().env.appVersion} desktop`
-      : (issueReportVersion ?? 'web'),
+    version: appVersion,
     userAgent: typeof navigator === 'undefined' ? '' : navigator.userAgent,
   });
   const [browserStoragePersistent, setBrowserStoragePersistent] = useState(false);
@@ -1362,25 +1384,25 @@ export function DocBlocksShell({
         '',
         'Your markdown can do anything.',
         '',
-        'DocBlocks is a free browser-based markdown document editor that lets you create, organize, and manage your documents right in the browser. What you write here can become a Word or PDF doc, a slide deck, an e-book, or a video.',
+        'DocBlocks is a free, local-first Markdown editor for creating, organizing, and publishing documents without sending your writing to a server. What you write here can become a Word or PDF document, a slide deck, a web page, or a video.',
         '',
         'Simple to write. Beautiful wherever it goes.',
         '',
         '## Features',
         '',
-        '- **Rich Markdown Editing** -- Write in a visual editor or switch to raw markdown source anytime. Use section annotations to change the visualization for blocks of content.',
-        '- **Workspaces** -- Organize your documents into separate workspaces in the browser or on your device.',
-        '- **Useful Everywhere** -- Your content is usable across multiple formats -- Microsoft Word .docx, PowerPoint, PDF, HTML, EPUB e-books, and Markdown.',
-        '- **Playback & Video** -- Preview your documents as rich visual presentations and export them as MP4 video',
-        '- **No BS** -- Free, no ads, no accounts, no tracking - everything runs locally in your browser',
+        '- **Rich Markdown editing** — Write visually or switch to raw Markdown source at any time. Section annotations can change how individual blocks are presented.',
+        '- **Workspaces** — Organize documents into separate browser workspaces or folders on your device.',
+        '- **Useful everywhere** — Export Word, PowerPoint, PDF, HTML, and Markdown in the app, with EPUB and additional formats available through the CLI.',
+        '- **Playback and video** — Preview a document as a rich presentation and export it as an MP4 video.',
+        '- **Private by default** — No ads, accounts, or tracking. Your browser workspace stays on this device.',
         '',
         '## Getting Started',
         '',
-        '1. Create a new file using the **New File** button in the sidebar',
-        '2. Start writing in markdown -- the editor supports headings, lists, links, images, and more',
-        '3. Your work is saved automatically',
+        '1. Create a document with the **New file** button in the file pane.',
+        '2. Start writing in Markdown — the editor supports headings, lists, links, images, and more.',
+        '3. Your work is saved automatically.',
         '',
-        'Built on [Squiggly Square markdown extensions](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
+        'Built with [squisq](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
         '',
         '## Explore DocBlocks',
         '',
@@ -2440,6 +2462,58 @@ export function DocBlocksShell({
     showToast,
   ]);
 
+  const handleNewFolder = useCallback(async () => {
+    if (!provider) return;
+    const name = await promptForText({
+      title: 'New folder',
+      label: 'Folder name',
+      initialValue: 'Untitled folder',
+      confirmLabel: 'Create',
+    });
+    if (!name) return;
+    const folderName = name.trim();
+    if (!folderName || /[\\/]/.test(folderName)) {
+      showToast('error', 'Use a folder name without slashes.');
+      return;
+    }
+    const path = `/${folderName}`;
+    try {
+      const providerV2 = getFileSystemProviderV2(provider);
+      if (providerV2) {
+        await providerV2.createDirectory(parseWorkspacePath(path), { mode: 'create' });
+      } else {
+        if (await providerEntryExists(provider, path)) {
+          throw new Error('A file or folder with that name already exists.');
+        }
+        await provider.createDirectory(path);
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof FsError && error.code === 'already-exists'
+          ? 'A file or folder with that name already exists.'
+          : error instanceof Error
+            ? error.message
+            : 'Could not create the folder.';
+      showToast('error', message);
+      return;
+    }
+    setSelectedFile(null);
+    setSelectedFolder(path);
+    setFolderEntries([]);
+    setExplorerKey((key) => key + 1);
+    closeWelcomeGateway();
+    if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
+    if (effectiveCompact) setMobileShowEditor(true);
+  }, [
+    provider,
+    promptForText,
+    showToast,
+    closeWelcomeGateway,
+    activeWorkspaceId,
+    pushHash,
+    effectiveCompact,
+  ]);
+
   // Manifest shortcut "New document" launches `/?action=new` (installed
   // PWA jump list). Handled once the first workspace/provider is ready,
   // then stripped from the URL so a reload doesn't re-trigger it.
@@ -3315,9 +3389,10 @@ export function DocBlocksShell({
             showing (compact = real mobile narrow viewport OR the user
             dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
           {(!effectiveCompact || !mobileShowEditor) && (
-            <div
+            <aside
               ref={sidebarRef}
               className="db-shell-sidebar"
+              aria-label="Workspace and files"
               style={effectiveCompact ? undefined : { width: `${sidebarWidth}px` }}
             >
               <div className="db-shell-sidebar-header">
@@ -3344,6 +3419,8 @@ export function DocBlocksShell({
                   storagePersistent={
                     showBrowserStorageWarning ? browserStoragePersistent : undefined
                   }
+                  appVersion={appVersion}
+                  appBuildDate={appBuildDate}
                 />
                 <WorkspacePicker
                   activeWorkspaceId={activeWorkspaceId}
@@ -3399,6 +3476,37 @@ export function DocBlocksShell({
                     : undefined
                 }
               />
+              {isMobile && showWelcomeGateway && (
+                <section
+                  className="db-mobile-first-run"
+                  aria-labelledby="db-mobile-first-run-title"
+                >
+                  <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
+                  <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
+                  <p>
+                    Write visually, keep plain Markdown underneath, and export the same document in
+                    useful formats. Your browser workspace stays on this device.
+                  </p>
+                  <div className="db-mobile-first-run-actions">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeWelcomeGateway();
+                        setMobileShowEditor(true);
+                      }}
+                    >
+                      Tour the welcome document
+                    </button>
+                    <button
+                      type="button"
+                      className="db-mobile-first-run-secondary"
+                      onClick={() => void handleNewFile()}
+                    >
+                      Create a document
+                    </button>
+                  </div>
+                </section>
+              )}
               <div className="db-shell-sidebar-footer">
                 <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
                   Docs
@@ -3431,7 +3539,7 @@ export function DocBlocksShell({
                   </>
                 )}
               </div>
-            </div>
+            </aside>
           )}
 
           {/* Resize handle between sidebar and editor -- hidden whenever
@@ -3449,6 +3557,7 @@ export function DocBlocksShell({
           {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
           {(!effectiveCompact || mobileShowEditor) && (
             <main
+              aria-label="Document editor"
               className={
                 updateAvailable && onApplyUpdate && updateStatusBarVisible
                   ? 'db-shell-editor-area db-shell-editor-area--has-update'
@@ -3467,7 +3576,7 @@ export function DocBlocksShell({
                   <Suspense
                     fallback={
                       <div className="db-shell-empty" role="status">
-                        Loading editor&hellip;
+                        Loading your document&hellip;
                       </div>
                     }
                   >
@@ -3533,17 +3642,19 @@ export function DocBlocksShell({
                             destinationAdapter={exportDestinationAdapter}
                             colorScheme={resolvedTheme}
                             videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
+                            ffmpegWasm={ffmpegWasm}
                             initialSharedMode={initialSharedMode}
                           />
                         </>
                       }
                     />
                   </Suspense>
-                  {showWelcomeGateway && (
+                  {showWelcomeGateway && !isMobile && (
                     <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
                       <span className="db-welcome-gateway-text">
-                        You&rsquo;re watching this welcome doc in <strong>Slideshow</strong> view --
-                        it&rsquo;s a regular markdown file, and so is everything you&rsquo;ll write.
+                        You&rsquo;re watching this welcome doc in <strong>Slideshow</strong>{' '}
+                        view&mdash; it&rsquo;s a regular markdown file, and so is everything
+                        you&rsquo;ll write.
                       </span>
                       <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
                         Start writing
@@ -3595,7 +3706,7 @@ export function DocBlocksShell({
                   )}
                 </div>
               ) : (
-                <div className="db-shell-empty">
+                <div className="db-shell-empty db-shell-empty--workspace">
                   {effectiveCompact && (
                     <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
                       <span className="db-mobile-files-icon">
@@ -3604,7 +3715,44 @@ export function DocBlocksShell({
                       Back to files
                     </button>
                   )}
-                  <p>Select a file to start editing, or create a new one.</p>
+                  <div className="db-workspace-empty-content">
+                    <span className="db-workspace-empty-icon" aria-hidden="true">
+                      <FileGlyph />
+                    </span>
+                    <h1>
+                      {activeWorkspaceDescriptor?.name
+                        ? `${activeWorkspaceDescriptor.name} is ready`
+                        : 'Your workspace is ready'}
+                    </h1>
+                    <p>Create your first Markdown document, or open a folder you already use.</p>
+                    <div className="db-workspace-empty-actions">
+                      <button type="button" onClick={() => void handleNewFile()}>
+                        Create your first document
+                      </button>
+                      <button
+                        type="button"
+                        className="db-workspace-empty-secondary"
+                        onClick={() => void handleNewFolder()}
+                      >
+                        New folder
+                      </button>
+                      {(isElectronHost() ||
+                        typeof (globalThis as { showDirectoryPicker?: unknown })
+                          .showDirectoryPicker === 'function') && (
+                        <button
+                          type="button"
+                          className="db-workspace-empty-secondary"
+                          onClick={() => void handleOpenFolder()}
+                        >
+                          Open a folder
+                        </button>
+                      )}
+                    </div>
+                    <p className="db-workspace-empty-hint">
+                      Browser workspaces stay on this device. Use the sidebar backup action to keep
+                      a portable copy.
+                    </p>
+                  </div>
                 </div>
               )}
               <UpdateAvailableNotice

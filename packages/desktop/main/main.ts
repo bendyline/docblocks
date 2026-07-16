@@ -21,6 +21,7 @@ import { registerShellIpc } from './ipc-shell.js';
 import { registerExportIpc } from './ipc-export.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerGitIpc } from './ipc-git.js';
+import { detectGit } from './git/detect.js';
 import { killAllGitChildren } from './git/exec.js';
 import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
 import { buildMenu } from './menu.js';
@@ -416,6 +417,12 @@ async function bootstrap(): Promise<void> {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
+        // Squisq's browser GIF encoder uses ffmpeg.wasm/SharedArrayBuffer.
+        // These apply to both the packaged app:// renderer and the trusted
+        // Vite development origin.
+        'Cross-Origin-Opener-Policy': ['same-origin'],
+        'Cross-Origin-Embedder-Policy': ['credentialless'],
+        'Cross-Origin-Resource-Policy': ['same-origin'],
         'Content-Security-Policy': [
           isDev
             ? "default-src 'self' app: http://localhost:5221 ws://localhost:5221; " +
@@ -489,6 +496,11 @@ async function bootstrap(): Promise<void> {
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
 
+  // Probe before the renderer loads so its Git UI and the native menu use the
+  // same process-lifetime capability. On macOS this never executes the Apple
+  // `/usr/bin/git` installer shim.
+  const gitAvailable = (await detectGit()) !== null;
+
   // A source checkout always starts on its dedicated development workspace.
   // The URL hash intentionally wins over renderer last-document state, while
   // OS open-file/deep-link requests still supersede it through the normal
@@ -500,7 +512,7 @@ async function bootstrap(): Promise<void> {
   // after the first drain and therefore queued one late request.
   drainPendingOpenRequests(mainWindow);
 
-  buildMenu(mainWindow);
+  buildMenu(mainWindow, gitAvailable);
   mainWindow.setMenuBarVisibility(false);
 
   registerTray(() => mainWindow);
@@ -551,10 +563,11 @@ app.on('window-all-closed', () => {
 });
 
 async function reopenWindow(): Promise<void> {
+  const gitAvailable = (await detectGit()) !== null;
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
   mainWindow = await createWindow(developmentWorkspace?.id);
   drainPendingOpenRequests(mainWindow);
-  buildMenu(mainWindow);
+  buildMenu(mainWindow, gitAvailable);
   mainWindow.setMenuBarVisibility(false);
 }
 
