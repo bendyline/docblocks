@@ -164,10 +164,43 @@ function requireWorkflowScript(
   script: string,
   workflow: string,
 ): void {
+  if (!invokesWorkflowScript(commands, script)) {
+    throw new Error(`${workflow} does not invoke npm run ${script}`);
+  }
+}
+
+function invokesWorkflowScript(commands: readonly string[], script: string): boolean {
   const escaped = script.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   const invocation = new RegExp(`\\bnpm run ${escaped}(?=\\s|$)`, 'mu');
-  if (!commands.some((command) => invocation.test(command))) {
-    throw new Error(`${workflow} does not invoke npm run ${script}`);
+  return commands.some((command) => invocation.test(command));
+}
+
+async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const commands = job.steps.flatMap((step) =>
+      isRecord(step) && typeof step.run === 'string' ? [step.run.trim()] : [],
+    );
+    if (!invokesWorkflowScript(commands, 'all')) continue;
+
+    const installCommand = commands.find((command) =>
+      /\bnpx playwright install(?=\s|$)/mu.test(command),
+    );
+    const requiredArguments = ['--with-deps', 'chromium', 'firefox', 'webkit'];
+    const missingArguments = requiredArguments.filter(
+      (argument) =>
+        !installCommand || !new RegExp(`(?:^|\\s)${argument}(?=\\s|$)`, 'mu').test(installCommand),
+    );
+    if (missingArguments.length > 0) {
+      throw new Error(
+        `${relativePath}: ${jobName} runs npm run all but its Playwright install is missing ${missingArguments.join(', ')}`,
+      );
+    }
   }
 }
 
@@ -281,6 +314,7 @@ async function main(): Promise<void> {
       requireWorkflowScript(commands, requirement, workflow);
     }
     await requirePinnedWorkflowActions(workflow);
+    await requireCanonicalGatePlaywrightBrowsers(workflow);
   }
   await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
 

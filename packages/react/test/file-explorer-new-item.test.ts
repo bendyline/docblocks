@@ -31,6 +31,17 @@ function typeInto(element: HTMLInputElement, value: string): void {
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function createDeferred(): Readonly<{ promise: Promise<void>; resolve: () => void }> {
+  let resolvePromise: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: () => resolvePromise?.(),
+  };
+}
+
 describe('FileExplorer new item failures', () => {
   let container: HTMLElement;
   let root: ReturnType<typeof createRoot>;
@@ -102,6 +113,65 @@ describe('FileExplorer new item failures', () => {
       'the complaint no longer applies to the new name',
     ).to.equal(null);
     expect(input?.getAttribute('aria-invalid')).to.equal('false');
+  });
+
+  it('keeps creation single-flight while the provider write is pending', async () => {
+    const writeStarted = createDeferred();
+    const releaseWrite = createDeferred();
+    const writeFile = provider.v2.writeFile.bind(provider.v2);
+    let writeCount = 0;
+    provider.v2.writeFile = async (...parameters: Parameters<typeof writeFile>) => {
+      writeCount += 1;
+      writeStarted.resolve();
+      await releaseWrite.promise;
+      return writeFile(...parameters);
+    };
+
+    const newFile = container.querySelector<HTMLButtonElement>('[aria-label="New File"]');
+    const newFolder = container.querySelector<HTMLButtonElement>('[aria-label="New Folder"]');
+    if (!newFile || !newFolder) throw new Error('new-item toolbar buttons missing');
+    await act(async () => newFile.click());
+
+    const input = container.querySelector<HTMLInputElement>('.db-new-item-input');
+    const form = container.querySelector<HTMLFormElement>('.db-new-item-row');
+    if (!input || !form) throw new Error('new-file form missing');
+    await act(async () => typeInto(input, 'delayed'));
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await writeStarted.promise;
+
+    const add = container.querySelector<HTMLButtonElement>('.db-new-item-add');
+    expect(newFile.disabled).to.equal(true);
+    expect(newFolder.disabled).to.equal(true);
+    expect(input.disabled).to.equal(true);
+    expect(add?.disabled).to.equal(true);
+    expect(form.getAttribute('aria-busy')).to.equal('true');
+
+    await act(async () => {
+      add?.click();
+      newFolder.click();
+    });
+    expect(writeCount, 'a pending submit cannot be duplicated').to.equal(1);
+    expect(
+      container.querySelector<HTMLInputElement>('.db-new-item-input')?.getAttribute('aria-label'),
+      'a pending file creation cannot be replaced by a folder form',
+    ).to.equal('New file name');
+
+    await act(async () => {
+      releaseWrite.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+
+    expect(newFolder.disabled).to.equal(false);
+    expect(container.querySelector('.db-new-item-input')).to.equal(null);
+    const rows = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+    expect(rows.map((row) => row.dataset.path)).to.include('delayed.md');
+
+    await act(async () => newFolder.click());
+    expect(
+      container.querySelector<HTMLInputElement>('.db-new-item-input')?.getAttribute('aria-label'),
+    ).to.equal('New folder name');
   });
 
   it('closes the form and creates the file when the name is free', async () => {

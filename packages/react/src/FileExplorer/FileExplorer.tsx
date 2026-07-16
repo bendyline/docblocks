@@ -164,6 +164,8 @@ export function FileExplorer({
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
+  const [newItemCreationPending, setNewItemCreationPending] = useState(false);
+  const newItemCreationPendingRef = useRef(false);
   /** Failure from the new-file/new-folder form — surfaced beside its input. */
   const [newItemError, setNewItemError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -266,23 +268,27 @@ export function FileExplorer({
   );
 
   const handleNewItemSubmit = useCallback(async () => {
+    if (newItemCreationPendingRef.current) return;
     if (!newItemName.trim()) {
       setNewItemType(null);
       setNewItemError(null);
       return;
     }
     const name = newItemName.trim();
+    const itemType = newItemType;
     // Scope to currently selected folder (or root)
     const prefix =
       tree.selectedKind === 'directory' && tree.selectedPath ? `${tree.selectedPath}/` : '';
     let createdPath = `${prefix}${name}`;
     setNewItemError(null);
+    newItemCreationPendingRef.current = true;
+    setNewItemCreationPending(true);
     try {
-      if (newItemType === 'file') {
+      if (itemType === 'file') {
         const filename = name.endsWith('.md') ? name : `${name}.md`;
         createdPath = `${prefix}${filename}`;
         await tree.createFile(createdPath, '');
-      } else if (newItemType === 'directory') {
+      } else if (itemType === 'directory') {
         await tree.createDirectory(createdPath);
       }
     } catch (error: unknown) {
@@ -292,6 +298,9 @@ export function FileExplorer({
       // can correct it rather than retype from scratch.
       setNewItemError(error instanceof Error ? error.message : 'Unable to create this item.');
       return;
+    } finally {
+      newItemCreationPendingRef.current = false;
+      setNewItemCreationPending(false);
     }
     setNewItemName('');
     setNewItemType(null);
@@ -591,6 +600,7 @@ export function FileExplorer({
         <div className="db-explorer-actions">
           <button
             className="db-explorer-btn"
+            disabled={newItemCreationPending}
             onClick={() => {
               setNewItemError(null);
               setNewItemType('file');
@@ -602,6 +612,7 @@ export function FileExplorer({
           </button>
           <button
             className="db-explorer-btn"
+            disabled={newItemCreationPending}
             onClick={() => {
               setNewItemError(null);
               setNewItemType('directory');
@@ -693,6 +704,7 @@ export function FileExplorer({
         <div className="db-new-item">
           <form
             className="db-new-item-row"
+            aria-busy={newItemCreationPending}
             onSubmit={(e) => {
               e.preventDefault();
               void handleNewItemSubmit();
@@ -705,6 +717,7 @@ export function FileExplorer({
               aria-label={newItemType === 'file' ? 'New file name' : 'New folder name'}
               aria-invalid={newItemError !== null}
               aria-describedby={newItemError ? NEW_ITEM_ERROR_ID : undefined}
+              disabled={newItemCreationPending}
               onChange={(e) => {
                 setNewItemName(e.target.value);
                 // The name changed, so the previous complaint about it no
@@ -721,8 +734,8 @@ export function FileExplorer({
               autoFocus
             />
             {newItemType === 'file' && <span className="db-new-item-suffix">.md</span>}
-            <button type="submit" className="db-new-item-add">
-              Add
+            <button type="submit" className="db-new-item-add" disabled={newItemCreationPending}>
+              {newItemCreationPending ? 'Adding…' : 'Add'}
             </button>
           </form>
           {newItemError && (
