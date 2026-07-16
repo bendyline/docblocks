@@ -1,6 +1,6 @@
 {
   "name": "docblocks-desktop",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "private": true,
   "description": "DocBlocks desktop application — native wrapper around the DocBlocks editor.",
   "author": "Bendyline",

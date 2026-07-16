@@ -1,3 +1,9 @@
+## docblocks-desktop [2.1.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.1.0...docblocks-desktop@2.1.1) (2026-07-16)
+
+### Bug Fixes
+
+* Workflow updates, lint ([#11](https://github.com/bendyline/docblocks/issues/11)) ([10b9b42](https://github.com/bendyline/docblocks/commit/10b9b426244006c827fee8f42ee4282d2dcd921b))
+
 ## docblocks-desktop [2.1.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.0.0...docblocks-desktop@2.1.0) (2026-07-16)
 
 ### Features
