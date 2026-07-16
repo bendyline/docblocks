@@ -77,7 +77,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     };
   });
   expect(tabMetrics.paddingTop).toBe('4px');
-  expect(tabMetrics.paddingBottom).toBe('7px');
+  expect(tabMetrics.paddingBottom).toBe('9px');
   expect(tabMetrics.centerDelta).not.toBeNull();
   // Chromium can place text boxes on quarter pixels, so allow the label's
   // geometric center to differ slightly while still catching the old 48px

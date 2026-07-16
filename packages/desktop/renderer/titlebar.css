@@ -38,11 +38,11 @@
 
 .db-desktop-root .db-shell .squisq-toolbar-view-tab {
   padding-top: 4px;
-  padding-bottom: 7px;
+  padding-bottom: 9px;
 }
 
 .db-desktop-root .db-shell .squisq-use-mode-trigger {
-  padding-bottom: 12px;
+  padding-bottom: 14px;
 }
 
 .db-desktop-root .squisq-toolbar-button[aria-label='Insert image'] {

@@ -19,9 +19,15 @@ async function waitForVSCode(page: Page) {
 
 async function getWebviewContent(page: Page): Promise<FrameLocator> {
   const webviews = page.locator('iframe.webview');
-  const count = await webviews.count();
-  const outerFrame = webviews.nth(count - 1).contentFrame();
-  return outerFrame.locator('iframe#active-frame').contentFrame();
+  await expect(webviews.last()).toBeVisible({ timeout: 15_000 });
+
+  // Keep this locator live. VS Code selects the new tab before it appends the
+  // corresponding webview iframe, so capturing `count - 1` here can pin the
+  // caller to the previous document for the rest of an assertion's timeout.
+  const outerFrame = webviews.last().contentFrame();
+  const activeFrame = outerFrame.locator('iframe#active-frame');
+  await expect(activeFrame).toBeVisible({ timeout: 15_000 });
+  return activeFrame.contentFrame();
 }
 
 test.describe('DocBlocks markdown editor — full bootstrap', () => {
@@ -129,9 +135,10 @@ test.describe('DocBlocks markdown editor — full bootstrap', () => {
       await expect(link).toBeVisible({ timeout: 15_000 });
       await link.click();
 
-      await expect(page.locator('.tabs-container')).toContainText('linked-document.md', {
-        timeout: 15_000,
-      });
+      await expect(page.locator('.tabs-container .tab.active')).toContainText(
+        'linked-document.md',
+        { timeout: 15_000 },
+      );
       const linkedEditor = await getWebviewContent(page);
       await expect(linkedEditor.locator('body')).toContainText('Linked Document', {
         timeout: 15_000,
