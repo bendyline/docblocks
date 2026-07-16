@@ -386,11 +386,11 @@ async function main(): Promise<void> {
   }
   const lockedSquisqEditor = packageLock.packages?.['node_modules/@bendyline/squisq-editor-react'];
   if (
-    lockedSquisqEditor?.peerDependencies?.['monaco-editor'] !== `>=${expectedMonacoVersion}` ||
+    lockedSquisqEditor?.peerDependencies?.['monaco-editor'] !== `~${expectedMonacoVersion}` ||
     lockedSquisqEditor.peerDependenciesMeta?.['monaco-editor']?.optional === true
   ) {
     throw new Error(
-      `package-lock.json must resolve @bendyline/squisq-editor-react with a required monaco-editor >=${expectedMonacoVersion} peer`,
+      `package-lock.json must resolve @bendyline/squisq-editor-react with a required monaco-editor ~${expectedMonacoVersion} peer`,
     );
   }
   for (const [manifestPath, manifest] of [

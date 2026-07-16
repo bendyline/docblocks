@@ -9,6 +9,9 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '../dist/webview'),
     emptyOutDir: true,
+    // Known large chunks have surface-specific limits in
+    // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
+    chunkSizeWarningLimit: 4_000,
     rollupOptions: {
       output: {
         entryFileNames: 'index.js',
