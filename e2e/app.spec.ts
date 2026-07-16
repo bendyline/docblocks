@@ -78,6 +78,27 @@ test.describe('DocBlocks App', () => {
     await expect(page.locator('main.db-shell-editor-area')).toBeVisible();
   });
 
+  test('renders Mermaid diagrams through the Vite dev server', async ({ page }) => {
+    const archive = await createSharedDocumentArchive(
+      '# Mermaid diagram\n\n```mermaid\ngraph TD\n  A[DocBlocks] --> B[Squisq]\n```\n',
+      'mermaid.md',
+    );
+    const sharedUrl = buildSharedDocumentUrl(page.url(), archive, null);
+
+    await page.evaluate((url) => {
+      window.history.pushState(null, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, sharedUrl);
+
+    const diagram = page.locator('[aria-label="flowchart-v2 diagram editor"]');
+    await expect(diagram).toBeVisible({ timeout: 15_000 });
+    await expect(
+      diagram.getByRole('button', { name: 'DocBlocks, rect Mermaid node' }),
+    ).toBeVisible();
+    await expect(diagram.getByRole('button', { name: 'Squisq, rect Mermaid node' })).toBeVisible();
+    await expect(page.locator('.squisq-mermaid-render-error')).toHaveCount(0);
+  });
+
   test('has a sidebar with workspace picker', async ({ page }) => {
     const sidebar = page.locator('.db-shell-sidebar');
     await expect(sidebar).toBeVisible();

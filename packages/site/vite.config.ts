@@ -266,6 +266,10 @@ export default defineConfig({
       // CJS transitive deps of squisq packages that need pre-bundling.
       // The squisq packages themselves are excluded (served from source
       // via symlinks for live dev), but their CJS deps must be bundled.
+      // Mermaid is loaded dynamically from the excluded squisq-react package,
+      // so Vite cannot discover it during dependency scanning. Pre-bundle it
+      // explicitly so its CommonJS dayjs imports receive ESM interop wrappers.
+      'mermaid',
       'localforage',
       'extend',
       'debug',

@@ -38,12 +38,12 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
         style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
     };
   });
-  expect(chrome.height).toBe(32);
+  expect(chrome.height).toBe(42);
   expect(chrome.appRegion).toBe('drag');
 
   // The shared shell lifts the tabs within its roomier 48px browser toolbar.
   // Desktop must win that equal-specificity rule so labels stay centered in
-  // the compact 32px titlebar instead of riding against its top edge.
+  // the compact 42px titlebar instead of riding against its top edge.
   const writeTab = toolbar.getByRole('tab', { name: 'Write' });
   const tabMetrics = await writeTab.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -60,7 +60,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     };
   });
   expect(tabMetrics.paddingTop).toBe('4px');
-  expect(tabMetrics.paddingBottom).toBe('4px');
+  expect(tabMetrics.paddingBottom).toBe('7px');
   expect(tabMetrics.centerDelta).not.toBeNull();
   // Chromium can place text boxes on quarter pixels, so allow the label's
   // geometric center to differ slightly while still catching the old 48px

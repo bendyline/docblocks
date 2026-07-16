@@ -175,7 +175,10 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-macos:
     needs: quality
-    runs-on: macos-latest
+    # Keep release signing on the image that is known to work with the current
+    # Electron toolchain. `macos-latest` moved from macOS 15 to macOS 26 and
+    # codesign began returning signatures without the required secure timestamp.
+    runs-on: macos-15
     # Job-level so step `if:` conditionals can read it — a step's own `env:`
     # block is NOT visible to that same step's `if:`.
     env:
@@ -228,10 +231,34 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain
 
       - name: Build + package desktop (macOS)
+        working-directory: packages/desktop
         run: |
           sudo launchctl limit maxfiles 524288 524288
           ulimit -n 524288
-          npm run dist:mac -w docblocks-desktop -- --publish never
+          npm run build
+
+          # Apple's timestamp service can occasionally return a signature with
+          # no secure timestamp. Retry only that exact transient failure; all
+          # other packaging failures remain immediate and actionable.
+          max_attempts=3
+          for attempt in $(seq 1 "$max_attempts"); do
+            log="$RUNNER_TEMP/electron-builder-macos-$attempt.log"
+            set +e
+            npx --no-install electron-builder --mac --publish never 2>&1 | tee "$log"
+            status=${PIPESTATUS[0]}
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              exit 0
+            fi
+            if ! grep -Fq 'A timestamp was expected but was not found.' "$log" || [ "$attempt" -eq "$max_attempts" ]; then
+              exit "$status"
+            fi
+
+            echo "::warning::Apple secure timestamping failed on attempt $attempt; retrying a clean package."
+            rm -rf dist/artifacts
+            sleep $((attempt * 15))
+          done
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           # electron-builder's built-in notarytool reads APPLE_APP_SPECIFIC_PASSWORD.
@@ -327,6 +354,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Build upstream packages
+        run: npm run build:core && npm run build:react
 
       - name: Package VS Code extension
         run: npm run package:vscode

@@ -86,7 +86,7 @@ The rich-text editor itself is **Squisq**, a sister project that ships as `@bend
 ```bash
 npm install
 
-# First activate the Node major/minor pinned by .nvmrc; the gate rejects runtime drift.
+# Use a Node version satisfying package.json#engines.
 # Canonical local/CI gate — builds, checks, unit/integration tests, and every local E2E suite
 npm run all
 

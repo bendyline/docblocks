@@ -86,7 +86,9 @@ export default defineConfig({
     ],
   },
   optimizeDeps: {
-    include: ['monaco-editor'],
+    // Mermaid is a lazy dependency of the excluded squisq-react package.
+    // Explicit optimization provides ESM interop for its CommonJS deps.
+    include: ['monaco-editor', 'mermaid'],
     exclude: [
       '@bendyline/squisq',
       '@bendyline/squisq-react',
