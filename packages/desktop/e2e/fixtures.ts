@@ -51,7 +51,8 @@ interface RunningApplication extends LaunchedDocBlocksApplication {
 }
 
 function makeTmpDir(prefix: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const canonicalTmpDir = fs.realpathSync.native(os.tmpdir());
+  return fs.mkdtempSync(path.join(canonicalTmpDir, prefix));
 }
 
 function removeTmpDir(directory: string): void {
