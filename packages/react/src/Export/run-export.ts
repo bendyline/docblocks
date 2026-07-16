@@ -15,10 +15,16 @@ import { FORMAT_EXTENSIONS } from './export-options.js';
 
 export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
 
+/** Host-provided converters that must be loaded before an export begins. */
+export interface ExportConverterOverrides {
+  docToPptx?: (typeof import('@bendyline/squisq-formats/pptx'))['docToPptx'];
+}
+
 const MIME_TYPES: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   pdf: 'application/pdf',
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  epub: 'application/epub+zip',
   md: 'text/markdown',
   html: 'text/html',
 };
@@ -67,6 +73,7 @@ export async function runExport(
   options: ExportOptions,
   mediaContainer?: ContentContainer | null,
   saveBlob?: ExportBlobSaver,
+  converterOverrides: ExportConverterOverrides = {},
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
   const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
@@ -101,20 +108,36 @@ export async function runExport(
     return;
   }
 
+  if (options.format === 'epub') {
+    const { markdownDocToEpub } = await import('@bendyline/squisq-formats/epub');
+    const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
+    const buf = await markdownDocToEpub(doc, { themeId, images });
+    await saveExportBlob(new Blob([buf], { type: MIME_TYPES.epub }), filename, saveBlob);
+    return;
+  }
+
   if (options.format === 'pptx') {
-    const [{ markdownToDoc }, { applyTransform }, { docToPptx }] = await Promise.all([
-      import('@bendyline/squisq/doc'),
-      import('@bendyline/squisq/transform'),
-      import('@bendyline/squisq-formats/pptx'),
-    ]);
-    // Use the full transform pipeline: markdown -> Doc -> transform -> PPTX
+    const pptxModule = converterOverrides.docToPptx
+      ? Promise.resolve({ docToPptx: converterOverrides.docToPptx })
+      : import('@bendyline/squisq-formats/pptx');
+    const [{ markdownToDoc }, { applyTransform }, { buildPreviewDoc }, { docToPptx }] =
+      await Promise.all([
+        import('@bendyline/squisq/doc'),
+        import('@bendyline/squisq/transform'),
+        import('@bendyline/squisq-editor-react'),
+        pptxModule,
+      ]);
+    // Use the exact slideshow projection before PPTX conversion. The player
+    // and exporter therefore share block flattening, typed template inputs,
+    // image interleaving, synthetic timing, and the later expandDocBlocks pass.
     const baseDoc = markdownToDoc(doc);
     const transformed = applyTransform(baseDoc, options.transformStyle);
-    const enrichedDoc = transformed.doc;
+    const enrichedDoc = buildPreviewDoc(transformed.doc);
     if (themeId) {
       enrichedDoc.themeId = themeId;
     }
-    const buf = await docToPptx(enrichedDoc, { themeId });
+    const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
+    const buf = await docToPptx(enrichedDoc, { themeId, images });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename, saveBlob);
     return;
   }
@@ -331,6 +354,23 @@ async function resolveImages(
     const ext = url.slice(url.lastIndexOf('.') + 1).toLowerCase();
     const contentType = IMAGE_MIME[ext] || 'image/png';
     map.set(url, { data, contentType });
+  }
+
+  return map;
+}
+
+/** Resolve the raw image payload shape consumed by EPUB export. */
+async function resolveImageData(
+  doc: MarkdownDocument,
+  container: ContentContainer,
+): Promise<Map<string, ArrayBuffer>> {
+  const urls = collectMarkdownImageUrls(doc);
+  const map = new Map<string, ArrayBuffer>();
+
+  for (const url of urls) {
+    if (map.has(url) || isExternalUrl(url)) continue;
+    const data = await container.readFile(url);
+    if (data) map.set(url, data);
   }
 
   return map;

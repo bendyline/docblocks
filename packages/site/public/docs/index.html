@@ -67,6 +67,63 @@
         </aside>
       </section>
 
+      <section class="product-preview" aria-label="DocBlocks editor preview">
+        <figure class="product-preview-frame">
+          <img
+            src="/marketing/docblocks-editor.png"
+            alt="The DocBlocks Markdown editor showing its file pane, writing canvas, and document controls"
+            width="1280"
+            height="720"
+            loading="eager"
+          />
+          <figcaption>
+            One Markdown document, with the file pane and editing tools shared by the web and
+            desktop experiences.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="section" aria-labelledby="quick-start">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Quick start</p>
+            <h2 id="quick-start">Create, protect, and publish a document.</h2>
+          </div>
+          <p class="section-copy">
+            The web editor requires no account. These three steps cover the first successful
+            document and the local-first storage choices that matter before you begin real work.
+          </p>
+        </div>
+        <div class="card-grid">
+          <article class="card">
+            <h3>1. Create or open</h3>
+            <p>
+              Open the web editor and choose <strong>Create your first document</strong>. To work
+              with an existing local folder in a supported browser, choose
+              <strong>Open a folder</strong> and grant only that folder.
+            </p>
+            <p><a href="/">Open the web editor</a></p>
+          </article>
+          <article class="card">
+            <h3>2. Keep a backup</h3>
+            <p>
+              Browser workspaces stay on this device. In Settings, request persistent storage when
+              available, and use <strong>Backup browser docs frequently</strong> to download a
+              portable copy before clearing browser data or changing devices.
+            </p>
+          </article>
+          <article class="card">
+            <h3>3. Export or share</h3>
+            <p>
+              Open <strong>Export and share</strong> from the editor toolbar. Export creates a local
+              file. A share link embeds a copy of the document in the URL, so never include secrets
+              and treat anyone with the link as able to read that copy.
+            </p>
+            <p><a href="/formats/">Compare export formats</a></p>
+          </article>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="documentation-index">
         <div class="section-heading">
           <div>
@@ -133,6 +190,65 @@
             </p>
             <p><a href="/formats/">Explore formats</a></p>
           </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="troubleshooting">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Troubleshooting</p>
+            <h2 id="troubleshooting">Recover without guessing.</h2>
+          </div>
+          <p class="section-copy">
+            DocBlocks keeps failures visible instead of silently treating storage, permissions, or
+            conversion errors as success. Start with the message on screen, then use the matching
+            recovery path below.
+          </p>
+        </div>
+        <div class="card-grid">
+          <article class="card">
+            <h3>A site page opens the editor</h3>
+            <p>
+              Apply the visible DocBlocks update and reload once. The corrected service worker keeps
+              the editor at the site root while product, documentation, privacy, and terms pages use
+              their own routes.
+            </p>
+          </article>
+          <article class="card">
+            <h3>A document will not save</h3>
+            <p>
+              Keep the tab open. Check the storage or conflict banner, free browser space when
+              requested, and choose a conflict branch explicitly. Download all workspaces before
+              clearing site data.
+            </p>
+          </article>
+          <article class="card">
+            <h3>An export fails</h3>
+            <p>
+              The export dialog remains open with the failure detail. Check unreadable images,
+              destination permission, and available storage, then retry. A failed export never
+              reports success or replaces an existing destination silently.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="support-and-releases">
+        <div class="callout">
+          <div>
+            <h2 id="support-and-releases">Include the version when asking for help.</h2>
+            <p>
+              Open <strong>About DocBlocks</strong> to find the version and delivery surface.
+              Include that value, your browser or operating system, and the smallest reproducible
+              document when reporting a problem.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <a class="button" href="https://github.com/bendyline/docblocks/issues">Get support</a>
+            <a class="button" href="https://github.com/bendyline/docblocks/releases"
+              >Release notes</a
+            >
+          </div>
         </div>
       </section>
 

@@ -16,7 +16,7 @@ import {
   type ExportOptions,
 } from '../src/Export/export-options.js';
 
-const ALL_FORMATS: ExportFormat[] = ['docx', 'pdf', 'pptx', 'md', 'html'];
+const ALL_FORMATS: ExportFormat[] = ['docx', 'pdf', 'pptx', 'epub', 'md', 'html'];
 const STORAGE_KEY = 'docblocks-export-options';
 
 describe('export-options', () => {
@@ -37,6 +37,7 @@ describe('export-options', () => {
       expect(FORMAT_EXTENSIONS.docx).to.equal('.docx');
       expect(FORMAT_EXTENSIONS.pdf).to.equal('.pdf');
       expect(FORMAT_EXTENSIONS.pptx).to.equal('.pptx');
+      expect(FORMAT_EXTENSIONS.epub).to.equal('.epub');
       expect(FORMAT_EXTENSIONS.md).to.equal('.md');
       expect(FORMAT_EXTENSIONS.html).to.equal('.html');
     });

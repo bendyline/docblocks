@@ -1,6 +1,10 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import {
+  CROSS_ORIGIN_ISOLATION_HEADERS,
+  ffmpegCorePlugin,
+} from '../../scripts/vite-ffmpeg-core.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
 // the rationale.
@@ -46,7 +50,7 @@ export default defineConfig({
   root: path.resolve(__dirname, 'renderer'),
   base: './',
   publicDir: path.resolve(__dirname, 'renderer/public'),
-  plugins: [stripBrokenSourcemapPragmas(), react()],
+  plugins: [stripBrokenSourcemapPragmas(), ffmpegCorePlugin(), react()],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy — see packages/site/vite.config.ts for
@@ -127,6 +131,7 @@ export default defineConfig({
     port: 5221,
     strictPort: true,
     open: false,
+    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     fs: {
       // Local Squisq development uses package symlinks into ../squisq.
       // Its editor CSS imports Font Awesome, whose relative webfont URLs

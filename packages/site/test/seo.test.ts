@@ -19,10 +19,10 @@ async function read(relativePath: string): Promise<string> {
   return readFile(path.join(SITE_ROOT, relativePath), 'utf8');
 }
 
-/** The `[...]` body of the workbox `navigateFallbackAllowlist` option. */
-function extractAllowlistSource(config: string): string {
-  const source = config.match(/navigateFallbackAllowlist:\s*\[([^\]]*)\]/)?.[1];
-  expect(source, 'navigateFallbackAllowlist literal').to.be.a('string');
+/** The `[...]` body of the custom worker's root navigation allowlist. */
+function extractAllowlistSource(serviceWorker: string): string {
+  const source = serviceWorker.match(/allowlist:\s*\[([^\]]*)\]/)?.[1];
+  expect(source, 'NavigationRoute allowlist literal').to.be.a('string');
   return source ?? '';
 }
 
@@ -125,15 +125,24 @@ describe('site SEO surface', () => {
   });
 
   it('keeps the service-worker fallback scoped to the root editor', async () => {
-    const config = await read('vite.config.ts');
+    const [config, serviceWorker] = await Promise.all([
+      read('vite.config.ts'),
+      read('src/service-worker.ts'),
+    ]);
     expect(config).to.include("appType: 'mpa'");
+    expect(config).to.include("strategies: 'injectManifest'");
     expect(config).to.include('SITE_PRECACHE_GLOB');
-    for (const extension of ['webmanifest', 'txt', 'xml']) {
+    for (const extension of ['webmanifest', 'txt', 'xml', 'wasm']) {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
     }
+    expect(serviceWorker).to.include("createHandlerBoundToURL('index.html')");
+    expect(serviceWorker).to.include("headers.set('Cross-Origin-Opener-Policy', 'same-origin')");
+    expect(serviceWorker).to.include(
+      "headers.set('Cross-Origin-Embedder-Policy', 'credentialless')",
+    );
 
-    const allowlist = parseRegexLiterals(extractAllowlistSource(config));
-    expect(allowlist.length, 'navigateFallbackAllowlist entries').to.be.greaterThan(0);
+    const allowlist = parseRegexLiterals(extractAllowlistSource(serviceWorker));
+    expect(allowlist.length, 'NavigationRoute allowlist entries').to.be.greaterThan(0);
 
     // The root editor is the app shell and must fall back to index.html.
     expect(matchesAllowlist(allowlist, '/'), '/').to.equal(true);
@@ -148,14 +157,72 @@ describe('site SEO surface', () => {
     }
   });
 
+  it('ships a one-time migration from the legacy catch-all navigation worker', async () => {
+    const [config, serviceWorker, migration] = await Promise.all([
+      read('vite.config.ts'),
+      read('src/service-worker.ts'),
+      read('public/pwa-route-migration.js'),
+    ]);
+
+    expect(config).to.include("filename: 'sw.ts'");
+    expect(serviceWorker).to.include("serviceWorker.importScripts('pwa-route-migration.js')");
+    expect(serviceWorker).to.include("type: 'SKIP_WAITING'");
+    expect(serviceWorker).to.include('ServiceWorkerRuntime).skipWaiting()');
+    expect(serviceWorker).not.to.include('clients.claim()');
+    expect(migration).to.include('root-only-navigation-v1');
+    expect(migration).to.include('self.skipWaiting()');
+    expect(migration).to.include('self.clients.claim()');
+    expect(migration).to.include("markerCacheName = 'docblocks-pwa-migrations'");
+  });
+
+  it('publishes separate copyable CLI installation and invocation commands', async () => {
+    const html = await read('public/cli/index.html');
+    expect(html).to.include('npm install -g @bendyline/docblocks-cli');
+    expect(html).to.include('docblocks --help');
+    expect(html).not.to.include('@bendyline/docblocks-cli docblocks --help');
+  });
+
+  it('publishes customer quick-start, recovery, version, and support guidance', async () => {
+    const html = await read('public/docs/index.html');
+    expect(html).to.include('id="quick-start"');
+    expect(html).to.include('Backup browser docs frequently');
+    expect(html).to.include('id="troubleshooting"');
+    expect(html).to.include('A site page opens the editor');
+    expect(html).to.include('About DocBlocks');
+    expect(html).to.include('https://github.com/bendyline/docblocks/releases');
+    expect(html).to.include('https://github.com/bendyline/docblocks/issues');
+  });
+
+  it('ships dark-mode marketing surfaces with real product imagery', async () => {
+    const [css, desktop, vscode, docs, editorImage, vscodeImage] = await Promise.all([
+      read('public/marketing/marketing.css'),
+      read('public/desktop/index.html'),
+      read('public/vscode/index.html'),
+      read('public/docs/index.html'),
+      stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-editor.png')),
+      stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-vscode.png')),
+    ]);
+
+    expect(css).to.include('@media (prefers-color-scheme: dark)');
+    expect(css).to.include('color-scheme: light dark');
+    expect(desktop).to.include('/marketing/docblocks-editor.png');
+    expect(vscode).to.include('/marketing/docblocks-vscode.png');
+    expect(docs).to.include('/marketing/docblocks-editor.png');
+    expect(editorImage.size).to.be.greaterThan(50_000);
+    expect(vscodeImage.size).to.be.greaterThan(50_000);
+  });
+
   it('resolves every manifest entry point through the navigation fallback', async () => {
     // Regression guard: workbox matches the allowlist against
     // `url.pathname + url.search`, so a root-only `/^\/$/` silently excludes
     // the "New document" shortcut's `/?action=new` — the jump-list entry then
     // hits the network and shows a browser error page offline. Any URL the
     // manifest advertises as an entry point has to survive the allowlist.
-    const config = await read('vite.config.ts');
-    const allowlist = parseRegexLiterals(extractAllowlistSource(config));
+    const [config, serviceWorker] = await Promise.all([
+      read('vite.config.ts'),
+      read('src/service-worker.ts'),
+    ]);
+    const allowlist = parseRegexLiterals(extractAllowlistSource(serviceWorker));
 
     const entryPoints = [
       ...extractManifestValues(config, 'start_url'),

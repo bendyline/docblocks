@@ -18,7 +18,7 @@ export default defineConfig({
   },
   format: ['esm'],
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   external: ['@bendyline/squisq', 'localforage'],
 });

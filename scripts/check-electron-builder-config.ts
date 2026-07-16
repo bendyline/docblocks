@@ -1,12 +1,12 @@
 /**
  * Validates packages/desktop/electron-builder.yml against the schema that the
- * installed electron-builder (app-builder-lib) ships. Catches unknown or
+ * installed electron-builder (app-builder-lib) ships and checks load-bearing
+ * project policy such as the release architecture matrix. Catches unknown or
  * misplaced options (e.g. signtool keys that moved under `signtoolOptions` in
- * electron-builder 26) at `npm run all` time instead of during the release job's
- * `electron-builder --dir`, which is the only other place this config is read.
+ * electron-builder 26) at `npm run all` time instead of during a release job.
  *
- * This is a schema check only — it does not catch failures that surface during
- * actual packaging (missing icon files, signing errors, etc.).
+ * This does not perform packaging, so missing host tools, signing errors, and
+ * similar artifact-time failures still surface in packaging jobs.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -45,6 +45,60 @@ if (!validate(config)) {
 }
 
 process.stdout.write('electron-builder.yml: schema OK\n');
+
+type UnknownRecord = Readonly<Record<string, unknown>>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function failConfigPolicy(message: string): never {
+  process.stderr.write(`${message}\n`);
+  process.exit(1);
+}
+
+function requireTargetArchitectures(
+  platformName: 'win' | 'mac' | 'linux',
+  targetName: string,
+  expectedArchitectures: readonly string[],
+): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const platform = config[platformName];
+  if (!isRecord(platform) || !Array.isArray(platform.target)) {
+    failConfigPolicy(`electron-builder.yml ${platformName}.target must be a target list.`);
+  }
+  const target = platform.target.find(
+    (candidate) => isRecord(candidate) && candidate.target === targetName,
+  );
+  if (!isRecord(target) || !Array.isArray(target.arch)) {
+    failConfigPolicy(
+      `electron-builder.yml ${platformName} target ${targetName} must declare architectures.`,
+    );
+  }
+  const architectures = target.arch;
+  if (
+    architectures.length !== expectedArchitectures.length ||
+    architectures.some((architecture, index) => architecture !== expectedArchitectures[index])
+  ) {
+    failConfigPolicy(
+      `electron-builder.yml ${platformName} target ${targetName} must build ${expectedArchitectures.join(', ')}.`,
+    );
+  }
+}
+
+for (const [platformName, targetName] of [
+  ['win', 'nsis'],
+  ['mac', 'dmg'],
+  ['mac', 'zip'],
+  ['linux', 'AppImage'],
+  ['linux', 'deb'],
+] as const) {
+  requireTargetArchitectures(platformName, targetName, ['x64', 'arm64']);
+}
+
+process.stdout.write('electron-builder.yml: x64 + arm64 release matrix OK\n');
 
 const configuredFiles =
   typeof config === 'object' && config !== null && 'files' in config ? config.files : null;

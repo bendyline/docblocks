@@ -1,3 +1,5 @@
+@import '@bendyline/squisq-editor-react/styles';
+
 /* ── DocBlocks Styles ─────────────────────────────────────────── */
 
 /* ── Theme Tokens ────────────────────────────────────────────── */
@@ -763,6 +765,83 @@
   margin: 4px 0;
 }
 
+.db-workspace-create {
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 24px));
+  padding: 10px;
+}
+
+.db-workspace-create-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-workspace-create-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  outline: none;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+
+.db-workspace-create-input:focus-visible {
+  border-color: var(--db-accent);
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-workspace-create-input[aria-invalid='true'] {
+  border-color: var(--db-danger);
+}
+
+.db-workspace-create-error {
+  margin: 6px 0 0;
+  color: var(--db-danger);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.db-workspace-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.db-workspace-create-actions button {
+  padding: 5px 10px;
+  border: 1px solid var(--db-accent);
+  border-radius: 4px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-workspace-create-actions button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-workspace-create-actions button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.db-workspace-create-actions .db-workspace-create-cancel {
+  border-color: var(--db-border-strong);
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+}
+
 /* ── App Menu ────────────────────────────────────────────────── */
 
 .db-app-menu {
@@ -1126,6 +1205,142 @@ body.db-resizing-sidebar * {
   border-right: none;
 }
 
+.db-shell--mobile:has(.db-mobile-first-run) .db-file-explorer {
+  flex: 0 0 170px;
+  height: 170px;
+  min-height: 170px;
+}
+
+.db-mobile-first-run {
+  flex: 0 0 auto;
+  margin: 12px 12px auto;
+  padding: 20px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 92% 4%, var(--db-accent-soft-15), transparent 42%),
+    var(--db-bg-subtle);
+  box-shadow: 0 12px 30px var(--db-shadow);
+}
+
+.db-mobile-first-run-eyebrow {
+  margin: 0 0 7px;
+  color: var(--db-accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-mobile-first-run h1 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 23px;
+  line-height: 1.2;
+}
+
+.db-mobile-first-run > p:not(.db-mobile-first-run-eyebrow) {
+  margin: 10px 0 0;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-mobile-first-run-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 17px;
+}
+
+.db-mobile-first-run-actions button {
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--db-accent);
+  border-radius: 7px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-mobile-first-run-actions button:hover {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-mobile-first-run-actions .db-mobile-first-run-secondary {
+  border-color: var(--db-border-strong);
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+}
+
+.db-mobile-first-run-actions .db-mobile-first-run-secondary:hover {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+.db-mobile-first-run-actions button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+/* The compact editor uses two deliberate toolbar rows: navigation/views on
+   top and actions below. Squisq's formatting actions remain available through
+   its measured More menu; hiding their inline copies removes clipped,
+   keyboard-focusable controls while leaving room for versioning, document
+   settings, Files, and DocBlocks' Export and share control. */
+.db-shell--mobile .squisq-toolbar {
+  min-height: 88px;
+  flex-wrap: wrap;
+  align-content: stretch;
+  padding-right: 0;
+}
+
+.db-shell--mobile .squisq-toolbar > .db-mobile-back {
+  box-sizing: border-box;
+  flex: 0 0 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 6px 10px;
+}
+
+.db-shell--mobile .squisq-toolbar-view-tabs {
+  box-sizing: border-box;
+  flex: 1 0 calc(100% - 45px);
+  width: calc(100% - 45px);
+  min-width: 0;
+  height: 44px;
+}
+
+.db-shell--mobile .squisq-toolbar-actions {
+  flex: 0 1 0;
+  width: 0;
+  height: 44px;
+}
+
+.db-shell--mobile .squisq-toolbar-actions > * {
+  visibility: hidden;
+}
+
+.db-shell--mobile .squisq-toolbar-overflow,
+.db-shell--mobile .squisq-toolbar > .squisq-toolbar-button,
+.db-shell--mobile .squisq-toolbar > .db-toolbar-menu {
+  flex: 0 0 auto;
+}
+
+/* The compact layout moves Squisq's overflow trigger to the left edge of
+   the second row. Its desktop right-aligned placement can consequently put
+   the menu off-canvas, so anchor the mobile popover to the viewport instead. */
+.db-shell--mobile .squisq-editor-shell .squisq-toolbar-overflow-menu {
+  right: auto !important;
+  left: max(4px, env(safe-area-inset-left)) !important;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+}
+
 .db-mobile-back {
   display: flex;
   align-items: center;
@@ -1154,6 +1369,112 @@ body.db-resizing-sidebar * {
 .db-mobile-files-icon svg {
   width: 24px;
   height: 24px;
+}
+
+.db-shell-empty--workspace {
+  position: relative;
+  box-sizing: border-box;
+  flex-direction: column;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 50% 38%, var(--db-accent-soft-08), transparent 44%), var(--db-bg);
+}
+
+.db-shell-empty--workspace > .db-mobile-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--db-border);
+  border-radius: 0;
+  background: var(--db-bg-subtle);
+}
+
+.db-workspace-empty-content {
+  display: flex;
+  width: min(460px, 100%);
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.db-workspace-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 14px;
+  background: var(--db-bg-subtle);
+  color: var(--db-accent-deep);
+}
+
+.db-workspace-empty-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.db-workspace-empty-content h1 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.db-workspace-empty-content > p {
+  max-width: 390px;
+  margin: 9px 0 0;
+  color: var(--db-text-muted);
+  line-height: 1.5;
+}
+
+.db-workspace-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.db-workspace-empty-actions button {
+  padding: 8px 13px;
+  border: 1px solid var(--db-accent);
+  border-radius: 5px;
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-workspace-empty-actions button:hover {
+  border-color: var(--db-accent-hover);
+  background: var(--db-accent-hover);
+}
+
+.db-workspace-empty-actions button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-workspace-empty-actions .db-workspace-empty-secondary {
+  border-color: var(--db-border-strong);
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
+}
+
+.db-workspace-empty-actions .db-workspace-empty-secondary:hover {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+.db-workspace-empty-content .db-workspace-empty-hint {
+  margin-top: 18px;
+  font-size: 12px;
 }
 
 /* In folder/empty views, the back button sits as a standalone bar */
@@ -1273,8 +1594,33 @@ body.db-resizing-sidebar * {
 
 .db-dialog-links {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.db-about-version {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+}
+
+.db-about-version span {
+  color: var(--db-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.db-about-version code {
+  color: var(--db-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  user-select: all;
 }
 
 .db-dialog-sep {
@@ -1611,15 +1957,20 @@ body.db-resizing-sidebar * {
 
 .db-toolbar-menu {
   position: relative;
+  margin-left: 6px;
+  padding-left: 7px;
+  border-left: 1px solid var(--db-border);
 }
 
 .db-toolbar-menu-trigger {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
+  gap: 5px;
+  width: auto;
+  min-width: 28px;
   height: 28px;
-  padding: 0;
+  padding: 0 8px;
   line-height: 1;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -1629,8 +1980,28 @@ body.db-resizing-sidebar * {
 }
 
 .db-toolbar-menu-trigger svg {
+  flex: 0 0 auto;
   width: 18px;
   height: 18px;
+}
+
+.db-toolbar-menu-trigger-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.db-shell--mobile .db-toolbar-menu {
+  margin-left: 2px;
+  padding-left: 3px;
+}
+
+.db-shell--mobile .db-toolbar-menu-trigger {
+  width: 28px;
+  padding: 0;
+}
+
+.db-shell--mobile .db-toolbar-menu-trigger-label {
+  display: none;
 }
 
 .db-toolbar-menu-trigger:hover {
@@ -1771,6 +2142,10 @@ body.db-resizing-sidebar * {
   border-color: var(--db-accent);
 }
 
+.db-export-path-input[aria-invalid='true'] {
+  border-color: var(--db-danger);
+}
+
 .db-export-path-pick {
   flex: 0 0 auto;
   height: 30px;
@@ -1800,6 +2175,10 @@ body.db-resizing-sidebar * {
   margin-top: 3px;
   font-size: 11px;
   color: var(--db-text-placeholder);
+}
+
+.db-export-hint--error {
+  color: var(--db-danger);
 }
 
 .db-export-checkbox {
@@ -1869,6 +2248,20 @@ body.db-resizing-sidebar * {
   gap: 8px;
   padding: 12px 20px 16px;
   border-top: 1px solid var(--db-border);
+}
+
+.db-export-more-formats {
+  margin: 4px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--db-border);
+  color: var(--db-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.db-export-more-formats a {
+  color: var(--db-accent);
+  font-weight: 600;
 }
 
 .db-export-btn {
@@ -2768,6 +3161,35 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-badge-bg: #333333;
   --db-badge-text: #eeeeee;
   --db-badge-text-hover: #ffffff;
+}
+
+/* Convert/Insert is portaled to document.body, so the editor shell's Squisq
+   overrides cannot reach it. The active DocBlocks palette is already hoisted
+   to html above; consume it here so every accent and appearance produces the
+   same menu surfaces as the rest of the shell. The selector also covers the
+   nested Mermaid and code-snippet menus, which share this portal class. */
+html:has(.db-shell) .squisq-insert-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+  box-shadow: 0 4px 12px var(--db-shadow);
+}
+
+html:has(.db-shell) .squisq-insert-menu .squisq-toolbar-overflow-item {
+  color: var(--db-text-secondary);
+}
+
+html:has(.db-shell) .squisq-insert-menu .squisq-toolbar-overflow-item:hover,
+html:has(.db-shell) .squisq-insert-menu .squisq-toolbar-overflow-item:focus-visible {
+  background: var(--db-bg-hover);
+}
+
+html:has(.db-shell) .squisq-insert-menu .squisq-insert-menu-header {
+  color: var(--db-text-muted);
+}
+
+html:has(.db-shell) .squisq-insert-menu .squisq-insert-menu-header--separated {
+  border-top-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) .squisq-tooltip {
@@ -4487,11 +4909,13 @@ button.db-git-file-row:hover {
    block turns that row into the titlebar: draggable empty space, insets for
    the caption buttons, and every interactive descendant opted back out.
 
-   Ported 1:1 from the Electron build — keep in sync with
-   packages/desktop/renderer/titlebar.css (which is scoped under
-   `.db-desktop-root`; Electron windows report `display-mode: browser`, so
-   this media query can never double-apply there). The media query is live:
-   toggling the overlay chevron flips it with no JS. */
+   Shares its drag/inset structure with the Electron build in
+   packages/desktop/renderer/titlebar.css. Its compact vertical metrics are
+   intentionally PWA-specific because Electron uses a 42px overlay while this
+   mode follows the OS-provided caption height (32px on Windows). Electron is
+   scoped under `.db-desktop-root` and reports `display-mode: browser`, so this
+   media query can never double-apply there. The media query is live: toggling
+   the overlay chevron flips it with no JS. */
 @media (display-mode: window-controls-overlay) {
   .db-shell {
     --db-wco-titlebar-height: env(titlebar-area-height, 32px);
@@ -4525,11 +4949,26 @@ button.db-git-file-row:hover {
 
   .db-shell .squisq-toolbar-view-tab {
     padding-top: 4px;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
   }
 
   .db-shell .squisq-use-mode-trigger {
-    padding-bottom: 9px;
+    padding-bottom: 7px;
+  }
+
+  /* The 32px caption row leaves little room around Squisq's 28px action
+     buttons. Keep the selected background clear of the header's 1px bottom
+     divider without moving the glyphs off their shared center line. */
+  .db-shell .squisq-toolbar-actions .squisq-toolbar-button {
+    box-sizing: border-box;
+    height: 26px;
+  }
+
+  /* Squisq's overflow measurement deliberately tolerates a 2px overhang.
+     Reserve one pixel beyond that tolerance so the final Insert control
+     moves into More actions instead of being clipped by the caption inset. */
+  .db-shell .squisq-toolbar-actions {
+    margin-right: 3px;
   }
 
   .db-shell .squisq-toolbar-button[aria-label='Insert image'] {

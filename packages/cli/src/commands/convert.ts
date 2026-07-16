@@ -10,7 +10,18 @@
  * underlying squisq libraries directly.
  */
 
-import { link, lstat, mkdir, open, opendir, realpath, rename, rm, stat } from 'node:fs/promises';
+import {
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  opendir,
+  realpath,
+  rename,
+  rm,
+  stat,
+} from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, basename, extname, join, resolve } from 'node:path';
 import { Command } from 'commander';
@@ -22,6 +33,7 @@ import { positiveLimit } from '../internal/limits.js';
 import { isLinkUnsupportedError } from '../internal/link-support.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
+import { assertKnownThemeId } from '../internal/theme.js';
 
 const DEFAULT_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
 
@@ -157,9 +169,6 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     );
   }
 
-  await mkdir(outputDir, { recursive: true });
-  throwIfAborted(opts.signal);
-
   // Validate transform
   if (opts.transform) {
     const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
@@ -188,6 +197,11 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   const result = await squisq.readInput(resolvedInput, { signal: opts.signal });
   throwIfAborted(opts.signal);
   const { container } = result;
+  await assertKnownThemeId(
+    opts.theme,
+    result.doc.customThemes?.map((theme) => theme.id),
+  );
+  throwIfAborted(opts.signal);
 
   // Keep DocBlocks' source-preserving Markdown transform projection for
   // authored Markdown. JSON Doc inputs have no Markdown source to protect, so
@@ -207,7 +221,8 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
   const source: ConvertSource = exportMarkdownDoc
     ? { kind: 'markdown', markdown: exportMarkdownDoc, container, baseName }
     : { kind: 'doc', doc: result.doc, container, baseName };
-  const outputFiles: ConvertResult['outputFiles'] = [];
+  const preparedOutputs: PreparedConversionOutput[] = [];
+  const outputPathKeys = new Set<string>();
   let totalOutputBytes = 0;
 
   for (const format of formats) {
@@ -229,27 +244,40 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     }
     const suggestedFilename = basename(conversion.suggestedFilename);
     const outPath = join(outputDir, suggestedFilename);
-    await publishFile(outPath, conversion.bytes, allowOverwrite, opts.signal);
-    throwIfAborted(opts.signal);
-    const info = await stat(outPath);
-    throwIfAborted(opts.signal);
-    outputFiles.push({
+    const outputPathKey = process.platform === 'win32' ? outPath.toLowerCase() : outPath;
+    if (outputPathKeys.has(outputPathKey)) {
+      throw new Error(`Multiple conversion targets resolve to the same output: ${outPath}`);
+    }
+    outputPathKeys.add(outputPathKey);
+    preparedOutputs.push({
       path: outPath,
       format,
-      size: info.size,
+      bytes: conversion.bytes,
+      size: conversion.bytes.byteLength,
       mimeType: conversion.mimeType,
       suggestedFilename: conversion.suggestedFilename,
       warnings: [...conversion.warnings],
     });
-    for (const warning of conversion.warnings) {
-      console.error(`  Warning [${format}]: ${warning}`);
-    }
-    console.error(`  ✓ ${outPath}`);
   }
 
+  await publishConversionBatch(preparedOutputs, outputDir, allowOverwrite, opts.signal);
+
+  const outputFiles: ConvertResult['outputFiles'] = preparedOutputs.map(
+    ({ bytes: _bytes, ...output }) => output,
+  );
+  for (const output of outputFiles) {
+    for (const warning of output.warnings) {
+      console.error(`  Warning [${output.format}]: ${warning}`);
+    }
+    console.error(`  ✓ ${output.path}`);
+  }
   console.error('Done.');
   return { outputFiles };
 }
+
+type PreparedConversionOutput = ConvertResult['outputFiles'][number] & {
+  readonly bytes: Uint8Array;
+};
 
 async function assertInputWithinBudget(
   inputPath: string,
@@ -257,7 +285,15 @@ async function assertInputWithinBudget(
   maxEntries: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  const rootInfo = await stat(inputPath);
+  let rootInfo: Awaited<ReturnType<typeof stat>>;
+  try {
+    rootInfo = await stat(inputPath);
+  } catch (error: unknown) {
+    if (isNodeErrorCode(error, ['ENOENT', 'ENOTDIR'])) {
+      throw new Error(`Conversion input not found: ${inputPath}`);
+    }
+    throw error;
+  }
   if (rootInfo.isFile()) {
     if (rootInfo.size > maxBytes) {
       throw new Error(`Conversion input exceeds the ${maxBytes}-byte limit.`);
@@ -321,7 +357,7 @@ async function assertOutputsAvailable(
   const conflicts: string[] = [];
   for (const outputPath of outputPaths) {
     throwIfAborted(signal);
-    if (await lstat(outputPath).catch(() => null)) conflicts.push(outputPath);
+    if (await lstatIfPresent(outputPath)) conflicts.push(outputPath);
   }
   throwIfAborted(signal);
   if (conflicts.length > 0) throw new Error(overwriteConflictMessage(conflicts));
@@ -337,71 +373,195 @@ function overwriteConflictMessage(conflicts: readonly string[]): string {
   ].join('\n');
 }
 
+interface StagedConversionOutput {
+  readonly outputPath: string;
+  readonly stagedPath: string;
+  readonly bytes: Uint8Array;
+}
+
+interface ConversionCommitState {
+  readonly outputPath: string;
+  backupPath: string | null;
+  published: boolean;
+}
+
+export interface ConversionPublicationInput {
+  readonly path: string;
+  readonly bytes: Uint8Array;
+}
+
+class ConversionRollbackError extends Error {
+  public readonly publicationError: unknown;
+  public readonly rollbackErrors: readonly unknown[];
+
+  public constructor(message: string, publicationError: unknown, rollbackErrors: unknown[]) {
+    super(message);
+    this.name = 'ConversionRollbackError';
+    this.publicationError = publicationError;
+    this.rollbackErrors = rollbackErrors;
+  }
+}
+
 /**
- * Publish bounded bytes through an operation-owned sibling file.
+ * Stage and publish a complete conversion batch on one filesystem.
  *
- * Mirrors the MCP authority's publication policy: replacement is opt-in, and
- * the default path publishes with `link()` — an atomic create-if-absent on one
- * filesystem — so a file that appears between the preflight check and this
- * moment is reported rather than destroyed. Volumes without hard links
- * (FAT32/exFAT, some network mounts) fall back to an exclusive create, which
- * refuses an occupied destination just as firmly.
+ * No destination is touched until every converter succeeds and every bounded
+ * result has been durably staged. Replacement moves each old destination into
+ * the private staging directory before publishing; a later failure restores
+ * those backups and removes outputs created by this operation.
  */
-async function publishFile(
-  outputPath: string,
-  bytes: Uint8Array,
+/** @internal Exported only for deterministic transaction fault tests. */
+export async function publishConversionBatch(
+  outputs: readonly ConversionPublicationInput[],
+  outputDir: string,
   allowOverwrite: boolean,
   signal?: AbortSignal,
+  afterPublishForTest?: (publishedCount: number) => void | Promise<void>,
 ): Promise<void> {
-  const temporaryPath = join(
-    dirname(outputPath),
-    `.${basename(outputPath)}.${process.pid}.${randomUUID()}.tmp`,
-  );
-  let handle: Awaited<ReturnType<typeof open>> | null = null;
+  await mkdir(outputDir, { recursive: true });
+  const stagingDirectory = await mkdtemp(join(outputDir, '.docblocks-convert-'));
+  let preserveRecoveryDirectory = false;
   try {
-    handle = await open(temporaryPath, 'wx', 0o600);
-    await handle.writeFile(bytes);
-    await handle.sync();
-    await handle.close();
-    handle = null;
-    throwIfAborted(signal);
-    if (allowOverwrite) {
-      await rename(temporaryPath, outputPath);
-      return;
-    }
-    try {
-      await link(temporaryPath, outputPath);
-      return;
-    } catch (error: unknown) {
-      // A genuinely occupied destination must refuse, never fall back.
-      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
-      if (!isLinkUnsupportedError(error)) throw error;
+    const stagedOutputs: StagedConversionOutput[] = [];
+    for (let index = 0; index < outputs.length; index += 1) {
+      throwIfAborted(signal);
+      const output = outputs[index];
+      if (!output) continue;
+      const stagedPath = join(stagingDirectory, `${index}-${randomUUID()}.stage`);
+      await writePrivateFile(stagedPath, output.bytes);
+      stagedOutputs.push({ outputPath: output.path, stagedPath, bytes: output.bytes });
     }
 
-    // FAT32/exFAT and some network mounts have no hard links. `wx` is the same
-    // atomic create-if-absent primitive without them: an occupied destination
-    // still fails EEXIST, so publication stays refuse-don't-clobber.
-    let published: Awaited<ReturnType<typeof open>>;
-    try {
-      published = await open(outputPath, 'wx', 0o600);
-    } catch (error: unknown) {
-      if (isNodeErrorCode(error, 'EEXIST')) throw new Error(overwriteConflictMessage([outputPath]));
-      throw error;
+    if (!allowOverwrite) {
+      await assertOutputsAvailable(
+        stagedOutputs.map((output) => output.outputPath),
+        signal,
+      );
+    } else {
+      await assertReplaceableOutputs(stagedOutputs.map((output) => output.outputPath));
     }
+
+    const committed: ConversionCommitState[] = [];
     try {
-      await published.writeFile(bytes);
-      await published.sync();
-      await published.close();
+      for (let index = 0; index < stagedOutputs.length; index += 1) {
+        throwIfAborted(signal);
+        const output = stagedOutputs[index];
+        if (!output) continue;
+        const state: ConversionCommitState = {
+          outputPath: output.outputPath,
+          backupPath: null,
+          published: false,
+        };
+        committed.push(state);
+
+        if (allowOverwrite) {
+          const existing = await lstatIfPresent(output.outputPath);
+          if (existing && !existing.isFile() && !existing.isSymbolicLink()) {
+            throw new Error(`Refusing to replace a non-file destination: ${output.outputPath}`);
+          }
+          if (existing) {
+            state.backupPath = join(stagingDirectory, `${index}-${randomUUID()}.backup`);
+            await rename(output.outputPath, state.backupPath);
+          }
+          await rename(output.stagedPath, output.outputPath);
+        } else {
+          await publishStagedFileNoReplace(output);
+        }
+        state.published = true;
+        await afterPublishForTest?.(committed.length);
+      }
     } catch (error: unknown) {
-      // This run exclusively created the destination, so removing the partial
-      // publication cannot destroy a file the caller wanted to keep.
-      await published.close().catch(() => undefined);
-      await rm(outputPath, { force: true }).catch(() => undefined);
+      const rollbackErrors = await rollbackConversionBatch(committed);
+      if (rollbackErrors.length > 0) {
+        preserveRecoveryDirectory = true;
+        throw new ConversionRollbackError(
+          `Conversion publication failed and automatic rollback was incomplete. Recovery files remain in ${stagingDirectory}.`,
+          error,
+          rollbackErrors,
+        );
+      }
       throw error;
     }
   } finally {
-    await handle?.close().catch(() => undefined);
-    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    if (!preserveRecoveryDirectory) {
+      await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+}
+
+async function writePrivateFile(path: string, bytes: Uint8Array): Promise<void> {
+  const handle = await open(path, 'wx', 0o600);
+  try {
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function publishStagedFileNoReplace(output: StagedConversionOutput): Promise<void> {
+  try {
+    await link(output.stagedPath, output.outputPath);
+    return;
+  } catch (error: unknown) {
+    if (isNodeErrorCode(error, 'EEXIST')) {
+      throw new Error(overwriteConflictMessage([output.outputPath]));
+    }
+    if (!isLinkUnsupportedError(error)) throw error;
+  }
+
+  let published: Awaited<ReturnType<typeof open>>;
+  try {
+    published = await open(output.outputPath, 'wx', 0o600);
+  } catch (error: unknown) {
+    if (isNodeErrorCode(error, 'EEXIST')) {
+      throw new Error(overwriteConflictMessage([output.outputPath]));
+    }
+    throw error;
+  }
+  try {
+    await published.writeFile(output.bytes);
+    await published.sync();
+    await published.close();
+  } catch (error: unknown) {
+    await published.close().catch(() => undefined);
+    await rm(output.outputPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function rollbackConversionBatch(
+  committed: readonly ConversionCommitState[],
+): Promise<unknown[]> {
+  const rollbackErrors: unknown[] = [];
+  for (let index = committed.length - 1; index >= 0; index -= 1) {
+    const state = committed[index];
+    if (!state) continue;
+    try {
+      if (state.published) await rm(state.outputPath, { force: true });
+      if (state.backupPath) await rename(state.backupPath, state.outputPath);
+    } catch (error: unknown) {
+      rollbackErrors.push(error);
+    }
+  }
+  return rollbackErrors;
+}
+
+async function assertReplaceableOutputs(outputPaths: readonly string[]): Promise<void> {
+  for (const outputPath of outputPaths) {
+    const existing = await lstatIfPresent(outputPath);
+    if (existing && !existing.isFile() && !existing.isSymbolicLink()) {
+      throw new Error(`Refusing to replace a non-file destination: ${outputPath}`);
+    }
+  }
+}
+
+async function lstatIfPresent(path: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {
+  try {
+    return await lstat(path);
+  } catch (error: unknown) {
+    if (isNodeErrorCode(error, ['ENOENT', 'ENOTDIR'])) return null;
+    throw error;
   }
 }
 

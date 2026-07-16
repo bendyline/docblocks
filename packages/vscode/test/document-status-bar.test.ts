@@ -24,10 +24,14 @@ describe('VS Code document status bar', () => {
     expect(failure).to.include({ action: 'save', severity: 'error' });
     expect(failure?.tooltip).to.contain('Disk is full');
 
-    expect(getDocumentStatusBarPresentation('conflict', 'notes.md', null)).to.include({
+    const conflict = getDocumentStatusBarPresentation('conflict', 'notes.md', null);
+    expect(conflict).to.include({
       action: 'resolve-conflict',
       severity: 'warning',
     });
+    expect(conflict?.tooltip).to.contain(
+      "notes.md's VS Code buffer changed outside this DocBlocks editor",
+    );
   });
 
   it('keeps conflict diagnostics in the native resolution prompt', () => {

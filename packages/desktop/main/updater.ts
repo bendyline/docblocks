@@ -19,12 +19,18 @@ import type {
   UpdaterStatus,
 } from '@bendyline/docblocks/host';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
-import { classifyUpdateCheck, failedUpdateCheck } from './updater-result.js';
+import {
+  classifyUpdateCheck,
+  failedUpdateCheck,
+  updaterStatusForError,
+  type UpdaterActivity,
+} from './updater-result.js';
 
 const { autoUpdater } = pkg;
 
 const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
 let updateDownloaded = false;
+let updaterActivity: UpdaterActivity = 'idle';
 
 /**
  * True in store-distributed builds (Mac App Store / Microsoft Store), where
@@ -64,20 +70,29 @@ export function initAutoUpdater(): void {
   // app quit, since the renderer banner gives the user an explicit CTA.
   autoUpdater.autoInstallOnAppQuit = false;
 
-  autoUpdater.on('checking-for-update', () => broadcast({ kind: 'checking' }));
-  autoUpdater.on('update-available', (info: UpdateInfo) =>
+  autoUpdater.on('checking-for-update', () => {
+    updaterActivity = 'checking';
+    broadcast({ kind: 'checking' });
+  });
+  autoUpdater.on('update-available', (info: UpdateInfo) => {
+    updaterActivity = 'downloading';
     broadcast({
       kind: 'available',
       version: info.version,
       releaseNotes: releaseNotesOf(info),
       releaseUrl: releaseUrlFor(info.version),
-    }),
-  );
-  autoUpdater.on('update-not-available', () => broadcast({ kind: 'not-available' }));
-  autoUpdater.on('download-progress', (info) =>
-    broadcast({ kind: 'downloading', percent: info.percent }),
-  );
+    });
+  });
+  autoUpdater.on('update-not-available', () => {
+    updaterActivity = 'idle';
+    broadcast({ kind: 'not-available' });
+  });
+  autoUpdater.on('download-progress', (info) => {
+    updaterActivity = 'downloading';
+    broadcast({ kind: 'downloading', percent: info.percent });
+  });
   autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
+    updaterActivity = 'idle';
     updateDownloaded = true;
     broadcast({
       kind: 'downloaded',
@@ -86,16 +101,25 @@ export function initAutoUpdater(): void {
       releaseUrl: releaseUrlFor(info.version),
     });
   });
-  autoUpdater.on('error', (err) =>
-    broadcast({ kind: 'error', message: err?.message ?? 'Update error' }),
-  );
+  autoUpdater.on('error', (err) => {
+    const status = updaterStatusForError(updaterActivity, err);
+    updaterActivity = 'idle';
+    broadcast(status);
+  });
 
   // Not checkForUpdatesAndNotify(): that variant pops a *native OS*
   // notification once the download finishes, which belongs to the
   // notify-and-quit-install flow `autoInstallOnAppQuit = false` just opted out
   // of. The 'update-downloaded' handler above already drives the in-app
   // restart banner, so the native toast would only compete with it.
+  updaterActivity = 'checking';
   autoUpdater.checkForUpdates().catch((err) => {
+    // electron-updater normally emits `error` before rejecting. Preserve the
+    // same quiet fallback if a provider rejects without emitting the event.
+    if (updaterActivity === 'checking') {
+      updaterActivity = 'idle';
+      broadcast({ kind: 'not-available' });
+    }
     console.warn('[updater] initial check failed:', err);
   });
 }
@@ -106,12 +130,18 @@ export function registerUpdaterIpc(
   registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<UpdateCheckResult> => {
     // Store builds are updated by the store, not by electron-updater.
     if (isStoreBuild()) return { kind: 'store-managed' };
+    updaterActivity = 'checking';
     try {
       const res = await autoUpdater.checkForUpdates();
       return classifyUpdateCheck(app.getVersion(), res?.updateInfo.version);
     } catch (error: unknown) {
       const result = failedUpdateCheck(error);
-      broadcast({ kind: 'error', message: result.message });
+      // A check failure is returned to the explicit caller for diagnostics,
+      // but it is intentionally not promoted to an in-app alert.
+      if (updaterActivity === 'checking') {
+        updaterActivity = 'idle';
+        broadcast({ kind: 'not-available' });
+      }
       return result;
     }
   });

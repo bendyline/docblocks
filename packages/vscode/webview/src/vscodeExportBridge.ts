@@ -26,6 +26,7 @@ type ExportBridgeRequest =
       dataBase64: string;
       mimeType: string;
       grantId: string | null;
+      targetFilename: string | null;
     }
   | { type: 'resolveExportTarget'; filename: string }
   | { type: 'pickExportTarget'; filename: string; currentGrantId: string | null }
@@ -36,6 +37,7 @@ export interface VscodeExportBridge {
     blob: Blob,
     filename: string,
     target?: ExportTargetGrantMessage | null,
+    targetFilename?: string | null,
   ): Promise<ExportTargetGrantMessage | null>;
   resolveExportTarget(filename: string): Promise<ExportTargetGrantMessage | null>;
   pickExportTarget(
@@ -146,8 +148,12 @@ export function createVscodeExportBridge(
     blob: Blob,
     filename: string,
     target?: ExportTargetGrantMessage | null,
+    targetFilename?: string | null,
   ): Promise<ExportTargetGrantMessage | null> {
     if (!isSafeExportFilename(filename)) throw new Error('The export filename is invalid');
+    if (targetFilename != null && !isSafeExportFilename(targetFilename)) {
+      throw new Error('The edited export filename is invalid');
+    }
     if (blob.size > HOST_WIRE_LIMITS.binaryBytes) {
       throw new Error('The export exceeds the allowed size');
     }
@@ -160,6 +166,7 @@ export function createVscodeExportBridge(
         dataBase64: encodeBoundedBase64(new Uint8Array(await blob.arrayBuffer())),
         mimeType,
         grantId: target?.grantId ?? null,
+        targetFilename: targetFilename ?? null,
       },
       'exportSaved',
     );

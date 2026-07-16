@@ -5,10 +5,16 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fontRoot = path.join(repoRoot, 'packages/site/public/fonts');
-const css = await readFile(path.join(fontRoot, 'fonts.css'), 'utf8');
+const cssFiles = [
+  path.join(fontRoot, 'fonts.css'),
+  path.join(repoRoot, 'packages/site/public/marketing/marketing.css'),
+];
+const cssSources = await Promise.all(cssFiles.map((file) => readFile(file, 'utf8')));
 const fontFiles = (await readdir(fontRoot)).filter((file) => file.endsWith('.woff2')).sort();
 const referencedFonts = new Set(
-  [...css.matchAll(/url\(['"]?\/fonts\/([^'")]+\.woff2)['"]?\)/gu)].map((match) => match[1]),
+  cssSources.flatMap((css) =>
+    [...css.matchAll(/url\(['"]?\/fonts\/([^'")]+\.woff2)['"]?\)/gu)].map((match) => match[1]),
+  ),
 );
 
 const missing = [...referencedFonts].filter((file) => !fontFiles.includes(file));

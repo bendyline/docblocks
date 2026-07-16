@@ -312,10 +312,12 @@ test.describe('DocBlocks App', () => {
 
     const buttons = toolbar.locator('.db-explorer-btn');
     await expect(buttons).toHaveCount(2); // +F, +D
-    const newFileIcon = buttons.nth(0).locator('.fa-file-circle-plus');
+    const newFileButton = toolbar.getByRole('button', { name: 'New File' });
+    const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
+    const newFileIcon = newFileButton.locator('.fa-file-circle-plus');
     await expect(newFileIcon).toBeVisible();
     await expect(newFileIcon).toHaveCSS('font-family', /Font Awesome/);
-    await expect(buttons.nth(1).locator('.fa-folder-plus')).toBeVisible();
+    await expect(newFolderButton.locator('.fa-folder-plus')).toBeVisible();
 
     await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
   });
@@ -362,7 +364,7 @@ test.describe('File operations', () => {
   });
 
   test('can create a new file', async ({ page }) => {
-    const newFileBtn = page.locator('.db-explorer-btn').first();
+    const newFileBtn = page.getByRole('button', { name: 'New File' });
     await newFileBtn.click();
 
     const input = page.locator('.db-new-item-input');
@@ -377,7 +379,7 @@ test.describe('File operations', () => {
   });
 
   test('can create a file and see editor', async ({ page }) => {
-    const newFileBtn = page.locator('.db-explorer-btn').first();
+    const newFileBtn = page.getByRole('button', { name: 'New File' });
     await newFileBtn.click();
 
     const input = page.locator('.db-new-item-input');
@@ -395,8 +397,7 @@ test.describe('File operations', () => {
   });
 
   test('can create a folder', async ({ page }) => {
-    const buttons = page.locator('.db-explorer-btn');
-    await buttons.nth(1).click();
+    await page.getByRole('button', { name: 'New Folder' }).click();
 
     const input = page.locator('.db-new-item-input');
     await expect(input).toBeVisible();
@@ -408,13 +409,11 @@ test.describe('File operations', () => {
   });
 
   test('can drag a file into a folder and back to the workspace root', async ({ page }) => {
-    const buttons = page.locator('.db-explorer-btn');
-
-    await buttons.nth(0).click();
+    await page.getByRole('button', { name: 'New File' }).click();
     await page.locator('.db-new-item-input').fill('drag-me');
     await page.locator('.db-new-item-add').click();
 
-    await buttons.nth(1).click();
+    await page.getByRole('button', { name: 'New Folder' }).click();
     await page.locator('.db-new-item-input').fill('drop-here');
     await page.locator('.db-new-item-add').click();
 
@@ -545,6 +544,7 @@ test.describe('Squisq overflow menu theming', () => {
 
     const menu = page.locator('.squisq-toolbar-overflow-menu');
     await expect(menu).toBeVisible();
+    await expect(menu.getByRole('button', { name: 'Insert...' })).toBeVisible();
     await expect(menu.locator('.squisq-template-picker-trigger')).toBeVisible();
 
     const colors = await menu.evaluate((element) => {
@@ -585,6 +585,76 @@ test.describe('Squisq overflow menu theming', () => {
     expect(colors.menuBorder).toBe(colors.expectedBorder);
     expect(colors.itemColor).toBe(colors.expectedText);
     expect(colors.pickerBorder).toBe(colors.expectedBorder);
+  });
+
+  test('uses the active DocBlocks palette for the portaled Convert/Insert menu', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('docblocks:themePreference', 'dark');
+      localStorage.setItem('docblocks:accentColor', 'purple');
+    });
+    await openInitializedSite(page);
+    await expect(page.locator('.db-shell[data-theme="dark"][data-accent="purple"]')).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.locator('.db-welcome-gateway-cta').click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    await page.locator('.squisq-toolbar-overflow-trigger').click();
+    const overflowMenu = page.locator('.squisq-toolbar-overflow-menu');
+    await expect(overflowMenu).toBeVisible();
+    await overflowMenu.getByRole('button', { name: 'Insert...' }).click();
+
+    const insertMenu = page.locator('.squisq-insert-menu').first();
+    await expect(insertMenu).toBeVisible();
+
+    const colors = await insertMenu.evaluate((element) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = [
+        'position:absolute',
+        'visibility:hidden',
+        'background:var(--db-bg)',
+        'border:1px solid var(--db-border)',
+        'color:var(--db-text-secondary)',
+      ].join(';');
+      const mutedProbe = document.createElement('span');
+      mutedProbe.style.color = 'var(--db-text-muted)';
+      const hoverProbe = document.createElement('span');
+      hoverProbe.style.background = 'var(--db-bg-hover)';
+      probe.append(mutedProbe, hoverProbe);
+      document.body.appendChild(probe);
+
+      const menuStyle = getComputedStyle(element);
+      const firstItem = element.querySelector<HTMLElement>('.squisq-toolbar-overflow-item');
+      const header = element.querySelector<HTMLElement>('.squisq-insert-menu-header');
+      const probeStyle = getComputedStyle(probe);
+      const result = {
+        menuBackground: menuStyle.backgroundColor,
+        menuBorder: menuStyle.borderTopColor,
+        itemColor: firstItem ? getComputedStyle(firstItem).color : '',
+        headerColor: header ? getComputedStyle(header).color : '',
+        expectedBackground: probeStyle.backgroundColor,
+        expectedBorder: probeStyle.borderTopColor,
+        expectedText: probeStyle.color,
+        expectedMuted: getComputedStyle(mutedProbe).color,
+        expectedHover: getComputedStyle(hoverProbe).backgroundColor,
+      };
+      probe.remove();
+      return result;
+    });
+
+    expect(colors.menuBackground).toBe(colors.expectedBackground);
+    expect(colors.menuBorder).toBe(colors.expectedBorder);
+    expect(colors.itemColor).toBe(colors.expectedText);
+    expect(colors.headerColor).toBe(colors.expectedMuted);
+
+    const firstItem = insertMenu.locator('.squisq-toolbar-overflow-item').first();
+    await firstItem.hover();
+    await expect(firstItem).toHaveCSS('background-color', colors.expectedHover);
   });
 });
 
@@ -718,6 +788,28 @@ test.describe('Simple diagram theming', () => {
 });
 
 test.describe('Video export dialog theming', () => {
+  test('offers Animated GIF as a built-in ffmpeg-backed export', async ({ page }) => {
+    await openInitializedSite(page);
+    const gateway = page.locator('.db-welcome-gateway-cta');
+    if (await gateway.isVisible().catch(() => false)) await gateway.click();
+    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
+      timeout: 10_000,
+    });
+    expect(
+      await page.evaluate(() => ({
+        crossOriginIsolated: globalThis.crossOriginIsolated,
+        sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
+      })),
+    ).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
+
+    await page.getByRole('button', { name: 'Export and share' }).click();
+    await page.getByRole('menuitem', { name: 'Export Animated GIF...' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Export Animated GIF' });
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.getByLabel('Format')).toHaveValue('gif');
+  });
+
   test('uses the active DocBlocks accent palette', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');

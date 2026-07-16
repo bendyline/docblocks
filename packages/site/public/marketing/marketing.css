@@ -31,7 +31,7 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --ink: #262219;
   --muted: #665f54;
   --paper: #f3eede;
@@ -73,6 +73,36 @@ a:hover {
 
 img {
   max-width: 100%;
+}
+
+.product-preview {
+  padding-top: clamp(42px, 7vw, 82px);
+}
+
+.product-preview-frame {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--paper-bright);
+  box-shadow: var(--shadow);
+}
+
+.product-preview-frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.product-preview-frame figcaption {
+  padding: 13px 18px 15px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .skip-link {
@@ -348,10 +378,20 @@ h3 {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
+.install-commands {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 26px 0;
+}
+
 .install-command {
   display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
-  margin: 26px 0;
   padding: 19px 21px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 14px;
@@ -476,6 +516,76 @@ h3 {
 
   .site-footer {
     padding-block: 28px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f3ecdd;
+    --muted: #c6baa7;
+    --paper: #171713;
+    --paper-bright: #201f19;
+    --paper-deep: #2d2a22;
+    --accent: #d3a06f;
+    --accent-dark: #edc59b;
+    --border: rgba(243, 236, 221, 0.17);
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 88% 8%, rgba(172, 126, 81, 0.16), transparent 24rem),
+      linear-gradient(180deg, var(--paper-bright), var(--paper) 38rem);
+  }
+
+  .hero-aside,
+  .card,
+  .table-wrap {
+    background: rgba(38, 36, 29, 0.72);
+  }
+
+  .button {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #201f19;
+  }
+
+  .button:hover {
+    background: var(--accent-dark);
+    color: #201f19;
+  }
+
+  .button--secondary {
+    background: transparent;
+    color: var(--ink);
+  }
+
+  .button--secondary:hover {
+    background: rgba(243, 236, 221, 0.08);
+    color: var(--ink);
+  }
+
+  .callout,
+  .install-command {
+    background: #0f0f0d;
+  }
+
+  .callout {
+    border: 1px solid var(--border);
+  }
+
+  .callout .button {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #201f19;
+  }
+
+  .yes {
+    color: #93c99f;
+  }
+
+  .no {
+    color: #c7a888;
   }
 }
 

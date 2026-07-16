@@ -21,8 +21,22 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": [
+    "./dist/bin.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "bin": {
-    "docblocks": "./dist/index.js"
+    "docblocks": "./dist/bin.js"
+  },
+  "engines": {
+    "node": ">=22.14.0"
   },
   "files": [
     "dist"
@@ -33,12 +47,11 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.1.0",
-    "@bendyline/squisq": "2.3.0",
-    "@bendyline/squisq-cli": "2.3.0",
-    "@bendyline/squisq-editor-react": "2.3.1",
-    "@bendyline/squisq-formats": "2.3.0",
-    "@bendyline/squisq-react": "2.3.0",
-    "@bendyline/squisq-video": "2.2.0",
+    "@bendyline/squisq": "2.3.1",
+    "@bendyline/squisq-cli": "2.3.1",
+    "@bendyline/squisq-formats": "2.3.1",
+    "@bendyline/squisq-react": "2.3.1",
+    "@bendyline/squisq-video": "2.2.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "13.1.0",
     "jszip": "3.10.1",

@@ -31,9 +31,10 @@ import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueu
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
+import { resolveEditorLinkTarget } from './editorLinkNavigation.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
-const USE_EXTERNAL_CHOICE = 'Use External Changes';
+const USE_EXTERNAL_CHOICE = 'Use VS Code Buffer';
 const MAX_PENDING_OPERATIONS = 128;
 const MAX_PENDING_WIRE_CHARACTERS = HOST_WIRE_LIMITS.base64Characters;
 
@@ -72,7 +73,7 @@ export class MarkdownEditorPanel {
   private readonly exportGrantScope: ExportGrantScope;
   private readonly statusBarItem: vscode.StatusBarItem;
   private conflictPrompt: Promise<void> | null = null;
-  private pendingExternalSnapshot: HostDocumentSnapshot | null = null;
+  private externalChangePending = false;
   private externalChangeQueued = false;
 
   private constructor(
@@ -278,16 +279,11 @@ export class MarkdownEditorPanel {
         this.document = event.document;
         this.updateTitle();
         this.updateStatusBar();
-        // TextDocument objects are live. Capture the exact event snapshot now
-        // so a queued callback cannot accidentally classify a later version.
-        let external: HostDocumentSnapshot;
-        try {
-          external = toHostSnapshot(event.document);
-        } catch (error: unknown) {
-          void vscode.window.showErrorMessage(toError(error).message);
-          return;
-        }
-        this.queueExternalChange(external);
+        // VS Code also emits this event for dirty-state and other bookkeeping
+        // transitions. Those carry no text edits and must not be presented as
+        // a competing document branch.
+        if (event.contentChanges.length === 0) return;
+        this.queueExternalChange();
       }),
       vscode.workspace.onDidSaveTextDocument((document) => {
         if (document.uri.toString() !== this.uri.toString()) return;
@@ -336,10 +332,9 @@ export class MarkdownEditorPanel {
   /**
    * Collapse external document changes onto a single queue slot.
    *
-   * Only the newest external snapshot still describes the buffer; the earlier
-   * ones are already gone, and `observeExternal` rebases (or conflicts) against
-   * whatever it is handed. Enqueuing one entry per change therefore bought
-   * nothing and cost correctness: this queue is bounded at
+   * Only the current VS Code buffer describes the external branch. Enqueuing
+   * one entry per event therefore bought nothing and cost correctness: this
+   * queue is bounded at
    * {@link MAX_PENDING_OPERATIONS} and is shared with webview requests that
    * await a modal dialog *inside* the queued operation (pickExportTarget and
    * saveExport both await showSaveDialog). While such an operation stalls the
@@ -350,35 +345,39 @@ export class MarkdownEditorPanel {
    *
    * Coalescing keeps the ordering guarantee (the entry still runs in queue
    * order relative to webview messages) while making that overflow structurally
-   * unreachable: at most one external-change entry is ever pending.
+   * unreachable: at most one external-change entry is ever pending. The queued
+   * operation re-reads the live TextDocument after pending webview edits drain,
+   * so an obsolete intermediate event cannot create a stale conflict prompt.
    */
-  private queueExternalChange(external: HostDocumentSnapshot): void {
-    this.pendingExternalSnapshot = external;
+  private queueExternalChange(): void {
+    this.externalChangePending = true;
     if (this.externalChangeQueued) return;
     this.externalChangeQueued = true;
 
     const accepted = this.messageQueue.enqueue({ kind: 'external-change' }, async () => {
       this.externalChangeQueued = false;
-      const latest = this.pendingExternalSnapshot;
-      this.pendingExternalSnapshot = null;
-      if (latest) await this.applyExternalChange(latest);
+      if (!this.externalChangePending) return;
+      this.externalChangePending = false;
+      await this.applyExternalChange();
     });
     if (accepted) return;
 
     // The queue refuses work while disposing (the close-time flush re-reads the
     // document, so nothing is lost) or while saturated by webview requests.
-    // Keep the snapshot and retry once the tail drains rather than dropping it.
+    // Keep the observation and retry once the tail drains rather than dropping it.
     this.externalChangeQueued = false;
     if (this.panelDisposed) return;
     void this.messageQueue.drain().then(() => {
-      const pending = this.pendingExternalSnapshot;
-      if (pending && !this.panelDisposed) this.queueExternalChange(pending);
+      if (this.externalChangePending && !this.panelDisposed) this.queueExternalChange();
     });
   }
 
-  private async applyExternalChange(external: HostDocumentSnapshot): Promise<void> {
+  private async applyExternalChange(): Promise<void> {
     await this.latestEditQueue.flush();
     const sync = await this.syncReady;
+    // TextDocument instances are live. Confirm the current buffer here instead
+    // of classifying content captured before this queued operation ran.
+    const external = await this.readHostDocument();
     const wasConflicted = sync.getSnapshot().session.conflict !== null;
     const result = sync.observeExternal(external);
     if (result === 'applied') this.sendContent();
@@ -427,6 +426,10 @@ export class MarkdownEditorPanel {
       case 'setAccentColor':
       case 'setWriteCanvasSettings':
         await this.handleSettingsUpdate(message);
+        break;
+
+      case 'openLink':
+        await this.handleOpenLink(message.href);
         break;
 
       case 'save':
@@ -519,7 +522,7 @@ export class MarkdownEditorPanel {
     if (!snapshot.session.conflict) return;
 
     const fileName = getDisplayBasename(this.uri);
-    const message = `${fileName} changed outside DocBlocks while local edits were pending.`;
+    const message = `${fileName}'s VS Code buffer changed outside this DocBlocks editor while local edits were pending.`;
     const choice = modal
       ? await vscode.window.showWarningMessage(
           message,
@@ -597,6 +600,39 @@ export class MarkdownEditorPanel {
     await this.applyEditorSettings();
   }
 
+  private async handleOpenLink(href: string): Promise<void> {
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(this.uri);
+    const documentWorkspacePath = workspaceFolder
+      ? vscode.workspace.asRelativePath(this.uri, false)
+      : null;
+    const target = resolveEditorLinkTarget(href, documentWorkspacePath);
+
+    if (!target) {
+      await vscode.window.showWarningMessage(
+        'DocBlocks only opens HTTP(S) links or files inside the current workspace.',
+      );
+      return;
+    }
+
+    try {
+      if (target.kind === 'external') {
+        const opened = await vscode.env.openExternal(vscode.Uri.parse(target.url, true));
+        if (!opened) throw new Error('VS Code did not open the external link.');
+        return;
+      }
+
+      if (!workspaceFolder) {
+        throw new Error('The linked file is not inside an open workspace.');
+      }
+      const targetUri = vscode.Uri.joinPath(workspaceFolder.uri, ...target.path.split('/'));
+      await vscode.commands.executeCommand('vscode.open', targetUri, { preview: false });
+    } catch (error: unknown) {
+      await vscode.window.showErrorMessage(
+        boundedMessage(`DocBlocks could not open the link: ${toError(error).message}`),
+      );
+    }
+  }
+
   private async applyEditorSettings(): Promise<void> {
     const settings = readVscodeEditorSettings(this.uri);
     const sync = await this.syncReady;
@@ -611,6 +647,12 @@ export class MarkdownEditorPanel {
   }
 
   private rejectBusyMessage(message: QueuedWebviewMessage): void {
+    if (message.type === 'openLink') {
+      void vscode.window.showWarningMessage(
+        'DocBlocks could not open the link because the editor queue is full.',
+      );
+      return;
+    }
     if (!('requestId' in message)) return;
     const responseMessage = 'DocBlocks rejected the request because the editor queue is full.';
     switch (message.type) {
@@ -889,7 +931,7 @@ export class MarkdownEditorPanel {
       } catch (error: unknown) {
         if (sync.getSnapshot().session.status !== 'conflict') throw error;
         const choice = await vscode.window.showWarningMessage(
-          `${getDisplayBasename(this.uri)} changed outside DocBlocks. Choose which version to keep before the editor closes.`,
+          `${getDisplayBasename(this.uri)}'s VS Code buffer changed outside this DocBlocks editor. Choose which version to keep before the editor closes.`,
           { modal: true },
           KEEP_LOCAL_CHOICE,
           USE_EXTERNAL_CHOICE,

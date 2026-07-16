@@ -1,8 +1,10 @@
 /* The Electron renderer owns the titlebar. Keep this file desktop-only:
    site and VS Code use their host application's normal chrome — except the
-   installed web app's Window Controls Overlay mode, which ports these rules
+   installed web app's Window Controls Overlay mode, which shares these rules
    under `@media (display-mode: window-controls-overlay)` at the bottom of
-   packages/react/src/styles/docblocks.css. Keep the two blocks in sync. */
+   packages/react/src/styles/docblocks.css. Keep their drag/inset structure in
+   sync; their compact vertical metrics intentionally differ because Electron
+   uses a 42px overlay while the installed PWA follows the OS-provided 32px. */
 
 .db-desktop-root {
   --db-desktop-titlebar-height: max(42px, env(titlebar-area-height, 32px));

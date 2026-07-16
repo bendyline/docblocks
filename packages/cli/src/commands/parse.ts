@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 import { Command } from 'commander';
 import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
 import { positiveLimit } from '../internal/limits.js';
+import { isNodeErrorCode } from '../internal/node-error.js';
 
 const DEFAULT_MAX_PARSE_INPUT_BYTES = 20 * 1024 * 1024;
 const DEFAULT_MAX_PARSE_OUTPUT_BYTES = 128 * 1024 * 1024;
@@ -57,7 +58,15 @@ export async function runParse(inputPath: string, options: ParseOptions = {}): P
 }
 
 async function readBoundedFile(inputPath: string, maxBytes: number): Promise<Buffer> {
-  const handle = await open(inputPath, 'r');
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(inputPath, 'r');
+  } catch (error: unknown) {
+    if (isNodeErrorCode(error, ['ENOENT', 'ENOTDIR'])) {
+      throw new Error(`Parse input not found: ${inputPath}`);
+    }
+    throw error;
+  }
   try {
     const info = await handle.stat();
     if (!info.isFile()) throw new Error(`Parse input is not a file: ${inputPath}`);

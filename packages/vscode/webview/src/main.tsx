@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { VscodeEditor } from './VscodeEditor.js';
+import './vscodeEditor.css';
 
 const root = createRoot(document.getElementById('root')!);
 root.render(

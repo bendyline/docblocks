@@ -5,7 +5,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { ConversionError, createCliRegistry } from '@bendyline/squisq-cli/api';
 import { docxToContainer } from '@bendyline/squisq-formats/docx';
-import { runConvert } from '../src/commands/convert.js';
+import { publishConversionBatch, runConvert } from '../src/commands/convert.js';
 
 const TINY_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=',
@@ -108,6 +108,75 @@ describe('CLI registry-backed conversion', function () {
     expect((caught as Error).message).to.include('output exceeds');
     expect(await readFile(outputPath, 'utf8')).to.equal('previous output');
     expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('leaves no partial batch and preserves overwritten files when a later converter fails', async () => {
+    const inputPath = path.join(tempRoot, 'tables.md');
+    const outputDir = path.join(tempRoot, 'out');
+    const csvPath = path.join(outputDir, 'tables.csv');
+    await writeFile(inputPath, '# Tables\n\n| A |\n| - |\n| B |', 'utf8');
+    await mkdir(outputDir);
+    await writeFile(csvPath, 'ORIGINAL USER CONTENT', 'utf8');
+
+    const registry = createCliRegistry();
+    const html = registry.get('html');
+    if (!html?.exportDoc) throw new Error('Expected the linked HTML exporter');
+    registry.register({
+      ...html,
+      exportDoc: async () => {
+        throw new Error('intentional later-target failure');
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, {
+        outputDir,
+        formats: 'csv,html',
+        allowOverwrite: true,
+        registry,
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('intentional later-target failure');
+    expect(await readFile(csvPath, 'utf8')).to.equal('ORIGINAL USER CONTENT');
+    expect(await readdir(outputDir)).to.deep.equal(['tables.csv']);
+  });
+
+  it('rolls back committed replacements when a later publication step fails', async () => {
+    const outputDir = path.join(tempRoot, 'out');
+    const firstPath = path.join(outputDir, 'first.txt');
+    const secondPath = path.join(outputDir, 'second.txt');
+    await mkdir(outputDir);
+    await writeFile(firstPath, 'original first', 'utf8');
+    await writeFile(secondPath, 'original second', 'utf8');
+
+    let caught: unknown;
+    try {
+      await publishConversionBatch(
+        [
+          { path: firstPath, bytes: Buffer.from('replacement first') },
+          { path: secondPath, bytes: Buffer.from('replacement second') },
+        ],
+        outputDir,
+        true,
+        undefined,
+        (publishedCount) => {
+          if (publishedCount === 1) throw new Error('intentional commit fault');
+        },
+      );
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('intentional commit fault');
+    expect(await readFile(firstPath, 'utf8')).to.equal('original first');
+    expect(await readFile(secondPath, 'utf8')).to.equal('original second');
+    expect(await readdir(outputDir)).to.deep.equal(['first.txt', 'second.txt']);
   });
 
   it('atomically replaces an existing converter-named output without leaving staging files', async () => {
@@ -234,6 +303,18 @@ describe('CLI registry-backed conversion', function () {
     expect((caught as Error).message).to.include('input exceeds');
   });
 
+  it('reports a missing input without exposing a raw ENOENT', async () => {
+    let caught: unknown;
+    try {
+      await runConvert(path.join(tempRoot, 'missing.md'), { formats: 'html' });
+    } catch (error: unknown) {
+      caught = error;
+    }
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('Conversion input not found:');
+    expect((caught as Error).message).not.to.include('ENOENT');
+  });
+
   it('refuses a duplicated requested format instead of converting it twice', async () => {
     const inputPath = path.join(tempRoot, 'tables.md');
     const outputDir = path.join(tempRoot, 'out');
@@ -358,6 +439,27 @@ describe('CLI registry-backed conversion', function () {
     expect(conversionError.hint).to.include('linked Squisq CLI registry');
   });
 
+  it('rejects an unknown theme before creating conversion output', async () => {
+    const inputPath = path.join(tempRoot, 'input.md');
+    const outputDir = path.join(tempRoot, 'out');
+    await writeFile(inputPath, '# Input', 'utf8');
+
+    let caught: unknown;
+    try {
+      await runConvert(inputPath, {
+        formats: 'html',
+        outputDir,
+        theme: 'not-a-real-theme',
+      });
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error).message).to.include('Unknown theme "not-a-real-theme"');
+    expect(await readdir(outputDir).catch(() => [])).to.deep.equal([]);
+  });
+
   it('passes the caller signal into the linked registry and preserves its abort reason', async () => {
     const inputPath = path.join(tempRoot, 'input.md');
     const outputDir = path.join(tempRoot, 'out');
@@ -393,6 +495,6 @@ describe('CLI registry-backed conversion', function () {
 
     expect(receivedSignal).to.equal(controller.signal);
     expect(caught).to.equal(reason);
-    expect(await readdir(outputDir)).to.deep.equal([]);
+    expect(await readdir(outputDir).catch(() => [])).to.deep.equal([]);
   });
 });

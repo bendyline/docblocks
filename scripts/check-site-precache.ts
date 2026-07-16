@@ -45,7 +45,7 @@ if (/\.clientsClaim\(\)/u.test(serviceWorker)) {
   throw new Error('PWA service worker would claim clients before the user approves an update.');
 }
 const manifestUrls = new Set(
-  [...serviceWorker.matchAll(/\burl:"([^"]+)"/gu)].map((match) => match[1]),
+  [...serviceWorker.matchAll(/(?:"url"|\burl):"([^"]+)"/gu)].map((match) => match[1]),
 );
 const eligibleFiles = await collectEligibleFiles(distRoot);
 const missing = eligibleFiles.filter((file) => !manifestUrls.has(file));

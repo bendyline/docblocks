@@ -5,7 +5,10 @@ import {
   parseWebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
 import { ExportTargetGrantRegistry } from '../src/exportGrants.js';
-import { selectRememberedExactExportTarget } from '../src/exportTargetPolicy.js';
+import {
+  isMatchingExportTargetFilename,
+  selectRememberedExactExportTarget,
+} from '../src/exportTargetPolicy.js';
 import { parseDocumentResourcePath, parseMediaRef } from '../src/mediaPaths.js';
 import { parseSetupWebviewMessage } from '../src/setupMessages.js';
 
@@ -57,6 +60,8 @@ describe('VS Code authority boundary', () => {
         filename: 'document.pdf',
         dataBase64: '',
         mimeType: 'application/pdf',
+        grantId: null,
+        targetFilename: null,
         targetPath: 'file:///forged.pdf',
       }),
     ).to.equal(null);
@@ -76,8 +81,31 @@ describe('VS Code authority boundary', () => {
         dataBase64: '',
         mimeType: 'application/pdf',
         grantId: null,
+        targetFilename: null,
       }),
     ).to.equal(null);
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'openLink',
+        href: 'https://example.com',
+        targetPath: '/workspace/forged.md',
+      }),
+    ).to.equal(null);
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'openLink',
+        href: 'x'.repeat(HOST_WIRE_LIMITS.urlCharacters + 1),
+      }),
+    ).to.equal(null);
+  });
+
+  it('accepts a bounded literal href for host-authorized navigation', () => {
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'openLink',
+        href: '../guide/agent-loop.md#start',
+      }),
+    ).to.deep.equal({ type: 'openLink', href: '../guide/agent-loop.md#start' });
   });
 
   it('accepts only an opaque grant ID for an export write', () => {
@@ -89,6 +117,7 @@ describe('VS Code authority boundary', () => {
         dataBase64: 'cGRm',
         mimeType: 'application/pdf',
         grantId: 'export_123',
+        targetFilename: 'renamed-document.pdf',
       }),
     ).to.deep.equal({
       type: 'saveExport',
@@ -97,7 +126,26 @@ describe('VS Code authority boundary', () => {
       dataBase64: 'cGRm',
       mimeType: 'application/pdf',
       grantId: 'export_123',
+      targetFilename: 'renamed-document.pdf',
     });
+  });
+
+  it('allows only a safe edited basename with the generated format extension', () => {
+    expect(isMatchingExportTargetFilename('document.pdf', 'renamed document.PDF')).to.equal(true);
+    expect(isMatchingExportTargetFilename('document.pdf', 'renamed.docx')).to.equal(false);
+    expect(isMatchingExportTargetFilename('document.pdf', '../renamed.pdf')).to.equal(false);
+
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'saveExport',
+        requestId: 1,
+        filename: 'document.pdf',
+        dataBase64: 'cGRm',
+        mimeType: 'application/pdf',
+        grantId: 'export_123',
+        targetFilename: '../renamed.pdf',
+      }),
+    ).to.equal(null);
   });
 
   it('validates editor settings in both protocol directions', () => {
@@ -161,15 +209,18 @@ describe('VS Code authority boundary', () => {
 
   it('auto-resolves only an exact remembered target for an allowlisted export format', () => {
     const rememberedPdf = 'file:///exports/approved-report.pdf';
+    const rememberedEpub = 'file:///exports/approved-book.epub';
     const stored = {
       lastUri: 'file:///exports/previous.docx',
       byExtension: {
         pdf: rememberedPdf,
+        epub: rememberedEpub,
         json: 'file:///workspace/package.json',
       },
     };
 
     expect(selectRememberedExactExportTarget(stored, 'new-report.pdf')).to.equal(rememberedPdf);
+    expect(selectRememberedExactExportTarget(stored, 'new-book.epub')).to.equal(rememberedEpub);
     expect(selectRememberedExactExportTarget(stored, 'new-report.docx')).to.equal(null);
     expect(selectRememberedExactExportTarget(stored, '.env')).to.equal(null);
     expect(selectRememberedExactExportTarget(stored, 'package.json')).to.equal(null);

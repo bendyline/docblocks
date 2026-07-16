@@ -4,6 +4,17 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import docblocksPackage from '../core/package.json';
 import { SITE_PRECACHE_GLOB, SITE_PRECACHE_MAX_BYTES } from '../../scripts/site-precache-policy.js';
+import {
+  CROSS_ORIGIN_ISOLATION_HEADERS,
+  ffmpegCorePlugin,
+} from '../../scripts/vite-ffmpeg-core.js';
+
+// Linked Squisq packages resolve to their already-compiled workspace `dist`
+// files. Letting the React plugin feed those large JavaScript chunks through
+// Babel again makes the first lazy Monaco/video request slow enough to exceed
+// the site E2E action timeout on Windows. DocBlocks TS/TSX still goes through
+// the normal React transform; only precompiled sibling-package output skips it.
+const linkedSquisqDistJavaScript = /[/\\]squisq[/\\]packages[/\\][^/\\]+[/\\]dist[/\\].*\.js$/;
 
 // Strips //# sourceMappingURL pragmas from upstream packages whose published
 // tarballs reference sourcemaps or sources that aren't actually shipped, so
@@ -79,12 +90,15 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
   return deps.filter((dep) => !isDeferredFeatureAsset(dep));
 }
 
-// PWA packaging. The whole dist is precached (~22 MB) so every feature —
-// export formats, Monaco language workers, theme fonts — works offline even
+// PWA packaging. The whole dist is precached (~55 MB) so every feature —
+// export formats, Monaco language workers, theme fonts, ffmpeg.wasm — works offline even
 // if the user never touched it while online. That is a deliberate product
 // decision: never let functionality break offline to save bandwidth.
 const docblocksPwa = (): Plugin[] =>
   VitePWA({
+    strategies: 'injectManifest',
+    srcDir: 'src',
+    filename: 'sw.ts',
     // Updates are prompt-based: the shell shows an "Update available" status
     // notice that opens Reload/Later controls. Never auto-reload mid-edit.
     registerType: 'prompt',
@@ -135,29 +149,14 @@ const docblocksPwa = (): Plugin[] =>
         { src: 'icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
       ],
     },
-    workbox: {
+    injectManifest: {
       // Everything in dist. CNAME has no extension so it stays out.
       globPatterns: [SITE_PRECACHE_GLOB],
       // Workbox's default cap is 2 MiB, which would SILENTLY drop the main
-      // bundle, the monaco chunk, and ts.worker (6 MB) from the precache.
+      // bundle, ts.worker (6 MB), and ffmpeg core (31 MB) from the precache.
       // The post-build precache gate fails if an eligible file exceeds this
       // cap or is absent from the generated manifest.
       maximumFileSizeToCacheInBytes: SITE_PRECACHE_MAX_BYTES,
-      navigateFallback: 'index.html',
-      // Only the root editor is an app-shell route. Static product pages,
-      // crawl files, and custom 404s must resolve to their own responses.
-      // Workbox tests this against `url.pathname + url.search`, so the query
-      // string has to be allowed explicitly: the manifest's "New document"
-      // jump-list shortcut navigates to `/?action=new`, and a bare `/^\/$/`
-      // would send it to the network (a browser error page when offline).
-      // The optional group keeps the fallback pinned to the root — the
-      // static routes above still resolve to their own precached documents.
-      navigateFallbackAllowlist: [/^\/(\?.*)?$/],
-      cleanupOutdatedCaches: true,
-      // Paired with registerType 'prompt': the waiting SW takes over only
-      // when the user accepts the reload.
-      skipWaiting: false,
-      clientsClaim: false,
     },
   });
 
@@ -169,8 +168,15 @@ export default defineConfig({
   base: process.env.VITE_BASE || '/',
   define: {
     __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
+    __DOCBLOCKS_BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
-  plugins: [stripBrokenSourcemapPragmas(), serveStaticDirectoryIndexes(), react(), docblocksPwa()],
+  plugins: [
+    stripBrokenSourcemapPragmas(),
+    serveStaticDirectoryIndexes(),
+    ffmpegCorePlugin(),
+    react({ exclude: linkedSquisqDistJavaScript }),
+    docblocksPwa(),
+  ],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy across the graph. Without this, the
@@ -251,6 +257,7 @@ export default defineConfig({
     // Deterministic harnesses pass --strictPort explicitly.
     strictPort: false,
     open: true,
+    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     fs: {
       // Allow serving files from the symlinked squisq workspace —
       // its CSS @imports `@fortawesome/fontawesome-free/css/all.min.css`,
@@ -259,6 +266,9 @@ export default defineConfig({
       // so we need to whitelist it for Vite to serve the font assets.
       allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
     },
+  },
+  preview: {
+    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
   },
   optimizeDeps: {
     include: [

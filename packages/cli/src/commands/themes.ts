@@ -3,12 +3,12 @@
  */
 
 import { Command } from 'commander';
+import { getAvailableThemeIds } from '../internal/theme.js';
 
 export const themesCommand = new Command('themes')
   .description('List all available visual themes')
   .action(async () => {
-    const { getAvailableThemes } = await import('@bendyline/squisq/schemas');
-    const themes = getAvailableThemes();
+    const themes = await getAvailableThemeIds();
     console.error('Available themes:\n');
     for (const theme of themes) {
       process.stdout.write(`${theme}\n`);

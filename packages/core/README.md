@@ -55,8 +55,8 @@ compatibility `filesystem` barrel still re-exports every provider, but eagerly
 constructing from that barrel puts mutually exclusive backends in one startup
 bundle.
 
-Mutation behavior is explicit: `writeFile` requires a `create`, `replace`, or
-`upsert` mode; `remove` distinguishes an empty-directory removal from a
+Mutation behavior is explicit: `writeFile` accepts a `create`, `replace`, or
+`upsert` mode and defaults to `upsert` when omitted; `remove` distinguishes an empty-directory removal from a
 recursive tree removal; and `move` never overwrites its destination. Missing
 entries are returned as `null` only by `stat` and `readFile`. Permission,
 wrong-kind, conflict, quota, and I/O failures remain typed `FsError`s.

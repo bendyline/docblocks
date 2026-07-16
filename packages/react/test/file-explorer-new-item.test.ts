@@ -84,6 +84,14 @@ describe('FileExplorer new item failures', () => {
     });
   }
 
+  it('places New Folder before New File in the explorer toolbar', () => {
+    const actions = container.querySelector('.db-explorer-actions');
+    const labels = [...(actions?.querySelectorAll('button') ?? [])].map((button) =>
+      button.getAttribute('aria-label'),
+    );
+    expect(labels).to.deep.equal(['New Folder', 'New File']);
+  });
+
   it('surfaces a duplicate name instead of sitting there silently', async () => {
     await submitNewFile('taken');
 

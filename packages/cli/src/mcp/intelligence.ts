@@ -16,6 +16,7 @@ import type { DocDiagnostic } from '@bendyline/squisq/schemas';
 import type { PreparedDocument } from './document-service.js';
 import { DocumentService, throwIfAborted, warningDiagnostic } from './document-service.js';
 import { boundWireText, toWireIdentifier } from './output-bounds.js';
+import { analyzeDocumentBlocks } from './block-analysis.js';
 
 const DEFAULT_MAX_INSPECTION_BLOCKS = 200;
 const MAX_INSPECTION_BLOCKS = 2_000;
@@ -40,14 +41,13 @@ export async function inspectPreparedDocument(
   ) {
     throw new Error(`Inspection block limit must be between 1 and ${MAX_INSPECTION_BLOCKS}`);
   }
-  const { analyzeBlocks } = await import('@bendyline/squisq/transform');
   const { flattenBlocks, validateMarkdownSource } = await import('@bendyline/squisq/doc');
   await yieldForCancellation(signal);
   const assets = prepared.assets;
   const assetPaths = new Set(assets.map((asset) => asset.path));
   const validation = validateMarkdownSource(prepared.markdown, { assets: assetPaths });
-  const analyzed = analyzeBlocks(prepared.doc.blocks);
   const flatBlocks = flattenBlocks(prepared.doc.blocks);
+  const analyzed = await analyzeDocumentBlocks(prepared.doc.blocks);
   throwIfAborted(signal);
   const blockOffset = parseInspectionCursor(cursor, analyzed.length);
   const blockEnd = Math.min(analyzed.length, blockOffset + maximumBlocks);
@@ -697,13 +697,14 @@ async function targetPreflight(
   }
   const diagnostics: McpDiagnostic[] = [];
   const details = summarizeMarkdownNodes(prepared.markdownDoc);
+  const { flattenBlocks } = await import('@bendyline/squisq/doc');
+  const flatBlocks = flattenBlocks(prepared.doc.blocks);
   await yieldForCancellation(signal);
   if (['pptx', 'pdf', 'mp4', 'gif'].includes(normalized)) {
-    const { analyzeBlocks } = await import('@bendyline/squisq/transform');
     let denseBlockCount = 0;
     let firstDenseBlock: PreparedDocument['doc']['blocks'][number] | null = null;
     let analyzedIndex = 0;
-    for (const entry of analyzeBlocks(prepared.doc.blocks)) {
+    for (const entry of await analyzeDocumentBlocks(prepared.doc.blocks)) {
       const checkpoint = cancellationCheckpoint(signal, analyzedIndex);
       if (checkpoint) await checkpoint;
       analyzedIndex += 1;
@@ -757,7 +758,7 @@ async function targetPreflight(
       });
     }
   }
-  if (normalized === 'pptx' && prepared.doc.blocks.some((block) => block.template)) {
+  if (normalized === 'pptx' && flatBlocks.some((block) => block.template)) {
     diagnostics.push(
       warningDiagnostic(
         'Editable-native PPTX export preserves semantic content and theme but does not reproduce arbitrary Squisq template geometry.',

@@ -2,6 +2,8 @@ import { test, expect, type FrameLocator, type Page } from '@playwright/test';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
+const editedExportFixturePath = 'test-fixtures/test-doc-export-edited.md';
+const pptxExportFixturePath = 'test-fixtures/test-doc-export.pptx';
 const editSentinel = 'VS Code webview edit sync sentinel';
 
 async function bootVSCode(page: Page): Promise<void> {
@@ -89,11 +91,15 @@ async function writeFixture(content: string): Promise<void> {
 async function removeExportFixture(): Promise<void> {
   const fs = await import('node:fs/promises');
   await fs.rm(exportFixturePath, { force: true });
+  await fs.rm(editedExportFixturePath, { force: true });
+  await fs.rm(pptxExportFixturePath, { force: true });
 }
 
 async function prepareExportFixture(): Promise<void> {
   const fs = await import('node:fs/promises');
+  await fs.rm(editedExportFixturePath, { force: true });
   await fs.writeFile(exportFixturePath, '');
+  await fs.writeFile(pptxExportFixturePath, '');
 }
 
 test.describe('VS Code web and UX integration', () => {
@@ -151,8 +157,26 @@ test.describe('VS Code web and UX integration', () => {
     const previewTab = editor.locator('[role="tab"][data-view="preview"]');
     await expect(previewTab).toBeVisible();
     await expect(previewTab).toHaveAccessibleName('Slideshow');
-    await expect(editor.getByRole('button', { name: /export document/i })).toBeVisible();
+    const exportButton = editor.getByRole('button', { name: /export document/i });
+    await expect(exportButton).toBeVisible();
     await expect(editor.locator('body')).toContainText('Test Document');
+
+    await exportButton.click();
+    const exportDialog = editor.getByRole('dialog', { name: 'Export Document' });
+    await expect(exportDialog.getByRole('button', { name: 'Animated GIF...' })).toHaveCount(0);
+    await exportDialog.getByRole('button', { name: 'Cancel' }).click();
+
+    const insertButton = editor.getByRole('button', { name: 'Insert', exact: true });
+    if (await insertButton.isVisible()) {
+      await insertButton.click();
+    } else {
+      await editor.getByRole('button', { name: 'More actions' }).click();
+      await editor.getByRole('button', { name: 'Insert...' }).click();
+    }
+    const insertMenu = editor.locator('.squisq-insert-menu');
+    await expect(insertMenu).toBeVisible();
+    await expect(insertMenu.getByRole('menuitem', { name: 'Record media' })).toHaveCount(0);
+    await editor.locator('body').press('Escape');
 
     await editor.getByRole('tab', { name: /source/i }).click();
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
@@ -161,7 +185,7 @@ test.describe('VS Code web and UX integration', () => {
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
-  test('exports Markdown bytes through the VS Code save-dialog authority boundary', async ({
+  test('exports Markdown after a validated filename edit within the approved folder', async ({
     page,
   }) => {
     await bootVSCode(page);
@@ -180,14 +204,51 @@ test.describe('VS Code web and UX integration', () => {
     await saveDialog.getByRole('option', { name: 'test-doc-export.md', exact: true }).click();
     await saveDialog.getByRole('button', { name: 'OK', exact: true }).click();
 
-    await expect(dialog.getByLabel('Export to')).toHaveValue(/test-doc-export\.md/u);
+    const exportPath = dialog.getByLabel('Export to');
+    await expect(exportPath).toHaveValue(/test-doc-export\.md/u);
+    const approvedPath = await exportPath.inputValue();
+    await exportPath.fill(approvedPath.replace(/test-doc-export\.md$/u, 'wrong-extension.pdf'));
+    await expect(dialog.getByRole('alert')).toContainText('must end in .md');
+    await expect(dialog.getByRole('button', { name: 'Export', exact: true })).toBeDisabled();
+
+    await exportPath.fill(
+      approvedPath.replace(/test-doc-export\.md$/u, 'test-doc-export-edited.md'),
+    );
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Export', exact: true }).click();
     await expect(dialog).not.toBeVisible({ timeout: 15_000 });
 
-    await openTextEditorWithOpenWith(page, 'test-doc-export.md');
+    await openTextEditorWithOpenWith(page, 'test-doc-export-edited.md');
     await expect(page.locator('.monaco-editor .view-lines')).toContainText('# Test Document', {
       timeout: 10_000,
     });
+  });
+
+  test('exports PowerPoint after its old lazy-chunk URL becomes unavailable', async ({ page }) => {
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    await editor.getByRole('button', { name: /export document/i }).click();
+    const dialog = editor.getByRole('dialog', { name: 'Export Document' });
+    await dialog.getByRole('radio', { name: 'PowerPoint' }).click();
+    await expect(dialog.getByLabel('Transform')).toHaveValue('documentary');
+    await dialog.getByRole('button', { name: 'Choose export location' }).click();
+
+    const saveDialog = page.locator('.quick-input-widget');
+    await expect(saveDialog).toBeVisible({ timeout: 10_000 });
+    const saveInput = saveDialog.locator('input').first();
+    await saveInput.fill('test-doc-export.pptx');
+    await saveDialog.getByRole('option', { name: 'test-doc-export.pptx', exact: true }).click();
+    await saveDialog.getByRole('button', { name: 'OK', exact: true }).click();
+
+    // A long-lived webview can retain its loaded export control while an
+    // extension rebuild replaces hashed assets on disk. Any converter fetched
+    // only after this point would fail exactly like the reported stale URL.
+    await page.route('**/dist/webview/assets/index-*.js', async (route) => route.abort('failed'));
+    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+
+    await expect(dialog).not.toBeVisible({ timeout: 15_000 });
   });
 
   test('opens a trailing-newline document without authoring or saving a hydration edit', async ({

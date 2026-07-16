@@ -206,6 +206,22 @@ test.describe('DocBlocks webview theme parity', () => {
     ).toEqual(['light']);
   });
 
+  test('uses a dark Monaco theme for Source when VS Code is dark', async ({ page }) => {
+    await selectColorTheme(page, 'Dark Modern');
+    await openTestDoc(page);
+
+    const frame = await findEditorFrame(page);
+    await expect(frame.locator('.db-shell[data-theme]')).toHaveAttribute('data-theme', 'dark', {
+      timeout: 15_000,
+    });
+
+    await frame.getByRole('tab', { name: /source/i }).click();
+    const sourceEditor = frame.locator('.squisq-raw-editor-container .monaco-editor');
+    await expect(sourceEditor).toBeVisible({ timeout: 15_000 });
+    await expect(sourceEditor).toHaveClass(/\bvs-dark\b/);
+    await expect(sourceEditor).toHaveCSS('background-color', 'rgb(30, 30, 30)');
+  });
+
   test('follows a live theme switch after mount, and the recorder proves it', async ({ page }) => {
     await selectColorTheme(page, 'Light Modern');
     await openTestDoc(page);
@@ -214,13 +230,20 @@ test.describe('DocBlocks webview theme parity', () => {
     const shell = frame.locator('.db-shell[data-theme]');
     await expect(shell).toHaveAttribute('data-theme', 'light', { timeout: 15_000 });
 
+    await frame.getByRole('tab', { name: /source/i }).click();
+    const sourceEditor = frame.locator('.squisq-raw-editor-container .monaco-editor');
+    await expect(sourceEditor).toBeVisible({ timeout: 15_000 });
+    await expect(sourceEditor).toHaveClass(/(?:^|\s)vs(?:\s|$)/);
+
     // The host observes onDidChangeActiveColorTheme and pushes `themeChange`;
     // an already-mounted editor must honour it.
     await selectColorTheme(page, 'Dark Modern');
     await expect(shell).toHaveAttribute('data-theme', 'dark', { timeout: 15_000 });
+    await expect(sourceEditor).toHaveClass(/\bvs-dark\b/);
 
     await selectColorTheme(page, 'Light Modern');
     await expect(shell).toHaveAttribute('data-theme', 'light', { timeout: 15_000 });
+    await expect(sourceEditor).toHaveClass(/(?:^|\s)vs(?:\s|$)/);
 
     // Two jobs: live `themeChange` reaches the shell, and — because these flips
     // are recorded — the sibling test's flash detector is demonstrably able to

@@ -62,6 +62,10 @@ export interface AppMenuProps {
   getStorageEstimate?: () => Promise<{ usage: number; quota: number } | null>;
   /** Whether the browser has marked origin storage persistent (Settings display). */
   storagePersistent?: boolean;
+  /** Human-readable version/build and delivery surface shown in About. */
+  appVersion?: string;
+  /** ISO build date shown in About. */
+  appBuildDate?: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -91,6 +95,8 @@ export function AppMenu({
   onInstallApp,
   getStorageEstimate,
   storagePersistent,
+  appVersion,
+  appBuildDate,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -192,9 +198,9 @@ export function AppMenu({
               <button
                 className="db-app-menu-item"
                 role="menuitem"
-                onClick={() => handleAction(() => void onKeepBrowserData())}
+                onClick={() => handleAction(() => setShowSettings(true))}
               >
-                Keep data in browser for longer
+                Storage protection&hellip;
               </button>
             )}
             {onDownloadAllWorkspaces && (
@@ -248,8 +254,8 @@ export function AppMenu({
               {storagePersistent !== undefined && (
                 <p className="db-settings-hint">
                   {storagePersistent
-                    ? 'Data is marked persistent, so the browser will avoid evicting it.'
-                    : 'Data is not yet marked persistent.'}
+                    ? 'Protected from routine browser cleanup on this device.'
+                    : 'Browsers may clear site data under storage pressure unless protection is granted.'}
                 </p>
               )}
               {onKeepBrowserData && (
@@ -260,8 +266,8 @@ export function AppMenu({
                   onClick={() => void handleKeepBrowserDataFromSettings()}
                 >
                   {requestingPersistentStorage
-                    ? 'Requesting persistent storage…'
-                    : 'Keep data in browser for longer'}
+                    ? 'Requesting storage protection…'
+                    : 'Protect data from browser cleanup'}
                 </button>
               )}
             </fieldset>
@@ -313,9 +319,21 @@ export function AppMenu({
       {showAbout && (
         <Dialog title="About DocBlocks" onClose={() => setShowAbout(false)}>
           <p>
-            <strong>DocBlocks</strong> is a markdown document editor that runs entirely in your
-            browser. Your files stay on your device.
+            <strong>DocBlocks</strong> is a local-first Markdown document editor. Your files stay
+            under your control.
           </p>
+          {appVersion && (
+            <p className="db-about-version">
+              <span>Version</span>
+              <code aria-label={`DocBlocks version ${appVersion}`}>{appVersion}</code>
+            </p>
+          )}
+          {appBuildDate && (
+            <p className="db-about-version">
+              <span>Build</span>
+              <time dateTime={appBuildDate}>{appBuildDate}</time>
+            </p>
+          )}
           <p>
             Built with{' '}
             <a href="https://github.com/bendyline/squisq" target="_blank" rel="noopener noreferrer">
@@ -334,6 +352,22 @@ export function AppMenu({
               rel="noopener noreferrer"
             >
               GitHub
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/releases"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Release notes
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
+            <a
+              href="https://github.com/bendyline/docblocks/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Support
             </a>
             <span className="db-dialog-sep">&middot;</span>
             <a
