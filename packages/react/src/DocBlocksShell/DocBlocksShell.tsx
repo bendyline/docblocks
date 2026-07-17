@@ -136,6 +136,7 @@ import {
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
+import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
@@ -158,6 +159,7 @@ import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
+import { WELCOME_DOCUMENT_CONTENT, WELCOME_DOCUMENT_PATH } from './welcome-document.js';
 
 const DOCBLOCKS_VIDEO_EXPORT_PALETTE: Partial<VideoExportPalette> = Object.freeze({
   overlay: 'rgba(0, 0, 0, 0.72)',
@@ -303,7 +305,7 @@ export interface DocBlocksShellProps {
   /**
    * True when a new deploy is waiting (browser PWA hosts: a fresh service
    * worker finished installing). The shell shows an "Update available"
-   * status-bar notice that opens a Reload/Later prompt.
+   * status-bar notice; clicking it opens a nearby Reload/Later prompt.
    */
   updateAvailable?: boolean;
   /** Activates the waiting update and reloads onto the new version. */
@@ -1381,39 +1383,8 @@ export function DocBlocksShell({
 
       if (entries.length > 0) return;
 
-      const welcomePath = '/aboutDocBlocks.md';
-      const welcomeContent = [
-        '# DocBlocks: the local-first Markdown editor',
-        '',
-        'Your markdown can do anything.',
-        '',
-        'DocBlocks is a free, local-first Markdown editor for creating, organizing, and publishing documents without sending your writing to a server. What you write here can become a Word or PDF document, a slide deck, a web page, or a video.',
-        '',
-        'Simple to write. Beautiful wherever it goes.',
-        '',
-        '## Features',
-        '',
-        '- **Rich Markdown editing** — Write visually or switch to raw Markdown source at any time. Section annotations can change how individual blocks are presented.',
-        '- **Workspaces** — Organize documents into separate browser workspaces or folders on your device.',
-        '- **Useful everywhere** — Export Word, PowerPoint, PDF, HTML, and Markdown in the app, with EPUB and additional formats available through the CLI.',
-        '- **Playback and video** — Preview a document as a rich presentation and export it as an MP4 video.',
-        '- **Private by default** — No ads, accounts, or tracking. Your browser workspace stays on this device.',
-        '',
-        '## Getting Started',
-        '',
-        '1. Create a document with the **New file** button in the file pane.',
-        '2. Start writing in Markdown — the editor supports headings, lists, links, images, and more.',
-        '3. Your work is saved automatically.',
-        '',
-        'Built with [squisq](https://github.com/bendyline/squisq) by [Bendyline](https://bendyline.com).',
-        '',
-        '## Explore DocBlocks',
-        '',
-        '- [Desktop app](https://docblocks.com/desktop/) for macOS, Windows, and Linux',
-        '- [VS Code extension](https://docblocks.com/vscode/) for rich editing inside your workspace',
-        '- [CLI and MCP server](https://docblocks.com/cli/) for conversion and agent workflows',
-        '- [Supported formats](https://docblocks.com/formats/) and [documentation](https://docblocks.com/docs/)',
-      ].join('\n');
+      const welcomePath = WELCOME_DOCUMENT_PATH;
+      const welcomeContent = WELCOME_DOCUMENT_CONTENT;
 
       let seededContent = welcomeContent;
       try {
@@ -2676,6 +2647,61 @@ export function DocBlocksShell({
     ],
   );
 
+  const handleEditorLinkClick = useCallback(
+    (href: string): boolean => {
+      const target = resolveShellEditorLinkTarget(href, selectedFile);
+      if (!target) {
+        showToast(
+          'error',
+          'DocBlocks only opens HTTP(S) links or Markdown files inside this workspace.',
+        );
+        return true;
+      }
+      if (target.kind === 'fragment') return false;
+
+      if (target.kind === 'external') {
+        if (isElectronHost()) {
+          void getDocBlocksHost()
+            .shell.openExternal(target.url)
+            .catch((error: unknown) => {
+              showToast(
+                'error',
+                error instanceof Error ? error.message : 'Could not open the external link.',
+              );
+            });
+        } else if (typeof window !== 'undefined') {
+          try {
+            window.open(target.url, '_blank', 'noopener,noreferrer');
+          } catch (error: unknown) {
+            showToast(
+              'error',
+              error instanceof Error ? error.message : 'Could not open the external link.',
+            );
+          }
+        }
+        return true;
+      }
+
+      void (async () => {
+        if (!provider) return;
+        try {
+          if (!(await providerEntryExists(provider, target.path))) {
+            showToast('error', 'The linked Markdown file was not found in this workspace.');
+            return;
+          }
+          await handleSelect(target.path, 'file');
+        } catch (error: unknown) {
+          showToast(
+            'error',
+            error instanceof Error ? error.message : 'Could not open the linked Markdown file.',
+          );
+        }
+      })();
+      return true;
+    },
+    [handleSelect, provider, selectedFile, showToast],
+  );
+
   const handleTreeMutation = useCallback<FileTreeMutationHandler>(
     async (change, mutate) => {
       if (!provider || !activeWorkspaceId || !selectedFile) {
@@ -3595,6 +3621,7 @@ export function DocBlocksShell({
                       articleId={selectedFile}
                       fileName={selectedFile}
                       onChange={handleEditorChange}
+                      onLinkClick={handleEditorLinkClick}
                       colorScheme={resolvedTheme}
                       writeCanvasSettings={writeCanvasSettings}
                       height="100%"

@@ -47,16 +47,16 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.2.0",
-    "@bendyline/squisq": "2.3.2",
-    "@bendyline/squisq-cli": "2.3.2",
-    "@bendyline/squisq-formats": "2.3.2",
-    "@bendyline/squisq-react": "2.3.2",
-    "@bendyline/squisq-video": "2.2.2",
+    "@bendyline/squisq": "2.3.3",
+    "@bendyline/squisq-cli": "2.3.3",
+    "@bendyline/squisq-formats": "2.3.3",
+    "@bendyline/squisq-react": "2.3.3",
+    "@bendyline/squisq-video": "2.2.3",
     "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "13.1.0",
     "jszip": "3.10.1",
-    "playwright-core": "1.58.2",
     "pdf-lib": "1.17.1",
+    "playwright-core": "1.58.2",
     "zod": "3.25.76"
   }
 }

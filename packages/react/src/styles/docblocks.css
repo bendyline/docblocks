@@ -1600,6 +1600,21 @@ body.db-resizing-sidebar * {
   gap: 6px;
 }
 
+.db-about-beta {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-accent);
+  border-radius: 6px;
+  background: var(--db-accent-soft-08);
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.db-about-beta strong {
+  color: var(--db-accent-deep);
+}
+
 .db-about-version {
   display: flex;
   align-items: center;
@@ -4335,24 +4350,26 @@ html:has(.db-shell[data-theme='dark'])
   box-shadow: 0 2px 8px var(--db-shadow);
 }
 
-/* The expanded Reload/Later prompt uses the same top-center card pattern as
-   the document-conflict card, accent-toned instead of warning. */
+/* The expanded Reload/Later prompt sits just above its status-bar trigger. */
 .db-update-banner {
-  position: fixed;
-  top: 16px;
-  left: 50%;
+  position: absolute;
+  right: 8px;
+  bottom: 30px;
   z-index: 210;
   display: flex;
   gap: 16px;
   align-items: center;
-  max-width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100% - 16px));
   padding: 10px 12px;
   color: var(--db-text);
   background: var(--db-bg-elevated, var(--db-bg));
   border: 1px solid var(--db-accent);
   border-radius: 8px;
   box-shadow: 0 6px 20px var(--db-shadow);
-  transform: translateX(-50%);
+}
+
+.db-update-banner--floating {
+  bottom: 48px;
 }
 
 .db-update-banner-actions {
@@ -5033,15 +5050,15 @@ button.db-git-file-row:hover {
     padding-bottom: 2px;
   }
 
-  /* The native 32px caption band leaves the labels slightly above its visual
-     center. Move only the text down; the tab hit area and active underline
-     stay anchored to the titlebar edges. */
+  /* Keep the compact labels on the same visual center as the action glyphs.
+     Move only the text; the tab hit area and active underline stay anchored
+     to the titlebar edges. */
   .db-shell .squisq-toolbar-view-tab-label {
-    transform: translateY(4px);
+    transform: translateY(1px);
   }
 
   .db-shell .squisq-use-mode-trigger {
-    padding-bottom: 7px;
+    padding-bottom: 10px;
   }
 
   /* The 32px caption row leaves little room around Squisq's 28px action

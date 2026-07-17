@@ -173,6 +173,85 @@ export async function validatePreparedDocument(
   };
 }
 
+/**
+ * Detect annotation-like spans whose delimiters are malformed. The Squisq
+ * parser recovers from a stray brace such as `{[comparisonBar unit="%"}]}`
+ * without complaint, so the authored typo silently survives into conversion
+ * unless validation surfaces it.
+ */
+export function annotationSyntaxDiagnostics(
+  markdown: string,
+  stage: DiagnosticStage,
+  format: string,
+): McpDiagnostic[] {
+  const diagnostics: McpDiagnostic[] = [];
+  const lines = markdown.split(/\r?\n/);
+  let inFence = false;
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (diagnostics.length >= MCP_WIRE_LIMITS.arrayEntries) break;
+    const rawLine = lines[lineIndex]!;
+    if (/^\s*(?:```|~~~)/u.test(rawLine)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const line = rawLine.replace(/`[^`]*`/gu, '``');
+    let search = 0;
+    while (search < line.length) {
+      const open = line.indexOf('{[', search);
+      if (open === -1) break;
+      const close = line.indexOf(']}', open + 2);
+      if (close === -1) {
+        diagnostics.push(
+          malformedAnnotationDiagnostic(
+            stage,
+            format,
+            lineIndex + 1,
+            open + 1,
+            'An annotation opened with "{[" has no matching "]}" on the same line.',
+          ),
+        );
+        break;
+      }
+      const inner = line.slice(open + 2, close).replace(/"[^"]*"/gu, '""');
+      if (/[{}[\]]/u.test(inner)) {
+        diagnostics.push(
+          malformedAnnotationDiagnostic(
+            stage,
+            format,
+            lineIndex + 1,
+            open + 1,
+            'An annotation contains a stray brace or bracket outside quoted values.',
+          ),
+        );
+      }
+      search = close + 2;
+    }
+  }
+  return diagnostics;
+}
+
+function malformedAnnotationDiagnostic(
+  stage: DiagnosticStage,
+  format: string,
+  line: number,
+  column: number,
+  message: string,
+): McpDiagnostic {
+  return {
+    code: 'malformed-template-annotation',
+    severity: 'warning',
+    stage,
+    format,
+    count: 1,
+    message,
+    remediation:
+      'Repair the annotation so it reads exactly `{[templateId key="value"]}` with no extra braces or brackets, then validate again.',
+    retryable: false,
+    location: { kind: 'source', line, column },
+  };
+}
+
 /** Detect authoring shapes that are syntactically valid but commonly surprise agents. */
 export async function authoringDiagnostics(
   prepared: PreparedDocument,
@@ -192,7 +271,11 @@ export async function authoringDiagnostics(
   const blocks = flattenBlocks(prepared.doc.blocks);
   const analyzedBlocks = blocks.slice(0, MCP_WIRE_LIMITS.arrayEntries);
   const theme = resolveThemeForDoc(prepared.doc);
-  const diagnostics: McpDiagnostic[] = [];
+  const diagnostics: McpDiagnostic[] = annotationSyntaxDiagnostics(
+    prepared.markdown,
+    stage,
+    format,
+  );
   for (let index = 0; index < analyzedBlocks.length; index += 1) {
     const checkpoint = cancellationCheckpoint(signal, index);
     if (checkpoint) await checkpoint;

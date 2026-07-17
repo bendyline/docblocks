@@ -174,7 +174,7 @@ test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir
   // test owns instead of coupling readiness to mutable rendered copy.
   await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
   expect(fs.readFileSync(welcome, 'utf8')).toContain(
-    '# DocBlocks: the local-first Markdown editor',
+    '# DocBlocks: one Markdown file, many finished forms',
   );
 });
 
@@ -210,7 +210,7 @@ test('exports exact Markdown bytes through the remembered native target', async 
   await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
   const exported = fs.readFileSync(target, 'utf8');
   expect(exported.length).toBeGreaterThan(100);
-  expect(exported).toContain('# DocBlocks: the local-first Markdown editor');
+  expect(exported).toContain('# DocBlocks: one Markdown file, many finished forms');
 });
 
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {

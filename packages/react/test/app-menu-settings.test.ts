@@ -76,12 +76,19 @@ describe('AppMenu settings', () => {
       );
       await act(async () => aboutButton?.click());
 
+      expect(container.querySelector('.db-about-beta')?.textContent).to.equal(
+        "Beta Software. We're still working through initial hiccups and issues. Please bear with us, make sure you keep backups, and open issues where you find them. Thanks!",
+      );
       expect(container.querySelector('.db-about-version')?.textContent).to.contain('2.1.0 web');
       expect(container.querySelector('time')?.textContent).to.equal('2026-07-15');
       const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).map((link) => ({
         text: link.textContent?.trim(),
         href: link.href,
       }));
+      expect(links).to.deep.include({
+        text: 'More information...',
+        href: 'https://docblocks.com/web/',
+      });
       expect(links).to.deep.include({
         text: 'Release notes',
         href: 'https://github.com/bendyline/docblocks/releases',
@@ -90,7 +97,43 @@ describe('AppMenu settings', () => {
         text: 'Support',
         href: 'https://github.com/bendyline/docblocks/issues',
       });
+      expect(links).to.deep.include({
+        text: 'open issues',
+        href: 'https://github.com/bendyline/docblocks/issues/new',
+      });
     } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it('links Electron users to the Desktop information page', async () => {
+    const hostGlobal = globalThis as typeof globalThis & {
+      docBlocksHost?: { fs: Record<string, never> };
+    };
+    hostGlobal.docBlocksHost = { fs: {} };
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(createElement(AppMenu));
+      });
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+      });
+      const aboutButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'About',
+      );
+      await act(async () => aboutButton?.click());
+
+      const moreInformationLink = Array.from(
+        container.querySelectorAll<HTMLAnchorElement>('a'),
+      ).find((link) => link.textContent?.trim() === 'More information...');
+      expect(moreInformationLink?.href).to.equal('https://docblocks.com/desktop/');
+    } finally {
+      delete hostGlobal.docBlocksHost;
       await act(async () => root.unmount());
       container.remove();
     }

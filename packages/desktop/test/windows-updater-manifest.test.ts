@@ -28,6 +28,9 @@ function sha512(value: Buffer): string {
 async function createFixture(options?: {
   readonly omitUniversal?: boolean;
   readonly invalidSha?: boolean;
+  readonly omitBlockMap?: boolean;
+  readonly emptyBlockMap?: boolean;
+  readonly blockMapSize?: number;
 }): Promise<Fixture> {
   const directory = await mkdtemp(path.join(tmpdir(), 'docblocks-windows-updater-'));
   temporaryDirectories.push(directory);
@@ -35,7 +38,12 @@ async function createFixture(options?: {
   const universal = Buffer.from('combined x64 and arm64 installer');
   const blockMap = Buffer.from('combined blockmap');
   await writeFile(path.join(directory, universalName), universal);
-  await writeFile(path.join(directory, universalName + '.blockmap'), blockMap);
+  if (!options?.omitBlockMap) {
+    await writeFile(
+      path.join(directory, universalName + '.blockmap'),
+      options?.emptyBlockMap ? Buffer.alloc(0) : blockMap,
+    );
+  }
 
   const universalSha512 = sha512(universal);
   const files: UnknownRecord[] = [
@@ -43,13 +51,11 @@ async function createFixture(options?: {
       url: 'DocBlocks-2.1.3-win-arm64.exe',
       sha512: sha512(Buffer.from('arm64')),
       size: 5,
-      blockMapSize: 5,
     },
     {
       url: 'DocBlocks-2.1.3-win-x64.exe',
       sha512: sha512(Buffer.from('x64')),
       size: 3,
-      blockMapSize: 3,
     },
   ];
   if (!options?.omitUniversal) {
@@ -57,7 +63,7 @@ async function createFixture(options?: {
       url: universalName,
       sha512: options?.invalidSha ? sha512(Buffer.from('wrong')) : universalSha512,
       size: universal.length,
-      blockMapSize: blockMap.length,
+      ...(options?.blockMapSize === undefined ? {} : { blockMapSize: options.blockMapSize }),
     });
   }
 
@@ -110,7 +116,6 @@ describe('Windows updater manifest preparation', () => {
         url: fixture.universalName,
         sha512: fixture.universalSha512,
         size: Buffer.byteLength('combined x64 and arm64 installer'),
-        blockMapSize: Buffer.byteLength('combined blockmap'),
       },
     ]);
     expect(parsed.path).to.equal(fixture.universalName);
@@ -123,6 +128,27 @@ describe('Windows updater manifest preparation', () => {
     await expectFailure(
       prepareWindowsUpdaterManifest(fixture.manifestPath),
       'exactly one combined *-win.exe installer',
+    );
+  });
+
+  it('fails when the combined installer blockmap is missing', async () => {
+    const fixture = await createFixture({ omitBlockMap: true });
+    await expectFailure(prepareWindowsUpdaterManifest(fixture.manifestPath), 'blockmap is missing');
+  });
+
+  it('fails when the combined installer blockmap is empty', async () => {
+    const fixture = await createFixture({ emptyBlockMap: true });
+    await expectFailure(
+      prepareWindowsUpdaterManifest(fixture.manifestPath),
+      'blockmap must be a non-empty file',
+    );
+  });
+
+  it('validates blockmap size when electron-builder includes it', async () => {
+    const fixture = await createFixture({ blockMapSize: 1 });
+    await expectFailure(
+      prepareWindowsUpdaterManifest(fixture.manifestPath),
+      'blockmap size mismatch',
     );
   });
 

@@ -68,6 +68,7 @@ export default tseslint.config(
       '**/.vscode-test-web/**',
       '**/.vscode-test/**',
       '**/playwright-report/**',
+      '**/reports/**',
       '**/test-results/**',
     ],
   },

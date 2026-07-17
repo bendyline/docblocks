@@ -1,37 +1,47 @@
 @font-face {
-  font-family: 'DM Sans';
+  font-family: 'Hanken Grotesk';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/dm-sans-400.woff2') format('woff2');
+  src: url('/fonts/hanken-grotesk-400.woff2') format('woff2');
 }
 
 @font-face {
-  font-family: 'DM Sans';
+  font-family: 'Hanken Grotesk';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/dm-sans-700.woff2') format('woff2');
+  src: url('/fonts/hanken-grotesk-400.woff2') format('woff2');
 }
 
 @font-face {
-  font-family: 'Cormorant Garamond';
+  font-family: 'Hanken Grotesk';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('/fonts/hanken-grotesk-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'PT Serif';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/cormorant-garamond-400.woff2') format('woff2');
+  src: url('/fonts/pt-serif-400.woff2') format('woff2');
 }
 
 @font-face {
-  font-family: 'Cormorant Garamond';
+  font-family: 'PT Serif';
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url('/fonts/cormorant-garamond-700.woff2') format('woff2');
+  src: url('/fonts/pt-serif-700.woff2') format('woff2');
 }
 
 :root {
   color-scheme: light dark;
+  --font-main: 'Hanken Grotesk', Inter, system-ui, sans-serif;
+  --font-accent: 'PT Serif', Georgia, serif;
   --ink: #262219;
   --muted: #665f54;
   --paper: #f3eede;
@@ -50,7 +60,7 @@
 html {
   background: var(--paper);
   color: var(--ink);
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
+  font-family: var(--font-main);
   scroll-behavior: smooth;
 }
 
@@ -193,6 +203,10 @@ img {
   color: white;
 }
 
+.site-header > .button {
+  border-radius: 0;
+}
+
 .button--secondary {
   background: transparent;
   color: var(--ink);
@@ -227,14 +241,14 @@ h1,
 h2,
 h3 {
   margin-top: 0;
-  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-family: var(--font-accent);
   text-wrap: balance;
 }
 
 h1 {
   max-width: 900px;
   margin-bottom: 25px;
-  font-size: clamp(3.2rem, 8vw, 7.1rem);
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 0.88;

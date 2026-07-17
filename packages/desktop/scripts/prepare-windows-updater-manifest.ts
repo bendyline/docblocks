@@ -13,7 +13,7 @@ interface UpdaterFile extends UnknownRecord {
   readonly url: string;
   readonly sha512: string;
   readonly size: number;
-  readonly blockMapSize: number;
+  readonly blockMapSize?: number;
 }
 
 const UNIVERSAL_INSTALLER_PATTERN = /-win\.exe$/iu;
@@ -30,9 +30,10 @@ function requireUpdaterFile(value: unknown, index: number): UpdaterFile {
     typeof value.size !== 'number' ||
     !Number.isSafeInteger(value.size) ||
     value.size < 1 ||
-    typeof value.blockMapSize !== 'number' ||
-    !Number.isSafeInteger(value.blockMapSize) ||
-    value.blockMapSize < 1
+    (value.blockMapSize !== undefined &&
+      (typeof value.blockMapSize !== 'number' ||
+        !Number.isSafeInteger(value.blockMapSize) ||
+        value.blockMapSize < 1))
   ) {
     throw new Error('Windows updater manifest files[' + index + '] is malformed.');
   }
@@ -40,6 +41,19 @@ function requireUpdaterFile(value: unknown, index: number): UpdaterFile {
     throw new Error('Windows updater manifest files[' + index + '] must name one local artifact.');
   }
   return value as UpdaterFile;
+}
+
+async function statRequiredBlockMap(
+  blockMapPath: string,
+): Promise<Awaited<ReturnType<typeof stat>>> {
+  try {
+    return await stat(blockMapPath);
+  } catch (error: unknown) {
+    if (isRecord(error) && error.code === 'ENOENT') {
+      throw new Error('Combined Windows installer blockmap is missing.');
+    }
+    throw error;
+  }
 }
 
 async function sha512Base64(filePath: string): Promise<string> {
@@ -78,7 +92,7 @@ export async function prepareWindowsUpdaterManifest(manifestPath: string): Promi
   const blockMapPath = installerPath + '.blockmap';
   const [installerStat, blockMapStat, actualSha512] = await Promise.all([
     stat(installerPath),
-    stat(blockMapPath),
+    statRequiredBlockMap(blockMapPath),
     sha512Base64(installerPath),
   ]);
 
@@ -91,7 +105,10 @@ export async function prepareWindowsUpdaterManifest(manifestPath: string): Promi
         '.',
     );
   }
-  if (!blockMapStat.isFile() || blockMapStat.size !== universal.blockMapSize) {
+  if (!blockMapStat.isFile() || blockMapStat.size < 1) {
+    throw new Error('Combined Windows installer blockmap must be a non-empty file.');
+  }
+  if (universal.blockMapSize !== undefined && blockMapStat.size !== universal.blockMapSize) {
     throw new Error(
       'Combined Windows installer blockmap size mismatch: manifest=' +
         universal.blockMapSize +
