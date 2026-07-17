@@ -318,9 +318,9 @@ function hasFfmpeg(): boolean {
 
 /**
  * Linked Squisq resolves optional packages from its real checkout, not from
- * this workspace. Point it at the desktop workspace's hoisted ffmpeg-static
- * binary so the canonical integration test exercises the renderer that is
- * actually installed here instead of reporting a false missing dependency.
+ * this workspace. Point it at the root's dev-only ffmpeg-static binary so the
+ * canonical integration test exercises the renderer actually installed here.
+ * Desktop packaging excludes this dependency from its production closure.
  */
 function configureWorkspaceFfmpegOverride(): void {
   if (process.env.SQUISQ_FFMPEG) return;

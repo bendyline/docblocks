@@ -103,7 +103,7 @@ export interface DocBlocksHostExportAPI {
 
 /** System ffmpeg detection. */
 export interface DocBlocksHostFfmpegAPI {
-  /** True if `ffmpeg` is available on PATH (or bundled). */
+  /** True if `ffmpeg` is available on PATH. */
   available(): Promise<boolean>;
   /** Version string from `ffmpeg -version`, or null if unavailable. */
   version(): Promise<string | null>;

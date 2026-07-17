@@ -54,19 +54,20 @@
 }
 
 /* Make the draggable header space discoverable without turning it into a
-   control. This desktop-only pseudo-element lands immediately after the
-   workspace gear and leaves pointer handling to the header's drag region. */
-.db-desktop-root .db-shell-sidebar-header::after {
-  content: '';
-  width: 12px;
+   control. The 12px dotted content and its 8px right padding form one drag
+   region, so the visual breathing room also moves the window. */
+.db-desktop-root .db-window-drag-grip {
+  box-sizing: border-box;
+  width: 20px;
   height: 20px;
-  flex: 0 0 12px;
-  margin-right: 3px;
+  flex: 0 0 20px;
+  padding-right: 8px;
   background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+  background-clip: content-box;
+  background-origin: content-box;
   background-position: center;
   background-size: 4px 4px;
   opacity: 0.72;
-  pointer-events: none;
   app-region: drag;
   -webkit-app-region: drag;
 }

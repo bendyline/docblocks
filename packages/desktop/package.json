@@ -21,6 +21,7 @@
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.e2e.json",
+    "prepare:windows-updater": "tsx scripts/prepare-windows-updater-manifest.ts dist/artifacts/latest.yml",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win",
@@ -40,9 +41,6 @@
     "chokidar": "3.6.0",
     "electron-updater": "6.3.9",
     "electron-window-state": "5.0.3"
-  },
-  "optionalDependencies": {
-    "ffmpeg-static": "5.2.0"
   },
   "devDependencies": {
     "@bendyline/docblocks": "2.1.2",

@@ -1138,7 +1138,8 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 23px;
+  /* Match Squisq's 12px line box + 4px vertical padding + 1px border. */
+  height: 25px;
   padding: 0 12px 0 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
@@ -5067,18 +5068,20 @@ button.db-git-file-row:hover {
   }
 
   /* Make the draggable header space beside the workspace gear discoverable,
-     matching the Electron titlebar without introducing another control. */
-  .db-shell .db-shell-sidebar-header::after {
-    content: '';
-    width: 12px;
+     matching the Electron titlebar without introducing another control. The
+     12px dotted content and its 8px right padding form one drag region. */
+  .db-shell .db-window-drag-grip {
+    box-sizing: border-box;
+    width: 20px;
     height: 20px;
-    flex: 0 0 12px;
-    margin-right: 3px;
+    flex: 0 0 20px;
+    padding-right: 8px;
     background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+    background-clip: content-box;
+    background-origin: content-box;
     background-position: center;
     background-size: 4px 4px;
     opacity: 0.72;
-    pointer-events: none;
     app-region: drag;
     -webkit-app-region: drag;
   }

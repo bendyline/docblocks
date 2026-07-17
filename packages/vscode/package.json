@@ -130,7 +130,8 @@
   "scripts": {
     "build": "tsup && npm run build:webview",
     "build:webview": "vite build --config webview/vite.config.ts",
-    "package:vsix": "npm run build && vsce package --no-dependencies",
+    "package:vsix": "npm run build && npm run check:package-contents && vsce package --no-dependencies",
+    "check:package-contents": "tsx ../../scripts/check-vscode-package-contents.ts",
     "typecheck": "npm run typecheck:extension && npm run typecheck:webview && npm run typecheck:web-e2e && npm run typecheck:desktop-e2e",
     "typecheck:extension": "tsc --noEmit -p tsconfig.json",
     "typecheck:webview": "tsc --noEmit -p webview/tsconfig.json",

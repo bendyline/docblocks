@@ -5,7 +5,7 @@ export default defineConfig([
   {
     entry: { extension: 'src/extension.ts' },
     format: ['cjs'],
-    sourcemap: true,
+    sourcemap: false,
     clean: true,
     external: ['vscode'],
     noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
@@ -16,7 +16,7 @@ export default defineConfig([
   {
     entry: { 'extension.web': 'src/extension.ts' },
     format: ['cjs'],
-    sourcemap: true,
+    sourcemap: false,
     platform: 'browser',
     external: ['vscode'],
     noExternal: ['@bendyline/docblocks', 'jsonc-parser'],

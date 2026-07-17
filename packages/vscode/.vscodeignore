@@ -1,9 +1,12 @@
 **/*.map
+**/*.log
 **/*.tsbuildinfo
 *.vsix
 
 .vscode-test-web/**
 e2e/**
+desktop-e2e/**
+dist/desktop-e2e/**
 test/**
 test-fixtures/**
 playwright-report/**
@@ -12,5 +15,5 @@ test-results/**
 src/**
 webview/**
 
-tsconfig.json
+tsconfig*.json
 tsup.config.ts
