@@ -40,6 +40,7 @@ const stripBrokenSourcemapPragmas = (): Plugin => ({
 
 const STATIC_DIRECTORY_INDEX_ROUTES = new Set([
   '/cli/',
+  '/web/',
   '/desktop/',
   '/docs/',
   '/formats/',
@@ -100,7 +101,8 @@ const docblocksPwa = (): Plugin[] =>
     srcDir: 'src',
     filename: 'sw.ts',
     // Updates are prompt-based: the shell shows an "Update available" status
-    // notice that opens Reload/Later controls. Never auto-reload mid-edit.
+    // notice that opens Reload/Later controls only when clicked. Never
+    // auto-reload mid-edit.
     registerType: 'prompt',
     // The page CSP (`script-src 'self'`) forbids inline scripts, and we need
     // the update callbacks anyway — registration lives in src/pwa.ts.

@@ -12,7 +12,7 @@ export interface UpdateAvailableNoticeProps {
 /**
  * Keeps PWA updates unobtrusive until the user asks to review one. The
  * notice is positioned over the editor status bar by DocBlocksShell CSS;
- * the existing Reload/Later prompt remains a fixed shell-level card.
+ * clicking it opens the nearby Reload/Later card.
  */
 export function UpdateAvailableNotice({
   available,
@@ -20,10 +20,7 @@ export function UpdateAvailableNotice({
   blocked = false,
   statusBarVisible,
 }: UpdateAvailableNoticeProps) {
-  // Updates that affect routing or cached application code must not depend on
-  // a user noticing a tiny status-bar label. Start with the actionable card;
-  // "Later" deliberately collapses it back to the persistent notice.
-  const [promptOpen, setPromptOpen] = useState(true);
+  const [promptOpen, setPromptOpen] = useState(false);
 
   if (!available || !onApplyUpdate) return null;
 
@@ -46,7 +43,11 @@ export function UpdateAvailableNotice({
         Update available
       </button>
       {promptVisible && (
-        <div id={UPDATE_PROMPT_ID} className="db-update-banner" role="alert">
+        <div
+          id={UPDATE_PROMPT_ID}
+          className={`db-update-banner${statusBarVisible ? '' : ' db-update-banner--floating'}`}
+          role="alert"
+        >
           <span>
             A new version of DocBlocks is available. Reload to update the editor and site pages.
           </span>

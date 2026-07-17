@@ -29,18 +29,24 @@ describe('UpdateAvailableNotice', () => {
     await act(async () => root.unmount());
   });
 
-  it('starts with a prominent update prompt and keeps the status notice available', async () => {
+  it('starts with only the unobtrusive status notice', async () => {
     const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
     expect(notice?.textContent).to.equal('Update available');
+    expect(container.querySelector('.db-update-banner')).to.equal(null);
+    expect(notice?.getAttribute('aria-expanded')).to.equal('false');
+  });
+
+  it('opens from the status notice and closes with Later', async () => {
+    const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
+    await act(async () => notice?.click());
+
     const prompt = container.querySelector('.db-update-banner');
     expect(prompt?.textContent).to.contain('A new version of DocBlocks is available.');
     expect(prompt?.textContent).to.contain('site pages');
     expect(prompt?.textContent).to.contain('Reload');
     expect(prompt?.textContent).to.contain('Later');
     expect(notice?.getAttribute('aria-expanded')).to.equal('true');
-  });
 
-  it('closes the prompt with Later while keeping the status notice available', async () => {
     const later = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Later',
     );
@@ -48,6 +54,7 @@ describe('UpdateAvailableNotice', () => {
 
     expect(container.querySelector('.db-update-banner')).to.equal(null);
     expect(container.querySelector('.db-update-status-notice')).not.to.equal(null);
+    expect(notice?.getAttribute('aria-expanded')).to.equal('false');
   });
 
   it('calls the update callback from the Reload action', async () => {
@@ -63,6 +70,9 @@ describe('UpdateAvailableNotice', () => {
         }),
       );
     });
+
+    const notice = container.querySelector<HTMLButtonElement>('.db-update-status-notice');
+    await act(async () => notice?.click());
 
     const reload = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Reload',

@@ -6,6 +6,7 @@ import { SITE_PRECACHE_EXTENSIONS } from '../../../scripts/site-precache-policy.
 const SITE_ROOT = path.join(process.cwd(), 'packages', 'site');
 const PUBLIC_ROOT = path.join(SITE_ROOT, 'public');
 const MARKETING_ROUTES = [
+  'web',
   'desktop',
   'vscode',
   'cli',
@@ -100,6 +101,11 @@ describe('site SEO surface', () => {
       const html = await read(`public/${route}/index.html`);
       expectIndexableDocument(html, `https://docblocks.com/${route}/`);
       expect(html).to.include('href="/"');
+      expect(html).to.include('href="/web/"');
+      expect(html.indexOf('href="/web/"')).to.be.lessThan(html.indexOf('href="/desktop/"'));
+      expect(html, `${route} footer`).to.match(
+        /DocBlocks is free open-source software in beta, by\s*<a href="https:\/\/bendyline\.com">Bendyline<\/a>\./,
+      );
       const title = html.match(/<title>([^<]+)<\/title>/)?.[1];
       expect(typeof title, `${route} title type`).to.equal('string');
       expect(title?.length ?? 0, `${route} title length`).to.be.greaterThan(0);
@@ -193,9 +199,19 @@ describe('site SEO surface', () => {
     expect(html).to.include('https://github.com/bendyline/docblocks/issues');
   });
 
+  it('explains the Web value proposition, sandbox boundaries, and install path', async () => {
+    const html = await read('public/web/index.html');
+
+    expect(html).to.include('No account, installer, or server upload');
+    expect(html).to.include('Browser storage is not a backup');
+    expect(html).to.include('Folder support varies');
+    expect(html).to.include('Install DocBlocks&hellip;');
+    expect(html).to.include('href="/desktop/"');
+  });
   it('ships dark-mode marketing surfaces with real product imagery', async () => {
-    const [css, desktop, vscode, docs, editorImage, vscodeImage] = await Promise.all([
+    const [css, web, desktop, vscode, docs, editorImage, vscodeImage] = await Promise.all([
       read('public/marketing/marketing.css'),
+      read('public/web/index.html'),
       read('public/desktop/index.html'),
       read('public/vscode/index.html'),
       read('public/docs/index.html'),
@@ -205,11 +221,24 @@ describe('site SEO surface', () => {
 
     expect(css).to.include('@media (prefers-color-scheme: dark)');
     expect(css).to.include('color-scheme: light dark');
+    expect(web).to.include('/marketing/docblocks-editor.png');
     expect(desktop).to.include('/marketing/docblocks-editor.png');
     expect(vscode).to.include('/marketing/docblocks-vscode.png');
     expect(docs).to.include('/marketing/docblocks-editor.png');
     expect(editorImage.size).to.be.greaterThan(50_000);
     expect(vscodeImage.size).to.be.greaterThan(50_000);
+  });
+
+  it('uses the Bendyline typography on every shared marketing surface', async () => {
+    const css = await read('public/marketing/marketing.css');
+
+    expect(css).to.include("--font-main: 'Hanken Grotesk'");
+    expect(css).to.include("--font-accent: 'PT Serif'");
+    expect(css).to.include("src: url('/fonts/hanken-grotesk-400.woff2')");
+    expect(css).to.include("src: url('/fonts/pt-serif-700.woff2')");
+    expect(css).to.include('font-family: var(--font-main)');
+    expect(css).to.include('font-family: var(--font-accent)');
+    expect(css).to.include('font-size: clamp(2.5rem, 5vw, 4.5rem)');
   });
 
   it('resolves every manifest entry point through the navigation fallback', async () => {

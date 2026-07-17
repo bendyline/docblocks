@@ -94,7 +94,9 @@ describe('MCP linked template recommendations', () => {
     expect(payload.workflow.some((step) => step.includes('directly to convert_document'))).to.equal(
       true,
     );
-    expect(payload.workflow.some((step) => step.includes('review or conversion'))).to.equal(true);
+    expect(
+      payload.workflow.some((step) => step.includes('stage it once with create_document_bundle')),
+    ).to.equal(true);
     expect(payload.syntax.headingAnnotation).to.equal('# Heading {[content]}');
     expect(payload.syntax.standaloneWarning).to.include('heading-less block');
     expect(payload.templates.find((entry) => entry.id === 'content')).to.include({

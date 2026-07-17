@@ -731,11 +731,21 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               throw new Error(`Format "${normalizedTarget}" is not export-capable`);
             }
           }
-          const [templates, schemaModule, transformModule] = await Promise.all([
+          const [fullTemplates, schemaModule, transformModule] = await Promise.all([
             authoringTemplateCatalog(),
             import('@bendyline/squisq/schemas'),
             import('@bendyline/squisq/transform'),
           ]);
+          const annotationHandling = normalizedTarget
+            ? await targetTemplateAnnotationHandling(normalizedTarget)
+            : null;
+          // When the linked exporter flattens annotations to semantic content,
+          // the visual-template catalog is inert weight for this target: scope
+          // it to the loss-averse defaults instead of shipping 26 full schemas.
+          const templates =
+            annotationHandling === 'ignored'
+              ? fullTemplates.filter((template) => template.safeForContentFirst)
+              : fullTemplates;
           let recommendations: Array<{
             blockId: string;
             title: string | null;
@@ -803,25 +813,27 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             defaultFidelity: authoringDefaultFidelity(normalizedTarget, goal),
             workflow: [
               'Treat supplied facts as a closed evidence set. Use temporal or correlational wording unless causality is supplied. Label calculations, assumptions, hypotheses, recommendations, and illustrative examples. Do not infer end-to-end feasibility from one supplied phase duration.',
-              'Audit claims before conversion: causal links, rhetorical labels such as compounding, engine, healthy, strong, or constraint, superlatives, sole-cause claims, targets, capabilities, owners, dates, channels, and operational details must be supplied or explicitly framed as a hypothesis, recommendation, example, or proposal. Do not connect separate metrics, audiences, segments, or workflows unless the relationship is supplied. Prefer observed, coincided with, intended to, or proposed over drove, addresses, protects, or proves. Do not call choices a sequence or capacity allocation unless order, timing, or resource constraints were supplied.',
-              'Complete every requested element without presenting invented policy as established fact. When a requested policy, playbook, or training guide needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note placed before the first such detail so it governs all of them.',
+              'Audit claims before conversion: causal links, rhetorical labels such as compounding, engine, healthy, strong, or constraint, superlatives, sole-cause claims, targets, capabilities, owners, dates, channels, and operational details must be supplied or explicitly framed. Do not connect separate metrics, audiences, segments, or workflows unless the relationship is supplied. Prefer observed, coincided with, intended to, or proposed over drove, addresses, protects, or proves. Do not call choices a sequence or capacity allocation unless order, timing, or resources were supplied.',
+              'Complete every requested element without presenting invented policy as established fact. When a requested policy, playbook, or training guide needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note placed before the first such detail so it governs all of them. Prefix each unsupplied operational rule with Proposed: on its slide or section.',
               'Generic option traits—control, flexibility, vendor support, freed capacity, switching costs—are capability claims: state one only when supplied or labeled Assumption or Judgment, even in table cells and tradeoffs.',
               'Author complete Squisq-compatible content with heading-bound annotations; ordinary headings default to the loss-averse content template.',
               normalizedTarget === 'pptx'
                 ? 'Match every explicitly requested slide count exactly. Use exactly one level-one Markdown heading (#) per slide and no level-two through level-six headings because every heading becomes a slide by default. Target at most 80 words per slide, and use lists, tables, or bold labels for within-slide structure.'
                 : 'Honor the requested word range and document genre. Prefer connected memo prose for executive decisions and native headings, tables, and checklists for operational documents.',
               normalizedTarget === 'pptx'
-                ? 'Make slide one a supported point-of-view thesis, not a generic title or unsupported flourish. For requested choices, state a concrete opportunity cost grounded in the supplied alternatives and name one clearly labeled proposed accountable role per choice. If a tradeoff requires an unsupplied capacity or outcome assumption, label it Assumption or Potential tradeoff rather than stating it as fact.'
+                ? 'Make slide one a supported point-of-view thesis, not a generic title. For requested choices, state a concrete opportunity cost from supplied alternatives and one proposed accountable role per choice. Label any unsupplied capacity or outcome assumption Assumption or Potential tradeoff.'
                 : 'Tie each decision implication or comparative judgment to a supplied fact or calculation, or label it Judgment. When accountability is requested but not supplied, name one clearly labeled proposed accountable role per decision or workstream.',
-              'Add decision value without inventing causes: interpret supplied comparisons to baselines, goals, targets, and rankings; use transparent calculations; label any new review cadence or measurement procedure as proposed.',
+              'Add decision value without inventing causes: interpret supplied comparisons to baselines, goals, and targets; use transparent calculations; label new review cadences or measurement procedures as proposed.',
               'Before validation and conversion, run a content preflight: count slide sections or document words, verify every requested element, and rewrite or label every unsupported claim.',
-              'Use the complete Markdown as the authoritative source. Pass it—or a bundle source when assets are needed—directly to convert_document, and revise by editing the complete Markdown and converting again.',
-              'Use create_document_bundle only when reusing a large Markdown-and-asset bundle across several review or conversion operations would materially reduce retransmission.',
+              'Use the complete Markdown as the authoritative source. Pass it—or a bundle source when assets are needed—directly to convert_document; revise by editing it and converting again.',
+              'When a draft will feed two or more validate, preview, or convert calls, stage it once with create_document_bundle and pass the returned artifact URI as each source; after edits, stage the revised draft again.',
               'Use inspect_document or validate_document when semantic structure, content retention, accessibility, or target diagnostics need review; repair actionable findings in the authoritative Markdown.',
               'Use preview_document when visual evidence is needed, inspect previewBasis, and repair overflow or layout problems in the authoritative Markdown.',
               normalizedTarget === 'pptx'
                 ? 'For visual polish, replace selected content blocks with compatible recommended templates; use patterns such as definitionCard for a definition, dataTable for a true table, comparisonBar for supported numeric comparisons, and list for concise steps when the returned catalog supports them. Preserve all required content and preview again.'
-                : 'For visual polish, use native headings, tables, and checklists where they improve scanning; keep complete-body content when a visual template would discard detail, then preview again.',
+                : annotationHandling === 'ignored'
+                  ? 'This target flattens template annotations to semantic content, so visual templates have no effect on the exported file: rely on native headings, tables, and checklists for structure and scanning.'
+                  : 'For visual polish, use native headings, tables, and checklists where they improve scanning; keep complete-body content when a visual template would discard detail, then preview again.',
               'Convert to immutable artifacts, inspect conversion reports, and save only final durable outputs.',
             ],
             syntax: {
@@ -1334,7 +1346,7 @@ function compactAuthoringContextText(context: AuthoringContextResult): string {
     `Warning: ${context.syntax.standaloneWarning}`,
     `Templates (${context.templates.length}): ${context.templates.map(({ id }) => id).join(', ')}`,
     `Themes (${context.themes.length}): ${context.themes.map(({ id }) => id).join(', ')}`,
-    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')}`,
+    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')} — transforms re-compose blocks and can change section count; avoid on exact-count briefs.`,
   ];
   if (context.recommendations.length > 0) {
     lines.push(
@@ -1438,6 +1450,25 @@ async function authoringTemplateCatalog() {
         annotationExample: boundWireText(`# Heading {[${id}${required ? ` ${required}` : ''}]}`),
       };
     });
+}
+
+/**
+ * Read the linked registry's declared template-annotation handling for one
+ * export format. Guarded structurally so a linked Squisq that predates the
+ * field degrades to null (no catalog scoping) instead of failing typecheck
+ * or runtime.
+ */
+async function targetTemplateAnnotationHandling(
+  targetFormat: string,
+): Promise<'rendered' | 'preserved' | 'ignored' | null> {
+  const { createCliRegistry } = await import('@bendyline/squisq-cli/api');
+  const definition: unknown = createCliRegistry().get(targetFormat);
+  if (definition && typeof definition === 'object' && 'templateAnnotationHandling' in definition) {
+    const value = (definition as { templateAnnotationHandling?: unknown })
+      .templateAnnotationHandling;
+    if (value === 'rendered' || value === 'preserved' || value === 'ignored') return value;
+  }
+  return null;
 }
 
 function authoringDefaultFidelity(

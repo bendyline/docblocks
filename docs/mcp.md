@@ -230,9 +230,12 @@ A robust agent workflow is:
    audiences, segments, or workflows unless the relationship is supplied. Add
    decision value through supplied baselines, goals, targets, rankings, and transparent
    calculations. Do not call choices a sequence or capacity allocation unless order,
-   timing, or resource constraints were supplied. When a requested policy,
-   playbook, or training guide needs unsupplied operating details, add one explicit
-   proposed operating model scope note that applies to those details.
+   timing, or resource constraints were supplied. Generic option traits—control,
+   flexibility, vendor support, freed capacity, switching costs—are capability claims:
+   state one only when supplied or labeled as an assumption or judgment, even in table
+   cells and tradeoffs. When a requested policy, playbook, or training guide needs
+   unsupplied operating details, add one explicit proposed operating model scope note
+   placed before the first such detail so it governs all of them.
 4. Match explicit slide/page counts and word ranges exactly. For PPTX, use exactly
    one level-one Markdown heading (`#`) per slide and no level-two through level-six
    headings because every heading becomes a slide by default. Target at most 80 words
@@ -245,8 +248,9 @@ A robust agent workflow is:
 5. Keep the complete Markdown as the authoritative source. Pass it directly to
    `convert_document`, or use a bundle source directly when assets are needed. Revise
    by editing the complete Markdown and converting again.
-6. Use `create_document_bundle` only when the same materially large Markdown-and-asset
-   bundle will feed several review or conversion operations.
+6. When one draft will feed two or more validate, preview, or convert calls, stage it
+   once with `create_document_bundle` and pass the returned artifact URI as each call's
+   source instead of re-sending the Markdown; after edits, stage the revised draft again.
 7. Before conversion, count slide sections or document words, verify every requested
    element, and rewrite or label every unsupported claim. Use `inspect_document` or
    `validate_document` when semantic structure, accessibility, retention, or target
@@ -398,6 +402,9 @@ most 500 entries; overflow is aggregated by severity so reports remain bounded.
 extra heading-less block. `template-body-not-rendered` identifies body prose assigned
 to a template whose renderer ignores it, and `rendered-content-omitted` is an error
 when a complete-body template does not materialize all of its body text.
+`malformed-template-annotation` warns when an annotation-like span has unbalanced or
+stray delimiters (for example `{[comparisonBar unit="%"}]}`) that the parser would
+otherwise survive silently.
 
 ## Themes, templates, and layouts
 
@@ -408,7 +415,12 @@ call:
    themes, transforms, exact template inputs, canonical examples, body-retention
    policy, and optional block-level recommendations. Structured-capable clients avoid
    a duplicate pretty-printed catalog; text-only clients can call `describe_template`
-   for focused exact inputs. Use `list_*` and `describe_*` only for follow-up.
+   for focused exact inputs. Use `list_*` and `describe_*` only for follow-up. When
+   the linked registry declares that the target's exporter ignores template
+   annotations (`templateAnnotationHandling: 'ignored'`, e.g. DOCX), the returned
+   template catalog is scoped to the loss-averse content-first defaults and the
+   workflow states that visual templates do not change that target's output;
+   `list_templates` still returns the complete catalog.
 2. Separate supplied facts from calculations, assumptions, hypotheses, and
    recommendations before authoring. Preserve facts exactly and use temporal or
    correlational wording unless causality is supplied. Do not infer end-to-end
@@ -423,8 +435,9 @@ call:
    replacing selected blocks with more visual templates.
 5. Keep the complete Markdown as the authoritative source and pass it directly to
    `convert_document`, or pass a bundle source directly when assets are needed. A
-   temporary local Markdown file is unnecessary. `create_document_bundle` is an
-   optional optimization for reusing materially large Markdown-and-asset bundles.
+   temporary local Markdown file is unnecessary. When one draft will feed two or
+   more validate, preview, or convert calls, stage it once with
+   `create_document_bundle` and reuse the artifact URI as each call's source.
 6. `describe_theme` resolves built-in themes and themes embedded in a source.
 7. `infer_theme_from_file` imports reusable colors, typography, and optionally
    Office layout information.

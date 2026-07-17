@@ -56,6 +56,30 @@ describe('MCP content-first authoring', () => {
     ).to.equal(true);
   });
 
+  it('flags malformed template annotations that the parser silently survives', async () => {
+    const result = await callTool(harness.client, 'validate_document', {
+      source: {
+        kind: 'markdown',
+        name: 'typo.md',
+        markdown:
+          '# Retention {[comparisonBar leftLabel="Q1" leftValue="66" rightLabel="Q2" rightValue="71" unit="%"}]}\n\nBody.\n\n' +
+          '# Unclosed {[content\n\nBody.\n\n' +
+          '# Clean {[factCard fact="Braces in {quotes} are fine"]}\n\nBody.',
+      },
+      targetFormat: 'pptx',
+    });
+
+    expect(result.isError, result.text).to.equal(false);
+    const diagnostics = result.structuredContent?.diagnostics as
+      | Array<{ code?: string; location?: { line?: number } }>
+      | undefined;
+    const malformed = diagnostics?.filter(
+      (diagnostic) => diagnostic.code === 'malformed-template-annotation',
+    );
+    expect(malformed?.length).to.equal(2);
+    expect(malformed?.map((diagnostic) => diagnostic.location?.line)).to.deep.equal([1, 5]);
+  });
+
   it('preserves the MCP content default across the native DBK conversion boundary', async () => {
     const converted = await callTool(harness.client, 'convert_document', {
       source: {

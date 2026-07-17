@@ -123,6 +123,7 @@ describe('MCP content eval harness', () => {
       },
       testCase,
       'D:\\run',
+      'D:\\isolated-agent-cwd',
       'D:\\run\\schema.json',
       'D:\\run\\final.json',
     );
@@ -131,6 +132,10 @@ describe('MCP content eval harness', () => {
     expect(args.join(' ')).to.include('--allow-write');
     expect(args.join(' ')).to.include('bin.js');
     expect(args.slice(-1)).to.deep.equal(['-']);
+    const cdIndex = args.indexOf('--cd');
+    expect(cdIndex).to.be.greaterThan(-1);
+    expect(args[cdIndex + 1]).to.equal('D:\\isolated-agent-cwd');
+    expect(args).to.not.include('D:\\run');
   });
 
   it('gives the LLM judge authoritative deterministic counts', () => {

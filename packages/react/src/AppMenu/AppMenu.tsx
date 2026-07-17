@@ -3,6 +3,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { isElectronHost } from '@bendyline/docblocks/host';
 import type { VersioningPreference } from '../preferences/versioning.js';
 import type { AccentColor, ThemePreference } from '../preferences/theme.js';
 import {
@@ -102,6 +103,9 @@ export function AppMenu({
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
+  const moreInformationUrl = isElectronHost()
+    ? 'https://docblocks.com/desktop/'
+    : 'https://docblocks.com/web/';
   const menuRef = useRef<HTMLDivElement>(null);
   const [storageEstimate, setStorageEstimate] = useState<{
     usage: number;
@@ -322,6 +326,18 @@ export function AppMenu({
             <strong>DocBlocks</strong> is a local-first Markdown document editor. Your files stay
             under your control.
           </p>
+          <aside className="db-about-beta">
+            <strong>Beta Software.</strong> We&apos;re still working through initial hiccups and
+            issues. Please bear with us, make sure you keep backups, and{' '}
+            <a
+              href="https://github.com/bendyline/docblocks/issues/new"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              open issues
+            </a>{' '}
+            where you find them. Thanks!
+          </aside>
           {appVersion && (
             <p className="db-about-version">
               <span>Version</span>
@@ -346,6 +362,10 @@ export function AppMenu({
             .
           </p>
           <p className="db-dialog-links">
+            <a href={moreInformationUrl} target="_blank" rel="noopener noreferrer">
+              More information...
+            </a>
+            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks"
               target="_blank"

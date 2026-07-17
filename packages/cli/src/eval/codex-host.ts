@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import { EVAL_PROMPT_PROFILES } from './cases.js';
@@ -85,17 +86,34 @@ export async function runGeneration(
   await writeFile(path.join(caseDirectory, 'generation-prompt.txt'), prompt);
 
   const resolved = await resolveCodexCommand(options.codexCommand);
+  // The agent works from an isolated empty directory outside the repository so
+  // it cannot discover eval rubrics, harness docs, or repo guidance by walking
+  // up from its working directory. The Codex sandbox stays read-only; durable
+  // output still flows through the MCP write grant on the case directory.
+  const agentCwd = await mkdtemp(path.join(tmpdir(), 'docblocks-eval-agent-'));
   const args = [
     ...resolved.prefixArgs,
-    ...buildCodexGenerationArgs(options, testCase, caseDirectory, outputSchemaPath, finalPath),
+    ...buildCodexGenerationArgs(
+      options,
+      testCase,
+      caseDirectory,
+      agentCwd,
+      outputSchemaPath,
+      finalPath,
+    ),
   ];
-  const capture = await runCapturedProcess({
-    command: resolved.command,
-    args,
-    cwd: options.repoRoot,
-    stdin: prompt,
-    timeoutMs: 15 * 60 * 1_000,
-  });
+  let capture: ProcessCapture;
+  try {
+    capture = await runCapturedProcess({
+      command: resolved.command,
+      args,
+      cwd: agentCwd,
+      stdin: prompt,
+      timeoutMs: 15 * 60 * 1_000,
+    });
+  } finally {
+    await rm(agentCwd, { recursive: true, force: true }).catch(() => undefined);
+  }
   await Promise.all([
     writeFile(path.join(caseDirectory, 'generation-trace.jsonl'), capture.stdout),
     writeFile(path.join(caseDirectory, 'generation-stderr.log'), capture.stderr),
@@ -134,6 +152,10 @@ export async function runLlmJudge(
   await writeFile(path.join(caseDirectory, 'judge-prompt.txt'), prompt);
 
   const resolved = await resolveCodexCommand(options.codexCommand);
+  // The judge gets its own isolated empty working directory: the case directory
+  // already contains generation traces and static-judge results the independent
+  // judge must not read, and repo-relative discovery is equally out of scope.
+  const judgeCwd = await mkdtemp(path.join(tmpdir(), 'docblocks-eval-judge-'));
   const args = [
     ...resolved.prefixArgs,
     'exec',
@@ -147,7 +169,7 @@ export async function runLlmJudge(
     '--color',
     'never',
     '--cd',
-    caseDirectory,
+    judgeCwd,
     '--output-schema',
     outputSchemaPath,
     '--output-last-message',
@@ -155,13 +177,18 @@ export async function runLlmJudge(
     ...(options.model ? ['--model', options.model] : []),
     '-',
   ];
-  const capture = await runCapturedProcess({
-    command: resolved.command,
-    args,
-    cwd: options.repoRoot,
-    stdin: prompt,
-    timeoutMs: 10 * 60 * 1_000,
-  });
+  let capture: ProcessCapture;
+  try {
+    capture = await runCapturedProcess({
+      command: resolved.command,
+      args,
+      cwd: judgeCwd,
+      stdin: prompt,
+      timeoutMs: 10 * 60 * 1_000,
+    });
+  } finally {
+    await rm(judgeCwd, { recursive: true, force: true }).catch(() => undefined);
+  }
   await Promise.all([
     writeFile(path.join(caseDirectory, 'judge-trace.jsonl'), capture.stdout),
     writeFile(path.join(caseDirectory, 'judge-stderr.log'), capture.stderr),
@@ -178,6 +205,7 @@ export function buildCodexGenerationArgs(
   options: CodexHostOptions,
   testCase: EvalCase,
   caseDirectory: string,
+  agentCwd: string,
   outputSchemaPath: string,
   finalPath: string,
 ): readonly string[] {
@@ -203,7 +231,7 @@ export function buildCodexGenerationArgs(
     '--color',
     'never',
     '--cd',
-    caseDirectory,
+    agentCwd,
     '-c',
     `mcp_servers.docblocks.command=${tomlString(process.execPath)}`,
     '-c',
