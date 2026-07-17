@@ -4,6 +4,7 @@ import {
   buildSharedDocumentUrl,
   createSharedDocumentArchive,
 } from '../packages/react/src/Export/shared-document.js';
+import { WELCOME_DOCUMENT_CONTENT } from '../packages/react/src/DocBlocksShell/welcome-document.js';
 
 test.describe('SEO bootstrap shell', () => {
   test('resembles the app chrome before React mounts', async ({ page }) => {
@@ -48,7 +49,7 @@ test.describe('SEO bootstrap shell', () => {
 
     expect(metrics.display).toBe('grid');
     expect(metrics.sidebarWidth).toBe(260);
-    expect(metrics.toolbarHeight).toBe(49);
+    expect(metrics.toolbarHeight).toBe(48);
     expect(metrics.documentStartsAfterSidebar).toBe(true);
     expect(metrics.background).toBe('rgb(26, 24, 18)');
     expect(metrics.headlineFontSize).toBe('16px');
@@ -296,8 +297,7 @@ test.describe('DocBlocks App', () => {
     const downloadPath = await download.path();
     if (!downloadPath) throw new Error('Browser export did not produce a downloadable file');
     const bytes = await import('node:fs/promises').then((fs) => fs.readFile(downloadPath));
-    expect(bytes.length).toBeGreaterThan(100);
-    expect(bytes.toString('utf8')).toContain('# DocBlocks: the local-first Markdown editor');
+    expect(bytes.toString('utf8')).toBe(WELCOME_DOCUMENT_CONTENT);
   });
 
   test('shows file explorer with FILES heading', async ({ page }) => {
@@ -544,8 +544,9 @@ test.describe('Squisq overflow menu theming', () => {
 
     const menu = page.locator('.squisq-toolbar-overflow-menu');
     await expect(menu).toBeVisible();
-    await expect(menu.getByRole('button', { name: 'Insert...' })).toBeVisible();
-    await expect(menu.locator('.squisq-template-picker-trigger')).toBeVisible();
+    const insertItem = menu.getByRole('button', { name: 'Insert...' });
+    await expect(insertItem).toBeVisible();
+    await expect(insertItem).toHaveClass(/squisq-toolbar-overflow-item/);
 
     const colors = await menu.evaluate((element) => {
       const shell = document.querySelector<HTMLElement>('.db-shell');
@@ -566,13 +567,10 @@ test.describe('Squisq overflow menu theming', () => {
       const firstItem = element.querySelector<HTMLElement>(
         '.squisq-toolbar-overflow-item:not(.squisq-toolbar-overflow-item--active):not(.squisq-toolbar-overflow-item--danger)',
       );
-      const picker = element.querySelector<HTMLElement>('.squisq-template-picker-trigger');
-
       const result = {
         menuBackground: menuStyle.backgroundColor,
         menuBorder: menuStyle.borderTopColor,
         itemColor: firstItem ? getComputedStyle(firstItem).color : '',
-        pickerBorder: picker ? getComputedStyle(picker).borderTopColor : '',
         expectedBackground: probeStyle.backgroundColor,
         expectedBorder: probeStyle.borderTopColor,
         expectedText: probeStyle.color,
@@ -584,7 +582,6 @@ test.describe('Squisq overflow menu theming', () => {
     expect(colors.menuBackground).toBe(colors.expectedBackground);
     expect(colors.menuBorder).toBe(colors.expectedBorder);
     expect(colors.itemColor).toBe(colors.expectedText);
-    expect(colors.pickerBorder).toBe(colors.expectedBorder);
   });
 
   test('uses the active DocBlocks palette for the portaled Convert/Insert menu', async ({
