@@ -88,6 +88,85 @@ function requireTargetArchitectures(
   }
 }
 
+function requireInstallerLicenseParagraphs(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const nsis = config.nsis;
+  if (!isRecord(nsis) || typeof nsis.license !== 'string') {
+    failConfigPolicy('electron-builder.yml nsis.license must name the installer license file.');
+  }
+
+  const licensePath = path.resolve(path.dirname(configPath), nsis.license);
+  if (!existsSync(licensePath)) {
+    failConfigPolicy(`NSIS installer license is missing at ${licensePath}.`);
+  }
+
+  const licenseParagraphs = readFileSync(licensePath, 'utf8')
+    .replace(/\r\n/gu, '\n')
+    .trim()
+    .split(/\n[\t ]*\n/gu);
+  if (licenseParagraphs.some((paragraph) => paragraph.includes('\n'))) {
+    failConfigPolicy(
+      'NSIS installer license paragraphs must not contain hard line breaks; the setup control wraps them to its available width.',
+    );
+  }
+
+  process.stdout.write('NSIS installer license: fluid paragraph wrapping OK\n');
+}
+
+requireInstallerLicenseParagraphs();
+
+function requireLinuxIcons(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const linux = config.linux;
+  if (!isRecord(linux) || linux.icon !== 'icons') {
+    failConfigPolicy('electron-builder.yml linux.icon must use the freedesktop icon set.');
+  }
+
+  const directories = config.directories;
+  if (!isRecord(directories) || typeof directories.buildResources !== 'string') {
+    failConfigPolicy('electron-builder.yml directories.buildResources must be configured.');
+  }
+  const linuxIconDirectory = path.resolve(
+    path.dirname(configPath),
+    directories.buildResources,
+    linux.icon,
+  );
+  const requiredSizes = [16, 32, 48, 64, 128, 256, 512];
+  for (const size of requiredSizes) {
+    const iconPath = path.join(linuxIconDirectory, `${size}x${size}.png`);
+    if (!existsSync(iconPath)) {
+      failConfigPolicy(`Linux icon set is missing ${iconPath}.`);
+    }
+    const png = readFileSync(iconPath);
+    const isPng =
+      png.length >= 24 &&
+      png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    if (!isPng || png.readUInt32BE(16) !== size || png.readUInt32BE(20) !== size) {
+      failConfigPolicy(`Linux icon ${iconPath} must be a ${size}x${size} PNG.`);
+    }
+  }
+
+  const includesRuntimeIcon =
+    Array.isArray(linux.extraResources) &&
+    linux.extraResources.some(
+      (resource) =>
+        isRecord(resource) &&
+        resource.from === 'resources/icon.png' &&
+        resource.to === 'resources/icon.png',
+    );
+  if (!includesRuntimeIcon) {
+    failConfigPolicy('electron-builder.yml must copy the Linux runtime icon into resources.');
+  }
+
+  process.stdout.write('electron-builder.yml: Linux launcher + runtime icons OK\n');
+}
+
+requireLinuxIcons();
+
 for (const [platformName, targetName] of [
   ['win', 'nsis'],
   ['mac', 'dmg'],

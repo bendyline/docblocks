@@ -37,7 +37,7 @@ import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
-import { registerTray } from './tray.js';
+import { registerTray, resolveIconPath } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
   attachWindowCloseGuard,
@@ -45,12 +45,18 @@ import {
   registerWindowLifecycleIpc,
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
+import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { hostEnvironmentArguments } from '../shared/host-environment.js';
 
 const DEV_SERVER_URL = 'http://localhost:5221';
 const TITLE_BAR_HEIGHT = 42;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
+
+// Chromium otherwise auto-detects GNOME Keyring/KWallet and can show an unlock
+// prompt at startup. DocBlocks stores no credentials in its browser session;
+// Git and gh retain ownership of their own credentials outside Electron.
+configureLinuxCredentialStorage(process.platform, app.commandLine);
 
 // Development must not share Chromium storage, settings, window state, or the
 // single-instance lock with an installed DocBlocks build. Honour an explicit
@@ -229,6 +235,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   const restoredHeight = Math.min(winState.height, workArea.height);
 
   const preloadPath = path.join(__dirname, '..', 'preload', 'preload.cjs');
+  const linuxIconPath = process.platform === 'linux' ? resolveIconPath() : null;
 
   const win = new BrowserWindow({
     x: savedPositionUsable ? winState.x : undefined,
@@ -239,6 +246,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     minHeight: 480,
     show: false,
     title: 'DocBlocks',
+    ...(linuxIconPath ? { icon: linuxIconPath } : {}),
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -255,6 +263,10 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
       // The preload uses only Electron's sandbox-supported bridge APIs.
       sandbox: true,
       webSecurity: true,
+      // Animated GIF/video export captures frames through render-mode paint
+      // callbacks. Chromium normally suspends those callbacks when the window
+      // is backgrounded or minimized, which can deadlock a long-running export.
+      backgroundThrottling: false,
       // `HostEnvironment` is read synchronously by the renderer, so these
       // cannot be fetched over IPC. The sandboxed preload also cannot reach
       // `app.getVersion()`/`app.isPackaged`, and a packaged app defines

@@ -94,10 +94,13 @@ function loadEditorShell(): Promise<typeof import('./LazyEditorShell.js')> {
   editorShellModulePromise ??= (async () => {
     const workersReady = (globalThis as { docBlocksMonacoWorkersReady?: Promise<unknown> })
       .docBlocksMonacoWorkersReady;
+    const editorReady = import('./LazyEditorShell.js');
     // Worker setup is an enhancement; a host that cannot install language
-    // workers must not make the document editor unavailable.
-    await workersReady?.catch(() => undefined);
-    return import('./LazyEditorShell.js');
+    // workers must not make the document editor unavailable. Start the editor
+    // request at the same time so worker wiring never serializes the large
+    // editor chunk behind its own host-facing bootstrap.
+    const [editorModule] = await Promise.all([editorReady, workersReady?.catch(() => undefined)]);
+    return editorModule;
   })();
   return editorShellModulePromise;
 }
@@ -3521,7 +3524,7 @@ export function DocBlocksShell({
                   &bull;
                 </span>
                 <a href={issueReportUrl} target="_blank" rel="noopener noreferrer">
-                  Issues
+                  Report issue
                 </a>
                 {showBrowserStorageWarning && (
                   <>

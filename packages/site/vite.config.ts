@@ -273,6 +273,37 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       'monaco-editor',
+      // Linked Squisq is served from its dist symlinks and the editor itself
+      // is a dynamic import, so Vite's startup scan cannot discover these
+      // Tiptap entry points. List every entry the editor imports directly to
+      // prevent a first-document dependency re-optimization and page reload.
+      '@tiptap/core',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+      '@tiptap/extension-document',
+      '@tiptap/extension-heading',
+      '@tiptap/extension-table',
+      '@tiptap/extension-table-row',
+      '@tiptap/extension-table-cell',
+      '@tiptap/extension-table-header',
+      '@tiptap/extension-task-list',
+      '@tiptap/extension-task-item',
+      '@tiptap/extension-list-item',
+      '@tiptap/extension-ordered-list',
+      '@tiptap/extension-paragraph',
+      '@tiptap/extension-placeholder',
+      '@tiptap/extension-link',
+      '@tiptap/extension-image',
+      '@tiptap/extension-mention',
+      '@tiptap/extension-text',
+      '@tiptap/suggestion',
+      '@tiptap/pm/state',
+      '@tiptap/pm/view',
+      '@tiptap/pm/keymap',
+      '@tiptap/pm/model',
+      '@tiptap/pm/transform',
+      '@tiptap/pm/commands',
+      '@tiptap/pm/schema-list',
       // CJS transitive deps of squisq packages that need pre-bundling.
       // The squisq packages themselves are excluded (served from source
       // via symlinks for live dev), but their CJS deps must be bundled.

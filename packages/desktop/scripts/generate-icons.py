@@ -4,6 +4,7 @@ Generate Electron app icons from packages/site/public/_res/siteimages/docblk.web
 
 Produces:
   resources/icon.png           — 1024×1024 master
+  resources/icons/*.png        — Linux freedesktop icon-size set
   resources/icon.iconset/…     — intermediate macOS iconset (removed at end)
   resources/icon.icns          — macOS (via iconutil)
   resources/icon.ico           — Windows multi-resolution
@@ -14,6 +15,7 @@ on a transparent square canvas with ~10% margin for better rendering in OS
 chrome (dock, taskbar, alt-tab thumbnails).
 
 Run from the docblocks repo root: python3 packages/desktop/scripts/generate-icons.py
+Pass --linux-only when iconutil is unavailable and only the Linux set is needed.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ SOURCE = REPO_ROOT / "packages/site/public/_res/siteimages/docblk.webp"
 RESOURCES = REPO_ROOT / "packages/desktop/resources"
 INSTALLER = REPO_ROOT / "packages/desktop/installer"
 MARGIN_RATIO = 0.10  # 10% margin around the glyph
+LINUX_ICON_SIZES = (16, 32, 48, 64, 128, 256, 512)
 
 
 def square_canvas(src: Image.Image, size: int) -> Image.Image:
@@ -44,7 +47,7 @@ def square_canvas(src: Image.Image, size: int) -> Image.Image:
     return canvas
 
 
-def main() -> int:
+def main(*, linux_only: bool = False) -> int:
     if not SOURCE.exists():
         print(f"Source not found: {SOURCE}", file=sys.stderr)
         return 1
@@ -58,7 +61,21 @@ def main() -> int:
     square_canvas(src, 1024).save(master_path, "PNG", optimize=True)
     print(f"  wrote {master_path.relative_to(REPO_ROOT)}")
 
-    # 2) macOS .icns via iconutil.
+    # 2) Linux freedesktop icon set. A lone 1024px image is not discoverable
+    # through every hicolor theme index, which leaves some app launchers with a
+    # generic icon. electron-builder installs each of these in the matching
+    # hicolor size directory for both AppImage and native package targets.
+    linux_icons = RESOURCES / "icons"
+    linux_icons.mkdir(parents=True, exist_ok=True)
+    for size in LINUX_ICON_SIZES:
+        linux_icon_path = linux_icons / f"{size}x{size}.png"
+        square_canvas(src, size).save(linux_icon_path, "PNG", optimize=True)
+        print(f"  wrote {linux_icon_path.relative_to(REPO_ROOT)}")
+
+    if linux_only:
+        return 0
+
+    # 3) macOS .icns via iconutil.
     iconset = RESOURCES / "icon.iconset"
     if iconset.exists():
         shutil.rmtree(iconset)
@@ -87,7 +104,7 @@ def main() -> int:
     shutil.rmtree(iconset)
     print(f"  wrote {icns_path.relative_to(REPO_ROOT)}")
 
-    # 3) Windows .ico — multi-resolution container.
+    # 4) Windows .ico — multi-resolution container.
     ico_path = RESOURCES / "icon.ico"
     ico_sizes = [16, 24, 32, 48, 64, 128, 256]
     # Build a 1024 canvas once and let PIL downscale to the requested sizes.
@@ -99,7 +116,7 @@ def main() -> int:
     )
     print(f"  wrote {ico_path.relative_to(REPO_ROOT)}")
 
-    # 4) NSIS welcome sidebar — 164×314 24-bit BMP (no alpha, no transparency).
+    # 5) NSIS welcome sidebar — 164×314 24-bit BMP (no alpha, no transparency).
     # electron-builder forwards this to the NSIS MUI_WELCOMEFINISHPAGE_BITMAP
     # macro. Anything other than exactly 164×314 + 24-bit will be rejected at
     # installer compile time.
@@ -124,7 +141,7 @@ def main() -> int:
     sidebar_canvas.save(sidebar_path, "BMP")
     print(f"  wrote {sidebar_path.relative_to(REPO_ROOT)}")
 
-    # 5) Sanity: show produced file sizes.
+    # 6) Sanity: show produced file sizes.
     for p in (master_path, icns_path, ico_path, sidebar_path):
         size_kb = os.path.getsize(p) / 1024
         print(f"    {p.name:14s} {size_kb:7.1f} KB")
@@ -133,4 +150,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    args = sys.argv[1:]
+    if any(arg != "--linux-only" for arg in args):
+        print("Usage: generate-icons.py [--linux-only]", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(main(linux_only="--linux-only" in args))

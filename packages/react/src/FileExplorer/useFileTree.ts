@@ -244,13 +244,23 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       })();
     };
 
-    const subscription = providerV2.watch(requestRefresh, {
-      onError: (caught) => {
-        if (disposed) return;
-        reportError(caught);
+    const subscription = providerV2.watch(
+      (event) => {
+        // File content changes do not alter the directory tree. In particular,
+        // every Electron autosave emits a local `modified` event; refreshing in
+        // response briefly replaces the explorer with its loading state on
+        // every save and needlessly re-reads every expanded directory.
+        if (event.type === 'modified') return;
         requestRefresh();
       },
-    });
+      {
+        onError: (caught) => {
+          if (disposed) return;
+          reportError(caught);
+          requestRefresh();
+        },
+      },
+    );
     void subscription.ready.catch((caught: unknown) => {
       if (!disposed) reportError(caught);
     });

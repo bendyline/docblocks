@@ -10,11 +10,13 @@ const REQUIRED_AGENTIC_TOOL_NAMES = [
   'get_conversion_report',
   'convert_document',
   'create_document_bundle',
+  'revise_document',
   'save_artifact',
   'inspect_document',
   'validate_document',
   'preview_document',
   'compare_documents',
+  'get_authoring_context',
   'list_templates',
   'describe_template',
   'recommend_templates',
@@ -93,6 +95,10 @@ describe('MCP protocol surface', function () {
       name: 'docblocks',
       version: getPackageVersion(),
     });
+    expect(h.client.getInstructions()).to.include('get_authoring_context');
+    expect(h.client.getInstructions()).to.include('# Heading {[content]}');
+    expect(h.client.getInstructions()).to.include('revise_document');
+    expect(h.client.getInstructions()).to.include('Never invent root ids');
 
     const capabilities = h.client.getServerCapabilities();
     expect(capabilities).to.not.equal(undefined);
@@ -140,6 +146,7 @@ describe('MCP protocol surface', function () {
       'inspect_document',
       'validate_document',
       'compare_documents',
+      'get_authoring_context',
       'list_templates',
       'describe_template',
       'recommend_templates',
@@ -159,6 +166,7 @@ describe('MCP protocol surface', function () {
     for (const name of [
       'convert_document',
       'create_document_bundle',
+      'revise_document',
       'preview_document',
       'apply_inferred_theme',
     ]) {
@@ -196,7 +204,7 @@ describe('MCP protocol surface', function () {
     }
   });
 
-  it('publishes the exact core-owned bounded output contract for all 19 tools', async () => {
+  it('publishes the exact core-owned bounded output contract for all 21 tools', async () => {
     const { tools } = await h.client.listTools();
     expect(DOCBLOCKS_MCP_TOOL_NAMES).to.deep.equal(REQUIRED_AGENTIC_TOOL_NAMES);
     expect(Object.keys(DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS)).to.deep.equal([
@@ -306,6 +314,18 @@ describe('MCP protocol surface', function () {
       (alternative) => schemaConst(alternative, 'ifExists') === 'replace',
     );
     expect(requireSchema(replace, 'replace materialization').required).to.include('expectedSha256');
+
+    const revise = findTool(tools, 'revise_document');
+    expect(revise.inputSchema.required).to.deep.equal(['artifactUri', 'expectedSha256', 'edits']);
+    expect(revise.description).to.include('without resending the full document');
+    const edits = schemaProperty(revise, 'edits');
+    expect(edits.minItems).to.equal(1);
+    expect(edits.maxItems).to.equal(64);
+    const edit = requireSchema(edits.items, 'revision edit');
+    expect(edit.additionalProperties).to.equal(false);
+    expect(edit.required).to.deep.equal(['kind', 'blockId', 'markdown']);
+    expect(schemaConst(edit, 'kind')).to.equal('replace_block');
+    expect(schemaPropertyFromSchema(edit, 'markdown').maxLength).to.equal(1024 * 1024);
   });
 
   it('enumerates resources/templates and keeps discovery aligned with linked Squisq', async () => {
@@ -319,6 +339,13 @@ describe('MCP protocol surface', function () {
     expect(formatsResource).to.include({
       name: 'formats',
       uri: 'docblocks://formats',
+    });
+    const authoringResource = listed.resources.find(
+      (resource) => resource.uri === 'docblocks://authoring-guide',
+    );
+    expect(authoringResource?.annotations).to.deep.equal({
+      audience: ['assistant'],
+      priority: 1,
     });
     for (const resource of listed.resources) {
       expect(resource.description, `${resource.uri} description`).to.be.a('string');
@@ -363,6 +390,29 @@ describe('MCP protocol surface', function () {
     const payload = JSON.parse(content.text) as { formats?: unknown };
     const formats = requireFormatCapabilities(payload.formats);
     expect(formats.map((format) => format.id)).to.have.members([...LINKED_FORMAT_IDS]);
+
+    const authoring = await h.client.readResource({ uri: 'docblocks://authoring-guide' });
+    const authoringContent = authoring.contents[0];
+    if (!authoringContent || !('text' in authoringContent)) {
+      throw new Error('Expected the authoring guide as text JSON');
+    }
+    const authoringPayload = JSON.parse(authoringContent.text) as {
+      version?: unknown;
+      markdownAnnotation?: unknown;
+      standaloneWarning?: unknown;
+      workflow?: unknown[];
+      templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
+    };
+    expect(authoringPayload.version).to.equal(3);
+    expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
+    expect(authoringPayload.standaloneWarning).to.include('heading-less block');
+    expect(
+      authoringPayload.workflow?.some((step) => String(step).includes('revise_document')),
+    ).to.equal(true);
+    expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
+      bodyPolicy: 'complete',
+      annotationExample: '# Heading {[content]}',
+    });
 
     const listedFormatsResult = await h.client.callTool({ name: 'list_formats', arguments: {} });
     expect(listedFormatsResult.isError).to.not.equal(true);
@@ -455,7 +505,8 @@ describe('MCP protocol surface', function () {
       }),
     );
     expect(presentationDefault).to.include('Create a presentation about: Orbital habitats');
-    expect(presentationDefault).to.include('list_transform_styles');
+    expect(presentationDefault).to.include('get_authoring_context');
+    expect(presentationDefault).to.include('# Heading {[content]}');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 
     const presentationOption = promptText(

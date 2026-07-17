@@ -625,6 +625,16 @@ export class MarkdownEditorPanel {
         throw new Error('The linked file is not inside an open workspace.');
       }
       const targetUri = vscode.Uri.joinPath(workspaceFolder.uri, ...target.path.split('/'));
+      if (target.kind === 'external-or-workspace') {
+        try {
+          await vscode.workspace.fs.stat(targetUri);
+        } catch (error: unknown) {
+          if (!isFileNotFoundError(error)) throw error;
+          const opened = await vscode.env.openExternal(vscode.Uri.parse(target.url, true));
+          if (!opened) throw new Error('VS Code did not open the external link.');
+          return;
+        }
+      }
       await vscode.commands.executeCommand('vscode.open', targetUri, { preview: false });
     } catch (error: unknown) {
       await vscode.window.showErrorMessage(
@@ -1047,6 +1057,10 @@ function getDisplayBasename(uri: vscode.Uri): string {
 
 function boundedMessage(message: string): string {
   return message.slice(0, HOST_WIRE_LIMITS.messageCharacters);
+}
+
+function isFileNotFoundError(error: unknown): boolean {
+  return error instanceof vscode.FileSystemError && error.code === 'FileNotFound';
 }
 
 function estimateWireCharacters(message: QueuedWebviewMessage): number {

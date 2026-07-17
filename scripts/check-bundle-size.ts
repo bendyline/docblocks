@@ -167,6 +167,18 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
     messages.push(`${surface.name}: ${chunkBudget.label} ${asset} ${formatBytes(size)}`);
   }
 
+  const workerSetupAsset = await findAssetByPrefix(surface.assetsDir, 'setupMonacoWorkers-');
+  if (!workerSetupAsset) {
+    throw new Error(`${surface.name}: missing deferred Monaco worker setup chunk`);
+  }
+  const workerSetupSource = await readFile(path.join(surface.assetsDir, workerSetupAsset), 'utf8');
+  if (workerSetupSource.includes('LazyEditorShell-')) {
+    throw new Error(
+      `${surface.name}: ${workerSetupAsset} imports the deferred editor; use the narrow Squisq monaco-workers entry`,
+    );
+  }
+  messages.push(`${surface.name}: isolated Monaco worker setup ${workerSetupAsset}`);
+
   if (surface.aggregateBudget) {
     const aggregateSize = await sumFilesWithExtensions(
       surface.aggregateBudget.directory,

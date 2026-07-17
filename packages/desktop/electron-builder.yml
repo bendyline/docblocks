@@ -166,14 +166,22 @@ linux:
       arch:
         - x64
         - arm64
-  icon: resources/icon.png
+  # Use a freedesktop size set rather than only the 1024px master. Several
+  # desktop environments do not index 1024x1024 hicolor entries, which leaves
+  # the installed application with a generic launcher icon.
+  icon: icons
+  # BrowserWindow and the tray need a runtime-readable icon as well. Build
+  # resources are not copied into process.resourcesPath automatically.
+  extraResources:
+    - from: resources/icon.png
+      to: resources/icon.png
   category: Office
   # Required by the .deb (fpm) target. Kept here rather than as an author email
   # in package.json so the package author field stays consistent with the other
   # workspace packages.
   maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
-  description: DocBlocks — a browser-based markdown document editor for the desktop.
+  description: DocBlocks - a Markdown editor, converter, and publisher.
 
 snap:
   grade: stable

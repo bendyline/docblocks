@@ -48,16 +48,22 @@ docblocks mcp --allow-read ./documents --allow-write ./exports
 
 The preferred workflow is:
 
-1. Discover granted root aliases with `list_roots` when files are involved.
-2. Use `inspect_document` and `validate_document` to understand the source and
+1. Call `get_authoring_context` once, and discover granted root aliases with
+   `list_roots` only when local files are involved.
+2. Keep short drafts inline or stage Markdown and assets once with
+   `create_document_bundle` when iterative revision is expected.
+3. Use `inspect_document` and `validate_document` to understand the source and
    its target-format constraints.
-3. Call `convert_document` once for one or more targets. Conversion returns
-   immutable, session-scoped artifact references rather than writing files.
-4. Use `preview_document` for bounded, paginated image checks and inspect its
+4. Repair selected blocks of a staged DBK with `revise_document`, using the
+   inspected block IDs and exact parent artifact SHA-256. Each revision returns
+   a new artifact and leaves the parent unchanged.
+5. Use `preview_document` for bounded, paginated image checks and inspect its
    `previewBasis`: Markdown/DBK are source renders, imported document artifacts
    are reconstructed previews rather than native-application pixels, and MP4
    or GIF sources return one natively extracted first-frame JPEG.
-5. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
+6. Call `convert_document` once for one or more targets. Conversion returns
+   immutable, session-scoped artifact references rather than writing files.
+7. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
    another document operation, or explicitly persist it with `save_artifact`.
 
 The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,

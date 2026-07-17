@@ -159,6 +159,38 @@ describe('useFileTree', () => {
     await provider.v2.dispose();
   });
 
+  it('does not refresh the tree for watched file content changes', async () => {
+    const provider = new MemoryFileSystemProvider('watched', 'Watched');
+    await provider.v2.writeFile(parseWorkspacePath('note.md'), new Uint8Array([1]), {
+      mode: 'create',
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['note.md']);
+
+    const readDirectory = provider.v2.readDirectory.bind(provider.v2);
+    let refreshReads = 0;
+    provider.v2.readDirectory = async (path) => {
+      refreshReads += 1;
+      return readDirectory(path);
+    };
+
+    await act(async () => {
+      await provider.v2.writeFile(parseWorkspacePath('note.md'), new Uint8Array([2]), {
+        mode: 'replace',
+      });
+    });
+    await advanceTime(SETTLE);
+
+    expect(refreshReads).to.equal(0);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['note.md']);
+    await handle.unmount();
+    await provider.v2.dispose();
+  });
+
   it('refreshes the tree when the window regains focus', async () => {
     const provider = makeProvider({ '': [] });
     const handle = await renderHook(

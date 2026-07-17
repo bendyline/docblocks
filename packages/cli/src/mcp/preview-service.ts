@@ -16,7 +16,7 @@ import { getDependencyRuntimeVersion, getPackageVersion } from '../version.js';
 import { ArtifactStore } from './artifact-store.js';
 import type { PreparedDocument } from './document-service.js';
 import { throwIfAborted } from './document-service.js';
-import { boundDiagnostics } from './intelligence.js';
+import { authoringDiagnostics, boundDiagnostics } from './intelligence.js';
 
 const DEFAULT_WIDTH = 1_280;
 const DEFAULT_HEIGHT = 720;
@@ -195,6 +195,7 @@ export async function previewPreparedDocument(
     diagnostics: boundDiagnostics(
       [
         ...prepared.diagnostics,
+        ...(await authoringDiagnostics(prepared, 'render', prepared.sourceFormat, signal)),
         ...(rendered.diagnostics ?? []),
         ...(previewBasis === 'reconstructed-import'
           ? [reconstructedPreviewDiagnostic(prepared.sourceFormat)]

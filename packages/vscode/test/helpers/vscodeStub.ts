@@ -231,6 +231,20 @@ class FakeWorkspaceEdit {
   }
 }
 
+class FakeFileSystemError extends Error {
+  public constructor(
+    message: string,
+    public readonly code: string,
+  ) {
+    super(message);
+    this.name = 'FileSystemError';
+  }
+
+  public static FileNotFound(uri?: FakeUri): FakeFileSystemError {
+    return new FakeFileSystemError(`File not found: ${uri?.toString() ?? ''}`, 'FileNotFound');
+  }
+}
+
 export interface VscodeStub {
   documents: FakeTextDocument[];
   configuration: Map<string, unknown>;
@@ -239,6 +253,7 @@ export interface VscodeStub {
   shownTextDocuments: FakeTextDocument[];
   untitledDocuments: FakeTextDocument[];
   workspaceFolders: { uri: FakeUri; name: string; index: number }[];
+  workspaceFiles: Set<string>;
   externalUris: FakeUri[];
   /** Reply used by showWarningMessage, e.g. a modal conflict choice. */
   warningResponse: string | undefined;
@@ -289,6 +304,7 @@ function resetVscodeStub(stub: VscodeStub): void {
   stub.shownTextDocuments.length = 0;
   stub.untitledDocuments.length = 0;
   stub.workspaceFolders.length = 0;
+  stub.workspaceFiles.clear();
   stub.externalUris.length = 0;
   stub.statusBarItems.length = 0;
   stub.createdWebviewPanels.length = 0;
@@ -305,6 +321,7 @@ function createVscodeStub(): VscodeStub {
     shownTextDocuments: [],
     untitledDocuments: [],
     workspaceFolders: [],
+    workspaceFiles: new Set(),
     externalUris: [],
     warningResponse: undefined,
     onDidChangeTextDocumentEmitter: new FakeEmitter(),
@@ -339,6 +356,8 @@ function createVscodeStub(): VscodeStub {
       public constructor(public readonly id: string) {}
     },
     WorkspaceEdit: FakeWorkspaceEdit,
+    FileSystemError: FakeFileSystemError,
+    FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
     Disposable: class FakeDisposable {
       public constructor(private readonly callOnDispose?: () => void) {}
 
@@ -396,6 +415,16 @@ function createVscodeStub(): VscodeStub {
       },
     },
     workspace: {
+      fs: {
+        stat: (
+          target: FakeUri,
+        ): Promise<{ type: number; ctime: number; mtime: number; size: number }> => {
+          if (stub.workspaceFiles.has(target.path) || findDocument(target)) {
+            return Promise.resolve({ type: 1, ctime: 0, mtime: 0, size: 0 });
+          }
+          return Promise.reject(FakeFileSystemError.FileNotFound(target));
+        },
+      },
       get workspaceFolders(): { uri: FakeUri; name: string; index: number }[] {
         return stub.workspaceFolders;
       },

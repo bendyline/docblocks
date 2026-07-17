@@ -140,10 +140,16 @@ export async function prepareRenderedDocument(
     },
   };
   registry.register(captureDefinition);
+  const canonicalMarkdown =
+    options.autoTemplates === true
+      ? prepared.markdownDoc
+      : (await import('@bendyline/squisq/doc')).docToMarkdown(prepared.doc, {
+          defaultTemplate: 'sectionHeader',
+        });
   const result = await convert(
     {
       kind: 'markdown',
-      markdown: prepared.markdownDoc,
+      markdown: canonicalMarkdown,
       container: prepared.container,
       baseName: prepared.baseName,
     },

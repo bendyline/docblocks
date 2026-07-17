@@ -11,7 +11,7 @@
  * configured to serve them) and, per the renderer Vite config's
  * `worker.format: 'es'`, run as ES module workers.
  */
-import { configureMonacoWorkers } from '@bendyline/squisq-editor-react';
+import { configureMonacoWorkers } from '@bendyline/squisq-editor-react/monaco-workers';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';

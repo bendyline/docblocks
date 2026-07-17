@@ -28,10 +28,15 @@ const vscode = getVscodeApi();
 // Keep the large Squisq implementation out of the startup entry and load it
 // only after that document and its media/export bridges are ready.
 const EditorShell = lazy(async () => {
+  const editorReady = import('./LazyEditorShell.js');
   // Worker setup is an enhancement; a host that cannot install language
-  // workers must not make the document editor unavailable.
-  await import('./setupMonacoWorkers.js').catch(() => undefined);
-  return import('./LazyEditorShell.js');
+  // workers must not make the document editor unavailable. Start both chunks
+  // together so worker wiring cannot serialize the editor implementation.
+  const [editorModule] = await Promise.all([
+    editorReady,
+    import('./setupMonacoWorkers.js').catch(() => undefined),
+  ]);
+  return editorModule;
 });
 const VscodeExportButton = lazy(() =>
   import('./VscodeExportButton.js').then((module) => ({ default: module.VscodeExportButton })),
@@ -291,6 +296,9 @@ export function VscodeEditor() {
             placeholder={editorPlaceholder}
             mediaProvider={mediaBridge.mediaProvider}
             allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
+            allowPresentationWindow={false}
+            allowPresentationFullscreen={false}
+            allowPrint={false}
             showFilesToggle={false}
             statusBarSlotRight={
               autoSavePending ? (

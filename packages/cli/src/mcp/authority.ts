@@ -139,7 +139,12 @@ export class McpFileAuthority {
   /** Resolve a root-relative read without ever treating the alias as new authority. */
   public async authorizeRootRead(rootId: string, workspacePath: string): Promise<string> {
     const root = this.readRoots.find((candidate) => candidate.id === rootId);
-    if (!root) throw new Error('Unknown or unreadable MCP root');
+    if (!root) {
+      throw authorityError(
+        'Unknown or unreadable MCP root',
+        'Call list_roots and copy a returned read-enabled root id. If no roots are listed, use an inline markdown or bundle source, or restart the server with --allow-read.',
+      );
+    }
     const candidate = path.join(root.physical, ...parseRootRelativePath(workspacePath));
     const physical = await realpath(candidate).catch(() => null);
     if (!physical || !isPathInside(root.physical, physical)) {
@@ -151,7 +156,12 @@ export class McpFileAuthority {
   /** Resolve a root-relative write without ever treating the alias as new authority. */
   public async authorizeRootWrite(rootId: string, workspacePath: string): Promise<string> {
     const root = this.writeRoots.find((candidate) => candidate.id === rootId);
-    if (!root) throw new Error('Unknown or unwritable MCP root');
+    if (!root) {
+      throw authorityError(
+        'Unknown or unwritable MCP root',
+        'Call list_roots and copy a returned write-enabled root id. If none is writable, keep the result as a session artifact or restart the server with --allow-write.',
+      );
+    }
     const candidate = path.join(root.physical, ...parseRootRelativePath(workspacePath));
     const authorized = await this.authorizeWrite(candidate);
     const physicalParent = await realpath(path.dirname(authorized));
@@ -616,4 +626,8 @@ async function withMaterializationLock<T>(target: string, operation: () => Promi
   } finally {
     if (materializationTails.get(key) === tail) materializationTails.delete(key);
   }
+}
+
+function authorityError(message: string, hint: string): Error & { code: string; hint: string } {
+  return Object.assign(new Error(message), { code: 'unauthorized-path', hint });
 }

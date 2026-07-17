@@ -50,6 +50,23 @@ describe('MCP structured failures', () => {
     });
   });
 
+  it('tells agents how to recover from an invented root id', async () => {
+    const result = await callTool(harness.client, 'inspect_document', {
+      source: {
+        kind: 'file',
+        rootId: 'workspace',
+        path: 'draft.md',
+        format: 'md',
+      },
+    });
+
+    expect(result.isError).to.equal(true);
+    const parsed = parseMcpErrorResult(result.structuredContent);
+    expect(parsed?.error.code).to.equal('unauthorized-path');
+    expect(parsed?.error.hint).to.include('Call list_roots');
+    expect(parsed?.error.hint).to.include('inline markdown or bundle source');
+  });
+
   it('sanitizes and bounds untrusted error messages and hints before publication', () => {
     const failure = Object.assign(
       new Error(`linked\0message\u007f${'x'.repeat(MCP_WIRE_LIMITS.messageCharacters + 100)}`),

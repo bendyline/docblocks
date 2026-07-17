@@ -142,6 +142,36 @@ export default defineConfig({
   optimizeDeps: {
     include: [
       'monaco-editor',
+      // The lazy linked-Squisq editor sits outside Vite's startup scan. Eagerly
+      // optimize its direct Tiptap entries so opening the first document does
+      // not invalidate the dependency graph and reload the renderer.
+      '@tiptap/core',
+      '@tiptap/react',
+      '@tiptap/starter-kit',
+      '@tiptap/extension-document',
+      '@tiptap/extension-heading',
+      '@tiptap/extension-table',
+      '@tiptap/extension-table-row',
+      '@tiptap/extension-table-cell',
+      '@tiptap/extension-table-header',
+      '@tiptap/extension-task-list',
+      '@tiptap/extension-task-item',
+      '@tiptap/extension-list-item',
+      '@tiptap/extension-ordered-list',
+      '@tiptap/extension-paragraph',
+      '@tiptap/extension-placeholder',
+      '@tiptap/extension-link',
+      '@tiptap/extension-image',
+      '@tiptap/extension-mention',
+      '@tiptap/extension-text',
+      '@tiptap/suggestion',
+      '@tiptap/pm/state',
+      '@tiptap/pm/view',
+      '@tiptap/pm/keymap',
+      '@tiptap/pm/model',
+      '@tiptap/pm/transform',
+      '@tiptap/pm/commands',
+      '@tiptap/pm/schema-list',
       // Mermaid is a lazy dependency of the excluded squisq-react package.
       // Explicit optimization provides ESM interop for its CommonJS deps.
       'mermaid',

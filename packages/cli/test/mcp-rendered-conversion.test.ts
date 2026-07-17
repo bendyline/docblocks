@@ -96,6 +96,12 @@ Revenue increased by eighteen percent while operating costs declined by seven pe
         title: 'Agent-authored title',
       });
 
+      expect(
+        (await import('@bendyline/squisq/doc'))
+          .flattenBlocks(baseline.prepared.doc.blocks)
+          .every((block) => block.template === 'content'),
+      ).to.equal(true);
+
       expect(styled.prepared.doc.themeId).to.equal('render-brand');
       expect(styled.prepared.doc.startBlock?.title).to.equal('Agent-authored title');
       expect(styled.prepared.doc.customThemes?.map(({ id }) => id)).to.include('render-brand');

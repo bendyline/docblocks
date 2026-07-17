@@ -5,14 +5,18 @@ import {
   parseArtifactRef,
   parseComparisonResult,
   parseConversionResult,
+  parseDocumentRevisionResult,
   parseInspectionResult,
   parsePreviewResult,
   parseValidationResult,
 } from './wire.js';
 import type {
+  AuthoringContextResult,
+  AuthoringTemplateSummary,
   DescribeTemplateResult,
   DescribeThemeResult,
   DocBlocksMcpToolName,
+  DocumentRevisionRequest,
   FormatCapabilitySummary,
   FormatDirectionCapability,
   InferThemeResult,
@@ -607,6 +611,47 @@ const boundedPathTextSchema = z
   .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire');
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 
+export const replaceBlockRevisionSchema = z
+  .object({
+    kind: z.literal('replace_block'),
+    blockId: idSchema,
+    markdown: z
+      .string()
+      .min(1)
+      .max(MCP_WIRE_LIMITS.revisionFragmentCharacters)
+      .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire'),
+  })
+  .strict();
+
+export const documentRevisionRequestSchema = z
+  .object({
+    artifactUri: artifactUriSchema,
+    expectedSha256: sha256Schema,
+    edits: z.array(replaceBlockRevisionSchema).min(1).max(MCP_WIRE_LIMITS.revisionEdits),
+  })
+  .strict() satisfies z.ZodType<DocumentRevisionRequest>;
+
+const appliedBlockRevisionSchema = z
+  .object({
+    kind: z.literal('replace_block'),
+    blockId: idSchema,
+    beforeSha256: sha256Schema,
+    afterSha256: sha256Schema,
+  })
+  .strict();
+
+export const documentRevisionResultSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal('revision'),
+    parentArtifact: artifactRefSchema,
+    artifact: artifactRefSchema,
+    edits: z.array(appliedBlockRevisionSchema).min(1).max(MCP_WIRE_LIMITS.revisionEdits),
+    diagnostics: z.array(diagnosticSchema).max(MCP_WIRE_LIMITS.arrayEntries),
+  })
+  .strict()
+  .superRefine((value, context) => addExactWireIssue(parseDocumentRevisionResult(value), context));
+
 export const convertDocumentResultSchema = z
   .object({ results: z.array(conversionResultSchema).min(1).max(12) })
   .strict();
@@ -707,6 +752,28 @@ export const describeTemplateResultSchema = z
   })
   .strict() satisfies z.ZodType<DescribeTemplateResult>;
 
+export const authoringTemplateSummarySchema = templateSummarySchema
+  .extend({
+    inputs: z.array(templateInputSummarySchema).max(MCP_WIRE_LIMITS.arrayEntries),
+    role: z.enum([
+      'opener',
+      'divider',
+      'content',
+      'highlight',
+      'quote',
+      'comparison',
+      'event',
+      'media',
+      'data',
+      'spatial',
+    ]),
+    bodyPolicy: z.enum(['complete', 'derived', 'ignored', 'structured']),
+    safeForContentFirst: z.boolean(),
+    placement: z.literal('heading'),
+    annotationExample: boundedString,
+  })
+  .strict() satisfies z.ZodType<AuthoringTemplateSummary>;
+
 export const templateContentProfileSchema = z
   .object({
     hasImage: z.boolean(),
@@ -740,6 +807,32 @@ export const recommendTemplatesResultSchema = z
     truncated: z.boolean(),
   })
   .strict() satisfies z.ZodType<RecommendTemplatesResult>;
+
+export const authoringContextResultSchema = z
+  .object({
+    goal: z.enum(['content-first', 'visual-polish']),
+    targetFormat: formatSchema.nullable(),
+    defaultTemplateId: idSchema,
+    defaultFidelity: z
+      .enum(['semantic', 'editable-native', 'rendered-fidelity', 'hybrid'])
+      .nullable(),
+    workflow: z.array(boundedString).max(32),
+    syntax: z
+      .object({
+        headingAnnotation: boundedString,
+        standaloneAnnotation: boundedString,
+        standaloneWarning: boundedString,
+      })
+      .strict(),
+    formats: z.array(formatCapabilitySummarySchema).max(64),
+    templates: z.array(authoringTemplateSummarySchema).max(MCP_WIRE_LIMITS.arrayEntries),
+    themes: z.array(themeCatalogEntrySchema).max(MCP_WIRE_LIMITS.arrayEntries),
+    transformStyles: z.array(transformStyleSummarySchema).max(MCP_WIRE_LIMITS.arrayEntries),
+    recommendations: z.array(templateRecommendationSchema).max(100),
+    totalBlocks: nonNegativeSafeIntegerSchema.nullable(),
+    truncated: z.boolean(),
+  })
+  .strict() satisfies z.ZodType<AuthoringContextResult>;
 
 export const themeDescriptionSchema = z
   .object({
@@ -817,11 +910,13 @@ export const DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS: Readonly<
   get_conversion_report: conversionResultSchema,
   convert_document: convertDocumentResultSchema,
   create_document_bundle: conversionResultSchema,
+  revise_document: documentRevisionResultSchema,
   save_artifact: saveArtifactResultSchema,
   inspect_document: inspectionResultSchema,
   validate_document: validationResultSchema,
   preview_document: previewResultSchema,
   compare_documents: comparisonResultSchema,
+  get_authoring_context: authoringContextResultSchema,
   list_templates: listTemplatesResultSchema,
   describe_template: describeTemplateResultSchema,
   recommend_templates: recommendTemplatesResultSchema,
@@ -845,11 +940,13 @@ export const DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS: Readonly<
   create_document_bundle: toolOutputSchema(
     DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.create_document_bundle,
   ),
+  revise_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.revise_document),
   save_artifact: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.save_artifact),
   inspect_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.inspect_document),
   validate_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.validate_document),
   preview_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.preview_document),
   compare_documents: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.compare_documents),
+  get_authoring_context: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.get_authoring_context),
   list_templates: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.list_templates),
   describe_template: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.describe_template),
   recommend_templates: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.recommend_templates),

@@ -13,7 +13,7 @@ import type { MenuCommand } from '@bendyline/docblocks/host';
 
 let tray: Tray | null = null;
 
-function resolveIconPath(): string | null {
+export function resolveIconPath(): string | null {
   const candidates = [
     path.join(__dirname, '..', '..', 'resources', 'icon.png'),
     path.join(process.resourcesPath ?? '', 'resources', 'icon.png'),

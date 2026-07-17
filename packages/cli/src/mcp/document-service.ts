@@ -93,7 +93,12 @@ export class DocumentService {
     const { parseMarkdown } = await import('@bendyline/squisq/markdown');
     const { markdownToDoc } = await import('@bendyline/squisq/doc');
     const markdownDoc = parseMarkdown(markdown);
-    const doc = markdownToDoc(markdownDoc);
+    // MCP drafts start loss-averse: ordinary headings render their complete
+    // bodies until an author deliberately chooses a more visual template.
+    const doc = markdownToDoc(markdownDoc, {
+      defaultTemplate: 'content',
+      autoTemplates: false,
+    });
     const assets = await this.assetSummaries(container, signal);
     throwIfAborted(signal);
     return {
