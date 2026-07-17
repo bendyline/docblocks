@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.2.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.1.2...@bendyline/docblocks-react@2.2.0) (2026-07-17)
+
+### Features
+
+* Evolve MCP, update setup config ([#14](https://github.com/bendyline/docblocks/issues/14)) ([5bff7ff](https://github.com/bendyline/docblocks/commit/5bff7ff94c3dc95fd8a359b32cc67a21372c8211))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.2.0
+
 ## @bendyline/docblocks-react [2.1.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.1.1...@bendyline/docblocks-react@2.1.2) (2026-07-17)
 
 ### Bug Fixes
