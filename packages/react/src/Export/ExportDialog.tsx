@@ -26,8 +26,6 @@ export interface ExportDialogProps {
   onExport: (options: ExportOptions) => void;
   /** Called whenever the currently selected options change. */
   onOptionsChange?: (options: ExportOptions) => void;
-  /** Opens the richer animated-GIF export flow when the host supports ffmpeg.wasm. */
-  onAnimatedGifExport?: () => void;
   /** Called when the dialog is dismissed. */
   onClose: () => void;
 }
@@ -127,7 +125,6 @@ export function ExportDialog({
   destination,
   onExport,
   onOptionsChange,
-  onAnimatedGifExport,
   onClose,
 }: ExportDialogProps) {
   const [format, setFormat] = useState<ExportFormat>(initial.format);
@@ -453,25 +450,8 @@ export function ExportDialog({
         </div>
       )}
 
-      {onAnimatedGifExport && (
-        <div className="db-export-field">
-          <span className="db-export-label">Animated media</span>
-          <button
-            type="button"
-            className="db-export-btn db-export-btn--secondary"
-            onClick={onAnimatedGifExport}
-          >
-            Animated GIF...
-          </button>
-          <span className="db-export-hint">
-            Opens timing, orientation, captions, looping, and color controls.
-          </span>
-        </div>
-      )}
-
       <p className="db-export-more-formats">
-        Need spreadsheets, {onAnimatedGifExport ? '' : 'animated media, '}portable bundles, or
-        automation?{' '}
+        Need spreadsheets, animated media, portable bundles, or automation?{' '}
         <a href="https://docblocks.com/cli/" target="_blank" rel="noopener noreferrer">
           More formats with the DocBlocks CLI
         </a>

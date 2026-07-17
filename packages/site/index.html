@@ -480,12 +480,11 @@
 
       .db-seo-bootstrap-document {
         box-sizing: border-box;
-        width: min(900px, calc(100% - 64px));
-        margin: 0 auto;
-        padding: clamp(42px, 7vh, 76px) 0 72px;
+        width: 100%;
+        margin: 0;
+        padding: 16px 24px 72px;
         color: var(--db-boot-text);
       }
-
       .db-seo-bootstrap-document > * {
         margin-top: 0;
       }
@@ -528,6 +527,20 @@
         font-weight: 600;
       }
 
+      .db-seo-bootstrap-loading-note {
+        max-width: 720px;
+        margin: 18px 0 0;
+        color: var(--db-boot-text-muted);
+        font-family: 'DM Sans', system-ui, sans-serif;
+        font-size: 0.76rem;
+        line-height: 1.5;
+      }
+
+      .db-seo-bootstrap-loading-note a {
+        color: inherit;
+        text-underline-offset: 3px;
+      }
+
       @media (prefers-color-scheme: dark) {
         html:not([data-db-theme='light']) {
           --db-boot-bg: #1a1812;
@@ -554,24 +567,27 @@
         }
 
         .db-seo-bootstrap-toolbar {
-          padding-inline: 12px;
+          padding-right: 8px;
         }
 
         .db-seo-bootstrap-tabs {
-          gap: 12px;
+          padding-inline: 6px;
         }
 
-        .db-seo-bootstrap-tools {
-          gap: 10px;
+        .db-seo-bootstrap-tab {
+          padding-inline: 9px;
         }
 
-        .db-seo-bootstrap-tools span:nth-child(-n + 2) {
+        .db-seo-bootstrap-tools .db-seo-bootstrap-tool:nth-child(n + 4) {
           display: none;
         }
 
         .db-seo-bootstrap-document {
-          width: calc(100% - 36px);
-          padding-top: 34px;
+          padding: 16px 18px 56px;
+        }
+
+        .db-seo-bootstrap-export-label {
+          display: none;
         }
       }
     </style>
@@ -603,13 +619,35 @@
         <section class="db-seo-bootstrap-editor" aria-label="DocBlocks editor">
           <div class="db-seo-bootstrap-toolbar" aria-hidden="true">
             <div class="db-seo-bootstrap-tabs">
-              <span class="db-seo-bootstrap-tab-active">Write</span>
-              <span>Source</span>
-              <span>Slideshow⌄</span>
+              <span class="db-seo-bootstrap-tab db-seo-bootstrap-tab-active">Write</span>
+              <span class="db-seo-bootstrap-tab">Source</span>
+              <span class="db-seo-bootstrap-tab">Slideshow&#8964;</span>
             </div>
             <div class="db-seo-bootstrap-tools">
-              <span>B&nbsp;&nbsp;I&nbsp;&nbsp;H1</span><span>☷</span><span>◉</span><span>↥</span>
+              <span class="db-seo-bootstrap-tool"><strong>B</strong></span>
+              <span class="db-seo-bootstrap-tool"><em>I</em></span>
+              <span class="db-seo-bootstrap-tool">H1</span>
+              <span class="db-seo-bootstrap-tool">&#9776;</span>
+              <span class="db-seo-bootstrap-tool">&#9673;</span>
             </div>
+            <span class="db-seo-bootstrap-toolbar-spacer"></span>
+            <span class="db-seo-bootstrap-export">
+              <svg
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M8 10.5V1.75" />
+                <path d="M5.25 4.5 8 1.75l2.75 2.75" />
+                <path
+                  d="M4.25 6.75h-1a1.5 1.5 0 0 0-1.5 1.5v4.5a1.5 1.5 0 0 0 1.5 1.5h9.5a1.5 1.5 0 0 0 1.5-1.5v-4.5a1.5 1.5 0 0 0-1.5-1.5h-1"
+                />
+              </svg>
+              <span class="db-seo-bootstrap-export-label">Export</span>
+            </span>
           </div>
           <div class="db-seo-bootstrap-document-scroll">
             <article class="db-seo-bootstrap-document">
@@ -628,6 +666,11 @@
                 <a href="/formats/">Formats</a>
                 <a href="/docs/">Documentation</a>
               </nav>
+              <p class="db-seo-bootstrap-loading-note">
+                (The site is fully loading. If you see this content for a long time or stuck
+                regularly, please
+                <a href="https://github.com/bendyline/docblocks/issues/new">open an issue</a>.)
+              </p>
             </article>
           </div>
         </section>

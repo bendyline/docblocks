@@ -356,11 +356,6 @@ export function ExportToolbarControls({
     [markdownSource, videoModules],
   );
 
-  const handleOpenAnimatedGifFromDialog = useCallback(() => {
-    setDialogOpen(false);
-    void handleOpenVideoModal('gif');
-  }, [handleOpenVideoModal]);
-
   const handleCloseVideoModal = useCallback(() => {
     setVideoModalOpen(false);
     setVideoDoc(null);
@@ -590,9 +585,6 @@ export function ExportToolbarControls({
             }
             onExport={handleExport}
             onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
-            onAnimatedGifExport={
-              showAnimatedGifExport ? handleOpenAnimatedGifFromDialog : undefined
-            }
             onClose={handleCloseDialog}
           />
         </Suspense>

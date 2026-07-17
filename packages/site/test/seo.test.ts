@@ -78,6 +78,13 @@ describe('site SEO surface', () => {
     expect(html).to.include('class="db-seo-bootstrap-document"');
     expect(html).to.include('<script src="/bootstrap-theme.js"></script>');
     expect(html).to.match(/\.db-seo-bootstrap h1\s*\{[^}]*font-size:\s*1rem;/s);
+    expect(html).to.match(
+      /\.db-seo-bootstrap-document\s*\{[^}]*width:\s*100%;[^}]*padding:\s*16px 24px 72px;/s,
+    );
+    expect(html).to.include('class="db-seo-bootstrap-toolbar-spacer"');
+    expect(html).to.include('<path d="M8 10.5V1.75" />');
+    expect(html).to.include('The site is fully loading.');
+    expect(html).to.include('href="https://github.com/bendyline/docblocks/issues/new"');
 
     const jsonLdText = html.match(
       /<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/,
@@ -90,8 +97,13 @@ describe('site SEO surface', () => {
     const bootstrap = await read('public/bootstrap-theme.js');
     expect(bootstrap).to.include("globalThis.localStorage.getItem('docblocks:themePreference')");
     expect(bootstrap).to.include("preference === 'light' || preference === 'dark'");
+    expect(bootstrap).to.include("globalThis.localStorage.getItem('docblocks:accentColor')");
+    expect(bootstrap).to.include("'brown', 'green', 'blue', 'purple', 'maroon', 'orange', 'gray'");
     expect(bootstrap).to.include(
-      'globalThis.document.documentElement.dataset.dbTheme = preference',
+      'globalThis.document.documentElement.dataset.dbAccent = accentColor',
+    );
+    expect(bootstrap).to.include(
+      'globalThis.document.documentElement.dataset.dbTheme = resolvedTheme',
     );
   });
 

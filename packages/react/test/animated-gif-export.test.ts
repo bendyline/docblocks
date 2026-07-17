@@ -73,26 +73,20 @@ describe('Animated GIF export availability', () => {
     expect(buttonByText(container, 'Export animated gif...')).not.to.equal(undefined);
   });
 
-  it('surfaces the richer GIF flow from the built-in export dialog', async () => {
-    let opened = 0;
+  it('keeps animated GIF controls out of the document export dialog', async () => {
     await act(async () => {
       root.render(
         createElement(ExportDialog, {
           initial: DEFAULT_OPTIONS,
           exporting: false,
           onExport: () => undefined,
-          onAnimatedGifExport: () => {
-            opened += 1;
-          },
           onClose: () => undefined,
         }),
       );
     });
 
-    const animatedGif = buttonByText(container, 'Animated GIF...');
-    expect(animatedGif).not.to.equal(undefined);
-    await act(async () => animatedGif?.click());
-    expect(opened).to.equal(1);
+    expect(buttonByText(container, 'Animated GIF...')).to.equal(undefined);
+    expect(container.textContent).not.to.contain('Animated media');
   });
 
   it('opens the video modal with Animated GIF preselected', async () => {
