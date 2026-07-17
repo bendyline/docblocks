@@ -71,8 +71,21 @@ describe('desktop git exec', function () {
     expect(Date.now() - started).to.be.lessThan(10_000);
   });
 
-  it('aborts when stdout exceeds maxStdoutBytes', async () => {
-    const res = await runGit({ bin: gitBin, cwd: tmp, args: ['help', '-a'], maxStdoutBytes: 64 });
+  it('aborts when stdout exceeds maxStdoutBytes', async function () {
+    this.timeout(10_000);
+
+    const res = await runGit({
+      // Use a deterministic direct child instead of `git help -a`, whose
+      // command discovery can be slow and environment-dependent on Windows.
+      bin: process.execPath,
+      cwd: tmp,
+      args: [
+        '-e',
+        'process.stdout.write(Buffer.alloc(1_024)); setInterval(() => undefined, 1_000)',
+      ],
+      timeoutMs: 2_000,
+      maxStdoutBytes: 64,
+    });
 
     expect(res.stderr).to.contain('git output exceeded the size limit');
     expect(res.timedOut).to.equal(false);
