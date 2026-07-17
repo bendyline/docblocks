@@ -50,6 +50,6 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
   await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
   expect(fs.readFileSync(welcome, 'utf8')).toContain(
-    '# DocBlocks: the local-first Markdown editor',
+    '# DocBlocks: one Markdown file, many finished forms',
   );
 });

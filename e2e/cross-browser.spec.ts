@@ -6,7 +6,7 @@ test('boots the editor and exports Markdown', async ({ page }) => {
   await openInitializedSite(page);
   await expect(page.locator('.db-shell')).toBeVisible();
   await expect(page.locator('main.db-shell-editor-area')).toContainText(
-    'DocBlocks: the local-first Markdown editor',
+    'DocBlocks: one Markdown file, many finished forms',
   );
 
   await page.getByRole('button', { name: 'Export and share' }).click();
@@ -21,6 +21,6 @@ test('boots the editor and exports Markdown', async ({ page }) => {
 
   expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');
   expect(await readFile(downloadPath, 'utf8')).toContain(
-    '# DocBlocks: the local-first Markdown editor',
+    '# DocBlocks: one Markdown file, many finished forms',
   );
 });
