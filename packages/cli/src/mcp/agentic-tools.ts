@@ -1,9 +1,11 @@
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import type { TemplateAuthoringMetadata } from '@bendyline/squisq/doc';
 import {
   MCP_WIRE_LIMITS,
   parseComparisonResult,
   parseConversionResult,
+  parseDocumentRevisionResult,
   parseDocumentSource,
   parseInspectionResult,
   parseMaterializationOptions,
@@ -32,6 +34,7 @@ import {
   bundleDocumentSourceSchema,
   DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS,
   documentSourceSchema,
+  documentRevisionRequestSchema,
   formatInputSchema,
   materializationOptionsSchema,
 } from '@bendyline/docblocks/mcp/zod';
@@ -42,6 +45,7 @@ import {
 } from './preview-service.js';
 import { errorResult, successResult } from './error-result.js';
 import { reportMcpProgress } from './progress.js';
+import { reviseDocumentArtifact } from './revision-service.js';
 import {
   MCP_OUTPUT_PATTERNS,
   boundNullableWireText,
@@ -322,7 +326,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'create_document_bundle',
     {
       description:
-        'Package Markdown and authority-scoped assets into an immutable DBK artifact with asset metadata.',
+        'Stage authored Markdown and authority-scoped assets as an immutable DBK artifact. Use the returned artifact URI directly with validate_document, preview_document, and convert_document; no local Markdown file or invented root id is required.',
       inputSchema: z.object({ source: bundleDocumentSourceSchema }).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.create_document_bundle,
       annotations: ARTIFACT_CREATING,
@@ -351,6 +355,40 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'convert', null, extra.signal);
+      }
+    },
+  );
+
+  server.registerTool(
+    'revise_document',
+    {
+      description:
+        'Replace selected heading blocks in an immutable DBK artifact without resending the full document. Requires the parent artifact SHA-256, preserves block ids and child blocks, and returns a new DBK artifact without mutating the parent.',
+      inputSchema: documentRevisionRequestSchema,
+      outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.revise_document,
+      annotations: ARTIFACT_CREATING,
+    },
+    async (request, extra) => {
+      try {
+        return await context.runOperation(extra.signal, async (operationSignal) => {
+          const documents = new DocumentService(await context.authority, context.artifacts);
+          const result = await reviseDocumentArtifact(
+            context.artifacts,
+            documents,
+            request,
+            operationSignal,
+          );
+          requireWire(parseDocumentRevisionResult(result), 'document revision');
+          return {
+            content: [
+              { type: 'text' as const, text: JSON.stringify(result) },
+              artifactLink(result.artifact),
+            ],
+            structuredContent: asStructuredContent(successResult(result)),
+          };
+        });
+      } catch (caught: unknown) {
+        return errorResult(caught, 'transform', 'dbk', extra.signal);
       }
     },
   );
@@ -633,47 +671,30 @@ function registerAuthoringGuideResource(server: McpServer): void {
       description:
         'Compact linked-Squisq authoring vocabulary, artifact workflow, fidelity modes, templates, themes, and transform styles.',
       mimeType: 'application/json',
+      annotations: { audience: ['assistant'], priority: 1 },
     },
     async () => {
-      const [docModule, schemaModule, transformModule] = await Promise.all([
-        import('@bendyline/squisq/doc'),
+      const [templates, schemaModule, transformModule] = await Promise.all([
+        authoringTemplateCatalog(),
         import('@bendyline/squisq/schemas'),
         import('@bendyline/squisq/transform'),
       ]);
-      const templates = docModule
-        .getAvailableTemplates()
-        .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-        .map((id) => ({
-          id: requireWireIdentifier(id, 'template id'),
-          label: boundWireText(
-            docModule.TEMPLATE_METADATA[id]?.label ?? id,
-            MCP_WIRE_LIMITS.labelCharacters,
-            id,
-          ),
-          description: boundWireText(docModule.TEMPLATE_METADATA[id]?.description ?? ''),
-          inputs: (docModule.TEMPLATE_INPUT_DESCRIPTORS[id] ?? [])
-            .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-            .map((input) => ({
-              key: requireWireIdentifier(input.key, 'template input key'),
-              required: input.required ?? false,
-              values: boundWireTextArray(
-                input.values ?? [],
-                MCP_WIRE_LIMITS.arrayEntries,
-                MCP_WIRE_LIMITS.labelCharacters,
-              ),
-              hint: boundNullableWireText(input.valueHint, MCP_WIRE_LIMITS.labelCharacters),
-            })),
-        }));
       const guide = {
-        version: 1,
+        version: 3,
         workflow: [
-          'list_roots and select an authority-scoped source',
-          'inspect_document and validate_document',
-          'convert_document to one or more immutable artifacts',
+          'author complete Markdown with annotations bound to headings; ordinary headings default to content',
+          'keep Markdown inline or stage Markdown plus assets with create_document_bundle',
+          'inspect_document and validate_document before visual optimization',
+          'for a staged DBK, use revise_document with inspected block ids and the exact parent SHA-256 for targeted repairs',
           'preview_document and inspect previewBasis before treating images as source renders, reconstructed imports, or native extraction',
+          'replace selected content blocks with compatible visual templates and preview again',
+          'convert_document to one or more immutable artifacts',
           'save_artifact only when a durable file is required',
         ],
-        markdownAnnotation: '{[templateId key="value"]}',
+        markdownAnnotation: '# Heading {[templateId key="value"]}',
+        standaloneAnnotation: '{[templateId key="value"]}',
+        standaloneWarning:
+          'A standalone annotation creates an additional heading-less block. Bind the annotation to a heading unless that extra block is deliberate.',
         fidelity: {
           semantic: 'Prioritize meaning and portability.',
           'editable-native': 'Produce editable native structures with target-specific diagnostics.',
@@ -716,6 +737,149 @@ function registerAuthoringGuideResource(server: McpServer): void {
 
 function registerTemplateTools(server: McpServer, context: AgenticToolContext): void {
   server.registerTool(
+    'get_authoring_context',
+    {
+      description:
+        'Get the complete linked-Squisq authoring vocabulary, canonical heading syntax, content-retention behavior, workflow, and optional block recommendations in one call.',
+      inputSchema: z
+        .object({
+          targetFormat: formatInputSchema.optional(),
+          goal: z.enum(['content-first', 'visual-polish']).optional(),
+          source: documentSourceSchema.optional(),
+          maxBlocks: z.number().int().min(1).max(100).optional(),
+        })
+        .strict(),
+      outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.get_authoring_context,
+      annotations: READ_ONLY,
+    },
+    async ({ targetFormat, goal: requestedGoal, source, maxBlocks }, extra) => {
+      try {
+        return await context.runOperation(extra.signal, async (operationSignal) => {
+          const goal = requestedGoal ?? 'content-first';
+          const normalizedTarget = targetFormat?.toLowerCase() ?? null;
+          const formats = boundedFormatCapabilities();
+          if (normalizedTarget) {
+            const target = formats.find((format) => format.id === normalizedTarget);
+            if (!target) throw new Error(`Unknown target format "${normalizedTarget}"`);
+            if (!target.export.supported) {
+              throw new Error(`Format "${normalizedTarget}" is not export-capable`);
+            }
+          }
+          const [templates, schemaModule, transformModule] = await Promise.all([
+            authoringTemplateCatalog(),
+            import('@bendyline/squisq/schemas'),
+            import('@bendyline/squisq/transform'),
+          ]);
+          let recommendations: Array<{
+            blockId: string;
+            title: string | null;
+            profile: {
+              hasImage: boolean;
+              imageCount: number;
+              hasVideo: boolean;
+              hasBlockquote: boolean;
+              hasList: boolean;
+              hasTable: boolean;
+              hasDate: boolean;
+              hasNumberHighlight: boolean;
+              wordCount: number;
+              hasAsciiDiagram: boolean;
+              hasTimeline: boolean;
+              hasTree: boolean;
+            };
+            recommendedTemplateIds: string[];
+          }> = [];
+          let totalBlocks: number | null = null;
+          let truncated = false;
+          if (source) {
+            const documents = new DocumentService(await context.authority, context.artifacts);
+            const prepared = await documents.prepare(
+              requireDocumentSource(source),
+              operationSignal,
+            );
+            const [{ flattenBlocks }, recommendModule] = await Promise.all([
+              import('@bendyline/squisq/doc'),
+              import('@bendyline/squisq/recommend'),
+            ]);
+            const blocks = flattenBlocks(prepared.doc.blocks);
+            const limit = maxBlocks ?? 50;
+            recommendations = blocks.slice(0, limit).map((block) => {
+              const profile = recommendModule.profileBlockContents(block.contents ?? []);
+              const visual = recommendModule.recommendTemplatesForBlock(
+                profile,
+                templates.map((template) => template.id),
+              ).recommended;
+              const recommendedTemplateIds =
+                goal === 'content-first'
+                  ? ['content', ...visual.filter((id) => id !== 'content')]
+                  : visual;
+              return {
+                blockId: toWireIdentifier(block.id, 'block'),
+                title: boundNullableWireText(block.title, MCP_WIRE_LIMITS.labelCharacters),
+                profile: {
+                  ...profile,
+                  hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
+                  hasTimeline: profile.hasTimeline ?? false,
+                  hasTree: profile.hasTree ?? false,
+                },
+                recommendedTemplateIds: recommendedTemplateIds
+                  .slice(0, 256)
+                  .map((id) => requireWireIdentifier(id, 'recommended template id')),
+              };
+            });
+            totalBlocks = blocks.length;
+            truncated = recommendations.length < blocks.length;
+          }
+          return textAndStructured({
+            goal,
+            targetFormat: normalizedTarget,
+            defaultTemplateId: 'content',
+            defaultFidelity: authoringDefaultFidelity(normalizedTarget, goal),
+            workflow: [
+              'Author complete content with heading-bound annotations; ordinary headings default to content.',
+              'Keep Markdown inline or stage Markdown plus assets with create_document_bundle.',
+              'Validate the source and repair content-retention, accessibility, and target diagnostics.',
+              'For a staged DBK, use revise_document with inspected block ids and the exact parent SHA-256 for targeted repairs.',
+              'Preview the bounded visual items and repair overflow before changing layouts.',
+              'For visual polish, replace selected content blocks with compatible recommended templates and preview again.',
+              'Convert to immutable artifacts, inspect conversion reports, and save only final durable outputs.',
+            ],
+            syntax: {
+              headingAnnotation: '# Heading {[content]}',
+              standaloneAnnotation: '{[content]}',
+              standaloneWarning:
+                'A standalone annotation creates an additional heading-less block. Bind it to a heading unless that extra block is deliberate.',
+            },
+            formats,
+            templates,
+            themes: schemaModule
+              .getThemeSummaries()
+              .slice(0, MCP_WIRE_LIMITS.arrayEntries)
+              .map((theme) => ({
+                id: requireWireIdentifier(theme.id, 'theme id'),
+                name: boundWireText(theme.name, MCP_WIRE_LIMITS.labelCharacters, theme.id),
+                description: boundWireText(theme.description ?? ''),
+              })),
+            transformStyles: transformModule
+              .getTransformStyleSummaries()
+              .slice(0, MCP_WIRE_LIMITS.arrayEntries)
+              .map((style) => ({
+                id: requireWireIdentifier(style.id, 'transform style id'),
+                name: boundWireText(style.name, MCP_WIRE_LIMITS.labelCharacters, style.id),
+                description: boundWireText(style.description),
+              })),
+            recommendations,
+            totalBlocks,
+            truncated,
+          });
+        });
+      } catch (caught: unknown) {
+        return errorResult(caught, 'inspect', null, extra.signal);
+      }
+    },
+  );
+
+  server.registerTool(
     'list_templates',
     {
       description: 'List Squisq authoring templates agents can use in Markdown annotations.',
@@ -725,18 +889,11 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     },
     async () => {
       try {
-        const { getAvailableTemplates, TEMPLATE_METADATA } = await import('@bendyline/squisq/doc');
-        const templates = getAvailableTemplates()
-          .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-          .map((id) => ({
-            id: requireWireIdentifier(id, 'template id'),
-            label: boundWireText(
-              TEMPLATE_METADATA[id]?.label ?? id,
-              MCP_WIRE_LIMITS.labelCharacters,
-              id,
-            ),
-            description: boundWireText(TEMPLATE_METADATA[id]?.description ?? ''),
-          }));
+        const templates = (await authoringTemplateCatalog()).map(({ id, label, description }) => ({
+          id,
+          label,
+          description,
+        }));
         return textAndStructured({ templates });
       } catch (caught: unknown) {
         return errorResult(caught, 'inspect');
@@ -754,47 +911,21 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     },
     async ({ templateId }) => {
       try {
-        const { getAvailableTemplates, TEMPLATE_INPUT_DESCRIPTORS, TEMPLATE_METADATA } =
-          await import('@bendyline/squisq/doc');
-        if (!getAvailableTemplates().includes(templateId)) {
+        const described = (await authoringTemplateCatalog()).find(
+          (template) => template.id === templateId,
+        );
+        if (!described) {
           return errorResult(new Error(`Unknown template "${templateId}"`), 'validate');
         }
-        const inputs = (TEMPLATE_INPUT_DESCRIPTORS[templateId] ?? [])
-          .slice(0, MCP_WIRE_LIMITS.arrayEntries)
-          .map((input) => ({
-            key: requireWireIdentifier(input.key, 'template input key'),
-            description: boundWireText(input.description),
-            type: boundWireText(
-              input.coerce ?? 'string',
-              MCP_WIRE_LIMITS.labelCharacters,
-              'string',
-            ),
-            required: input.required ?? false,
-            values: boundWireTextArray(
-              input.values ?? [],
-              MCP_WIRE_LIMITS.arrayEntries,
-              MCP_WIRE_LIMITS.labelCharacters,
-            ),
-            valueHint: boundNullableWireText(input.valueHint, MCP_WIRE_LIMITS.labelCharacters),
-          }));
-        const metadata = TEMPLATE_METADATA[templateId];
         const template = {
-          id: requireWireIdentifier(templateId, 'template id'),
-          label: boundWireText(
-            metadata?.label ?? templateId,
-            MCP_WIRE_LIMITS.labelCharacters,
-            templateId,
-          ),
-          description: boundWireText(metadata?.description ?? ''),
-          inputs,
+          id: described.id,
+          label: described.label,
+          description: described.description,
+          inputs: described.inputs,
         };
-        const required = inputs
-          .filter((input) => input.required)
-          .map((input) => `${input.key}="…"`)
-          .join(' ');
         return textAndStructured({
           template,
-          annotationExample: boundWireText(`{[${templateId}${required ? ` ${required}` : ''}]}`),
+          annotationExample: described.annotationExample,
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'inspect');
@@ -1251,6 +1382,64 @@ function summarizeTheme(theme: {
     bodyFont: boundWireText(JSON.stringify(theme.typography.bodyFont) ?? ''),
     titleFont: boundWireText(JSON.stringify(theme.typography.titleFont) ?? ''),
   };
+}
+
+async function authoringTemplateCatalog() {
+  const {
+    getAvailableTemplates,
+    TEMPLATE_AUTHORING_METADATA,
+    TEMPLATE_INPUT_DESCRIPTORS,
+    TEMPLATE_METADATA,
+  } = await import('@bendyline/squisq/doc');
+  const authoring = TEMPLATE_AUTHORING_METADATA as Record<string, TemplateAuthoringMetadata>;
+  return getAvailableTemplates()
+    .slice(0, MCP_WIRE_LIMITS.arrayEntries)
+    .map((id) => {
+      const metadata = TEMPLATE_METADATA[id];
+      const behavior = authoring[id];
+      if (!behavior) throw new Error(`Template "${id}" has no authoring metadata`);
+      const inputs = (TEMPLATE_INPUT_DESCRIPTORS[id] ?? [])
+        .slice(0, MCP_WIRE_LIMITS.arrayEntries)
+        .map((input) => ({
+          key: requireWireIdentifier(input.key, 'template input key'),
+          description: boundWireText(input.description),
+          type: boundWireText(input.coerce ?? 'string', MCP_WIRE_LIMITS.labelCharacters, 'string'),
+          required: input.required ?? false,
+          values: boundWireTextArray(
+            input.values ?? [],
+            MCP_WIRE_LIMITS.arrayEntries,
+            MCP_WIRE_LIMITS.labelCharacters,
+          ),
+          valueHint: boundNullableWireText(input.valueHint, MCP_WIRE_LIMITS.labelCharacters),
+        }));
+      const required = inputs
+        .filter((input) => input.required)
+        .map((input) => `${input.key}="…"`)
+        .join(' ');
+      return {
+        id: requireWireIdentifier(id, 'template id'),
+        label: boundWireText(metadata?.label ?? id, MCP_WIRE_LIMITS.labelCharacters, id),
+        description: boundWireText(metadata?.description ?? ''),
+        inputs,
+        ...behavior,
+        annotationExample: boundWireText(`# Heading {[${id}${required ? ` ${required}` : ''}]}`),
+      };
+    });
+}
+
+function authoringDefaultFidelity(
+  targetFormat: string | null,
+  goal: 'content-first' | 'visual-polish',
+): ConversionFidelity | null {
+  if (!targetFormat) return null;
+  if (targetFormat === 'mp4' || targetFormat === 'gif') return 'rendered-fidelity';
+  if (goal === 'visual-polish' && (targetFormat === 'pptx' || targetFormat === 'pdf')) {
+    return 'rendered-fidelity';
+  }
+  if (targetFormat === 'docx' || targetFormat === 'pptx' || targetFormat === 'xlsx') {
+    return 'editable-native';
+  }
+  return 'semantic';
 }
 
 function boundedFormatCapabilities() {

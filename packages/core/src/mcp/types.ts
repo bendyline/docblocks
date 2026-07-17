@@ -11,11 +11,13 @@ export const DOCBLOCKS_MCP_TOOL_NAMES = [
   'get_conversion_report',
   'convert_document',
   'create_document_bundle',
+  'revise_document',
   'save_artifact',
   'inspect_document',
   'validate_document',
   'preview_document',
   'compare_documents',
+  'get_authoring_context',
   'list_templates',
   'describe_template',
   'recommend_templates',
@@ -214,6 +216,40 @@ export interface ConversionResult {
 /** Successful payload returned by the canonical multi-target conversion tool. */
 export interface ConvertDocumentResult {
   readonly results: readonly ConversionResult[];
+}
+
+/** One bounded, heading-scoped replacement applied to an immutable document artifact. */
+export interface ReplaceBlockRevision {
+  readonly kind: 'replace_block';
+  /** Stable block id returned by inspect_document for the parent artifact. */
+  readonly blockId: string;
+  /** Complete replacement heading plus its direct body; nested headings are not accepted. */
+  readonly markdown: string;
+}
+
+/** Optimistic, artifact-native revision request. The parent artifact is never mutated. */
+export interface DocumentRevisionRequest {
+  readonly artifactUri: string;
+  readonly expectedSha256: string;
+  readonly edits: readonly ReplaceBlockRevision[];
+}
+
+/** Hash-addressed record of one block replacement in a document revision. */
+export interface AppliedBlockRevision {
+  readonly kind: 'replace_block';
+  readonly blockId: string;
+  readonly beforeSha256: string;
+  readonly afterSha256: string;
+}
+
+/** Successful immutable artifact-to-artifact document revision. */
+export interface DocumentRevisionResult {
+  readonly version: DocBlocksMcpWireVersion;
+  readonly kind: 'revision';
+  readonly parentArtifact: ArtifactRef;
+  readonly artifact: ArtifactRef;
+  readonly edits: readonly AppliedBlockRevision[];
+  readonly diagnostics: readonly McpDiagnostic[];
 }
 
 export interface DocumentMetadataSummary {
@@ -480,6 +516,53 @@ export interface DescribedTemplate extends TemplateSummary {
 export interface DescribeTemplateResult {
   readonly template: DescribedTemplate;
   readonly annotationExample: string;
+}
+
+export type AuthoringGoal = 'content-first' | 'visual-polish';
+
+export type TemplateAuthoringRole =
+  | 'opener'
+  | 'divider'
+  | 'content'
+  | 'highlight'
+  | 'quote'
+  | 'comparison'
+  | 'event'
+  | 'media'
+  | 'data'
+  | 'spatial';
+
+export type TemplateBodyPolicy = 'complete' | 'derived' | 'ignored' | 'structured';
+
+export interface AuthoringTemplateSummary extends DescribedTemplate {
+  readonly role: TemplateAuthoringRole;
+  readonly bodyPolicy: TemplateBodyPolicy;
+  readonly safeForContentFirst: boolean;
+  readonly placement: 'heading';
+  readonly annotationExample: string;
+}
+
+export interface AuthoringSyntaxSummary {
+  readonly headingAnnotation: string;
+  readonly standaloneAnnotation: string;
+  readonly standaloneWarning: string;
+}
+
+/** One-call, linked-registry-backed context for agent authoring. */
+export interface AuthoringContextResult {
+  readonly goal: AuthoringGoal;
+  readonly targetFormat: string | null;
+  readonly defaultTemplateId: string;
+  readonly defaultFidelity: ConversionFidelity | null;
+  readonly workflow: readonly string[];
+  readonly syntax: AuthoringSyntaxSummary;
+  readonly formats: readonly FormatCapabilitySummary[];
+  readonly templates: readonly AuthoringTemplateSummary[];
+  readonly themes: readonly ThemeCatalogEntry[];
+  readonly transformStyles: readonly TransformStyleSummary[];
+  readonly recommendations: readonly TemplateRecommendation[];
+  readonly totalBlocks: number | null;
+  readonly truncated: boolean;
 }
 
 export interface TemplateContentProfile {

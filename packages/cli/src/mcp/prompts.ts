@@ -122,12 +122,14 @@ function presentationPrompt(
 ): string {
   return `Create a presentation about: ${topic}
 
-1. Use list_formats, list_themes, list_transform_styles, and list_templates for current linked-Squisq capabilities.
-2. Author focused Markdown sections with accessible alt text. Prefer style "${style ?? 'choose from list_transform_styles'}", theme "${theme ?? 'choose from list_themes'}", and template "${template ?? 'choose per block'}".
-3. Call validate_document with targetFormat "pptx" and repair actionable diagnostics.
-4. Call convert_document with a pptx target. Choose editable-native for editable Office structures, rendered-fidelity for exact Squisq visuals, or hybrid for rendered visuals plus semantic retention.
-5. Call preview_document and inspect the bounded slide images.
-6. Use get_conversion_report for provenance and save_artifact only when a durable file is required.`;
+1. Call get_authoring_context with targetFormat "pptx" and goal "content-first" for the complete linked-Squisq vocabulary and workflow in one response.
+2. Author complete Markdown sections with accessible alt text. Put annotations on headings, for example \`# Heading {[content]}\`; a standalone \`{[template]}\` creates an extra block. Prefer style "${style ?? 'choose from the returned transform styles'}", theme "${theme ?? 'choose from the returned themes'}", and template "${template ?? 'content until visual optimization'}".
+3. Keep the draft inline or stage Markdown plus assets with create_document_bundle. Do not write a temporary local Markdown file or invent a root id.
+4. Call validate_document with targetFormat "pptx" and repair actionable diagnostics before optimizing layouts.
+5. Call preview_document and inspect every bounded slide image, especially overflow and body-retention diagnostics.
+6. If a staged DBK needs targeted repairs, call inspect_document for block IDs and revise_document with the artifact's exact SHA-256 instead of resending the full Markdown. Only after content coverage is acceptable, replace selected \`content\` blocks with more visual recommended templates and preview again.
+7. Call convert_document with a pptx target. Choose editable-native for editable Office structures, rendered-fidelity for exact Squisq visuals, or hybrid for rendered visuals plus semantic retention.
+8. Use get_conversion_report for provenance and save_artifact only when a durable file is required.`;
 }
 
 function videoPrompt(
@@ -138,9 +140,9 @@ function videoPrompt(
 ): string {
   return `Create a video about: ${topic}
 
-1. Use list_formats, list_themes, list_transform_styles, and list_templates for current linked-Squisq capabilities.
-2. Author concise Markdown for a ${orientation ?? 'landscape'} animated sequence using theme "${theme ?? 'choose from list_themes'}" and template "${template ?? 'choose per block'}".
-3. Call validate_document with targetFormat "mp4" and repair actionable diagnostics.
+1. Call get_authoring_context with targetFormat "mp4" for the complete linked-Squisq vocabulary and workflow.
+2. Author concise Markdown for a ${orientation ?? 'landscape'} animated sequence using theme "${theme ?? 'choose from the returned themes'}" and template "${template ?? 'content until visual optimization'}". Bind annotations to headings.
+3. If the draft is staged, use inspect_document plus revise_document for targeted repairs instead of resending the full Markdown. Call validate_document with targetFormat "mp4" and repair actionable diagnostics.
 4. Call preview_document to review representative frames.
 5. Call convert_document with an mp4 target and orientation "${orientation ?? 'landscape'}"; monitor progress and honor cancellation.
 6. Use get_conversion_report for provenance and save_artifact only when a durable file is required.`;
@@ -155,9 +157,9 @@ function documentPrompt(
   const target = format ?? 'pdf';
   return `Create a professional document about: ${topic}
 
-1. Use list_formats, list_themes, list_transform_styles, and list_templates for current linked-Squisq capabilities.
-2. Author structured Markdown using theme "${theme ?? 'choose from list_themes'}" and template "${template ?? 'choose per block'}".
-3. Call validate_document with targetFormat "${target}" and repair actionable diagnostics.
+1. Call get_authoring_context with targetFormat "${target}" for the complete linked-Squisq vocabulary and workflow.
+2. Author structured Markdown using theme "${theme ?? 'choose from the returned themes'}" and template "${template ?? 'content until visual optimization'}". Bind annotations to headings.
+3. If the draft is staged, use inspect_document plus revise_document for targeted repairs instead of resending the full Markdown. Call validate_document with targetFormat "${target}" and repair actionable diagnostics.
 4. Call convert_document with a ${target} target to create an immutable artifact.
 5. Call preview_document and review the bounded page images.
 6. Use get_conversion_report for provenance and save_artifact only when a durable file is required.`;

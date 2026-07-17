@@ -13,6 +13,7 @@ import type {
 } from '@bendyline/docblocks/mcp';
 import { DOCBLOCKS_MCP_WIRE_VERSION, MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import type { DocDiagnostic } from '@bendyline/squisq/schemas';
+import type { TemplateAuthoringMetadata } from '@bendyline/squisq/doc';
 import type { PreparedDocument } from './document-service.js';
 import { DocumentService, throwIfAborted, warningDiagnostic } from './document-service.js';
 import { boundWireText, toWireIdentifier } from './output-bounds.js';
@@ -83,6 +84,7 @@ export async function inspectPreparedDocument(
       mapDocDiagnostic(diagnostic, prepared.sourceFormat),
     ),
     ...missingAltTextDiagnostics(prepared.markdownDoc, prepared.sourceFormat),
+    ...(await authoringDiagnostics(prepared, 'inspect', prepared.sourceFormat, signal)),
   ];
   let wordCount = 0;
   for (let index = 0; index < analyzed.length; index += 1) {
@@ -146,6 +148,12 @@ export async function validatePreparedDocument(
       prepared.markdownDoc,
       normalizedTargetFormat ?? prepared.sourceFormat,
     ),
+    ...(await authoringDiagnostics(
+      prepared,
+      'validate',
+      normalizedTargetFormat ?? prepared.sourceFormat,
+      signal,
+    )),
     ...(normalizedTargetFormat
       ? await targetPreflight(prepared, normalizedTargetFormat, signal)
       : []),
@@ -163,6 +171,128 @@ export async function validatePreparedDocument(
     summary,
     diagnostics: unique,
   };
+}
+
+/** Detect authoring shapes that are syntactically valid but commonly surprise agents. */
+export async function authoringDiagnostics(
+  prepared: PreparedDocument,
+  stage: DiagnosticStage,
+  format: string,
+  signal?: AbortSignal,
+): Promise<McpDiagnostic[]> {
+  throwIfAborted(signal);
+  const {
+    TEMPLATE_AUTHORING_METADATA,
+    flattenBlocks,
+    getBlockBodyText,
+    materializeBlockLayers,
+    resolveTemplateName,
+    resolveThemeForDoc,
+  } = await import('@bendyline/squisq/doc');
+  const blocks = flattenBlocks(prepared.doc.blocks);
+  const analyzedBlocks = blocks.slice(0, MCP_WIRE_LIMITS.arrayEntries);
+  const theme = resolveThemeForDoc(prepared.doc);
+  const diagnostics: McpDiagnostic[] = [];
+  for (let index = 0; index < analyzedBlocks.length; index += 1) {
+    const checkpoint = cancellationCheckpoint(signal, index);
+    if (checkpoint) await checkpoint;
+    const block = analyzedBlocks[index]!;
+    throwIfAborted(signal);
+    if (block.standaloneAnnotation) {
+      diagnostics.push({
+        code: 'standalone-template-block',
+        severity: 'warning',
+        stage,
+        format,
+        count: 1,
+        message: `Block "${block.id}" was created by a standalone template annotation and has no heading.`,
+        remediation:
+          'Move the annotation onto the intended heading, for example `# Heading {[content]}`, unless the additional heading-less block is deliberate.',
+        retryable: false,
+        location: {
+          kind: 'block',
+          blockId: toWireIdentifier(block.id, 'block'),
+          nodeType: 'block',
+        },
+      });
+    }
+    if (!block.template) continue;
+    const templateId = resolveTemplateName(block.template);
+    const behavior = (TEMPLATE_AUTHORING_METADATA as Record<string, TemplateAuthoringMetadata>)[
+      templateId
+    ];
+    if (!behavior) continue;
+    const body = getBlockBodyText(block).trim();
+    if (!body) continue;
+    if (behavior.bodyPolicy === 'ignored') {
+      diagnostics.push({
+        code: 'template-body-not-rendered',
+        severity: 'warning',
+        stage,
+        format,
+        count: 1,
+        message: `Template "${templateId}" does not render the body of block "${block.title ?? block.id}".`,
+        remediation:
+          'Use the content template to preserve the complete body, or move this prose into a separate content block before visual optimization.',
+        retryable: false,
+        location: {
+          kind: 'block',
+          blockId: toWireIdentifier(block.id, 'block'),
+          nodeType: 'block',
+        },
+      });
+      continue;
+    }
+    if (behavior.bodyPolicy !== 'complete') continue;
+    const materialized = materializeBlockLayers(block, {
+      theme,
+      customTemplates: prepared.doc.customTemplates,
+      persistentLayers: false,
+      blockIndex: index,
+      totalBlocks: analyzedBlocks.length,
+    });
+    const renderedText = materialized.layers
+      .filter((layer) => layer.type === 'text')
+      .map((layer) => layer.content.text)
+      .join('\n');
+    if (!normalizedText(renderedText).includes(normalizedText(body))) {
+      diagnostics.push({
+        code: 'rendered-content-omitted',
+        severity: 'error',
+        stage,
+        format,
+        count: 1,
+        message: `The complete body of block "${block.title ?? block.id}" is not present in its rendered text layers.`,
+        remediation:
+          'Keep the content template and repair its inputs, then validate and preview again before conversion.',
+        retryable: false,
+        location: {
+          kind: 'block',
+          blockId: toWireIdentifier(block.id, 'block'),
+          nodeType: 'block',
+        },
+      });
+    }
+  }
+  if (analyzedBlocks.length < blocks.length) {
+    diagnostics.push({
+      code: 'authoring-analysis-truncated',
+      severity: 'info',
+      stage,
+      format,
+      count: blocks.length - analyzedBlocks.length,
+      message: `Authoring diagnostics analyzed the first ${analyzedBlocks.length} blocks.`,
+      remediation:
+        'Split the document before requesting exhaustive per-block authoring diagnostics.',
+      retryable: false,
+      location: null,
+    });
+  }
+  return diagnostics;
+}
+
+function normalizedText(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLocaleLowerCase('en-US');
 }
 
 export async function comparePreparedDocuments(

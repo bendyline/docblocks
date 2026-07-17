@@ -12,6 +12,7 @@ import {
   type ComparisonResult,
   type ConversionFidelity,
   type ConversionResult,
+  type DocumentRevisionResult,
   type DiagnosticLocation,
   type DiagnosticSeverity,
   type DiagnosticStage,
@@ -46,6 +47,8 @@ export const MCP_WIRE_LIMITS = Object.freeze({
   messageCharacters: 4_000,
   excerptCharacters: 4_096,
   documentCharacters: 20 * 1024 * 1024,
+  revisionFragmentCharacters: 1024 * 1024,
+  revisionEdits: 64,
   artifactBytes: 500 * 1024 * 1024,
   bundleAssets: 256,
   arrayEntries: 10_000,
@@ -362,6 +365,51 @@ export function parseConversionResult(value: unknown): ConversionResult | null {
     appliedTransformId: value.appliedTransformId,
     sourceAssets,
     sourceAssetCount: value.sourceAssetCount,
+    diagnostics,
+  };
+}
+
+export function parseDocumentRevisionResult(value: unknown): DocumentRevisionResult | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'version',
+      'kind',
+      'parentArtifact',
+      'artifact',
+      'edits',
+      'diagnostics',
+    ]) ||
+    value.version !== DOCBLOCKS_MCP_WIRE_VERSION ||
+    value.kind !== 'revision'
+  ) {
+    return null;
+  }
+  const parentArtifact = parseArtifactRef(value.parentArtifact);
+  const artifact = parseArtifactRef(value.artifact);
+  const edits = parseArray(value.edits, parseAppliedBlockRevision, MCP_WIRE_LIMITS.revisionEdits);
+  const diagnostics = parseArray(value.diagnostics, parseMcpDiagnostic);
+  if (
+    parentArtifact === null ||
+    artifact === null ||
+    edits === null ||
+    diagnostics === null ||
+    edits.length < 1 ||
+    new Set(edits.map((edit) => edit.blockId)).size !== edits.length ||
+    parentArtifact.uri === artifact.uri ||
+    parentArtifact.format !== 'dbk' ||
+    artifact.format !== 'dbk' ||
+    artifact.sourceFormat !== 'dbk' ||
+    artifact.sourceSha256 === null
+  ) {
+    return null;
+  }
+  return {
+    version: DOCBLOCKS_MCP_WIRE_VERSION,
+    kind: 'revision',
+    parentArtifact,
+    artifact,
+    edits,
     diagnostics,
   };
 }
@@ -741,6 +789,25 @@ function parseEngineVersion(value: unknown): EngineVersion | null {
     return null;
   }
   return { name: value.name, version: value.version };
+}
+
+function parseAppliedBlockRevision(value: unknown): DocumentRevisionResult['edits'][number] | null {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ['kind', 'blockId', 'beforeSha256', 'afterSha256']) ||
+    value.kind !== 'replace_block' ||
+    !isIdentifier(value.blockId) ||
+    !isSha256(value.beforeSha256) ||
+    !isSha256(value.afterSha256)
+  ) {
+    return null;
+  }
+  return {
+    kind: 'replace_block',
+    blockId: value.blockId,
+    beforeSha256: value.beforeSha256,
+    afterSha256: value.afterSha256,
+  };
 }
 
 function parseDocumentMetadata(value: unknown): DocumentMetadataSummary | null {

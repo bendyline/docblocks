@@ -99,45 +99,49 @@ sources, targets, assets, and destinations. The tool list below is exhaustive.
 
 <!-- BEGIN MCP TOOL CATALOG -->
 
-| Tool                     | Class             | Purpose                                                                           |
-| ------------------------ | ----------------- | --------------------------------------------------------------------------------- |
-| `list_roots`             | read-only         | List opaque read/write root aliases granted at startup.                           |
-| `get_conversion_report`  | read-only         | Retrieve the stored report for a conversion-backed artifact.                      |
-| `convert_document`       | artifact-creating | Convert one normalized source into 1 through 12 immutable artifacts.              |
-| `create_document_bundle` | artifact-creating | Package Markdown and explicit assets into an immutable DBK artifact.              |
-| `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.             |
-| `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.        |
-| `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity. |
-| `preview_document`       | artifact-creating | Produce bounded, paginated image artifacts for visual review.                     |
-| `compare_documents`      | read-only         | Compare semantic and structural retention between two sources.                    |
-| `list_templates`         | read-only         | List linked Squisq template IDs and summaries.                                    |
-| `describe_template`      | read-only         | Describe exact template annotations and inputs.                                   |
-| `recommend_templates`    | read-only         | Profile document blocks and recommend compatible Squisq templates.                |
-| `describe_theme`         | read-only         | Describe a built-in or document-embedded theme.                                   |
-| `infer_theme_from_file`  | read-only         | Infer reusable theme and optional layout information from an imported file.       |
-| `inspect_pptx_layouts`   | read-only         | Inspect slide size, masters, layouts, usage, and template mapping.                |
-| `apply_inferred_theme`   | artifact-creating | Apply an inferred theme/layout set and return a DBK artifact.                     |
-| `list_formats`           | read-only         | List live linked-registry import and export capabilities.                         |
-| `list_themes`            | read-only         | List live linked Squisq themes.                                                   |
-| `list_transform_styles`  | read-only         | List live linked Squisq transform styles.                                         |
+| Tool                     | Class             | Purpose                                                                               |
+| ------------------------ | ----------------- | ------------------------------------------------------------------------------------- |
+| `list_roots`             | read-only         | List opaque read/write root aliases granted at startup.                               |
+| `get_conversion_report`  | read-only         | Retrieve the stored report for a conversion-backed artifact.                          |
+| `convert_document`       | artifact-creating | Convert one normalized source into 1 through 12 immutable artifacts.                  |
+| `create_document_bundle` | artifact-creating | Stage Markdown and explicit assets as an immutable DBK working artifact.              |
+| `revise_document`        | artifact-creating | Replace selected DBK blocks with hash-guarded immutable artifact revision.            |
+| `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.                 |
+| `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.            |
+| `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity.     |
+| `preview_document`       | artifact-creating | Produce bounded, paginated image artifacts for visual review.                         |
+| `compare_documents`      | read-only         | Compare semantic and structural retention between two sources.                        |
+| `get_authoring_context`  | read-only         | Return the complete linked authoring catalog, workflow, and optional recommendations. |
+| `list_templates`         | read-only         | List linked Squisq template IDs and summaries.                                        |
+| `describe_template`      | read-only         | Describe exact template annotations and inputs.                                       |
+| `recommend_templates`    | read-only         | Profile document blocks and recommend compatible Squisq templates.                    |
+| `describe_theme`         | read-only         | Describe a built-in or document-embedded theme.                                       |
+| `infer_theme_from_file`  | read-only         | Infer reusable theme and optional layout information from an imported file.           |
+| `inspect_pptx_layouts`   | read-only         | Inspect slide size, masters, layouts, usage, and template mapping.                    |
+| `apply_inferred_theme`   | artifact-creating | Apply an inferred theme/layout set and return a DBK artifact.                         |
+| `list_formats`           | read-only         | List live linked-registry import and export capabilities.                             |
+| `list_themes`            | read-only         | List live linked Squisq themes.                                                       |
+| `list_transform_styles`  | read-only         | List live linked Squisq transform styles.                                             |
 
 <!-- END MCP TOOL CATALOG -->
 
-Four tools create temporary artifacts without writing a user path:
-`convert_document`, `create_document_bundle`, `preview_document`, and
-`apply_inferred_theme`. `save_artifact` is the sole materializing tool and is marked
+Five tools create temporary artifacts without writing a user path:
+`convert_document`, `create_document_bundle`, `revise_document`, `preview_document`,
+and `apply_inferred_theme`. `save_artifact` is the sole materializing tool and is marked
 destructive because its conditional replacement mode can change an existing file.
-The other 14 tools are read-only and idempotent.
+The other 15 tools are read-only and idempotent.
 
 ### Important input bounds
 
-| Tool                  | Key constraints                                                                                     |
-| --------------------- | --------------------------------------------------------------------------------------------------- |
-| `convert_document`    | `source`; 1-12 distinct `targets`; optional `themeId`, `transformId`, `autoTemplates`, and `title`. |
-| `inspect_document`    | `maxBlocks` defaults to 200 and is at most 2,000; opaque nullable cursor.                           |
-| `validate_document`   | Optional nullable target format enables target-specific fidelity checks.                            |
-| `preview_document`    | `maxItems` is 1-20 per call; optional start index and 160-1920 by 90-1920 dimensions.               |
-| `recommend_templates` | At most 256 candidate IDs and at most 100 analyzed blocks.                                          |
+| Tool                    | Key constraints                                                                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `convert_document`      | `source`; 1-12 distinct `targets`; optional `themeId`, `transformId`, `autoTemplates`, and `title`. |
+| `revise_document`       | DBK artifact URI plus exact SHA-256; 1-64 unique block replacements, each at most 1 Mi characters.  |
+| `inspect_document`      | `maxBlocks` defaults to 200 and is at most 2,000; opaque nullable cursor.                           |
+| `validate_document`     | Optional nullable target format enables target-specific fidelity checks.                            |
+| `preview_document`      | `maxItems` is 1-20 per call; optional start index and 160-1920 by 90-1920 dimensions.               |
+| `recommend_templates`   | At most 256 candidate IDs and at most 100 analyzed blocks.                                          |
+| `get_authoring_context` | Optional target, goal, source, and at most 100 recommended blocks.                                  |
 
 Clients should inspect the schemas returned by MCP rather than hand-building a
 looser local copy.
@@ -215,18 +219,53 @@ binary theme/layout tools instead use their authority-scoped binary readers.
 A robust agent workflow is:
 
 1. Call `list_roots` only when local files or durable output are needed.
-2. Call `list_formats`, `list_themes`, `list_transform_styles`, and the template
-   tools instead of guessing current authoring vocabulary.
-3. Use `inspect_document` to understand content and `validate_document` for source
+2. Call `get_authoring_context` once instead of enumerating the authoring catalogs.
+3. Keep short Markdown inline, or stage Markdown and assets once with
+   `create_document_bundle` when iterative work is expected.
+4. Use `inspect_document` to understand content and `validate_document` for source
    or target constraints.
-4. Call `convert_document` once with all desired targets. They share one normalized
+5. For a staged DBK, use `revise_document` with inspected block IDs and the exact
+   parent SHA-256 to repair selected blocks without resending the complete document.
+6. Call `convert_document` once with all desired targets. They share one normalized
    source, and a failure rolls back every artifact created by that call.
-5. Use `preview_document` to review bounded pages, slides, sheets, or frames. Check
+7. Use `preview_document` to review bounded pages, slides, sheets, or frames. Check
    `previewBasis` before treating pixels as native verification.
-6. Reuse an artifact as another tool's source, read a bounded artifact resource, or
+8. Reuse an artifact as another tool's source, read a bounded artifact resource, or
    call `save_artifact` for durable output.
-7. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
+9. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
    and diagnostics matter.
+
+### Immutable block revision
+
+`revise_document` is the artifact-native editing path for a staged DBK. Its parent
+must be a live session artifact, and `expectedSha256` must exactly match the SHA-256
+returned with that artifact. A mismatch is a conflict; the server never guesses
+which artifact generation the caller intended.
+
+Each `replace_block` edit uses an ID returned by `inspect_document` and supplies one
+complete heading plus its direct body. The heading depth is fixed, nested headings
+are rejected, and an explicit replacement ID cannot differ from the inspected ID.
+The server pins the original ID into the replacement, preserves child blocks and
+assets, applies all replacements atomically, and returns a new immutable DBK. The
+parent artifact remains readable and unchanged.
+
+```json
+{
+  "artifactUri": "docblocks://artifacts/00000000-0000-4000-8000-000000000000",
+  "expectedSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "edits": [
+    {
+      "kind": "replace_block",
+      "blockId": "casualties",
+      "markdown": "# Human cost {[content]}\n\n- 4,400 Allied deaths\n- Source note: ..."
+    }
+  ]
+}
+```
+
+The result records the parent and revised artifact references plus before/after
+SHA-256 values for every replaced block. To continue revising, inspect and use the
+new artifact URI and its hash; do not reuse the parent precondition.
 
 ### Example multi-target conversion
 
@@ -361,21 +400,36 @@ One call returns at most 20 items. Use `startIndex` to paginate.
 Diagnostics are stable records with code, severity, stage, optional format and
 location, occurrence count, remediation, and retryability. A result publishes at
 most 500 entries; overflow is aggregated by severity so reports remain bounded.
+`standalone-template-block` identifies annotations that accidentally created an
+extra heading-less block. `template-body-not-rendered` identifies body prose assigned
+to a template whose renderer ignores it, and `rendered-content-omitted` is an error
+when a complete-body template does not materialize all of its body text.
 
 ## Themes, templates, and layouts
 
-The authoring workflow stays linked-Squisq-native:
+The authoring workflow stays linked-Squisq-native and starts with one consolidated
+call:
 
-1. `list_templates` and `describe_template` discover exact annotation syntax and
-   required inputs.
-2. `recommend_templates` profiles content blocks and returns compatible template
-   IDs from the linked recommender.
-3. `describe_theme` resolves built-in themes and themes embedded in a source.
-4. `infer_theme_from_file` imports reusable colors, typography, and optionally
+1. `get_authoring_context` returns formats, themes, transforms, exact template
+   inputs, canonical examples, body-retention policy, and optionally block-level
+   recommendations. Use `list_*` and `describe_*` only for incremental follow-up.
+2. Author annotations on headings: `# Heading {[content]}`. A standalone
+   `{[content]}` creates an additional heading-less block and is only appropriate
+   when that extra block is deliberate.
+3. Ordinary MCP headings default to the linked `content` template, which renders
+   the complete body. Validate and preview this verbose first pass before replacing
+   selected blocks with more visual templates.
+4. Keep Markdown inline or use `create_document_bundle` to stage Markdown plus
+   assets. The returned artifact URI feeds directly into inspect, validate, preview,
+   and convert; a temporary local Markdown file is unnecessary.
+5. After staging, use `revise_document` with inspected block IDs and the artifact's
+   exact SHA-256 for targeted repairs instead of retransmitting the full Markdown.
+6. `describe_theme` resolves built-in themes and themes embedded in a source.
+7. `infer_theme_from_file` imports reusable colors, typography, and optionally
    Office layout information.
-5. `inspect_pptx_layouts` reports slide size, masters, layouts, usage, classification,
+8. `inspect_pptx_layouts` reports slide size, masters, layouts, usage, classification,
    and mapped template IDs.
-6. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK
+9. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK
    artifact without mutating the source.
 
 The binary inference boundary is intentionally narrower than `DocumentSource`:
@@ -387,8 +441,8 @@ The binary inference boundary is intentionally narrower than `DocumentSource`:
 - `describe_theme` resolves built-in themes without a source, but requires `source`
   to resolve a custom theme embedded in a document.
 
-DocBlocks does not maintain a parallel theme/template vocabulary. Discovery and
-prompt completions call Squisq APIs at runtime.
+DocBlocks does not maintain a parallel theme/template vocabulary. Discovery,
+content-retention behavior, and prompt completions call Squisq APIs at runtime.
 
 ## Artifacts, reports, and resources
 

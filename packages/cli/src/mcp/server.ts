@@ -235,7 +235,13 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     options.shutdownDrainTimeoutMs ?? DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
   );
   const artifacts = new ArtifactStore(options);
-  const server = new McpServer({ name: 'docblocks', version: getPackageVersion() });
+  const server = new McpServer(
+    { name: 'docblocks', version: getPackageVersion() },
+    {
+      instructions:
+        "Start with get_authoring_context for one-call format, theme, transform, template, syntax, and workflow guidance. Author template annotations on headings, for example `# Heading {[content]}`; standalone `{[template]}` creates an extra heading-less block. DocBlocks MCP defaults ordinary headings to the loss-averse `content` template. Keep authored work in an inline source or stage Markdown plus assets with create_document_bundle. For targeted repairs to a staged DBK, inspect its block ids and call revise_document with the artifact's exact SHA-256 instead of resending the full Markdown. Then validate, preview, convert, and only save the final artifact when durable output is required. Never invent root ids: call list_roots and use an id exactly as returned.",
+    },
+  );
 
   registerAgenticTools(server, {
     authority,

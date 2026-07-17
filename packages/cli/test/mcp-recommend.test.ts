@@ -46,6 +46,49 @@ describe('MCP linked template recommendations', () => {
     ).to.equal(true);
   });
 
+  it('returns a self-contained content-first authoring context in one call', async () => {
+    const result = await callTool(harness.client, 'get_authoring_context', {
+      targetFormat: 'pptx',
+      goal: 'content-first',
+      source: {
+        kind: 'markdown',
+        name: 'context.md',
+        markdown: '# Overview\n\nComplete operational detail that must remain visible.',
+      },
+    });
+
+    expect(result.isError, result.text).to.equal(false);
+    const payload = result.structuredContent as {
+      defaultTemplateId: string;
+      defaultFidelity: string;
+      workflow: string[];
+      syntax: { headingAnnotation: string; standaloneWarning: string };
+      templates: Array<{
+        id: string;
+        bodyPolicy: string;
+        safeForContentFirst: boolean;
+        annotationExample: string;
+      }>;
+      recommendations: Array<{ recommendedTemplateIds: string[] }>;
+    };
+    expect(payload.defaultTemplateId).to.equal('content');
+    expect(payload.defaultFidelity).to.equal('editable-native');
+    expect(payload.workflow.some((step) => step.includes('revise_document'))).to.equal(true);
+    expect(payload.syntax.headingAnnotation).to.equal('# Heading {[content]}');
+    expect(payload.syntax.standaloneWarning).to.include('heading-less block');
+    expect(payload.templates.find((entry) => entry.id === 'content')).to.include({
+      bodyPolicy: 'complete',
+      safeForContentFirst: true,
+    });
+    expect(payload.templates.find((entry) => entry.id === 'sectionHeader')?.bodyPolicy).to.equal(
+      'ignored',
+    );
+    expect(payload.templates.every((entry) => entry.annotationExample.startsWith('# '))).to.equal(
+      true,
+    );
+    expect(payload.recommendations[0]?.recommendedTemplateIds[0]).to.equal('content');
+  });
+
   it('bounds source-controlled block titles in recommendation output', async () => {
     const result = await callTool(harness.client, 'recommend_templates', {
       source: {
