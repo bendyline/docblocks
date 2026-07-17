@@ -5,7 +5,6 @@ import {
   parseArtifactRef,
   parseComparisonResult,
   parseConversionResult,
-  parseDocumentRevisionResult,
   parseInspectionResult,
   parsePreviewResult,
   parseValidationResult,
@@ -16,7 +15,6 @@ import type {
   DescribeTemplateResult,
   DescribeThemeResult,
   DocBlocksMcpToolName,
-  DocumentRevisionRequest,
   FormatCapabilitySummary,
   FormatDirectionCapability,
   InferThemeResult,
@@ -611,47 +609,6 @@ const boundedPathTextSchema = z
   .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire');
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 
-export const replaceBlockRevisionSchema = z
-  .object({
-    kind: z.literal('replace_block'),
-    blockId: idSchema,
-    markdown: z
-      .string()
-      .min(1)
-      .max(MCP_WIRE_LIMITS.revisionFragmentCharacters)
-      .regex(WIRE_STRING_PATTERN, 'NUL and DEL are not permitted on the MCP wire'),
-  })
-  .strict();
-
-export const documentRevisionRequestSchema = z
-  .object({
-    artifactUri: artifactUriSchema,
-    expectedSha256: sha256Schema,
-    edits: z.array(replaceBlockRevisionSchema).min(1).max(MCP_WIRE_LIMITS.revisionEdits),
-  })
-  .strict() satisfies z.ZodType<DocumentRevisionRequest>;
-
-const appliedBlockRevisionSchema = z
-  .object({
-    kind: z.literal('replace_block'),
-    blockId: idSchema,
-    beforeSha256: sha256Schema,
-    afterSha256: sha256Schema,
-  })
-  .strict();
-
-export const documentRevisionResultSchema = z
-  .object({
-    version: z.literal(1),
-    kind: z.literal('revision'),
-    parentArtifact: artifactRefSchema,
-    artifact: artifactRefSchema,
-    edits: z.array(appliedBlockRevisionSchema).min(1).max(MCP_WIRE_LIMITS.revisionEdits),
-    diagnostics: z.array(diagnosticSchema).max(MCP_WIRE_LIMITS.arrayEntries),
-  })
-  .strict()
-  .superRefine((value, context) => addExactWireIssue(parseDocumentRevisionResult(value), context));
-
 export const convertDocumentResultSchema = z
   .object({ results: z.array(conversionResultSchema).min(1).max(12) })
   .strict();
@@ -910,7 +867,6 @@ export const DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS: Readonly<
   get_conversion_report: conversionResultSchema,
   convert_document: convertDocumentResultSchema,
   create_document_bundle: conversionResultSchema,
-  revise_document: documentRevisionResultSchema,
   save_artifact: saveArtifactResultSchema,
   inspect_document: inspectionResultSchema,
   validate_document: validationResultSchema,
@@ -940,7 +896,6 @@ export const DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS: Readonly<
   create_document_bundle: toolOutputSchema(
     DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.create_document_bundle,
   ),
-  revise_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.revise_document),
   save_artifact: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.save_artifact),
   inspect_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.inspect_document),
   validate_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.validate_document),

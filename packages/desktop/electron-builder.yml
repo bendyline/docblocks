@@ -83,7 +83,6 @@ nsis:
   installerHeaderIcon: resources/icon.ico
   installerSidebar: installer/sidebar.bmp
   uninstallerSidebar: installer/sidebar.bmp
-  include: installer/nsis-hooks.nsh
 
 # Microsoft Store build variant — built with `electron-builder --win appx`.
 # The Store re-signs the package, so it is left unsigned here (the Azure

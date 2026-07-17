@@ -117,6 +117,35 @@ function requireInstallerLicenseParagraphs(): void {
 
 requireInstallerLicenseParagraphs();
 
+function requireWindowsUserDataRetention(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const nsis = config.nsis;
+  if (!isRecord(nsis)) {
+    failConfigPolicy('electron-builder.yml nsis options must be configured.');
+  }
+  if (nsis.deleteAppDataOnUninstall === true) {
+    failConfigPolicy('NSIS uninstall must retain DocBlocks user data.');
+  }
+  if (typeof nsis.include === 'string') {
+    const includePath = path.resolve(path.dirname(configPath), nsis.include);
+    if (!existsSync(includePath)) {
+      failConfigPolicy(`NSIS include is missing at ${includePath}.`);
+    }
+    const includeSource = readFileSync(includePath, 'utf8');
+    if (/!macro\s+customUnInstall(?:Section)?\b/u.test(includeSource)) {
+      failConfigPolicy(
+        'NSIS custom uninstall hooks are forbidden because uninstall must retain DocBlocks user data.',
+      );
+    }
+  }
+
+  process.stdout.write('NSIS uninstall: DocBlocks user data retained\n');
+}
+
+requireWindowsUserDataRetention();
+
 function requireLinuxIcons(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');
