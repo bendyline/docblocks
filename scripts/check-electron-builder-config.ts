@@ -117,6 +117,35 @@ function requireInstallerLicenseParagraphs(): void {
 
 requireInstallerLicenseParagraphs();
 
+function requireWindowsUserDataRetention(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const nsis = config.nsis;
+  if (!isRecord(nsis)) {
+    failConfigPolicy('electron-builder.yml nsis options must be configured.');
+  }
+  if (nsis.deleteAppDataOnUninstall === true) {
+    failConfigPolicy('NSIS uninstall must retain DocBlocks user data.');
+  }
+  if (typeof nsis.include === 'string') {
+    const includePath = path.resolve(path.dirname(configPath), nsis.include);
+    if (!existsSync(includePath)) {
+      failConfigPolicy(`NSIS include is missing at ${includePath}.`);
+    }
+    const includeSource = readFileSync(includePath, 'utf8');
+    if (/!macro\s+customUnInstall(?:Section)?\b/u.test(includeSource)) {
+      failConfigPolicy(
+        'NSIS custom uninstall hooks are forbidden because uninstall must retain DocBlocks user data.',
+      );
+    }
+  }
+
+  process.stdout.write('NSIS uninstall: DocBlocks user data retained\n');
+}
+
+requireWindowsUserDataRetention();
+
 function requireLinuxIcons(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');
@@ -166,6 +195,103 @@ function requireLinuxIcons(): void {
 }
 
 requireLinuxIcons();
+
+function requireLinuxPackageMetadata(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+
+  const expectedAssociations = [
+    {
+      ext: 'md',
+      mimeType: 'text/markdown',
+      description: 'Markdown document',
+    },
+    {
+      ext: 'dbk',
+      mimeType: 'application/vnd.docblocks+zip',
+      description: 'DocBlocks bundle',
+    },
+  ] as const;
+  const associations = config.fileAssociations;
+  if (!Array.isArray(associations)) {
+    failConfigPolicy('electron-builder.yml fileAssociations must be configured.');
+  }
+  const mimeAssociations = associations.filter(
+    (association) => isRecord(association) && typeof association.mimeType === 'string',
+  );
+  if (mimeAssociations.length !== expectedAssociations.length) {
+    failConfigPolicy(
+      'electron-builder.yml must expose exactly the Markdown and DBK Linux MIME associations.',
+    );
+  }
+  for (const expected of expectedAssociations) {
+    const association = mimeAssociations.find(
+      (candidate) => isRecord(candidate) && candidate.ext === expected.ext,
+    );
+    if (
+      !isRecord(association) ||
+      association.mimeType !== expected.mimeType ||
+      association.description !== expected.description
+    ) {
+      failConfigPolicy(
+        `electron-builder.yml ${expected.ext} association must declare ${expected.mimeType} with a user-facing description.`,
+      );
+    }
+  }
+
+  const deb = config.deb;
+  if (!isRecord(deb) || deb.packageCategory !== 'editors') {
+    failConfigPolicy('electron-builder.yml deb.packageCategory must be editors.');
+  }
+
+  process.stdout.write('electron-builder.yml: Linux Markdown/DBK MIME + DEB metadata OK\n');
+}
+
+requireLinuxPackageMetadata();
+
+function requireMacPrivacyMetadata(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+  const mac = config.mac;
+  const extendInfo = isRecord(mac) ? mac.extendInfo : null;
+  if (!isRecord(extendInfo)) {
+    failConfigPolicy('electron-builder.yml mac.extendInfo must define privacy prompts.');
+  }
+
+  const expectedPrompts = {
+    NSCameraUsageDescription:
+      'DocBlocks accesses the camera only when you choose to record video for a document.',
+    NSMicrophoneUsageDescription:
+      'DocBlocks accesses the microphone only when you choose to record audio or video for a document.',
+    NSAudioCaptureUsageDescription:
+      'DocBlocks accesses system audio only when you choose to include it in a screen recording.',
+  } as const;
+  for (const [key, prompt] of Object.entries(expectedPrompts)) {
+    if (extendInfo[key] !== prompt) {
+      failConfigPolicy(
+        `electron-builder.yml mac.extendInfo.${key} must be branded and contextual.`,
+      );
+    }
+  }
+  for (const key of [
+    'NSBluetoothAlwaysUsageDescription',
+    'NSBluetoothPeripheralUsageDescription',
+  ]) {
+    if (!Object.hasOwn(extendInfo, key) || extendInfo[key] !== null) {
+      failConfigPolicy(
+        `electron-builder.yml mac.extendInfo.${key} must be null to remove Electron's unused inherited declaration.`,
+      );
+    }
+  }
+
+  process.stdout.write(
+    'electron-builder.yml: branded macOS privacy prompts; Bluetooth removed OK\n',
+  );
+}
+
+requireMacPrivacyMetadata();
 
 for (const [platformName, targetName] of [
   ['win', 'nsis'],
@@ -228,6 +354,11 @@ const declaredRuntimeDependencies = new Set([
   ...Object.keys(desktopManifest.dependencies ?? {}),
   ...Object.keys(desktopManifest.optionalDependencies ?? {}),
 ]);
+if (declaredRuntimeDependencies.has('ffmpeg-static')) {
+  failConfigPolicy(
+    'Desktop production dependencies must not include host-native ffmpeg-static; GIF export uses the packaged ffmpeg.wasm core.',
+  );
+}
 const mainRequires = collectRuntimeRequires(readFileSync(mainPath, 'utf8'));
 const requiredPackages = new Set(
   [...mainRequires]

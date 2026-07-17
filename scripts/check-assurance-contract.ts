@@ -260,6 +260,25 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
     }
   }
 
+  const windowsUpdaterStepIndex = windowsJob.steps.findIndex(
+    (step) => isRecord(step) && step.name === 'Prepare Windows updater manifest',
+  );
+  const windowsUploadStepIndex = windowsJob.steps.findIndex(
+    (step) => isRecord(step) && step.name === 'Upload Windows artifacts',
+  );
+  const windowsUpdaterStep = windowsJob.steps[windowsUpdaterStepIndex];
+  if (
+    windowsUpdaterStepIndex <= windowsJob.steps.indexOf(windowsVerifyStep) ||
+    windowsUploadStepIndex <= windowsUpdaterStepIndex ||
+    !isRecord(windowsUpdaterStep) ||
+    typeof windowsUpdaterStep.run !== 'string' ||
+    !windowsUpdaterStep.run.includes('npm run prepare:windows-updater -w docblocks-desktop')
+  ) {
+    throw new Error(
+      relativePath +
+        ': build-windows must normalize updater metadata after signing and before upload',
+    );
+  }
   const linuxJob = parsed.jobs['build-linux'];
   if (!isRecord(linuxJob) || !Array.isArray(linuxJob.steps)) {
     throw new Error(`${relativePath}: build-linux has no steps`);
@@ -329,6 +348,7 @@ async function main(): Promise<void> {
     'npm run check:site-precache',
     'npm run check:site-fonts',
     'npm run check:desktop-config',
+    'npm run check:vscode-package',
     'npm run check:agent-guidance',
     'npm run check:assurance',
     'npm run lint',
@@ -358,6 +378,9 @@ async function main(): Promise<void> {
   }
 
   const vscodePackage = await readPackage('packages/vscode/package.json');
+  requireScript(rootPackage, 'check:vscode-package', 'check:package-contents -w docblocks-vscode');
+  requireScript(vscodePackage, 'package:vsix', 'npm run check:package-contents');
+  requireScript(vscodePackage, 'check:package-contents', 'check-vscode-package-contents.ts');
   requireScript(vscodePackage, 'typecheck', 'typecheck:extension');
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
   requireScript(vscodePackage, 'typecheck', 'typecheck:desktop-e2e');

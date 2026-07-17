@@ -5,13 +5,13 @@ import {
   MCP_WIRE_LIMITS,
   parseComparisonResult,
   parseConversionResult,
-  parseDocumentRevisionResult,
   parseDocumentSource,
   parseInspectionResult,
   parseMaterializationOptions,
   parsePreviewResult,
   parseValidationResult,
   type ArtifactRef,
+  type AuthoringContextResult,
   type ConversionFidelity,
   type DocumentSource,
 } from '@bendyline/docblocks/mcp';
@@ -34,7 +34,6 @@ import {
   bundleDocumentSourceSchema,
   DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS,
   documentSourceSchema,
-  documentRevisionRequestSchema,
   formatInputSchema,
   materializationOptionsSchema,
 } from '@bendyline/docblocks/mcp/zod';
@@ -45,7 +44,6 @@ import {
 } from './preview-service.js';
 import { errorResult, successResult } from './error-result.js';
 import { reportMcpProgress } from './progress.js';
-import { reviseDocumentArtifact } from './revision-service.js';
 import {
   MCP_OUTPUT_PATTERNS,
   boundNullableWireText,
@@ -326,7 +324,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'create_document_bundle',
     {
       description:
-        'Stage authored Markdown and authority-scoped assets as an immutable DBK artifact. Use the returned artifact URI directly with validate_document, preview_document, and convert_document; no local Markdown file or invented root id is required.',
+        'Optionally stage Markdown plus authority-scoped assets as a reusable immutable DBK artifact when the same bundle will feed several operations. For normal authoring, pass complete Markdown or a bundle source directly to convert_document.',
       inputSchema: z.object({ source: bundleDocumentSourceSchema }).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.create_document_bundle,
       annotations: ARTIFACT_CREATING,
@@ -355,40 +353,6 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'convert', null, extra.signal);
-      }
-    },
-  );
-
-  server.registerTool(
-    'revise_document',
-    {
-      description:
-        'Replace selected heading blocks in an immutable DBK artifact without resending the full document. Requires the parent artifact SHA-256, preserves block ids and child blocks, and returns a new DBK artifact without mutating the parent.',
-      inputSchema: documentRevisionRequestSchema,
-      outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.revise_document,
-      annotations: ARTIFACT_CREATING,
-    },
-    async (request, extra) => {
-      try {
-        return await context.runOperation(extra.signal, async (operationSignal) => {
-          const documents = new DocumentService(await context.authority, context.artifacts);
-          const result = await reviseDocumentArtifact(
-            context.artifacts,
-            documents,
-            request,
-            operationSignal,
-          );
-          requireWire(parseDocumentRevisionResult(result), 'document revision');
-          return {
-            content: [
-              { type: 'text' as const, text: JSON.stringify(result) },
-              artifactLink(result.artifact),
-            ],
-            structuredContent: asStructuredContent(successResult(result)),
-          };
-        });
-      } catch (caught: unknown) {
-        return errorResult(caught, 'transform', 'dbk', extra.signal);
       }
     },
   );
@@ -680,15 +644,17 @@ function registerAuthoringGuideResource(server: McpServer): void {
         import('@bendyline/squisq/transform'),
       ]);
       const guide = {
-        version: 3,
+        version: 6,
         workflow: [
-          'author complete Markdown with annotations bound to headings; ordinary headings default to content',
-          'keep Markdown inline or stage Markdown plus assets with create_document_bundle',
-          'inspect_document and validate_document before visual optimization',
-          'for a staged DBK, use revise_document with inspected block ids and the exact parent SHA-256 for targeted repairs',
-          'preview_document and inspect previewBasis before treating images as source renders, reconstructed imports, or native extraction',
-          'replace selected content blocks with compatible visual templates and preview again',
-          'convert_document to one or more immutable artifacts',
+          'treat supplied facts as a closed evidence set; label calculations, assumptions, hypotheses, recommendations, and examples; do not present causal links, rhetorical performance labels, superlatives, sole causes, targets, capabilities, owners, dates, channels, or operational details as established facts unless supplied',
+          'when the requested genre needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note that applies to those details, then complete the requested element',
+          'author complete Squisq-compatible Markdown with annotations bound to headings; ordinary headings default to the loss-averse content template',
+          'for PPTX, use exactly one level-one Markdown heading per slide and no level-two through level-six headings because every heading becomes a slide by default',
+          'by default, pass the complete Markdown—or a bundle source when assets are needed—directly to convert_document; revise by editing the complete Markdown and converting again',
+          'use create_document_bundle only when a reusable staged DBK materially avoids repeating a large Markdown-and-asset bundle across several operations',
+          'use inspect_document, validate_document, and preview_document when their semantic, diagnostic, or visual evidence is useful; they are review tools rather than required phases',
+          'for visual polish, replace selected content blocks with compatible visual templates while preserving required content',
+          'convert_document creates one or more immutable artifacts from the authoritative complete source',
           'save_artifact only when a durable file is required',
         ],
         markdownAnnotation: '# Heading {[templateId key="value"]}',
@@ -740,7 +706,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     'get_authoring_context',
     {
       description:
-        'Get the complete linked-Squisq authoring vocabulary, canonical heading syntax, content-retention behavior, workflow, and optional block recommendations in one call.',
+        'Get a compact agent-facing authoring contract plus the complete linked-Squisq catalog in structured content, with optional block recommendations.',
       inputSchema: z
         .object({
           targetFormat: formatInputSchema.optional(),
@@ -830,18 +796,32 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             totalBlocks = blocks.length;
             truncated = recommendations.length < blocks.length;
           }
-          return textAndStructured({
+          const payload: AuthoringContextResult = {
             goal,
             targetFormat: normalizedTarget,
             defaultTemplateId: 'content',
             defaultFidelity: authoringDefaultFidelity(normalizedTarget, goal),
             workflow: [
-              'Author complete content with heading-bound annotations; ordinary headings default to content.',
-              'Keep Markdown inline or stage Markdown plus assets with create_document_bundle.',
-              'Validate the source and repair content-retention, accessibility, and target diagnostics.',
-              'For a staged DBK, use revise_document with inspected block ids and the exact parent SHA-256 for targeted repairs.',
-              'Preview the bounded visual items and repair overflow before changing layouts.',
-              'For visual polish, replace selected content blocks with compatible recommended templates and preview again.',
+              'Treat supplied facts as a closed evidence set. Use temporal or correlational wording unless causality is supplied. Label calculations, assumptions, hypotheses, recommendations, and illustrative examples. Do not infer end-to-end feasibility from one supplied phase duration.',
+              'Audit claims before conversion: causal links, rhetorical labels such as compounding, engine, healthy, strong, or constraint, superlatives, sole-cause claims, targets, capabilities, owners, dates, channels, and operational details must be supplied or explicitly framed as a hypothesis, recommendation, example, or proposal. Do not connect separate metrics, audiences, segments, or workflows unless the relationship is supplied. Prefer observed, coincided with, intended to, or proposed over drove, addresses, protects, or proves. Do not call choices a sequence or capacity allocation unless order, timing, or resource constraints were supplied.',
+              'Complete every requested element without presenting invented policy as established fact. When a requested policy, playbook, or training guide needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note placed before the first such detail so it governs all of them.',
+              'Generic option traits—control, flexibility, vendor support, freed capacity, switching costs—are capability claims: state one only when supplied or labeled Assumption or Judgment, even in table cells and tradeoffs.',
+              'Author complete Squisq-compatible content with heading-bound annotations; ordinary headings default to the loss-averse content template.',
+              normalizedTarget === 'pptx'
+                ? 'Match every explicitly requested slide count exactly. Use exactly one level-one Markdown heading (#) per slide and no level-two through level-six headings because every heading becomes a slide by default. Target at most 80 words per slide, and use lists, tables, or bold labels for within-slide structure.'
+                : 'Honor the requested word range and document genre. Prefer connected memo prose for executive decisions and native headings, tables, and checklists for operational documents.',
+              normalizedTarget === 'pptx'
+                ? 'Make slide one a supported point-of-view thesis, not a generic title or unsupported flourish. For requested choices, state a concrete opportunity cost grounded in the supplied alternatives and name one clearly labeled proposed accountable role per choice. If a tradeoff requires an unsupplied capacity or outcome assumption, label it Assumption or Potential tradeoff rather than stating it as fact.'
+                : 'Tie each decision implication or comparative judgment to a supplied fact or calculation, or label it Judgment. When accountability is requested but not supplied, name one clearly labeled proposed accountable role per decision or workstream.',
+              'Add decision value without inventing causes: interpret supplied comparisons to baselines, goals, targets, and rankings; use transparent calculations; label any new review cadence or measurement procedure as proposed.',
+              'Before validation and conversion, run a content preflight: count slide sections or document words, verify every requested element, and rewrite or label every unsupported claim.',
+              'Use the complete Markdown as the authoritative source. Pass it—or a bundle source when assets are needed—directly to convert_document, and revise by editing the complete Markdown and converting again.',
+              'Use create_document_bundle only when reusing a large Markdown-and-asset bundle across several review or conversion operations would materially reduce retransmission.',
+              'Use inspect_document or validate_document when semantic structure, content retention, accessibility, or target diagnostics need review; repair actionable findings in the authoritative Markdown.',
+              'Use preview_document when visual evidence is needed, inspect previewBasis, and repair overflow or layout problems in the authoritative Markdown.',
+              normalizedTarget === 'pptx'
+                ? 'For visual polish, replace selected content blocks with compatible recommended templates; use patterns such as definitionCard for a definition, dataTable for a true table, comparisonBar for supported numeric comparisons, and list for concise steps when the returned catalog supports them. Preserve all required content and preview again.'
+                : 'For visual polish, use native headings, tables, and checklists where they improve scanning; keep complete-body content when a visual template would discard detail, then preview again.',
               'Convert to immutable artifacts, inspect conversion reports, and save only final durable outputs.',
             ],
             syntax: {
@@ -871,7 +851,8 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             recommendations,
             totalBlocks,
             truncated,
-          });
+          };
+          return textAndStructured(payload, compactAuthoringContextText(payload));
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'inspect', null, extra.signal);
@@ -1333,11 +1314,43 @@ async function sendProgress(
   await reportMcpProgress(extra, progress, total, message);
 }
 
-function textAndStructured<T extends object>(payload: T) {
+function textAndStructured<T extends object>(payload: T, text = JSON.stringify(payload, null, 2)) {
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: 'text' as const, text }],
     structuredContent: asStructuredContent(successResult(payload)),
   };
+}
+
+function compactAuthoringContextText(context: AuthoringContextResult): string {
+  const target = context.targetFormat ?? 'unspecified target';
+  const lines = [
+    `DocBlocks authoring contract: ${target}, ${context.goal}.`,
+    `Default template: ${context.defaultTemplateId}. Default fidelity: ${context.defaultFidelity ?? 'select for target'}.`,
+    '',
+    'Required workflow:',
+    ...context.workflow.map((step, index) => `${index + 1}. ${step}`),
+    '',
+    `Heading annotation: ${context.syntax.headingAnnotation}`,
+    `Warning: ${context.syntax.standaloneWarning}`,
+    `Templates (${context.templates.length}): ${context.templates.map(({ id }) => id).join(', ')}`,
+    `Themes (${context.themes.length}): ${context.themes.map(({ id }) => id).join(', ')}`,
+    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')}`,
+  ];
+  if (context.recommendations.length > 0) {
+    lines.push(
+      `Recommended blocks: ${context.recommendations
+        .map(
+          ({ blockId, recommendedTemplateIds }) =>
+            `${blockId} -> ${recommendedTemplateIds.join('/')}`,
+        )
+        .join('; ')}`,
+    );
+  }
+  lines.push(
+    '',
+    'The complete exact format, template-input, theme, transform, and recommendation catalog is in structuredContent. Use describe_template for focused follow-up when structured content is unavailable.',
+  );
+  return lines.join('\n');
 }
 
 function asStructuredContent(payload: object): Record<string, unknown> {

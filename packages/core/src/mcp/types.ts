@@ -11,7 +11,6 @@ export const DOCBLOCKS_MCP_TOOL_NAMES = [
   'get_conversion_report',
   'convert_document',
   'create_document_bundle',
-  'revise_document',
   'save_artifact',
   'inspect_document',
   'validate_document',
@@ -216,40 +215,6 @@ export interface ConversionResult {
 /** Successful payload returned by the canonical multi-target conversion tool. */
 export interface ConvertDocumentResult {
   readonly results: readonly ConversionResult[];
-}
-
-/** One bounded, heading-scoped replacement applied to an immutable document artifact. */
-export interface ReplaceBlockRevision {
-  readonly kind: 'replace_block';
-  /** Stable block id returned by inspect_document for the parent artifact. */
-  readonly blockId: string;
-  /** Complete replacement heading plus its direct body; nested headings are not accepted. */
-  readonly markdown: string;
-}
-
-/** Optimistic, artifact-native revision request. The parent artifact is never mutated. */
-export interface DocumentRevisionRequest {
-  readonly artifactUri: string;
-  readonly expectedSha256: string;
-  readonly edits: readonly ReplaceBlockRevision[];
-}
-
-/** Hash-addressed record of one block replacement in a document revision. */
-export interface AppliedBlockRevision {
-  readonly kind: 'replace_block';
-  readonly blockId: string;
-  readonly beforeSha256: string;
-  readonly afterSha256: string;
-}
-
-/** Successful immutable artifact-to-artifact document revision. */
-export interface DocumentRevisionResult {
-  readonly version: DocBlocksMcpWireVersion;
-  readonly kind: 'revision';
-  readonly parentArtifact: ArtifactRef;
-  readonly artifact: ArtifactRef;
-  readonly edits: readonly AppliedBlockRevision[];
-  readonly diagnostics: readonly McpDiagnostic[];
 }
 
 export interface DocumentMetadataSummary {

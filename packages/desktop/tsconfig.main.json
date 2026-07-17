@@ -6,5 +6,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["main/**/*.ts", "shared/**/*.ts"]
+  "include": ["main/**/*.ts", "scripts/**/*.ts", "shared/**/*.ts"]
 }

@@ -73,7 +73,28 @@ describe('MCP linked template recommendations', () => {
     };
     expect(payload.defaultTemplateId).to.equal('content');
     expect(payload.defaultFidelity).to.equal('editable-native');
-    expect(payload.workflow.some((step) => step.includes('revise_document'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('closed evidence set'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('proposed operating model'))).to.equal(
+      true,
+    );
+    expect(payload.workflow.some((step) => step.includes('content preflight'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('at most 80 words'))).to.equal(true);
+    expect(
+      payload.workflow.some((step) => step.includes('no level-two through level-six headings')),
+    ).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('point-of-view thesis'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('proposed accountable role'))).to.equal(
+      true,
+    );
+    expect(payload.workflow.some((step) => step.includes('Potential tradeoff'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('capacity allocation'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('separate metrics'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('supplied comparisons'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('definitionCard'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('directly to convert_document'))).to.equal(
+      true,
+    );
+    expect(payload.workflow.some((step) => step.includes('review or conversion'))).to.equal(true);
     expect(payload.syntax.headingAnnotation).to.equal('# Heading {[content]}');
     expect(payload.syntax.standaloneWarning).to.include('heading-less block');
     expect(payload.templates.find((entry) => entry.id === 'content')).to.include({
@@ -87,6 +108,12 @@ describe('MCP linked template recommendations', () => {
       true,
     );
     expect(payload.recommendations[0]?.recommendedTemplateIds[0]).to.equal('content');
+    expect(result.text).to.include('DocBlocks authoring contract: pptx, content-first');
+    expect(result.text).to.include('temporal or correlational wording');
+    expect(result.text).to.include('Audit claims before conversion');
+    expect(result.text).to.include('Prefer observed, coincided with');
+    expect(result.text).to.include('complete exact format, template-input');
+    expect(result.text.length).to.be.lessThan(5_000);
   });
 
   it('bounds source-controlled block titles in recommendation output', async () => {

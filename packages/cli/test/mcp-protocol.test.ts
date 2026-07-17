@@ -10,7 +10,6 @@ const REQUIRED_AGENTIC_TOOL_NAMES = [
   'get_conversion_report',
   'convert_document',
   'create_document_bundle',
-  'revise_document',
   'save_artifact',
   'inspect_document',
   'validate_document',
@@ -96,8 +95,21 @@ describe('MCP protocol surface', function () {
       version: getPackageVersion(),
     });
     expect(h.client.getInstructions()).to.include('get_authoring_context');
+    expect(h.client.getInstructions()).to.include('closed evidence set');
+    expect(h.client.getInstructions()).to.include('temporal or correlational wording');
+    expect(h.client.getInstructions()).to.include('proposed operating model');
+    expect(h.client.getInstructions()).to.include('slide/page counts');
+    expect(h.client.getInstructions()).to.include('at most 80 words');
+    expect(h.client.getInstructions()).to.include('audit unsupported claims');
+    expect(h.client.getInstructions()).to.include('point-of-view thesis');
+    expect(h.client.getInstructions()).to.include('proposed accountable role');
+    expect(h.client.getInstructions()).to.include('capacity allocation');
+    expect(h.client.getInstructions()).to.include('label unsupplied capacity');
+    expect(h.client.getInstructions()).to.include('separate metrics');
+    expect(h.client.getInstructions()).to.include('supplied baselines');
     expect(h.client.getInstructions()).to.include('# Heading {[content]}');
-    expect(h.client.getInstructions()).to.include('revise_document');
+    expect(h.client.getInstructions()).to.include('directly into convert_document');
+    expect(h.client.getInstructions()).to.include('rather than as required phases');
     expect(h.client.getInstructions()).to.include('Never invent root ids');
 
     const capabilities = h.client.getServerCapabilities();
@@ -166,7 +178,6 @@ describe('MCP protocol surface', function () {
     for (const name of [
       'convert_document',
       'create_document_bundle',
-      'revise_document',
       'preview_document',
       'apply_inferred_theme',
     ]) {
@@ -204,7 +215,7 @@ describe('MCP protocol surface', function () {
     }
   });
 
-  it('publishes the exact core-owned bounded output contract for all 21 tools', async () => {
+  it('publishes the exact core-owned bounded output contract for all 20 tools', async () => {
     const { tools } = await h.client.listTools();
     expect(DOCBLOCKS_MCP_TOOL_NAMES).to.deep.equal(REQUIRED_AGENTIC_TOOL_NAMES);
     expect(Object.keys(DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS)).to.deep.equal([
@@ -314,18 +325,6 @@ describe('MCP protocol surface', function () {
       (alternative) => schemaConst(alternative, 'ifExists') === 'replace',
     );
     expect(requireSchema(replace, 'replace materialization').required).to.include('expectedSha256');
-
-    const revise = findTool(tools, 'revise_document');
-    expect(revise.inputSchema.required).to.deep.equal(['artifactUri', 'expectedSha256', 'edits']);
-    expect(revise.description).to.include('without resending the full document');
-    const edits = schemaProperty(revise, 'edits');
-    expect(edits.minItems).to.equal(1);
-    expect(edits.maxItems).to.equal(64);
-    const edit = requireSchema(edits.items, 'revision edit');
-    expect(edit.additionalProperties).to.equal(false);
-    expect(edit.required).to.deep.equal(['kind', 'blockId', 'markdown']);
-    expect(schemaConst(edit, 'kind')).to.equal('replace_block');
-    expect(schemaPropertyFromSchema(edit, 'markdown').maxLength).to.equal(1024 * 1024);
   });
 
   it('enumerates resources/templates and keeps discovery aligned with linked Squisq', async () => {
@@ -403,11 +402,18 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(3);
+    expect(authoringPayload.version).to.equal(6);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(
-      authoringPayload.workflow?.some((step) => String(step).includes('revise_document')),
+      authoringPayload.workflow?.some((step) =>
+        String(step).includes('directly to convert_document'),
+      ),
+    ).to.equal(true);
+    expect(
+      authoringPayload.workflow?.some((step) =>
+        String(step).includes('review tools rather than required phases'),
+      ),
     ).to.equal(true);
     expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
       bodyPolicy: 'complete',
@@ -506,6 +512,18 @@ describe('MCP protocol surface', function () {
     );
     expect(presentationDefault).to.include('Create a presentation about: Orbital habitats');
     expect(presentationDefault).to.include('get_authoring_context');
+    expect(presentationDefault).to.include('closed evidence set');
+    expect(presentationDefault).to.include('temporal or correlational wording');
+    expect(presentationDefault).to.include('requested slide count exactly');
+    expect(presentationDefault).to.include('at most 80 words');
+    expect(presentationDefault).to.include('point-of-view thesis');
+    expect(presentationDefault).to.include('proposed accountable role');
+    expect(presentationDefault).to.include('Potential tradeoff');
+    expect(presentationDefault).to.include('capacity allocation');
+    expect(presentationDefault).to.include('separate metrics');
+    expect(presentationDefault).to.include('supplied baselines');
+    expect(presentationDefault).to.include('rewrite or label every unsupported claim');
+    expect(presentationDefault).to.include('definitionCard');
     expect(presentationDefault).to.include('# Heading {[content]}');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 
@@ -536,6 +554,9 @@ describe('MCP protocol surface', function () {
       await h.client.getPrompt({ name: 'create-document', arguments: { topic: 'Wetlands' } }),
     );
     expect(documentDefault).to.include('Create a professional document about: Wetlands');
+    expect(documentDefault).to.include('closed evidence set');
+    expect(documentDefault).to.include('proposed operating model');
+    expect(documentDefault).to.include('count document words');
     expect(documentDefault).to.match(/\bpdf\b/iu);
 
     const documentOption = promptText(

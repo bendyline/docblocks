@@ -87,23 +87,45 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // The sidebar titlebar ends with a desktop-only dotted grip so the
   // draggable space beside the workspace gear is visually discoverable.
   const sidebarHeader = window.locator('.db-shell-sidebar-header');
-  const grip = await sidebarHeader.evaluate((element) => {
-    const headerStyle = getComputedStyle(element);
-    const style = getComputedStyle(element, '::after');
+  const gripElement = sidebarHeader.locator('.db-window-drag-grip');
+  await expect(gripElement).toHaveAttribute(
+    'data-tooltip',
+    'Click and drag here to move your window around.',
+  );
+  const grip = await gripElement.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const headerRect = element.getBoundingClientRect();
+    const gutterTarget = document.elementFromPoint(
+      headerRect.right - 4,
+      headerRect.top + headerRect.height / 2,
+    );
+    const gutterGrip = gutterTarget?.closest('.db-window-drag-grip');
+    const gutterStyle = gutterGrip ? getComputedStyle(gutterGrip) : null;
     return {
-      hasContent: style.content !== 'none' && style.content !== 'normal',
       width: style.width,
+      paddingRight: style.paddingRight,
       backgroundImage: style.backgroundImage,
-      cursor: headerStyle.cursor,
+      cursor: style.cursor,
       appRegion:
         style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+      gutterIsGrip: gutterGrip === element,
+      gutterAppRegion:
+        gutterStyle?.getPropertyValue('-webkit-app-region') ||
+        gutterStyle?.getPropertyValue('app-region'),
     };
   });
-  expect(grip.hasContent).toBe(true);
-  expect(grip.width).toBe('12px');
+  expect(grip.width).toBe('20px');
+  expect(grip.paddingRight).toBe('8px');
   expect(grip.backgroundImage).toContain('radial-gradient');
   expect(grip.cursor).toBe('grab');
   expect(grip.appRegion).toBe('drag');
+  expect(grip.gutterIsGrip).toBe(true);
+  expect(grip.gutterAppRegion).toBe('drag');
+
+  await gripElement.hover();
+  await expect(window.locator('.squisq-tooltip')).toHaveText(
+    'Click and drag here to move your window around.',
+  );
 
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();

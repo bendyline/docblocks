@@ -9,7 +9,7 @@ The current server has these non-negotiable properties:
 
 - local stdio transport only;
 - wire version 1 with strict inputs and exact structured outputs;
-- exactly 19 canonical tools and no legacy aliases;
+- exactly 20 canonical tools and no legacy aliases;
 - no filesystem authority unless a root is granted at startup;
 - artifact-first conversion, bundling, previewing, and theme application;
 - durable output only through `save_artifact`;
@@ -25,7 +25,7 @@ flowchart LR
   transport <--> sdk["MCP SDK server"]
 
   subgraph docblocks["DocBlocks MCP process"]
-    sdk --> tools["19 strict tools"]
+    sdk --> tools["20 strict tools"]
     tools --> guard["Guarded expensive operations"]
     guard --> documents["DocumentService: source resolution and normalization"]
     guard --> intelligence["Inspect, validate, compare, preview"]
@@ -105,7 +105,6 @@ sources, targets, assets, and destinations. The tool list below is exhaustive.
 | `get_conversion_report`  | read-only         | Retrieve the stored report for a conversion-backed artifact.                          |
 | `convert_document`       | artifact-creating | Convert one normalized source into 1 through 12 immutable artifacts.                  |
 | `create_document_bundle` | artifact-creating | Stage Markdown and explicit assets as an immutable DBK working artifact.              |
-| `revise_document`        | artifact-creating | Replace selected DBK blocks with hash-guarded immutable artifact revision.            |
 | `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.                 |
 | `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.            |
 | `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity.     |
@@ -125,9 +124,9 @@ sources, targets, assets, and destinations. The tool list below is exhaustive.
 
 <!-- END MCP TOOL CATALOG -->
 
-Five tools create temporary artifacts without writing a user path:
-`convert_document`, `create_document_bundle`, `revise_document`, `preview_document`,
-and `apply_inferred_theme`. `save_artifact` is the sole materializing tool and is marked
+Four tools create temporary artifacts without writing a user path:
+`convert_document`, `create_document_bundle`, `preview_document`, and
+`apply_inferred_theme`. `save_artifact` is the sole materializing tool and is marked
 destructive because its conditional replacement mode can change an existing file.
 The other 15 tools are read-only and idempotent.
 
@@ -136,7 +135,6 @@ The other 15 tools are read-only and idempotent.
 | Tool                    | Key constraints                                                                                     |
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
 | `convert_document`      | `source`; 1-12 distinct `targets`; optional `themeId`, `transformId`, `autoTemplates`, and `title`. |
-| `revise_document`       | DBK artifact URI plus exact SHA-256; 1-64 unique block replacements, each at most 1 Mi characters.  |
 | `inspect_document`      | `maxBlocks` defaults to 200 and is at most 2,000; opaque nullable cursor.                           |
 | `validate_document`     | Optional nullable target format enables target-specific fidelity checks.                            |
 | `preview_document`      | `maxItems` is 1-20 per call; optional start index and 160-1920 by 90-1920 dimensions.               |
@@ -220,52 +218,48 @@ A robust agent workflow is:
 
 1. Call `list_roots` only when local files or durable output are needed.
 2. Call `get_authoring_context` once instead of enumerating the authoring catalogs.
-3. Keep short Markdown inline, or stage Markdown and assets once with
-   `create_document_bundle` when iterative work is expected.
-4. Use `inspect_document` to understand content and `validate_document` for source
-   or target constraints.
-5. For a staged DBK, use `revise_document` with inspected block IDs and the exact
-   parent SHA-256 to repair selected blocks without resending the complete document.
-6. Call `convert_document` once with all desired targets. They share one normalized
+   Its text content is a compact, high-salience authoring contract; its exact
+   structured content retains the complete linked catalog.
+3. Treat supplied facts as a closed evidence set: preserve them exactly; use temporal
+   or correlational wording unless causality is supplied; label calculations,
+   assumptions, hypotheses, recommendations, and illustrative examples. Causal links,
+   rhetorical performance labels, superlatives, sole causes, targets, capabilities,
+   owners, dates, channels, and operational details must be supplied or explicitly
+   framed. Prefer `observed`, `coincided with`, `intended to`, or `proposed` over
+   `drove`, `addresses`, `protects`, or `proves`. Do not connect separate metrics,
+   audiences, segments, or workflows unless the relationship is supplied. Add
+   decision value through supplied baselines, goals, targets, rankings, and transparent
+   calculations. Do not call choices a sequence or capacity allocation unless order,
+   timing, or resource constraints were supplied. When a requested policy,
+   playbook, or training guide needs unsupplied operating details, add one explicit
+   proposed operating model scope note that applies to those details.
+4. Match explicit slide/page counts and word ranges exactly. For PPTX, use exactly
+   one level-one Markdown heading (`#`) per slide and no level-two through level-six
+   headings because every heading becomes a slide by default. Target at most 80 words
+   per slide and express within-slide structure with lists, tables, or bold labels.
+   Make slide one a supported point-of-view thesis. For requested choices, state concrete opportunity
+   costs grounded in supplied alternatives and one proposed accountable role per
+   choice. Label any unsupplied capacity or outcome claim as an assumption or
+   potential tradeoff, and label a new review cadence or measurement procedure as
+   proposed.
+5. Keep the complete Markdown as the authoritative source. Pass it directly to
+   `convert_document`, or use a bundle source directly when assets are needed. Revise
+   by editing the complete Markdown and converting again.
+6. Use `create_document_bundle` only when the same materially large Markdown-and-asset
+   bundle will feed several review or conversion operations.
+7. Before conversion, count slide sections or document words, verify every requested
+   element, and rewrite or label every unsupported claim. Use `inspect_document` or
+   `validate_document` when semantic structure, accessibility, retention, or target
+   diagnostics need review.
+8. Use `preview_document` when bounded visual evidence is useful. Check `previewBasis`
+   before treating pixels as native verification, and repair findings in the complete
+   Markdown.
+9. Call `convert_document` once with all desired targets. They share one normalized
    source, and a failure rolls back every artifact created by that call.
-7. Use `preview_document` to review bounded pages, slides, sheets, or frames. Check
-   `previewBasis` before treating pixels as native verification.
-8. Reuse an artifact as another tool's source, read a bounded artifact resource, or
-   call `save_artifact` for durable output.
-9. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
-   and diagnostics matter.
-
-### Immutable block revision
-
-`revise_document` is the artifact-native editing path for a staged DBK. Its parent
-must be a live session artifact, and `expectedSha256` must exactly match the SHA-256
-returned with that artifact. A mismatch is a conflict; the server never guesses
-which artifact generation the caller intended.
-
-Each `replace_block` edit uses an ID returned by `inspect_document` and supplies one
-complete heading plus its direct body. The heading depth is fixed, nested headings
-are rejected, and an explicit replacement ID cannot differ from the inspected ID.
-The server pins the original ID into the replacement, preserves child blocks and
-assets, applies all replacements atomically, and returns a new immutable DBK. The
-parent artifact remains readable and unchanged.
-
-```json
-{
-  "artifactUri": "docblocks://artifacts/00000000-0000-4000-8000-000000000000",
-  "expectedSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "edits": [
-    {
-      "kind": "replace_block",
-      "blockId": "casualties",
-      "markdown": "# Human cost {[content]}\n\n- 4,400 Allied deaths\n- Source note: ..."
-    }
-  ]
-}
-```
-
-The result records the parent and revised artifact references plus before/after
-SHA-256 values for every replaced block. To continue revising, inspect and use the
-new artifact URI and its hash; do not reuse the parent precondition.
+10. Reuse an artifact as another tool's source, read a bounded artifact resource, or
+    call `save_artifact` for durable output.
+11. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
+    and diagnostics matter.
 
 ### Example multi-target conversion
 
@@ -410,27 +404,34 @@ when a complete-body template does not materialize all of its body text.
 The authoring workflow stays linked-Squisq-native and starts with one consolidated
 call:
 
-1. `get_authoring_context` returns formats, themes, transforms, exact template
-   inputs, canonical examples, body-retention policy, and optionally block-level
-   recommendations. Use `list_*` and `describe_*` only for incremental follow-up.
-2. Author annotations on headings: `# Heading {[content]}`. A standalone
+1. `get_authoring_context` returns a compact text contract plus structured formats,
+   themes, transforms, exact template inputs, canonical examples, body-retention
+   policy, and optional block-level recommendations. Structured-capable clients avoid
+   a duplicate pretty-printed catalog; text-only clients can call `describe_template`
+   for focused exact inputs. Use `list_*` and `describe_*` only for follow-up.
+2. Separate supplied facts from calculations, assumptions, hypotheses, and
+   recommendations before authoring. Preserve facts exactly and use temporal or
+   correlational wording unless causality is supplied. Do not infer end-to-end
+   feasibility from one phase duration. Introduce unsupplied policy, roles, gates,
+   timelines, and procedures as a proposed operating model.
+3. Author annotations on headings: `# Heading {[content]}`. A standalone
    `{[content]}` creates an additional heading-less block and is only appropriate
-   when that extra block is deliberate.
-3. Ordinary MCP headings default to the linked `content` template, which renders
-   the complete body. Validate and preview this verbose first pass before replacing
-   selected blocks with more visual templates.
-4. Keep Markdown inline or use `create_document_bundle` to stage Markdown plus
-   assets. The returned artifact URI feeds directly into inspect, validate, preview,
-   and convert; a temporary local Markdown file is unnecessary.
-5. After staging, use `revise_document` with inspected block IDs and the artifact's
-   exact SHA-256 for targeted repairs instead of retransmitting the full Markdown.
+   when that extra block is deliberate. For PPTX, use exactly one `#` heading per
+   slide and no subordinate Markdown headings.
+4. Ordinary MCP headings default to the linked `content` template, which renders
+   the complete body. Use validation or preview when their evidence is helpful before
+   replacing selected blocks with more visual templates.
+5. Keep the complete Markdown as the authoritative source and pass it directly to
+   `convert_document`, or pass a bundle source directly when assets are needed. A
+   temporary local Markdown file is unnecessary. `create_document_bundle` is an
+   optional optimization for reusing materially large Markdown-and-asset bundles.
 6. `describe_theme` resolves built-in themes and themes embedded in a source.
 7. `infer_theme_from_file` imports reusable colors, typography, and optionally
    Office layout information.
 8. `inspect_pptx_layouts` reports slide size, masters, layouts, usage, classification,
    and mapped template IDs.
-9. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK
-   artifact without mutating the source.
+9. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK artifact
+   without mutating the source.
 
 The binary inference boundary is intentionally narrower than `DocumentSource`:
 
@@ -664,11 +665,17 @@ Keep extensions inside the existing boundaries:
 ## Verification
 
 ```bash
+npm run test:eval:mcp
 npm run test:mcp
 npm run check:squisq-linked
 npm run test:mcp:linked
 npm run all
 ```
+
+The repository-local [MCP content evaluation framework](mcp-evals.md) hosts Codex
+against the built stdio server, preserves exact authored Markdown and Office
+artifacts, applies deterministic and LLM judges, and supports paired A/B reports.
+Its outputs stay under gitignored `reports/`.
 
 `test:mcp` covers the protocol surface and adversarial authority/artifact behavior.
 `test:mcp:linked` rebuilds and links the sibling checkout, runs focused Squisq

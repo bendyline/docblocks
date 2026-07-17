@@ -10,25 +10,6 @@ const PROBE_OUTPUT_LIMIT = 64 * 1024;
 
 let detectedVersion: string | null | undefined;
 let detectionPromise: Promise<string | null> | null = null;
-let resolvedFfmpegPath: string | null = null;
-
-/** Resolve the ffmpeg binary path: bundled (ffmpeg-static) > system PATH. */
-function resolveFfmpegBinary(): string {
-  if (resolvedFfmpegPath) return resolvedFfmpegPath;
-  try {
-    // ffmpeg-static is optional. Guard require so app startup remains safe.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const bundled = require('ffmpeg-static');
-    if (typeof bundled === 'string' && bundled.length > 0) {
-      resolvedFfmpegPath = bundled;
-      return bundled;
-    }
-  } catch {
-    // Optional dependency absent; use PATH.
-  }
-  resolvedFfmpegPath = 'ffmpeg';
-  return resolvedFfmpegPath;
-}
 
 async function detectFfmpeg(): Promise<string | null> {
   if (detectedVersion !== undefined) return detectedVersion;
@@ -36,7 +17,7 @@ async function detectFfmpeg(): Promise<string | null> {
 
   detectionPromise = new Promise<string | null>((resolve) => {
     try {
-      const child = spawn(resolveFfmpegBinary(), ['-version'], {
+      const child = spawn('ffmpeg', ['-version'], {
         stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       });

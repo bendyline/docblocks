@@ -1138,6 +1138,7 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Match Squisq's rendered line box + 4px vertical padding + 1px border. */
   height: 23px;
   padding: 0 12px 0 18px;
   border-top: 1px solid var(--db-border-strong);
@@ -2812,6 +2813,7 @@ html:has(.db-shell[data-theme='dark']) {
   --db-accent-soft-15: rgba(200, 180, 143, 0.18);
   --db-accent-soft-25: rgba(200, 180, 143, 0.28);
   --db-accent-tint-strong: #3a382e;
+  --db-accent-deep: #e6dcc0;
   --db-gutter-bg: #4a4538;
 }
 
@@ -2834,6 +2836,7 @@ html:has(.db-shell[data-theme='light']) {
   --db-accent-soft-15: rgba(125, 105, 72, 0.15);
   --db-accent-soft-25: rgba(125, 105, 72, 0.25);
   --db-accent-tint-strong: #d8d0b5;
+  --db-accent-deep: #3d3220;
   --db-gutter-bg: #efe8d4;
 }
 
@@ -3163,6 +3166,54 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-badge-bg: #333333;
   --db-badge-text: #eeeeee;
   --db-badge-text-hover: #ffffff;
+}
+
+/* The Use mode menu is portaled to document.body, outside both the DocBlocks
+   shell and the Squisq editor shell. Consume the palette hoisted to `html`
+   above so its surface, states, icons, and text follow every DocBlocks theme
+   and accent instead of falling back to Squisq's standalone blue/slate UI. */
+html:has(.db-shell) .squisq-use-mode-menu {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow:
+    0 12px 32px var(--db-shadow),
+    0 2px 6px var(--db-shadow);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item {
+  color: var(--db-text-secondary);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:hover,
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:focus-visible {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item--selected {
+  background: var(--db-accent-tint-strong);
+  color: var(--db-accent-deep);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-icon {
+  background: var(--db-bg-hover);
+  color: var(--db-text-muted);
+}
+
+html:has(.db-shell)
+  .squisq-use-mode-menu
+  .squisq-use-mode-menu-item--selected
+  .squisq-use-mode-menu-icon {
+  background: var(--db-accent-soft-25);
+  color: var(--db-accent-hover);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-summary {
+  color: var(--db-text-muted);
+}
+
+html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-check {
+  color: var(--db-accent-hover);
 }
 
 /* Custom layout authoring is portaled to document.body. Bind its host-facing
@@ -5017,18 +5068,20 @@ button.db-git-file-row:hover {
   }
 
   /* Make the draggable header space beside the workspace gear discoverable,
-     matching the Electron titlebar without introducing another control. */
-  .db-shell .db-shell-sidebar-header::after {
-    content: '';
-    width: 12px;
+     matching the Electron titlebar without introducing another control. The
+     12px dotted content and its 8px right padding form one drag region. */
+  .db-shell .db-window-drag-grip {
+    box-sizing: border-box;
+    width: 20px;
     height: 20px;
-    flex: 0 0 12px;
-    margin-right: 3px;
+    flex: 0 0 20px;
+    padding-right: 8px;
     background-image: radial-gradient(circle, var(--db-text-muted) 1px, transparent 1.25px);
+    background-clip: content-box;
+    background-origin: content-box;
     background-position: center;
     background-size: 4px 4px;
     opacity: 0.72;
-    pointer-events: none;
     app-region: drag;
     -webkit-app-region: drag;
   }

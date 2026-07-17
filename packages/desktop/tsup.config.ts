@@ -27,13 +27,7 @@ export default defineConfig([
     // the small slice of DocBlocks core used by main so electron-builder only
     // has to copy dependencies that are genuinely loaded at runtime.
     noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
-    external: [
-      'electron',
-      'electron-updater',
-      'chokidar',
-      'electron-window-state',
-      'ffmpeg-static',
-    ],
+    external: ['electron', 'electron-updater', 'chokidar', 'electron-window-state'],
     outExtension: () => ({ js: '.cjs' }),
   },
   // Preload — runs in renderer sandbox with limited Node APIs + DOM.

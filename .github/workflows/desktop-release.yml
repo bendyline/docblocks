@@ -168,6 +168,13 @@ jobs:
             }
           }
 
+      # electron-builder merges the x64, arm64, and combined NSIS installers
+      # into latest.yml. electron-updater does not architecture-filter Windows
+      # entries, so publish only the combined installer in updater metadata.
+      # The per-architecture installers remain uploaded as manual assets.
+      - name: Prepare Windows updater manifest
+        run: npm run prepare:windows-updater -w docblocks-desktop
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

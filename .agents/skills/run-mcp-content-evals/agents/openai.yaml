@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Run MCP Content Evals'
+  short_description: 'Run and compare DocBlocks MCP content evaluations'
+  default_prompt: 'Use $run-mcp-content-evals to run the quick baseline suite and summarize actionable regressions.'

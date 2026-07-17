@@ -9,7 +9,6 @@ import {
   parseArtifactRef,
   parseComparisonResult,
   parseConversionResult,
-  parseDocumentRevisionResult,
   parseDocumentSource,
   parseInspectionResult,
   parseMaterializationOptions,
@@ -26,8 +25,6 @@ import {
   artifactRefSchema,
   comparisonResultSchema,
   conversionResultSchema,
-  documentRevisionRequestSchema,
-  documentRevisionResultSchema,
   documentSourceSchema,
   inspectionResultSchema,
   materializationOptionsSchema,
@@ -84,39 +81,6 @@ function conversionResultValue() {
     appliedTransformId: null,
     sourceAssets: [],
     sourceAssetCount: 0,
-    diagnostics: [],
-  };
-}
-
-function documentRevisionResultValue() {
-  const parentArtifact = artifact({
-    id: 'parent-artifact',
-    uri: 'docblocks://artifacts/parent-artifact',
-    format: 'dbk',
-    mimeType: 'application/vnd.docblocks+zip',
-    suggestedFilename: 'report.dbk',
-  });
-  const revisedArtifact = artifact({
-    id: 'revised-artifact',
-    uri: 'docblocks://artifacts/revised-artifact',
-    format: 'dbk',
-    mimeType: 'application/vnd.docblocks+zip',
-    sourceFormat: 'dbk',
-    suggestedFilename: 'report.dbk',
-  });
-  return {
-    version: DOCBLOCKS_MCP_WIRE_VERSION,
-    kind: 'revision' as const,
-    parentArtifact,
-    artifact: revisedArtifact,
-    edits: [
-      {
-        kind: 'replace_block' as const,
-        blockId: 'overview',
-        beforeSha256: 'c'.repeat(64),
-        afterSha256: 'd'.repeat(64),
-      },
-    ],
     diagnostics: [],
   };
 }
@@ -494,37 +458,6 @@ describe('DocBlocks MCP wire contracts', () => {
       ).to.equal(null);
     });
 
-    it('validates immutable document revision requests and results exactly', () => {
-      const request = {
-        artifactUri: 'docblocks://artifacts/parent-artifact',
-        expectedSha256: ARTIFACT_HASH,
-        edits: [
-          {
-            kind: 'replace_block' as const,
-            blockId: 'overview',
-            markdown: '# Revised overview {[content]}\n\nComplete replacement body.',
-          },
-        ],
-      };
-      const result = documentRevisionResultValue();
-      expect(documentRevisionRequestSchema.safeParse(request).success).to.equal(true);
-      expect(
-        documentRevisionRequestSchema.safeParse({ ...request, path: 'report.dbk' }).success,
-      ).to.equal(false);
-      expect(parseDocumentRevisionResult(result)).to.deep.equal(result);
-      expect(documentRevisionResultSchema.safeParse(result).success).to.equal(true);
-      expect(parseDocumentRevisionResult({ ...result, mutable: true })).to.equal(null);
-      expect(
-        parseDocumentRevisionResult({
-          ...result,
-          edits: [...result.edits, result.edits[0]],
-        }),
-      ).to.equal(null);
-      expect(parseDocumentRevisionResult({ ...result, artifact: result.parentArtifact })).to.equal(
-        null,
-      );
-    });
-
     it('publishes mutually exclusive exact success and error output branches', () => {
       const schema = toolOutputSchema(z.object({ value: z.string() }).strict());
       const detail = {
@@ -651,11 +584,6 @@ describe('DocBlocks MCP wire contracts', () => {
         maxLength: MCP_WIRE_LIMITS.pathCharacters,
       });
       expect(destinationPath.pattern).to.be.a('string').and.not.equal('');
-
-      const revision = publishedSuccessResultProperties(
-        DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.revise_document,
-      );
-      expect(recordOf(revision.edits).maxItems).to.equal(MCP_WIRE_LIMITS.revisionEdits);
     });
 
     it('owns one exact output schema for every canonical MCP tool', () => {
@@ -665,7 +593,7 @@ describe('DocBlocks MCP wire contracts', () => {
       expect(Object.keys(DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS)).to.deep.equal([
         ...DOCBLOCKS_MCP_TOOL_NAMES,
       ]);
-      expect(DOCBLOCKS_MCP_TOOL_NAMES).to.have.length(21);
+      expect(DOCBLOCKS_MCP_TOOL_NAMES).to.have.length(20);
 
       const error = {
         version: 1,

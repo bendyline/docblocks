@@ -157,3 +157,4 @@ vite.config.ts.timestamp-*
 # Skill output (architecture / quality / a11y / ux reviews) — kept local by default
 reports/
 .DS_Store
+/.release-audit-2.1.2-20260717

@@ -50,14 +50,14 @@ The preferred workflow is:
 
 1. Call `get_authoring_context` once, and discover granted root aliases with
    `list_roots` only when local files are involved.
-2. Keep short drafts inline or stage Markdown and assets once with
-   `create_document_bundle` when iterative revision is expected.
-3. Use `inspect_document` and `validate_document` to understand the source and
-   its target-format constraints.
-4. Repair selected blocks of a staged DBK with `revise_document`, using the
-   inspected block IDs and exact parent artifact SHA-256. Each revision returns
-   a new artifact and leaves the parent unchanged.
-5. Use `preview_document` for bounded, paginated image checks and inspect its
+2. Keep the complete Squisq-compatible Markdown as the authoritative source and
+   pass it—or a bundle source when assets are needed—directly to `convert_document`.
+   Revise by editing the complete Markdown and converting again.
+3. Use `create_document_bundle` only when the same materially large
+   Markdown-and-asset bundle will feed several review or conversion operations.
+4. Use `inspect_document` or `validate_document` when semantic structure,
+   accessibility, retention, or target-format diagnostics need review.
+5. Use `preview_document` when bounded visual evidence is useful and inspect its
    `previewBasis`: Markdown/DBK are source renders, imported document artifacts
    are reconstructed previews rather than native-application pixels, and MP4
    or GIF sources return one natively extracted first-frame JPEG.

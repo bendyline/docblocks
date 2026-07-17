@@ -16,7 +16,7 @@ renderer/   Vite + React app — mounts <DocBlocksShell>; runs in a browser cont
 
 Key main-process modules:
 
-- `ipc-fs.ts` / `ipc-workspaces.ts` / `ipc-shell.ts` / `ipc-ffmpeg.ts` — IPC handlers behind the host API
+- `ipc-fs.ts` / `ipc-workspaces.ts` / `ipc-shell.ts` — IPC handlers behind the host API
 - `workspace-roots.ts` — whitelist enforcement: the renderer can only read/write inside folders the user has explicitly granted. **New `ipc-fs` operations must respect it.**
 - `menu.ts` / `tray.ts` — native menu and tray integration
 - `updater.ts` — auto-update via electron-updater (checks this repo's GitHub Releases)
@@ -27,7 +27,7 @@ Key main-process modules:
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.
 - **The renderer never imports `electron` or `node:*`.** It's a browser context; everything native goes through the host API.
 - **The `app://` custom protocol is load-bearing.** It gives IndexedDB a stable origin (workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
-- **Animated GIF uses the packaged browser core.** The renderer build copies the pinned ffmpeg.wasm core and its GPL notices under `dist/renderer/ffmpeg-core/`; main adds COOP/COEP to trusted renderer responses so `SharedArrayBuffer` is available. The VS Code extension deliberately does not ship these assets.
+- **Animated GIF uses the packaged browser core.** The renderer build copies the architecture-neutral pinned ffmpeg.wasm core and its GPL notices under `dist/renderer/ffmpeg-core/`; main adds COOP/COEP to trusted renderer responses so `SharedArrayBuffer` is available. The desktop runtime does not bundle a host-native FFmpeg executable. The VS Code extension deliberately does not ship these assets.
 
 ## Development
 
