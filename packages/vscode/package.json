@@ -28,7 +28,7 @@
       "properties": {
         "docblocks.autoSave": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "scope": "window",
           "description": "Automatically save markdown files 20 seconds after the last edit in the DocBlocks editor. Manual Save and editor close still flush pending changes when disabled."
         },

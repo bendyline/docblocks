@@ -993,7 +993,7 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const textSize = configuration.get<unknown>('writeCanvasTextSize');
   const lineSpacing = configuration.get<unknown>('writeCanvasLineSpacing');
   return {
-    autoSave: typeof autoSave === 'boolean' ? autoSave : true,
+    autoSave: typeof autoSave === 'boolean' ? autoSave : false,
     accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
     writeCanvasSettings: {
       textSize: isDocBlocksWriteCanvasTextSize(textSize)

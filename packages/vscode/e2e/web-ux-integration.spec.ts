@@ -270,14 +270,12 @@ test.describe('VS Code web and UX integration', () => {
 
   /**
    * The byte-preservation test above never clicks, so it cannot observe the
-   * window that opens once `armEditorEdits` fires. Arming happens on any
-   * pointer-down — including mere caret placement — so if Squisq emitted a
-   * normalizing snapshot from a click alone, that snapshot would be accepted as
-   * an authored edit and eventually autosaved, rewriting the file with markdown
-   * the user never typed. This fixture is deliberately non-canonical in every
-   * way the WYSIWYG serializer is known to rewrite (setext heading, underscore
-   * emphasis, asterisk bullets, `1.`-repeated ordering, indented code), so any
-   * normalizing emission would be recorded as an edit here.
+   * former window that opened when any pointer-down armed editor writes. Mere
+   * caret placement must not authorize a Squisq normalization callback. This
+   * fixture is deliberately non-canonical in every way the WYSIWYG serializer
+   * is known to rewrite (setext heading, underscore emphasis, asterisk bullets,
+   * `1.`-repeated ordering, indented code), so any accepted normalization would
+   * be recorded as an edit here.
    *
    * The assertion is the *dirty state*, not the file bytes: @vscode/test-web
    * serves the fixture folder read-only, so an `fs.readFile` of the fixture can
@@ -320,6 +318,54 @@ test.describe('VS Code web and UX integration', () => {
 
     await expect(autosavePending).toHaveCount(0);
     await expect(statusBarDirty).toHaveCount(0);
+  });
+
+  test('keeps a first whitespace-only edit from authoring a normalized snapshot', async ({
+    page,
+  }) => {
+    await writeFixture(
+      [
+        '# Connectors',
+        '',
+        "A **connector** binds a project to an external source of the user's own data — a",
+        'mailbox, a calendar, a Drive folder, a git repo, a Slack export — and mirrors it.',
+        '',
+        '**Architectural thesis: preserve this emphasis.** Keep the source byte-stable.',
+        '',
+      ].join('\n'),
+    );
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const paragraph = editor.getByText(/A connector binds a project/u).first();
+    await expect(paragraph).toBeVisible({ timeout: 15_000 });
+    await paragraph.click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1_000);
+
+    await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
+    ).toHaveCount(0);
+  });
+
+  test('accepts a first substantive edit made with a formatting control', async ({ page }) => {
+    await writeFixture('Format this text.\n');
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const paragraph = editor.getByText('Format this text.').first();
+    await expect(paragraph).toBeVisible({ timeout: 15_000 });
+    await paragraph.click();
+    await page.keyboard.press('ControlOrMeta+A');
+    await editor.getByRole('button', { name: /Bold/u }).click();
+
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('opens Squisq Find mode from the editor toolbar', async ({ page }) => {
@@ -379,7 +425,9 @@ test.describe('VS Code web and UX integration', () => {
     await expect(
       editor.getByRole('dialog', { name: /docblocks for vs code settings/i }),
     ).toBeVisible();
-    await expect(editor.getByRole('checkbox', { name: /automatically save files/i })).toBeChecked();
+    await expect(
+      editor.getByRole('checkbox', { name: /automatically save files/i }),
+    ).not.toBeChecked();
     await expect(editor.getByRole('radio', { name: 'Green' })).toBeVisible();
     const textSize = editor.getByRole('slider', { name: 'Text size' });
     const lineSpacing = editor.getByRole('slider', { name: 'Line spacing' });
@@ -417,7 +465,8 @@ test.describe('VS Code web and UX integration', () => {
     const settingsButton = editor.getByRole('button', { name: /docblocks settings/i });
     await settingsButton.click();
     const autoSave = editor.getByRole('checkbox', { name: /automatically save files/i });
-    if (await autoSave.isChecked()) await autoSave.click();
+    const autoSaveWasEnabled = await autoSave.isChecked();
+    if (autoSaveWasEnabled) await autoSave.click();
     await editor.getByRole('button', { name: 'Close' }).click();
     await page.waitForTimeout(300);
 
@@ -438,9 +487,11 @@ test.describe('VS Code web and UX integration', () => {
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Saved' }),
     ).toBeVisible({ timeout: 10_000 });
 
-    await settingsButton.click();
-    if (!(await autoSave.isChecked())) await autoSave.click();
-    await editor.getByRole('button', { name: 'Close' }).click();
+    if (autoSaveWasEnabled) {
+      await settingsButton.click();
+      await autoSave.click();
+      await editor.getByRole('button', { name: 'Close' }).click();
+    }
   });
 
   test('manually saves a changed markdown document before the autosave delay', async ({ page }) => {
@@ -448,6 +499,12 @@ test.describe('VS Code web and UX integration', () => {
     await openDocBlocksEditor(page);
 
     const editor = await getLatestWebviewContent(page);
+    const settingsButton = editor.getByRole('button', { name: /docblocks settings/i });
+    await settingsButton.click();
+    const autoSave = editor.getByRole('checkbox', { name: /automatically save files/i });
+    if (!(await autoSave.isChecked())) await autoSave.click();
+    await editor.getByRole('button', { name: 'Close' }).click();
+
     const finalParagraph = editor.getByText('A blockquote for testing purposes.').first();
     await expect(finalParagraph).toBeVisible({ timeout: 15_000 });
     await finalParagraph.click();
@@ -465,6 +522,10 @@ test.describe('VS Code web and UX integration', () => {
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Saved' }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
+
+    await settingsButton.click();
+    if (await autoSave.isChecked()) await autoSave.click();
+    await editor.getByRole('button', { name: 'Close' }).click();
 
     await openTextEditorWithOpenWith(page);
 

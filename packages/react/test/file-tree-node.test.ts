@@ -254,6 +254,12 @@ describe('FileTreeNode rename', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
 
+    expect(
+      container.querySelector('.db-tree-rename-input'),
+      'Enter should leave rename mode before the asynchronous move finishes',
+    ).to.equal(null);
+    expect(document.activeElement).to.equal(container.querySelector('.db-tree-row'));
+
     // The blur that lands while the rename is still in flight must not
     // fire a second rename against an entry that is already moving.
     await act(async () => {

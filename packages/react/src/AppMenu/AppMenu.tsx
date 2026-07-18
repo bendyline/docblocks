@@ -17,6 +17,7 @@ import {
   WriteCanvasSettingsControls,
 } from '../Settings/Settings.js';
 import { Dialog } from '../components/Dialog.js';
+import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
@@ -106,7 +107,9 @@ export function AppMenu({
   const moreInformationUrl = isElectronHost()
     ? 'https://docblocks.com/desktop/'
     : 'https://docblocks.com/web/';
-  const menuRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
+    useMenuKeyboard(isOpen, setIsOpen);
   const [storageEstimate, setStorageEstimate] = useState<{
     usage: number;
     quota: number;
@@ -131,18 +134,21 @@ export function AppMenu({
   useEffect(() => {
     if (!isOpen) return;
     function handleOutsideClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        closeMenu(false);
       }
     }
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen]);
+  }, [closeMenu, isOpen]);
 
-  const handleAction = useCallback((action: () => void) => {
-    setIsOpen(false);
-    action();
-  }, []);
+  const handleAction = useCallback(
+    (action: () => void) => {
+      closeMenu(false);
+      action();
+    },
+    [closeMenu],
+  );
 
   const handleKeepBrowserDataFromSettings = useCallback(async () => {
     if (!onKeepBrowserData || requestingPersistentStorage) return;
@@ -156,12 +162,14 @@ export function AppMenu({
 
   return (
     <>
-      <div ref={menuRef} className="db-app-menu">
+      <div ref={containerRef} className="db-app-menu">
         <button
+          ref={triggerRef}
           className="db-app-menu-btn"
           onClick={() => setIsOpen(!isOpen)}
+          onKeyDown={handleTriggerKeyDown}
           aria-expanded={isOpen}
-          aria-haspopup="true"
+          aria-haspopup="menu"
         >
           {logoUrl ? (
             <img
@@ -181,10 +189,16 @@ export function AppMenu({
         </button>
 
         {isOpen && (
-          <div className="db-app-menu-dropdown" role="menu">
+          <div
+            ref={menuRef}
+            className="db-app-menu-dropdown"
+            role="menu"
+            onKeyDown={handleMenuKeyDown}
+          >
             <button
               className="db-app-menu-item"
               role="menuitem"
+              tabIndex={-1}
               onClick={() => handleAction(() => setShowSettings(true))}
             >
               Settings
@@ -193,6 +207,7 @@ export function AppMenu({
               <button
                 className="db-app-menu-item"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => handleAction(() => void onInstallApp())}
               >
                 Install DocBlocks&hellip;
@@ -202,6 +217,7 @@ export function AppMenu({
               <button
                 className="db-app-menu-item"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => handleAction(() => setShowSettings(true))}
               >
                 Storage protection&hellip;
@@ -211,6 +227,7 @@ export function AppMenu({
               <button
                 className="db-app-menu-item"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
               >
                 Download all workspaces
@@ -220,6 +237,7 @@ export function AppMenu({
             <button
               className="db-app-menu-item"
               role="menuitem"
+              tabIndex={-1}
               onClick={() => handleAction(() => setShowAbout(true))}
             >
               About

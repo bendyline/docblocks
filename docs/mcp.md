@@ -99,28 +99,28 @@ sources, targets, assets, and destinations. The tool list below is exhaustive.
 
 <!-- BEGIN MCP TOOL CATALOG -->
 
-| Tool                     | Class             | Purpose                                                                               |
-| ------------------------ | ----------------- | ------------------------------------------------------------------------------------- |
-| `list_roots`             | read-only         | List opaque read/write root aliases granted at startup.                               |
-| `get_conversion_report`  | read-only         | Retrieve the stored report for a conversion-backed artifact.                          |
-| `convert_document`       | artifact-creating | Convert one normalized source into 1 through 12 immutable artifacts.                  |
-| `create_document_bundle` | artifact-creating | Stage Markdown and explicit assets as an immutable DBK working artifact.              |
-| `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.                 |
-| `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.            |
-| `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity.     |
-| `preview_document`       | artifact-creating | Produce bounded, paginated image artifacts for visual review.                         |
-| `compare_documents`      | read-only         | Compare semantic and structural retention between two sources.                        |
-| `get_authoring_context`  | read-only         | Return the complete linked authoring catalog, workflow, and optional recommendations. |
-| `list_templates`         | read-only         | List linked Squisq template IDs and summaries.                                        |
-| `describe_template`      | read-only         | Describe exact template annotations and inputs.                                       |
-| `recommend_templates`    | read-only         | Profile document blocks and recommend compatible Squisq templates.                    |
-| `describe_theme`         | read-only         | Describe a built-in or document-embedded theme.                                       |
-| `infer_theme_from_file`  | read-only         | Infer reusable theme and optional layout information from an imported file.           |
-| `inspect_pptx_layouts`   | read-only         | Inspect slide size, masters, layouts, usage, and template mapping.                    |
-| `apply_inferred_theme`   | artifact-creating | Apply an inferred theme/layout set and return a DBK artifact.                         |
-| `list_formats`           | read-only         | List live linked-registry import and export capabilities.                             |
-| `list_themes`            | read-only         | List live linked Squisq themes.                                                       |
-| `list_transform_styles`  | read-only         | List live linked Squisq transform styles.                                             |
+| Tool                     | Class             | Purpose                                                                           |
+| ------------------------ | ----------------- | --------------------------------------------------------------------------------- |
+| `list_roots`             | read-only         | List opaque read/write root aliases granted at startup.                           |
+| `get_conversion_report`  | read-only         | Retrieve the stored report for a conversion-backed artifact.                      |
+| `convert_document`       | artifact-creating | Convert one normalized source into 1 through 12 immutable artifacts.              |
+| `create_document_bundle` | artifact-creating | Stage Markdown and explicit assets as an immutable DBK working artifact.          |
+| `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.             |
+| `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.        |
+| `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity. |
+| `preview_document`       | artifact-creating | Produce bounded, paginated image artifacts for visual review.                     |
+| `compare_documents`      | read-only         | Compare semantic and structural retention between two sources.                    |
+| `get_authoring_context`  | read-only         | Return a focused authoring contract, safe defaults, and optional recommendations. |
+| `list_templates`         | read-only         | List linked Squisq template IDs and summaries.                                    |
+| `describe_template`      | read-only         | Describe exact template annotations and inputs.                                   |
+| `recommend_templates`    | read-only         | Profile document blocks and recommend compatible Squisq templates.                |
+| `describe_theme`         | read-only         | Describe a built-in or document-embedded theme.                                   |
+| `infer_theme_from_file`  | read-only         | Infer reusable theme and optional layout information from an imported file.       |
+| `inspect_pptx_layouts`   | read-only         | Inspect slide size, masters, layouts, usage, and template mapping.                |
+| `apply_inferred_theme`   | artifact-creating | Apply an inferred theme/layout set and return a DBK artifact.                     |
+| `list_formats`           | read-only         | List live linked-registry import and export capabilities.                         |
+| `list_themes`            | read-only         | List live linked Squisq themes.                                                   |
+| `list_transform_styles`  | read-only         | List live linked Squisq transform styles.                                         |
 
 <!-- END MCP TOOL CATALOG -->
 
@@ -216,10 +216,14 @@ binary theme/layout tools instead use their authority-scoped binary readers.
 
 A robust agent workflow is:
 
-1. Call `list_roots` only when local files or durable output are needed.
-2. Call `get_authoring_context` once instead of enumerating the authoring catalogs.
-   Its text content is a compact, high-salience authoring contract; its exact
-   structured content retains the complete linked catalog.
+1. For durable output, call `list_roots` before drafting. If no returned root is
+   write-enabled, stop and explain that the server must restart with
+   `--allow-write`; do not switch to a shell or CLI converter. Inline sources and
+   transient artifacts still work without roots.
+2. Call `get_authoring_context` once for a focused contract, the target capability,
+   safe defaults, and optional source-based recommendations. Use
+   `recommend_templates` and `describe_template` for focused follow-up. Read
+   `docblocks://authoring-guide` only when the complete catalog is required.
 3. Treat supplied facts as a closed evidence set: preserve them exactly; use temporal
    or correlational wording unless causality is supplied; label calculations,
    assumptions, hypotheses, recommendations, and illustrative examples. Causal links,
@@ -248,13 +252,15 @@ A robust agent workflow is:
 5. Keep the complete Markdown as the authoritative source. Pass it directly to
    `convert_document`, or use a bundle source directly when assets are needed. Revise
    by editing the complete Markdown and converting again.
-6. When one draft will feed two or more validate, preview, or convert calls, stage it
-   once with `create_document_bundle` and pass the returned artifact URI as each call's
-   source instead of re-sending the Markdown; after edits, stage the revised draft again.
+6. When one draft will feed two or more validate, inspect, preview, or convert calls,
+   stage it once with `create_document_bundle` and pass the returned artifact URI as
+   each call's source instead of re-sending the Markdown; after edits, stage the
+   revised draft again.
 7. Before conversion, count slide sections or document words, verify every requested
-   element, and rewrite or label every unsupported claim. Use `inspect_document` or
-   `validate_document` when semantic structure, accessibility, retention, or target
-   diagnostics need review.
+   element, and rewrite or label every unsupported claim. Use `validate_document` as
+   the routine export preflight and follow its repair diagnostics. Use
+   `inspect_document` only when semantic structure, provenance, assets, metadata, or
+   theme details are needed.
 8. Use `preview_document` when bounded visual evidence is useful. Check `previewBasis`
    before treating pixels as native verification, and repair findings in the complete
    Markdown.
@@ -411,16 +417,15 @@ otherwise survive silently.
 The authoring workflow stays linked-Squisq-native and starts with one consolidated
 call:
 
-1. `get_authoring_context` returns a compact text contract plus structured formats,
-   themes, transforms, exact template inputs, canonical examples, body-retention
-   policy, and optional block-level recommendations. Structured-capable clients avoid
-   a duplicate pretty-printed catalog; text-only clients can call `describe_template`
-   for focused exact inputs. Use `list_*` and `describe_*` only for follow-up. When
-   the linked registry declares that the target's exporter ignores template
-   annotations (`templateAnnotationHandling: 'ignored'`, e.g. DOCX), the returned
-   template catalog is scoped to the loss-averse content-first defaults and the
-   workflow states that visual templates do not change that target's output;
-   `list_templates` still returns the complete catalog.
+1. `get_authoring_context` returns compact text plus focused structured content: the
+   requested target capability, safe default template, themes, transforms, and
+   optional block-level recommendations. Without a source it returns only the safe
+   `content` template; with a source it adds templates recommended for those blocks.
+   Call `describe_template` for exact selected inputs, or read
+   `docblocks://authoring-guide` for the complete linked catalog. `list_templates`
+   remains a lightweight summary catalog. When the linked registry declares that the
+   target exporter ignores template annotations (for example DOCX), recommendations
+   stay scoped to content-first defaults.
 2. Separate supplied facts from calculations, assumptions, hypotheses, and
    recommendations before authoring. Preserve facts exactly and use temporal or
    correlational wording unless causality is supplied. Do not infer end-to-end
@@ -431,12 +436,13 @@ call:
    when that extra block is deliberate. For PPTX, use exactly one `#` heading per
    slide and no subordinate Markdown headings.
 4. Ordinary MCP headings default to the linked `content` template, which renders
-   the complete body. Use validation or preview when their evidence is helpful before
-   replacing selected blocks with more visual templates.
+   the complete body. Use `validate_document` as the routine export preflight. Use
+   `inspect_document` only for semantic or metadata detail and `preview_document`
+   only when visual evidence is helpful before replacing selected blocks.
 5. Keep the complete Markdown as the authoritative source and pass it directly to
    `convert_document`, or pass a bundle source directly when assets are needed. A
    temporary local Markdown file is unnecessary. When one draft will feed two or
-   more validate, preview, or convert calls, stage it once with
+   more validate, inspect, preview, or convert calls, stage it once with
    `create_document_bundle` and reuse the artifact URI as each call's source.
 6. `describe_theme` resolves built-in themes and themes embedded in a source.
 7. `infer_theme_from_file` imports reusable colors, typography, and optionally
@@ -535,6 +541,10 @@ writer can still race the final publication boundary.
 ```bash
 docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
+
+An empty `list_roots` result explicitly tells the agent that durable output is
+unavailable and that the server must restart with `--allow-write`. The agent must not
+bypass this authority boundary through a shell or direct CLI conversion.
 
 Root IDs returned by `list_roots` are opaque usability aliases, not bearer tokens or
 authority. The server still checks the requested operation against its startup grant.

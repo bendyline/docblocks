@@ -35,6 +35,7 @@ import {
 import type { ExportBlobSaver } from './run-export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 import { Dialog } from '../components/Dialog.js';
+import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
 const ExportDialog = lazy(() =>
   import('./ExportDialog.js').then((module) => ({ default: module.ExportDialog })),
@@ -214,7 +215,9 @@ export function ExportToolbarControls({
   const [exportError, setExportError] = useState<string | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const destinationRequestRef = useRef(0);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuContainerRef = useRef<HTMLDivElement>(null);
+  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
+    useMenuKeyboard(menuOpen, setMenuOpen);
 
   const lastOptions = loadLastExportOptions();
 
@@ -249,13 +252,13 @@ export function ExportToolbarControls({
   useEffect(() => {
     if (!menuOpen) return;
     const onPointerDown = (e: PointerEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+      if (menuContainerRef.current && !menuContainerRef.current.contains(e.target as Node)) {
+        closeMenu(false);
       }
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [menuOpen]);
+  }, [closeMenu, menuOpen]);
 
   useEffect(() => {
     if (
@@ -497,11 +500,13 @@ export function ExportToolbarControls({
           <ExportGlyph />
         </button>
       ) : (
-        <div className="db-toolbar-menu" ref={menuRef}>
+        <div className="db-toolbar-menu" ref={menuContainerRef}>
           <button
+            ref={triggerRef}
             type="button"
             className="db-toolbar-menu-trigger"
             onClick={handleToggleMenu}
+            onKeyDown={handleTriggerKeyDown}
             aria-label="Export and share"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -512,11 +517,17 @@ export function ExportToolbarControls({
           </button>
 
           {menuOpen && (
-            <div className="db-toolbar-menu-dropdown" role="menu">
+            <div
+              ref={menuRef}
+              className="db-toolbar-menu-dropdown"
+              role="menu"
+              onKeyDown={handleMenuKeyDown}
+            >
               {lastOptions && (
                 <button
                   type="button"
                   role="menuitem"
+                  tabIndex={-1}
                   className="db-toolbar-menu-item"
                   onClick={handleQuickExport}
                   disabled={exporting}
@@ -527,6 +538,7 @@ export function ExportToolbarControls({
               <button
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 className="db-toolbar-menu-item"
                 onClick={handleOpenDialog}
               >
@@ -535,6 +547,7 @@ export function ExportToolbarControls({
               <button
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 className="db-toolbar-menu-item"
                 onClick={handleOpenShareDialog}
               >
@@ -546,6 +559,7 @@ export function ExportToolbarControls({
                   <button
                     type="button"
                     role="menuitem"
+                    tabIndex={-1}
                     className="db-toolbar-menu-item"
                     onClick={() => void handleOpenVideoModal('mp4')}
                   >
@@ -555,6 +569,7 @@ export function ExportToolbarControls({
                     <button
                       type="button"
                       role="menuitem"
+                      tabIndex={-1}
                       className="db-toolbar-menu-item"
                       onClick={() => void handleOpenVideoModal('gif')}
                     >

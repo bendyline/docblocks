@@ -231,7 +231,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'list_roots',
     {
       description:
-        'List opaque root aliases granted when this DocBlocks MCP server started. Root aliases improve path usability but never expand authority.',
+        'Call first when durable local output is requested. Lists opaque startup-granted roots; if none is write-enabled, save_artifact cannot publish a file and the MCP server must be restarted with --allow-write.',
       inputSchema: z.object({}).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.list_roots,
       annotations: READ_ONLY,
@@ -239,7 +239,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     async () => {
       try {
         const roots = (await context.authority).listRoots();
-        return textAndStructured({ roots });
+        return textAndStructured({ roots }, rootDiscoveryText(roots));
       } catch (caught: unknown) {
         return errorResult(caught, 'resolve');
       }
@@ -324,7 +324,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'create_document_bundle',
     {
       description:
-        'Optionally stage Markdown plus authority-scoped assets as a reusable immutable DBK artifact when the same bundle will feed several operations. For normal authoring, pass complete Markdown or a bundle source directly to convert_document.',
+        'Stage Markdown plus authority-scoped assets as a reusable immutable DBK artifact when the same complete draft will be passed to two or more validate, inspect, preview, or convert calls. Pass its artifact URI instead of repeating the Markdown.',
       inputSchema: z.object({ source: bundleDocumentSourceSchema }).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.create_document_bundle,
       annotations: ARTIFACT_CREATING,
@@ -404,7 +404,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'inspect_document',
     {
       description:
-        'Inspect any linked-registry document as bounded semantic structure, block provenance, assets, metadata, theme, and diagnostics.',
+        'Inspect bounded semantic structure, block provenance, assets, metadata, theme, and diagnostics. Use for those details; do not pair it with validate_document for a routine export preflight.',
       inputSchema: z
         .object({
           source: documentSourceSchema,
@@ -440,7 +440,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'validate_document',
     {
       description:
-        'Validate document structure, templates, annotations, assets, accessibility, and optional target-format fidelity before export.',
+        'Primary pre-export review for structure, template content retention, annotations, assets, accessibility, and target fidelity. Diagnostics include repairs; normally do not also call inspect_document.',
       inputSchema: z
         .object({
           source: documentSourceSchema,
@@ -633,7 +633,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
     'docblocks://authoring-guide',
     {
       description:
-        'Compact linked-Squisq authoring vocabulary, artifact workflow, fidelity modes, templates, themes, and transform styles.',
+        'Complete linked-Squisq authoring catalog with exact template inputs, fidelity modes, themes, and transform styles. Read only when the focused authoring context is insufficient.',
       mimeType: 'application/json',
       annotations: { audience: ['assistant'], priority: 1 },
     },
@@ -644,15 +644,15 @@ function registerAuthoringGuideResource(server: McpServer): void {
         import('@bendyline/squisq/transform'),
       ]);
       const guide = {
-        version: 6,
+        version: 7,
         workflow: [
           'treat supplied facts as a closed evidence set; label calculations, assumptions, hypotheses, recommendations, and examples; do not present causal links, rhetorical performance labels, superlatives, sole causes, targets, capabilities, owners, dates, channels, or operational details as established facts unless supplied',
           'when the requested genre needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note that applies to those details, then complete the requested element',
           'author complete Squisq-compatible Markdown with annotations bound to headings; ordinary headings default to the loss-averse content template',
           'for PPTX, use exactly one level-one Markdown heading per slide and no level-two through level-six headings because every heading becomes a slide by default',
           'by default, pass the complete Markdown—or a bundle source when assets are needed—directly to convert_document; revise by editing the complete Markdown and converting again',
-          'use create_document_bundle only when a reusable staged DBK materially avoids repeating a large Markdown-and-asset bundle across several operations',
-          'use inspect_document, validate_document, and preview_document when their semantic, diagnostic, or visual evidence is useful; they are review tools rather than required phases',
+          'use create_document_bundle when the same complete draft will be passed to two or more validate, inspect, preview, or convert calls, then pass its artifact URI instead of repeating Markdown',
+          'use validate_document as the routine export preflight; use inspect_document only for semantic structure, provenance, assets, metadata, or theme details; use preview_document only when visual evidence is useful',
           'for visual polish, replace selected content blocks with compatible visual templates while preserving required content',
           'convert_document creates one or more immutable artifacts from the authoritative complete source',
           'save_artifact only when a durable file is required',
@@ -706,7 +706,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     'get_authoring_context',
     {
       description:
-        'Get a compact agent-facing authoring contract plus the complete linked-Squisq catalog in structured content, with optional block recommendations.',
+        'Get a focused authoring contract, target capability, safe default template, themes, transforms, and optional source-based recommendations. Exact full template inputs remain on demand through describe_template or docblocks://authoring-guide.',
       inputSchema: z
         .object({
           targetFormat: formatInputSchema.optional(),
@@ -742,7 +742,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           // When the linked exporter flattens annotations to semantic content,
           // the visual-template catalog is inert weight for this target: scope
           // it to the loss-averse defaults instead of shipping 26 full schemas.
-          const templates =
+          const candidateTemplates =
             annotationHandling === 'ignored'
               ? fullTemplates.filter((template) => template.safeForContentFirst)
               : fullTemplates;
@@ -783,7 +783,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               const profile = recommendModule.profileBlockContents(block.contents ?? []);
               const visual = recommendModule.recommendTemplatesForBlock(
                 profile,
-                templates.map((template) => template.id),
+                candidateTemplates.map((template) => template.id),
               ).recommended;
               const recommendedTemplateIds =
                 goal === 'content-first'
@@ -812,29 +812,21 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             defaultTemplateId: 'content',
             defaultFidelity: authoringDefaultFidelity(normalizedTarget, goal),
             workflow: [
-              'Treat supplied facts as a closed evidence set. Use temporal or correlational wording unless causality is supplied. Label calculations, assumptions, hypotheses, recommendations, and illustrative examples. Do not infer end-to-end feasibility from one supplied phase duration.',
-              'Audit claims before conversion: causal links, rhetorical labels such as compounding, engine, healthy, strong, or constraint, superlatives, sole-cause claims, targets, capabilities, owners, dates, channels, and operational details must be supplied or explicitly framed. Do not connect separate metrics, audiences, segments, or workflows unless the relationship is supplied. Prefer observed, coincided with, intended to, or proposed over drove, addresses, protects, or proves. Do not call choices a sequence or capacity allocation unless order, timing, or resources were supplied.',
-              'Complete every requested element without presenting invented policy as established fact. When a requested policy, playbook, or training guide needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note placed before the first such detail so it governs all of them. Prefix each unsupplied operational rule with Proposed: on its slide or section.',
-              'Generic option traits—control, flexibility, vendor support, freed capacity, switching costs—are capability claims: state one only when supplied or labeled Assumption or Judgment, even in table cells and tradeoffs.',
-              'Author complete Squisq-compatible content with heading-bound annotations; ordinary headings default to the loss-averse content template.',
+              'For durable local output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not fall back to a shell or CLI converter. A transient artifact is acceptable only when the user did not require a file.',
+              'Treat supplied facts as a closed evidence set. Preserve them exactly; label calculations, assumptions, hypotheses, recommendations, causal claims, capabilities, owners, dates, and unsupplied operating details. When a requested policy or playbook needs invented procedures, introduce one proposed operating model scope note before those details.',
               normalizedTarget === 'pptx'
                 ? 'Match every explicitly requested slide count exactly. Use exactly one level-one Markdown heading (#) per slide and no level-two through level-six headings because every heading becomes a slide by default. Target at most 80 words per slide, and use lists, tables, or bold labels for within-slide structure.'
                 : 'Honor the requested word range and document genre. Prefer connected memo prose for executive decisions and native headings, tables, and checklists for operational documents.',
+              'Author the complete Squisq-compatible Markdown with annotations bound to headings. Ordinary headings default to the loss-averse content template; keep that default until the complete content is sound.',
+              'Before conversion, count slide sections or document words, verify every requested element, and rewrite or label unsupported claims. For decisions, ground tradeoffs in supplied alternatives and label unsupplied accountability, capacity, outcomes, and review cadences as proposed or assumed.',
+              'Use validate_document as the routine export preflight and follow its repair diagnostics. Call inspect_document only when semantic structure, provenance, assets, metadata, or theme details are needed.',
+              'When the same complete draft will feed two or more validate, inspect, preview, or convert calls, stage it once with create_document_bundle and reuse its artifact URI; after edits, stage the revised draft again.',
               normalizedTarget === 'pptx'
-                ? 'Make slide one a supported point-of-view thesis, not a generic title. For requested choices, state a concrete opportunity cost from supplied alternatives and one proposed accountable role per choice. Label any unsupplied capacity or outcome assumption Assumption or Potential tradeoff.'
-                : 'Tie each decision implication or comparative judgment to a supplied fact or calculation, or label it Judgment. When accountability is requested but not supplied, name one clearly labeled proposed accountable role per decision or workstream.',
-              'Add decision value without inventing causes: interpret supplied comparisons to baselines, goals, and targets; use transparent calculations; label new review cadences or measurement procedures as proposed.',
-              'Before validation and conversion, run a content preflight: count slide sections or document words, verify every requested element, and rewrite or label every unsupported claim.',
-              'Use the complete Markdown as the authoritative source. Pass it—or a bundle source when assets are needed—directly to convert_document; revise by editing it and converting again.',
-              'When a draft will feed two or more validate, preview, or convert calls, stage it once with create_document_bundle and pass the returned artifact URI as each source; after edits, stage the revised draft again.',
-              'Use inspect_document or validate_document when semantic structure, content retention, accessibility, or target diagnostics need review; repair actionable findings in the authoritative Markdown.',
-              'Use preview_document when visual evidence is needed, inspect previewBasis, and repair overflow or layout problems in the authoritative Markdown.',
-              normalizedTarget === 'pptx'
-                ? 'For visual polish, replace selected content blocks with compatible recommended templates; use patterns such as definitionCard for a definition, dataTable for a true table, comparisonBar for supported numeric comparisons, and list for concise steps when the returned catalog supports them. Preserve all required content and preview again.'
+                ? 'For visual polish, call recommend_templates on the complete draft, then describe_template only for selected candidates before replacing content blocks. Preserve required content and use preview_document only when visual evidence is needed.'
                 : annotationHandling === 'ignored'
                   ? 'This target flattens template annotations to semantic content, so visual templates have no effect on the exported file: rely on native headings, tables, and checklists for structure and scanning.'
-                  : 'For visual polish, use native headings, tables, and checklists where they improve scanning; keep complete-body content when a visual template would discard detail, then preview again.',
-              'Convert to immutable artifacts, inspect conversion reports, and save only final durable outputs.',
+                  : 'For visual polish, use native headings, tables, and checklists where they improve scanning; describe a selected visual template before use and keep complete-body content when it would discard detail.',
+              'Pass the authoritative Markdown or bundle source directly to convert_document. It returns immutable artifacts; call save_artifact only for final durable outputs and never switch to a shell or CLI converter.',
             ],
             syntax: {
               headingAnnotation: '# Heading {[content]}',
@@ -842,8 +834,10 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               standaloneWarning:
                 'A standalone annotation creates an additional heading-less block. Bind it to a heading unless that extra block is deliberate.',
             },
-            formats,
-            templates,
+            formats: normalizedTarget
+              ? formats.filter((format) => format.id === normalizedTarget)
+              : formats,
+            templates: focusedAuthoringTemplates(candidateTemplates, recommendations),
             themes: schemaModule
               .getThemeSummaries()
               .slice(0, MCP_WIRE_LIMITS.arrayEntries)
@@ -864,7 +858,19 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             totalBlocks,
             truncated,
           };
-          return textAndStructured(payload, compactAuthoringContextText(payload));
+          return {
+            content: [
+              { type: 'text' as const, text: compactAuthoringContextText(payload) },
+              {
+                type: 'resource_link' as const,
+                uri: 'docblocks://authoring-guide',
+                name: 'authoring-guide',
+                description: 'Complete linked-Squisq authoring catalog; read only if needed.',
+                mimeType: 'application/json',
+              },
+            ],
+            structuredContent: asStructuredContent(successResult(payload)),
+          };
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'inspect', null, extra.signal);
@@ -1333,6 +1339,32 @@ function textAndStructured<T extends object>(payload: T, text = JSON.stringify(p
   };
 }
 
+function rootDiscoveryText(
+  roots: readonly { id: string; label: string; read: boolean; write: boolean }[],
+): string {
+  if (roots.length === 0) {
+    return 'No DocBlocks MCP roots are configured. Durable file output is unavailable: restart the server with --allow-write <directory>. Do not fall back to a shell or CLI converter; keep a transient artifact only when the user did not require a file.';
+  }
+  const catalog = JSON.stringify({ roots }, null, 2);
+  if (roots.some((root) => root.write)) return catalog;
+  return `${catalog}\n\nNo returned root is write-enabled. Durable file output is unavailable: restart the server with --allow-write <directory>. Do not fall back to a shell or CLI converter.`;
+}
+
+type AuthoringTemplateCatalog = Awaited<ReturnType<typeof authoringTemplateCatalog>>;
+
+function focusedAuthoringTemplates(
+  candidates: AuthoringTemplateCatalog,
+  recommendations: AuthoringContextResult['recommendations'],
+): AuthoringTemplateCatalog {
+  const selectedIds = new Set<string>(['content']);
+  for (const recommendation of recommendations) {
+    for (const templateId of recommendation.recommendedTemplateIds) {
+      selectedIds.add(templateId);
+    }
+  }
+  return candidates.filter((template) => selectedIds.has(template.id));
+}
+
 function compactAuthoringContextText(context: AuthoringContextResult): string {
   const target = context.targetFormat ?? 'unspecified target';
   const lines = [
@@ -1360,7 +1392,7 @@ function compactAuthoringContextText(context: AuthoringContextResult): string {
   }
   lines.push(
     '',
-    'The complete exact format, template-input, theme, transform, and recommendation catalog is in structuredContent. Use describe_template for focused follow-up when structured content is unavailable.',
+    'This response is intentionally focused. Use recommend_templates on a complete draft, describe_template for exact selected inputs, or read docblocks://authoring-guide only when the full catalog is required.',
   );
   return lines.join('\n');
 }

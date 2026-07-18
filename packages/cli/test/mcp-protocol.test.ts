@@ -95,22 +95,19 @@ describe('MCP protocol surface', function () {
       version: getPackageVersion(),
     });
     expect(h.client.getInstructions()).to.include('get_authoring_context');
+    expect(h.client.getInstructions()).to.include('list_roots before drafting');
+    expect(h.client.getInstructions()).to.include('--allow-write');
+    expect(h.client.getInstructions()).to.include('do not fall back');
     expect(h.client.getInstructions()).to.include('closed evidence set');
     expect(h.client.getInstructions()).to.include('temporal or correlational wording');
     expect(h.client.getInstructions()).to.include('proposed operating model');
     expect(h.client.getInstructions()).to.include('slide/page counts');
     expect(h.client.getInstructions()).to.include('at most 80 words');
-    expect(h.client.getInstructions()).to.include('audit unsupported claims');
-    expect(h.client.getInstructions()).to.include('point-of-view thesis');
-    expect(h.client.getInstructions()).to.include('proposed accountable role');
-    expect(h.client.getInstructions()).to.include('capacity allocation');
-    expect(h.client.getInstructions()).to.include('label unsupplied capacity');
-    expect(h.client.getInstructions()).to.include('separate metrics');
-    expect(h.client.getInstructions()).to.include('supplied baselines');
+    expect(h.client.getInstructions()).to.include('routine export preflight');
     expect(h.client.getInstructions()).to.include('# Heading {[content]}');
     expect(h.client.getInstructions()).to.include('directly into convert_document');
-    expect(h.client.getInstructions()).to.include('rather than as required phases');
-    expect(h.client.getInstructions()).to.include('Never invent root ids');
+    expect(h.client.getInstructions()).to.include('reuse its artifact URI');
+    expect(h.client.getInstructions()).to.include('never invent root ids');
 
     const capabilities = h.client.getServerCapabilities();
     expect(capabilities).to.not.equal(undefined);
@@ -312,6 +309,16 @@ describe('MCP protocol surface', function () {
     expect(preview.description).to.include('reconstructed-import');
     expect(preview.description).to.include('native-extracted');
 
+    expect(findTool(tools, 'list_roots').description).to.include('durable local output');
+    expect(findTool(tools, 'create_document_bundle').description).to.include('two or more');
+    expect(findTool(tools, 'inspect_document').description).to.include('do not pair');
+    expect(findTool(tools, 'validate_document').description).to.include(
+      'normally do not also call inspect_document',
+    );
+    expect(findTool(tools, 'get_authoring_context').description).to.include(
+      'docblocks://authoring-guide',
+    );
+
     const save = findTool(tools, 'save_artifact');
     expect(save.inputSchema.required).to.deep.equal(['artifactUri', 'destination']);
     const destinationAlternatives = requireSchemaArray(
@@ -402,7 +409,7 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(6);
+    expect(authoringPayload.version).to.equal(7);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(
@@ -411,9 +418,7 @@ describe('MCP protocol surface', function () {
       ),
     ).to.equal(true);
     expect(
-      authoringPayload.workflow?.some((step) =>
-        String(step).includes('review tools rather than required phases'),
-      ),
+      authoringPayload.workflow?.some((step) => String(step).includes('routine export preflight')),
     ).to.equal(true);
     expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
       bodyPolicy: 'complete',
@@ -523,7 +528,10 @@ describe('MCP protocol surface', function () {
     expect(presentationDefault).to.include('separate metrics');
     expect(presentationDefault).to.include('supplied baselines');
     expect(presentationDefault).to.include('rewrite or label every unsupported claim');
-    expect(presentationDefault).to.include('definitionCard');
+    expect(presentationDefault).to.include('list_roots before drafting');
+    expect(presentationDefault).to.include('do not use a shell or CLI converter');
+    expect(presentationDefault).to.include('recommend_templates');
+    expect(presentationDefault).to.include('describe only selected candidates');
     expect(presentationDefault).to.include('# Heading {[content]}');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 

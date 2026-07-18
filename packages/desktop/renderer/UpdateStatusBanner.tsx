@@ -2,28 +2,27 @@ import { useEffect, useState } from 'react';
 import type { UpdaterStatus } from '@bendyline/docblocks/host';
 import { getDocBlocksHost, isElectronHost } from '@bendyline/docblocks/host';
 
-/**
- * Thin banner across the top of the shell that reflects auto-updater
- * state. It only shows when there is something to tell the user:
- *
- *   • `available` / `downloading` → informational "update incoming" note
- *   • `downloaded` → prominent "Restart to install" CTA
- *   • `error` → dismissable warning
- *
- * Quiet otherwise (`checking` and `not-available` render nothing).
- */
-export function UpdateStatusBanner() {
+/** Subscribe once at the desktop root so progress survives editor remounts. */
+export function useUpdaterStatus(): UpdaterStatus {
   const [status, setStatus] = useState<UpdaterStatus>({ kind: 'not-available' });
-  const [dismissedError, setDismissedError] = useState<string | null>(null);
-  const [installing, setInstalling] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isElectronHost()) return;
     return getDocBlocksHost().updater.onStatus(setStatus);
   }, []);
 
-  if (!isElectronHost()) return null;
+  return status;
+}
+
+export interface UpdateStatusItemProps {
+  status: UpdaterStatus;
+}
+
+/** Compact updater state and actions for the editor's bottom status bar. */
+export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
+  const [dismissedError, setDismissedError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
 
   const restartToInstall = async () => {
     setInstalling(true);
@@ -46,34 +45,38 @@ export function UpdateStatusBanner() {
   switch (status.kind) {
     case 'available':
       return (
-        <div className="db-update-banner db-update-banner--info" role="status" aria-live="polite">
-          <span>
-            Update available — DocBlocks {status.version} is downloading in the background.
-          </span>
-          {status.releaseUrl && (
-            <button
-              type="button"
-              className="db-update-banner-link"
-              onClick={() =>
-                status.releaseUrl && getDocBlocksHost().shell.openExternal(status.releaseUrl)
-              }
-            >
-              What's new
-            </button>
-          )}
-        </div>
+        <span
+          className="squisq-status-item db-desktop-update-status"
+          role="progressbar"
+          aria-label={`Downloading DocBlocks ${status.version}`}
+        >
+          Downloading update&hellip;
+        </span>
       );
 
-    case 'downloading':
+    case 'downloading': {
+      const percent = Math.round(status.percent);
       return (
-        <div className="db-update-banner db-update-banner--info" role="status" aria-live="polite">
-          <span>Downloading update… {Math.round(status.percent)}%</span>
-        </div>
+        <span
+          className="squisq-status-item db-desktop-update-status"
+          role="progressbar"
+          aria-label="Downloading DocBlocks update"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+        >
+          Downloading update&hellip; {percent}%
+        </span>
       );
+    }
 
     case 'downloaded':
       return (
-        <div className="db-update-banner db-update-banner--ready" role="status" aria-live="polite">
+        <span
+          className="squisq-status-item db-desktop-update-status db-desktop-update-status--ready"
+          role="status"
+          aria-live="polite"
+        >
           <span>
             {installError ??
               (installing
@@ -83,7 +86,7 @@ export function UpdateStatusBanner() {
           {status.releaseUrl && (
             <button
               type="button"
-              className="db-update-banner-link"
+              className="db-desktop-update-link"
               onClick={() =>
                 status.releaseUrl && getDocBlocksHost().shell.openExternal(status.releaseUrl)
               }
@@ -93,33 +96,33 @@ export function UpdateStatusBanner() {
           )}
           <button
             type="button"
-            className="db-update-banner-action"
+            className="db-desktop-update-action"
             onClick={() => void restartToInstall()}
             disabled={installing}
           >
             {installing ? 'Preparing restart…' : 'Restart to install'}
           </button>
-        </div>
+        </span>
       );
 
     case 'error':
       if (dismissedError === status.message) return null;
       return (
-        <div
-          className="db-update-banner db-update-banner--error"
+        <span
+          className="squisq-status-item db-desktop-update-status db-desktop-update-status--error"
           role="alert"
           aria-live="assertive"
         >
           <span>Update check failed: {status.message}</span>
           <button
             type="button"
-            className="db-update-banner-dismiss"
+            className="db-desktop-update-dismiss"
             onClick={() => setDismissedError(status.message)}
-            aria-label="Dismiss"
+            aria-label="Dismiss update error"
           >
             ×
           </button>
-        </div>
+        </span>
       );
 
     default:

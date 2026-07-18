@@ -417,13 +417,30 @@ h3 {
 
 .table-wrap {
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(255, 253, 247, 0.62);
+  box-shadow: inset -18px 0 16px -18px var(--muted);
+}
+
+.table-wrap:focus-visible {
+  outline: 3px solid var(--accent-dark);
+  outline-offset: 3px;
+}
+
+.table-scroll-hint {
+  display: none;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .format-table {
   width: 100%;
+  min-width: 700px;
   border-collapse: collapse;
 }
 
@@ -498,20 +515,45 @@ h3 {
   }
 
   .site-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 14px;
+    min-height: 0;
+    padding-block: 10px;
+  }
+
+  .brand,
+  .brand img {
+    width: 118px;
   }
 
   .site-header > .button {
-    justify-self: start;
+    justify-self: end;
+    min-height: 36px;
+    padding-inline: 12px;
+    font-size: 0.76rem;
   }
 
   .site-nav {
-    grid-column: 1;
-    gap: 9px 16px;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: nowrap;
+    gap: 6px 14px;
+    overflow-x: auto;
+    padding-bottom: 7px;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+
+  .site-nav a {
+    font-size: 0.78rem;
   }
 
   .page-main {
-    padding-top: 48px;
+    padding-top: 36px;
+  }
+
+  .table-scroll-hint {
+    display: block;
   }
 
   h1 {

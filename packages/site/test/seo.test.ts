@@ -211,6 +211,19 @@ describe('site SEO surface', () => {
     expect(html).to.include('https://github.com/bendyline/docblocks/issues');
   });
 
+  it('makes the format table keyboard-scrollable and cues narrow-screen overflow', async () => {
+    const [html, css] = await Promise.all([
+      read('public/formats/index.html'),
+      read('public/marketing/marketing.css'),
+    ]);
+
+    expect(html).to.include('id="format-table-scroll-hint"');
+    expect(html).to.include('aria-describedby="format-table-scroll-hint"');
+    expect(html).to.include('tabindex="0"');
+    expect(css).to.include('.table-scroll-hint');
+    expect(css).to.include('min-width: 700px');
+  });
+
   it('explains the Web value proposition, sandbox boundaries, and install path', async () => {
     const html = await read('public/web/index.html');
 

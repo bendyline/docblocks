@@ -138,6 +138,8 @@ export function FileTreeNode({
    * exists.
    */
   const renameSubmittedRef = useRef(false);
+  /** Return keyboard focus to the treeitem after Enter/Escape unmounts the input. */
+  const returnFocusAfterRenameRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
   const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
@@ -251,26 +253,33 @@ export function FileTreeNode({
   /** Abandon the rename and make sure a trailing blur cannot submit it. */
   const handleRenameCancel = useCallback(() => {
     renameSubmittedRef.current = true;
+    returnFocusAfterRenameRef.current = true;
     setRenaming(false);
   }, []);
 
-  const handleRenameSubmit = useCallback(async () => {
-    if (renameSubmittedRef.current) return;
-    renameSubmittedRef.current = true;
+  const handleRenameSubmit = useCallback(
+    async (returnFocus = false) => {
+      if (renameSubmittedRef.current) return;
+      renameSubmittedRef.current = true;
+      returnFocusAfterRenameRef.current = returnFocus;
+      // Enter is a commit gesture: leave edit mode immediately instead of
+      // keeping a stale textbox mounted while the filesystem move resolves.
+      setRenaming(false);
 
-    if (renameValue && renameValue !== entry.name) {
-      const parentPath = entry.path.includes('/')
-        ? entry.path.slice(0, entry.path.lastIndexOf('/'))
-        : '';
-      const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
-      try {
-        await onRename(entry.path, newPath, entry.kind);
-      } catch (caught: unknown) {
-        setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+      if (renameValue && renameValue !== entry.name) {
+        const parentPath = entry.path.includes('/')
+          ? entry.path.slice(0, entry.path.lastIndexOf('/'))
+          : '';
+        const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
+        try {
+          await onRename(entry.path, newPath, entry.kind);
+        } catch (caught: unknown) {
+          setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+        }
       }
-    }
-    setRenaming(false);
-  }, [renameValue, entry.name, entry.path, entry.kind, onRename]);
+    },
+    [renameValue, entry.name, entry.path, entry.kind, onRename],
+  );
 
   const handleDeleteClick = useCallback(async () => {
     closeMenu(false);
@@ -321,6 +330,12 @@ export function FileTreeNode({
       inputRef.current.focus();
       inputRef.current.select();
     }
+  }, [renaming]);
+
+  useEffect(() => {
+    if (renaming || !returnFocusAfterRenameRef.current) return;
+    returnFocusAfterRenameRef.current = false;
+    rowRef.current?.focus({ preventScroll: true });
   }, [renaming]);
 
   // A keyboard-opened menu must take focus, or the keys that operate it
@@ -425,7 +440,7 @@ export function FileTreeNode({
               // must never see these keys.
               e.preventDefault();
               e.stopPropagation();
-              if (e.key === 'Enter') void handleRenameSubmit();
+              if (e.key === 'Enter') void handleRenameSubmit(true);
               else handleRenameCancel();
             }}
             onClick={(e) => e.stopPropagation()}
@@ -451,6 +466,7 @@ export function FileTreeNode({
               // Advertise the keyboard route, since the tree's roving
               // tabindex deliberately keeps this button out of the tab order.
               aria-keyshortcuts="Shift+F10"
+              title="More actions (Shift+F10)"
               tabIndex={-1}
             >
               <MoreIcon />

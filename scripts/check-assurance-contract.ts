@@ -220,10 +220,40 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
   const orderedCommands = vscodeCommands.join('\n');
   const buildCore = orderedCommands.indexOf('npm run build:core');
   const buildReact = orderedCommands.indexOf('npm run build:react');
-  const packageVscode = orderedCommands.indexOf('npm run package:vscode');
+  const packageVscode = orderedCommands.indexOf('npm run package:vsix -w docblocks-vscode');
   if (buildCore < 0 || buildReact <= buildCore || packageVscode <= buildReact) {
     throw new Error(
       `${relativePath}: build-vscode-vsix must build core and React before packaging the extension`,
+    );
+  }
+  const vscodeVersionStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Read release version',
+  );
+  if (
+    !isRecord(vscodeVersionStep) ||
+    vscodeVersionStep.id !== 'version' ||
+    typeof vscodeVersionStep.run !== 'string' ||
+    !vscodeVersionStep.run.includes("require('./packages/desktop/package.json').version") ||
+    !vscodeVersionStep.run.includes('GITHUB_OUTPUT')
+  ) {
+    throw new Error(
+      `${relativePath}: build-vscode-vsix must read the authoritative desktop release version`,
+    );
+  }
+  const vscodePackageStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Package VS Code extension',
+  );
+  if (
+    !isRecord(vscodePackageStep) ||
+    !isRecord(vscodePackageStep.env) ||
+    vscodePackageStep.env.RELEASE_VERSION !== '${{ steps.version.outputs.version }}' ||
+    typeof vscodePackageStep.run !== 'string' ||
+    !vscodePackageStep.run.includes('npm run package:vsix -w docblocks-vscode') ||
+    !vscodePackageStep.run.includes('"$RELEASE_VERSION"') ||
+    !vscodePackageStep.run.includes('--no-update-package-json')
+  ) {
+    throw new Error(
+      `${relativePath}: build-vscode-vsix must stamp the desktop version into the VSIX without changing the checkout`,
     );
   }
 

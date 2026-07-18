@@ -11,64 +11,60 @@
   min-height: 0;
 }
 
-.db-update-banner {
-  display: flex;
+.db-desktop-update-status {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  font-size: 13px;
-  line-height: 1.4;
-  flex-shrink: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+  gap: 8px;
+  color: var(--db-accent-deep);
+  font-variant-numeric: tabular-nums;
 }
 
-.db-update-banner--info {
-  background: #eef4ff;
-  color: #1d3b74;
+.db-desktop-update-status--ready {
+  color: var(--db-text);
 }
 
-.db-update-banner--ready {
-  background: #1d3b74;
-  color: #ffffff;
+.db-desktop-update-status--error {
+  color: var(--db-danger, #a33a35);
 }
 
-.db-update-banner--error {
-  background: #fdecea;
-  color: #8a2a1e;
-}
-
-.db-update-banner-link {
-  background: none;
-  border: none;
-  text-decoration: underline;
-  cursor: pointer;
-  color: inherit;
+.db-desktop-update-link,
+.db-desktop-update-action,
+.db-desktop-update-dismiss {
   padding: 0;
+  color: inherit;
   font: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
 }
 
-.db-update-banner-action {
-  margin-left: auto;
-  padding: 4px 12px;
-  border-radius: 4px;
+.db-desktop-update-link {
+  text-decoration: underline;
+}
+
+.db-desktop-update-action {
+  padding: 0 7px;
   border: 1px solid currentColor;
-  background: rgba(255, 255, 255, 0.12);
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
+  border-radius: 3px;
 }
 
-.db-update-banner-action:hover {
-  background: rgba(255, 255, 255, 0.22);
+.db-desktop-update-action:hover {
+  background: var(--db-bg-subtle);
 }
 
-.db-update-banner-dismiss {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 18px;
+.db-desktop-update-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.db-desktop-update-dismiss {
+  font-size: 16px;
   line-height: 1;
-  cursor: pointer;
-  padding: 0 4px;
+}
+
+.db-desktop-update-link:focus-visible,
+.db-desktop-update-action:focus-visible,
+.db-desktop-update-dismiss:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 1px;
 }

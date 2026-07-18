@@ -411,6 +411,34 @@
   flex: 1;
   overflow-y: auto;
   padding: 2px 0;
+  scrollbar-color: var(--db-accent) var(--db-bg);
+  scrollbar-width: thin;
+}
+
+.db-tree::-webkit-scrollbar {
+  width: 12px;
+}
+
+.db-tree::-webkit-scrollbar-track,
+.db-tree::-webkit-scrollbar-corner {
+  background: var(--db-bg);
+}
+
+.db-tree::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background: var(--db-accent);
+  border: 3px solid var(--db-bg);
+  border-radius: 999px;
+}
+
+.db-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--db-accent-hover);
+}
+
+.db-tree::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .db-tree-loading,
@@ -555,9 +583,16 @@
 
 .db-tree-row:hover .db-tree-more,
 .db-tree-row:focus-within .db-tree-more,
+.db-tree-row--selected .db-tree-more,
 .db-tree-more:focus-visible,
 .db-tree-more--active {
   visibility: visible;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .db-tree-more {
+    visibility: visible;
+  }
 }
 
 .db-tree-more:hover {
@@ -1173,15 +1208,13 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-footer-action {
-  min-width: 0;
+  flex-shrink: 0;
   padding: 0;
-  overflow: hidden;
   border: 0;
   background: transparent;
   font: inherit;
   line-height: inherit;
   text-decoration: underline;
-  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -2397,6 +2430,12 @@ body.db-resizing-sidebar * {
   --squisq-accent: var(--db-accent);
   --squisq-accent-hover: var(--db-accent-hover);
   --squisq-text-on-accent: var(--db-text-on-accent);
+}
+
+/* Squisq's default horizontal rule uses a fixed slate border in both
+   appearances. Keep document rules aligned with the selected host accent. */
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor hr {
+  border-top-color: var(--db-accent);
 }
 
 /* Simple diagrams, drawings, and layout canvases share Squisq's Scene

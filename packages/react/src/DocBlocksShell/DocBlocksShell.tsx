@@ -310,6 +310,8 @@ export interface DocBlocksShellProps {
   updateAvailable?: boolean;
   /** Activates the waiting update and reloads onto the new version. */
   onApplyUpdate?: () => void;
+  /** Host-supplied content rendered at the right edge of the editor status bar. */
+  statusBarSlotRight?: React.ReactNode;
   /**
    * True once the app has been fully cached for offline use (browser PWA
    * hosts). Shown to the user once as a passive notice.
@@ -605,6 +607,7 @@ export function DocBlocksShell({
   versioningRef,
   updateAvailable = false,
   onApplyUpdate,
+  statusBarSlotRight,
   offlineReady = false,
 }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
@@ -3566,9 +3569,9 @@ export function DocBlocksShell({
                       type="button"
                       className="db-shell-sidebar-footer-action"
                       onClick={() => void handleDownloadAllWorkspaces()}
-                      title="Browser docs can get auto-removed. Download all workspaces."
+                      title="Browser documents can be removed automatically. Download all workspaces now."
                     >
-                      Backup browser docs frequently
+                      Back up browser docs
                     </button>
                   </>
                 )}
@@ -3637,6 +3640,7 @@ export function DocBlocksShell({
                       versioningPrunePolicy={versioningPrunePolicy}
                       versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
                       onSaveVersion={onSaveVersion}
+                      statusBarSlotRight={statusBarSlotRight}
                       toolbarSlotLeft={
                         effectiveCompact ? (
                           <button
