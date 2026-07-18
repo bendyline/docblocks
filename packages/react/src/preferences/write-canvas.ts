@@ -4,7 +4,7 @@ export type WriteCanvasPreferences = Required<WriteCanvasSettings>;
 
 export const WRITE_CANVAS_TEXT_SIZE_MIN = 12;
 export const WRITE_CANVAS_TEXT_SIZE_MAX = 32;
-export const WRITE_CANVAS_LINE_SPACING_MIN = 1.2;
+export const WRITE_CANVAS_LINE_SPACING_MIN = 1;
 export const WRITE_CANVAS_LINE_SPACING_MAX = 2.4;
 
 export const DEFAULT_WRITE_CANVAS_PREFERENCES: Readonly<WriteCanvasPreferences> = {

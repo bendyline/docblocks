@@ -147,12 +147,30 @@ test.describe('VS Code web and UX integration', () => {
   test('loads the default DocBlocks editor with expected mode tabs and rendered fixture content', async ({
     page,
   }) => {
+    const optionalRuntimeRequests: string[] = [];
+    page.on('request', (request) => {
+      const url = request.url();
+      if (
+        url.includes('/dist/webview/') &&
+        /(?:\/monaco(?:Suggestions-[^/]+)?\.css|\/assets\/(?:monaco(?:Suggestions)?-|setupMonacoWorkers-|mermaid\.core-|(?:editor|json|css|html|ts)\.worker-))/u.test(
+          url,
+        )
+      ) {
+        optionalRuntimeRequests.push(url);
+      }
+    });
+
     await bootVSCode(page);
     await openDocBlocksEditor(page);
 
     const editor = await getLatestWebviewContent(page);
     await expect(editor.getByRole('toolbar', { name: /formatting toolbar/i })).toBeVisible();
-    await expect(editor.getByRole('tab', { name: /write/i })).toBeVisible();
+    const writeTab = editor.getByRole('tab', { name: /write/i });
+    await expect(writeTab).toBeVisible();
+    await expect(writeTab).toHaveAttribute('aria-selected', 'true');
+    await expect(editor.locator('.squisq-wysiwyg-editor')).toBeVisible();
+    await expect(editor.locator('.squisq-raw-editor-container')).toHaveCount(0);
+    expect(optionalRuntimeRequests).toEqual([]);
     await expect(editor.getByRole('tab', { name: /source/i })).toBeVisible();
     const previewTab = editor.locator('[role="tab"][data-view="preview"]');
     await expect(previewTab).toBeVisible();
@@ -180,6 +198,17 @@ test.describe('VS Code web and UX integration', () => {
 
     await editor.getByRole('tab', { name: /source/i }).click();
     await expect(editor.locator('.monaco-editor')).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() => optionalRuntimeRequests.some((url) => /\/assets\/monaco-/u.test(url)))
+      .toBe(true);
+    expect(optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url))).toBe(false);
+    expect(optionalRuntimeRequests.some((url) => /ts\.worker-/u.test(url))).toBe(false);
+
+    await editor.locator('textarea.inputarea').press('KeyA');
+    await expect
+      .poll(() => optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url)))
+      .toBe(true);
+    expect(optionalRuntimeRequests.some((url) => /ts\.worker-/u.test(url))).toBe(false);
 
     await previewTab.click();
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });

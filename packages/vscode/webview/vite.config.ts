@@ -92,9 +92,11 @@ export default defineConfig({
     // The editor is loaded dynamically from linked Squisq, outside Vite's
     // startup scan. Pre-optimize its direct Tiptap entries so the first opened
     // document does not trigger dependency discovery and a webview reload.
+    // Use Monaco's API-only entry here: optimizing the package root pulls the
+    // complete editor.main contribution set into VS Code development loads.
     // Mermaid remains explicit for CommonJS dependency interop.
     include: [
-      'monaco-editor',
+      'monaco-editor/esm/vs/editor/editor.api.js',
       '@tiptap/core',
       '@tiptap/react',
       '@tiptap/starter-kit',

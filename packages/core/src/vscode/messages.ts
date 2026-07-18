@@ -47,7 +47,7 @@ export type DocBlocksAccentColor = (typeof DOCBLOCKS_ACCENT_COLORS)[number];
 
 export const DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MIN = 12;
 export const DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MAX = 32;
-export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MIN = 1.2;
+export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MIN = 1;
 export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MAX = 2.4;
 
 export interface VscodeWriteCanvasSettings {

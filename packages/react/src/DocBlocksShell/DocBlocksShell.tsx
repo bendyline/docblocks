@@ -11,7 +11,6 @@ import type {
   EditorView,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
-import { MediaContext } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
@@ -66,7 +65,7 @@ import {
   unregisterTransientWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu } from '../AppMenu/AppMenu.js';
-import { pickEmptyDocumentPrompt } from '../editor.js';
+import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
   FileExplorer,
   type FileTreeChange,
@@ -654,6 +653,7 @@ export function DocBlocksShell({
     saveViewPreferences(prefs);
   }, []);
   const isMobile = useIsMobile();
+  const defaultPreviewViewportPreset = useResponsivePreviewViewportPreset();
   // Keep a true first visit in the compact file pane so the product can
   // explain itself before opening a document. Once the one-time welcome has
   // been acknowledged, returning mobile users go straight back to the editor.
@@ -3609,7 +3609,7 @@ export function DocBlocksShell({
               }}
             >
               {selectedFile && mediaProvider ? (
-                <MediaContext.Provider value={mediaProvider}>
+                <>
                   <Suspense
                     fallback={
                       <div className="db-shell-empty" role="status">
@@ -3621,6 +3621,7 @@ export function DocBlocksShell({
                       key={`${selectedFile}-${editorKey}`}
                       initialMarkdown={editorContent}
                       initialView={initialView}
+                      defaultViewportPreset={defaultPreviewViewportPreset}
                       articleId={selectedFile}
                       fileName={selectedFile}
                       onChange={handleEditorChange}
@@ -3708,7 +3709,7 @@ export function DocBlocksShell({
                       </button>
                     </div>
                   )}
-                </MediaContext.Provider>
+                </>
               ) : selectedFolder ? (
                 <div className="db-folder-view">
                   {effectiveCompact && (

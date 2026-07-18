@@ -15,9 +15,9 @@ describe('Write canvas preferences', () => {
   });
 
   it('round-trips text size and line spacing', () => {
-    saveWriteCanvasPreferences({ textSize: 20, lineSpacing: 2 });
+    saveWriteCanvasPreferences({ textSize: 20, lineSpacing: 1 });
 
-    expect(loadWriteCanvasPreferences()).to.deep.equal({ textSize: 20, lineSpacing: 2 });
+    expect(loadWriteCanvasPreferences()).to.deep.equal({ textSize: 20, lineSpacing: 1 });
   });
 
   it('falls back per field when stored values are malformed or outside the sliders', () => {

@@ -1,3 +1,36 @@
+import { useEffect, useState } from 'react';
+import type { ViewportPreset } from '@bendyline/squisq/schemas';
+
+export const PORTRAIT_FORM_FACTOR_QUERY = '(orientation: portrait)';
+
+/** Map the host surface orientation to Squisq's matching preview canvas. */
+export function previewViewportPresetForOrientation(isPortrait: boolean): ViewportPreset {
+  return isPortrait ? 'portrait' : 'landscape';
+}
+
+/**
+ * Follow the host viewport orientation so slideshow/video previews make useful
+ * use of portrait screens. Squisq still gives document and manual selections
+ * precedence over this host-provided default.
+ */
+export function useResponsivePreviewViewportPreset(): ViewportPreset {
+  const [isPortrait, setIsPortrait] = useState(() => {
+    if (typeof globalThis.matchMedia !== 'function') return false;
+    return globalThis.matchMedia(PORTRAIT_FORM_FACTOR_QUERY).matches;
+  });
+
+  useEffect(() => {
+    if (typeof globalThis.matchMedia !== 'function') return;
+    const query = globalThis.matchMedia(PORTRAIT_FORM_FACTOR_QUERY);
+    const update = () => setIsPortrait(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  return previewViewportPresetForOrientation(isPortrait);
+}
+
 /**
  * Placeholder prompts shown by DocBlocks when a Markdown document is empty.
  * Hosts pick one prompt for each mounted document generation and pass it to

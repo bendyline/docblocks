@@ -165,16 +165,16 @@ describe('VS Code authority boundary', () => {
     expect(
       parseWebviewToExtensionMessage({
         type: 'setWriteCanvasSettings',
-        settings: { textSize: 20, lineSpacing: 1.8 },
+        settings: { textSize: 20, lineSpacing: 1 },
       }),
     ).to.deep.equal({
       type: 'setWriteCanvasSettings',
-      settings: { textSize: 20, lineSpacing: 1.8 },
+      settings: { textSize: 20, lineSpacing: 1 },
     });
     expect(
       parseWebviewToExtensionMessage({
         type: 'setWriteCanvasSettings',
-        settings: { textSize: 100, lineSpacing: 1.8 },
+        settings: { textSize: 20, lineSpacing: 0.9 },
       }),
     ).to.equal(null);
 

@@ -1,7 +1,9 @@
 import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { MediaContext } from '@bendyline/squisq-react';
 import '@bendyline/docblocks-react/styles';
-import { pickEmptyDocumentPrompt } from '@bendyline/docblocks-react/editor';
+import {
+  pickEmptyDocumentPrompt,
+  useResponsivePreviewViewportPreset,
+} from '@bendyline/docblocks-react/editor';
 import type {
   DocBlocksAccentColor,
   DocumentSessionMessageStatus,
@@ -21,6 +23,8 @@ import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 import { VscodeWebviewRecovery } from './webviewRecovery.js';
 import { VscodeFindButton } from './VscodeFindButton.js';
+import { preloadMonacoRuntime } from './monacoRuntime.js';
+import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 
 const vscode = getVscodeApi();
 
@@ -28,15 +32,7 @@ const vscode = getVscodeApi();
 // Keep the large Squisq implementation out of the startup entry and load it
 // only after that document and its media/export bridges are ready.
 const EditorShell = lazy(async () => {
-  const editorReady = import('./LazyEditorShell.js');
-  // Worker setup is an enhancement; a host that cannot install language
-  // workers must not make the document editor unavailable. Start both chunks
-  // together so worker wiring cannot serialize the editor implementation.
-  const [editorModule] = await Promise.all([
-    editorReady,
-    import('./setupMonacoWorkers.js').catch(() => undefined),
-  ]);
-  return editorModule;
+  return import('./LazyEditorShell.js');
 });
 const VscodeExportButton = lazy(() =>
   import('./VscodeExportButton.js').then((module) => ({ default: module.VscodeExportButton })),
@@ -58,6 +54,7 @@ const VSCODE_EDITOR_MEDIA_CAPABILITIES = Object.freeze({ allowRecording: false }
 const TOOLBAR_EDIT_INTENT_TIMEOUT_MS = 250;
 
 export function VscodeEditor() {
+  const defaultPreviewViewportPreset = useResponsivePreviewViewportPreset();
   const [markdown, setMarkdown] = useState<string | null>(null);
   // Seed from the class VS Code stamped on <body> before this script ran, so
   // the first painted frame already matches VS Code. The host's `themeChange`
@@ -114,6 +111,12 @@ export function VscodeEditor() {
             }
 
             activeSessionIdRef.current = msg.sessionId;
+            if (markdownUsesMonacoWidget(nextContent)) {
+              // Code-fence widgets will request Monaco when the Write canvas
+              // mounts. Start that large import alongside the editor chunk
+              // instead of discovering it only after Squisq has rendered.
+              void preloadMonacoRuntime().catch(() => undefined);
+            }
             setSessionStatus('saved');
             setEditorScope(scope);
             if (nextContent !== markdownRef.current || msg.fileName !== fileNameRef.current) {
@@ -298,6 +301,12 @@ export function VscodeEditor() {
     return true;
   }, []);
 
+  const handleMonacoIntent = useCallback((event: React.SyntheticEvent<HTMLDivElement>) => {
+    if (!(event.target instanceof Element)) return;
+    if (!event.target.closest('[role="tab"][data-view="raw"]')) return;
+    void preloadMonacoRuntime().catch(() => undefined);
+  }, []);
+
   const editorGenerationKey = editorScope
     ? `${editorScope.sessionId}:${editorScope.generation}`
     : 'loading';
@@ -351,42 +360,48 @@ export function VscodeEditor() {
       onCutCapture={armEditorEditsForCut}
       onDropCapture={armEditorEditsForDrop}
       onClickCapture={armEditorEditsForControl}
+      onPointerOverCapture={handleMonacoIntent}
+      onFocusCapture={handleMonacoIntent}
     >
-      <MediaContext.Provider value={mediaBridge.mediaProvider}>
-        <Suspense fallback={<EditorLoading />}>
-          <EditorShell
-            key={`${editorScope.sessionId}:${editorScope.generation}`}
-            initialMarkdown={markdown}
-            onChange={handleChange}
-            onLinkClick={handleLinkClick}
-            colorScheme={theme}
-            writeCanvasSettings={settings.writeCanvasSettings}
-            height="100%"
-            placeholder={editorPlaceholder}
-            mediaProvider={mediaBridge.mediaProvider}
-            allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
-            allowPresentationWindow={false}
-            allowPresentationFullscreen={false}
-            allowPrint={false}
-            showFilesToggle={false}
-            statusBarSlotRight={
-              autoSavePending ? (
-                <span className="squisq-status-item db-autosave-pending">Autosave pending</span>
-              ) : undefined
-            }
-            findMode={findMode}
-            onFindModeChange={setFindMode}
-            toolbarSlotLeft={
+      <Suspense fallback={<EditorLoading />}>
+        <EditorShell
+          key={`${editorScope.sessionId}:${editorScope.generation}`}
+          initialMarkdown={markdown}
+          initialView="wysiwyg"
+          defaultViewportPreset={defaultPreviewViewportPreset}
+          onChange={handleChange}
+          onLinkClick={handleLinkClick}
+          colorScheme={theme}
+          writeCanvasSettings={settings.writeCanvasSettings}
+          height="100%"
+          placeholder={editorPlaceholder}
+          mediaProvider={mediaBridge.mediaProvider}
+          allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
+          allowPresentationWindow={false}
+          allowPresentationFullscreen={false}
+          allowPrint={false}
+          showFilesToggle={false}
+          statusBarSlotRight={
+            autoSavePending ? (
+              <span className="squisq-status-item db-autosave-pending">Autosave pending</span>
+            ) : undefined
+          }
+          findMode={findMode}
+          onFindModeChange={setFindMode}
+          toolbarSlotLeft={
+            <Suspense fallback={null}>
               <VscodeSettingsButton
                 settings={settings}
                 onAutoSaveChange={handleAutoSaveChange}
                 onAccentColorChange={handleAccentColorChange}
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
               />
-            }
-            toolbarSlotRight={
-              <>
-                <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
+            </Suspense>
+          }
+          toolbarSlotRight={
+            <>
+              <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
+              <Suspense fallback={null}>
                 <VscodeExportButton
                   selectedFile={fileName}
                   mediaContainer={exportBridge.contentContainer}
@@ -394,11 +409,11 @@ export function VscodeEditor() {
                   resolveExportTarget={exportBridge.resolveExportTarget}
                   pickExportTarget={exportBridge.pickExportTarget}
                 />
-              </>
-            }
-          />
-        </Suspense>
-      </MediaContext.Provider>
+              </Suspense>
+            </>
+          }
+        />
+      </Suspense>
     </div>
   );
 }
