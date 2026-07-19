@@ -304,6 +304,57 @@ describe('FileTreeNode rename', () => {
 });
 
 describe('FileTreeNode context menu', () => {
+  it('pins and unpins files from the document context menu', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const actions: string[] = [];
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(FileTreeNode, {
+            ...baseProps(),
+            onTogglePin: async (path) => {
+              actions.push(path);
+            },
+          }),
+        );
+      });
+
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click(),
+      );
+      expect(
+        [...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((item) =>
+          item.textContent?.trim(),
+        ),
+      ).to.deep.equal(['Rename', 'Pin', 'Delete']);
+      await act(async () => clickContextItem('Pin'));
+      expect(actions).to.deep.equal(['/draft.md']);
+
+      await act(async () => {
+        root.render(
+          createElement(FileTreeNode, {
+            ...baseProps(),
+            pinned: true,
+            onTogglePin: async (path) => {
+              actions.push(path);
+            },
+          }),
+        );
+      });
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click(),
+      );
+      await act(async () => clickContextItem('Unpin'));
+      expect(actions).to.deep.equal(['/draft.md', '/draft.md']);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it('removes its scroll listener when the menu closes by click', async () => {
     const container = document.createElement('div');
     document.body.append(container);

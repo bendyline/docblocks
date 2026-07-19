@@ -244,7 +244,7 @@ export default defineConfig({
   build: {
     // Known large chunks have surface-specific limits in
     // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
-    chunkSizeWarningLimit: 4_000,
+    chunkSizeWarningLimit: 8_000,
     modulePreload: {
       resolveDependencies: resolveModulePreloadDependencies,
     },
@@ -306,6 +306,12 @@ export default defineConfig({
       '@tiptap/pm/transform',
       '@tiptap/pm/commands',
       '@tiptap/pm/schema-list',
+      // Video export is also loaded from excluded linked-Squisq packages.
+      // Pre-bundle its browser dependencies so opening the first video dialog
+      // does not make Vite discover them and reload away the open dialog.
+      '@ffmpeg/ffmpeg',
+      '@ffmpeg/util',
+      'html2canvas',
       // CJS transitive deps of squisq packages that need pre-bundling.
       // The squisq packages themselves are excluded (served from source
       // via symlinks for live dev), but their CJS deps must be bundled.

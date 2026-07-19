@@ -79,6 +79,10 @@ export interface FileTreeNodeProps {
   confirmDelete?: (message: string) => boolean | Promise<boolean>;
   onDelete: (path: string, kind: 'file' | 'directory') => Promise<void>;
   onRename: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+  /** Whether this document is present in the shell's cross-workspace pin list. */
+  pinned?: boolean;
+  /** Pin or unpin this file. Omitted for directories and standalone trees. */
+  onTogglePin?: (path: string) => void | Promise<void>;
   draggable?: boolean;
   dragging?: boolean;
   dropTarget?: boolean;
@@ -105,6 +109,8 @@ export function FileTreeNode({
   confirmDelete = defaultConfirmDelete,
   onDelete,
   onRename,
+  pinned = false,
+  onTogglePin,
   draggable = false,
   dragging = false,
   dropTarget = false,
@@ -298,6 +304,20 @@ export function FileTreeNode({
       setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
     }
   }, [entry.name, entry.path, entry.kind, confirmDelete, onDelete, closeMenu]);
+
+  const handleTogglePin = useCallback(async () => {
+    closeMenu(false);
+    setActionError(null);
+    try {
+      await onTogglePin?.(entry.path);
+    } catch (caught: unknown) {
+      setActionError(
+        caught instanceof Error
+          ? caught.message
+          : `Unable to ${pinned ? 'unpin' : 'pin'} this file.`,
+      );
+    }
+  }, [closeMenu, entry.path, onTogglePin, pinned]);
 
   // Close context menu on outside click or scroll
   useEffect(() => {
@@ -501,6 +521,17 @@ export function FileTreeNode({
             >
               Rename
             </button>
+            {!isDir && onTogglePin && (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="db-tree-context-item"
+                onClick={() => void handleTogglePin()}
+              >
+                {pinned ? 'Unpin' : 'Pin'}
+              </button>
+            )}
             {gitActions && (gitActions.viewChanges || gitActions.fileHistory) && (
               <>
                 <div className="db-tree-context-divider" role="separator" />

@@ -33,6 +33,7 @@ import {
   FsError,
   getFileSystemProviderV2,
   isQuotaExceededError,
+  moveFileSystemEntry,
   parseWorkspacePath,
   workspacePathContains,
 } from '@bendyline/docblocks/filesystem';
@@ -159,6 +160,20 @@ import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
 import { WELCOME_DOCUMENT_CONTENT, WELCOME_DOCUMENT_PATH } from './welcome-document.js';
+import {
+  loadPinnedDocuments,
+  missingPinnedDocumentMessage,
+  movePinnedDocumentsToWorkspace,
+  pinnedDocumentKey,
+  relocatePinnedDocuments,
+  removePinnedDocument,
+  renamePinnedDocumentWorkspace,
+  savePinnedDocuments,
+  togglePinnedDocument,
+  type PinnedDocument,
+  type PinnedDocumentAvailability,
+  type PinnedDocumentListItem,
+} from './pinned-documents.js';
 
 const DOCBLOCKS_VIDEO_EXPORT_PALETTE: Partial<VideoExportPalette> = Object.freeze({
   overlay: 'rgba(0, 0, 0, 0.72)',
@@ -419,6 +434,41 @@ async function readProviderText(
     : null;
 }
 
+async function pinnedProviderFileExists(
+  provider: FileSystemProvider,
+  path: string,
+): Promise<boolean> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  if (!providerV2) return provider.exists(path);
+  const entry = await providerV2.stat(parseWorkspacePath(path));
+  if (!entry) return false;
+  if (entry.kind !== 'file') throw new Error('The pinned path is no longer a document.');
+  return true;
+}
+
+/** Delete one pinned file with the strongest conditional semantics offered by its provider. */
+async function removePinnedProviderFile(
+  provider: FileSystemProvider,
+  path: string,
+): Promise<boolean> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  if (providerV2) {
+    const canonical = parseWorkspacePath(path);
+    const entry = await providerV2.stat(canonical);
+    if (!entry) return false;
+    if (entry.kind !== 'file') throw new Error('The pinned path is no longer a document.');
+    await providerV2.remove(canonical, {
+      recursive: false,
+      missing: 'error',
+      expectedVersion: entry.version,
+    });
+    return true;
+  }
+  if (!(await provider.exists(path))) return false;
+  await provider.delete(path);
+  return true;
+}
+
 async function readStableFileSnapshot(
   provider: FileSystemProvider,
   path: string,
@@ -532,6 +582,16 @@ interface PendingDbkConflict {
   provider: MemoryFileSystemProvider;
   snapshot: DbkWorkspaceSnapshot;
 }
+
+type PinnedDocumentProviderAccess =
+  | { kind: 'missing-workspace' }
+  | { kind: 'unavailable'; workspace: WorkspaceDescriptor }
+  | {
+      kind: 'ready';
+      workspace: WorkspaceDescriptor;
+      provider: FileSystemProvider;
+      owned: boolean;
+    };
 
 async function createElectronProviderFromWorkspace(
   ws: WorkspaceDescriptor,
@@ -833,6 +893,94 @@ export function DocBlocksShell({
       cancelled = true;
     };
   }, [activeWorkspaceId, descriptorRefreshKey]);
+  const [pinnedDocuments, setPinnedDocuments] = useState<PinnedDocument[]>(loadPinnedDocuments);
+  const [pinnedDocumentAvailability, setPinnedDocumentAvailability] = useState<
+    ReadonlyMap<string, PinnedDocumentAvailability>
+  >(() => new Map());
+  useEffect(() => {
+    savePinnedDocuments(pinnedDocuments);
+  }, [pinnedDocuments]);
+  const setPinnedAvailability = useCallback(
+    (
+      document: Pick<PinnedDocument, 'workspaceId' | 'path'>,
+      availability: PinnedDocumentAvailability,
+    ) => {
+      const key = pinnedDocumentKey(document);
+      setPinnedDocumentAvailability((current) => {
+        if (current.get(key) === availability) return current;
+        const next = new Map(current);
+        next.set(key, availability);
+        return next;
+      });
+    },
+    [],
+  );
+  const pinnedDocumentItems = useMemo<PinnedDocumentListItem[]>(
+    () =>
+      pinnedDocuments.map((document) => ({
+        ...document,
+        availability: pinnedDocumentAvailability.get(pinnedDocumentKey(document)) ?? 'unknown',
+      })),
+    [pinnedDocumentAvailability, pinnedDocuments],
+  );
+  useEffect(() => {
+    if (!provider || !activeWorkspaceId) return;
+    const activePins = pinnedDocuments.filter(
+      (document) => document.workspaceId === activeWorkspaceId,
+    );
+    if (activePins.length === 0) return;
+
+    let cancelled = false;
+    let scanning = false;
+    let scanAgain = false;
+    const scan = async (): Promise<void> => {
+      if (scanning) {
+        scanAgain = true;
+        return;
+      }
+      scanning = true;
+      try {
+        do {
+          scanAgain = false;
+          await Promise.all(
+            activePins.map(async (document) => {
+              try {
+                const exists = await providerEntryExists(provider, document.path);
+                if (!cancelled) setPinnedAvailability(document, exists ? 'available' : 'missing');
+              } catch {
+                // Permission, quota, corruption, and I/O errors are not
+                // absence. Leave a deliberately non-committal annotation.
+                if (!cancelled) setPinnedAvailability(document, 'unknown');
+              }
+            }),
+          );
+        } while (scanAgain && !cancelled);
+      } finally {
+        scanning = false;
+      }
+    };
+
+    void scan();
+    const scanOnFocus = () => void scan();
+    window.addEventListener('focus', scanOnFocus);
+
+    const providerV2 = getFileSystemProviderV2(provider);
+    const subscription = providerV2?.capabilities.watch
+      ? providerV2.watch(
+          (event) => {
+            if (event.type !== 'modified') void scan();
+          },
+          { onError: () => undefined },
+        )
+      : null;
+    void subscription?.ready.catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', scanOnFocus);
+      void subscription?.dispose();
+    };
+  }, [activeWorkspaceId, pinnedDocuments, provider, setPinnedAvailability]);
   const [transientMoveDestinations, setTransientMoveDestinations] = useState<WorkspaceDescriptor[]>(
     [],
   );
@@ -2173,6 +2321,199 @@ export function DocBlocksShell({
     [pushHash, transitionAwayFromDocument],
   );
 
+  const unpinDocument = useCallback((document: Pick<PinnedDocument, 'workspaceId' | 'path'>) => {
+    const key = pinnedDocumentKey(document);
+    setPinnedDocuments((current) => removePinnedDocument(current, document));
+    setPinnedDocumentAvailability((current) => {
+      if (!current.has(key)) return current;
+      const next = new Map(current);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const confirmMissingPinnedDocument = useCallback(
+    async (document: PinnedDocument) => {
+      setPinnedAvailability(document, 'missing');
+      const shouldUnpin = await confirmAction({
+        title: 'File not found',
+        message: missingPinnedDocumentMessage(document),
+        confirmLabel: 'OK',
+        cancelLabel: 'Cancel',
+      });
+      if (shouldUnpin) unpinDocument(document);
+    },
+    [confirmAction, setPinnedAvailability, unpinDocument],
+  );
+
+  const handleTogglePin = useCallback(
+    (path: string) => {
+      if (!activeWorkspaceId || !provider) return;
+      const canonicalPath = parseWorkspacePath(path);
+      if (!canonicalPath) return;
+      const document: PinnedDocument = {
+        workspaceId: activeWorkspaceId,
+        workspaceName: activeWorkspaceDescriptor?.name ?? provider.label,
+        path: canonicalPath,
+      };
+      const alreadyPinned = pinnedDocuments.some(
+        (candidate) => pinnedDocumentKey(candidate) === pinnedDocumentKey(document),
+      );
+      setPinnedDocuments((current) => togglePinnedDocument(current, document));
+      if (alreadyPinned) {
+        setPinnedDocumentAvailability((current) => {
+          const key = pinnedDocumentKey(document);
+          if (!current.has(key)) return current;
+          const next = new Map(current);
+          next.delete(key);
+          return next;
+        });
+      } else {
+        setPinnedAvailability(document, 'available');
+      }
+    },
+    [
+      activeWorkspaceDescriptor?.name,
+      activeWorkspaceId,
+      pinnedDocuments,
+      provider,
+      setPinnedAvailability,
+    ],
+  );
+
+  const activeWorkspacePinnedPaths = useMemo(
+    () =>
+      pinnedDocuments
+        .filter((document) => document.workspaceId === activeWorkspaceId)
+        .map((document) => document.path),
+    [activeWorkspaceId, pinnedDocuments],
+  );
+
+  const handlePinnedDocumentSelect = useCallback(
+    async (document: PinnedDocumentListItem) => {
+      const requestId = ++navigationRequestRef.current;
+      const workspace = await getWorkspace(document.workspaceId);
+      if (requestId !== navigationRequestRef.current) return;
+      if (!workspace) {
+        await confirmMissingPinnedDocument(document);
+        return;
+      }
+
+      let nextProvider: FileSystemProvider | null =
+        activeWorkspaceId === workspace.id ? provider : null;
+      let ownsNextProvider = false;
+      let adoptedNextProvider = nextProvider !== null;
+      try {
+        if (!nextProvider) {
+          const transient = getTransientWorkspace(workspace.id);
+          if (transient) {
+            nextProvider = transient.provider;
+          } else if (workspace.type === 'electron-native') {
+            nextProvider = isElectronHost()
+              ? await createElectronProviderFromWorkspace(workspace)
+              : null;
+            ownsNextProvider = nextProvider !== null;
+          } else if (workspace.type === 'native') {
+            nextProvider = await (await loadNativeFileSystem()).restoreNativeFolder(workspace.id);
+            ownsNextProvider = nextProvider !== null;
+          } else {
+            nextProvider = await createIndexedDbFileSystemProvider(workspace.id, workspace.name);
+            ownsNextProvider = true;
+          }
+        }
+        if (requestId !== navigationRequestRef.current) return;
+        if (!nextProvider) {
+          setPinnedAvailability(document, 'unknown');
+          showToast(
+            'error',
+            `DocBlocks could not open “${workspace.name}”. Open that workspace and grant access, then try again.`,
+          );
+          return;
+        }
+        const openedProvider = nextProvider;
+
+        let exists: boolean;
+        try {
+          exists = await providerEntryExists(openedProvider, document.path);
+        } catch (error: unknown) {
+          setPinnedAvailability(document, 'unknown');
+          showToast(
+            'error',
+            error instanceof Error ? error.message : 'Could not check the pinned document.',
+          );
+          return;
+        }
+        if (requestId !== navigationRequestRef.current) return;
+        if (!exists) {
+          await confirmMissingPinnedDocument(document);
+          return;
+        }
+
+        let disappearedDuringRead = false;
+        const transitioned = await documentSession.transitionWithLoad(async () => {
+          if (requestId !== navigationRequestRef.current) return null;
+          const content = await readProviderText(openedProvider, document.path);
+          if (content === null) {
+            disappearedDuringRead = true;
+            return null;
+          }
+          if (requestId !== navigationRequestRef.current) return null;
+          return {
+            target: createDocumentTarget(openedProvider, workspace.id, document.path),
+            content,
+          };
+        });
+        if (!transitioned) {
+          if (disappearedDuringRead) await confirmMissingPinnedDocument(document);
+          return;
+        }
+        if (requestId !== navigationRequestRef.current) return;
+
+        adoptedNextProvider = true;
+        setProvider(openedProvider);
+        setActiveWorkspaceId(workspace.id);
+        setActiveWorkspaceDescriptor(workspace);
+        setSelectedFile(document.path);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+        setInitialView('wysiwyg');
+        setInitialSharedMode(null);
+        setExplorerKey((key) => key + 1);
+        setPinnedAvailability(document, 'available');
+        closeWelcomeGateway();
+        pushHash(workspace.id, document.path);
+        saveLastState({ workspaceId: workspace.id, filePath: document.path, view: 'wysiwyg' });
+        if (effectiveCompact) setMobileShowEditor(true);
+        void touchWorkspace(workspace.id).catch(() => undefined);
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'Could not open the pinned document.',
+        );
+      } finally {
+        if (nextProvider && ownsNextProvider && !adoptedNextProvider) {
+          try {
+            await getFileSystemProviderV2(nextProvider)?.dispose();
+          } catch {
+            // Preserve the navigation result; disposal is best-effort here.
+          }
+        }
+      }
+    },
+    [
+      activeWorkspaceId,
+      closeWelcomeGateway,
+      confirmMissingPinnedDocument,
+      createDocumentTarget,
+      documentSession,
+      effectiveCompact,
+      provider,
+      pushHash,
+      setPinnedAvailability,
+      showToast,
+    ],
+  );
+
   const handleMoveTransientWorkspace = useCallback(
     async (destinationWorkspaceId: string) => {
       if (!activeWorkspaceId || !provider || !selectedFile) {
@@ -2235,6 +2576,12 @@ export function DocBlocksShell({
         setActiveWorkspaceId(destination.id);
         setActiveWorkspaceDescriptor(destination);
         setSelectedFile(selectedFile);
+        setPinnedDocuments((current) =>
+          movePinnedDocumentsToWorkspace(current, activeWorkspaceId, {
+            workspaceId: destination.id,
+            workspaceName: destination.name,
+          }),
+        );
         setSelectedFolder(null);
         setFolderEntries([]);
         setInitialView('wysiwyg');
@@ -2738,6 +3085,11 @@ export function DocBlocksShell({
       if (!provider) return;
       setDocumentLinkEpoch((epoch) => epoch + 1);
       if (change?.type === 'move' && change.oldPath && change.newPath) {
+        if (activeWorkspaceId) {
+          setPinnedDocuments((current) =>
+            relocatePinnedDocuments(current, activeWorkspaceId, change.oldPath, change.newPath),
+          );
+        }
         const nextFile = selectedFile
           ? relocateProviderPath(selectedFile, change.oldPath, change.newPath)
           : null;
@@ -2763,6 +3115,17 @@ export function DocBlocksShell({
         return;
       }
 
+      if (change?.type === 'delete' && activeWorkspaceId) {
+        for (const document of pinnedDocuments) {
+          if (
+            document.workspaceId === activeWorkspaceId &&
+            pathContains(change.path, document.path)
+          ) {
+            setPinnedAvailability(document, 'missing');
+          }
+        }
+      }
+
       // If the open file was deleted, clear the editor
       if (selectedFile) {
         const exists = await providerEntryExists(provider, selectedFile);
@@ -2776,7 +3139,227 @@ export function DocBlocksShell({
         setFolderEntries(entries);
       }
     },
-    [provider, selectedFile, selectedFolder, activeWorkspaceId, pushHash],
+    [
+      provider,
+      selectedFile,
+      selectedFolder,
+      activeWorkspaceId,
+      pinnedDocuments,
+      pushHash,
+      setPinnedAvailability,
+    ],
+  );
+
+  const acquirePinnedDocumentProvider = useCallback(
+    async (document: PinnedDocument): Promise<PinnedDocumentProviderAccess> => {
+      const workspace = await getWorkspace(document.workspaceId);
+      if (!workspace) return { kind: 'missing-workspace' };
+      if (activeWorkspaceId === workspace.id && provider) {
+        return { kind: 'ready', workspace, provider, owned: false };
+      }
+
+      const transient = getTransientWorkspace(workspace.id);
+      if (transient) {
+        return { kind: 'ready', workspace, provider: transient.provider, owned: false };
+      }
+
+      let pinnedProvider: FileSystemProvider | null = null;
+      if (workspace.type === 'electron-native') {
+        pinnedProvider = isElectronHost()
+          ? await createElectronProviderFromWorkspace(workspace)
+          : null;
+      } else if (workspace.type === 'native') {
+        pinnedProvider = await (await loadNativeFileSystem()).restoreNativeFolder(workspace.id);
+      } else {
+        pinnedProvider = await createIndexedDbFileSystemProvider(workspace.id, workspace.name);
+      }
+      if (!pinnedProvider) return { kind: 'unavailable', workspace };
+      return { kind: 'ready', workspace, provider: pinnedProvider, owned: true };
+    },
+    [activeWorkspaceId, provider],
+  );
+
+  const markRelocatedPinnedDocument = useCallback((document: PinnedDocument, newPath: string) => {
+    const relocated: PinnedDocument = {
+      workspaceId: document.workspaceId,
+      workspaceName: document.workspaceName,
+      path: newPath,
+    };
+    setPinnedDocuments((current) =>
+      relocatePinnedDocuments(current, document.workspaceId, document.path, newPath),
+    );
+    setPinnedDocumentAvailability((current) => {
+      const oldKey = pinnedDocumentKey(document);
+      const nextKey = pinnedDocumentKey(relocated);
+      const next = new Map(current);
+      next.delete(oldKey);
+      next.set(nextKey, 'available');
+      return next;
+    });
+  }, []);
+
+  const handlePinnedDocumentRename = useCallback(
+    async (document: PinnedDocumentListItem) => {
+      if (document.availability === 'missing') {
+        await confirmMissingPinnedDocument(document);
+        return;
+      }
+
+      const oldName = basenameOf(document.path);
+      const response = await promptForText({
+        title: 'Rename document',
+        label: 'Document name',
+        initialValue: oldName,
+        confirmLabel: 'Rename',
+      });
+      if (response === null) return;
+      const newName = response.trim();
+      if (!newName || /[\\/]/.test(newName)) {
+        showToast('error', 'Use a document name without slashes.');
+        return;
+      }
+
+      const parent = dirnameOf(document.path);
+      let newPath: string;
+      try {
+        newPath = parseWorkspacePath(parent ? `${parent}/${newName}` : newName);
+      } catch {
+        showToast('error', 'Use a valid document name.');
+        return;
+      }
+      if (newPath === document.path) return;
+
+      const access = await acquirePinnedDocumentProvider(document);
+      if (access.kind === 'missing-workspace') {
+        await confirmMissingPinnedDocument(document);
+        return;
+      }
+      if (access.kind === 'unavailable') {
+        setPinnedAvailability(document, 'unknown');
+        showToast(
+          'error',
+          `DocBlocks could not open "${access.workspace.name}". Open that workspace and grant access, then try again.`,
+        );
+        return;
+      }
+
+      try {
+        if (!(await pinnedProviderFileExists(access.provider, document.path))) {
+          await confirmMissingPinnedDocument(document);
+          return;
+        }
+        const change: FileTreeChange = {
+          type: 'move',
+          oldPath: document.path,
+          newPath,
+          kind: 'file',
+        };
+        const mutate = () => moveFileSystemEntry(access.provider, document.path, newPath, 'file');
+        if (access.provider === provider && access.workspace.id === activeWorkspaceId) {
+          await handleTreeMutation(change, mutate);
+          await handleTreeChange(change);
+          setExplorerKey((key) => key + 1);
+        } else {
+          await mutate();
+        }
+        markRelocatedPinnedDocument(document, newPath);
+      } finally {
+        if (access.owned) {
+          try {
+            await getFileSystemProviderV2(access.provider)?.dispose();
+          } catch {
+            // The rename result is authoritative; cleanup must not turn success into an error.
+          }
+        }
+      }
+    },
+    [
+      acquirePinnedDocumentProvider,
+      activeWorkspaceId,
+      confirmMissingPinnedDocument,
+      handleTreeChange,
+      handleTreeMutation,
+      markRelocatedPinnedDocument,
+      promptForText,
+      provider,
+      setPinnedAvailability,
+      showToast,
+    ],
+  );
+
+  const handlePinnedDocumentDelete = useCallback(
+    async (document: PinnedDocumentListItem) => {
+      if (document.availability === 'missing') {
+        await confirmMissingPinnedDocument(document);
+        return;
+      }
+
+      const access = await acquirePinnedDocumentProvider(document);
+      if (access.kind === 'missing-workspace') {
+        await confirmMissingPinnedDocument(document);
+        return;
+      }
+      if (access.kind === 'unavailable') {
+        setPinnedAvailability(document, 'unknown');
+        showToast(
+          'error',
+          `DocBlocks could not open "${access.workspace.name}". Open that workspace and grant access, then try again.`,
+        );
+        return;
+      }
+
+      try {
+        if (!(await pinnedProviderFileExists(access.provider, document.path))) {
+          await confirmMissingPinnedDocument(document);
+          return;
+        }
+        if (
+          !(await confirmDeleteEntry(
+            `Delete the document "${basenameOf(document.path)}"? This cannot be undone.`,
+          ))
+        ) {
+          return;
+        }
+
+        const change: FileTreeChange = {
+          type: 'delete',
+          path: document.path,
+          kind: 'file',
+        };
+        const mutate = async () => {
+          if (!(await removePinnedProviderFile(access.provider, document.path))) {
+            throw new Error('The document disappeared before it could be deleted.');
+          }
+        };
+        if (access.provider === provider && access.workspace.id === activeWorkspaceId) {
+          await handleTreeMutation(change, mutate);
+          await handleTreeChange(change);
+          setExplorerKey((key) => key + 1);
+        } else {
+          await mutate();
+        }
+        setPinnedAvailability(document, 'missing');
+      } finally {
+        if (access.owned) {
+          try {
+            await getFileSystemProviderV2(access.provider)?.dispose();
+          } catch {
+            // The delete result is authoritative; cleanup must not turn success into an error.
+          }
+        }
+      }
+    },
+    [
+      acquirePinnedDocumentProvider,
+      activeWorkspaceId,
+      confirmDeleteEntry,
+      confirmMissingPinnedDocument,
+      handleTreeChange,
+      handleTreeMutation,
+      provider,
+      setPinnedAvailability,
+      showToast,
+    ],
   );
 
   /**
@@ -2857,6 +3440,9 @@ export function DocBlocksShell({
     });
     if (!newName || newName === ws.name) return;
     await saveWorkspace({ ...ws, name: newName });
+    setPinnedDocuments((current) =>
+      renamePinnedDocumentWorkspace(current, activeWorkspaceId, newName),
+    );
     setDescriptorRefreshKey((key) => key + 1);
   }, [activeWorkspaceId, promptForText]);
 
@@ -3310,6 +3896,11 @@ export function DocBlocksShell({
       await (await loadIndexedDbFileSystem()).deleteIndexedDBWorkspaceData(activeWorkspaceId);
     }
     await removeWorkspace(activeWorkspaceId);
+    for (const document of pinnedDocuments) {
+      if (document.workspaceId === activeWorkspaceId) {
+        setPinnedAvailability(document, 'missing');
+      }
+    }
     if (requestId !== navigationRequestRef.current) return;
 
     const electron = isElectronHost();
@@ -3345,7 +3936,14 @@ export function DocBlocksShell({
       setSelectedFolder(null);
       setFolderEntries([]);
     }
-  }, [activeWorkspaceId, handleWorkspaceSelect, transitionAwayFromDocument, confirmAction]);
+  }, [
+    activeWorkspaceId,
+    confirmAction,
+    handleWorkspaceSelect,
+    pinnedDocuments,
+    setPinnedAvailability,
+    transitionAwayFromDocument,
+  ]);
 
   return (
     <div
@@ -3496,7 +4094,15 @@ export function DocBlocksShell({
               <FileExplorer
                 key={explorerKey}
                 provider={provider}
+                activeWorkspaceId={activeWorkspaceId}
                 activeFilePath={selectedFile}
+                pinnedDocuments={pinnedDocumentItems}
+                pinnedPaths={activeWorkspacePinnedPaths}
+                onPinnedDocumentSelect={(document) => void handlePinnedDocumentSelect(document)}
+                onPinnedDocumentUnpin={unpinDocument}
+                onPinnedDocumentRename={handlePinnedDocumentRename}
+                onPinnedDocumentDelete={handlePinnedDocumentDelete}
+                onTogglePin={handleTogglePin}
                 onSelect={handleSelect}
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
@@ -3759,15 +4365,11 @@ export function DocBlocksShell({
                     <span className="db-workspace-empty-icon" aria-hidden="true">
                       <FileGlyph />
                     </span>
-                    <h1>
-                      {activeWorkspaceDescriptor?.name
-                        ? `${activeWorkspaceDescriptor.name} is ready`
-                        : 'Your workspace is ready'}
-                    </h1>
-                    <p>Create your first Markdown document, or open a folder you already use.</p>
+                    <h1>{activeWorkspaceDescriptor?.name ?? 'Workspace'}</h1>
+                    <p>Choose a Markdown document from the sidebar, or create a new one.</p>
                     <div className="db-workspace-empty-actions">
                       <button type="button" onClick={() => void handleNewFile()}>
-                        Create your first document
+                        New document
                       </button>
                       <button
                         type="button"

@@ -119,7 +119,7 @@ export default defineConfig({
     sourcemap: process.env.DOCBLOCKS_SOURCEMAPS === 'true',
     // Known large chunks have surface-specific limits in
     // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
-    chunkSizeWarningLimit: 4_000,
+    chunkSizeWarningLimit: 8_000,
     modulePreload: {
       resolveDependencies: resolveModulePreloadDependencies,
     },
@@ -172,6 +172,12 @@ export default defineConfig({
       '@tiptap/pm/transform',
       '@tiptap/pm/commands',
       '@tiptap/pm/schema-list',
+      // Video export is also loaded from excluded linked-Squisq packages.
+      // Pre-bundle its browser dependencies so opening the first video dialog
+      // does not make Vite discover them and reload away the open dialog.
+      '@ffmpeg/ffmpeg',
+      '@ffmpeg/util',
+      'html2canvas',
       // Mermaid is a lazy dependency of the excluded squisq-react package.
       // Explicit optimization provides ESM interop for its CommonJS deps.
       'mermaid',

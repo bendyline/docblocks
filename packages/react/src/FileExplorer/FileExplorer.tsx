@@ -27,6 +27,8 @@ import {
 import { NewFileIcon, NewFolderIcon } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
+import { PinnedDocuments } from './PinnedDocuments.js';
+import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
@@ -117,6 +119,22 @@ export interface FileExplorerProps {
   provider: FileSystemProvider | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
   activeFilePath?: string | null;
+  /** Active workspace identity, used to decorate a selected cross-workspace pin. */
+  activeWorkspaceId?: string | null;
+  /** Documents pinned across every workspace, shown above the active file tree. */
+  pinnedDocuments?: readonly PinnedDocumentListItem[];
+  /** Canonical paths pinned inside the active workspace. */
+  pinnedPaths?: readonly string[];
+  /** Opens a pinned document, switching workspace when necessary. */
+  onPinnedDocumentSelect?: (document: PinnedDocumentListItem) => void;
+  /** Removes a document from the global pinned list. */
+  onPinnedDocumentUnpin?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Renames a pinned document without requiring its workspace to be active. */
+  onPinnedDocumentRename?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Deletes a pinned document without requiring its workspace to be active. */
+  onPinnedDocumentDelete?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Pins or unpins a file in the active workspace. */
+  onTogglePin?: (path: string) => void | Promise<void>;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
   /**
@@ -145,6 +163,14 @@ export interface FileExplorerProps {
 export function FileExplorer({
   provider,
   activeFilePath,
+  activeWorkspaceId,
+  pinnedDocuments = [],
+  pinnedPaths = [],
+  onPinnedDocumentSelect,
+  onPinnedDocumentUnpin,
+  onPinnedDocumentRename,
+  onPinnedDocumentDelete,
+  onTogglePin,
   onSelect,
   onTreeMutation,
   onTreeChange,
@@ -161,6 +187,10 @@ export function FileExplorer({
   const { reveal } = tree;
   // Null on surfaces without git (site, tests) — everything degrades.
   const git = useGitContext();
+  const pinnedPathSet = useMemo(
+    () => new Set(pinnedPaths.map((path) => normalisePath(path))),
+    [pinnedPaths],
+  );
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
@@ -553,6 +583,8 @@ export function FileExplorer({
           confirmDelete={confirmDelete}
           onDelete={handleDelete}
           onRename={handleRename}
+          pinned={entry.kind === 'file' && pinnedPathSet.has(normalisePath(entry.path))}
+          onTogglePin={entry.kind === 'file' ? onTogglePin : undefined}
           draggable
           dragging={draggedEntry?.path === entry.path}
           dropTarget={dropTarget === entry.path}
@@ -583,6 +615,8 @@ export function FileExplorer({
       handleEntryDragOver,
       handleEntryDrop,
       activeRowPath,
+      pinnedPathSet,
+      onTogglePin,
     ],
   );
 
@@ -594,6 +628,18 @@ export function FileExplorer({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {onPinnedDocumentSelect && (
+        <PinnedDocuments
+          documents={pinnedDocuments}
+          activeWorkspaceId={activeWorkspaceId}
+          activeFilePath={activeFilePath}
+          onSelect={onPinnedDocumentSelect}
+          onUnpin={onPinnedDocumentUnpin}
+          onRename={onPinnedDocumentRename}
+          onDelete={onPinnedDocumentDelete}
+        />
+      )}
+
       {/* Toolbar */}
       <div className="db-explorer-toolbar">
         <span className="db-explorer-title">Files</span>

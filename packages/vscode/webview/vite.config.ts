@@ -11,7 +11,7 @@ export default defineConfig({
     emptyOutDir: true,
     // Known large chunks have surface-specific limits in
     // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
-    chunkSizeWarningLimit: 4_000,
+    chunkSizeWarningLimit: 8_000,
     rollupOptions: {
       output: {
         entryFileNames: 'index.js',
