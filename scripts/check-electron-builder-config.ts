@@ -61,26 +61,47 @@ function requireLegalResources(): void {
   if (!isRecord(config) || !Array.isArray(config.extraResources)) {
     failConfigPolicy('electron-builder.yml must copy distribution legal notices.');
   }
-  const requiredResources = new Map([
-    ['THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_NOTICES.txt'],
-    ['../../node_modules/electron/dist/LICENSE', 'licenses/ELECTRON_LICENSE.txt'],
-    [
-      '../../node_modules/electron/dist/LICENSES.chromium.html',
-      'licenses/ELECTRON_THIRD_PARTY_NOTICES.html',
-    ],
-  ]);
-  for (const [from, to] of requiredResources) {
+  // `committed` sources live in the repo, so their absence is a real regression.
+  // The Electron-provided notices are extracted by Electron's install-time
+  // binary download into node_modules/electron/dist; that artifact is not
+  // guaranteed in every environment that runs this config validator (which does
+  // no packaging). Only assert those on disk when the download is actually
+  // present, so a wrong `from` path is still caught locally and in packaging
+  // jobs without coupling `npm run all` to the Electron binary download.
+  const electronDist = path.resolve(path.dirname(configPath), '../../node_modules/electron/dist');
+  const electronDownloaded = existsSync(electronDist);
+  const requiredResources = [
+    { from: 'THIRD_PARTY_NOTICES.txt', to: 'THIRD_PARTY_NOTICES.txt', committed: true },
+    {
+      from: '../../node_modules/electron/dist/LICENSE',
+      to: 'licenses/ELECTRON_LICENSE.txt',
+      committed: false,
+    },
+    {
+      from: '../../node_modules/electron/dist/LICENSES.chromium.html',
+      to: 'licenses/ELECTRON_THIRD_PARTY_NOTICES.html',
+      committed: false,
+    },
+  ] as const;
+  for (const { from, to, committed } of requiredResources) {
     const configured = config.extraResources.some(
       (entry) => isRecord(entry) && entry.from === from && entry.to === to,
     );
     if (!configured) {
       failConfigPolicy(`electron-builder.yml must copy ${from} to ${to}.`);
     }
-    if (!existsSync(path.resolve(path.dirname(configPath), from))) {
+    if (
+      (committed || electronDownloaded) &&
+      !existsSync(path.resolve(path.dirname(configPath), from))
+    ) {
       failConfigPolicy(`Desktop legal resource is missing: ${from}.`);
     }
   }
-  process.stdout.write('electron-builder.yml: distribution legal notices OK\n');
+  process.stdout.write(
+    electronDownloaded
+      ? 'electron-builder.yml: distribution legal notices OK\n'
+      : 'electron-builder.yml: distribution legal notices configured OK (Electron binary not downloaded; source presence deferred to packaging)\n',
+  );
 }
 
 requireLegalResources();
