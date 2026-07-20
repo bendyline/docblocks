@@ -1,3 +1,14 @@
+## @bendyline/docblocks-cli [2.2.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.2.0...@bendyline/docblocks-cli@2.2.1) (2026-07-17)
+
+### Bug Fixes
+
+* Site updates, small bug fixes ([#15](https://github.com/bendyline/docblocks/issues/15)) ([ba10a92](https://github.com/bendyline/docblocks/commit/ba10a92aec7f685dfdcafd7df0ef707063e6a939))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.2.1
+
 ## @bendyline/docblocks-cli [2.2.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.1.2...@bendyline/docblocks-cli@2.2.0) (2026-07-17)
 
 ### Features
