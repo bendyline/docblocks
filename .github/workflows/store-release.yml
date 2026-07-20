@@ -159,7 +159,10 @@ jobs:
   build-mas:
     needs: [quality, create-draft-release]
     if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
-    runs-on: macos-latest
+    # Pin the signing image to match desktop-release.yml's Developer ID build.
+    # `macos-latest` moved from macOS 15 to macOS 26, where codesign changed
+    # behavior; keep Mac App Store signing on the same known-good image.
+    runs-on: macos-15
     permissions:
       contents: write
 
