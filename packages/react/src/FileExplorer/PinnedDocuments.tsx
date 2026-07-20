@@ -203,9 +203,6 @@ function PinnedDocumentRow({
           }
         }}
       >
-        <span className="db-pinned-document-icon" aria-hidden="true">
-          <PinIcon />
-        </span>
         <span className="db-pinned-document-heading">
           <span className="db-pinned-document-name">{displayName(pinnedDocument)}</span>
           {missing && <span className="db-pinned-document-missing">(missing)</span>}

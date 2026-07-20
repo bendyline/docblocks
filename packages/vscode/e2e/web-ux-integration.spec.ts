@@ -214,6 +214,41 @@ test.describe('VS Code web and UX integration', () => {
     await expect(editor.locator('body')).toContainText('Test Document', { timeout: 15_000 });
   });
 
+  test('loads the DocPlayer stylesheet so the slideshow player is height-clamped', async ({
+    page,
+  }) => {
+    // Regression: the webview must import `@bendyline/squisq-react/styles` (the
+    // DocPlayer stylesheet), exactly as the site and desktop renderers do.
+    // `docblocks-react/styles` only pulls in squisq's *editor* styles, so
+    // without the explicit import `.doc-player` loses `max-height: 100%` (and
+    // its background / block layout) — a tall slide then overflows the pane and
+    // pushes the slideshow controls off the bottom.
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const previewTab = editor.locator('[role="tab"][data-view="preview"]');
+    await previewTab.click();
+
+    const player = editor.locator('.doc-player').first();
+    await expect(player).toBeVisible({ timeout: 15_000 });
+
+    const style = await player.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        // The stylesheet sets this sentinel on `.doc-player`; DocPlayer.tsx
+        // warns when it computes empty. It is the direct "styles loaded" probe.
+        stylesLoaded: cs.getPropertyValue('--squisq-styles-loaded').trim(),
+        // The height clamp that keeps a tall slide (and its bottom controls)
+        // inside the pane. Absent (`none`) when the stylesheet is missing.
+        maxHeight: cs.maxHeight,
+      };
+    });
+
+    expect(style.stylesLoaded).toBe('1');
+    expect(style.maxHeight).not.toBe('none');
+  });
+
   test('exports Markdown after a validated filename edit within the approved folder', async ({
     page,
   }) => {

@@ -1,0 +1,17 @@
+/*
+ * Root layout reset for the desktop renderer.
+ *
+ * This lived as an inline <style> in index.html, but Vite's html-inline-proxy
+ * intermittently failed to resolve that block from a stale build cache
+ * (`Could not load index.html?html-proxy&inline-css`), crashing the renderer
+ * build. Importing the reset as a real stylesheet sidesteps that code path.
+ */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}

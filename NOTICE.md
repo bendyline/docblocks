@@ -32,8 +32,9 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Distribution review flags
 
-The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file. Their source repositories and declared identifiers are retained in the generated surface notice; distribution review should decide whether to vendor an authoritative upstream text before release:
+The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file:
 
+- fsevents@2.3.2 (MIT); affected artifact: DocBlocks desktop distribution; source: https://www.npmjs.com/package/fsevents.
 - lazy-val@1.0.5 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/develar/lazy-val.
 
 ## Development-only repository inputs
@@ -42,4 +43,4 @@ The root workspace pins Mocha 11.3.0 and Vite 6.4.3 for testing and building. It
 
 ## Regeneration and drift checking
 
-Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it runs in the canonical `npm run all` gate after the artifact builds. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.
+Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it is a standalone check (not part of `npm run all`) and should be run before publishing a release. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.

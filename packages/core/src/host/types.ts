@@ -163,6 +163,33 @@ export type MenuCommand =
   | 'help:viewOnGitHub';
 
 /**
+ * One pinned document mirrored from the renderer into native menu surfaces.
+ *
+ * The renderer owns the authoritative pinned list (localStorage). The main
+ * process only caches the latest snapshot so the tray / menu bar can offer a
+ * one-click shortcut per document; it never persists or mutates it.
+ */
+export interface HostPinnedDocument {
+  readonly workspaceId: string;
+  readonly workspaceName: string;
+  /** Canonical, root-relative workspace path. */
+  readonly path: string;
+}
+
+/**
+ * Renderer-to-main channel that keeps native menu surfaces in sync with
+ * renderer-owned state.
+ */
+export interface DocBlocksHostMenuAPI {
+  /**
+   * Publish the current pinned-document list so the desktop tray can offer a
+   * shortcut per document that activates it in the main window. Replaces any
+   * previously published list; send an empty array to clear the shortcuts.
+   */
+  setPinnedDocuments(documents: readonly HostPinnedDocument[]): void;
+}
+
+/**
  * OS open-file / deep-link event resolved by the host.
  * - 'workspace-file': a file inside an already-registered workspace.
  * - 'external-file': a loose markdown file outside any workspace — opened in a
@@ -278,6 +305,7 @@ export interface DocBlocksHostAPI {
   git: DocBlocksHostGitAPI;
   updater: DocBlocksHostUpdaterAPI;
   lifecycle: DocBlocksHostLifecycleAPI;
+  menu: DocBlocksHostMenuAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

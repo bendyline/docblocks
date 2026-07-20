@@ -8,6 +8,7 @@ import { App } from './App';
 (globalThis as { docBlocksMonacoWorkersReady?: Promise<unknown> }).docBlocksMonacoWorkersReady =
   import('./setupMonacoWorkers');
 
+import './base.css';
 import '@bendyline/squisq-react/styles';
 import '@bendyline/docblocks-react/styles';
 

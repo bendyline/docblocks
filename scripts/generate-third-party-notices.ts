@@ -596,7 +596,7 @@ function renderRootNotice(
     '',
     ...(missingMaterial.size > 0
       ? [
-          'The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file. Their source repositories and declared identifiers are retained in the generated surface notice; distribution review should decide whether to vendor an authoritative upstream text before release:',
+          'The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file:',
           '',
           ...[...missingMaterial.values()]
             .sort((left, right) => left.component.name.localeCompare(right.component.name))
@@ -616,7 +616,7 @@ function renderRootNotice(
     '',
     '## Regeneration and drift checking',
     '',
-    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it runs in the canonical `npm run all` gate after the artifact builds. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
+    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it is a standalone check (not part of `npm run all`) and should be run before publishing a release. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
   ]
     .join('\n')
     .trimEnd()}\n`;
@@ -656,9 +656,11 @@ async function main(): Promise<void> {
     if (actual !== expected) stale.push(relativePath);
   }
   if (stale.length > 0) {
-    throw new Error(
-      `Third-party notices are stale or missing:\n  ${stale.join('\n  ')}\nRun npm run generate:notices.`,
+    process.stderr.write(
+      `Third-party notices are stale or missing:\n  ${stale.join('\n  ')}\nRun npm run generate:notices.\n`,
     );
+    process.exitCode = 1;
+    return;
   }
   process.stdout.write(
     `Third-party notices are fresh across ${surfaces.length} artifact surfaces.\n`,

@@ -116,7 +116,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | fill-range | 7.1.1 | MIT | https://github.com/jonschlinkert/fill-range |
 | format | 0.2.2 | MIT | https://github.com/samsonjs/format |
 | fs-extra | 10.1.0 | MIT | https://github.com/jprichardson/node-fs-extra |
-| fsevents | 2.3.2 | MIT | https://github.com/fsevents/fsevents |
+| fsevents | 2.3.2 | MIT | https://www.npmjs.com/package/fsevents |
 | genson-js | 0.0.8 | Apache-2.0 | git+ssh://git@github.com/aspecto-io/genson-js |
 | glob-parent | 5.1.2 | ISC | https://github.com/gulpjs/glob-parent |
 | graceful-fs | 4.2.10 | ISC | https://github.com/isaacs/node-graceful-fs |
@@ -211,12 +211,12 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | prosemirror-gapcursor | 1.4.1 | MIT | https://github.com/prosemirror/prosemirror-gapcursor |
 | prosemirror-history | 1.5.0 | MIT | https://github.com/prosemirror/prosemirror-history |
 | prosemirror-keymap | 1.2.3 | MIT | https://github.com/prosemirror/prosemirror-keymap |
-| prosemirror-model | 1.25.4 | MIT | https://github.com/prosemirror/prosemirror-model |
+| prosemirror-model | 1.25.11 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-model |
 | prosemirror-schema-list | 1.5.1 | MIT | https://github.com/prosemirror/prosemirror-schema-list |
 | prosemirror-state | 1.4.4 | MIT | https://github.com/prosemirror/prosemirror-state |
 | prosemirror-tables | 1.8.5 | MIT | https://github.com/ProseMirror/prosemirror-tables |
 | prosemirror-transform | 1.11.0 | MIT | https://github.com/prosemirror/prosemirror-transform |
-| prosemirror-view | 1.41.7 | MIT | https://github.com/prosemirror/prosemirror-view |
+| prosemirror-view | 1.42.1 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-view |
 | react | 18.3.1 | MIT | https://github.com/facebook/react |
 | react-dom | 18.3.1 | MIT | https://github.com/facebook/react |
 | readdirp | 3.6.0 | MIT | https://github.com/paulmillr/readdirp |
@@ -263,6 +263,7 @@ The following locked packages declare a license identifier but publish no packag
 
 | Package | Version | Declared license | Source |
 | --- | --- | --- | --- |
+| fsevents | 2.3.2 | MIT | https://www.npmjs.com/package/fsevents |
 | lazy-val | 1.0.5 | MIT | https://github.com/develar/lazy-val |
 
 ==============================================================================
@@ -7856,33 +7857,6 @@ Copyright 2010 - 2014 Sami Samhuri sami@samhuri.net
 [MIT license](http://sjs.mit-license.org)
 
 ==============================================================================
-Components: fsevents@2.3.2
-Source files: node_modules/fsevents/LICENSE
-==============================================================================
-MIT License
------------
-
-Copyright (C) 2010-2020 by Philipp Dunkel, Ben Noordhuis, Elan Shankar, Paul Miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-==============================================================================
 Components: genson-js@0.0.8
 Source files: node_modules/genson-js/LICENSE
 ==============================================================================
@@ -9975,7 +9949,7 @@ Source files: node_modules/pdfjs-dist/LICENSE
    END OF TERMS AND CONDITIONS
 
 ==============================================================================
-Components: prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-keymap@1.2.3, prosemirror-model@1.25.4, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.41.7
+Components: prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-keymap@1.2.3, prosemirror-model@1.25.11, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.42.1
 Source files: node_modules/prosemirror-commands/LICENSE, node_modules/prosemirror-dropcursor/LICENSE, node_modules/prosemirror-gapcursor/LICENSE, node_modules/prosemirror-history/LICENSE, node_modules/prosemirror-keymap/LICENSE, node_modules/prosemirror-model/LICENSE, node_modules/prosemirror-schema-list/LICENSE, node_modules/prosemirror-state/LICENSE, node_modules/prosemirror-transform/LICENSE, node_modules/prosemirror-view/LICENSE
 ==============================================================================
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others

@@ -33,7 +33,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | @mermaid-js/parser | 1.2.0 | MIT | https://github.com/mermaid-js/mermaid |
 | @napi-rs/canvas | 0.1.100 | MIT | https://github.com/Brooooooklyn/canvas |
 | @napi-rs/canvas-android-arm64 | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-android-arm64 |
-| @napi-rs/canvas-darwin-arm64 | 0.1.100 | MIT | https://github.com/Brooooooklyn/canvas |
+| @napi-rs/canvas-darwin-arm64 | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-darwin-arm64 |
 | @napi-rs/canvas-darwin-x64 | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-darwin-x64 |
 | @napi-rs/canvas-linux-arm-gnueabihf | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-arm-gnueabihf |
 | @napi-rs/canvas-linux-arm64-gnu | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-arm64-gnu |
@@ -42,7 +42,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | @napi-rs/canvas-linux-x64-gnu | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-x64-gnu |
 | @napi-rs/canvas-linux-x64-musl | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-x64-musl |
 | @napi-rs/canvas-win32-arm64-msvc | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-win32-arm64-msvc |
-| @napi-rs/canvas-win32-x64-msvc | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-win32-x64-msvc |
+| @napi-rs/canvas-win32-x64-msvc | 0.1.100 | MIT | https://github.com/Brooooooklyn/canvas |
 | @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
 | @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |
 | @popperjs/core | 2.11.8 | MIT | github:popperjs/popper-core |
@@ -305,14 +305,14 @@ This notice is included in the published npm tarball. Transitive packages instal
 | prosemirror-keymap | 1.2.3 | MIT | https://github.com/prosemirror/prosemirror-keymap |
 | prosemirror-markdown | 1.13.4 | MIT | https://github.com/prosemirror/prosemirror-markdown |
 | prosemirror-menu | 1.3.0 | MIT | https://github.com/prosemirror/prosemirror-menu |
-| prosemirror-model | 1.25.4 | MIT | https://github.com/prosemirror/prosemirror-model |
+| prosemirror-model | 1.25.11 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-model |
 | prosemirror-schema-basic | 1.2.4 | MIT | https://github.com/prosemirror/prosemirror-schema-basic |
 | prosemirror-schema-list | 1.5.1 | MIT | https://github.com/prosemirror/prosemirror-schema-list |
 | prosemirror-state | 1.4.4 | MIT | https://github.com/prosemirror/prosemirror-state |
 | prosemirror-tables | 1.8.5 | MIT | https://github.com/ProseMirror/prosemirror-tables |
 | prosemirror-trailing-node | 3.0.0 | MIT | https://github.com/remirror/remirror |
 | prosemirror-transform | 1.11.0 | MIT | https://github.com/prosemirror/prosemirror-transform |
-| prosemirror-view | 1.41.7 | MIT | https://github.com/prosemirror/prosemirror-view |
+| prosemirror-view | 1.42.1 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-view |
 | punycode.js | 2.3.1 | MIT | https://github.com/mathiasbynens/punycode.js |
 | readable-stream | 2.3.8 | MIT | https://github.com/nodejs/readable-stream |
 | remark-directive | 3.0.1 | MIT | https://github.com/remarkjs/remark-directive |
@@ -10803,7 +10803,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-Components: prosemirror-collab@1.3.1, prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-inputrules@1.5.1, prosemirror-keymap@1.2.3, prosemirror-markdown@1.13.4, prosemirror-menu@1.3.0, prosemirror-model@1.25.4, prosemirror-schema-basic@1.2.4, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.41.7
+Components: prosemirror-collab@1.3.1, prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-inputrules@1.5.1, prosemirror-keymap@1.2.3, prosemirror-markdown@1.13.4, prosemirror-menu@1.3.0, prosemirror-model@1.25.11, prosemirror-schema-basic@1.2.4, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.42.1
 Source files: node_modules/prosemirror-collab/LICENSE, node_modules/prosemirror-commands/LICENSE, node_modules/prosemirror-dropcursor/LICENSE, node_modules/prosemirror-gapcursor/LICENSE, node_modules/prosemirror-history/LICENSE, node_modules/prosemirror-inputrules/LICENSE, node_modules/prosemirror-keymap/LICENSE, node_modules/prosemirror-markdown/LICENSE, node_modules/prosemirror-menu/LICENSE, node_modules/prosemirror-model/LICENSE, node_modules/prosemirror-schema-basic/LICENSE, node_modules/prosemirror-schema-list/LICENSE, node_modules/prosemirror-state/LICENSE, node_modules/prosemirror-transform/LICENSE, node_modules/prosemirror-view/LICENSE
 ==============================================================================
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others

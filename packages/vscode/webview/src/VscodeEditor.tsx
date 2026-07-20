@@ -1,4 +1,13 @@
 import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
+// The DocPlayer (slideshow / video preview) ships its own stylesheet in
+// @bendyline/squisq-react. docblocks-react/styles only pulls in squisq's
+// *editor* styles, not the player's, so it must be imported explicitly here —
+// exactly as the site and desktop renderers do in their main.tsx. Without it
+// the player loses `.doc-player { max-height: 100% }` (plus its background and
+// block layout), so a tall slide overflows the pane and pushes the slideshow /
+// video controls off the bottom. Load it before docblocks-react/styles to match
+// the proven site/desktop cascade order.
+import '@bendyline/squisq-react/styles';
 import '@bendyline/docblocks-react/styles';
 import {
   pickEmptyDocumentPrompt,

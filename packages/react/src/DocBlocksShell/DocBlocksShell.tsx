@@ -900,6 +900,18 @@ export function DocBlocksShell({
   useEffect(() => {
     savePinnedDocuments(pinnedDocuments);
   }, [pinnedDocuments]);
+  // Mirror the pinned list into the desktop tray so each document gets a
+  // one-click shortcut. No-op on non-Electron surfaces.
+  useEffect(() => {
+    if (!isElectronHost()) return;
+    getDocBlocksHost().menu.setPinnedDocuments(
+      pinnedDocuments.map((document) => ({
+        workspaceId: document.workspaceId,
+        workspaceName: document.workspaceName,
+        path: document.path,
+      })),
+    );
+  }, [pinnedDocuments]);
   const setPinnedAvailability = useCallback(
     (
       document: Pick<PinnedDocument, 'workspaceId' | 'path'>,

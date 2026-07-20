@@ -23,6 +23,7 @@ import type {
   GitStatus,
   HostPrepareCloseRequest,
   HostPrepareCloseResult,
+  DocBlocksHostMenuAPI,
   HostEnvironment,
   HostFileSystemV2WatchMessage,
   MenuCommand,
@@ -326,6 +327,21 @@ function onOpenRequest(listener: (request: OpenRequest) => void): () => void {
   return openRequestChannel.subscribe(listener);
 }
 
+const menuApi: DocBlocksHostMenuAPI = {
+  setPinnedDocuments(documents) {
+    // Send plain, structured-cloneable records. The main process re-validates
+    // the payload before building any menu item — nothing here is trusted.
+    ipcRenderer.send(
+      'menu:setPinnedDocuments',
+      documents.map((document) => ({
+        workspaceId: document.workspaceId,
+        workspaceName: document.workspaceName,
+        path: document.path,
+      })),
+    );
+  },
+};
+
 // ── env ─────────────────────────────────────────────────────────────
 
 // `appVersion` and `isDev` are main-owned and arrive on argv — see
@@ -352,6 +368,7 @@ const host: DocBlocksHostAPI = {
   git: gitApi,
   updater: updaterApi,
   lifecycle: lifecycleApi,
+  menu: menuApi,
   onMenuCommand,
   onOpenRequest,
 };

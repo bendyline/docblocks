@@ -291,17 +291,6 @@
   outline-offset: -2px;
 }
 
-.db-pinned-document-icon {
-  flex: 0 0 14px;
-  color: var(--db-text-muted);
-  font-size: 11px;
-  text-align: center;
-}
-
-.db-pinned-document-row--selected .db-pinned-document-icon {
-  color: inherit;
-}
-
 .db-pinned-document-heading {
   min-width: 0;
   display: flex;

@@ -183,12 +183,12 @@ This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.
 | prosemirror-gapcursor | 1.4.1 | MIT | https://github.com/prosemirror/prosemirror-gapcursor |
 | prosemirror-history | 1.5.0 | MIT | https://github.com/prosemirror/prosemirror-history |
 | prosemirror-keymap | 1.2.3 | MIT | https://github.com/prosemirror/prosemirror-keymap |
-| prosemirror-model | 1.25.4 | MIT | https://github.com/prosemirror/prosemirror-model |
+| prosemirror-model | 1.25.11 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-model |
 | prosemirror-schema-list | 1.5.1 | MIT | https://github.com/prosemirror/prosemirror-schema-list |
 | prosemirror-state | 1.4.4 | MIT | https://github.com/prosemirror/prosemirror-state |
 | prosemirror-tables | 1.8.5 | MIT | https://github.com/ProseMirror/prosemirror-tables |
 | prosemirror-transform | 1.11.0 | MIT | https://github.com/prosemirror/prosemirror-transform |
-| prosemirror-view | 1.41.7 | MIT | https://github.com/prosemirror/prosemirror-view |
+| prosemirror-view | 1.42.1 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-view |
 | react | 18.3.1 | MIT | https://github.com/facebook/react |
 | react-dom | 18.3.1 | MIT | https://github.com/facebook/react |
 | remark-directive | 3.0.1 | MIT | https://github.com/remarkjs/remark-directive |
@@ -9131,7 +9131,7 @@ Source files: node_modules/pdfjs-dist/LICENSE
    END OF TERMS AND CONDITIONS
 
 ==============================================================================
-Components: prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-keymap@1.2.3, prosemirror-model@1.25.4, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.41.7
+Components: prosemirror-commands@1.7.1, prosemirror-dropcursor@1.8.2, prosemirror-gapcursor@1.4.1, prosemirror-history@1.5.0, prosemirror-keymap@1.2.3, prosemirror-model@1.25.11, prosemirror-schema-list@1.5.1, prosemirror-state@1.4.4, prosemirror-transform@1.11.0, prosemirror-view@1.42.1
 Source files: node_modules/prosemirror-commands/LICENSE, node_modules/prosemirror-dropcursor/LICENSE, node_modules/prosemirror-gapcursor/LICENSE, node_modules/prosemirror-history/LICENSE, node_modules/prosemirror-keymap/LICENSE, node_modules/prosemirror-model/LICENSE, node_modules/prosemirror-schema-list/LICENSE, node_modules/prosemirror-state/LICENSE, node_modules/prosemirror-transform/LICENSE, node_modules/prosemirror-view/LICENSE
 ==============================================================================
 Copyright (C) 2015-2017 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
