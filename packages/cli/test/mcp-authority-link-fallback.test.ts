@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { McpFileAuthority } from '../src/mcp/authority.js';
@@ -39,7 +39,10 @@ describe('McpFileAuthority create-mode publication without hard links', () => {
   let root = '';
 
   beforeEach(async () => {
-    root = await mkdtemp(path.join(os.tmpdir(), 'docblocks-linkless-'));
+    const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'docblocks-linkless-'));
+    // macOS exposes the same temp directory through /var and /private/var.
+    // The authority returns the physically canonicalized target path.
+    root = await realpath(temporaryRoot);
   });
 
   afterEach(async () => {

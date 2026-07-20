@@ -34,6 +34,10 @@ DocBlocks ships as **four surfaces** from this one repository:
 | [CLI reference](docs/cli.md)                       | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
 | [MCP architecture and protocol guide](docs/mcp.md) | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
 | [Agent/contributor guidance](AGENTS.md)            | Repository architecture, hard rules, test gates, and development conventions.                  |
+| [Contributing](CONTRIBUTING.md)                    | Proposal-only contribution policy and submission terms.                                        |
+| [Support](SUPPORT.md)                              | Where and how to request help or report a problem.                                             |
+| [Security policy](SECURITY.md)                     | How to report vulnerabilities and sensitive security concerns.                                 |
+| [Code of Conduct](CODE_OF_CONDUCT.md)              | Expected behavior for project interactions.                                                    |
 
 ## Agent workflows
 

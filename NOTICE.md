@@ -1,117 +1,45 @@
+<!-- GENERATED FILE - run npm run generate:notices -->
+
 # Third-Party Notices
 
-This file lists the third-party open source software used by DocBlocks.
+This file is the distribution-level entry point for third-party software used by DocBlocks. The generated per-surface notices below are authoritative for their artifacts; they are derived from `package-lock.json`, workspace manifests, and the actual Vite/Rollup output graphs. This inventory is provided for engineering and review purposes and is not legal advice.
 
----
+## Distribution notices
 
-## Fonts
+| Distribution                           | Notice shipped with the artifact                                                             | Inventory basis       |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
+| @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 112 locked components |
+| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 343 locked components |
+| @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 347 locked components |
+| DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 207 locked components |
+| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 197 locked components |
+| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 237 locked components |
 
-All fonts are self-hosted from Google Fonts (latin subset, WOFF2 format).
-Individual license files are located in `packages/react/src/fonts/licenses/`.
+The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
 
-| Font               | License     | Copyright                            |
-| ------------------ | ----------- | ------------------------------------ |
-| Cormorant Garamond | SIL OFL 1.1 | The Cormorant Project Authors        |
-| Crimson Text       | SIL OFL 1.1 | The Crimson Text Project Authors     |
-| DM Sans            | SIL OFL 1.1 | The DM Sans Project Authors          |
-| DM Serif Display   | SIL OFL 1.1 | Adobe (2014-2018), Google LLC (2019) |
-| Hanken Grotesk     | SIL OFL 1.1 | The Hanken Grotesk Project Authors   |
-| IBM Plex Sans      | SIL OFL 1.1 | IBM Corp.                            |
-| Inter              | SIL OFL 1.1 | The Inter Project Authors            |
-| JetBrains Mono     | SIL OFL 1.1 | The JetBrains Mono Project Authors   |
-| Lora               | SIL OFL 1.1 | The Lora Project Authors             |
-| Merriweather       | SIL OFL 1.1 | The Merriweather Project Authors     |
-| Oswald             | SIL OFL 1.1 | The Oswald Project Authors           |
-| Playfair Display   | SIL OFL 1.1 | The Playfair Display Project Authors |
-| PT Serif           | SIL OFL 1.1 | ParaType Ltd.                        |
-| Roboto             | SIL OFL 1.1 | The Roboto Project Authors           |
-| Source Serif 4     | SIL OFL 1.1 | The Source Serif 4 Project Authors   |
+## Material non-JavaScript distributions
 
----
+- The site ships 15 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
+- Site and desktop renderer builds ship @ffmpeg/core@0.12.9 (GPL-2.0-or-later) as `ffmpeg-core.js` and `ffmpeg-core.wasm`. The same directory contains `COPYING.GPL-2.0.txt`, upstream notices, third-party licenses, and exact source-release pointers.
+- Desktop distributions embed Electron 42.2.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
 
-## Runtime Dependencies
+## Major runtime components
 
-These packages are bundled with or required at runtime by DocBlocks packages.
+- Squisq packages: @bendyline/squisq-cli@2.4.0, @bendyline/squisq-editor-react@2.4.0, @bendyline/squisq-formats@2.3.4, @bendyline/squisq-react@2.4.0, @bendyline/squisq-video-react@2.2.4, @bendyline/squisq-video@2.2.4, @bendyline/squisq@2.4.0.
+- MCP SDK: @modelcontextprotocol/sdk@1.29.0.
+- Monaco Editor: monaco-editor@0.50.0.
+- Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.
 
-| Package                   | Version | License    | Used By                    |
-| ------------------------- | ------- | ---------- | -------------------------- |
-| @modelcontextprotocol/sdk | 1.28.0  | MIT        | cli                        |
-| commander                 | 13.1.0  | MIT        | cli                        |
-| monaco-editor             | 0.55.1  | MIT        | react, site                |
-| playwright-core           | 1.58.2  | Apache-2.0 | cli                        |
-| react                     | 18.3.1  | MIT        | react (peer), site, vscode |
-| react-dom                 | 18.3.1  | MIT        | react (peer), site, vscode |
-| zod                       | 3.25.76 | MIT        | cli                        |
+## Distribution review flags
 
----
+The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file. Their source repositories and declared identifiers are retained in the generated surface notice; distribution review should decide whether to vendor an authoritative upstream text before release:
 
-## Development Dependencies
+- lazy-val@1.0.5 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/develar/lazy-val.
 
-These packages are used during development, testing, and building only. They are
-not distributed with DocBlocks.
+## Development-only repository inputs
 
-| Package                                    | Version | License    |
-| ------------------------------------------ | ------- | ---------- |
-| @commitlint/cli                            | 19.8.1  | MIT        |
-| @commitlint/config-conventional            | 19.8.1  | MIT        |
-| @eslint/js                                 | 9.39.4  | MIT        |
-| @playwright/test                           | 1.58.2  | Apache-2.0 |
-| @semantic-release/changelog                | 6.0.3   | MIT        |
-| @semantic-release/git                      | 10.0.1  | MIT        |
-| @types/chai                                | 5.2.3   | MIT        |
-| @types/mocha                               | 10.0.10 | MIT        |
-| @types/react                               | 18.3.28 | MIT        |
-| @types/react-dom                           | 18.3.7  | MIT        |
-| @types/vscode                              | 1.85.0  | MIT        |
-| @vitejs/plugin-react                       | 4.7.0   | MIT        |
-| @vscode/test-web                           | 0.0.80  | MIT        |
-| @vscode/vsce                               | 3.9.2   | MIT        |
-| chai                                       | 6.2.2   | MIT        |
-| conventional-changelog-conventionalcommits | 8.0.0   | ISC        |
-| eslint                                     | 9.39.4  | MIT        |
-| eslint-config-prettier                     | 10.1.8  | MIT        |
-| eslint-plugin-react-hooks                  | 5.2.0   | MIT        |
-| eslint-plugin-react-refresh                | 0.4.26  | MIT        |
-| globals                                    | 15.15.0 | MIT        |
-| mocha                                      | 11.7.5  | MIT        |
-| multi-semantic-release                     | 3.1.0   | 0BSD       |
-| prettier                                   | 3.8.1   | MIT        |
-| rimraf                                     | 5.0.10  | ISC        |
-| semantic-release                           | 25.0.3  | MIT        |
-| tsup                                       | 8.5.1   | MIT        |
-| tsx                                        | 4.21.0  | MIT        |
-| typescript                                 | 5.9.3   | Apache-2.0 |
-| typescript-eslint                          | 8.57.1  | MIT        |
-| vite                                       | 6.4.1   | MIT        |
+The root workspace pins Mocha 11.3.0 and Vite 6.4.3 for testing and building. It also pins ffmpeg-static 5.2.0 (GPL-3.0-or-later) as a local development/test fallback. These root development dependencies are not included by the generated DocBlocks distribution manifests; shipped browser GIF encoding instead uses the separately noticed @ffmpeg/core WebAssembly distribution.
 
----
+## Regeneration and drift checking
 
-## License Texts
-
-### SIL Open Font License 1.1
-
-The majority of the bundled fonts are licensed under the SIL Open Font License,
-Version 1.1. The full text of this license is available at:
-https://scripts.sil.org/OFL
-
-### MIT License
-
-The majority of npm dependencies are licensed under the MIT License. The full
-text is available at: https://opensource.org/licenses/MIT
-
-### Apache License 2.0
-
-TypeScript, Playwright, and related packages are licensed under the Apache
-License 2.0. The full text is available at:
-https://www.apache.org/licenses/LICENSE-2.0
-
-### ISC License
-
-glob, rimraf, and conventional-changelog-conventionalcommits are licensed under
-the ISC License. The full text is available at:
-https://opensource.org/licenses/ISC
-
-### 0BSD License (Zero-Clause BSD)
-
-multi-semantic-release is licensed under 0BSD. The full text is available at:
-https://opensource.org/licenses/0BSD
+Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it runs in the canonical `npm run all` gate after the artifact builds. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.

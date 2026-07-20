@@ -57,6 +57,34 @@ function failConfigPolicy(message: string): never {
   process.exit(1);
 }
 
+function requireLegalResources(): void {
+  if (!isRecord(config) || !Array.isArray(config.extraResources)) {
+    failConfigPolicy('electron-builder.yml must copy distribution legal notices.');
+  }
+  const requiredResources = new Map([
+    ['THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_NOTICES.txt'],
+    ['../../node_modules/electron/dist/LICENSE', 'licenses/ELECTRON_LICENSE.txt'],
+    [
+      '../../node_modules/electron/dist/LICENSES.chromium.html',
+      'licenses/ELECTRON_THIRD_PARTY_NOTICES.html',
+    ],
+  ]);
+  for (const [from, to] of requiredResources) {
+    const configured = config.extraResources.some(
+      (entry) => isRecord(entry) && entry.from === from && entry.to === to,
+    );
+    if (!configured) {
+      failConfigPolicy(`electron-builder.yml must copy ${from} to ${to}.`);
+    }
+    if (!existsSync(path.resolve(path.dirname(configPath), from))) {
+      failConfigPolicy(`Desktop legal resource is missing: ${from}.`);
+    }
+  }
+  process.stdout.write('electron-builder.yml: distribution legal notices OK\n');
+}
+
+requireLegalResources();
+
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
   targetName: string,

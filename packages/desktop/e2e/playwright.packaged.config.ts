@@ -16,7 +16,9 @@ export default defineConfig({
   reporter: process.env.CI
     ? 'github'
     : [['html', { outputFolder: 'playwright-report/packaged', open: 'never' }]],
-  timeout: 60_000,
+  // The signed app can announce DevTools before CDP discovery accepts
+  // connections, especially at the end of the complete assurance gate.
+  timeout: 150_000,
   expect: {
     timeout: 10_000,
   },

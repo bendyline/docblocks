@@ -5,6 +5,7 @@ import {
   CROSS_ORIGIN_ISOLATION_HEADERS,
   ffmpegCorePlugin,
 } from '../../scripts/vite-ffmpeg-core.js';
+import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
 // the rationale.
@@ -50,7 +51,12 @@ export default defineConfig({
   root: path.resolve(__dirname, 'renderer'),
   base: './',
   publicDir: path.resolve(__dirname, 'renderer/public'),
-  plugins: [stripBrokenSourcemapPragmas(), ffmpegCorePlugin(), react()],
+  plugins: [
+    stripBrokenSourcemapPragmas(),
+    ffmpegCorePlugin(),
+    thirdPartyComponentManifestPlugin(),
+    react(),
+  ],
   resolve: {
     preserveSymlinks: false,
     // Force a single monaco-editor copy — see packages/site/vite.config.ts for

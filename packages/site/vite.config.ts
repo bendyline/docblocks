@@ -8,6 +8,7 @@ import {
   CROSS_ORIGIN_ISOLATION_HEADERS,
   ffmpegCorePlugin,
 } from '../../scripts/vite-ffmpeg-core.js';
+import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Linked Squisq packages resolve to their already-compiled workspace `dist`
 // files. Letting the React plugin feed those large JavaScript chunks through
@@ -176,6 +177,7 @@ export default defineConfig({
     stripBrokenSourcemapPragmas(),
     serveStaticDirectoryIndexes(),
     ffmpegCorePlugin(),
+    thirdPartyComponentManifestPlugin(),
     react({ exclude: linkedSquisqDistJavaScript }),
     docblocksPwa(),
   ],

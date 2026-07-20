@@ -4077,11 +4077,7 @@ export function DocBlocksShell({
                     <SplitViewIcon />
                   </button>
                 )}
-                <span
-                  className={'db-window-drag-grip'}
-                  data-tooltip={'Click and drag here to move your window around.'}
-                  aria-hidden={true}
-                />
+                <span className={'db-window-drag-grip'} aria-hidden={true} />
               </div>
               {git.available && (
                 <Suspense fallback={null}>

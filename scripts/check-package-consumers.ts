@@ -236,6 +236,13 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
   const manifest = JSON.parse(
     await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
   ) as InstalledManifest;
+  const thirdPartyNotice = path.join(packageRoot, 'THIRD_PARTY_NOTICES.txt');
+  if (!(await stat(thirdPartyNotice)).isFile()) {
+    throw new Error(`${packageName}: packed install is missing THIRD_PARTY_NOTICES.txt`);
+  }
+  if ((await readFile(thirdPartyNotice, 'utf8')).length < 1_000) {
+    throw new Error(`${packageName}: packed third-party notice is unexpectedly small`);
+  }
   const targets = new Set<string>();
   for (const target of [manifest.main, manifest.module, manifest.types, manifest.typings]) {
     if (target?.startsWith('./')) targets.add(target.slice(2));

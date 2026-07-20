@@ -172,6 +172,14 @@ async function findDanglingSourceMaps(filePaths: readonly string[]): Promise<rea
 
 export async function checkVsixPackageContents(): Promise<void> {
   const files = listVsixFiles();
+  for (const requiredNotice of [
+    'THIRD_PARTY_NOTICES.txt',
+    'dist/webview/THIRD_PARTY_COMPONENTS.json',
+  ]) {
+    if (!files.includes(requiredNotice)) {
+      throw new Error(`VSIX is missing required legal inventory: ${requiredNotice}`);
+    }
+  }
   const forbidden = findForbiddenVsixPaths(files);
   if (forbidden.length > 0) {
     throw new Error(

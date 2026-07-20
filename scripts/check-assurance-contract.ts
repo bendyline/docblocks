@@ -379,6 +379,7 @@ async function main(): Promise<void> {
     'npm run check:site-fonts',
     'npm run check:desktop-config',
     'npm run check:vscode-package',
+    'npm run check:notices',
     'npm run check:agent-guidance',
     'npm run check:assurance',
     'npm run lint',
@@ -429,6 +430,7 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'typecheck', 'tsconfig.e2e.json');
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
+  requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
 
   const reactPackage = await readPackage('packages/react/package.json');
   const sitePackage = await readPackage('packages/site/package.json');

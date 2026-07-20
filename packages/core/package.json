@@ -25,7 +25,8 @@
   "types": "./dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "THIRD_PARTY_NOTICES.txt"
   ],
   "exports": {
     ".": {
@@ -99,7 +100,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.3.3",
+    "@bendyline/squisq": "2.4.0",
     "zod": "3.25.76"
   }
 }

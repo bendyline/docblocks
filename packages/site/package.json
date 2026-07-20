@@ -12,12 +12,12 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.3.3",
-    "@bendyline/squisq-editor-react": "2.3.4",
-    "@bendyline/squisq-formats": "2.3.3",
-    "@bendyline/squisq-react": "2.3.3",
-    "@bendyline/squisq-video": "2.2.3",
-    "@bendyline/squisq-video-react": "2.2.3",
+    "@bendyline/squisq": "2.4.0",
+    "@bendyline/squisq-editor-react": "2.4.0",
+    "@bendyline/squisq-formats": "2.3.4",
+    "@bendyline/squisq-react": "2.4.0",
+    "@bendyline/squisq-video": "2.2.4",
+    "@bendyline/squisq-video-react": "2.2.4",
     "monaco-editor": "0.50.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"

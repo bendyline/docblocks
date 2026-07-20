@@ -48,6 +48,11 @@ const manifestUrls = new Set(
   [...serviceWorker.matchAll(/(?:"url"|\burl):"([^"]+)"/gu)].map((match) => match[1]),
 );
 const eligibleFiles = await collectEligibleFiles(distRoot);
+for (const requiredNotice of ['THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_COMPONENTS.json']) {
+  if (!eligibleFiles.includes(requiredNotice)) {
+    throw new Error(`Site distribution is missing ${requiredNotice}.`);
+  }
+}
 const missing = eligibleFiles.filter((file) => !manifestUrls.has(file));
 if (missing.length > 0) {
   throw new Error(

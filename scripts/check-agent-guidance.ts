@@ -52,6 +52,7 @@ function generatedBlock(skills: readonly string[]): string {
     '- Canonical local and CI gate: use a Node version satisfying `package.json#engines`, then run `npm run all`; success includes every repository unit/integration test and all locally runnable E2E suites on the current OS.',
     '- Packed public-package consumer check: `npm run check:packages`.',
     '- Assurance-contract freshness check: `npm run check:assurance`.',
+    '- Third-party distribution notice drift check: `npm run check:notices`; regenerate after a dependency or bundle change with `npm run generate:notices`.',
     '- All E2E suites together: `npm run test:e2e:all`.',
     '- Individual site E2E: `npm run test:e2e`, `npm run test:e2e:browsers`, and `npm run test:e2e:offline`.',
     '- Individual desktop source E2E: `npm run test:e2e:desktop`.',
