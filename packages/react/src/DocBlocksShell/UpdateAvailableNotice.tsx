@@ -21,6 +21,7 @@ export function UpdateAvailableNotice({
   statusBarVisible,
 }: UpdateAvailableNoticeProps) {
   const [promptOpen, setPromptOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   if (!available || !onApplyUpdate) return null;
 
@@ -52,10 +53,17 @@ export function UpdateAvailableNotice({
             A new version of DocBlocks is available. Reload to update the editor and site pages.
           </span>
           <div className="db-update-banner-actions">
-            <button type="button" onClick={onApplyUpdate} disabled={blocked}>
-              Reload
+            <button
+              type="button"
+              onClick={() => {
+                setApplying(true);
+                onApplyUpdate();
+              }}
+              disabled={blocked || applying}
+            >
+              {applying ? 'Updating\u2026' : 'Reload'}
             </button>
-            <button type="button" onClick={() => setPromptOpen(false)}>
+            <button type="button" onClick={() => setPromptOpen(false)} disabled={applying}>
               Later
             </button>
           </div>

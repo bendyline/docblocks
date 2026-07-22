@@ -36,7 +36,7 @@ When exporting, you can edit the suggested file name or use the adjacent picker 
 
 The editor works on its own. To add DocBlocks command-line conversion, video tools, or the local MCP server, run **DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup**.
 
-The guided setup installs `@bendyline/docblocks-cli` as a workspace development dependency, not as a global package. MCP setup preserves existing servers and does not grant filesystem access automatically; add explicit read or write roots only when you intend to expose them.
+The guided setup installs `@bendyline/docblocks-cli` as a workspace development dependency, not as a global package. MCP setup preserves existing servers and grants the DocBlocks MCP server read and write access to the current `${workspaceFolder}` so it can read source documents and save generated files there. Edit `.vscode/mcp.json` if you want narrower roots.
 
 ## Commands
 

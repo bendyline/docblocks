@@ -46,8 +46,10 @@ describe('FileExplorer new item failures', () => {
   let container: HTMLElement;
   let root: ReturnType<typeof createRoot>;
   let provider: MemoryFileSystemProvider;
+  let selections: Array<{ path: string; kind: 'file' | 'directory' }>;
 
   beforeEach(async () => {
+    selections = [];
     provider = new MemoryFileSystemProvider('mem', 'Memory');
     await provider.v2.writeFile(
       parseWorkspacePath('taken.md'),
@@ -58,7 +60,12 @@ describe('FileExplorer new item failures', () => {
     document.body.append(container);
     root = createRoot(container);
     await act(async () => {
-      root.render(createElement(FileExplorer, { provider }));
+      root.render(
+        createElement(FileExplorer, {
+          provider,
+          onSelect: (path, kind) => selections.push({ path, kind }),
+        }),
+      );
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
   });
@@ -84,12 +91,17 @@ describe('FileExplorer new item failures', () => {
     });
   }
 
-  it('places New Folder before New File in the explorer toolbar', () => {
+  it('places sort controls before New Folder and New File in the explorer toolbar', () => {
     const actions = container.querySelector('.db-explorer-actions');
     const labels = [...(actions?.querySelectorAll('button') ?? [])].map((button) =>
       button.getAttribute('aria-label'),
     );
-    expect(labels).to.deep.equal(['New Folder', 'New File']);
+    expect(labels).to.deep.equal([
+      'Sort by name',
+      'Sort by last modified',
+      'New Folder',
+      'New File',
+    ]);
   });
 
   it('surfaces a duplicate name instead of sitting there silently', async () => {
@@ -191,6 +203,14 @@ describe('FileExplorer new item failures', () => {
     );
     const rows = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')];
     expect(rows.map((row) => row.dataset.path)).to.include('fresh.md');
+  });
+
+  it('selects and opens a newly created file', async () => {
+    await submitNewFile('fresh');
+
+    expect(selections).to.deep.equal([{ path: 'fresh.md', kind: 'file' }]);
+    const createdRow = container.querySelector<HTMLElement>('[data-path="fresh.md"]');
+    expect(createdRow?.getAttribute('aria-selected')).to.equal('true');
   });
 
   it('recovers: a corrected name creates after a failure', async () => {

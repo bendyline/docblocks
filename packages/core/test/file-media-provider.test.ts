@@ -1,6 +1,9 @@
 import { expect } from 'chai';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import { createFileSystemDocumentTarget, DocumentSession } from '../src/document/index.js';
+import { FileSystemContentContainer } from '../src/filesystem/filesystem-content-container.js';
 import { createFileMediaProvider } from '../src/filesystem/file-media-provider.js';
+import { MemoryFileSystemProvider } from '../src/filesystem/memory-provider.js';
 
 interface ObjectUrlProbe {
   created: Blob[];
@@ -59,6 +62,61 @@ describe('file media provider', () => {
       { name: 'notes_files/audio.mp3', mimeType: 'audio/mpeg', size: 3 },
       { name: 'notes_files/image.png', mimeType: 'image/png', size: 2 },
     ]);
+  });
+
+  it('keeps a nested recording byte-for-byte across document save and media reload', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    try {
+      const filesystem = new MemoryFileSystemProvider('recording', 'Recording');
+      filesystem.seedText('notes.md', '# Notes\n');
+      const container = new FileSystemContentContainer(filesystem, '');
+      const provider = createFileMediaProvider(container, 'notes.md');
+      const recording = new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]);
+      const recordingPath = 'notes_files/video/camera+audio-capture.webm';
+
+      expect(
+        await provider.addMedia(
+          'video/camera+audio-capture.webm',
+          new Blob([recording], { type: 'video/webm' }),
+          'video/webm',
+        ),
+      ).to.equal(recordingPath);
+
+      const session = new DocumentSession({ autoSaveDelayMs: 60_000 });
+      await session.transitionTo(
+        createFileSystemDocumentTarget(filesystem, 'notes.md'),
+        '# Notes\n',
+      );
+      const scope = session.getSnapshot();
+      if (!scope.targetKey) throw new Error('Test session has no document target.');
+      session.edit(`# Notes\n\n<video src="${recordingPath}" controls></video>\n`, {
+        targetKey: scope.targetKey,
+        generation: scope.generation,
+      });
+      await session.flush('manual');
+
+      provider.dispose();
+      const reopened = createFileMediaProvider(
+        new FileSystemContentContainer(filesystem, ''),
+        'notes.md',
+      );
+      expect(await reopened.listMedia()).to.deep.equal([
+        {
+          name: recordingPath,
+          mimeType: 'video/webm',
+          size: recording.byteLength,
+        },
+      ]);
+      expect(await reopened.resolveUrl(recordingPath)).to.equal('blob:media-1');
+      expect(probe.created[0]?.type).to.equal('video/webm');
+      expect(
+        Array.from(new Uint8Array((await container.readFile(recordingPath)) ?? new ArrayBuffer(0))),
+      ).to.deep.equal(Array.from(recording));
+      expect(await filesystem.readFile('notes.md')).to.contain(recordingPath);
+      reopened.dispose();
+    } finally {
+      restore();
+    }
   });
 
   it('resolves equivalent references once and returns missing references unchanged', async () => {

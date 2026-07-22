@@ -69,6 +69,7 @@ import { AppMenu } from '../AppMenu/AppMenu.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
   FileExplorer,
+  type FileExplorerSortMode,
   type FileTreeChange,
   type FileTreeMutationHandler,
 } from '../FileExplorer/FileExplorer.js';
@@ -148,10 +149,12 @@ import { buildIssueReportUrl } from './issue-report.js';
 import { loadLastState, saveLastState } from './last-state.js';
 import {
   isWelcomeGatewayDismissed,
+  loadFileExplorerSortMode,
   loadSidebarWidth,
   loadViewPreferences,
   markWelcomeGatewayDismissed,
   saveSidebarWidth,
+  saveFileExplorerSortMode,
   saveViewPreferences,
   SIDEBAR_COLLAPSE_THRESHOLD,
   SIDEBAR_WIDTH_MAX,
@@ -1119,6 +1122,12 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
+  const [fileExplorerSortMode, setFileExplorerSortMode] =
+    useState<FileExplorerSortMode>(loadFileExplorerSortMode);
+  const handleFileExplorerSortModeChange = useCallback((mode: FileExplorerSortMode) => {
+    setFileExplorerSortMode(mode);
+    saveFileExplorerSortMode(mode);
+  }, []);
   const [documentLinkEpoch, setDocumentLinkEpoch] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
@@ -4122,8 +4131,11 @@ export function DocBlocksShell({
               <FileExplorer
                 key={explorerKey}
                 provider={provider}
+                metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
                 activeWorkspaceId={activeWorkspaceId}
                 activeFilePath={selectedFile}
+                sortMode={fileExplorerSortMode}
+                onSortModeChange={handleFileExplorerSortModeChange}
                 pinnedDocuments={pinnedDocumentItems}
                 pinnedPaths={activeWorkspacePinnedPaths}
                 onPinnedDocumentSelect={(document) => void handlePinnedDocumentSelect(document)}

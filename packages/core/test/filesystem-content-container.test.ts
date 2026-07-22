@@ -13,6 +13,25 @@ describe('FileSystemContentContainer', () => {
     ]);
   });
 
+  it('preserves nested file paths and prefix scans from a root-scoped container', async () => {
+    const provider = new MemoryFileSystemProvider('root-container', 'Container');
+    await provider.writeBinary(
+      '/notes_files/video/camera+audio-recording.webm',
+      new Uint8Array([1, 2, 3]),
+    );
+    const container = new FileSystemContentContainer(provider, '');
+
+    const expected = [
+      {
+        path: 'notes_files/video/camera+audio-recording.webm',
+        mimeType: 'video/webm',
+        size: 3,
+      },
+    ];
+    expect(await container.listFiles()).to.deep.equal(expected);
+    expect(await container.listFiles('notes_files/')).to.deep.equal(expected);
+  });
+
   it('propagates directory failures instead of returning a partial backup', async () => {
     class FailingDirectoryProvider extends MemoryFileSystemProvider {
       override async readDirectory(): Promise<never> {

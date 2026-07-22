@@ -97,7 +97,17 @@ export class FileSystemContentContainer implements ContentContainer {
           const childPath = parseWorkspacePath(child.path);
           const prefixPath = parseWorkspacePath(this.prefix);
           if (!workspacePathContains(prefixPath, childPath)) continue;
-          const rel = childPath === prefixPath ? '' : childPath.slice(prefixPath.length + 1);
+          // `WorkspacePath`s never carry a leading slash. When this container
+          // is rooted at the workspace root, slicing `prefix.length + 1`
+          // therefore drops the first character of every file path. Besides
+          // publishing corrupt names, that makes prefix scans such as
+          // `notes_files/` return no media at all. Only skip a separator when
+          // the container has a non-root prefix.
+          const rel = prefixPath
+            ? childPath === prefixPath
+              ? ''
+              : childPath.slice(prefixPath.length + 1)
+            : childPath;
           if (prefix && !rel.startsWith(prefix)) continue;
           const size = child.size ?? (await this.provider.stat(child.path))?.size ?? 0;
           entries.push({

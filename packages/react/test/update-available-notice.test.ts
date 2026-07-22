@@ -80,5 +80,11 @@ describe('UpdateAvailableNotice', () => {
     await act(async () => reload?.click());
 
     expect(applyCalls).to.equal(1);
+    expect(reload?.textContent).to.equal('Updating\u2026');
+    expect(reload?.disabled).to.equal(true);
+    const later = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Later',
+    );
+    expect(later?.disabled).to.equal(true);
   });
 });

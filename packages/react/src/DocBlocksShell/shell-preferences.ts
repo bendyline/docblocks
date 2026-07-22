@@ -1,8 +1,10 @@
 import type { ViewPreferences } from '@bendyline/squisq-editor-react';
+import type { FileExplorerSortMode } from '../FileExplorer/entry-sort.js';
 
 const WELCOME_GATEWAY_KEY = 'docblocks:welcomeGatewayDismissed';
 const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
 const VIEW_PREFERENCES_KEY = 'docblocks:viewPreferences';
+const FILE_EXPLORER_SORT_MODE_KEY = 'docblocks:fileExplorerSortMode';
 
 export const SIDEBAR_WIDTH_DEFAULT = 320;
 export const SIDEBAR_WIDTH_MIN = 320;
@@ -48,6 +50,24 @@ export function saveSidebarWidth(px: number): void {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(px)));
   } catch {
     // Layout persistence is best-effort.
+  }
+}
+
+export function loadFileExplorerSortMode(): FileExplorerSortMode {
+  try {
+    return localStorage.getItem(FILE_EXPLORER_SORT_MODE_KEY) === 'last-modified'
+      ? 'last-modified'
+      : 'name';
+  } catch {
+    return 'name';
+  }
+}
+
+export function saveFileExplorerSortMode(mode: FileExplorerSortMode): void {
+  try {
+    localStorage.setItem(FILE_EXPLORER_SORT_MODE_KEY, mode);
+  } catch {
+    // File ordering persistence is best-effort.
   }
 }
 

@@ -164,7 +164,7 @@ describe('useFileTree', () => {
     await provider.v2.dispose();
   });
 
-  it('does not refresh the tree for watched file content changes', async () => {
+  it('refreshes only the containing listing for watched file metadata changes', async () => {
     const provider = new MemoryFileSystemProvider('watched', 'Watched');
     await provider.v2.writeFile(parseWorkspacePath('note.md'), new Uint8Array([1]), {
       mode: 'create',
@@ -190,10 +190,69 @@ describe('useFileTree', () => {
     });
     await advanceTime(SETTLE);
 
-    expect(refreshReads).to.equal(0);
+    expect(refreshReads).to.equal(1);
     expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['note.md']);
+    expect(handle.result.current.entries[0]?.lastModified).to.be.a('string');
     await handle.unmount();
     await provider.v2.dispose();
+  });
+
+  it('silently refreshes only the active file listing when a non-watch provider saves', async () => {
+    const provider = makeProvider({
+      '': [
+        {
+          ...file('note.md'),
+          lastModified: '2026-07-22T10:00:00.000Z',
+        },
+        dir('docs'),
+      ],
+      '/docs': [file('other.md', '/docs')],
+    });
+    const handle = await renderHook(
+      (p: {
+        provider: FileSystemProvider;
+        metadataRefreshKey: number;
+        metadataRefreshPath: string;
+      }) => useFileTree(p.provider, p.metadataRefreshKey, p.metadataRefreshPath),
+      { provider, metadataRefreshKey: 0, metadataRefreshPath: '/note.md' },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => handle.result.current.toggleExpand('/docs'));
+    await advanceTime(SETTLE);
+
+    provider.readDirCalls.length = 0;
+    provider.tree[''] = [
+      {
+        ...file('note.md'),
+        lastModified: '2026-07-22T11:00:00.000Z',
+      },
+      dir('docs'),
+    ];
+    const normalRead = provider.readDirectory.bind(provider);
+    let releaseRefresh!: () => void;
+    const refreshReleased = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    provider.readDirectory = async (path: string) => {
+      if (normalisePath(path) === '') await refreshReleased;
+      return normalRead(path);
+    };
+
+    await handle.rerender({ provider, metadataRefreshKey: 1, metadataRefreshPath: '/note.md' });
+    await advanceTime(0);
+
+    expect(
+      handle.result.current.loading,
+      'autosave must not replace the tree with Loading',
+    ).to.equal(false);
+    expect(handle.result.current.entries[0]?.lastModified).to.equal('2026-07-22T10:00:00.000Z');
+
+    await act(async () => releaseRefresh());
+    await advanceTime(SETTLE);
+
+    expect(provider.readDirCalls).to.deep.equal(['']);
+    expect(handle.result.current.entries[0]?.lastModified).to.equal('2026-07-22T11:00:00.000Z');
+    await handle.unmount();
   });
 
   it('does not add a focus refresh when the provider already has a watch barrier', async () => {

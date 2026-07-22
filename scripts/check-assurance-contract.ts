@@ -379,6 +379,23 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
       throw new Error(`${relativePath}: build-macos package step is missing ${requiredFragment}`);
     }
   }
+
+  const releaseJob = parsed.jobs.release;
+  if (!isRecord(releaseJob) || !Array.isArray(releaseJob.steps)) {
+    throw new Error(`${relativePath}: release has no steps`);
+  }
+  const githubReleaseStep = releaseJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Create GitHub Release',
+  );
+  if (
+    !isRecord(githubReleaseStep) ||
+    !isRecord(githubReleaseStep.with) ||
+    githubReleaseStep.with.target_commitish !== '${{ github.sha }}'
+  ) {
+    throw new Error(
+      `${relativePath}: the desktop GitHub Release must target the immutable workflow SHA`,
+    );
+  }
 }
 
 async function main(): Promise<void> {

@@ -14,6 +14,8 @@ export interface FileEntry {
   kind: 'file';
   name: string;
   path: string;
+  /** ISO-8601 timestamp when the provider can supply file metadata while listing. */
+  lastModified?: string;
 }
 
 export interface FolderEntry {

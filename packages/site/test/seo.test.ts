@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'chai';
@@ -15,9 +16,35 @@ const MARKETING_ROUTES = [
   'privacy',
   'terms',
 ] as const;
+const STATIC_CSP_PAGES = [...MARKETING_ROUTES, '404'] as const;
 
 async function read(relativePath: string): Promise<string> {
   return readFile(path.join(SITE_ROOT, relativePath), 'utf8');
+}
+
+function parseContentSecurityPolicy(html: string): Map<string, string[]> {
+  const policy = html.match(
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]+)"/u,
+  )?.[1];
+  expect(policy, 'Content-Security-Policy meta content').to.be.a('string');
+  return new Map<string, string[]>(
+    (policy ?? '')
+      .split(';')
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name, ...sources] = directive.split(/\s+/u);
+        return [name, sources];
+      }),
+  );
+}
+
+function readPngDimensions(image: Buffer): { width: number; height: number } {
+  const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(image.subarray(0, pngSignature.length).equals(pngSignature), 'PNG signature').to.equal(
+    true,
+  );
+  return { width: image.readUInt32BE(16), height: image.readUInt32BE(20) };
 }
 
 /** The `[...]` body of the custom worker's root navigation allowlist. */
@@ -66,6 +93,22 @@ function expectIndexableDocument(html: string, canonicalUrl: string): void {
 }
 
 describe('site SEO surface', () => {
+  it('allows local Blob media without weakening script or object policy', async () => {
+    const html = await read('index.html');
+    const policyDirectives = parseContentSecurityPolicy(html);
+
+    expect(policyDirectives.get('default-src')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('media-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
+    expect(policyDirectives.get('connect-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
+    expect(policyDirectives.get('script-src')).to.deep.equal(["'self'"]);
+    expect(policyDirectives.get('manifest-src')).to.deep.equal(["'self'"]);
+    expect(policyDirectives.get('object-src')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('base-uri')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('form-action')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('frame-src')).to.deep.equal(["'none'"]);
+    expect(html).to.include('<meta name="referrer" content="no-referrer" />');
+  });
+
   it('ships stable root metadata, structured data, and crawlable bootstrap content', async () => {
     const html = await read('index.html');
     expectIndexableDocument(html, 'https://docblocks.com/');
@@ -124,6 +167,53 @@ describe('site SEO surface', () => {
       titles.add(title ?? '');
     }
     expect(titles.size).to.equal(MARKETING_ROUTES.length);
+  });
+
+  it('denies active content and networking on static pages except the release API', async () => {
+    for (const route of STATIC_CSP_PAGES) {
+      const html = await read(route === '404' ? 'public/404.html' : `public/${route}/index.html`);
+      const policy = parseContentSecurityPolicy(html);
+      const label = `${route} CSP`;
+
+      expect(policy.get('default-src'), label).to.deep.equal(["'none'"]);
+      expect(policy.get('style-src'), label).to.deep.equal(["'self'"]);
+      expect(policy.get('img-src'), label).to.deep.equal(["'self'"]);
+      expect(policy.get('font-src'), label).to.deep.equal(["'self'"]);
+      for (const directive of [
+        'media-src',
+        'worker-src',
+        'object-src',
+        'base-uri',
+        'form-action',
+        'frame-src',
+      ]) {
+        expect(policy.get(directive), `${label} ${directive}`).to.deep.equal(["'none'"]);
+      }
+      expect(html, `${route} referrer policy`).to.include(
+        '<meta name="referrer" content="no-referrer" />',
+      );
+      expect(html.indexOf('http-equiv="Content-Security-Policy"'), label).to.be.lessThan(
+        html.indexOf('rel="stylesheet"'),
+      );
+
+      if (route === 'desktop') {
+        expect(policy.get('connect-src'), label).to.deep.equal(['https://api.github.com']);
+        const script = html.match(/<script>([\s\S]*?)<\/script>/u)?.[1];
+        expect(script, 'desktop inline release script').to.be.a('string');
+        const hash = createHash('sha256')
+          .update(script ?? '')
+          .digest('base64');
+        expect(policy.get('script-src'), label).to.deep.equal([`'sha256-${hash}'`]);
+        expect(script).to.include("const API_URL = 'https://api.github.com/repos/'");
+      } else {
+        expect(policy.get('connect-src'), label).to.deep.equal(["'none'"]);
+        expect(policy.get('script-src'), label).to.deep.equal(["'none'"]);
+        expect(html, `${route} scripts`).not.to.match(/<script(?:\s|>)/u);
+      }
+
+      expect(html, label).not.to.include("'unsafe-inline'");
+      expect(html, label).not.to.include("'unsafe-eval'");
+    }
   });
 
   it('publishes exact crawl files and omits app states from the sitemap', async () => {
@@ -234,15 +324,18 @@ describe('site SEO surface', () => {
     expect(html).to.include('href="/desktop/"');
   });
   it('ships dark-mode marketing surfaces with real product imagery', async () => {
-    const [css, web, desktop, vscode, docs, editorImage, vscodeImage] = await Promise.all([
-      read('public/marketing/marketing.css'),
-      read('public/web/index.html'),
-      read('public/desktop/index.html'),
-      read('public/vscode/index.html'),
-      read('public/docs/index.html'),
-      stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-editor.png')),
-      stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-vscode.png')),
-    ]);
+    const [css, web, desktop, vscode, docs, editorImage, vscodeImage, editorPng, vscodePng] =
+      await Promise.all([
+        read('public/marketing/marketing.css'),
+        read('public/web/index.html'),
+        read('public/desktop/index.html'),
+        read('public/vscode/index.html'),
+        read('public/docs/index.html'),
+        stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-editor.png')),
+        stat(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-vscode.png')),
+        readFile(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-editor.png')),
+        readFile(path.join(PUBLIC_ROOT, 'marketing', 'docblocks-vscode.png')),
+      ]);
 
     expect(css).to.include('@media (prefers-color-scheme: dark)');
     expect(css).to.include('color-scheme: light dark');
@@ -252,6 +345,10 @@ describe('site SEO surface', () => {
     expect(docs).to.include('/marketing/docblocks-editor.png');
     expect(editorImage.size).to.be.greaterThan(50_000);
     expect(vscodeImage.size).to.be.greaterThan(50_000);
+    expect(editorImage.size).to.be.lessThan(500_000);
+    expect(vscodeImage.size).to.be.lessThan(500_000);
+    expect(readPngDimensions(editorPng)).to.deep.equal({ width: 1280, height: 720 });
+    expect(readPngDimensions(vscodePng)).to.deep.equal({ width: 1280, height: 720 });
   });
 
   it('uses the Bendyline typography on every shared marketing surface', async () => {
