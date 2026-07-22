@@ -36,7 +36,7 @@
     "app": "npm run build:core && npm run build:react && npm run dev:desktop",
     "dev:desktop": "npm run dev -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
-    "test": "mocha",
+    "test": "tsx scripts/run-tests.ts",
     "coverage:critical": "npm run coverage:desktop-critical && npm run coverage:core-critical",
     "coverage:desktop-critical": "c8 --check-coverage --branches 75 --functions 100 --lines 90 --statements 90 --reporter=text --reporter=json-summary --reports-dir=reports/coverage-desktop-critical --include=packages/desktop/main/settings-schema.ts --include=packages/desktop/main/settings-file.ts --include=packages/desktop/main/settings-write-queue.ts --include=packages/desktop/main/updater-result.ts mocha --no-config --require tsx packages/desktop/test/settings.test.ts packages/desktop/test/updater-result.test.ts",
     "coverage:core-critical": "c8 --check-coverage --branches 85 --functions 100 --lines 95 --statements 95 --reporter=text --reporter=json-summary --reports-dir=reports/coverage-core-critical --include=packages/core/src/workspace/workspace-manager.ts --include=packages/core/src/filesystem/file-media-provider.ts mocha --no-config --require tsx --require ./packages/react/test/setup.ts packages/core/test/workspace-manager.test.ts packages/core/test/file-media-provider.test.ts",
