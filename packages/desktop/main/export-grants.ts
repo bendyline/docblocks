@@ -8,6 +8,7 @@ interface ExportTargetResource {
   absolutePath: string;
   physicalParent: string;
   bookmark?: string;
+  pickerApprovedIdentity?: string;
 }
 
 export interface ResolvedExportTarget {
@@ -38,6 +39,7 @@ export async function mintExportGrant(
   documentKey: string,
   targetPath: string,
   bookmark?: string,
+  pickerApprovedIdentity?: string,
 ): Promise<{ grantId: string; displayPath: string }> {
   const requested = path.resolve(targetPath);
   const physicalParent = await fs.realpath(path.dirname(requested));
@@ -48,8 +50,17 @@ export async function mintExportGrant(
     absolutePath,
     physicalParent,
     bookmark,
+    pickerApprovedIdentity,
   });
   return { grantId, displayPath: absolutePath };
+}
+
+/** A native picker approval applies to one save attempt only. */
+export function consumeExportPickerApproval(ownerId: number, grantId: string): string | null {
+  const resource = grants.require(ownerId, grantId);
+  const identity = resource.pickerApprovedIdentity ?? null;
+  resource.pickerApprovedIdentity = undefined;
+  return identity;
 }
 
 export async function resolveExportGrant(

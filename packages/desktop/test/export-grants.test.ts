@@ -3,7 +3,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { mintExportGrant, resolveExportGrant } from '../main/export-grants.js';
+import {
+  consumeExportPickerApproval,
+  mintExportGrant,
+  resolveExportGrant,
+} from '../main/export-grants.js';
 
 describe('desktop export grants', () => {
   let directory = '';
@@ -46,6 +50,15 @@ describe('desktop export grants', () => {
     }
 
     await expectRejected(resolveExportGrant(20, 'document-a', grant.grantId), 'regular file');
+  });
+
+  it('consumes native picker replacement approval after one save attempt', async () => {
+    const target = path.join(directory, 'report.pdf');
+    await fs.writeFile(target, 'existing');
+    const grant = await mintExportGrant(30, 'document-a', target, undefined, 'file-identity');
+
+    expect(consumeExportPickerApproval(30, grant.grantId)).to.equal('file-identity');
+    expect(consumeExportPickerApproval(30, grant.grantId)).to.equal(null);
   });
 });
 

@@ -2417,6 +2417,15 @@ body.db-resizing-sidebar * {
   padding: 4px 0;
 }
 
+.db-export-toolbar-menu-dropdown {
+  max-width: min(720px, calc(100vw - 16px));
+}
+
+.db-export-toolbar-menu-dropdown .db-toolbar-menu-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .db-toolbar-menu-item {
   display: block;
   width: 100%;

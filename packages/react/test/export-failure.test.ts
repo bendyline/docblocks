@@ -158,6 +158,124 @@ describe('Export failure surfacing', () => {
     expect(document.body.textContent).to.not.include(SAVE_FAILURE);
   });
 
+  it('shows the resolved native destination in the quick-export item', async () => {
+    const displayPath = 'C:\\Users\\party\\Desktop\\resume4.docx';
+    const resolvedFilenames: string[] = [];
+    window.localStorage.setItem(
+      'docblocks-export-options',
+      JSON.stringify({ ...DEFAULT_OPTIONS, format: 'docx' }),
+    );
+
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Export me\n' },
+          createElement(ExportToolbarControls, {
+            selectedFile: '/notes/resume4.md',
+            showVideoExport: false,
+            destinationAdapter: {
+              resolveTarget: async (filename) => {
+                resolvedFilenames.push(filename);
+                return { grantId: 'export-grant', displayPath };
+              },
+              pickTarget: async () => null,
+              saveBlob: async () => ({ grantId: 'export-grant', displayPath }),
+            },
+          }),
+        ),
+      );
+    });
+
+    const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
+    await act(async () => menu!.click());
+    const expectedLabel = `Export DOCX to ${displayPath}`;
+    await waitFor(
+      () => buttonByText(document.body, expectedLabel) !== undefined,
+      'the quick-export destination',
+    );
+
+    const quick = buttonByText(document.body, expectedLabel);
+    expect(quick?.disabled).to.equal(false);
+    expect(quick?.title).to.equal(expectedLabel);
+    expect(resolvedFilenames).to.deep.equal(['notes/resume4.docx']);
+  });
+
+  it('keeps the export dialog open without an error when native save is cancelled', async () => {
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Export me\n' },
+          createElement(ExportToolbarControls, {
+            selectedFile: '/notes/resume4.md',
+            trigger: 'button',
+            showVideoExport: false,
+            destinationAdapter: {
+              resolveTarget: async (filename) => ({
+                grantId: 'export-grant',
+                displayPath: filename,
+              }),
+              pickTarget: async () => null,
+              saveBlob: async () => null,
+            },
+          }),
+        ),
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    await act(async () => trigger!.click());
+    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await act(async () => buttonByText(document.body, 'Markdown')!.click());
+    await act(async () => buttonByText(document.body, 'Export')!.click());
+    await waitFor(
+      () => buttonByText(document.body, 'Export')?.disabled === false,
+      'the cancelled export to settle',
+    );
+
+    expect(document.body.querySelector('.db-export-dialog')).not.to.equal(null);
+    expect(document.body.querySelector('[role="alert"]')).to.equal(null);
+  });
+
+  it('hides Electron IPC internals around an actionable save failure', async () => {
+    const actionableFailure =
+      'Couldn\'t save "resume4.docx". It may be open in another app. Close the file and try again.';
+    const electronFailure = `Error invoking remote method 'exports:save': Error: ${actionableFailure}`;
+
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Export me\n' },
+          createElement(ExportToolbarControls, {
+            selectedFile: '/notes/resume4.md',
+            trigger: 'button',
+            showVideoExport: false,
+            saveBlob: async () => {
+              throw new Error(electronFailure);
+            },
+          }),
+        ),
+      );
+    });
+
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    await act(async () => trigger!.click());
+    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await act(async () => buttonByText(document.body, 'Markdown')!.click());
+    await act(async () => buttonByText(document.body, 'Export')!.click());
+    await waitFor(
+      () => document.body.textContent?.includes(actionableFailure) === true,
+      'the actionable export failure',
+    );
+
+    const alertText = document.body.querySelector('[role="alert"]')?.textContent ?? '';
+    expect(alertText).to.equal(`Export failed: ${actionableFailure}`);
+    expect(alertText).not.to.include('remote method');
+    expect(alertText).not.to.include('exports:save');
+  });
+
   it('clears the failure when the dialog is dismissed and reopened', async () => {
     await openDialogAndExport();
 

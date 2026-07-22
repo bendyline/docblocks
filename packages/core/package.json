@@ -23,7 +23,10 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "sideEffects": false,
+  "//sideEffects": "tsup's split multi-entry build emits bare imports for shared chunks. Mark only those generated chunks as side-effectful so consumer bundlers retain them without treating the public entries as side-effectful.",
+  "sideEffects": [
+    "./dist/chunk-*.js"
+  ],
   "files": [
     "dist",
     "THIRD_PARTY_NOTICES.txt"

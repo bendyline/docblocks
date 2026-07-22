@@ -152,6 +152,7 @@ export function FileTreeNode({
 
   const isDir = entry.kind === 'directory';
   const icon = expanded ? '\u25BE' : '\u25B8';
+  const nestedFileInset = !isDir && depth > 0 ? 8 : 0;
 
   const handleClick = useCallback(() => {
     if (isDir) {
@@ -399,7 +400,7 @@ export function FileTreeNode({
       <div
         ref={rowRef}
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
-        style={{ paddingLeft: depth * 12 + 4 }}
+        style={{ paddingLeft: depth * 12 + 4 + nestedFileInset }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         draggable={draggable && !renaming}

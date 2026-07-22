@@ -3,6 +3,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import type {
   IpcMainInvokeEvent,
+  MessageBoxOptions,
   SaveDialogOptions,
   SaveDialogReturnValue,
   WebContents,
@@ -11,7 +12,18 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { HOST_WIRE_LIMITS, isBoundedBytePayload, isBoundedString } from '@bendyline/docblocks/host';
 
-import { mintExportGrant, resolveExportGrant, revokeExportOwner } from './export-grants.js';
+import {
+  consumeExportPickerApproval,
+  mintExportGrant,
+  resolveExportGrant,
+  revokeExportOwner,
+} from './export-grants.js';
+import {
+  confirmExportReplacement,
+  readExportTargetIdentity,
+  type ExportReplacementDetails,
+} from './export-overwrite.js';
+import { exportSaveErrorMessage } from './export-save-error.js';
 import {
   findExportTargetAccess,
   getExportExtension,
@@ -96,6 +108,7 @@ function saveDialogOptions(filename: string, defaultPath: string): SaveDialogOpt
     title: 'Export Document',
     defaultPath,
     filters: extension ? [{ name: extensionLabel(extension), extensions: [extension] }] : undefined,
+    properties: ['showOverwriteConfirmation'],
     securityScopedBookmarks: isSandboxed(),
   };
 }
@@ -178,9 +191,37 @@ async function pickTarget(
     ? { path: selectedPath, bookmark: result.bookmark, confirmedByPicker: true as const }
     : null;
   beginAccess(selectedAccess);
-  const grant = await mintExportGrant(ownerId, documentKey, selectedPath, result.bookmark);
+  const pickerApprovedIdentity = await readExportTargetIdentity(selectedPath);
+  const grant = await mintExportGrant(
+    ownerId,
+    documentKey,
+    selectedPath,
+    result.bookmark,
+    pickerApprovedIdentity ?? undefined,
+  );
   await rememberTarget(documentKey, grant.displayPath, result.bookmark);
   return grant;
+}
+
+async function showReplacementConfirmation(
+  event: IpcMainInvokeEvent,
+  details: ExportReplacementDetails,
+): Promise<boolean> {
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const options: MessageBoxOptions = {
+    type: 'warning',
+    title: 'Replace existing export?',
+    message: `"${details.filename}" already exists.`,
+    detail: `Replace the existing file at ${details.displayPath}?`,
+    buttons: ['Replace', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const result = owner
+    ? await dialog.showMessageBox(owner, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 0;
 }
 
 export function registerExportIpc(): void {
@@ -229,11 +270,27 @@ export function registerExportIpc(): void {
       if (requestedExtension !== targetExtension) {
         throw new Error('Export target grant does not match the requested file type');
       }
+      const pickerApprovedIdentity = consumeExportPickerApproval(owner.id, grant.grantId);
 
       if (target.bookmark) beginAccess({ path: target.absolutePath, bookmark: target.bookmark });
-      await withFileMutationLocks([target.absolutePath], () =>
-        atomicWriteBinary(target.absolutePath, dataValue),
-      );
+      let saved = false;
+      try {
+        saved = await withFileMutationLocks([target.absolutePath], async () => {
+          const confirmed = await confirmExportReplacement(
+            target.absolutePath,
+            pickerApprovedIdentity,
+            (details) => showReplacementConfirmation(event, details),
+          );
+          if (!confirmed) return false;
+          await atomicWriteBinary(target.absolutePath, dataValue);
+          return true;
+        });
+      } catch (error: unknown) {
+        const message = exportSaveErrorMessage(error, target.absolutePath);
+        if (message) throw new Error(message);
+        throw error;
+      }
+      if (!saved) return null;
       await rememberTarget(documentKey, target.absolutePath, target.bookmark);
       return { grantId: grant.grantId, displayPath: target.absolutePath };
     },

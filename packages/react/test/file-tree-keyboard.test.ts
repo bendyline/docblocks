@@ -273,12 +273,12 @@ describe('FileTreeNode keyboard access', () => {
 
   it('uses compact indentation for nested rows', async () => {
     const row = await renderNode({ depth: 2 });
-    expect(row.style.paddingLeft).to.equal('28px');
+    expect(row.style.paddingLeft).to.equal('36px');
   });
 
-  it('does not reserve disclosure-icon space for nested files', async () => {
+  it('adds an 8px inset without reserving the full disclosure-icon space for nested files', async () => {
     const row = await renderNode({ depth: 1 });
-    expect(row.style.paddingLeft).to.equal('16px');
+    expect(row.style.paddingLeft).to.equal('24px');
     expect(row.querySelector('.db-tree-icon')).to.equal(null);
   });
 

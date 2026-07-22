@@ -96,6 +96,13 @@ export interface ExportDestinationAdapter {
   hint?: string;
 }
 
+interface ResolvedQuickDestination {
+  key: string;
+  target: ExportDestinationTarget;
+}
+
+class ExportCancelledError extends Error {}
+
 type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
 
 interface VideoExportModules {
@@ -148,12 +155,19 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
  * destination write refused) whose messages are already user-facing.
  */
 function exportErrorMessage(caught: unknown): string {
-  const detail = caught instanceof Error ? caught.message.trim() : '';
+  const detail =
+    caught instanceof Error
+      ? caught.message.replace(/^Error invoking remote method '[^']+': Error:\s*/, '').trim()
+      : '';
   return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
 }
 
 /** Build the quick-export label from saved options. */
-function quickLabel(opts: ExportOptions, transformSummaries: ExportSummaryOption[]): string {
+function quickLabel(
+  opts: ExportOptions,
+  transformSummaries: ExportSummaryOption[],
+  destinationPath?: string,
+): string {
   const baseExt = FORMAT_EXTENSIONS[opts.format].toUpperCase().replace('.', '');
   // Recursive HTML always emits a ZIP (multi-doc tree), regardless of
   // the saved `htmlBundle` value. Applies to both plain and rendered
@@ -182,9 +196,11 @@ function quickLabel(opts: ExportOptions, transformSummaries: ExportSummaryOption
   }
 
   if (parts.length > 0) {
-    return `Export ${ext} with ${parts.join(' + ')}`;
+    const label = `Export ${ext} with ${parts.join(' + ')}`;
+    return destinationPath ? `${label} to ${destinationPath}` : label;
   }
-  return `Export ${ext}`;
+  const label = `Export ${ext}`;
+  return destinationPath ? `${label} to ${destinationPath}` : label;
 }
 
 export function ExportToolbarControls({
@@ -214,12 +230,17 @@ export function ExportToolbarControls({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
+  const [quickDestination, setQuickDestination] = useState<ResolvedQuickDestination | null>(null);
+  const [quickDestinationPending, setQuickDestinationPending] = useState(false);
   const destinationRequestRef = useRef(0);
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(menuOpen, setMenuOpen);
 
   const lastOptions = loadLastExportOptions();
+  const quickDestinationKey = lastOptions ? JSON.stringify([selectedFile, lastOptions]) : null;
+  const quickDestinationTarget =
+    quickDestination?.key === quickDestinationKey ? quickDestination.target : null;
 
   /** Doc's currently-set squisq theme, pulled from the markdown
    *  frontmatter. The Document Settings dialog and Theme Customizer
@@ -261,6 +282,12 @@ export function ExportToolbarControls({
   }, [closeMenu, menuOpen]);
 
   useEffect(() => {
+    if (menuOpen) return;
+    setQuickDestination(null);
+    setQuickDestinationPending(false);
+  }, [menuOpen]);
+
+  useEffect(() => {
     if (
       !menuOpen ||
       lastOptions?.format !== 'pptx' ||
@@ -284,9 +311,41 @@ export function ExportToolbarControls({
     };
   }, [lastOptions?.format, lastOptions?.transformStyle, menuOpen, transformSummaries.length]);
 
+  useEffect(() => {
+    if (!menuOpen || !destinationAdapter || !quickDestinationKey) return;
+
+    const quickOptions = loadLastExportOptions();
+    if (!quickOptions) return;
+
+    let cancelled = false;
+    setQuickDestination(null);
+    setQuickDestinationPending(true);
+    void loadRunExportModule()
+      .then(({ buildExportFilename }) =>
+        destinationAdapter.resolveTarget(buildExportFilename(selectedFile, quickOptions)),
+      )
+      .then((target) => {
+        if (!cancelled) setQuickDestination({ key: quickDestinationKey, target });
+      })
+      .catch(() => {
+        if (!cancelled) setQuickDestination(null);
+      })
+      .finally(() => {
+        if (!cancelled) setQuickDestinationPending(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [destinationAdapter, menuOpen, quickDestinationKey, selectedFile]);
+
   const handleToggleMenu = useCallback(() => {
+    if (!menuOpen && destinationAdapter) {
+      setQuickDestination(null);
+      setQuickDestinationPending(true);
+    }
     setMenuOpen((prev) => !prev);
-  }, []);
+  }, [destinationAdapter, menuOpen]);
 
   const refreshDestination = useCallback(
     async (options: ExportOptions) => {
@@ -381,6 +440,7 @@ export function ExportToolbarControls({
         const pickedTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
         if (pickedTarget === null) return;
         setDestinationTarget(pickedTarget);
+        setQuickDestination(null);
       } catch {
         // Native hosts surface picker failures through their own UI channel.
       }
@@ -392,7 +452,8 @@ export function ExportToolbarControls({
     async (blob: Blob, filename: string, target: ExportDestinationTarget | null) => {
       if (!destinationAdapter) return;
       const savedTarget = await destinationAdapter.saveBlob(blob, filename, target);
-      if (savedTarget) setDestinationTarget(savedTarget);
+      if (!savedTarget) throw new ExportCancelledError();
+      setDestinationTarget(savedTarget);
     },
     [destinationAdapter],
   );
@@ -421,7 +482,7 @@ export function ExportToolbarControls({
         // `finally` used to make a failure look exactly like a success.
         setDialogOpen(false);
       } catch (caught: unknown) {
-        setExportError(exportErrorMessage(caught));
+        if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
       } finally {
         setExporting(false);
       }
@@ -446,10 +507,8 @@ export function ExportToolbarControls({
       const { runExport } = await loadRunExportModule();
       let quickTarget: ExportDestinationTarget | null = null;
       if (destinationAdapter) {
-        const { buildExportFilename } = await loadRunExportModule();
-        quickTarget = await destinationAdapter.resolveTarget(
-          buildExportFilename(selectedFile, lastOptions),
-        );
+        if (!quickDestinationTarget) return;
+        quickTarget = quickDestinationTarget;
       }
       await runExport(
         markdownSource,
@@ -463,7 +522,7 @@ export function ExportToolbarControls({
     } catch (caught: unknown) {
       // No dialog is open on this path, so the failure gets its own —
       // same shape as the video-export load failure below.
-      setExportError(exportErrorMessage(caught));
+      if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
     } finally {
       setExporting(false);
     }
@@ -475,6 +534,7 @@ export function ExportToolbarControls({
     saveBlob,
     saveToDestination,
     selectedFile,
+    quickDestinationTarget,
   ]);
 
   const handleDismissExportError = useCallback(() => {
@@ -519,7 +579,7 @@ export function ExportToolbarControls({
           {menuOpen && (
             <div
               ref={menuRef}
-              className="db-toolbar-menu-dropdown"
+              className="db-toolbar-menu-dropdown db-export-toolbar-menu-dropdown"
               role="menu"
               onKeyDown={handleMenuKeyDown}
             >
@@ -530,9 +590,29 @@ export function ExportToolbarControls({
                   tabIndex={-1}
                   className="db-toolbar-menu-item"
                   onClick={handleQuickExport}
-                  disabled={exporting}
+                  disabled={exporting || (Boolean(destinationAdapter) && !quickDestinationTarget)}
+                  title={
+                    quickDestinationTarget
+                      ? quickLabel(
+                          lastOptions,
+                          transformSummaries,
+                          quickDestinationTarget.displayPath,
+                        )
+                      : undefined
+                  }
                 >
-                  {quickLabel(lastOptions, transformSummaries)}
+                  {quickDestinationTarget
+                    ? quickLabel(
+                        lastOptions,
+                        transformSummaries,
+                        quickDestinationTarget.displayPath,
+                      )
+                    : quickLabel(lastOptions, transformSummaries) +
+                      (destinationAdapter
+                        ? quickDestinationPending
+                          ? ' (finding destination...)'
+                          : ' (destination unavailable)'
+                        : '')}
                 </button>
               )}
               <button
