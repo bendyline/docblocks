@@ -152,6 +152,12 @@ export function AppMenu({
 
   const handleKeepBrowserDataFromSettings = useCallback(async () => {
     if (!onKeepBrowserData || requestingPersistentStorage) return;
+    // The request reports durable-storage outcomes through the shell's shared
+    // acknowledgement dialog. Close Settings before starting it so two modal
+    // dialogs (and their focus traps) can never overlap. Both overlays use the
+    // same modal layer, which otherwise leaves the outcome hidden underneath
+    // the later-rendered Settings dialog.
+    setShowSettings(false);
     setRequestingPersistentStorage(true);
     try {
       await onKeepBrowserData();
@@ -218,9 +224,9 @@ export function AppMenu({
                 className="db-app-menu-item"
                 role="menuitem"
                 tabIndex={-1}
-                onClick={() => handleAction(() => setShowSettings(true))}
+                onClick={() => handleAction(() => void handleKeepBrowserDataFromSettings())}
               >
-                Storage protection&hellip;
+                Protect data from browser cleanup
               </button>
             )}
             {onDownloadAllWorkspaces && (

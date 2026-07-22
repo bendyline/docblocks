@@ -8,7 +8,7 @@ import { AppMenu } from '../src/AppMenu/AppMenu.js';
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 describe('AppMenu settings', () => {
-  it('uses the wide dialog and explains browser storage protection', async () => {
+  it('requests persistent browser storage directly from the app menu', async () => {
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
@@ -18,10 +18,50 @@ describe('AppMenu settings', () => {
       await act(async () => {
         root.render(
           createElement(AppMenu, {
+            onKeepBrowserData: async () => {
+              persistenceRequests += 1;
+            },
+          }),
+        );
+      });
+
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+      });
+      const persistenceButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Protect data from browser cleanup',
+      );
+      expect(persistenceButton).not.to.equal(undefined);
+
+      await act(async () => persistenceButton?.click());
+
+      expect(persistenceRequests).to.equal(1);
+      expect(container.querySelector('.db-dialog')).to.equal(null);
+      expect(container.querySelector('.db-app-menu-dropdown')).to.equal(null);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
+  it('closes Settings before requesting browser storage protection', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    let persistenceRequests = 0;
+    let finishPersistenceRequest: (() => void) | undefined;
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(AppMenu, {
             getStorageEstimate: async () => ({ usage: 1843, quota: 3 * 1024 ** 3 }),
             storagePersistent: false,
             onKeepBrowserData: async () => {
               persistenceRequests += 1;
+              await new Promise<void>((resolve) => {
+                finishPersistenceRequest = resolve;
+              });
             },
           }),
         );
@@ -48,6 +88,9 @@ describe('AppMenu settings', () => {
       expect(persistenceButton).not.to.equal(undefined);
       await act(async () => persistenceButton?.click());
       expect(persistenceRequests).to.equal(1);
+      expect(container.querySelector('.db-dialog')).to.equal(null);
+
+      await act(async () => finishPersistenceRequest?.());
     } finally {
       await act(async () => root.unmount());
       container.remove();

@@ -50,14 +50,39 @@ export const DOCBLOCKS_WRITE_CANVAS_TEXT_SIZE_MAX = 32;
 export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MIN = 1;
 export const DOCBLOCKS_WRITE_CANVAS_LINE_SPACING_MAX = 2.4;
 
+/**
+ * Stable ids for the Write-canvas font schemes. This is the wire/persisted
+ * contract for the font choice; the human labels and the resolved CSS
+ * font-family strings live with the UI in `@bendyline/docblocks-react`
+ * (`WRITE_CANVAS_FONT_SCHEMES`). A guard test keeps this list, the react
+ * registry, and the VS Code `package.json` enum in sync. `'theme'` is the
+ * default and means "inherit from the active theme override".
+ */
+export const DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES = [
+  'theme',
+  'serif-sans',
+  'sans-sans',
+  'serif-serif',
+  'pt-serif',
+  'hanken',
+  'playfair-pt-serif',
+  'hanken-lora',
+  'dm-serif-dm-sans',
+  'inter',
+] as const;
+
+export type DocBlocksWriteCanvasFontScheme = (typeof DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES)[number];
+
 export interface VscodeWriteCanvasSettings {
   textSize: number;
   lineSpacing: number;
+  fontScheme: DocBlocksWriteCanvasFontScheme;
 }
 
 export const DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS: Readonly<VscodeWriteCanvasSettings> = {
   textSize: 16,
   lineSpacing: 1.7,
+  fontScheme: 'theme',
 };
 
 export interface VscodeEditorSettings {
@@ -615,12 +640,19 @@ export function isDocBlocksWriteCanvasLineSpacing(value: unknown): value is numb
   );
 }
 
+export function isDocBlocksWriteCanvasFontScheme(
+  value: unknown,
+): value is DocBlocksWriteCanvasFontScheme {
+  return DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES.some((scheme) => scheme === value);
+}
+
 function parseVscodeWriteCanvasSettings(value: unknown): VscodeWriteCanvasSettings | null {
   return isRecord(value) &&
-    hasOnlyKeys(value, ['textSize', 'lineSpacing']) &&
+    hasOnlyKeys(value, ['textSize', 'lineSpacing', 'fontScheme']) &&
     isDocBlocksWriteCanvasTextSize(value.textSize) &&
-    isDocBlocksWriteCanvasLineSpacing(value.lineSpacing)
-    ? { textSize: value.textSize, lineSpacing: value.lineSpacing }
+    isDocBlocksWriteCanvasLineSpacing(value.lineSpacing) &&
+    isDocBlocksWriteCanvasFontScheme(value.fontScheme)
+    ? { textSize: value.textSize, lineSpacing: value.lineSpacing, fontScheme: value.fontScheme }
     : null;
 }
 

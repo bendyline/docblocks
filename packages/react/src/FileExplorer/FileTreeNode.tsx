@@ -148,7 +148,7 @@ export function FileTreeNode({
   const returnFocusAfterRenameRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
-  const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
+  const icon = expanded ? '\u25BE' : '\u25B8';
 
   const handleClick = useCallback(() => {
     if (isDir) {
@@ -396,7 +396,7 @@ export function FileTreeNode({
       <div
         ref={rowRef}
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
-        style={{ paddingLeft: depth * 16 + 4 }}
+        style={{ paddingLeft: depth * 12 + 4 }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         draggable={draggable && !renaming}
@@ -446,7 +446,7 @@ export function FileTreeNode({
           }
         }}
       >
-        <span className="db-tree-icon">{icon}</span>
+        {(isDir || depth === 0) && <span className="db-tree-icon">{isDir ? icon : null}</span>}
         {renaming ? (
           <input
             ref={inputRef}

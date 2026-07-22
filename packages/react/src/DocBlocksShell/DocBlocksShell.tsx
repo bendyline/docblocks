@@ -72,6 +72,7 @@ import {
   type FileTreeChange,
   type FileTreeMutationHandler,
 } from '../FileExplorer/FileExplorer.js';
+import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
 import { SplitViewIcon } from '../icons.js';
@@ -130,6 +131,7 @@ import {
 } from '../preferences/theme.js';
 import {
   loadWriteCanvasPreferences,
+  resolveWriteCanvasFonts,
   saveWriteCanvasPreferences,
   type WriteCanvasPreferences,
 } from '../preferences/write-canvas.js';
@@ -675,6 +677,20 @@ export function DocBlocksShell({
   const [writeCanvasSettings, setWriteCanvasSettings] = useState<WriteCanvasPreferences>(
     loadWriteCanvasPreferences,
   );
+  // The editor takes squisq's WriteCanvasSettings shape: numeric levers plus the
+  // font scheme resolved to header/body CSS families. `fontScheme` itself stays
+  // in the persisted preferences (and drives the Settings picker) but is not a
+  // squisq prop. DocBlocks' host stylesheet gives a named scheme precedence
+  // over the active theme; the `theme` scheme omits these variables and falls
+  // through to the theme typography.
+  const editorWriteCanvasSettings = useMemo(
+    () => ({
+      textSize: writeCanvasSettings.textSize,
+      lineSpacing: writeCanvasSettings.lineSpacing,
+      ...resolveWriteCanvasFonts(writeCanvasSettings.fontScheme),
+    }),
+    [writeCanvasSettings],
+  );
   // Settings choice > the host's `theme` prop > the OS. See resolve-theme.ts
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
@@ -1077,6 +1093,10 @@ export function DocBlocksShell({
   }, [activeWorkspaceId, selectedFile]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
+  const visibleFolderEntries = useMemo(
+    () => filterVisibleFileEntries(folderEntries),
+    [folderEntries],
+  );
   const { session: documentSession, snapshot: documentSnapshot } = useDocumentSession(500);
   // The session snapshot is the sole owner of document content and edit
   // identity. React retains only presentation state (path/folder/view).
@@ -4241,7 +4261,7 @@ export function DocBlocksShell({
                       onChange={handleEditorChange}
                       onLinkClick={handleEditorLinkClick}
                       colorScheme={resolvedTheme}
-                      writeCanvasSettings={writeCanvasSettings}
+                      writeCanvasSettings={editorWriteCanvasSettings}
                       height="100%"
                       placeholder={editorPlaceholder}
                       outlineWidth={280}
@@ -4340,11 +4360,11 @@ export function DocBlocksShell({
                     </span>
                     <span className="db-folder-view-path">{selectedFolder}</span>
                   </div>
-                  {folderEntries.length === 0 ? (
+                  {visibleFolderEntries.length === 0 ? (
                     <p className="db-folder-view-empty">This folder is empty.</p>
                   ) : (
                     <ul className="db-folder-view-list">
-                      {folderEntries.map((entry) => (
+                      {visibleFolderEntries.map((entry) => (
                         <li
                           key={entry.path}
                           className="db-folder-view-item"

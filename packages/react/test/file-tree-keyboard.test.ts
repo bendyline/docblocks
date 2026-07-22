@@ -271,6 +271,25 @@ describe('FileTreeNode keyboard access', () => {
     expect(row.getAttribute('aria-setsize')).to.equal('5');
   });
 
+  it('uses compact indentation for nested rows', async () => {
+    const row = await renderNode({ depth: 2 });
+    expect(row.style.paddingLeft).to.equal('28px');
+  });
+
+  it('does not reserve disclosure-icon space for nested files', async () => {
+    const row = await renderNode({ depth: 1 });
+    expect(row.style.paddingLeft).to.equal('16px');
+    expect(row.querySelector('.db-tree-icon')).to.equal(null);
+  });
+
+  it('keeps the disclosure icon for nested folders', async () => {
+    const row = await renderNode({
+      depth: 1,
+      entry: { kind: 'directory', name: 'guides', path: '/guides' },
+    });
+    expect(row.querySelector('.db-tree-icon')).not.to.equal(null);
+  });
+
   it('leaves the tab stop to the tree via the focusable prop', async () => {
     const row = await renderNode({ focusable: false });
     expect(row.getAttribute('tabindex')).to.equal('-1');

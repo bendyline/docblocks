@@ -29,6 +29,7 @@ import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
+import { filterVisibleFileEntries, isHiddenFileEntry } from './entry-visibility.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
@@ -95,23 +96,6 @@ function canMoveTo(entry: FileSystemEntry, directoryPath: string): boolean {
 
 function isInternalDrag(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(INTERNAL_DRAG_TYPE);
-}
-
-/**
- * Hide dot-entries (`.git`, `.gitignore`, `.DS_Store`, …) — never user
- * documents — and auto-generated `<basename>_files/` companion folders,
- * which hold per-document images and version snapshots (useful to the
- * editor, noisy in the user-facing file list). Everything still exists on
- * disk; we just don't surface it in the explorer.
- */
-function isHiddenEntry(entry: FileSystemEntry): boolean {
-  const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
-  if (name.startsWith('.')) return true;
-  return entry.kind === 'directory' && name.endsWith('_files');
-}
-
-function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
-  return entries.filter((e) => !isHiddenEntry(e));
 }
 
 export interface FileExplorerProps {
@@ -498,7 +482,7 @@ export function FileExplorer({
         roots: tree.entries,
         childrenOf: (dirPath) => getEquivalentPathValue(childEntries, dirPath) ?? [],
         isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
-        isVisible: (entry) => !isHiddenEntry(entry),
+        isVisible: (entry) => !isHiddenFileEntry(entry),
       }),
     [tree.entries, tree.expanded, childEntries],
   );
@@ -561,7 +545,7 @@ export function FileExplorer({
 
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
-      const visible = filterVisible(entries);
+      const visible = filterVisibleFileEntries(entries);
       return visible.map((entry, index) => (
         <FileTreeNode
           key={entry.path}
@@ -814,7 +798,7 @@ export function FileExplorer({
         <div className="db-tree" role="status" aria-live="polite">
           <div className="db-tree-loading">Loading...</div>
         </div>
-      ) : filterVisible(tree.entries).length === 0 ? (
+      ) : filterVisibleFileEntries(tree.entries).length === 0 ? (
         <div className="db-tree">
           <div className="db-tree-empty">No files yet</div>
         </div>

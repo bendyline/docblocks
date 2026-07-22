@@ -3,6 +3,7 @@ import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
   DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   isDocBlocksAccentColor,
+  isDocBlocksWriteCanvasFontScheme,
   isDocBlocksWriteCanvasLineSpacing,
   isDocBlocksWriteCanvasTextSize,
   parseWebviewToExtensionMessage,
@@ -307,7 +308,8 @@ export class MarkdownEditorPanel {
           !event.affectsConfiguration('docblocks.autoSave', this.uri) &&
           !event.affectsConfiguration('docblocks.accentColor', this.uri) &&
           !event.affectsConfiguration('docblocks.writeCanvasTextSize', this.uri) &&
-          !event.affectsConfiguration('docblocks.writeCanvasLineSpacing', this.uri)
+          !event.affectsConfiguration('docblocks.writeCanvasLineSpacing', this.uri) &&
+          !event.affectsConfiguration('docblocks.writeCanvasFontScheme', this.uri)
         ) {
           return;
         }
@@ -587,6 +589,7 @@ export class MarkdownEditorPanel {
           : [
               ['writeCanvasTextSize', message.settings.textSize],
               ['writeCanvasLineSpacing', message.settings.lineSpacing],
+              ['writeCanvasFontScheme', message.settings.fontScheme],
             ];
     try {
       for (const [key, value] of updates) {
@@ -992,6 +995,7 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const accentColor = configuration.get<unknown>('accentColor');
   const textSize = configuration.get<unknown>('writeCanvasTextSize');
   const lineSpacing = configuration.get<unknown>('writeCanvasLineSpacing');
+  const fontScheme = configuration.get<unknown>('writeCanvasFontScheme');
   return {
     autoSave: typeof autoSave === 'boolean' ? autoSave : false,
     accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
@@ -1002,6 +1006,9 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
       lineSpacing: isDocBlocksWriteCanvasLineSpacing(lineSpacing)
         ? lineSpacing
         : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.lineSpacing,
+      fontScheme: isDocBlocksWriteCanvasFontScheme(fontScheme)
+        ? fontScheme
+        : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.fontScheme,
     },
   };
 }
@@ -1010,7 +1017,8 @@ type VscodeEditorConfigurationKey =
   | 'autoSave'
   | 'accentColor'
   | 'writeCanvasTextSize'
-  | 'writeCanvasLineSpacing';
+  | 'writeCanvasLineSpacing'
+  | 'writeCanvasFontScheme';
 
 function getConfigurationTarget(
   configuration: vscode.WorkspaceConfiguration,

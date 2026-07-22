@@ -88,6 +88,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'git',
           'updater',
           'lifecycle',
+          'menu',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       workspace,
@@ -112,6 +113,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'fsV2',
     'git',
     'lifecycle',
+    'menu',
     'onMenuCommand',
     'onOpenRequest',
     'shell',
@@ -177,6 +179,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'onPrepareClose',
     'requestWindowClose',
   ]);
+  expect(contract.methods.menu).toEqual(['setPinnedDocuments']);
   expect(contract.methods.git).toEqual([
     'capabilities',
     'checkoutBranch',

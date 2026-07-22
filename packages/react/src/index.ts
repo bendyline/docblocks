@@ -28,14 +28,20 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Settings
 export {
   AccentColorSettings,
+  DEFAULT_WRITE_CANVAS_FONT_SCHEME,
+  resolveWriteCanvasFonts,
   SettingsDialog,
   ThemeSettings,
+  WRITE_CANVAS_FONT_SCHEMES,
   WriteCanvasSettingsControls,
 } from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
   SettingsDialogProps,
   ThemeSettingsProps,
+  WriteCanvasFontScheme,
+  WriteCanvasFontSchemeGroup,
+  WriteCanvasFontSchemeOption,
   WriteCanvasPreferences,
   WriteCanvasSettingsControlsProps,
 } from './Settings/public-api.js';

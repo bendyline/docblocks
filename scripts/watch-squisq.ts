@@ -1,10 +1,13 @@
 /**
- * Runs `tsup --watch` for each locally-linked squisq package in parallel.
+ * Runs `tsup --watch --no-clean` for each locally-linked squisq package in parallel.
  *
  * Use after `npm run link:squisq` so that edits to squisq source are
- * rebuilt to `dist/` automatically. Output from each package is prefixed
- * with the package name so streams are easy to attribute. Ctrl-C stops
- * every child process.
+ * rebuilt to `dist/` automatically. Watch builds must not clean `dist/`:
+ * DocBlocks can resolve declarations from these linked packages at the same
+ * time, and removing the previous `.d.ts` files until tsup emits replacements
+ * creates a transient TS7016 failure. Output from each package is prefixed
+ * with the package name so streams are easy to attribute. Ctrl-C stops every
+ * child process.
  */
 
 import { spawn, type ChildProcess } from 'child_process';
@@ -58,7 +61,7 @@ for (let i = 0; i < packages.length; i++) {
   }
 
   const tag = prefix(pkg, 31 + (i % 6));
-  const child = spawn('npx', ['tsup', '--watch'], {
+  const child = spawn('npx', ['tsup', '--watch', '--no-clean'], {
     cwd,
     env: process.env,
     stdio: ['ignore', 'pipe', 'pipe'],

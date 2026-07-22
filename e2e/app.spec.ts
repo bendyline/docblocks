@@ -225,7 +225,7 @@ test.describe('DocBlocks App', () => {
       )
       .toEqual({ textSize: '20px', lineSpacing: '2' });
     expect(await page.evaluate(() => localStorage.getItem('docblocks:writeCanvasSettings'))).toBe(
-      JSON.stringify({ textSize: 20, lineSpacing: 2 }),
+      JSON.stringify({ textSize: 20, lineSpacing: 2, fontScheme: 'theme' }),
     );
 
     await page.reload();

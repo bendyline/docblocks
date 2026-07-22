@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DocBlocks</title>
+    <!-- Self-hosted theme fonts (Latin + Latin Extended), mirroring the site so
+         Write-canvas font schemes (PT Serif, Hanken Grotesk, …) render for real
+         in the desktop app. Copied from packages/site/public/fonts; served from
+         the app:// origin in production and localhost in dev — both allowed by
+         the renderer CSP (font-src 'self' app: data:). -->
+    <link rel="stylesheet" href="/fonts/fonts.css" />
   </head>
   <body>
     <div id="root"></div>

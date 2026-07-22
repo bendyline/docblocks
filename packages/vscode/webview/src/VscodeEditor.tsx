@@ -13,6 +13,7 @@ import {
   pickEmptyDocumentPrompt,
   useResponsivePreviewViewportPreset,
 } from '@bendyline/docblocks-react/editor';
+import { resolveWriteCanvasFonts } from '@bendyline/docblocks-react/settings';
 import type {
   DocBlocksAccentColor,
   DocumentSessionMessageStatus,
@@ -326,6 +327,19 @@ export function VscodeEditor() {
   }, [editorGenerationKey]);
   const autoSavePending = isAutoSavePending(settings.autoSave, sessionStatus);
 
+  // Squisq's EditorShell takes numeric levers plus header/body CSS families; the
+  // font scheme id lives in our own settings and resolves to families here.
+  // The shared DocBlocks host stylesheet gives a named scheme precedence over
+  // the active theme; `theme` omits the families and inherits as before.
+  const editorWriteCanvasSettings = useMemo(
+    () => ({
+      textSize: settings.writeCanvasSettings.textSize,
+      lineSpacing: settings.writeCanvasSettings.lineSpacing,
+      ...resolveWriteCanvasFonts(settings.writeCanvasSettings.fontScheme),
+    }),
+    [settings.writeCanvasSettings],
+  );
+
   const restoreRecoveredDraft = useCallback(() => {
     if (recoveryConflict === null || editorScope === null) return;
     documentClientRef.current.armEdits(editorScope);
@@ -381,7 +395,7 @@ export function VscodeEditor() {
           onChange={handleChange}
           onLinkClick={handleLinkClick}
           colorScheme={theme}
-          writeCanvasSettings={settings.writeCanvasSettings}
+          writeCanvasSettings={editorWriteCanvasSettings}
           height="100%"
           placeholder={editorPlaceholder}
           mediaProvider={mediaBridge.mediaProvider}
