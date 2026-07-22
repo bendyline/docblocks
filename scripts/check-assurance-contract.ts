@@ -201,6 +201,17 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
         `${relativePath}: ${jobName} runs npm run all but its Playwright install is missing ${missingArguments.join(', ')}`,
       );
     }
+
+    const installsCliRendererChromium = commands.some((command) =>
+      /\bnpm exec -w @bendyline\/docblocks-cli -- playwright-core install chromium(?=\s|$)/mu.test(
+        command,
+      ),
+    );
+    if (!installsCliRendererChromium) {
+      throw new Error(
+        `${relativePath}: ${jobName} runs npm run all but does not install the CLI renderer's Chromium revision`,
+      );
+    }
   }
 }
 

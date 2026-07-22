@@ -165,9 +165,7 @@ export function FileExplorer({
   className,
 }: FileExplorerProps) {
   const tree = useFileTree(provider);
-  const { childEntries } = tree as typeof tree & {
-    childEntries: Map<string, FileSystemEntry[]>;
-  };
+  const { childEntries, childIssues } = tree;
   const { reveal } = tree;
   // Null on surfaces without git (site, tests) — everything degrades.
   const git = useGitContext();
@@ -546,42 +544,64 @@ export function FileExplorer({
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
       const visible = filterVisibleFileEntries(entries);
-      return visible.map((entry, index) => (
-        <FileTreeNode
-          key={entry.path}
-          entry={entry}
-          depth={depth}
-          focusable={entry.path === activeRowPath}
-          posInSet={index + 1}
-          setSize={visible.length}
-          onRowFocus={setActivePath}
-          expanded={hasEquivalentPath(tree.expanded, entry.path)}
-          selected={
-            tree.selectedPath !== null &&
-            normalisePath(tree.selectedPath) === normalisePath(entry.path)
-          }
-          badge={badgeFor(entry)}
-          gitActions={gitActionsFor(entry)}
-          onToggle={tree.toggleExpand}
-          onSelect={handleSelect}
-          confirmDelete={confirmDelete}
-          onDelete={handleDelete}
-          onRename={handleRename}
-          pinned={entry.kind === 'file' && pinnedPathSet.has(normalisePath(entry.path))}
-          onTogglePin={entry.kind === 'file' ? onTogglePin : undefined}
-          draggable
-          dragging={draggedEntry?.path === entry.path}
-          dropTarget={dropTarget === entry.path}
-          onDragStart={handleInternalDragStart}
-          onDragEnd={handleInternalDragEnd}
-          onDragOverEntry={handleEntryDragOver}
-          onDropEntry={handleEntryDrop}
-          renderChildren={(dirPath: string) => {
-            const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
-            return renderEntries(children, depth + 1);
-          }}
-        />
-      ));
+      return visible.map((entry, index) => {
+        const childIssue =
+          entry.kind === 'directory' ? getEquivalentPathValue(childIssues, entry.path) : undefined;
+        return (
+          <FileTreeNode
+            key={entry.path}
+            entry={entry}
+            depth={depth}
+            focusable={entry.path === activeRowPath}
+            posInSet={index + 1}
+            setSize={visible.length}
+            onRowFocus={setActivePath}
+            expanded={hasEquivalentPath(tree.expanded, entry.path)}
+            selected={
+              tree.selectedPath !== null &&
+              normalisePath(tree.selectedPath) === normalisePath(entry.path)
+            }
+            badge={badgeFor(entry)}
+            gitActions={gitActionsFor(entry)}
+            onToggle={tree.toggleExpand}
+            onSelect={handleSelect}
+            confirmDelete={confirmDelete}
+            onDelete={handleDelete}
+            onRename={handleRename}
+            pinned={entry.kind === 'file' && pinnedPathSet.has(normalisePath(entry.path))}
+            onTogglePin={entry.kind === 'file' ? onTogglePin : undefined}
+            draggable
+            dragging={draggedEntry?.path === entry.path}
+            dropTarget={dropTarget === entry.path}
+            onDragStart={handleInternalDragStart}
+            onDragEnd={handleInternalDragEnd}
+            onDragOverEntry={handleEntryDragOver}
+            onDropEntry={handleEntryDrop}
+            renderChildren={(dirPath: string) => {
+              const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
+              return renderEntries(children, depth + 1);
+            }}
+            childError={
+              childIssue ? (
+                <div
+                  className="db-tree-error db-tree-error--child"
+                  role="alert"
+                  data-directory-path={childIssue.directoryPath}
+                >
+                  <span>{childIssue.message}</span>{' '}
+                  <button
+                    type="button"
+                    className="db-tree-error-retry"
+                    onClick={() => void tree.retryDirectory(childIssue.directoryPath)}
+                  >
+                    Retry folder
+                  </button>
+                </div>
+              ) : undefined
+            }
+          />
+        );
+      });
     },
     [
       tree,
@@ -590,6 +610,7 @@ export function FileExplorer({
       handleDelete,
       handleRename,
       childEntries,
+      childIssues,
       badgeFor,
       gitActionsFor,
       draggedEntry,
@@ -782,10 +803,18 @@ export function FileExplorer({
         </div>
       )}
 
-      {tree.error && (
-        <div className="db-tree-error" role="alert">
-          <span>{tree.error}</span>{' '}
-          <button type="button" className="db-tree-error-retry" onClick={() => void tree.refresh()}>
+      {tree.rootIssue && (
+        <div
+          className="db-tree-error"
+          role="alert"
+          data-directory-path={tree.rootIssue.directoryPath}
+        >
+          <span>{tree.rootIssue.message}</span>{' '}
+          <button
+            type="button"
+            className="db-tree-error-retry"
+            onClick={() => void tree.retryDirectory('')}
+          >
             Retry
           </button>
         </div>

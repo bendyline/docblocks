@@ -14,6 +14,15 @@ describe('appearance styles', () => {
     );
   });
 
+  it('themes the first Source-view frame while Monaco loads', () => {
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\s*\{[^}]*--squisq-editor-background:\s*#ffffff;[^}]*--squisq-editor-foreground:\s*#1f2937;/s,
+    );
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\[data-theme='dark'\]\s*\{[^}]*--squisq-editor-background:\s*#1e1e1e;[^}]*--squisq-editor-foreground:\s*#d4d4d4;/s,
+    );
+  });
+
   it('gives an explicit Write-canvas font choice precedence over theme fonts', () => {
     expect(styles).to.match(
       /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-wysiwyg-editor\s*\{[^}]*font-family:\s*var\(--squisq-write-body-font,\s*var\(--squisq-theme-body-font,\s*inherit\)\);/s,

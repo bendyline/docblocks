@@ -587,6 +587,10 @@
   font-size: 12px;
 }
 
+.db-tree-error--child {
+  margin-left: 24px;
+}
+
 .db-tree-error-retry {
   border: 0;
   padding: 0;
@@ -2747,11 +2751,24 @@ body.db-resizing-sidebar * {
   background: var(--db-editor-canvas);
 }
 
-/* Bind Squisq's host-facing accent to the active DocBlocks appearance. */
+/* Bind Squisq's host-facing accent to the active DocBlocks appearance.
+   RawEditor uses the editor background/foreground variables for its
+   textarea while Monaco's first lazy load is in flight. Define them here so
+   Source view never paints Squisq's light fallback before the requested
+   Monaco theme is ready. */
 .db-shell .squisq-editor-shell {
   --squisq-accent: var(--db-accent);
   --squisq-accent-hover: var(--db-accent-hover);
   --squisq-text-on-accent: var(--db-text-on-accent);
+  --squisq-editor-background: #ffffff;
+  --squisq-editor-foreground: #1f2937;
+}
+
+.db-shell .squisq-editor-shell[data-theme='dark'] {
+  /* Match Monaco's built-in vs-dark canvas exactly so replacing the loading
+     textarea with Monaco does not introduce a second, subtler color flash. */
+  --squisq-editor-background: #1e1e1e;
+  --squisq-editor-foreground: #d4d4d4;
 }
 
 /* The Write-canvas font picker is an explicit host preference, so its

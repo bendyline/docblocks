@@ -28,7 +28,9 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: |
+          npx playwright install --with-deps chromium firefox webkit
+          npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium
 
       # Keep local and CI assurance identical. Add mandatory build, validation,
       # or unit-test gates to the root `all` script rather than duplicating the

@@ -12,6 +12,7 @@ export type {
 export { FileTreeNode } from './FileExplorer/index.js';
 export type { FileTreeNodeProps } from './FileExplorer/index.js';
 export { useFileTree } from './FileExplorer/index.js';
+export type { FileTreeActions, FileTreeReadIssue, FileTreeState } from './FileExplorer/index.js';
 
 // WorkspacePicker
 export { WorkspacePicker } from './WorkspacePicker/index.js';

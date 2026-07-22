@@ -91,6 +91,8 @@ export interface FileTreeNodeProps {
   onDragOverEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
   onDropEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
   renderChildren?: (dirPath: string) => React.ReactNode;
+  /** Path-scoped directory loading failure, rendered outside the ARIA tree group. */
+  childError?: React.ReactNode;
 }
 
 export function FileTreeNode({
@@ -119,6 +121,7 @@ export function FileTreeNode({
   onDragOverEntry,
   onDropEntry,
   renderChildren,
+  childError,
 }: FileTreeNodeProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -599,6 +602,7 @@ export function FileTreeNode({
           {renderChildren(entry.path)}
         </div>
       )}
+      {isDir && expanded && childError}
     </div>
   );
 }
