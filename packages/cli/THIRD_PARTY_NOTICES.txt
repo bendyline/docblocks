@@ -6,7 +6,7 @@ Run `npm run generate:notices` from the repository root.
 Resolved runtime and optional dependency closure declared by packages/cli/package.json.
 
 Inventory source: package-lock.json.
-Components: 348.
+Components: 347.
 
 This notice is included in the published npm tarball. Transitive packages installed by npm also retain their package-local license files.
 
@@ -298,7 +298,6 @@ This notice is included in the published npm tarball. Transitive packages instal
 | pdf-lib | 1.17.1 | MIT | https://github.com/Hopding/pdf-lib |
 | pdfjs-dist | 4.10.38 | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | pkce-challenge | 5.0.1 | MIT | https://github.com/crouchcd/pkce-challenge |
-| playwright-core | 1.58.2 | Apache-2.0 | https://github.com/microsoft/playwright |
 | playwright-core | 1.61.1 | Apache-2.0 | https://github.com/microsoft/playwright |
 | points-on-curve | 0.2.0 | MIT | https://github.com/pshihn/bezier-points |
 | points-on-path | 0.2.1 | MIT | https://github.com/pshihn/points-on-path |
@@ -447,8 +446,8 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: playwright-core@1.58.2, playwright-core@1.61.1
-Source files: node_modules/@bendyline/squisq-cli/node_modules/playwright-core/LICENSE, node_modules/playwright-core/LICENSE
+Components: playwright-core@1.61.1
+Source files: node_modules/@bendyline/squisq-cli/node_modules/playwright-core/LICENSE
 ==============================================================================
                                  Apache License
                            Version 2.0, January 2004
@@ -654,8 +653,8 @@ Source files: node_modules/@bendyline/squisq-cli/node_modules/playwright-core/LI
    limitations under the License.
 
 ==============================================================================
-Components: playwright-core@1.58.2, playwright-core@1.61.1
-Source files: node_modules/@bendyline/squisq-cli/node_modules/playwright-core/NOTICE, node_modules/playwright-core/NOTICE
+Components: playwright-core@1.61.1
+Source files: node_modules/@bendyline/squisq-cli/node_modules/playwright-core/NOTICE
 ==============================================================================
 Playwright
 Copyright (c) Microsoft Corporation

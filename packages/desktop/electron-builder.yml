@@ -22,16 +22,16 @@ files:
   - '!node_modules/**/*.flow'
   - package.json
 
-# Legal materials that must remain directly readable beside app.asar. Electron's
-# Chromium notice is supplied by the exact pinned Electron distribution rather
-# than copied into this repository (~19 MiB).
+# Legal materials that must remain directly readable beside app.asar.
 extraResources:
   - from: THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
-  - from: ../../node_modules/electron/dist/LICENSE
-    to: licenses/ELECTRON_LICENSE.txt
-  - from: ../../node_modules/electron/dist/LICENSES.chromium.html
-    to: licenses/ELECTRON_THIRD_PARTY_NOTICES.html
+
+# Electron's own license and Chromium notice are supplied by the exact Electron
+# archive that electron-builder extracts for this platform and architecture.
+# Copying them from that staging tree also works when npm skips Electron's
+# separate node_modules binary download, as the dedicated CI jobs do.
+afterExtract: scripts/copy-electron-licenses.cjs
 
 # Lock production binaries to the signed ASAR and disable Node/Electron
 # environment-variable escape hatches that the app does not use.
