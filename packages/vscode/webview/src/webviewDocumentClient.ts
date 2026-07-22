@@ -2,6 +2,7 @@ import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
+import { hasSubstantiveTextChange } from '@bendyline/docblocks/vscode';
 
 type SetContentMessage = Extract<ExtensionToWebviewMessage, { type: 'setContent' }>;
 type EditMessage = Extract<WebviewToExtensionMessage, { type: 'edit' }>;
@@ -14,8 +15,10 @@ export interface WebviewDocumentScope {
 
 interface ClientSession extends WebviewDocumentScope {
   baseDocumentVersion: number;
+  observedEditorContent: string;
   clientRevision: number;
-  editsArmed: boolean;
+  editIntent: 'substantive' | 'whitespace' | null;
+  hasSubstantiveEdit: boolean;
 }
 
 /**
@@ -36,15 +39,26 @@ export class WebviewDocumentClient {
       sessionId: message.sessionId,
       generation: this.generation,
       baseDocumentVersion: message.documentVersion,
+      observedEditorContent: message.content,
       clientRevision: message.acknowledgedClientRevision,
-      editsArmed: false,
+      editIntent: null,
+      hasSubstantiveEdit: false,
     };
     return Object.freeze({ sessionId: message.sessionId, generation: this.generation });
   }
 
   public createEdit(scope: WebviewDocumentScope, content: string): EditMessage | null {
     const session = this.session;
-    if (!session || !sameScope(session, scope) || !session.editsArmed) return null;
+    if (!session || !sameScope(session, scope)) return null;
+    if (!session.hasSubstantiveEdit) {
+      const intent = session.editIntent;
+      const priorEditorContent = session.observedEditorContent;
+      session.editIntent = null;
+      session.observedEditorContent = content;
+      if (intent === null || intent === 'whitespace') return null;
+      if (!hasSubstantiveTextChange(priorEditorContent, content)) return null;
+      session.hasSubstantiveEdit = true;
+    }
     session.clientRevision += 1;
     return {
       type: 'edit',
@@ -56,15 +70,24 @@ export class WebviewDocumentClient {
   }
 
   /**
-   * Mark this mounted editor as user-active before accepting its change
-   * callbacks. EditorShell may normalize its initial WYSIWYG snapshot during
-   * hydration; those callbacks have no browser input event and must not be
-   * relabelled as authored edits.
+   * Record a content-changing user gesture before accepting its change
+   * callback. EditorShell may normalize its WYSIWYG snapshot during hydration
+   * or navigation; interaction alone must not relabel that snapshot as an
+   * authored edit. The first accepted snapshot must also differ from the last
+   * observed editor snapshot by more than whitespace.
    */
-  public armEdits(scope: WebviewDocumentScope): boolean {
+  public armEdits(scope: WebviewDocumentScope, substantive = true): boolean {
     const session = this.session;
     if (!session || !sameScope(session, scope)) return false;
-    session.editsArmed = true;
+    session.editIntent = substantive ? 'substantive' : 'whitespace';
+    return true;
+  }
+
+  /** Cancel a transient toolbar intent that produced no document change. */
+  public disarmEdits(scope: WebviewDocumentScope): boolean {
+    const session = this.session;
+    if (!session || !sameScope(session, scope) || session.hasSubstantiveEdit) return false;
+    session.editIntent = null;
     return true;
   }
 

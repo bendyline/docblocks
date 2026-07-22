@@ -198,6 +198,136 @@
   gap: 2px;
 }
 
+.db-pinned-documents {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 38%;
+  overflow: hidden;
+  border-bottom: 1px solid var(--db-border-strong);
+  background: var(--db-bg-subtle);
+}
+
+.db-pinned-documents-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px 5px;
+}
+
+.db-pinned-documents-title i {
+  font-size: 10px;
+}
+
+.db-pinned-document-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 4px;
+  scrollbar-color: var(--db-accent) var(--db-bg-subtle);
+  scrollbar-width: thin;
+}
+
+.db-pinned-document-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+.db-pinned-document {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 4px 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-pinned-document-row:hover,
+.db-pinned-document-row:has(:focus-visible) {
+  background: var(--db-bg-hover);
+}
+
+.db-pinned-document:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-pinned-document-row--selected,
+.db-pinned-document-row--selected:hover,
+.db-pinned-document-row--selected:has(:focus-visible) {
+  --db-focus: #ffffff;
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-pinned-document-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  min-width: 30px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.db-pinned-document-more:hover,
+.db-pinned-document-more--active {
+  opacity: 1;
+}
+
+.db-pinned-document-more:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-pinned-document-heading {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.db-pinned-document-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-pinned-document-missing {
+  flex: 0 0 auto;
+  color: var(--db-danger);
+  font-size: 11px;
+}
+
+.db-pinned-document-row--selected .db-pinned-document-missing {
+  color: inherit;
+  opacity: 0.82;
+}
+
+.db-pinned-document-error {
+  position: absolute;
+  z-index: 1;
+  top: 100%;
+  right: 4px;
+  left: 4px;
+  margin: 0;
+  background: var(--db-bg);
+}
+
 .db-explorer-btn {
   width: 24px;
   height: 24px;
@@ -411,6 +541,34 @@
   flex: 1;
   overflow-y: auto;
   padding: 2px 0;
+  scrollbar-color: var(--db-accent) var(--db-bg);
+  scrollbar-width: thin;
+}
+
+.db-tree::-webkit-scrollbar {
+  width: 12px;
+}
+
+.db-tree::-webkit-scrollbar-track,
+.db-tree::-webkit-scrollbar-corner {
+  background: var(--db-bg);
+}
+
+.db-tree::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background: var(--db-accent);
+  border: 3px solid var(--db-bg);
+  border-radius: 999px;
+}
+
+.db-tree::-webkit-scrollbar-thumb:hover {
+  background: var(--db-accent-hover);
+}
+
+.db-tree::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .db-tree-loading,
@@ -427,6 +585,10 @@
   border-radius: 3px;
   color: var(--db-danger, #c33);
   font-size: 12px;
+}
+
+.db-tree-error--child {
+  margin-left: 24px;
 }
 
 .db-tree-error-retry {
@@ -555,9 +717,16 @@
 
 .db-tree-row:hover .db-tree-more,
 .db-tree-row:focus-within .db-tree-more,
+.db-tree-row--selected .db-tree-more,
 .db-tree-more:focus-visible,
 .db-tree-more--active {
   visibility: visible;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .db-tree-more {
+    visibility: visible;
+  }
 }
 
 .db-tree-more:hover {
@@ -1173,15 +1342,13 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell-sidebar-footer-action {
-  min-width: 0;
+  flex-shrink: 0;
   padding: 0;
-  overflow: hidden;
   border: 0;
   background: transparent;
   font: inherit;
   line-height: inherit;
   text-decoration: underline;
-  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1652,7 +1819,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-settings-fieldset + .db-settings-fieldset {
-  margin-top: 20px;
+  margin-top: 16px;
 }
 
 .db-settings-legend {
@@ -1692,6 +1859,16 @@ body.db-resizing-sidebar * {
   margin: 0;
   cursor: pointer;
   accent-color: var(--db-accent);
+}
+
+.db-settings-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.db-settings-radio--inline {
+  padding: 2px 0;
 }
 
 .db-settings-checkbox {
@@ -1739,6 +1916,188 @@ body.db-resizing-sidebar * {
   margin: 0;
   accent-color: var(--db-accent);
   cursor: pointer;
+}
+
+.db-settings-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-select-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.db-settings-select-input {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.db-settings-select-input:focus-visible {
+  border-color: var(--db-accent);
+}
+
+.db-font-picker {
+  position: relative;
+}
+
+.db-font-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 54px;
+  padding: 7px 10px 7px 12px;
+  overflow: hidden;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  outline: none;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-font-picker-trigger:hover,
+.db-font-picker-trigger[aria-expanded='true'] {
+  background: var(--db-bg-hover);
+}
+
+.db-font-picker-trigger:focus-visible {
+  border-color: var(--db-accent);
+  box-shadow: 0 0 0 1px var(--db-accent);
+}
+
+.db-font-picker-caret {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin: 0 3px 3px 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--db-text-muted);
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.db-font-picker-caret--open {
+  margin-top: 5px;
+  transform: rotate(225deg);
+}
+
+.db-font-picker-menu {
+  position: fixed;
+  z-index: 3100;
+  box-sizing: border-box;
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 6px;
+  outline: none;
+  background: var(--db-bg);
+  color: var(--db-text);
+  box-shadow: 0 10px 28px var(--db-shadow);
+}
+
+.db-font-picker-group {
+  padding: 10px 10px 4px;
+  color: var(--db-text-muted);
+  font:
+    600 10px/1.2 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.db-font-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 6px 9px 6px 11px;
+  border-radius: 4px;
+  color: var(--db-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-font-picker-option--active {
+  background: var(--db-bg-hover);
+}
+
+.db-font-picker-option--selected {
+  background: var(--db-accent-soft-12);
+}
+
+.db-font-picker-option--selected.db-font-picker-option--active {
+  background: var(--db-accent-soft-25);
+}
+
+.db-font-picker-preview {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.db-font-picker-heading,
+.db-font-picker-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-font-picker-heading {
+  color: var(--db-text);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.db-font-picker-body {
+  margin-top: 3px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.db-font-picker-preview--compact .db-font-picker-heading {
+  font-size: 15px;
+}
+
+.db-font-picker-preview--compact .db-font-picker-body {
+  color: var(--db-text-muted);
+  font-size: 11px;
+}
+
+.db-font-picker-check {
+  flex: 0 0 18px;
+  color: var(--db-accent-deep);
+  font:
+    700 14px/1 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  text-align: center;
 }
 
 .db-settings-accent-grid {
@@ -2056,6 +2415,15 @@ body.db-resizing-sidebar * {
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--db-shadow);
   padding: 4px 0;
+}
+
+.db-export-toolbar-menu-dropdown {
+  max-width: min(720px, calc(100vw - 16px));
+}
+
+.db-export-toolbar-menu-dropdown .db-toolbar-menu-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .db-toolbar-menu-item {
@@ -2392,11 +2760,55 @@ body.db-resizing-sidebar * {
   background: var(--db-editor-canvas);
 }
 
-/* Bind Squisq's host-facing accent to the active DocBlocks appearance. */
+/* Bind Squisq's host-facing accent to the active DocBlocks appearance.
+   RawEditor uses the editor background/foreground variables for its
+   textarea while Monaco's first lazy load is in flight. Define them here so
+   Source view never paints Squisq's light fallback before the requested
+   Monaco theme is ready. */
 .db-shell .squisq-editor-shell {
   --squisq-accent: var(--db-accent);
   --squisq-accent-hover: var(--db-accent-hover);
   --squisq-text-on-accent: var(--db-text-on-accent);
+  --squisq-editor-background: #ffffff;
+  --squisq-editor-foreground: #1f2937;
+}
+
+.db-shell .squisq-editor-shell[data-theme='dark'] {
+  /* Match Monaco's built-in vs-dark canvas exactly so replacing the loading
+     textarea with Monaco does not introduce a second, subtler color flash. */
+  --squisq-editor-background: #1e1e1e;
+  --squisq-editor-foreground: #d4d4d4;
+}
+
+/* The Write-canvas font picker is an explicit host preference, so its
+   variables must beat the active document theme in Write mode. Squisq's base
+   stylesheet intentionally puts theme fonts first; reverse that order only
+   inside the DocBlocks shell. When "Inherit from theme" is selected the Write
+   variables are absent, and these declarations fall straight through to the
+   same theme title/body fonts as before. */
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor {
+  font-family: var(--squisq-write-body-font, var(--squisq-theme-body-font, inherit));
+}
+
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h1,
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h2,
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h3,
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h4,
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h5,
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor h6 {
+  font-family: var(
+    --squisq-write-header-font,
+    var(
+      --squisq-write-body-font,
+      var(--squisq-theme-title-font, var(--squisq-theme-body-font, inherit))
+    )
+  );
+}
+
+/* Squisq's default horizontal rule uses a fixed slate border in both
+   appearances. Keep document rules aligned with the selected host accent. */
+.db-shell .squisq-editor-shell .squisq-wysiwyg-editor hr {
+  border-top-color: var(--db-accent);
 }
 
 /* Simple diagrams, drawings, and layout canvases share Squisq's Scene
@@ -4064,6 +4476,46 @@ html:has(.db-shell[data-theme='dark'])
   border-color: var(--db-border);
 }
 
+/* View menu. Squisq's dark appearance otherwise replaces its generic
+   variables with a fixed slate-blue palette. Keep the popover and its
+   controls on the same host palette as the DocBlocks app and overflow
+   menus, including the native radio/checkbox selection color. */
+.db-shell .squisq-editor-shell .squisq-view-menu-popover {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+  box-shadow: 0 4px 12px var(--db-shadow);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-view-menu-row:hover,
+.db-shell .squisq-editor-shell .squisq-view-menu-radio-row:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-shell .squisq-editor-shell .squisq-view-menu-row--select:hover,
+.db-shell .squisq-editor-shell .squisq-view-menu-row--radios:hover {
+  background: transparent;
+}
+
+.db-shell .squisq-editor-shell .squisq-view-menu-row--select .squisq-view-menu-label,
+.db-shell .squisq-editor-shell .squisq-view-menu-row--radios > .squisq-view-menu-label {
+  color: var(--db-text-muted);
+}
+
+.db-shell .squisq-editor-shell .squisq-view-menu-select {
+  background: var(--db-bg-subtle);
+  border-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-view-menu-separator {
+  background: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
+  accent-color: var(--db-accent);
+}
+
 /* Monaco's line-number gutter ("editorGutter.background") is set via
    squisq's JS-side theme registration — those colors can't be CSS
    variables. To make the gutter blend with the outline/preview chrome
@@ -4457,6 +4909,7 @@ html:has(.db-shell[data-theme='dark'])
 .db-dialog--wide {
   width: 560px;
   max-width: 100%;
+  max-height: min(calc(100dvh - 32px), 660px);
 }
 
 .db-dialog--full {

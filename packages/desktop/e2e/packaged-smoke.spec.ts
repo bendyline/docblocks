@@ -21,6 +21,15 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   const packaged = await launchPackagedApp();
   expect(fs.statSync(packaged.artifact.appAsarPath).isFile()).toBe(true);
   expect(path.basename(packaged.artifact.appAsarPath)).toBe('app.asar');
+  for (const legalResource of [
+    'THIRD_PARTY_NOTICES.txt',
+    'licenses/ELECTRON_LICENSE.txt',
+    'licenses/ELECTRON_THIRD_PARTY_NOTICES.html',
+  ]) {
+    expect(fs.statSync(path.join(packaged.artifact.resourcesPath, legalResource)).isFile()).toBe(
+      true,
+    );
+  }
 
   const fuseWires = readFuseWires(packaged.artifact.fuseBinaryPath);
   expect(fuseWires.length).toBeGreaterThan(0);

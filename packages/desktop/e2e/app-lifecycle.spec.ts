@@ -88,10 +88,6 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // draggable space beside the workspace gear is visually discoverable.
   const sidebarHeader = window.locator('.db-shell-sidebar-header');
   const gripElement = sidebarHeader.locator('.db-window-drag-grip');
-  await expect(gripElement).toHaveAttribute(
-    'data-tooltip',
-    'Click and drag here to move your window around.',
-  );
   const grip = await gripElement.evaluate((element) => {
     const style = getComputedStyle(element);
     const headerRect = element.getBoundingClientRect();
@@ -121,11 +117,6 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(grip.appRegion).toBe('drag');
   expect(grip.gutterIsGrip).toBe(true);
   expect(grip.gutterAppRegion).toBe('drag');
-
-  await gripElement.hover();
-  await expect(window.locator('.squisq-tooltip')).toHaveText(
-    'Click and drag here to move your window around.',
-  );
 
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();

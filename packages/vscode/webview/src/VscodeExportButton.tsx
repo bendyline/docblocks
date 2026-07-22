@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useEditorContext } from '@bendyline/squisq-editor-react';
+import { useEditorContext } from '@bendyline/squisq-editor-react/shell';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { docToPptx } from '@bendyline/squisq-formats/pptx';
 import {

@@ -28,7 +28,7 @@
       "properties": {
         "docblocks.autoSave": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "scope": "window",
           "description": "Automatically save markdown files 20 seconds after the last edit in the DocBlocks editor. Manual Save and editor close still flush pending changes when disabled."
         },
@@ -67,11 +67,41 @@
         "docblocks.writeCanvasLineSpacing": {
           "type": "number",
           "default": 1.7,
-          "minimum": 1.2,
+          "minimum": 1,
           "maximum": 2.4,
           "multipleOf": 0.1,
           "scope": "window",
           "description": "Line-height multiplier for body text in the DocBlocks Write canvas."
+        },
+        "docblocks.writeCanvasFontScheme": {
+          "type": "string",
+          "default": "theme",
+          "scope": "window",
+          "enum": [
+            "theme",
+            "serif-sans",
+            "sans-sans",
+            "serif-serif",
+            "pt-serif",
+            "hanken",
+            "playfair-pt-serif",
+            "hanken-lora",
+            "dm-serif-dm-sans",
+            "inter"
+          ],
+          "enumDescriptions": [
+            "Inherit from theme",
+            "Serif headings, sans body",
+            "Sans headings, sans body",
+            "Serif headings, serif body",
+            "PT Serif",
+            "Hanken Grotesk",
+            "Playfair Display headings, PT Serif body",
+            "Hanken Grotesk headings, Lora body",
+            "DM Serif Display headings, DM Sans body",
+            "Inter"
+          ],
+          "description": "Default font scheme for the DocBlocks Write canvas. Applies only when no theme font override is active."
         }
       }
     },
@@ -144,10 +174,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.3.3",
-    "@bendyline/squisq-editor-react": "2.3.4",
-    "@bendyline/squisq-formats": "2.3.3",
-    "@bendyline/squisq-react": "2.3.3",
+    "@bendyline/squisq": "2.4.1",
+    "@bendyline/squisq-editor-react": "2.4.1",
+    "@bendyline/squisq-formats": "2.3.5",
+    "@bendyline/squisq-react": "2.4.1",
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {

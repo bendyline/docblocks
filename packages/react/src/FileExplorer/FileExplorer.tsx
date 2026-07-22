@@ -27,6 +27,9 @@ import {
 import { NewFileIcon, NewFolderIcon } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
+import { PinnedDocuments } from './PinnedDocuments.js';
+import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
+import { filterVisibleFileEntries, isHiddenFileEntry } from './entry-visibility.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
@@ -95,28 +98,27 @@ function isInternalDrag(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(INTERNAL_DRAG_TYPE);
 }
 
-/**
- * Hide dot-entries (`.git`, `.gitignore`, `.DS_Store`, …) — never user
- * documents — and auto-generated `<basename>_files/` companion folders,
- * which hold per-document images and version snapshots (useful to the
- * editor, noisy in the user-facing file list). Everything still exists on
- * disk; we just don't surface it in the explorer.
- */
-function isHiddenEntry(entry: FileSystemEntry): boolean {
-  const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
-  if (name.startsWith('.')) return true;
-  return entry.kind === 'directory' && name.endsWith('_files');
-}
-
-function filterVisible(entries: FileSystemEntry[]): FileSystemEntry[] {
-  return entries.filter((e) => !isHiddenEntry(e));
-}
-
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
   activeFilePath?: string | null;
+  /** Active workspace identity, used to decorate a selected cross-workspace pin. */
+  activeWorkspaceId?: string | null;
+  /** Documents pinned across every workspace, shown above the active file tree. */
+  pinnedDocuments?: readonly PinnedDocumentListItem[];
+  /** Canonical paths pinned inside the active workspace. */
+  pinnedPaths?: readonly string[];
+  /** Opens a pinned document, switching workspace when necessary. */
+  onPinnedDocumentSelect?: (document: PinnedDocumentListItem) => void;
+  /** Removes a document from the global pinned list. */
+  onPinnedDocumentUnpin?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Renames a pinned document without requiring its workspace to be active. */
+  onPinnedDocumentRename?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Deletes a pinned document without requiring its workspace to be active. */
+  onPinnedDocumentDelete?: (document: PinnedDocumentListItem) => void | Promise<void>;
+  /** Pins or unpins a file in the active workspace. */
+  onTogglePin?: (path: string) => void | Promise<void>;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
   /**
@@ -145,6 +147,14 @@ export interface FileExplorerProps {
 export function FileExplorer({
   provider,
   activeFilePath,
+  activeWorkspaceId,
+  pinnedDocuments = [],
+  pinnedPaths = [],
+  onPinnedDocumentSelect,
+  onPinnedDocumentUnpin,
+  onPinnedDocumentRename,
+  onPinnedDocumentDelete,
+  onTogglePin,
   onSelect,
   onTreeMutation,
   onTreeChange,
@@ -155,12 +165,14 @@ export function FileExplorer({
   className,
 }: FileExplorerProps) {
   const tree = useFileTree(provider);
-  const { childEntries } = tree as typeof tree & {
-    childEntries: Map<string, FileSystemEntry[]>;
-  };
+  const { childEntries, childIssues } = tree;
   const { reveal } = tree;
   // Null on surfaces without git (site, tests) — everything degrades.
   const git = useGitContext();
+  const pinnedPathSet = useMemo(
+    () => new Set(pinnedPaths.map((path) => normalisePath(path))),
+    [pinnedPaths],
+  );
 
   const [newItemName, setNewItemName] = useState('');
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
@@ -468,7 +480,7 @@ export function FileExplorer({
         roots: tree.entries,
         childrenOf: (dirPath) => getEquivalentPathValue(childEntries, dirPath) ?? [],
         isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
-        isVisible: (entry) => !isHiddenEntry(entry),
+        isVisible: (entry) => !isHiddenFileEntry(entry),
       }),
     [tree.entries, tree.expanded, childEntries],
   );
@@ -531,41 +543,65 @@ export function FileExplorer({
 
   const renderEntries = useCallback(
     (entries: FileSystemEntry[], depth: number): React.ReactNode => {
-      const visible = filterVisible(entries);
-      return visible.map((entry, index) => (
-        <FileTreeNode
-          key={entry.path}
-          entry={entry}
-          depth={depth}
-          focusable={entry.path === activeRowPath}
-          posInSet={index + 1}
-          setSize={visible.length}
-          onRowFocus={setActivePath}
-          expanded={hasEquivalentPath(tree.expanded, entry.path)}
-          selected={
-            tree.selectedPath !== null &&
-            normalisePath(tree.selectedPath) === normalisePath(entry.path)
-          }
-          badge={badgeFor(entry)}
-          gitActions={gitActionsFor(entry)}
-          onToggle={tree.toggleExpand}
-          onSelect={handleSelect}
-          confirmDelete={confirmDelete}
-          onDelete={handleDelete}
-          onRename={handleRename}
-          draggable
-          dragging={draggedEntry?.path === entry.path}
-          dropTarget={dropTarget === entry.path}
-          onDragStart={handleInternalDragStart}
-          onDragEnd={handleInternalDragEnd}
-          onDragOverEntry={handleEntryDragOver}
-          onDropEntry={handleEntryDrop}
-          renderChildren={(dirPath: string) => {
-            const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
-            return renderEntries(children, depth + 1);
-          }}
-        />
-      ));
+      const visible = filterVisibleFileEntries(entries);
+      return visible.map((entry, index) => {
+        const childIssue =
+          entry.kind === 'directory' ? getEquivalentPathValue(childIssues, entry.path) : undefined;
+        return (
+          <FileTreeNode
+            key={entry.path}
+            entry={entry}
+            depth={depth}
+            focusable={entry.path === activeRowPath}
+            posInSet={index + 1}
+            setSize={visible.length}
+            onRowFocus={setActivePath}
+            expanded={hasEquivalentPath(tree.expanded, entry.path)}
+            selected={
+              tree.selectedPath !== null &&
+              normalisePath(tree.selectedPath) === normalisePath(entry.path)
+            }
+            badge={badgeFor(entry)}
+            gitActions={gitActionsFor(entry)}
+            onToggle={tree.toggleExpand}
+            onSelect={handleSelect}
+            confirmDelete={confirmDelete}
+            onDelete={handleDelete}
+            onRename={handleRename}
+            pinned={entry.kind === 'file' && pinnedPathSet.has(normalisePath(entry.path))}
+            onTogglePin={entry.kind === 'file' ? onTogglePin : undefined}
+            draggable
+            dragging={draggedEntry?.path === entry.path}
+            dropTarget={dropTarget === entry.path}
+            onDragStart={handleInternalDragStart}
+            onDragEnd={handleInternalDragEnd}
+            onDragOverEntry={handleEntryDragOver}
+            onDropEntry={handleEntryDrop}
+            renderChildren={(dirPath: string) => {
+              const children = getEquivalentPathValue(childEntries, dirPath) ?? [];
+              return renderEntries(children, depth + 1);
+            }}
+            childError={
+              childIssue ? (
+                <div
+                  className="db-tree-error db-tree-error--child"
+                  role="alert"
+                  data-directory-path={childIssue.directoryPath}
+                >
+                  <span>{childIssue.message}</span>{' '}
+                  <button
+                    type="button"
+                    className="db-tree-error-retry"
+                    onClick={() => void tree.retryDirectory(childIssue.directoryPath)}
+                  >
+                    Retry folder
+                  </button>
+                </div>
+              ) : undefined
+            }
+          />
+        );
+      });
     },
     [
       tree,
@@ -574,6 +610,7 @@ export function FileExplorer({
       handleDelete,
       handleRename,
       childEntries,
+      childIssues,
       badgeFor,
       gitActionsFor,
       draggedEntry,
@@ -583,6 +620,8 @@ export function FileExplorer({
       handleEntryDragOver,
       handleEntryDrop,
       activeRowPath,
+      pinnedPathSet,
+      onTogglePin,
     ],
   );
 
@@ -594,6 +633,18 @@ export function FileExplorer({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {onPinnedDocumentSelect && (
+        <PinnedDocuments
+          documents={pinnedDocuments}
+          activeWorkspaceId={activeWorkspaceId}
+          activeFilePath={activeFilePath}
+          onSelect={onPinnedDocumentSelect}
+          onUnpin={onPinnedDocumentUnpin}
+          onRename={onPinnedDocumentRename}
+          onDelete={onPinnedDocumentDelete}
+        />
+      )}
+
       {/* Toolbar */}
       <div className="db-explorer-toolbar">
         <span className="db-explorer-title">Files</span>
@@ -752,10 +803,18 @@ export function FileExplorer({
         </div>
       )}
 
-      {tree.error && (
-        <div className="db-tree-error" role="alert">
-          <span>{tree.error}</span>{' '}
-          <button type="button" className="db-tree-error-retry" onClick={() => void tree.refresh()}>
+      {tree.rootIssue && (
+        <div
+          className="db-tree-error"
+          role="alert"
+          data-directory-path={tree.rootIssue.directoryPath}
+        >
+          <span>{tree.rootIssue.message}</span>{' '}
+          <button
+            type="button"
+            className="db-tree-error-retry"
+            onClick={() => void tree.retryDirectory('')}
+          >
             Retry
           </button>
         </div>
@@ -768,7 +827,7 @@ export function FileExplorer({
         <div className="db-tree" role="status" aria-live="polite">
           <div className="db-tree-loading">Loading...</div>
         </div>
-      ) : filterVisible(tree.entries).length === 0 ? (
+      ) : filterVisibleFileEntries(tree.entries).length === 0 ? (
         <div className="db-tree">
           <div className="db-tree-empty">No files yet</div>
         </div>

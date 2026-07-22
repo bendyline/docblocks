@@ -22,6 +22,17 @@ files:
   - '!node_modules/**/*.flow'
   - package.json
 
+# Legal materials that must remain directly readable beside app.asar.
+extraResources:
+  - from: THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
+
+# Electron's own license and Chromium notice are supplied by the exact Electron
+# archive that electron-builder extracts for this platform and architecture.
+# Copying them from that staging tree also works when npm skips Electron's
+# separate node_modules binary download, as the dedicated CI jobs do.
+afterExtract: scripts/copy-electron-licenses.cjs
+
 # Lock production binaries to the signed ASAR and disable Node/Electron
 # environment-variable escape hatches that the app does not use.
 electronFuses:
@@ -119,6 +130,9 @@ mac:
         - arm64
   icon: resources/icon.icns
   category: public.app-category.productivity
+  # Release builds keep the hardened runtime. The unpacked `dist:dir` smoke
+  # build overrides this to false: ad-hoc signatures have no shared Team ID,
+  # so macOS library validation rejects Electron Framework before startup.
   hardenedRuntime: true
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist

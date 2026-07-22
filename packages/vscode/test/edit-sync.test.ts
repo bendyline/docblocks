@@ -127,6 +127,31 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
+  it('acknowledges first whitespace-only snapshots without dirtying or saving the document', async () => {
+    const adapter = new FakeDocumentAdapter();
+    adapter.content = '# Heading\n\nBody text.\n';
+    const sync = await VscodeDocumentSync.create(adapter, {
+      autoSaveDelayMs: 5,
+      createSessionId: () => 'session-a',
+    });
+
+    const whitespaceOnly = '# Heading\n\n\nBody   text.\n\n';
+    const acknowledgement = sync.acceptEdit(editEnvelope(sync, 1, whitespaceOnly));
+
+    expect(acknowledgement.accepted).to.equal(true);
+    expect(sync.getSnapshot().acknowledgedClientRevision).to.equal(1);
+    expect(sync.getSnapshot().session.content).to.equal(adapter.content);
+    expect(sync.getSnapshot().session.status).to.equal('saved');
+    await wait(20);
+    expect(adapter.commits).to.deep.equal([]);
+
+    expect(
+      sync.acceptEdit(editEnvelope(sync, 2, `${whitespaceOnly}Authored text`)).accepted,
+    ).to.equal(true);
+    expect(sync.getSnapshot().session.status).to.equal('dirty');
+    sync.dispose();
+  });
+
   it('applies a live autosave preference while retaining manual Save', async () => {
     const adapter = new FakeDocumentAdapter();
     const sync = await VscodeDocumentSync.create(adapter, {
@@ -765,7 +790,7 @@ describe('VS Code webview document scope', () => {
     expect(client.createEdit(first, 'obsolete')).to.equal(null);
   });
 
-  it('ignores mount-time normalization until the current editor receives user input', () => {
+  it('requires edit intent and a substantive first change before authoring a snapshot', () => {
     const client = new WebviewDocumentClient();
     const scope = client.acceptContent({
       type: 'setContent',
@@ -778,6 +803,16 @@ describe('VS Code webview document scope', () => {
     });
 
     expect(client.createEdit(scope, 'testing!')).to.equal(null);
+    expect(client.armEdits(scope, false)).to.equal(true);
+    expect(client.createEdit(scope, '\\*\\*testing!\\*\\*\n\n')).to.equal(null);
+    expect(client.createSave(1)).to.deep.include({ clientRevision: 0 });
+
+    // A click or key that did not itself change the document cannot leave the
+    // gate open for a later serializer callback.
+    expect(client.armEdits(scope)).to.equal(true);
+    expect(client.disarmEdits(scope)).to.equal(true);
+    expect(client.createEdit(scope, '\\*\\*testing!\\*\\*\n\n')).to.equal(null);
+
     expect(client.armEdits(scope)).to.equal(true);
     expect(client.createEdit(scope, 'testing! now')).to.deep.include({
       type: 'edit',

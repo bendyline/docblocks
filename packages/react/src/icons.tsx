@@ -24,6 +24,10 @@ export function MoreIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-ellipsis" />;
 }
 
+export function PinIcon() {
+  return <FontAwesomeIcon icon="fa-solid fa-thumbtack" />;
+}
+
 export function WorkspaceIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-gear" />;
 }

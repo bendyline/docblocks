@@ -58,20 +58,37 @@ export function WorkspacePicker({
   const [newWorkspaceError, setNewWorkspaceError] = useState<string | null>(null);
   const [newWorkspacePending, setNewWorkspacePending] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
-  // Close dropdown on outside click
+  const closeDropdown = useCallback((returnFocus: boolean) => {
+    setIsOpen(false);
+    setCreatingNew(false);
+    setNewWorkspaceError(null);
+    if (returnFocus) triggerRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  // Close from either pointer or keyboard, with Escape always restoring the
+  // trigger even when a pointer-open left focus elsewhere in the dropdown.
   useEffect(() => {
     if (!isOpen) return;
     function handleOutsideClick(e: MouseEvent) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setCreatingNew(false);
-        setNewWorkspaceError(null);
+        closeDropdown(false);
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeDropdown(true);
+    }
     document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeDropdown, isOpen]);
 
   const electron = isElectronHost();
 
@@ -159,6 +176,7 @@ export function WorkspacePicker({
   return (
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>
       <button
+        ref={triggerRef}
         className="db-workspace-picker-btn"
         onClick={() => {
           const nextOpen = !isOpen;
@@ -167,6 +185,7 @@ export function WorkspacePicker({
         }}
         title="Switch workspace"
         aria-label={`Switch workspace, current: ${activeWorkspaceName}`}
+        aria-expanded={isOpen}
       >
         <span className="db-workspace-picker-label">{activeWorkspaceName}</span>
         <span className="db-workspace-picker-compact-icon">

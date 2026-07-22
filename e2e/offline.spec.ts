@@ -1,10 +1,26 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { copyFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 // Runs under playwright.offline.config.ts (vite preview over a production
 // build) — the only environment where the service worker exists. See that
 // config's header comment.
+
+async function expectControllingWorker(
+  page: Page,
+  scriptPath: string,
+  timeout: number,
+): Promise<void> {
+  await expect
+    .poll(
+      () => page.evaluate(() => navigator.serviceWorker.controller?.scriptURL ?? 'uncontrolled'),
+      {
+        message: `expected ${scriptPath} to control the page`,
+        timeout,
+      },
+    )
+    .toContain(scriptPath);
+}
 
 test.describe('DocBlocks offline (PWA)', () => {
   const legacyWorkerName = 'legacy-navigation-worker.fixture.js';
@@ -33,7 +49,10 @@ test.describe('DocBlocks offline (PWA)', () => {
   test('automatically migrates clients controlled by the legacy catch-all worker', async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    // Replacing the legacy worker also performs the full ~55 MiB production
+    // precache before activation. Match the cold-install budget used by the
+    // end-to-end offline test below, especially for slower Windows runners.
+    test.setTimeout(180_000);
     await page.goto('/desktop/');
     await page.evaluate(async (scriptName) => {
       await caches.delete('docblocks-pwa-migrations');
@@ -41,25 +60,15 @@ test.describe('DocBlocks offline (PWA)', () => {
       await Promise.all(registrations.map((registration) => registration.unregister()));
       await navigator.serviceWorker.register(`/${scriptName}`, { scope: '/' });
       await navigator.serviceWorker.ready;
-      if (!navigator.serviceWorker.controller?.scriptURL.includes(scriptName)) {
-        await new Promise<void>((resolve) => {
-          navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), {
-            once: true,
-          });
-        });
-      }
     }, legacyWorkerName);
+    await expectControllingWorker(page, `/${legacyWorkerName}`, 30_000);
 
     // The legacy worker turns this static route into the editor shell. Loading
     // that shell registers the corrected worker, whose one-time migration
     // hook skips waiting and claims this client.
     await page.reload();
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 20_000 });
-    await page.waitForFunction(
-      () => navigator.serviceWorker.controller?.scriptURL.endsWith('/sw.js') === true,
-      undefined,
-      { timeout: 45_000 },
-    );
+    await expectControllingWorker(page, '/sw.js', 120_000);
 
     await page.goto('/desktop/');
     await expect(page.getByRole('heading', { level: 1 })).toContainText(

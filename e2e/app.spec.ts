@@ -154,6 +154,29 @@ test.describe('DocBlocks App', () => {
     await expect(page.locator('.db-app-menu-dropdown')).not.toBeVisible();
   });
 
+  test('shell popovers close on Escape and return focus to their triggers', async ({ page }) => {
+    const appMenu = page.locator('.db-app-menu-btn');
+    await appMenu.click();
+    await expect(page.locator('.db-app-menu-dropdown')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.db-app-menu-dropdown')).not.toBeVisible();
+    await expect(appMenu).toBeFocused();
+
+    const workspacePicker = page.locator('.db-workspace-picker-btn');
+    await workspacePicker.click();
+    await expect(page.locator('.db-workspace-dropdown')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.db-workspace-dropdown')).not.toBeVisible();
+    await expect(workspacePicker).toBeFocused();
+
+    const exportMenu = page.getByRole('button', { name: 'Export and share' });
+    await exportMenu.click();
+    await expect(page.locator('.db-toolbar-menu-dropdown')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.db-toolbar-menu-dropdown')).not.toBeVisible();
+    await expect(exportMenu).toBeFocused();
+  });
+
   test('applies and persists Write canvas typography settings', async ({ page }) => {
     await page.locator('.db-app-menu-btn').click();
     await page.getByRole('menuitem', { name: 'Settings' }).click();
@@ -202,7 +225,7 @@ test.describe('DocBlocks App', () => {
       )
       .toEqual({ textSize: '20px', lineSpacing: '2' });
     expect(await page.evaluate(() => localStorage.getItem('docblocks:writeCanvasSettings'))).toBe(
-      JSON.stringify({ textSize: 20, lineSpacing: 2 }),
+      JSON.stringify({ textSize: 20, lineSpacing: 2, fontScheme: 'theme' }),
     );
 
     await page.reload();
@@ -328,6 +351,13 @@ test.describe('DocBlocks App', () => {
 
     const docsLink = footer.getByRole('link', { name: 'Docs' });
     await expect(docsLink).toHaveAttribute('href', 'https://docblocks.com/docs/');
+
+    const backup = footer.getByRole('button', { name: 'Back up browser docs' });
+    await expect(backup).toBeVisible();
+    expect(
+      await backup.evaluate((element) => element.scrollWidth <= element.clientWidth),
+      'the browser-document safety action should not be visually truncated',
+    ).toBe(true);
 
     const termsLink = footer.getByRole('link', { name: 'Terms' });
     await expect(termsLink).toHaveAttribute('href', 'https://docblocks.com/terms/');
@@ -760,32 +790,13 @@ test.describe('Simple diagram theming', () => {
       localStorage.setItem('docblocks:accentColor', 'brown');
     });
     await openInitializedSite(page);
+
+    // The seeded welcome document already contains an editable Scene. Enter
+    // Write once, then use it without racing Monaco's lazy Source-view mount.
     await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
-    const sourceTab = page.locator('[role="tab"][data-view="raw"]');
-    await sourceTab.click();
-    await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.locator('[data-testid="raw-editor"]')).toBeVisible({ timeout: 10_000 });
-
-    const markdown = [
-      '# Accent Diagram',
-      '',
-      '```',
-      '┌───────┐       ┌──────┐',
-      '│ Alpha ├──────►│ Beta │',
-      '└───────┘       └──────┘',
-      '```',
-    ].join('\n');
-    const sourceEditor = page.locator('[data-testid="raw-editor"] .monaco-editor').first();
-    const sourceInput = page.getByRole('textbox', { name: 'Editor content' });
-    await sourceInput.focus();
-    await page.keyboard.press('Control+A');
-    await page.keyboard.insertText(markdown);
-    await expect(sourceEditor.locator('.view-line').first()).toContainText('Accent Diagram');
-    await page.locator('[role="tab"][data-view="wysiwyg"]').click();
-
     const scene = page.locator('.squisq-scene-shell').first();
     const card = scene.locator('[data-layer-id^="node-card-"]').first();
     await expect(card).toBeVisible({ timeout: 10_000 });
@@ -883,11 +894,6 @@ test.describe('Simple diagram theming', () => {
 test.describe('Video export dialog theming', () => {
   test('offers Animated GIF as a built-in ffmpeg-backed export', async ({ page }) => {
     await openInitializedSite(page);
-    const gateway = page.locator('.db-welcome-gateway-cta');
-    if (await gateway.isVisible().catch(() => false)) await gateway.click();
-    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
-      timeout: 10_000,
-    });
     expect(
       await page.evaluate(() => ({
         crossOriginIsolated: globalThis.crossOriginIsolated,
@@ -900,7 +906,9 @@ test.describe('Video export dialog theming', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Export Animated GIF' });
     await expect(dialog).toBeVisible({ timeout: 30_000 });
-    await expect(dialog.getByLabel('Format')).toHaveValue('gif');
+    // The lightweight loading dialog is replaced by the lazy video-export
+    // modal. Keep the assertion across that Suspense transition.
+    await expect(dialog.getByLabel('Format')).toHaveValue('gif', { timeout: 30_000 });
   });
 
   test('uses the active DocBlocks accent palette', async ({ page }) => {

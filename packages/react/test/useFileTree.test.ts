@@ -10,7 +10,11 @@
  *   • Null-provider path: actions are no-ops, root is empty
  */
 import { expect } from 'chai';
-import { MemoryFileSystemProvider, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
+import {
+  FsError,
+  MemoryFileSystemProvider,
+  parseWorkspacePath,
+} from '@bendyline/docblocks/filesystem';
 import type {
   FileSystemProvider,
   FileSystemEntry,
@@ -106,6 +110,7 @@ function makeProvider(initial: InMemoryTree): MemoryProvider {
 }
 
 const SETTLE = 30;
+const RETRY_SETTLE = 220;
 
 describe('useFileTree', () => {
   it('starts empty with a null provider', async () => {
@@ -187,6 +192,31 @@ describe('useFileTree', () => {
 
     expect(refreshReads).to.equal(0);
     expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['note.md']);
+    await handle.unmount();
+    await provider.v2.dispose();
+  });
+
+  it('does not add a focus refresh when the provider already has a watch barrier', async () => {
+    const provider = new MemoryFileSystemProvider('watched-focus', 'Watched focus');
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+
+    const readDirectory = provider.v2.readDirectory.bind(provider.v2);
+    let focusReads = 0;
+    provider.v2.readDirectory = async (path) => {
+      focusReads += 1;
+      return readDirectory(path);
+    };
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    await advanceTime(SETTLE);
+
+    expect(focusReads).to.equal(0);
     await handle.unmount();
     await provider.v2.dispose();
   });
@@ -473,6 +503,129 @@ describe('useFileTree', () => {
     await handle.unmount();
   });
 
+  it('does not let an older same-provider failure replace a newer healthy root read', async () => {
+    const provider = makeProvider({ '': [file('initial.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+
+    let releaseOlder!: () => void;
+    const olderReleased = new Promise<void>((resolve) => {
+      releaseOlder = resolve;
+    });
+    const normalRead = provider.readDirectory.bind(provider);
+    let refreshRead = 0;
+    provider.tree[''] = [file('current.md')];
+    provider.readDirectory = async (path: string) => {
+      refreshRead += 1;
+      if (refreshRead === 1) {
+        await olderReleased;
+        throw new Error('Stale refresh failed');
+      }
+      return normalRead(path);
+    };
+
+    let olderRefresh!: Promise<void>;
+    await act(async () => {
+      olderRefresh = handle.result.current.refresh();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await handle.result.current.refresh();
+    });
+
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['current.md']);
+    expect(handle.result.current.rootIssue).to.equal(null);
+
+    await act(async () => {
+      releaseOlder();
+      await olderRefresh;
+    });
+    expect(handle.result.current.rootIssue).to.equal(null);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal(['current.md']);
+    await handle.unmount();
+  });
+
+  it('recovers from a bounded run of transient root not-found observations', async () => {
+    const provider = makeProvider({ '': [file('available.md')] });
+    const normalRead = provider.readDirectory.bind(provider);
+    let attempts = 0;
+    provider.readDirectory = async (path: string) => {
+      attempts += 1;
+      if (attempts <= 2) {
+        throw new FsError('not-found', 'Directory not found.', {
+          operation: 'list',
+          path: '',
+        });
+      }
+      return normalRead(path);
+    };
+
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(RETRY_SETTLE);
+
+    expect(attempts).to.equal(3);
+    expect(handle.result.current.rootIssue).to.equal(null);
+    expect(handle.result.current.error).to.equal(null);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal([
+      'available.md',
+    ]);
+    await handle.unmount();
+  });
+
+  it('keeps a missing child failure scoped to that directory and retries it independently', async () => {
+    const provider = makeProvider({
+      '': [dir('docs')],
+      '/docs': [file('guide.md', '/docs')],
+    });
+    const normalRead = provider.readDirectory.bind(provider);
+    let childUnavailable = true;
+    provider.readDirectory = async (path: string) => {
+      if (normalisePath(path) === 'docs' && childUnavailable) {
+        throw new FsError('not-found', 'Directory not found.', {
+          operation: 'list',
+          path: 'docs',
+        });
+      }
+      return normalRead(path);
+    };
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+
+    await act(async () => {
+      handle.result.current.toggleExpand('/docs');
+    });
+    await advanceTime(RETRY_SETTLE);
+
+    expect(handle.result.current.error).to.equal(null);
+    expect(handle.result.current.rootIssue).to.equal(null);
+    expect(handle.result.current.childIssues.get('docs')).to.deep.include({
+      directoryPath: 'docs',
+      path: 'docs',
+      code: 'not-found',
+      message: 'Directory not found.',
+    });
+
+    childUnavailable = false;
+    await act(async () => {
+      await handle.result.current.retryDirectory('/docs');
+    });
+
+    expect(handle.result.current.childIssues.has('docs')).to.equal(false);
+    expect(
+      handle.result.current.childEntries.get('docs')?.map((entry) => entry.name),
+    ).to.deep.equal(['guide.md']);
+    await handle.unmount();
+  });
+
   it('surfaces provider read failures and clears them after a successful retry', async () => {
     const provider = makeProvider({ '': [file('recovered.md')] });
     const normalRead = provider.readDirectory.bind(provider);
@@ -487,6 +640,11 @@ describe('useFileTree', () => {
 
     expect(handle.result.current.loading).to.equal(false);
     expect(handle.result.current.error).to.equal('Workspace permission was revoked');
+    expect(handle.result.current.rootIssue).to.deep.include({
+      directoryPath: '',
+      path: '',
+      message: 'Workspace permission was revoked',
+    });
     expect(handle.result.current.entries).to.deep.equal([]);
 
     provider.readDirectory = normalRead;

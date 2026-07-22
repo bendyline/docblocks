@@ -277,8 +277,193 @@ h3 {
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   margin-top: 32px;
+}
+
+/* Platform-aware download CTA + matrix (desktop marketing page). */
+.dl-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 15px;
+  min-height: 66px;
+  padding: 12px 28px;
+  border: 1px solid var(--ink);
+  border-radius: 16px;
+  background: var(--ink);
+  color: var(--paper-bright);
+  text-decoration: none;
+  box-shadow: var(--shadow);
+  transition:
+    transform 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.dl-button:hover {
+  background: var(--accent-dark);
+  color: var(--paper-bright);
+  transform: translateY(-1px);
+}
+
+.dl-button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.dl-button__icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+}
+
+.dl-button__text {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.dl-button__label {
+  font-size: 1.14rem;
+  font-weight: 800;
+  line-height: 1.05;
+}
+
+.dl-button__sub {
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.74;
+}
+
+.dl-note {
+  margin: 14px 0 0;
+  font-size: 0.9rem;
+}
+
+.dl-note a {
+  font-weight: 700;
+}
+
+.dl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 18px;
+}
+
+.dl-loading {
+  margin: 0;
+  color: var(--muted);
+}
+
+.dl-card {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 22px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--paper-bright);
+}
+
+.dl-card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.dl-card__head h3 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.dl-card__icon {
+  display: inline-flex;
+  color: var(--accent);
+}
+
+.dl-card__icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.dl-card__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dl-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -12px;
+  padding: 13px 12px;
+  border-top: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.dl-card__list .dl-item:first-child {
+  border-top: 0;
+}
+
+.dl-item:hover {
+  background: var(--paper-deep);
+}
+
+.dl-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dl-item.is-detected {
+  background: var(--paper-deep);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.dl-item__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dl-item__label {
+  font-weight: 700;
+}
+
+.dl-item__badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--paper-bright);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dl-item__meta {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.dl-item__arrow {
+  width: 17px;
+  height: 17px;
+}
+
+.dl-fallback {
+  margin: 18px 0 0;
+  color: var(--muted);
 }
 
 .hero-aside {
@@ -417,13 +602,30 @@ h3 {
 
 .table-wrap {
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
   border: 1px solid var(--border);
   border-radius: 18px;
   background: rgba(255, 253, 247, 0.62);
+  box-shadow: inset -18px 0 16px -18px var(--muted);
+}
+
+.table-wrap:focus-visible {
+  outline: 3px solid var(--accent-dark);
+  outline-offset: 3px;
+}
+
+.table-scroll-hint {
+  display: none;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .format-table {
   width: 100%;
+  min-width: 700px;
   border-collapse: collapse;
 }
 
@@ -498,20 +700,45 @@ h3 {
   }
 
   .site-header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 14px;
+    min-height: 0;
+    padding-block: 10px;
+  }
+
+  .brand,
+  .brand img {
+    width: 118px;
   }
 
   .site-header > .button {
-    justify-self: start;
+    justify-self: end;
+    min-height: 36px;
+    padding-inline: 12px;
+    font-size: 0.76rem;
   }
 
   .site-nav {
-    grid-column: 1;
-    gap: 9px 16px;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    flex-wrap: nowrap;
+    gap: 6px 14px;
+    overflow-x: auto;
+    padding-bottom: 7px;
+    white-space: nowrap;
+    scrollbar-width: thin;
+  }
+
+  .site-nav a {
+    font-size: 0.78rem;
   }
 
   .page-main {
-    padding-top: 48px;
+    padding-top: 36px;
+  }
+
+  .table-scroll-hint {
+    display: block;
   }
 
   h1 {

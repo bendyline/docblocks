@@ -12,7 +12,8 @@
 #
 # Versioning:
 #   packages/desktop/package.json is the release version source of truth.
-#   Bump it before releasing; artifacts and release tags use that clean x.y.z.
+#   Bump it before releasing; artifacts, the bundled VSIX, and release tags use
+#   that clean x.y.z.
 #
 # Prerequisites (one-time setup):
 #   Windows signing:  Azure Trusted Signing resource + GitHub secrets
@@ -61,7 +62,9 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: |
+          npx playwright install --with-deps chromium firefox webkit
+          npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium
 
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
@@ -390,8 +393,17 @@ jobs:
       - name: Build upstream packages
         run: npm run build:core && npm run build:react
 
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          version="$(node --print "require('./packages/desktop/package.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Package VS Code extension
-        run: npm run package:vscode
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: npm run package:vsix -w docblocks-vscode -- "$RELEASE_VERSION" --no-update-package-json
 
       - name: Upload VS Code artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

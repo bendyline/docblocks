@@ -62,7 +62,9 @@ jobs:
         run: npm ci
 
       - name: Install Playwright runtime
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: |
+          npx playwright install --with-deps chromium firefox webkit
+          npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium
 
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
@@ -159,7 +161,10 @@ jobs:
   build-mas:
     needs: [quality, create-draft-release]
     if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
-    runs-on: macos-latest
+    # Pin the signing image to match desktop-release.yml's Developer ID build.
+    # `macos-latest` moved from macOS 15 to macOS 26, where codesign changed
+    # behavior; keep Mac App Store signing on the same known-good image.
+    runs-on: macos-15
     permissions:
       contents: write
 
@@ -232,10 +237,18 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/mas-signing.keychain-db" 2>/dev/null || true
           rm -f packages/desktop/embedded.provisionprofile
 
+      # electron-builder writes the MAS .pkg into the mas-<arch> subdirectory
+      # (next to DocBlocks.app), not the artifacts root. List the tree so the
+      # path stays visible in the log, then match the package recursively below.
+      - name: List MAS build artifacts
+        run: |
+          find packages/desktop/dist/artifacts -maxdepth 2 -type d | sort
+          find packages/desktop/dist/artifacts -name '*.pkg' | sort
+
       - name: Attach MAS package to private draft release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
           draft: true
-          files: packages/desktop/dist/artifacts/*.pkg
+          files: packages/desktop/dist/artifacts/**/*.pkg
           fail_on_unmatched_files: true

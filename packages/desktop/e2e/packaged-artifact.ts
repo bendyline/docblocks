@@ -15,6 +15,7 @@ export interface PackagedArtifact {
   executablePath: string;
   appAsarPath: string;
   fuseBinaryPath: string;
+  resourcesPath: string;
 }
 
 export interface FuseWire {
@@ -159,6 +160,7 @@ export function resolvePackagedArtifact(): PackagedArtifact {
     executablePath,
     appAsarPath: fs.realpathSync(appAsar),
     fuseBinaryPath: fs.realpathSync(fuseBinary),
+    resourcesPath: fs.realpathSync(path.dirname(appAsar)),
   };
 }
 

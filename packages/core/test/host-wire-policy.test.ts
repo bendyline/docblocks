@@ -1,11 +1,13 @@
 import { expect } from 'chai';
 import {
   HOST_WIRE_LIMITS,
+  MAX_HOST_PINNED_DOCUMENTS,
   isBoundedBytePayload,
   isBoundedString,
   isTrustedRendererUrl,
   parseExternalHttpUrl,
   parseOpenRequest,
+  parsePinnedMenuDocuments,
 } from '../src/host/index.js';
 
 describe('host wire policy', () => {
@@ -70,5 +72,43 @@ describe('host wire policy', () => {
       }),
     ).to.equal(null);
     expect(parseOpenRequest({ kind: 'unknown' })).to.equal(null);
+  });
+
+  it('validates, de-duplicates, and caps pinned menu documents', () => {
+    const valid = { workspaceId: 'ws-1', workspaceName: 'Notes', path: 'notes.md' };
+    expect(parsePinnedMenuDocuments([valid])).to.deep.equal([valid]);
+
+    // Non-arrays, malformed entries, extra keys, empty and oversized strings,
+    // and NUL-bearing values are all dropped.
+    expect(parsePinnedMenuDocuments('nope')).to.deep.equal([]);
+    expect(parsePinnedMenuDocuments([null, 42, 'x', []])).to.deep.equal([]);
+    expect(parsePinnedMenuDocuments([{ ...valid, extra: 1 }])).to.deep.equal([]);
+    expect(
+      parsePinnedMenuDocuments([{ workspaceId: 'ws-1', workspaceName: 'Notes' }]),
+    ).to.deep.equal([]);
+    expect(parsePinnedMenuDocuments([{ ...valid, path: '' }])).to.deep.equal([]);
+    expect(parsePinnedMenuDocuments([{ ...valid, workspaceId: 'a\0b' }])).to.deep.equal([]);
+    expect(
+      parsePinnedMenuDocuments([
+        { ...valid, path: 'x'.repeat(HOST_WIRE_LIMITS.pathCharacters + 1) },
+      ]),
+    ).to.deep.equal([]);
+
+    // Duplicate (workspaceId, path) pairs collapse to the first occurrence.
+    expect(parsePinnedMenuDocuments([valid, { ...valid, workspaceName: 'Renamed' }])).to.deep.equal(
+      [valid],
+    );
+
+    // A different path under the same workspace is kept.
+    const other = { ...valid, path: 'other.md' };
+    expect(parsePinnedMenuDocuments([valid, other])).to.deep.equal([valid, other]);
+
+    // The total is capped.
+    const many = Array.from({ length: MAX_HOST_PINNED_DOCUMENTS + 10 }, (_unused, index) => ({
+      workspaceId: 'ws-1',
+      workspaceName: 'Notes',
+      path: `doc-${index}.md`,
+    }));
+    expect(parsePinnedMenuDocuments(many)).to.have.length(MAX_HOST_PINNED_DOCUMENTS);
   });
 });

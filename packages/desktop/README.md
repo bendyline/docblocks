@@ -53,10 +53,16 @@ profile for one-off isolated runs.
 npm run build          # renderer (Vite) + main/preload (tsup) into dist/
 npm run dist           # build + electron-builder for the current platform
 npm run dist:mac       # or :win, :linux, :snap, :flatpak
-npm run dist:dir       # unpacked build for local inspection
+npm run dist:dir       # unpacked smoke build for local inspection
 ```
 
 electron-builder config is in `electron-builder.yml` (appId `com.bendyline.docblocks`, product name **DocBlocks**); artifacts land in `dist/artifacts/` named `DocBlocks-<version>-<os>-<arch>.<ext>`. App icons are regenerated with `npm run icons`.
+
+On macOS, `dist:dir` disables the hardened runtime for its ad-hoc-signed local
+artifact. Ad-hoc signatures have no common Team ID, so hardened library
+validation otherwise rejects Electron Framework before the app can start.
+Installers and release builds continue to use the hardened runtime and the
+normal signing and notarization configuration.
 
 Direct-download releases include x64 and arm64 builds for macOS, Windows, and
 Linux. Linux ships both AppImage and Debian packages for each architecture.

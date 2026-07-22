@@ -46,7 +46,7 @@ describe('MCP linked template recommendations', () => {
     ).to.equal(true);
   });
 
-  it('returns a self-contained content-first authoring context in one call', async () => {
+  it('returns a focused content-first authoring context in one call', async () => {
     const result = await callTool(harness.client, 'get_authoring_context', {
       targetFormat: 'pptx',
       goal: 'content-first',
@@ -63,6 +63,7 @@ describe('MCP linked template recommendations', () => {
       defaultFidelity: string;
       workflow: string[];
       syntax: { headingAnnotation: string; standaloneWarning: string };
+      formats: Array<{ id: string }>;
       templates: Array<{
         id: string;
         bodyPolicy: string;
@@ -73,24 +74,23 @@ describe('MCP linked template recommendations', () => {
     };
     expect(payload.defaultTemplateId).to.equal('content');
     expect(payload.defaultFidelity).to.equal('editable-native');
+    expect(payload.formats.map(({ id }) => id)).to.deep.equal(['pptx']);
+    expect(payload.workflow[0]).to.include('list_roots before drafting');
+    expect(payload.workflow[0]).to.include('--allow-write');
+    expect(payload.workflow[0]).to.include('do not fall back');
     expect(payload.workflow.some((step) => step.includes('closed evidence set'))).to.equal(true);
     expect(payload.workflow.some((step) => step.includes('proposed operating model'))).to.equal(
       true,
     );
-    expect(payload.workflow.some((step) => step.includes('content preflight'))).to.equal(true);
     expect(payload.workflow.some((step) => step.includes('at most 80 words'))).to.equal(true);
     expect(
       payload.workflow.some((step) => step.includes('no level-two through level-six headings')),
     ).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('point-of-view thesis'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('proposed accountable role'))).to.equal(
+    expect(payload.workflow.some((step) => step.includes('routine export preflight'))).to.equal(
       true,
     );
-    expect(payload.workflow.some((step) => step.includes('Potential tradeoff'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('capacity allocation'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('separate metrics'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('supplied comparisons'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('definitionCard'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('recommend_templates'))).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('describe_template'))).to.equal(true);
     expect(payload.workflow.some((step) => step.includes('directly to convert_document'))).to.equal(
       true,
     );
@@ -103,19 +103,46 @@ describe('MCP linked template recommendations', () => {
       bodyPolicy: 'complete',
       safeForContentFirst: true,
     });
-    expect(payload.templates.find((entry) => entry.id === 'sectionHeader')?.bodyPolicy).to.equal(
-      'ignored',
-    );
+    expect(payload.templates.length).to.be.lessThan(26);
     expect(payload.templates.every((entry) => entry.annotationExample.startsWith('# '))).to.equal(
       true,
     );
     expect(payload.recommendations[0]?.recommendedTemplateIds[0]).to.equal('content');
     expect(result.text).to.include('DocBlocks authoring contract: pptx, content-first');
-    expect(result.text).to.include('temporal or correlational wording');
-    expect(result.text).to.include('Audit claims before conversion');
-    expect(result.text).to.include('Prefer observed, coincided with');
-    expect(result.text).to.include('complete exact format, template-input');
-    expect(result.text.length).to.be.lessThan(5_000);
+    expect(result.text).to.include('intentionally focused');
+    expect(result.text).to.include('docblocks://authoring-guide');
+    expect(result.text.length).to.be.lessThan(4_000);
+    expect(JSON.stringify(payload).length).to.be.lessThan(12_000);
+  });
+
+  it('explains how to restore durable output when no roots are configured', async () => {
+    const restricted = await startMcpHarness({ readRoots: [], writeRoots: [] });
+    try {
+      const result = await callTool(restricted.client, 'list_roots', {});
+      expect(result.isError, result.text).to.equal(false);
+      expect(result.structuredContent).to.deep.equal({ roots: [] });
+      expect(result.text).to.include('Durable file output is unavailable');
+      expect(result.text).to.include('--allow-write');
+      expect(result.text).to.include('Do not fall back to a shell or CLI converter');
+    } finally {
+      await restricted.dispose();
+    }
+  });
+
+  it('warns when configured roots are read-only', async () => {
+    const restricted = await startMcpHarness({ writeRoots: [] });
+    try {
+      const result = await callTool(restricted.client, 'list_roots', {});
+      expect(result.isError, result.text).to.equal(false);
+      const roots = result.structuredContent?.roots;
+      expect(roots).to.be.an('array').with.length(1);
+      if (!Array.isArray(roots)) throw new Error('Expected root descriptors');
+      expect(roots[0]).to.deep.include({ read: true, write: false });
+      expect(result.text).to.include('No returned root is write-enabled');
+      expect(result.text).to.include('--allow-write');
+    } finally {
+      await restricted.dispose();
+    }
   });
 
   it('bounds source-controlled block titles in recommendation output', async () => {

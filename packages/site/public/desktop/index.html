@@ -53,13 +53,38 @@
             export polished documents without handing your source to a hosted editor.
           </p>
           <div class="hero-actions">
-            <a class="button" href="https://github.com/bendyline/docblocks/releases"
-              >Get releases</a
+            <a
+              class="dl-button"
+              id="dl-primary"
+              data-dl-primary
+              href="https://github.com/bendyline/docblocks/releases"
             >
+              <svg
+                class="dl-button__icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M12 3v12" />
+                <path d="m7 11 5 5 5-5" />
+                <path d="M5 21h14" />
+              </svg>
+              <span class="dl-button__text">
+                <span class="dl-button__label" data-dl-label>Download DocBlocks</span>
+                <span class="dl-button__sub" data-dl-sub>macOS · Windows · Linux</span>
+              </span>
+            </a>
             <a class="button button--secondary" href="https://github.com/bendyline/docblocks"
               >View source</a
             >
           </div>
+          <p class="dl-note">
+            <a href="#downloads">See all platforms &amp; versions ↓</a>
+          </p>
         </div>
         <aside class="hero-aside" aria-label="Desktop highlights">
           <h2>Built for local work</h2>
@@ -85,6 +110,40 @@
             The desktop app uses the same focused DocBlocks shell, backed by folders you choose.
           </figcaption>
         </figure>
+      </section>
+
+      <section class="section" id="downloads" aria-labelledby="downloads-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Downloads</p>
+            <h2 id="downloads-heading">Get DocBlocks for your platform</h2>
+          </div>
+          <p class="section-copy">
+            These installers come straight from the latest signed release on GitHub (<strong
+              data-dl-version
+              >the latest version</strong
+            ><span data-dl-date></span>). You can also
+            <a href="https://github.com/bendyline/docblocks/releases/latest" data-dl-notes
+              >view the release notes</a
+            >
+            or
+            <a href="https://github.com/bendyline/docblocks/releases" data-dl-all
+              >browse every version</a
+            >.
+          </p>
+        </div>
+
+        <div class="dl-grid" data-dl-grid>
+          <p class="dl-loading" data-dl-loading>Finding the latest installers…</p>
+        </div>
+
+        <p class="dl-fallback" data-dl-fallback hidden>
+          We couldn’t load the download list automatically.
+          <a href="https://github.com/bendyline/docblocks/releases/latest"
+            >Open the latest release on GitHub</a
+          >
+          to grab an installer for your platform.
+        </p>
       </section>
 
       <section class="section" aria-labelledby="desktop-workflow">
@@ -150,5 +209,384 @@
         <a href="https://github.com/bendyline/docblocks">GitHub</a>
       </nav>
     </footer>
+
+    <script>
+      (() => {
+        'use strict';
+
+        const REPO = 'bendyline/docblocks';
+        const API_URL = 'https://api.github.com/repos/' + REPO + '/releases?per_page=100';
+        const TAG_PREFIX = 'desktop-v';
+        const CACHE_KEY = 'docblocks:desktop-release:v1';
+        const CACHE_TTL = 60 * 60 * 1000;
+
+        const ARCH_ALIASES = {
+          arm64: ['arm64', 'aarch64'],
+          x64: ['x64', 'x86_64', 'amd64'],
+        };
+
+        const OS_NAMES = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
+        const MAC_ARCH_LABEL = { arm64: 'Apple silicon', x64: 'Intel' };
+
+        const ICONS = {
+          mac: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.66c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.29 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.65zM14.09 5.8c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.11 1.78-.97 2.83 1.02.08 2.07-.52 2.71-1.29z"/></svg>',
+          win: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 5.15 10.4 4.1v7.35H3V5.15zm8.35-1.2L21 2.5v8.95h-9.65V3.95zM3 12.55h7.4V20L3 18.9v-6.35zm8.35 0H21V21.5l-9.65-1.42v-7.53z"/></svg>',
+          linux:
+            '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.2c-2 0-3.3 1.6-3.3 3.9 0 .8.2 1.4.2 2.1-1.1 1.4-2.5 3.7-3 6-.4 1.8-1.4 2.9-1.8 3.8-.3.8.4 1.5 1.3 1.2.2.9 1.1 1.5 2.2 1.5h9.2c1.1 0 2-.6 2.2-1.5.9.3 1.6-.4 1.3-1.2-.4-.9-1.4-2-1.8-3.8-.5-2.3-1.9-4.6-3-6 0-.7.2-1.3.2-2.1 0-2.3-1.3-3.9-3.3-3.9zm-1.6 4.2c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9zm3.2 0c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9z"/></svg>',
+        };
+
+        const CATALOG = [
+          {
+            os: 'mac',
+            downloads: [
+              { arch: 'arm64', ext: 'dmg', label: 'Apple silicon (.dmg)' },
+              { arch: 'x64', ext: 'dmg', label: 'Intel (.dmg)' },
+            ],
+          },
+          {
+            os: 'win',
+            downloads: [
+              { arch: 'x64', ext: 'exe', label: '64-bit · x64 (.exe)' },
+              { arch: 'arm64', ext: 'exe', label: 'ARM64 (.exe)' },
+              { arch: null, ext: 'exe', label: 'Universal · x64 + ARM64 (.exe)' },
+            ],
+          },
+          {
+            os: 'linux',
+            downloads: [
+              { arch: 'x64', ext: 'AppImage', label: 'AppImage · x64' },
+              { arch: 'arm64', ext: 'AppImage', label: 'AppImage · ARM64' },
+              { arch: 'x64', ext: 'deb', label: 'Debian/Ubuntu · x64 (.deb)' },
+              { arch: 'arm64', ext: 'deb', label: 'Debian/Ubuntu · ARM64 (.deb)' },
+            ],
+          },
+        ];
+
+        const q = (selector) => document.querySelector(selector);
+
+        const ARROW =
+          '<svg class="dl-item__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"/><path d="m7 12 5 5 5-5"/></svg>';
+
+        function formatSize(bytes) {
+          if (!bytes || bytes < 0) return '';
+          const mb = bytes / 1e6;
+          if (mb >= 1000) return (mb / 1000).toFixed(1) + ' GB';
+          return Math.round(mb) + ' MB';
+        }
+
+        function matchAsset(assets, ext, arch) {
+          const suffix = ('.' + ext).toLowerCase();
+          return (
+            assets.find((asset) => {
+              const name = asset.name.toLowerCase();
+              if (!name.endsWith(suffix)) return false;
+              if (arch === null) {
+                return (
+                  !ARCH_ALIASES.arm64.some((token) => name.includes(token)) &&
+                  !ARCH_ALIASES.x64.some((token) => name.includes(token))
+                );
+              }
+              return ARCH_ALIASES[arch].some((token) => name.includes(token));
+            }) || null
+          );
+        }
+
+        function webglRenderer() {
+          try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) return '';
+            const info = gl.getExtension('WEBGL_debug_renderer_info');
+            const value = info
+              ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL)
+              : gl.getParameter(gl.RENDERER);
+            return String(value || '').toLowerCase();
+          } catch {
+            return '';
+          }
+        }
+
+        async function detectPlatform() {
+          const uaData = navigator.userAgentData;
+          const ua = (navigator.userAgent || '').toLowerCase();
+          const platform = ((uaData && uaData.platform) || navigator.platform || '').toLowerCase();
+          const hay = platform + ' ' + ua;
+
+          let os = null;
+          if (/iphone|ipad|ipod|android/.test(hay)) os = null;
+          else if (/mac/.test(hay)) os = 'mac';
+          else if (/win/.test(hay)) os = 'win';
+          else if (/linux|x11|ubuntu|fedora|debian/.test(hay)) os = 'linux';
+
+          // iPadOS reports a desktop Safari user agent; touch points give it away.
+          if (os === 'mac' && (navigator.maxTouchPoints || 0) > 2) os = null;
+
+          let arch = null;
+          if (uaData && typeof uaData.getHighEntropyValues === 'function') {
+            try {
+              const hints = await uaData.getHighEntropyValues(['architecture', 'bitness']);
+              const value = (hints.architecture || '').toLowerCase();
+              if (value.indexOf('arm') === 0) arch = 'arm64';
+              else if (value === 'x86' && hints.bitness === '64') arch = 'x64';
+            } catch {
+              /* UA client hints unavailable */
+            }
+          }
+
+          // Safari/Firefox expose no architecture hint; the GPU string is the
+          // most reliable Apple-silicon vs Intel signal left on macOS.
+          if (os === 'mac' && !arch) {
+            const renderer = webglRenderer();
+            if (/apple/.test(renderer)) arch = 'arm64';
+            else if (/intel|amd|radeon|nvidia|geforce/.test(renderer)) arch = 'x64';
+          }
+
+          return { os, arch };
+        }
+
+        function pickPrimary(os, arch, assets) {
+          if (os === 'mac') {
+            const wanted = arch === 'x64' ? 'x64' : 'arm64';
+            const asset =
+              matchAsset(assets, 'dmg', wanted) ||
+              matchAsset(assets, 'dmg', wanted === 'arm64' ? 'x64' : 'arm64');
+            return asset ? { os, asset, archLabel: MAC_ARCH_LABEL[wanted] } : null;
+          }
+          if (os === 'win') {
+            if (arch === 'arm64' || arch === 'x64') {
+              const asset = matchAsset(assets, 'exe', arch);
+              if (asset) return { os, asset, archLabel: arch === 'arm64' ? 'ARM64' : '64-bit' };
+            }
+            // Unknown architecture falls back to the combined x64 + ARM64 installer.
+            const universal = matchAsset(assets, 'exe', null) || matchAsset(assets, 'exe', 'x64');
+            return universal ? { os, asset: universal, archLabel: 'Universal' } : null;
+          }
+          if (os === 'linux') {
+            const wanted = arch === 'arm64' ? 'arm64' : 'x64';
+            const asset =
+              matchAsset(assets, 'AppImage', wanted) ||
+              matchAsset(assets, 'AppImage', wanted === 'arm64' ? 'x64' : 'arm64');
+            return asset
+              ? { os, asset, archLabel: 'AppImage · ' + (wanted === 'arm64' ? 'ARM64' : 'x64') }
+              : null;
+          }
+          return null;
+        }
+
+        function renderGrid(assets, primary) {
+          const grid = q('[data-dl-grid]');
+          if (!grid) return false;
+          const primaryUrl = primary && primary.asset ? primary.asset.browser_download_url : null;
+          const fragment = document.createDocumentFragment();
+          let rendered = 0;
+
+          CATALOG.forEach((platform) => {
+            const items = platform.downloads
+              .map((download) => {
+                const asset = matchAsset(assets, download.ext, download.arch);
+                return asset ? { download, asset } : null;
+              })
+              .filter(Boolean);
+            if (!items.length) return;
+
+            const card = document.createElement('article');
+            card.className = 'dl-card';
+            card.setAttribute('data-os', platform.os);
+
+            const head = document.createElement('div');
+            head.className = 'dl-card__head';
+            head.innerHTML =
+              '<span class="dl-card__icon">' +
+              ICONS[platform.os] +
+              '</span><h3>' +
+              OS_NAMES[platform.os] +
+              '</h3>';
+            card.appendChild(head);
+
+            const list = document.createElement('div');
+            list.className = 'dl-card__list';
+
+            items.forEach((item) => {
+              const link = document.createElement('a');
+              link.className = 'dl-item';
+              link.href = item.asset.browser_download_url;
+              const detected = primaryUrl && item.asset.browser_download_url === primaryUrl;
+              if (detected) link.classList.add('is-detected');
+              link.innerHTML =
+                '<span class="dl-item__main"><span class="dl-item__label">' +
+                item.download.label +
+                '</span>' +
+                (detected ? '<span class="dl-item__badge">Best for your device</span>' : '') +
+                '</span><span class="dl-item__meta">' +
+                formatSize(item.asset.size) +
+                ARROW +
+                '</span>';
+              link.setAttribute(
+                'aria-label',
+                item.download.label +
+                  ' for ' +
+                  OS_NAMES[platform.os] +
+                  (item.asset.size ? ', ' + formatSize(item.asset.size) : ''),
+              );
+              list.appendChild(link);
+            });
+
+            card.appendChild(list);
+            fragment.appendChild(card);
+            rendered += 1;
+          });
+
+          if (!rendered) return false;
+          grid.innerHTML = '';
+          grid.appendChild(fragment);
+          return true;
+        }
+
+        function updateHero(primary, version) {
+          const button = q('[data-dl-primary]');
+          const label = q('[data-dl-label]');
+          const sub = q('[data-dl-sub]');
+          if (!button) return;
+          if (primary && primary.asset) {
+            const osName = OS_NAMES[primary.os] || 'desktop';
+            button.href = primary.asset.browser_download_url;
+            if (label) label.textContent = 'Download for ' + osName;
+            if (sub) {
+              sub.textContent =
+                'v' + version + ' · ' + primary.archLabel + ' · ' + formatSize(primary.asset.size);
+            }
+            button.setAttribute(
+              'aria-label',
+              'Download DocBlocks ' + version + ' for ' + osName + ' (' + primary.archLabel + ')',
+            );
+          } else {
+            button.href = '#downloads';
+            if (label) label.textContent = 'Download DocBlocks';
+            if (sub) sub.textContent = 'v' + version + ' · choose your platform below';
+          }
+        }
+
+        function updateMeta(version, release) {
+          const versionEl = q('[data-dl-version]');
+          if (versionEl) versionEl.textContent = 'v' + version;
+          const dateEl = q('[data-dl-date]');
+          if (dateEl && release.published_at) {
+            const parsed = new Date(release.published_at);
+            if (!Number.isNaN(parsed.getTime())) {
+              dateEl.textContent =
+                ' · released ' +
+                parsed.toLocaleDateString(undefined, {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                });
+            }
+          }
+          const notes = q('[data-dl-notes]');
+          if (notes && release.html_url) notes.href = release.html_url;
+        }
+
+        function showFallback() {
+          const loading = q('[data-dl-loading]');
+          const grid = q('[data-dl-grid]');
+          const fallback = q('[data-dl-fallback]');
+          if (loading) loading.remove();
+          if (grid && !grid.querySelector('.dl-card')) grid.hidden = true;
+          if (fallback) fallback.hidden = false;
+        }
+
+        function releaseTime(release) {
+          const time = Date.parse(release && release.published_at);
+          return Number.isNaN(time) ? 0 : time;
+        }
+
+        function trimRelease(release) {
+          return {
+            tag_name: release.tag_name,
+            published_at: release.published_at,
+            html_url: release.html_url,
+            assets: (release.assets || []).map((asset) => ({
+              name: asset.name,
+              size: asset.size,
+              browser_download_url: asset.browser_download_url,
+            })),
+          };
+        }
+
+        function readCache() {
+          try {
+            const raw = globalThis.localStorage.getItem(CACHE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed.t !== 'number') return null;
+            if (Date.now() - parsed.t > CACHE_TTL) return null;
+            return parsed.release || null;
+          } catch {
+            return null;
+          }
+        }
+
+        function writeCache(release) {
+          try {
+            globalThis.localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), release }));
+          } catch {
+            /* storage unavailable */
+          }
+        }
+
+        async function loadRelease() {
+          const cached = readCache();
+          if (cached && cached.tag_name) return cached;
+          const response = await fetch(API_URL, {
+            headers: { Accept: 'application/vnd.github+json' },
+          });
+          if (!response.ok) throw new Error('GitHub API ' + response.status);
+          const releases = await response.json();
+          if (!Array.isArray(releases)) throw new Error('Unexpected payload');
+          const desktop = releases
+            .filter(
+              (release) =>
+                release &&
+                !release.draft &&
+                !release.prerelease &&
+                typeof release.tag_name === 'string' &&
+                release.tag_name.indexOf(TAG_PREFIX) === 0,
+            )
+            .sort((a, b) => releaseTime(b) - releaseTime(a))[0];
+          if (!desktop) throw new Error('No desktop release found');
+          const trimmed = trimRelease(desktop);
+          if (!trimmed.assets.length) throw new Error('No assets');
+          writeCache(trimmed);
+          return trimmed;
+        }
+
+        async function init() {
+          try {
+            const release = await loadRelease();
+            const version = release.tag_name.slice(TAG_PREFIX.length);
+            const assets = release.assets.filter(
+              (asset) => asset && asset.name && asset.browser_download_url,
+            );
+            const platform = await detectPlatform();
+            const primary = pickPrimary(platform.os, platform.arch, assets);
+
+            updateMeta(version, release);
+            if (!renderGrid(assets, primary)) {
+              showFallback();
+              return;
+            }
+            updateHero(primary, version);
+          } catch {
+            showFallback();
+          }
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init);
+        } else {
+          init();
+        }
+      })();
+    </script>
   </body>
 </html>

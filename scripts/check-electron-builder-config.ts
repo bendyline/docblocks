@@ -57,6 +57,37 @@ function failConfigPolicy(message: string): never {
   process.exit(1);
 }
 
+function requireLegalResources(): void {
+  if (!isRecord(config) || !Array.isArray(config.extraResources)) {
+    failConfigPolicy('electron-builder.yml must copy distribution legal notices.');
+  }
+  const noticesSource = 'THIRD_PARTY_NOTICES.txt';
+  const noticesDestination = 'THIRD_PARTY_NOTICES.txt';
+  const noticesConfigured = config.extraResources.some(
+    (entry) => isRecord(entry) && entry.from === noticesSource && entry.to === noticesDestination,
+  );
+  if (!noticesConfigured) {
+    failConfigPolicy(`electron-builder.yml must copy ${noticesSource} to ${noticesDestination}.`);
+  }
+  if (!existsSync(path.resolve(path.dirname(configPath), noticesSource))) {
+    failConfigPolicy(`Desktop legal resource is missing: ${noticesSource}.`);
+  }
+
+  const electronLicenseHook = 'scripts/copy-electron-licenses.cjs';
+  if (config.afterExtract !== electronLicenseHook) {
+    failConfigPolicy(
+      `electron-builder.yml must copy extracted Electron legal files with ${electronLicenseHook}.`,
+    );
+  }
+  if (!existsSync(path.resolve(path.dirname(configPath), electronLicenseHook))) {
+    failConfigPolicy(`Desktop Electron license hook is missing: ${electronLicenseHook}.`);
+  }
+
+  process.stdout.write('electron-builder.yml: distribution legal notices configured OK\n');
+}
+
+requireLegalResources();
+
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
   targetName: string,

@@ -1,17 +1,18 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { thirdPartyComponentManifestPlugin } from '../../../scripts/vite-third-party-manifest.js';
 
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [thirdPartyComponentManifestPlugin(), react()],
   root: path.resolve(__dirname),
   build: {
     outDir: path.resolve(__dirname, '../dist/webview'),
     emptyOutDir: true,
     // Known large chunks have surface-specific limits in
     // scripts/check-bundle-size.ts; keep Vite's generic warning aligned.
-    chunkSizeWarningLimit: 4_000,
+    chunkSizeWarningLimit: 8_000,
     rollupOptions: {
       output: {
         entryFileNames: 'index.js',
@@ -92,9 +93,11 @@ export default defineConfig({
     // The editor is loaded dynamically from linked Squisq, outside Vite's
     // startup scan. Pre-optimize its direct Tiptap entries so the first opened
     // document does not trigger dependency discovery and a webview reload.
+    // Use Monaco's API-only entry here: optimizing the package root pulls the
+    // complete editor.main contribution set into VS Code development loads.
     // Mermaid remains explicit for CommonJS dependency interop.
     include: [
-      'monaco-editor',
+      'monaco-editor/esm/vs/editor/editor.api.js',
       '@tiptap/core',
       '@tiptap/react',
       '@tiptap/starter-kit',

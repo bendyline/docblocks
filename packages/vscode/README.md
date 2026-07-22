@@ -52,7 +52,7 @@ Open **DocBlocks for VS Code settings** from the gear beside the export destinat
 
 | Setting                            | Purpose                                        | Default |
 | ---------------------------------- | ---------------------------------------------- | ------- |
-| `docblocks.autoSave`               | Saves 20 seconds after the most recent edit    | `true`  |
+| `docblocks.autoSave`               | Saves 20 seconds after the most recent edit    | `false` |
 | `docblocks.accentColor`            | Sets the editor control accent                 | `brown` |
 | `docblocks.writeCanvasTextSize`    | Sets the writing canvas text size              | `16`    |
 | `docblocks.writeCanvasLineSpacing` | Sets the writing canvas line-height multiplier | `1.7`   |

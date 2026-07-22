@@ -151,7 +151,7 @@ dev-dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Claude Code — track .claude/skills/ and .claude/settings.json, ignore per-user state
+# Claude Code — track reusable project skills; keep personal permissions local
 .claude/settings.local.json
 
 # Skill output (architecture / quality / a11y / ux reviews) — kept local by default

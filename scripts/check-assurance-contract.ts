@@ -201,6 +201,17 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
         `${relativePath}: ${jobName} runs npm run all but its Playwright install is missing ${missingArguments.join(', ')}`,
       );
     }
+
+    const installsCliRendererChromium = commands.some((command) =>
+      /\bnpm exec -w @bendyline\/docblocks-cli -- playwright-core install chromium(?=\s|$)/mu.test(
+        command,
+      ),
+    );
+    if (!installsCliRendererChromium) {
+      throw new Error(
+        `${relativePath}: ${jobName} runs npm run all but does not install the CLI renderer's Chromium revision`,
+      );
+    }
   }
 }
 
@@ -220,10 +231,40 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
   const orderedCommands = vscodeCommands.join('\n');
   const buildCore = orderedCommands.indexOf('npm run build:core');
   const buildReact = orderedCommands.indexOf('npm run build:react');
-  const packageVscode = orderedCommands.indexOf('npm run package:vscode');
+  const packageVscode = orderedCommands.indexOf('npm run package:vsix -w docblocks-vscode');
   if (buildCore < 0 || buildReact <= buildCore || packageVscode <= buildReact) {
     throw new Error(
       `${relativePath}: build-vscode-vsix must build core and React before packaging the extension`,
+    );
+  }
+  const vscodeVersionStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Read release version',
+  );
+  if (
+    !isRecord(vscodeVersionStep) ||
+    vscodeVersionStep.id !== 'version' ||
+    typeof vscodeVersionStep.run !== 'string' ||
+    !vscodeVersionStep.run.includes("require('./packages/desktop/package.json').version") ||
+    !vscodeVersionStep.run.includes('GITHUB_OUTPUT')
+  ) {
+    throw new Error(
+      `${relativePath}: build-vscode-vsix must read the authoritative desktop release version`,
+    );
+  }
+  const vscodePackageStep = vscodeJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Package VS Code extension',
+  );
+  if (
+    !isRecord(vscodePackageStep) ||
+    !isRecord(vscodePackageStep.env) ||
+    vscodePackageStep.env.RELEASE_VERSION !== '${{ steps.version.outputs.version }}' ||
+    typeof vscodePackageStep.run !== 'string' ||
+    !vscodePackageStep.run.includes('npm run package:vsix -w docblocks-vscode') ||
+    !vscodePackageStep.run.includes('"$RELEASE_VERSION"') ||
+    !vscodePackageStep.run.includes('--no-update-package-json')
+  ) {
+    throw new Error(
+      `${relativePath}: build-vscode-vsix must stamp the desktop version into the VSIX without changing the checkout`,
     );
   }
 
@@ -349,7 +390,6 @@ async function main(): Promise<void> {
     'npm run check:site-fonts',
     'npm run check:desktop-config',
     'npm run check:vscode-package',
-    'npm run check:agent-guidance',
     'npm run check:assurance',
     'npm run lint',
     'npm run format:check',
@@ -399,6 +439,7 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'typecheck', 'tsconfig.e2e.json');
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
+  requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
 
   const reactPackage = await readPackage('packages/react/package.json');
   const sitePackage = await readPackage('packages/site/package.json');

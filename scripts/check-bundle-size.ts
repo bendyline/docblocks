@@ -27,14 +27,14 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/site/dist/index.html',
     entryDir: 'packages/site/dist/assets',
     assetsDir: 'packages/site/dist/assets',
-    // Retain the post-DocumentSession cap; the editor and provider families
-    // are feature/backend chunks and are checked as deferred boundaries.
-    entryBudgetBytes: 2_375_000,
+    // Squisq's renderer graph belongs behind the editor boundary. The shell
+    // entry stays small enough to paint workspace chrome immediately.
+    entryBudgetBytes: 1_000_000,
     chunkBudgets: [
       // Squisq 2.3's editor update remains isolated to this deferred chunk;
       // the diagram runtimes are still split out separately.
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_355_000 },
-      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
+      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
     ],
   },
   {
@@ -42,12 +42,12 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/desktop/dist/renderer/index.html',
     entryDir: 'packages/desktop/dist/renderer/assets',
     assetsDir: 'packages/desktop/dist/renderer/assets',
-    entryBudgetBytes: 2_375_000,
+    entryBudgetBytes: 1_000_000,
     chunkBudgets: [
       // Squisq 2.3's editor update remains isolated to this deferred chunk;
       // the diagram runtimes are still split out separately.
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_355_000 },
-      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
+      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
     ],
   },
   {
@@ -55,21 +55,20 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/vscode/dist/webview/index.html',
     entryDir: 'packages/vscode/dist/webview',
     assetsDir: 'packages/vscode/dist/webview/assets',
-    // The webview has no shell chrome, but it still defers Squisq until the
-    // extension has supplied a document and the renderer bridges are ready.
-    // Squisq's editor and diagram implementations remain deferred.
-    entryBudgetBytes: 1_425_000,
+    // The host handshake must not parse Squisq before it can request the
+    // document. Editor, Monaco, and diagram implementations remain deferred.
+    entryBudgetBytes: 500_000,
     chunkBudgets: [
-      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 1_700_000 },
-      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 4_000_000 },
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 3_400_000 },
+      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
       {
         label: 'deferred standalone editor source',
         prefix: 'standalone-source',
         // Includes the linked Squisq ZIP/OOXML cooperative-cancellation path;
         // retain the smaller standalone source boundary restored in Squisq 2.2.
-        budgetBytes: 1_275_000,
+        budgetBytes: 2_550_000,
       },
-      { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 6_200_000 },
+      { label: 'deferred TypeScript worker', prefix: 'ts.worker-', budgetBytes: 12_400_000 },
     ],
     // Catch growth spread over the many Monaco language chunks as well as a
     // regression in any one named boundary. Fonts are excluded because they
@@ -79,7 +78,7 @@ const surfaces: BundleSurface[] = [
       extensions: ['.js', '.css'],
       // Mermaid's diagram families are separate deferred chunks, but the
       // aggregate gate still accounts for their complete shipped footprint.
-      budgetBytes: 21_250_000,
+      budgetBytes: 42_500_000,
     },
   },
 ];

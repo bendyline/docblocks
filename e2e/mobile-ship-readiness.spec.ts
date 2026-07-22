@@ -88,8 +88,8 @@ test.describe('mobile web-editor ship readiness', () => {
   });
 });
 
-test.describe('workspace first-run experience', () => {
-  test('names a new workspace before creation and presents useful next actions', async ({
+test.describe('workspace landing experience', () => {
+  test('names a new workspace before creation and presents neutral next actions', async ({
     page,
   }) => {
     await page.goto('/');
@@ -106,10 +106,14 @@ test.describe('workspace first-run experience', () => {
     await expect(
       page.getByRole('button', { name: 'Switch workspace, current: Customer launch notes' }),
     ).toBeVisible();
+    const landing = page.locator('.db-workspace-empty-content');
+    await expect(landing.getByRole('heading', { name: 'Customer launch notes' })).toBeVisible();
     await expect(
-      page.getByRole('heading', { name: 'Customer launch notes is ready' }),
+      landing.getByText('Choose a Markdown document from the sidebar, or create a new one.'),
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Create your first document' })).toBeVisible();
+    await expect(landing.getByRole('button', { name: 'New document' })).toBeVisible();
+    await expect(landing).not.toContainText(/\bis ready\b/i);
+    await expect(landing).not.toContainText(/create your first/i);
     await expect(
       page
         .locator('.db-workspace-empty-actions')

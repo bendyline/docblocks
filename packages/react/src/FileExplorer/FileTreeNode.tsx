@@ -79,6 +79,10 @@ export interface FileTreeNodeProps {
   confirmDelete?: (message: string) => boolean | Promise<boolean>;
   onDelete: (path: string, kind: 'file' | 'directory') => Promise<void>;
   onRename: (oldPath: string, newPath: string, kind: 'file' | 'directory') => Promise<void>;
+  /** Whether this document is present in the shell's cross-workspace pin list. */
+  pinned?: boolean;
+  /** Pin or unpin this file. Omitted for directories and standalone trees. */
+  onTogglePin?: (path: string) => void | Promise<void>;
   draggable?: boolean;
   dragging?: boolean;
   dropTarget?: boolean;
@@ -87,6 +91,8 @@ export interface FileTreeNodeProps {
   onDragOverEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
   onDropEntry?: (event: React.DragEvent, entry: FileSystemEntry) => void;
   renderChildren?: (dirPath: string) => React.ReactNode;
+  /** Path-scoped directory loading failure, rendered outside the ARIA tree group. */
+  childError?: React.ReactNode;
 }
 
 export function FileTreeNode({
@@ -105,6 +111,8 @@ export function FileTreeNode({
   confirmDelete = defaultConfirmDelete,
   onDelete,
   onRename,
+  pinned = false,
+  onTogglePin,
   draggable = false,
   dragging = false,
   dropTarget = false,
@@ -113,6 +121,7 @@ export function FileTreeNode({
   onDragOverEntry,
   onDropEntry,
   renderChildren,
+  childError,
 }: FileTreeNodeProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
@@ -138,9 +147,12 @@ export function FileTreeNode({
    * exists.
    */
   const renameSubmittedRef = useRef(false);
+  /** Return keyboard focus to the treeitem after Enter/Escape unmounts the input. */
+  const returnFocusAfterRenameRef = useRef(false);
 
   const isDir = entry.kind === 'directory';
-  const icon = isDir ? (expanded ? '\u25BE' : '\u25B8') : '\u00A0\u00A0';
+  const icon = expanded ? '\u25BE' : '\u25B8';
+  const nestedFileInset = !isDir && depth > 0 ? 8 : 0;
 
   const handleClick = useCallback(() => {
     if (isDir) {
@@ -251,26 +263,33 @@ export function FileTreeNode({
   /** Abandon the rename and make sure a trailing blur cannot submit it. */
   const handleRenameCancel = useCallback(() => {
     renameSubmittedRef.current = true;
+    returnFocusAfterRenameRef.current = true;
     setRenaming(false);
   }, []);
 
-  const handleRenameSubmit = useCallback(async () => {
-    if (renameSubmittedRef.current) return;
-    renameSubmittedRef.current = true;
+  const handleRenameSubmit = useCallback(
+    async (returnFocus = false) => {
+      if (renameSubmittedRef.current) return;
+      renameSubmittedRef.current = true;
+      returnFocusAfterRenameRef.current = returnFocus;
+      // Enter is a commit gesture: leave edit mode immediately instead of
+      // keeping a stale textbox mounted while the filesystem move resolves.
+      setRenaming(false);
 
-    if (renameValue && renameValue !== entry.name) {
-      const parentPath = entry.path.includes('/')
-        ? entry.path.slice(0, entry.path.lastIndexOf('/'))
-        : '';
-      const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
-      try {
-        await onRename(entry.path, newPath, entry.kind);
-      } catch (caught: unknown) {
-        setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+      if (renameValue && renameValue !== entry.name) {
+        const parentPath = entry.path.includes('/')
+          ? entry.path.slice(0, entry.path.lastIndexOf('/'))
+          : '';
+        const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
+        try {
+          await onRename(entry.path, newPath, entry.kind);
+        } catch (caught: unknown) {
+          setActionError(caught instanceof Error ? caught.message : 'Unable to rename this entry.');
+        }
       }
-    }
-    setRenaming(false);
-  }, [renameValue, entry.name, entry.path, entry.kind, onRename]);
+    },
+    [renameValue, entry.name, entry.path, entry.kind, onRename],
+  );
 
   const handleDeleteClick = useCallback(async () => {
     closeMenu(false);
@@ -289,6 +308,20 @@ export function FileTreeNode({
       setActionError(caught instanceof Error ? caught.message : 'Unable to delete this entry.');
     }
   }, [entry.name, entry.path, entry.kind, confirmDelete, onDelete, closeMenu]);
+
+  const handleTogglePin = useCallback(async () => {
+    closeMenu(false);
+    setActionError(null);
+    try {
+      await onTogglePin?.(entry.path);
+    } catch (caught: unknown) {
+      setActionError(
+        caught instanceof Error
+          ? caught.message
+          : `Unable to ${pinned ? 'unpin' : 'pin'} this file.`,
+      );
+    }
+  }, [closeMenu, entry.path, onTogglePin, pinned]);
 
   // Close context menu on outside click or scroll
   useEffect(() => {
@@ -321,6 +354,12 @@ export function FileTreeNode({
       inputRef.current.focus();
       inputRef.current.select();
     }
+  }, [renaming]);
+
+  useEffect(() => {
+    if (renaming || !returnFocusAfterRenameRef.current) return;
+    returnFocusAfterRenameRef.current = false;
+    rowRef.current?.focus({ preventScroll: true });
   }, [renaming]);
 
   // A keyboard-opened menu must take focus, or the keys that operate it
@@ -361,7 +400,7 @@ export function FileTreeNode({
       <div
         ref={rowRef}
         className={`db-tree-row ${selected ? 'db-tree-row--selected' : ''} ${dragging ? 'db-tree-row--dragging' : ''} ${dropTarget ? 'db-tree-row--drop-target' : ''}`}
-        style={{ paddingLeft: depth * 16 + 4 }}
+        style={{ paddingLeft: depth * 12 + 4 + nestedFileInset }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         draggable={draggable && !renaming}
@@ -411,7 +450,7 @@ export function FileTreeNode({
           }
         }}
       >
-        <span className="db-tree-icon">{icon}</span>
+        {(isDir || depth === 0) && <span className="db-tree-icon">{isDir ? icon : null}</span>}
         {renaming ? (
           <input
             ref={inputRef}
@@ -425,7 +464,7 @@ export function FileTreeNode({
               // must never see these keys.
               e.preventDefault();
               e.stopPropagation();
-              if (e.key === 'Enter') void handleRenameSubmit();
+              if (e.key === 'Enter') void handleRenameSubmit(true);
               else handleRenameCancel();
             }}
             onClick={(e) => e.stopPropagation()}
@@ -451,6 +490,7 @@ export function FileTreeNode({
               // Advertise the keyboard route, since the tree's roving
               // tabindex deliberately keeps this button out of the tab order.
               aria-keyshortcuts="Shift+F10"
+              title="More actions (Shift+F10)"
               tabIndex={-1}
             >
               <MoreIcon />
@@ -485,6 +525,17 @@ export function FileTreeNode({
             >
               Rename
             </button>
+            {!isDir && onTogglePin && (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="db-tree-context-item"
+                onClick={() => void handleTogglePin()}
+              >
+                {pinned ? 'Unpin' : 'Pin'}
+              </button>
+            )}
             {gitActions && (gitActions.viewChanges || gitActions.fileHistory) && (
               <>
                 <div className="db-tree-context-divider" role="separator" />
@@ -552,6 +603,7 @@ export function FileTreeNode({
           {renderChildren(entry.path)}
         </div>
       )}
+      {isDir && expanded && childError}
     </div>
   );
 }

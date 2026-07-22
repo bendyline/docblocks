@@ -12,6 +12,8 @@ import type { GitStatus } from '@bendyline/docblocks/host';
 import { GitContext, type GitValue } from '../src/Git/GitContext.js';
 import { GitStatusBar } from '../src/Git/GitStatusBar.js';
 import { GitToolbarControl } from '../src/Git/GitToolbarControl.js';
+import { AppMenu } from '../src/AppMenu/AppMenu.js';
+import { WorkspaceSettingsButton } from '../src/WorkspacePicker/WorkspaceSettingsButton.js';
 
 // The root Mocha/tsx loader does not inherit the package's react-jsx setting.
 // Supply the classic JSX runtime expected by its direct source transform.
@@ -101,6 +103,17 @@ describe('git dropdown keyboard contract', () => {
   for (const scenario of [
     { name: 'GitStatusBar', component: GitStatusBar, props: {} },
     { name: 'GitToolbarControl', component: GitToolbarControl, props: { selectedFile: '/a.md' } },
+    { name: 'AppMenu', component: AppMenu, props: {} },
+    {
+      name: 'WorkspaceSettingsButton',
+      component: WorkspaceSettingsButton,
+      props: {
+        onSettings: () => undefined,
+        onRename: () => undefined,
+        onDownload: () => undefined,
+        onRemove: () => undefined,
+      },
+    },
   ] as const) {
     describe(scenario.name, () => {
       it('opens with ArrowDown and focuses the first item', async () => {
@@ -170,6 +183,20 @@ describe('git dropdown keyboard contract', () => {
         expect(container.querySelector('[role="menu"]'), 'the menu must close').to.equal(null);
         expect(trigger.getAttribute('aria-expanded')).to.equal('false');
         expect(document.activeElement, 'focus must not be stranded').to.equal(trigger);
+      });
+
+      it('also closes on global Escape after a pointer-open', async () => {
+        const trigger = await renderMenu(scenario.component, scenario.props);
+        await act(async () => {
+          trigger.focus();
+          trigger.click();
+        });
+        expect(items().length).to.be.greaterThan(0);
+
+        await act(async () => press(document, 'Escape'));
+
+        expect(container.querySelector('[role="menu"]')).to.equal(null);
+        expect(document.activeElement).to.equal(trigger);
       });
 
       it('keeps its items out of the tab order', async () => {

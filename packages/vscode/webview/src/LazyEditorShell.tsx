@@ -4,7 +4,9 @@ import {
   EditorShell,
   useEditorContext,
   type EditorShellProps,
-} from '@bendyline/squisq-editor-react';
+} from '@bendyline/squisq-editor-react/shell';
+import { ensureMonacoWorkers } from './monacoRuntime.js';
+import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 
 /**
  * Keep Monaco on the scheme selected by the VS Code host.
@@ -16,8 +18,24 @@ import {
  * The Monaco module remains lazy because this component does nothing until
  * Squisq publishes a mounted editor through its context.
  */
-function VscodeSourceThemeSync({ colorScheme }: { colorScheme: 'light' | 'dark' }) {
-  const { monacoEditor } = useEditorContext();
+function VscodeMonacoIntegration({
+  colorScheme,
+  markdown,
+}: {
+  colorScheme: 'light' | 'dark';
+  markdown: string;
+}) {
+  const { activeView, monacoEditor } = useEditorContext();
+  const needsMonaco = activeView === 'raw' || markdownUsesMonacoWidget(markdown);
+
+  useEffect(() => {
+    if (!needsMonaco) return;
+
+    // Importing the setup module only registers worker constructors. Vite's
+    // worker chunks remain unfetched until Monaco asks for the matching
+    // language service. Plain WYSIWYG documents never request this module.
+    void ensureMonacoWorkers().catch(() => undefined);
+  }, [needsMonaco]);
 
   useEffect(() => {
     if (!monacoEditor) return;
@@ -39,17 +57,19 @@ function VscodeSourceThemeSync({ colorScheme }: { colorScheme: 'light' | 'dark' 
 
 export default function VscodeEditorShell({
   colorScheme = 'light',
+  initialMarkdown = '',
   toolbarSlotAfterActions,
   ...props
 }: EditorShellProps) {
   return (
     <EditorShell
       {...props}
+      initialMarkdown={initialMarkdown}
       colorScheme={colorScheme}
       toolbarSlotAfterActions={
         <Fragment>
           {toolbarSlotAfterActions}
-          <VscodeSourceThemeSync colorScheme={colorScheme} />
+          <VscodeMonacoIntegration colorScheme={colorScheme} markdown={initialMarkdown} />
         </Fragment>
       }
     />

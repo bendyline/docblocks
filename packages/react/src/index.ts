@@ -12,6 +12,7 @@ export type {
 export { FileTreeNode } from './FileExplorer/index.js';
 export type { FileTreeNodeProps } from './FileExplorer/index.js';
 export { useFileTree } from './FileExplorer/index.js';
+export type { FileTreeActions, FileTreeReadIssue, FileTreeState } from './FileExplorer/index.js';
 
 // WorkspacePicker
 export { WorkspacePicker } from './WorkspacePicker/index.js';
@@ -28,14 +29,20 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Settings
 export {
   AccentColorSettings,
+  DEFAULT_WRITE_CANVAS_FONT_SCHEME,
+  resolveWriteCanvasFonts,
   SettingsDialog,
   ThemeSettings,
+  WRITE_CANVAS_FONT_SCHEMES,
   WriteCanvasSettingsControls,
 } from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
   SettingsDialogProps,
   ThemeSettingsProps,
+  WriteCanvasFontScheme,
+  WriteCanvasFontSchemeGroup,
+  WriteCanvasFontSchemeOption,
   WriteCanvasPreferences,
   WriteCanvasSettingsControlsProps,
 } from './Settings/public-api.js';

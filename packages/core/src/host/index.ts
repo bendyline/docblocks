@@ -14,6 +14,8 @@ export type {
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,
   DocBlocksHostLifecycleAPI,
+  DocBlocksHostMenuAPI,
+  HostPinnedDocument,
   ElectronWorkspaceInfo,
   ExternalBinaryCommitResult,
   HostCloseReason,
@@ -58,11 +60,13 @@ export {
 
 export {
   HOST_WIRE_LIMITS,
+  MAX_HOST_PINNED_DOCUMENTS,
   isBoundedBytePayload,
   isBoundedString,
   isTrustedRendererUrl,
   parseExternalHttpUrl,
   parseOpenRequest,
+  parsePinnedMenuDocuments,
 } from './wire-policy.js';
 
 import type { DocBlocksHostAPI } from './types.js';

@@ -34,6 +34,10 @@ DocBlocks ships as **four surfaces** from this one repository:
 | [CLI reference](docs/cli.md)                       | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
 | [MCP architecture and protocol guide](docs/mcp.md) | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
 | [Agent/contributor guidance](AGENTS.md)            | Repository architecture, hard rules, test gates, and development conventions.                  |
+| [Contributing](CONTRIBUTING.md)                    | Proposal-only contribution policy and submission terms.                                        |
+| [Support](SUPPORT.md)                              | Where and how to request help or report a problem.                                             |
+| [Security policy](SECURITY.md)                     | How to report vulnerabilities and sensitive security concerns.                                 |
+| [Code of Conduct](CODE_OF_CONDUCT.md)              | Expected behavior for project interactions.                                                    |
 
 ## Agent workflows
 
@@ -46,24 +50,52 @@ docblocks mcp
 docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
 
+For a workspace-scoped VS Code server that can finish durable files without a CLI
+fallback, use `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "docblocks": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@bendyline/docblocks-cli",
+        "mcp",
+        "--allow-read",
+        "${workspaceFolder}",
+        "--allow-write",
+        "${workspaceFolder}"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
 The preferred workflow is:
 
-1. Call `get_authoring_context` once, and discover granted root aliases with
-   `list_roots` only when local files are involved.
-2. Keep the complete Squisq-compatible Markdown as the authoritative source and
+1. For durable output, call `list_roots` before drafting. If no root is
+   write-enabled, restart the MCP server with `--allow-write`; do not switch to a
+   shell or CLI converter.
+2. Call `get_authoring_context` once for a focused contract and safe defaults.
+   Use `recommend_templates` and `describe_template` for focused follow-up, or
+   read `docblocks://authoring-guide` only when the complete catalog is required.
+3. Keep the complete Squisq-compatible Markdown as the authoritative source and
    pass it—or a bundle source when assets are needed—directly to `convert_document`.
    Revise by editing the complete Markdown and converting again.
-3. Use `create_document_bundle` only when the same materially large
-   Markdown-and-asset bundle will feed several review or conversion operations.
-4. Use `inspect_document` or `validate_document` when semantic structure,
-   accessibility, retention, or target-format diagnostics need review.
-5. Use `preview_document` when bounded visual evidence is useful and inspect its
+4. Use `create_document_bundle` when the same complete draft will feed two or more
+   review or conversion operations, then reuse its artifact URI.
+5. Use `validate_document` as the routine export preflight. Use `inspect_document`
+   only for semantic structure, provenance, assets, metadata, or theme details.
+6. Use `preview_document` when bounded visual evidence is useful and inspect its
    `previewBasis`: Markdown/DBK are source renders, imported document artifacts
    are reconstructed previews rather than native-application pixels, and MP4
    or GIF sources return one natively extracted first-frame JPEG.
-6. Call `convert_document` once for one or more targets. Conversion returns
+7. Call `convert_document` once for one or more targets. Conversion returns
    immutable, session-scoped artifact references rather than writing files.
-7. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
+8. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
    another document operation, or explicitly persist it with `save_artifact`.
 
 The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,

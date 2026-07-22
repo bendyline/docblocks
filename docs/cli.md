@@ -337,6 +337,10 @@ keeps generated artifacts in a temporary, process-scoped store. The complete too
 resource, prompt, authority, fidelity, and lifecycle contract is in the
 [MCP architecture guide](mcp.md).
 
+For durable output, agents call `list_roots` before drafting. If no returned root is
+write-enabled, the server must be restarted with `--allow-write`; the MCP workflow
+does not fall back to the direct `convert` CLI command.
+
 | Option                               |    Default | Hard ceiling |
 | ------------------------------------ | ---------: | -----------: |
 | `--allow-read <dir...>`              |       none |     64 roots |

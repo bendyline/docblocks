@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { WorkspaceIcon } from '../icons.js';
+import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
 export interface WorkspaceSettingsButtonProps {
   onSettings: () => void;
@@ -19,31 +20,38 @@ export function WorkspaceSettingsButton({
   onRemove,
 }: WorkspaceSettingsButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
+    useMenuKeyboard(isOpen, setIsOpen);
 
   useEffect(() => {
     if (!isOpen) return;
     function handleOutsideClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setIsOpen(false);
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        closeMenu(false);
       }
     }
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen]);
+  }, [closeMenu, isOpen]);
 
-  const handleAction = useCallback((action: () => void) => {
-    setIsOpen(false);
-    action();
-  }, []);
+  const handleAction = useCallback(
+    (action: () => void) => {
+      closeMenu(false);
+      action();
+    },
+    [closeMenu],
+  );
 
   return (
-    <div ref={ref} className="db-ws-settings">
+    <div ref={containerRef} className="db-ws-settings">
       <button
+        ref={triggerRef}
         className="db-ws-settings-btn"
         onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={handleTriggerKeyDown}
         aria-expanded={isOpen}
-        aria-haspopup="true"
+        aria-haspopup="menu"
         aria-label="Workspace settings"
         title="Workspace settings"
       >
@@ -51,10 +59,16 @@ export function WorkspaceSettingsButton({
       </button>
 
       {isOpen && (
-        <div className="db-ws-settings-dropdown" role="menu">
+        <div
+          ref={menuRef}
+          className="db-ws-settings-dropdown"
+          role="menu"
+          onKeyDown={handleMenuKeyDown}
+        >
           <button
             className="db-ws-settings-item"
             role="menuitem"
+            tabIndex={-1}
             onClick={() => handleAction(onSettings)}
           >
             Workspace settings…
@@ -62,6 +76,7 @@ export function WorkspaceSettingsButton({
           <button
             className="db-ws-settings-item"
             role="menuitem"
+            tabIndex={-1}
             onClick={() => handleAction(onRename)}
           >
             Rename workspace
@@ -69,6 +84,7 @@ export function WorkspaceSettingsButton({
           <button
             className="db-ws-settings-item"
             role="menuitem"
+            tabIndex={-1}
             onClick={() => handleAction(onDownload)}
           >
             Download workspace
@@ -77,6 +93,7 @@ export function WorkspaceSettingsButton({
           <button
             className="db-ws-settings-item db-ws-settings-item--danger"
             role="menuitem"
+            tabIndex={-1}
             onClick={() => handleAction(onRemove)}
           >
             Remove workspace

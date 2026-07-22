@@ -6,12 +6,16 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   FsError,
+  fsErrorFromUnknown,
   getFileSystemProviderV2,
   moveFileSystemEntry,
   parseWorkspacePath,
   type FileSystemProvider,
   type FileSystemEntry,
+  type FsErrorCode,
 } from '@bendyline/docblocks/filesystem';
+
+const DIRECTORY_NOT_FOUND_RETRY_DELAYS_MS = Object.freeze([40, 120] as const);
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
@@ -48,10 +52,58 @@ async function readProviderDirectory(
   provider: FileSystemProvider,
   path: string,
 ): Promise<FileSystemEntry[]> {
-  const providerV2 = getFileSystemProviderV2(provider);
-  if (!providerV2) return provider.readDirectory(path);
-  const entries = await providerV2.readDirectory(parseWorkspacePath(path));
-  return entries.map((entry) => ({ kind: entry.kind, name: entry.name, path: entry.path }));
+  const canonical = parseWorkspacePath(path);
+  const readOnce = async (): Promise<FileSystemEntry[]> => {
+    const providerV2 = getFileSystemProviderV2(provider);
+    if (!providerV2) return provider.readDirectory(path);
+    const entries = await providerV2.readDirectory(canonical);
+    return entries.map((entry) => ({ kind: entry.kind, name: entry.name, path: entry.path }));
+  };
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await readOnce();
+    } catch (caught: unknown) {
+      const error = directoryReadError(caught, canonical);
+      const retryDelay = DIRECTORY_NOT_FOUND_RETRY_DELAYS_MS[attempt];
+      if (error.code !== 'not-found' || retryDelay === undefined) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+}
+
+function directoryReadError(caught: unknown, requestedPath: string): FsError {
+  const error = fsErrorFromUnknown(caught, { operation: 'list', path: requestedPath });
+  if (error.path !== null) return error;
+  return new FsError(error.code, error.message, {
+    operation: error.operation ?? 'list',
+    path: requestedPath,
+    destinationPath: error.destinationPath ?? undefined,
+    retryable: error.retryable,
+  });
+}
+
+export interface FileTreeReadIssue {
+  /** Directory whose listing was requested, in canonical workspace-relative form. */
+  readonly directoryPath: string;
+  /** Exact failing path supplied by the filesystem error. */
+  readonly path: string;
+  readonly code: FsErrorCode;
+  readonly message: string;
+  /** Whether another user-initiated attempt can reasonably succeed. */
+  readonly retryable: boolean;
+}
+
+function readIssue(caught: unknown, directoryPath: string): FileTreeReadIssue {
+  const canonical = parseWorkspacePath(directoryPath);
+  const error = directoryReadError(caught, canonical);
+  return Object.freeze({
+    directoryPath: canonical,
+    path: error.path ?? canonical,
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable || error.code === 'not-found',
+  });
 }
 
 export interface FileTreeState {
@@ -65,8 +117,14 @@ export interface FileTreeState {
   selectedKind: 'file' | 'directory' | null;
   /** Whether the tree is loading. */
   loading: boolean;
-  /** Latest provider/read/watch failure, cleared by a successful refresh. */
+  /** Root provider/read/watch failure, retained for backwards compatibility. */
   error: string | null;
+  /** Structured root failure, including its exact filesystem path. */
+  rootIssue: FileTreeReadIssue | null;
+  /** Failures scoped to expanded child directories. */
+  childIssues: ReadonlyMap<string, FileTreeReadIssue>;
+  /** Cached listings for expanded child directories. */
+  childEntries: ReadonlyMap<string, FileSystemEntry[]>;
 }
 
 export interface FileTreeActions {
@@ -86,6 +144,8 @@ export interface FileTreeActions {
   renameEntry: (oldPath: string, newPath: string, kind?: 'file' | 'directory') => Promise<void>;
   /** Force refresh the tree. */
   refresh: () => Promise<void>;
+  /** Retry one failed directory without treating it as a workspace-root failure. */
+  retryDirectory: (path: string) => Promise<void>;
 }
 
 export function useFileTree(provider: FileSystemProvider | null): FileTreeState & FileTreeActions {
@@ -94,16 +154,19 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [selectedKind, setSelectedKind] = useState<'file' | 'directory' | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [rootIssue, setRootIssue] = useState<FileTreeReadIssue | null>(null);
+  const [childIssues, setChildIssues] = useState<Map<string, FileTreeReadIssue>>(new Map());
 
   // Track child entries for expanded directories
   const [childEntries, setChildEntries] = useState<Map<string, FileSystemEntry[]>>(new Map());
 
   const providerRef = useRef(provider);
   providerRef.current = provider;
+  const directoryRequestSequenceRef = useRef(0);
+  const directoryRequestsRef = useRef<Map<string, number>>(new Map());
 
-  const reportError = useCallback((caught: unknown) => {
-    setError(caught instanceof Error ? caught.message : 'Unable to read this workspace.');
+  const reportRootIssue = useCallback((caught: unknown) => {
+    setRootIssue(readIssue(caught, ''));
   }, []);
 
   const loadRoot = useCallback(async () => {
@@ -113,46 +176,66 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       setLoading(false);
       return;
     }
+    const requestId = ++directoryRequestSequenceRef.current;
+    directoryRequestsRef.current.set('', requestId);
+    const isCurrent = () =>
+      providerRef.current === sourceProvider && directoryRequestsRef.current.get('') === requestId;
     setLoading(true);
-    setError(null);
     try {
       const root = await readProviderDirectory(sourceProvider, '');
-      if (providerRef.current !== sourceProvider) return;
+      if (!isCurrent()) return;
       setEntries(root);
+      setRootIssue(null);
     } catch (caught: unknown) {
-      if (providerRef.current === sourceProvider) reportError(caught);
+      if (isCurrent()) setRootIssue(readIssue(caught, ''));
     } finally {
-      if (providerRef.current === sourceProvider) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [reportError]);
+  }, []);
 
-  const loadChildren = useCallback(
-    async (dirPath: string) => {
-      const sourceProvider = providerRef.current;
-      if (!sourceProvider) return;
-      try {
-        const children = await readProviderDirectory(sourceProvider, dirPath);
-        if (providerRef.current !== sourceProvider) return;
-        setChildEntries((prev) => {
-          const next = new Map(prev);
-          next.set(dirPath, children);
-          return next;
-        });
-      } catch (caught: unknown) {
-        if (providerRef.current === sourceProvider) reportError(caught);
-      }
-    },
-    [reportError],
-  );
+  const loadChildren = useCallback(async (dirPath: string) => {
+    const sourceProvider = providerRef.current;
+    if (!sourceProvider) return;
+    const canonical = normalisePath(dirPath);
+    const requestId = ++directoryRequestSequenceRef.current;
+    directoryRequestsRef.current.set(canonical, requestId);
+    const isCurrent = () =>
+      providerRef.current === sourceProvider &&
+      directoryRequestsRef.current.get(canonical) === requestId;
+    try {
+      const children = await readProviderDirectory(sourceProvider, dirPath);
+      if (!isCurrent()) return;
+      setChildEntries((prev) => {
+        const next = new Map(prev);
+        next.set(canonical, children);
+        return next;
+      });
+      setChildIssues((prev) => {
+        if (!prev.has(canonical)) return prev;
+        const next = new Map(prev);
+        next.delete(canonical);
+        return next;
+      });
+    } catch (caught: unknown) {
+      if (!isCurrent()) return;
+      setChildIssues((prev) => {
+        const next = new Map(prev);
+        next.set(canonical, readIssue(caught, dirPath));
+        return next;
+      });
+    }
+  }, []);
 
   // Load root on provider change
   useEffect(() => {
     setEntries([]);
     setExpanded(new Set());
     setChildEntries(new Map());
+    setChildIssues(new Map());
     setSelectedPath(null);
     setSelectedKind(null);
-    setError(null);
+    setRootIssue(null);
+    directoryRequestsRef.current.clear();
     void loadRoot();
   }, [provider, loadRoot]);
 
@@ -206,6 +289,14 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     }
   }, [loadRoot, loadChildren, expanded]);
 
+  const retryDirectory = useCallback(
+    async (path: string) => {
+      if (normalisePath(path) === '') await loadRoot();
+      else await loadChildren(path);
+    },
+    [loadRoot, loadChildren],
+  );
+
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
@@ -236,7 +327,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
             await refreshRef.current();
           } while (refreshAgain && !disposed);
         } catch (caught: unknown) {
-          reportError(caught);
+          reportRootIssue(caught);
         } finally {
           refreshing = false;
           if (refreshAgain && !disposed) requestRefresh();
@@ -256,27 +347,29 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       {
         onError: (caught) => {
           if (disposed) return;
-          reportError(caught);
+          reportRootIssue(caught);
           requestRefresh();
         },
       },
     );
     void subscription.ready.catch((caught: unknown) => {
-      if (!disposed) reportError(caught);
+      if (!disposed) reportRootIssue(caught);
     });
     return () => {
       disposed = true;
       void subscription.dispose();
     };
-  }, [provider, reportError]);
+  }, [provider, reportRootIssue]);
 
   // File System Access and IndexedDB do not expose a dependable external
   // watcher. Refreshing on resume catches changes made while this surface was
   // in the background without continuously polling the filesystem.
   useEffect(() => {
     if (!provider) return;
+    const providerV2 = getFileSystemProviderV2(provider);
+    if (providerV2?.capabilities.watch) return;
     const refreshOnFocus = () => {
-      void refreshRef.current().catch(reportError);
+      void refreshRef.current().catch(reportRootIssue);
     };
     const refreshOnVisibility = () => {
       if (document.visibilityState === 'visible') refreshOnFocus();
@@ -287,7 +380,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       window.removeEventListener('focus', refreshOnFocus);
       document.removeEventListener('visibilitychange', refreshOnVisibility);
     };
-  }, [provider, reportError]);
+  }, [provider, reportRootIssue]);
 
   const createFile = useCallback(
     async (path: string, content = '') => {
@@ -377,6 +470,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       );
       setExpanded(nextExpanded);
       setChildEntries(new Map());
+      setChildIssues(new Map());
       await loadRoot();
       for (const dirPath of nextExpanded) {
         await loadChildren(dirPath);
@@ -394,7 +488,10 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     selectedPath,
     selectedKind,
     loading,
-    error,
+    error: rootIssue?.message ?? null,
+    rootIssue,
+    childIssues,
+    childEntries,
     toggleExpand,
     select,
     reveal,
@@ -403,7 +500,6 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     deleteEntry,
     renameEntry,
     refresh,
-    // Expose child entries for rendering
-    ...{ childEntries },
-  } as FileTreeState & FileTreeActions & { childEntries: Map<string, FileSystemEntry[]> };
+    retryDirectory,
+  };
 }

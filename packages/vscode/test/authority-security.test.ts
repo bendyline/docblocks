@@ -165,16 +165,30 @@ describe('VS Code authority boundary', () => {
     expect(
       parseWebviewToExtensionMessage({
         type: 'setWriteCanvasSettings',
-        settings: { textSize: 20, lineSpacing: 1.8 },
+        settings: { textSize: 20, lineSpacing: 1, fontScheme: 'pt-serif' },
       }),
     ).to.deep.equal({
       type: 'setWriteCanvasSettings',
-      settings: { textSize: 20, lineSpacing: 1.8 },
+      settings: { textSize: 20, lineSpacing: 1, fontScheme: 'pt-serif' },
     });
     expect(
       parseWebviewToExtensionMessage({
         type: 'setWriteCanvasSettings',
-        settings: { textSize: 100, lineSpacing: 1.8 },
+        settings: { textSize: 20, lineSpacing: 0.9, fontScheme: 'theme' },
+      }),
+    ).to.equal(null);
+    // An unknown font scheme id is rejected at the untrusted boundary.
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'setWriteCanvasSettings',
+        settings: { textSize: 20, lineSpacing: 1, fontScheme: 'comic-sans' },
+      }),
+    ).to.equal(null);
+    // The font scheme is required — an older-shaped payload is rejected.
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'setWriteCanvasSettings',
+        settings: { textSize: 20, lineSpacing: 1 },
       }),
     ).to.equal(null);
 
@@ -184,7 +198,7 @@ describe('VS Code authority boundary', () => {
         settings: {
           autoSave: true,
           accentColor: 'purple',
-          writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'hanken-lora' },
         },
       }),
     ).to.deep.equal({
@@ -192,7 +206,7 @@ describe('VS Code authority boundary', () => {
       settings: {
         autoSave: true,
         accentColor: 'purple',
-        writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+        writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'hanken-lora' },
       },
     });
     expect(
@@ -201,7 +215,7 @@ describe('VS Code authority boundary', () => {
         settings: {
           autoSave: 'yes',
           accentColor: 'purple',
-          writeCanvasSettings: { textSize: 18, lineSpacing: 2 },
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'theme' },
         },
       }),
     ).to.equal(null);

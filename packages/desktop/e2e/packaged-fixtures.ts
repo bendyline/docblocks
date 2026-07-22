@@ -11,7 +11,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { resolvePackagedArtifact, type PackagedArtifact } from './packaged-artifact.js';
 
-const LAUNCH_TIMEOUT_MS = 30_000;
+const DEVTOOLS_ENDPOINT_TIMEOUT_MS = 30_000;
+const CDP_CONNECT_TIMEOUT_MS = 60_000;
+const WINDOW_LOAD_TIMEOUT_MS = 30_000;
+const CDP_CONNECT_ATTEMPT_TIMEOUT_MS = 5_000;
+const CDP_CONNECT_RETRY_DELAY_MS = 250;
 const MAX_PROCESS_LOG_LENGTH = 128 * 1024;
 
 export interface PackagedApplication {
@@ -73,7 +77,7 @@ function waitForDevTools(child: ChildProcess, readLog: () => string): Promise<st
           new Error(`Timed out waiting for the packaged renderer DevTools endpoint.\n${readLog()}`),
         ),
       );
-    }, LAUNCH_TIMEOUT_MS);
+    }, DEVTOOLS_ENDPOINT_TIMEOUT_MS);
 
     child.stdout?.on('data', inspectLog);
     child.stderr?.on('data', inspectLog);
@@ -104,6 +108,36 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<bool
     }, timeoutMs);
     child.once('exit', onExit);
   });
+}
+
+async function connectToDevTools(endpoint: string, child: ChildProcess): Promise<Browser> {
+  const devToolsUrl = new URL(endpoint);
+  devToolsUrl.protocol = devToolsUrl.protocol === 'wss:' ? 'https:' : 'http:';
+  devToolsUrl.pathname = '/';
+  devToolsUrl.search = '';
+  devToolsUrl.hash = '';
+  const discoveryEndpoint = devToolsUrl.toString();
+  const deadline = Date.now() + CDP_CONNECT_TIMEOUT_MS;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error('Packaged DocBlocks exited while connecting to its DevTools endpoint.');
+    }
+    const remainingMs = Math.max(1, deadline - Date.now());
+    try {
+      return await chromium.connectOverCDP(discoveryEndpoint, {
+        timeout: Math.min(CDP_CONNECT_ATTEMPT_TIMEOUT_MS, remainingMs),
+      });
+    } catch (error) {
+      lastError = error;
+      const retryDelayMs = Math.min(CDP_CONNECT_RETRY_DELAY_MS, deadline - Date.now());
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Timed out connecting to the packaged DevTools endpoint. Last error: ${detail}`);
 }
 
 async function launchPackagedApplication(
@@ -139,13 +173,13 @@ async function launchPackagedApplication(
   let browser: Browser | undefined;
   try {
     const endpoint = await waitForDevTools(child, processLog);
-    browser = await chromium.connectOverCDP(endpoint, { timeout: LAUNCH_TIMEOUT_MS });
+    browser = await connectToDevTools(endpoint, child);
     const context = browser.contexts()[0];
     if (!context) throw new Error('The packaged Electron process exposed no browser context.');
     const window = context.pages()[0] ?? (await context.waitForEvent('page'));
     await window.waitForURL('app://docblocks/**', {
       waitUntil: 'domcontentloaded',
-      timeout: LAUNCH_TIMEOUT_MS,
+      timeout: WINDOW_LOAD_TIMEOUT_MS,
     });
 
     const close = async (): Promise<void> => {

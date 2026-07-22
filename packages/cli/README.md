@@ -65,6 +65,11 @@ docblocks mcp
 docblocks mcp --allow-read ./documents --allow-write ./exports
 ```
 
+For durable output, call `list_roots` before drafting. If no root is write-enabled,
+restart the server with `--allow-write`; do not bypass MCP with the direct `convert`
+command. `get_authoring_context` returns a focused contract and safe defaults, while
+the complete catalog remains available at `docblocks://authoring-guide`.
+
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
 import-capable linked-registry formats. `build` replaces generated HTML files;
 `convert` and `video` refuse existing destinations unless `--allow-overwrite` is

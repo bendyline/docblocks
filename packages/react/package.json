@@ -30,7 +30,8 @@
   ],
   "files": [
     "dist",
-    "src/styles"
+    "src/styles",
+    "THIRD_PARTY_NOTICES.txt"
   ],
   "exports": {
     ".": {
@@ -66,12 +67,12 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.2.1",
-    "@bendyline/squisq": "2.3.3",
-    "@bendyline/squisq-editor-react": "2.3.4",
-    "@bendyline/squisq-formats": "2.3.3",
-    "@bendyline/squisq-react": "2.3.3",
-    "@bendyline/squisq-video": "2.2.3",
-    "@bendyline/squisq-video-react": "2.2.3"
+    "@bendyline/squisq": "2.4.1",
+    "@bendyline/squisq-editor-react": "2.4.1",
+    "@bendyline/squisq-formats": "2.3.5",
+    "@bendyline/squisq-react": "2.4.1",
+    "@bendyline/squisq-video": "2.2.5",
+    "@bendyline/squisq-video-react": "2.2.5"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",
