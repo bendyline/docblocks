@@ -1,8 +1,8 @@
 import type { EvalCase, EvalPromptProfile, EvalSuite } from './types.js';
 
 export const EVAL_PROMPT_PROFILES: Readonly<Record<EvalPromptProfile, string>> = Object.freeze({
-  baseline: `Use the DocBlocks MCP server for authoring, validation, conversion, and saving. Do not create the Office artifact with shell commands or another document library. Return the exact Squisq-flavored Markdown supplied to the final convert_document call.`,
-  'content-first': `Use the DocBlocks MCP server for the complete workflow. Start with get_authoring_context, author a lossless content-first draft, validate it, then use compatible visual templates selectively and preview before the final conversion. Repair actionable diagnostics. Do not create the Office artifact with shell commands or another document library. Return the exact Squisq-flavored Markdown supplied to the final convert_document call.`,
+  baseline: `Use the DocBlocks MCP server for conversion and saving. Author Markdown and pass it directly to convert_document; no validation, inspection, preview, or authoring-context call is required. Do not create the Office artifact with shell commands or another document library. Return the exact Squisq-flavored Markdown supplied to the final convert_document call.`,
+  'content-first': `Use the DocBlocks MCP server for the complete workflow. Author the complete Markdown first and pass it directly to convert_document. Squisq annotations are optional layout hints; use get_authoring_context only when exact examples help, and use inspection or preview only when the brief explicitly requires that evidence. Do not create the Office artifact with shell commands or another document library. Return the exact Squisq-flavored Markdown supplied to the final convert_document call.`,
 });
 
 export const MCP_CONTENT_EVAL_CASES: readonly EvalCase[] = Object.freeze([

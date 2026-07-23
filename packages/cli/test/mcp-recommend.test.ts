@@ -46,7 +46,7 @@ describe('MCP linked template recommendations', () => {
     ).to.equal(true);
   });
 
-  it('returns a focused content-first authoring context in one call', async () => {
+  it('returns optional focused authoring details without imposing a writing workflow', async () => {
     const result = await callTool(harness.client, 'get_authoring_context', {
       targetFormat: 'pptx',
       goal: 'content-first',
@@ -78,41 +78,48 @@ describe('MCP linked template recommendations', () => {
     expect(payload.workflow[0]).to.include('list_roots before drafting');
     expect(payload.workflow[0]).to.include('--allow-write');
     expect(payload.workflow[0]).to.include('do not fall back');
-    expect(payload.workflow.some((step) => step.includes('closed evidence set'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('proposed operating model'))).to.equal(
-      true,
-    );
-    expect(payload.workflow.some((step) => step.includes('at most 80 words'))).to.equal(true);
     expect(
-      payload.workflow.some((step) => step.includes('no level-two through level-six headings')),
+      payload.workflow.some((step) => step.includes('unstructured text is still accepted')),
     ).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('routine export preflight'))).to.equal(
-      true,
-    );
-    expect(payload.workflow.some((step) => step.includes('recommend_templates'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('describe_template'))).to.equal(true);
-    expect(payload.workflow.some((step) => step.includes('directly to convert_document'))).to.equal(
-      true,
-    );
     expect(
-      payload.workflow.some((step) => step.includes('stage it once with create_document_bundle')),
+      payload.workflow.some((step) => step.includes('Pass Markdown directly to convert_document')),
     ).to.equal(true);
+    expect(payload.workflow.join(' ')).not.to.include('closed evidence set');
+    expect(payload.workflow.join(' ')).not.to.include('word');
+    expect(payload.workflow.join(' ')).not.to.include('validate_document');
     expect(payload.syntax.headingAnnotation).to.equal('# Heading {[content]}');
     expect(payload.syntax.standaloneWarning).to.include('heading-less block');
     expect(payload.templates.find((entry) => entry.id === 'content')).to.include({
       bodyPolicy: 'complete',
       safeForContentFirst: true,
     });
-    expect(payload.templates.length).to.be.lessThan(26);
+    expect(payload.templates.map(({ id }) => id)).to.include.members([
+      'title',
+      'sectionHeader',
+      'statHighlight',
+      'quote',
+    ]);
+    expect(payload.templates.length).to.be.lessThan(27);
     expect(payload.templates.every((entry) => entry.annotationExample.startsWith('# '))).to.equal(
       true,
     );
     expect(payload.recommendations[0]?.recommendedTemplateIds[0]).to.equal('content');
     expect(result.text).to.include('DocBlocks authoring contract: pptx, content-first');
+    expect(result.text).to.include('Optional example: # Heading {[statHighlight');
     expect(result.text).to.include('intentionally focused');
     expect(result.text).to.include('docblocks://authoring-guide');
     expect(result.text.length).to.be.lessThan(4_000);
     expect(JSON.stringify(payload).length).to.be.lessThan(12_000);
+  });
+
+  it('keeps editable PowerPoint as the default even for visual-polish discovery', async () => {
+    const result = await callTool(harness.client, 'get_authoring_context', {
+      targetFormat: 'pptx',
+      goal: 'visual-polish',
+    });
+
+    expect(result.isError, result.text).to.equal(false);
+    expect(result.structuredContent?.defaultFidelity).to.equal('editable-native');
   });
 
   it('explains how to restore durable output when no roots are configured', async () => {

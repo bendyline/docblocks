@@ -7,7 +7,6 @@ import {
   parseConversionResult,
   parseInspectionResult,
   parsePreviewResult,
-  parseValidationResult,
 } from './wire.js';
 import type {
   AuthoringContextResult,
@@ -249,7 +248,6 @@ export const diagnosticSchema = z
       'import',
       'parse',
       'inspect',
-      'validate',
       'transform',
       'convert',
       'render',
@@ -276,7 +274,6 @@ export const mcpErrorDetailSchema = z
         'import',
         'parse',
         'inspect',
-        'validate',
         'transform',
         'convert',
         'render',
@@ -517,25 +514,6 @@ export const inspectionResultSchema = z
   })
   .strict()
   .superRefine((value, context) => addExactWireIssue(parseInspectionResult(value), context));
-
-export const validationResultSchema = z
-  .object({
-    version: z.literal(1),
-    kind: z.literal('validation'),
-    sourceFormat: formatSchema,
-    targetFormat: formatSchema.nullable(),
-    valid: z.boolean(),
-    summary: z
-      .object({
-        errorCount: nonNegativeSafeIntegerSchema,
-        warningCount: nonNegativeSafeIntegerSchema,
-        infoCount: nonNegativeSafeIntegerSchema,
-      })
-      .strict(),
-    diagnostics: z.array(diagnosticSchema).max(MCP_WIRE_LIMITS.arrayEntries),
-  })
-  .strict()
-  .superRefine((value, context) => addExactWireIssue(parseValidationResult(value), context));
 
 const previewItemSchema = z
   .object({
@@ -869,7 +847,6 @@ export const DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS: Readonly<
   create_document_bundle: conversionResultSchema,
   save_artifact: saveArtifactResultSchema,
   inspect_document: inspectionResultSchema,
-  validate_document: validationResultSchema,
   preview_document: previewResultSchema,
   compare_documents: comparisonResultSchema,
   get_authoring_context: authoringContextResultSchema,
@@ -898,7 +875,6 @@ export const DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS: Readonly<
   ),
   save_artifact: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.save_artifact),
   inspect_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.inspect_document),
-  validate_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.validate_document),
   preview_document: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.preview_document),
   compare_documents: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.compare_documents),
   get_authoring_context: toolOutputSchema(DOCBLOCKS_MCP_TOOL_RESULT_SCHEMAS.get_authoring_context),

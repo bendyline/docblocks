@@ -71,7 +71,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   '',
   '## Agents get document tools, not a blank check {[factCard]}',
   '',
-  'The local MCP server can inspect, validate, preview, compare, and convert documents. Results remain temporary session artifacts until they are deliberately saved, and filesystem access begins with explicit roots rather than assumed authority.',
+  'The local MCP server converts plain text or Markdown directly and can optionally inspect, preview, or compare documents. Results remain temporary session artifacts until they are deliberately saved, and filesystem access begins with explicit roots rather than assumed authority.',
   '',
   '## Start with three small moves {[list]}',
   '',

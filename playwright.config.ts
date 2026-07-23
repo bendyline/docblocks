@@ -18,7 +18,7 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }]],
   // Allow the first Windows dev-server request to transform the full editor
   // graph. Per-action assertions retain their tighter explicit timeouts.
-  timeout: 60_000,
+  timeout: 90_000,
   use: {
     baseURL: 'http://localhost:5220',
     trace: 'on-first-retry',

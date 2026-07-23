@@ -9,7 +9,6 @@ import {
   parseConversionResult,
   parseInspectionResult,
   parseMcpErrorResult,
-  parseValidationResult,
 } from '@bendyline/docblocks/mcp';
 import { callTool } from './mcp-helpers.js';
 
@@ -185,7 +184,7 @@ describe('MCP CLI stdio transport', function () {
     expect(await stat(path.join(outsideRoot, 'denied-output.md')).catch(() => null)).to.equal(null);
   });
 
-  it('runs convert -> resource -> inspect/validate -> save through real stdio', async () => {
+  it('runs convert -> resource -> optional inspect -> save through real stdio', async () => {
     const cli = requireHarness(h);
     const markdown = '# Artifact workflow\n\nA complete agentic document pipeline.';
     const conversion = await cli.client.callTool({
@@ -257,15 +256,6 @@ describe('MCP CLI stdio transport', function () {
     expect(inspection, 'canonical inspection result').to.not.equal(null);
     expect(inspection?.statistics.blockCount).to.be.greaterThan(0);
     expect(inspection?.outline[0]?.title).to.equal('Artifact workflow');
-
-    const validated = await callTool(cli.client, 'validate_document', {
-      source: { kind: 'artifact', uri: converted.artifact.uri },
-      targetFormat: 'pdf',
-    });
-    expect(validated.isError).to.equal(false);
-    const validation = parseValidationResult(validated.structuredContent);
-    expect(validation, 'canonical validation result').to.not.equal(null);
-    expect(validation).to.include({ sourceFormat: 'md', targetFormat: 'pdf', valid: true });
 
     const roots = await callTool(cli.client, 'list_roots', {});
     expect(roots.isError).to.equal(false);

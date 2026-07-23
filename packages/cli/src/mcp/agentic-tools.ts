@@ -9,7 +9,6 @@ import {
   parseInspectionResult,
   parseMaterializationOptions,
   parsePreviewResult,
-  parseValidationResult,
   type ArtifactRef,
   type AuthoringContextResult,
   type ConversionFidelity,
@@ -24,11 +23,7 @@ import {
   type ConversionTargetRequest,
 } from './conversion-service.js';
 import { DocumentService, throwIfAborted, warningDiagnostic } from './document-service.js';
-import {
-  comparePreparedDocuments,
-  inspectPreparedDocument,
-  validatePreparedDocument,
-} from './intelligence.js';
+import { comparePreparedDocuments, inspectPreparedDocument } from './intelligence.js';
 import {
   artifactUriSchema,
   bundleDocumentSourceSchema,
@@ -270,14 +265,19 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'convert_document',
     {
       description:
-        'Convert any linked-registry input into one or more immutable artifacts. Use save_artifact only when a durable filesystem file is required.',
+        'Convert plain text, Markdown, bundles, or linked-registry inputs directly into one or more immutable artifacts. Plain Markdown needs no preflight or annotations; valid Squisq annotations are optional layout hints. Use save_artifact only for durable filesystem output.',
       inputSchema: z
         .object({
           source: documentSourceSchema,
           targets: z.array(conversionTargetSchema).min(1).max(12),
           themeId: identifierSchema.optional(),
           transformId: identifierSchema.optional(),
-          autoTemplates: z.boolean().optional(),
+          autoTemplates: z
+            .boolean()
+            .optional()
+            .describe(
+              'Enable content-aware automatic template selection. Defaults to true; explicit annotations still take precedence.',
+            ),
           title: z.string().max(4_000).optional(),
         })
         .strict(),
@@ -298,7 +298,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
               targets: targets.map(toConversionTarget),
               themeId,
               transformId,
-              autoTemplates,
+              autoTemplates: autoTemplates ?? true,
               title,
             },
             operationSignal,
@@ -324,7 +324,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'create_document_bundle',
     {
       description:
-        'Stage Markdown plus authority-scoped assets as a reusable immutable DBK artifact when the same complete draft will be passed to two or more validate, inspect, preview, or convert calls. Pass its artifact URI instead of repeating the Markdown.',
+        'Stage Markdown plus authority-scoped assets as a reusable immutable DBK artifact when assets must travel with the document or the same draft will be passed to two or more inspect, preview, or convert calls. Pass its artifact URI instead of repeating the Markdown.',
       inputSchema: z.object({ source: bundleDocumentSourceSchema }).strict(),
       outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.create_document_bundle,
       annotations: ARTIFACT_CREATING,
@@ -404,7 +404,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'inspect_document',
     {
       description:
-        'Inspect bounded semantic structure, block provenance, assets, metadata, theme, and diagnostics. Use for those details; do not pair it with validate_document for a routine export preflight.',
+        'Inspect bounded semantic structure, block provenance, assets, metadata, theme, and diagnostics when the user asks for document analysis. Inspection is never required before conversion.',
       inputSchema: z
         .object({
           source: documentSourceSchema,
@@ -432,41 +432,6 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
         });
       } catch (caught: unknown) {
         return errorResult(caught, 'inspect', null, extra.signal);
-      }
-    },
-  );
-
-  server.registerTool(
-    'validate_document',
-    {
-      description:
-        'Primary pre-export review for structure, template content retention, annotations, assets, accessibility, and target fidelity. Diagnostics include repairs; normally do not also call inspect_document.',
-      inputSchema: z
-        .object({
-          source: documentSourceSchema,
-          targetFormat: formatInputSchema.nullable().optional(),
-        })
-        .strict(),
-      outputSchema: DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS.validate_document,
-      annotations: READ_ONLY,
-    },
-    async ({ source, targetFormat }, extra) => {
-      try {
-        return await context.runOperation(extra.signal, async (operationSignal) => {
-          const documents = new DocumentService(await context.authority, context.artifacts);
-          const prepared = await documents.prepare(requireDocumentSource(source), operationSignal);
-          const normalizedTargetFormat = targetFormat?.toLowerCase() ?? null;
-          const result = await validatePreparedDocument(
-            documents,
-            prepared,
-            normalizedTargetFormat,
-            operationSignal,
-          );
-          requireWire(parseValidationResult(result), 'validation');
-          return textAndStructured(result);
-        });
-      } catch (caught: unknown) {
-        return errorResult(caught, 'validate', null, extra.signal);
       }
     },
   );
@@ -644,18 +609,14 @@ function registerAuthoringGuideResource(server: McpServer): void {
         import('@bendyline/squisq/transform'),
       ]);
       const guide = {
-        version: 7,
+        version: 8,
         workflow: [
-          'treat supplied facts as a closed evidence set; label calculations, assumptions, hypotheses, recommendations, and examples; do not present causal links, rhetorical performance labels, superlatives, sole causes, targets, capabilities, owners, dates, channels, or operational details as established facts unless supplied',
-          'when the requested genre needs unsupplied roles, gates, timelines, channels, or procedures, add one explicit proposed operating model scope note that applies to those details, then complete the requested element',
-          'author complete Squisq-compatible Markdown with annotations bound to headings; ordinary headings default to the loss-averse content template',
-          'for PPTX, use exactly one level-one Markdown heading per slide and no level-two through level-six headings because every heading becomes a slide by default',
-          'by default, pass the complete Markdown—or a bundle source when assets are needed—directly to convert_document; revise by editing the complete Markdown and converting again',
-          'use create_document_bundle when the same complete draft will be passed to two or more validate, inspect, preview, or convert calls, then pass its artifact URI instead of repeating Markdown',
-          'use validate_document as the routine export preflight; use inspect_document only for semantic structure, provenance, assets, metadata, or theme details; use preview_document only when visual evidence is useful',
-          'for visual polish, replace selected content blocks with compatible visual templates while preserving required content',
-          'convert_document creates one or more immutable artifacts from the authoritative complete source',
-          'save_artifact only when a durable file is required',
+          'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
+          'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; unstructured text is still accepted',
+          'convert_document chooses compatible templates automatically; Squisq annotations on headings are optional layout hints that take precedence',
+          'use a bundle source when assets must travel with the document, or create_document_bundle when one draft will be reused by two or more inspect, preview, or convert calls',
+          'use inspect_document or preview_document only when the user asks for document analysis or visual evidence',
+          'convert_document creates immutable artifacts; save_artifact only when a durable file is required',
         ],
         markdownAnnotation: '# Heading {[templateId key="value"]}',
         standaloneAnnotation: '{[templateId key="value"]}',
@@ -706,7 +667,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     'get_authoring_context',
     {
       description:
-        'Get a focused authoring contract, target capability, safe default template, themes, transforms, and optional source-based recommendations. Exact full template inputs remain on demand through describe_template or docblocks://authoring-guide.',
+        'Optionally discover target capabilities, safe defaults, themes, transforms, and exact starter annotation examples. Plain Markdown can be converted without calling this tool.',
       inputSchema: z
         .object({
           targetFormat: formatInputSchema.optional(),
@@ -810,23 +771,18 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             goal,
             targetFormat: normalizedTarget,
             defaultTemplateId: 'content',
-            defaultFidelity: authoringDefaultFidelity(normalizedTarget, goal),
+            defaultFidelity: authoringDefaultFidelity(normalizedTarget),
             workflow: [
               'For durable local output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not fall back to a shell or CLI converter. A transient artifact is acceptable only when the user did not require a file.',
-              'Treat supplied facts as a closed evidence set. Preserve them exactly; label calculations, assumptions, hypotheses, recommendations, causal claims, capabilities, owners, dates, and unsupplied operating details. When a requested policy or playbook needs invented procedures, introduce one proposed operating model scope note before those details.',
               normalizedTarget === 'pptx'
-                ? 'Match every explicitly requested slide count exactly. Use exactly one level-one Markdown heading (#) per slide and no level-two through level-six headings because every heading becomes a slide by default. Target at most 80 words per slide, and use lists, tables, or bold labels for within-slide structure.'
-                : 'Honor the requested word range and document genre. Prefer connected memo prose for executive decisions and native headings, tables, and checklists for operational documents.',
-              'Author the complete Squisq-compatible Markdown with annotations bound to headings. Ordinary headings default to the loss-averse content template; keep that default until the complete content is sound.',
-              'Before conversion, count slide sections or document words, verify every requested element, and rewrite or label unsupported claims. For decisions, ground tradeoffs in supplied alternatives and label unsupplied accountability, capacity, outcomes, and review cadences as proposed or assumed.',
-              'Use validate_document as the routine export preflight and follow its repair diagnostics. Call inspect_document only when semantic structure, provenance, assets, metadata, or theme details are needed.',
-              'When the same complete draft will feed two or more validate, inspect, preview, or convert calls, stage it once with create_document_bundle and reuse its artifact URI; after edits, stage the revised draft again.',
-              normalizedTarget === 'pptx'
-                ? 'For visual polish, call recommend_templates on the complete draft, then describe_template only for selected candidates before replacing content blocks. Preserve required content and use preview_document only when visual evidence is needed.'
-                : annotationHandling === 'ignored'
-                  ? 'This target flattens template annotations to semantic content, so visual templates have no effect on the exported file: rely on native headings, tables, and checklists for structure and scanning.'
-                  : 'For visual polish, use native headings, tables, and checklists where they improve scanning; describe a selected visual template before use and keep complete-body content when it would discard detail.',
-              'Pass the authoritative Markdown or bundle source directly to convert_document. It returns immutable artifacts; call save_artifact only for final durable outputs and never switch to a shell or CLI converter.',
+                ? 'Plain text and ordinary Markdown convert directly. Use one level-one Markdown heading (#) for each deliberate slide boundary; unstructured text is still accepted.'
+                : 'Plain text and ordinary Markdown convert directly without a preflight.',
+              'convert_document chooses compatible templates automatically. Annotations on headings are optional layout hints that take precedence; use the returned exact starter examples when useful.',
+              annotationHandling === 'ignored'
+                ? 'This target flattens template annotations to semantic content, so annotations are unnecessary for the exported file.'
+                : 'Explicit valid annotations override automatic layout choices; invalid or unnecessary annotations should be omitted rather than repaired through a separate workflow.',
+              'Pass Markdown directly to convert_document. Use a bundle source for assets, or create_document_bundle only when one draft will be reused by two or more inspect, preview, or convert calls.',
+              'Use inspect_document or preview_document only when the user asks for document analysis or visual evidence. Save only final durable artifacts with save_artifact.',
             ],
             syntax: {
               headingAnnotation: '# Heading {[content]}',
@@ -837,7 +793,11 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             formats: normalizedTarget
               ? formats.filter((format) => format.id === normalizedTarget)
               : formats,
-            templates: focusedAuthoringTemplates(candidateTemplates, recommendations),
+            templates: focusedAuthoringTemplates(
+              candidateTemplates,
+              recommendations,
+              normalizedTarget,
+            ),
             themes: schemaModule
               .getThemeSummaries()
               .slice(0, MCP_WIRE_LIMITS.arrayEntries)
@@ -914,7 +874,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           (template) => template.id === templateId,
         );
         if (!described) {
-          return errorResult(new Error(`Unknown template "${templateId}"`), 'validate');
+          return errorResult(new Error(`Unknown template "${templateId}"`), 'inspect');
         }
         const template = {
           id: described.id,
@@ -1024,7 +984,7 @@ function registerThemeTools(server: McpServer, context: AgenticToolContext): voi
           const documentTheme = prepared?.doc.customThemes?.find((theme) => theme.id === themeId);
           const builtIn = Object.prototype.hasOwnProperty.call(schemaModule.THEMES, themeId);
           if (!documentTheme && !builtIn) {
-            return errorResult(new Error(`Unknown theme "${themeId}"`), 'validate');
+            return errorResult(new Error(`Unknown theme "${themeId}"`), 'inspect');
           }
           const theme = docModule.resolveThemeForDoc(prepared?.doc, themeId);
           return textAndStructured({
@@ -1355,8 +1315,14 @@ type AuthoringTemplateCatalog = Awaited<ReturnType<typeof authoringTemplateCatal
 function focusedAuthoringTemplates(
   candidates: AuthoringTemplateCatalog,
   recommendations: AuthoringContextResult['recommendations'],
+  targetFormat: string | null,
 ): AuthoringTemplateCatalog {
   const selectedIds = new Set<string>(['content']);
+  if (targetFormat === 'pptx') {
+    for (const templateId of ['title', 'sectionHeader', 'statHighlight', 'quote']) {
+      selectedIds.add(templateId);
+    }
+  }
   for (const recommendation of recommendations) {
     for (const templateId of recommendation.recommendedTemplateIds) {
       selectedIds.add(templateId);
@@ -1371,14 +1337,17 @@ function compactAuthoringContextText(context: AuthoringContextResult): string {
     `DocBlocks authoring contract: ${target}, ${context.goal}.`,
     `Default template: ${context.defaultTemplateId}. Default fidelity: ${context.defaultFidelity ?? 'select for target'}.`,
     '',
-    'Required workflow:',
+    'Optional guidance:',
     ...context.workflow.map((step, index) => `${index + 1}. ${step}`),
     '',
     `Heading annotation: ${context.syntax.headingAnnotation}`,
     `Warning: ${context.syntax.standaloneWarning}`,
     `Templates (${context.templates.length}): ${context.templates.map(({ id }) => id).join(', ')}`,
+    ...context.templates
+      .filter(({ id }) => id !== 'content')
+      .map(({ annotationExample }) => `Optional example: ${annotationExample}`),
     `Themes (${context.themes.length}): ${context.themes.map(({ id }) => id).join(', ')}`,
-    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')} — transforms re-compose blocks and can change section count; avoid on exact-count briefs.`,
+    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')}.`,
   ];
   if (context.recommendations.length > 0) {
     lines.push(
@@ -1503,15 +1472,9 @@ async function targetTemplateAnnotationHandling(
   return null;
 }
 
-function authoringDefaultFidelity(
-  targetFormat: string | null,
-  goal: 'content-first' | 'visual-polish',
-): ConversionFidelity | null {
+function authoringDefaultFidelity(targetFormat: string | null): ConversionFidelity | null {
   if (!targetFormat) return null;
   if (targetFormat === 'mp4' || targetFormat === 'gif') return 'rendered-fidelity';
-  if (goal === 'visual-polish' && (targetFormat === 'pptx' || targetFormat === 'pdf')) {
-    return 'rendered-fidelity';
-  }
   if (targetFormat === 'docx' || targetFormat === 'pptx' || targetFormat === 'xlsx') {
     return 'editable-native';
   }

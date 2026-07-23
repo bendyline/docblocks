@@ -180,7 +180,7 @@ test.describe('a11y — workspace picker open', () => {
 test.describe('a11y — new file input visible', () => {
   test('no WCAG A/AA violations with new-file input visible', async ({ page }, info) => {
     await waitForShell(page);
-    await page.locator('.db-explorer-btn').first().click();
+    await page.getByRole('button', { name: 'New File' }).click();
     await expect(page.locator('.db-new-item-input')).toBeVisible();
 
     const violations = await scanAndReport(page, info, 'new-file-input');
@@ -200,7 +200,7 @@ test.describe('a11y — editor open with a file', () => {
     await waitForShell(page);
 
     // Create a file, then open it so the editor mounts.
-    await page.locator('.db-explorer-btn').first().click();
+    await page.getByRole('button', { name: 'New File' }).click();
     const input = page.locator('.db-new-item-input');
     await input.fill('a11y-test-doc');
     await page.locator('.db-new-item-add').click();

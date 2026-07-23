@@ -102,22 +102,17 @@ Done.`,
     }
   });
 
-  it('returns density preflight diagnostics for visual targets', async () => {
+  it('converts dense Markdown without requiring a preflight call', async () => {
     const harness = await startMcpHarness();
     try {
       const dense = Array.from({ length: 130 }, (_unused, index) => `word${index}`).join(' ');
-      const result = await callTool(harness.client, 'validate_document', {
+      const result = await callTool(harness.client, 'convert_document', {
         source: { kind: 'markdown', name: null, markdown: `# Dense\n\n${dense}` },
-        targetFormat: 'pptx',
+        targets: [{ format: 'pptx' }],
       });
       expect(result.isError).to.equal(false);
-      const diagnostics = result.structuredContent?.diagnostics;
-      expect(diagnostics).to.be.an('array');
-      expect(
-        (diagnostics as Array<{ code?: string }>).some(
-          (diagnostic) => diagnostic.code === 'content-density-high',
-        ),
-      ).to.equal(true);
+      const results = result.structuredContent?.results;
+      expect(results).to.be.an('array').with.length(1);
     } finally {
       await harness.dispose();
     }

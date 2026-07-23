@@ -9,13 +9,12 @@ import type {
   McpDiagnostic,
   OutlineEntry,
   ThemeSummary,
-  ValidationResult,
 } from '@bendyline/docblocks/mcp';
 import { DOCBLOCKS_MCP_WIRE_VERSION, MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import type { DocDiagnostic } from '@bendyline/squisq/schemas';
 import type { TemplateAuthoringMetadata } from '@bendyline/squisq/doc';
 import type { PreparedDocument } from './document-service.js';
-import { DocumentService, throwIfAborted, warningDiagnostic } from './document-service.js';
+import { DocumentService, throwIfAborted } from './document-service.js';
 import { boundWireText, toWireIdentifier } from './output-bounds.js';
 import { analyzeDocumentBlocks } from './block-analysis.js';
 
@@ -124,60 +123,11 @@ export async function inspectPreparedDocument(
   };
 }
 
-export async function validatePreparedDocument(
-  _documents: DocumentService,
-  prepared: PreparedDocument,
-  targetFormat: string | null,
-  signal?: AbortSignal,
-): Promise<ValidationResult> {
-  throwIfAborted(signal);
-  const normalizedTargetFormat = normalizeTargetFormat(targetFormat);
-  const { validateMarkdownSource } = await import('@bendyline/squisq/doc');
-  await yieldForCancellation(signal);
-  const assets = prepared.assets;
-  const validation = validateMarkdownSource(prepared.markdown, {
-    assets: new Set(assets.map((asset) => asset.path)),
-  });
-  throwIfAborted(signal);
-  const diagnostics = [
-    ...prepared.diagnostics,
-    ...validation.diagnostics.map((diagnostic) =>
-      mapDocDiagnostic(diagnostic, prepared.sourceFormat),
-    ),
-    ...missingAltTextDiagnostics(
-      prepared.markdownDoc,
-      normalizedTargetFormat ?? prepared.sourceFormat,
-    ),
-    ...(await authoringDiagnostics(
-      prepared,
-      'validate',
-      normalizedTargetFormat ?? prepared.sourceFormat,
-      signal,
-    )),
-    ...(normalizedTargetFormat
-      ? await targetPreflight(prepared, normalizedTargetFormat, signal)
-      : []),
-  ];
-  await yieldForCancellation(signal);
-  const unique = boundDiagnostics(diagnostics, 'validate');
-  throwIfAborted(signal);
-  const summary = summarizeDiagnostics(unique);
-  return {
-    version: DOCBLOCKS_MCP_WIRE_VERSION,
-    kind: 'validation',
-    sourceFormat: prepared.sourceFormat,
-    targetFormat: normalizedTargetFormat,
-    valid: summary.errorCount === 0,
-    summary,
-    diagnostics: unique,
-  };
-}
-
 /**
  * Detect annotation-like spans whose delimiters are malformed. The Squisq
  * parser recovers from a stray brace such as `{[comparisonBar unit="%"}]}`
  * without complaint, so the authored typo silently survives into conversion
- * unless validation surfaces it.
+ * unless optional inspection surfaces it.
  */
 export function annotationSyntaxDiagnostics(
   markdown: string,
@@ -246,7 +196,7 @@ function malformedAnnotationDiagnostic(
     count: 1,
     message,
     remediation:
-      'Repair the annotation so it reads exactly `{[templateId key="value"]}` with no extra braces or brackets, then validate again.',
+      'Repair the annotation so it reads exactly `{[templateId key="value"]}` with no extra braces or brackets.',
     retryable: false,
     location: { kind: 'source', line, column },
   };
@@ -347,7 +297,7 @@ export async function authoringDiagnostics(
         count: 1,
         message: `The complete body of block "${block.title ?? block.id}" is not present in its rendered text layers.`,
         remediation:
-          'Keep the content template and repair its inputs, then validate and preview again before conversion.',
+          'Keep the content template or repair its inputs; request a preview only when visual evidence is useful.',
         retryable: false,
         location: {
           kind: 'block',
@@ -827,7 +777,7 @@ function mapDocDiagnostic(diagnostic: DocDiagnostic, format: string): McpDiagnos
   return {
     code: diagnostic.code,
     severity: diagnostic.severity,
-    stage: 'validate',
+    stage: 'inspect',
     format,
     count: 1,
     message: diagnostic.message,
@@ -867,7 +817,7 @@ function missingAltTextDiagnostics(
     {
       code: 'missing-alt-text',
       severity: 'warning',
-      stage: 'validate',
+      stage: 'inspect',
       format,
       count: missingCount,
       message:
@@ -879,152 +829,6 @@ function missingAltTextDiagnostics(
       location: null,
     },
   ];
-}
-
-async function targetPreflight(
-  prepared: PreparedDocument,
-  targetFormat: string,
-  signal?: AbortSignal,
-): Promise<McpDiagnostic[]> {
-  throwIfAborted(signal);
-  const normalized = targetFormat.toLowerCase();
-  const { createCliRegistry } = await import('@bendyline/squisq-cli/api');
-  throwIfAborted(signal);
-  const target = createCliRegistry().get(normalized);
-  if (!target?.exportDoc) {
-    return [
-      {
-        code: target ? 'unsupported-output' : 'unknown-format',
-        severity: 'error',
-        stage: 'validate',
-        format: normalized,
-        count: 1,
-        message: target
-          ? `${target.label} cannot be used as a conversion target.`
-          : `Unknown target format "${normalized}".`,
-        remediation: 'Choose an export-capable format from list_formats.',
-        retryable: false,
-        location: null,
-      },
-    ];
-  }
-  const diagnostics: McpDiagnostic[] = [];
-  const details = summarizeMarkdownNodes(prepared.markdownDoc);
-  const { flattenBlocks } = await import('@bendyline/squisq/doc');
-  const flatBlocks = flattenBlocks(prepared.doc.blocks);
-  await yieldForCancellation(signal);
-  if (['pptx', 'pdf', 'mp4', 'gif'].includes(normalized)) {
-    let denseBlockCount = 0;
-    let firstDenseBlock: PreparedDocument['doc']['blocks'][number] | null = null;
-    let analyzedIndex = 0;
-    for (const entry of await analyzeDocumentBlocks(prepared.doc.blocks)) {
-      const checkpoint = cancellationCheckpoint(signal, analyzedIndex);
-      if (checkpoint) await checkpoint;
-      analyzedIndex += 1;
-      if (entry.bodyWordCount <= 120 && entry.plainText.length <= 900) continue;
-      denseBlockCount += 1;
-      firstDenseBlock ??= entry.block;
-    }
-    if (denseBlockCount > 0) {
-      diagnostics.push({
-        code: 'content-density-high',
-        severity: 'warning',
-        stage: 'validate',
-        format: normalized,
-        count: denseBlockCount,
-        message:
-          denseBlockCount === 1
-            ? `Block "${firstDenseBlock?.title ?? firstDenseBlock?.id ?? 'unknown'}" may be too dense for a single rendered item.`
-            : `${denseBlockCount} blocks may be too dense for a single rendered item.`,
-        remediation:
-          'Split the block, shorten prose, or confirm the result with preview_document overflow diagnostics.',
-        retryable: false,
-        location:
-          denseBlockCount === 1 && firstDenseBlock
-            ? {
-                kind: 'block',
-                blockId: toWireIdentifier(firstDenseBlock.id, 'block'),
-                nodeType: 'block',
-              }
-            : null,
-      });
-    }
-    const denseTables = details.tables.filter(
-      (table) => table.columnCount > 8 || table.rowCount > 30,
-    );
-    if (denseTables.length > 0) {
-      const firstDenseTable = denseTables[0];
-      diagnostics.push({
-        code: 'table-density-high',
-        severity: 'warning',
-        stage: 'validate',
-        format: normalized,
-        count: denseTables.length,
-        message:
-          denseTables.length === 1 && firstDenseTable
-            ? `Table ${firstDenseTable.index + 1} has ${firstDenseTable.rowCount} rows and ${firstDenseTable.columnCount} columns and may overflow.`
-            : `${denseTables.length} tables may overflow the rendered output.`,
-        remediation:
-          'Split the table or use a spreadsheet target; verify visual clipping with preview_document.',
-        retryable: false,
-        location: null,
-      });
-    }
-  }
-  if (normalized === 'pptx' && flatBlocks.some((block) => block.template)) {
-    diagnostics.push(
-      warningDiagnostic(
-        'Editable-native PPTX export preserves semantic content and theme but does not reproduce arbitrary Squisq template geometry.',
-        'validate',
-        normalized,
-      ),
-    );
-  }
-  if (normalized === 'pdf' && (await hasImages(prepared.markdownDoc, signal))) {
-    diagnostics.push(
-      warningDiagnostic(
-        'Native PDF export currently represents Markdown images as labeled placeholders.',
-        'validate',
-        normalized,
-      ),
-    );
-  }
-  if ((normalized === 'csv' || normalized === 'xlsx') && details.tableCount === 0) {
-    diagnostics.push(
-      warningDiagnostic(
-        `${normalized.toUpperCase()} export is table-oriented; this document contains no Markdown tables.`,
-        'validate',
-        normalized,
-      ),
-    );
-  }
-  if (normalized === 'gif' && (prepared.doc.audio?.segments?.length ?? 0) > 0) {
-    diagnostics.push(
-      warningDiagnostic(
-        'Animated GIF does not support audio; audio will be omitted.',
-        'validate',
-        normalized,
-      ),
-    );
-  }
-  return diagnostics;
-}
-
-async function hasImages(
-  markdownDoc: PreparedDocument['markdownDoc'],
-  signal?: AbortSignal,
-): Promise<boolean> {
-  throwIfAborted(signal);
-  let found = false;
-  const visit = (node: unknown): void => {
-    if (found || !node || typeof node !== 'object') return;
-    const candidate = node as { type?: unknown; children?: unknown };
-    if (candidate.type === 'image' || candidate.type === 'imageReference') found = true;
-    if (Array.isArray(candidate.children)) candidate.children.forEach(visit);
-  };
-  visit(markdownDoc);
-  await yieldForCancellation(signal);
-  return found;
 }
 
 export function boundDiagnostics(
@@ -1124,35 +928,6 @@ function sameLocation(left: McpDiagnostic['location'], right: McpDiagnostic['loc
 
 function safeDiagnosticCountSum(left: number, right: number): number {
   return Math.min(Number.MAX_SAFE_INTEGER, left + right);
-}
-
-function summarizeDiagnostics(diagnostics: readonly McpDiagnostic[]): {
-  errorCount: number;
-  warningCount: number;
-  infoCount: number;
-} {
-  let errorCount = 0;
-  let warningCount = 0;
-  let infoCount = 0;
-  for (const diagnostic of diagnostics) {
-    if (diagnostic.severity === 'error') {
-      errorCount = safeDiagnosticCountSum(errorCount, diagnostic.count);
-    } else if (diagnostic.severity === 'warning') {
-      warningCount = safeDiagnosticCountSum(warningCount, diagnostic.count);
-    } else {
-      infoCount = safeDiagnosticCountSum(infoCount, diagnostic.count);
-    }
-  }
-  return { errorCount, warningCount, infoCount };
-}
-
-function normalizeTargetFormat(targetFormat: string | null): string | null {
-  if (targetFormat === null) return null;
-  const normalized = targetFormat.toLowerCase();
-  if (!FORMAT_PATTERN.test(normalized)) {
-    throw new Error(`Invalid target format "${targetFormat.slice(0, 64)}"`);
-  }
-  return normalized;
 }
 
 function words(text: string): string[] {

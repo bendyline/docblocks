@@ -240,13 +240,11 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
     {
       instructions: [
         'For durable local output, call list_roots before drafting and use a returned write-enabled root id exactly as given. If none is writable, stop and explain that the server must restart with --allow-write; do not fall back to a shell or CLI converter.',
-        'Call get_authoring_context once for the focused linked-Squisq contract. Read the full authoring-guide resource or call describe_template only when exact additional catalog detail is needed; do not also enumerate catalogs by default.',
-        'Treat supplied facts as a closed evidence set: preserve them exactly, use temporal or correlational wording unless causality is supplied, and label calculations, assumptions, hypotheses, recommendations, capabilities, owners, dates, and unsupplied operating details. For a policy or playbook, introduce one proposed operating model scope note before invented procedures.',
-        'Honor explicit slide/page counts and word ranges. For PPTX use one level-one heading per slide, no lower-level headings, and at most 80 words per slide. Ground decision tradeoffs in supplied alternatives and label unsupplied accountability, capacity, outcomes, or review cadences as proposed or assumed.',
-        'Author complete Squisq-compatible Markdown with annotations on headings, for example `# Heading {[content]}`. Ordinary headings default to the loss-averse content template; standalone annotations create an extra heading-less block.',
-        'Use validate_document as the routine export preflight and repair its diagnostics. Use inspect_document only for semantic structure, provenance, assets, metadata, or theme details, and preview_document only when visual evidence is useful.',
-        'When the same complete draft will feed two or more validate, inspect, preview, or convert calls, stage it once with create_document_bundle and reuse its artifact URI instead of resending Markdown.',
-        'Pass the complete Markdown or bundle source directly into convert_document. Save only the final durable artifact with save_artifact; never invent root ids or switch conversion to a shell or CLI.',
+        'Pass plain text or ordinary Markdown directly to convert_document; no preflight, inspection, preview, or template annotation is required. For deliberate PPTX slide boundaries, use one level-one heading per slide; unstructured text is still accepted.',
+        'convert_document chooses compatible templates automatically. Squisq annotations on headings are optional layout hints that take precedence. Call get_authoring_context only when exact starter examples, themes, transforms, or target details are useful; read the full authoring-guide or call describe_template only for advanced author control.',
+        'Use a bundle source when assets must travel with the document. Use create_document_bundle only when one complete draft will be reused by two or more inspect, preview, or convert calls.',
+        'Use inspect_document or preview_document only when the user asks for document analysis or visual evidence.',
+        'convert_document returns immutable artifacts and diagnostics. Save only final durable output with save_artifact; never invent root ids or switch conversion to a shell or CLI.',
       ].join(' '),
     },
   );

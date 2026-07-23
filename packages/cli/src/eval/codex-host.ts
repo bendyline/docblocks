@@ -408,9 +408,7 @@ function collectToolMarkdown(
       ? 3
       : toolName.endsWith('create_document_bundle')
         ? 2
-        : toolName.endsWith('validate_document')
-          ? 1
-          : 0;
+        : 0;
     if (priority > 0) {
       for (const args of [value.arguments, value.args, value.input]) {
         const parsed = parsePossibleJson(args);

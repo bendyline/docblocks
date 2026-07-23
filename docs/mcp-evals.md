@@ -16,8 +16,8 @@ report directory. Durable output still goes through `save_artifact`.
 For each canonical prompt, the harness:
 
 1. builds and hosts the local CLI/MCP through `codex exec`;
-2. asks the agent to author, validate, preview, convert, and save one editable
-   Office artifact;
+2. asks the agent to author Markdown, convert it directly, and save one editable
+   Office artifact, with discovery, inspection, and preview available only when useful;
 3. captures Codex JSONL events and the exact Markdown from the final
    `convert_document` call;
 4. rejects a final-response Markdown copy that differs from the tool trace;

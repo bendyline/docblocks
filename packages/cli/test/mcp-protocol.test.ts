@@ -12,7 +12,6 @@ const REQUIRED_AGENTIC_TOOL_NAMES = [
   'create_document_bundle',
   'save_artifact',
   'inspect_document',
-  'validate_document',
   'preview_document',
   'compare_documents',
   'get_authoring_context',
@@ -98,16 +97,13 @@ describe('MCP protocol surface', function () {
     expect(h.client.getInstructions()).to.include('list_roots before drafting');
     expect(h.client.getInstructions()).to.include('--allow-write');
     expect(h.client.getInstructions()).to.include('do not fall back');
-    expect(h.client.getInstructions()).to.include('closed evidence set');
-    expect(h.client.getInstructions()).to.include('temporal or correlational wording');
-    expect(h.client.getInstructions()).to.include('proposed operating model');
-    expect(h.client.getInstructions()).to.include('slide/page counts');
-    expect(h.client.getInstructions()).to.include('at most 80 words');
-    expect(h.client.getInstructions()).to.include('routine export preflight');
-    expect(h.client.getInstructions()).to.include('# Heading {[content]}');
-    expect(h.client.getInstructions()).to.include('directly into convert_document');
-    expect(h.client.getInstructions()).to.include('reuse its artifact URI');
+    expect(h.client.getInstructions()).to.include('plain text or ordinary Markdown');
+    expect(h.client.getInstructions()).to.include('no preflight');
+    expect(h.client.getInstructions()).to.include('optional layout hints');
+    expect(h.client.getInstructions()).to.include('directly to convert_document');
+    expect(h.client.getInstructions()).to.include('reused by two or more');
     expect(h.client.getInstructions()).to.include('never invent root ids');
+    expect(h.client.getInstructions()).not.to.include('validate_document');
 
     const capabilities = h.client.getServerCapabilities();
     expect(capabilities).to.not.equal(undefined);
@@ -153,7 +149,6 @@ describe('MCP protocol surface', function () {
     for (const name of [
       'list_roots',
       'inspect_document',
-      'validate_document',
       'compare_documents',
       'get_authoring_context',
       'list_templates',
@@ -212,7 +207,7 @@ describe('MCP protocol surface', function () {
     }
   });
 
-  it('publishes the exact core-owned bounded output contract for all 20 tools', async () => {
+  it('publishes the exact core-owned bounded output contract for all 19 tools', async () => {
     const { tools } = await h.client.listTools();
     expect(DOCBLOCKS_MCP_TOOL_NAMES).to.deep.equal(REQUIRED_AGENTIC_TOOL_NAMES);
     expect(Object.keys(DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS)).to.deep.equal([
@@ -311,12 +306,9 @@ describe('MCP protocol surface', function () {
 
     expect(findTool(tools, 'list_roots').description).to.include('durable local output');
     expect(findTool(tools, 'create_document_bundle').description).to.include('two or more');
-    expect(findTool(tools, 'inspect_document').description).to.include('do not pair');
-    expect(findTool(tools, 'validate_document').description).to.include(
-      'normally do not also call inspect_document',
-    );
+    expect(findTool(tools, 'inspect_document').description).to.include('never required');
     expect(findTool(tools, 'get_authoring_context').description).to.include(
-      'docblocks://authoring-guide',
+      'Plain Markdown can be converted without calling this tool',
     );
 
     const save = findTool(tools, 'save_artifact');
@@ -409,7 +401,7 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(7);
+    expect(authoringPayload.version).to.equal(8);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(
@@ -418,7 +410,9 @@ describe('MCP protocol surface', function () {
       ),
     ).to.equal(true);
     expect(
-      authoringPayload.workflow?.some((step) => String(step).includes('routine export preflight')),
+      authoringPayload.workflow?.some((step) =>
+        String(step).includes('without a preflight or template annotations'),
+      ),
     ).to.equal(true);
     expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
       bodyPolicy: 'complete',
@@ -517,22 +511,12 @@ describe('MCP protocol surface', function () {
     );
     expect(presentationDefault).to.include('Create a presentation about: Orbital habitats');
     expect(presentationDefault).to.include('get_authoring_context');
-    expect(presentationDefault).to.include('closed evidence set');
-    expect(presentationDefault).to.include('temporal or correlational wording');
-    expect(presentationDefault).to.include('requested slide count exactly');
-    expect(presentationDefault).to.include('at most 80 words');
-    expect(presentationDefault).to.include('point-of-view thesis');
-    expect(presentationDefault).to.include('proposed accountable role');
-    expect(presentationDefault).to.include('Potential tradeoff');
-    expect(presentationDefault).to.include('capacity allocation');
-    expect(presentationDefault).to.include('separate metrics');
-    expect(presentationDefault).to.include('supplied baselines');
-    expect(presentationDefault).to.include('rewrite or label every unsupported claim');
+    expect(presentationDefault).to.include('Author plain Markdown');
+    expect(presentationDefault).to.include('optional layout hints');
+    expect(presentationDefault).to.include('No validation, inspection, or preview is required');
     expect(presentationDefault).to.include('list_roots before drafting');
     expect(presentationDefault).to.include('do not use a shell or CLI converter');
-    expect(presentationDefault).to.include('recommend_templates');
-    expect(presentationDefault).to.include('describe only selected candidates');
-    expect(presentationDefault).to.include('# Heading {[content]}');
+    expect(presentationDefault).to.include('level-one heading');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 
     const presentationOption = promptText(
@@ -561,10 +545,8 @@ describe('MCP protocol surface', function () {
     const documentDefault = promptText(
       await h.client.getPrompt({ name: 'create-document', arguments: { topic: 'Wetlands' } }),
     );
-    expect(documentDefault).to.include('Create a professional document about: Wetlands');
-    expect(documentDefault).to.include('closed evidence set');
-    expect(documentDefault).to.include('proposed operating model');
-    expect(documentDefault).to.include('count document words');
+    expect(documentDefault).to.include('Create a document about: Wetlands');
+    expect(documentDefault).to.include('Author plain Markdown');
     expect(documentDefault).to.match(/\bpdf\b/iu);
 
     const documentOption = promptText(
@@ -578,9 +560,9 @@ describe('MCP protocol surface', function () {
     const toolNames = new Set((await h.client.listTools()).tools.map(({ name }) => name));
     for (const text of [presentationDefault, videoDefault, documentDefault]) {
       expect(text).to.include('convert_document');
-      expect(text).to.include('validate_document');
       expect(text).to.include('preview_document');
       expect(text).to.include('save_artifact');
+      expect(text).not.to.include('validate_document');
       expect(text).not.to.include('export_markdown_to_');
       for (const toolName of text.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gu) ?? []) {
         expect(toolNames.has(toolName), `${toolName} referenced by a prompt`).to.equal(true);

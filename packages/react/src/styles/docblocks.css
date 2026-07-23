@@ -721,7 +721,6 @@
 .db-tree-row--selected .db-tree-last-modified,
 .db-tree-row--drop-target .db-tree-last-modified {
   color: inherit;
-  opacity: 0.8;
 }
 
 .db-tree-rename-input {

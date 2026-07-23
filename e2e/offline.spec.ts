@@ -23,7 +23,21 @@ async function expectControllingWorker(
 }
 
 test.describe('DocBlocks offline (PWA)', () => {
+  const legacyRegistrationPageName = 'legacy-worker-registration.fixture.html';
   const legacyWorkerName = 'legacy-navigation-worker.fixture.js';
+  const legacyRegistrationPageSource = path.join(
+    process.cwd(),
+    'e2e',
+    'fixtures',
+    'legacy-worker-registration.html',
+  );
+  const legacyRegistrationPageDestination = path.join(
+    process.cwd(),
+    'packages',
+    'site',
+    'dist',
+    legacyRegistrationPageName,
+  );
   const legacyWorkerSource = path.join(
     process.cwd(),
     'e2e',
@@ -40,11 +54,17 @@ test.describe('DocBlocks offline (PWA)', () => {
   const serviceWorkerPath = path.join(process.cwd(), 'packages', 'site', 'dist', 'sw.js');
 
   test.beforeAll(async () => {
-    await copyFile(legacyWorkerSource, legacyWorkerDestination);
+    await Promise.all([
+      copyFile(legacyRegistrationPageSource, legacyRegistrationPageDestination),
+      copyFile(legacyWorkerSource, legacyWorkerDestination),
+    ]);
   });
 
   test.afterAll(async () => {
-    await rm(legacyWorkerDestination, { force: true });
+    await Promise.all([
+      rm(legacyRegistrationPageDestination, { force: true }),
+      rm(legacyWorkerDestination, { force: true }),
+    ]);
   });
 
   test('automatically migrates clients controlled by the legacy catch-all worker', async ({
@@ -54,7 +74,10 @@ test.describe('DocBlocks offline (PWA)', () => {
     // precache before activation. Match the cold-install budget used by the
     // end-to-end offline test below, especially for slower Windows runners.
     test.setTimeout(180_000);
-    await page.goto('/desktop/');
+    // Static product pages intentionally deny workers through CSP. Use a
+    // same-origin, test-only page that grants only worker loading so the
+    // historical worker can be installed without weakening production pages.
+    await page.goto(`/${legacyRegistrationPageName}`);
     await page.evaluate(async (scriptName) => {
       await caches.delete('docblocks-pwa-migrations');
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -67,7 +90,7 @@ test.describe('DocBlocks offline (PWA)', () => {
     // The legacy worker turns this static route into the editor shell. Loading
     // that shell registers the corrected worker, whose one-time migration
     // hook skips waiting and claims this client.
-    await page.reload();
+    await page.goto('/desktop/');
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 20_000 });
     await expectControllingWorker(page, '/sw.js', 120_000);
 
