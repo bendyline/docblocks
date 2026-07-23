@@ -21,6 +21,7 @@ import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { MoreIcon } from '../icons.js';
+import { LastModifiedTime } from './LastModifiedTime.js';
 
 /** Git decoration for a row — precomputed by FileExplorer so this node stays context-free. */
 export interface FileTreeNodeBadge {
@@ -478,6 +479,9 @@ export function FileTreeNode({
               <span className={`db-git-badge db-git-badge--${badge.kind}`} aria-hidden="true">
                 {badge.glyph}
               </span>
+            )}
+            {entry.kind === 'file' && entry.lastModified && (
+              <LastModifiedTime value={entry.lastModified} />
             )}
             <button
               type="button"

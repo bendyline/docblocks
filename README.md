@@ -25,7 +25,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.
 - **Version history** — optional per-document revisions kept in a plain `<name>_files/.versions/` sibling folder. On by default for browser workspaces, off for local folders (your files, your call).
-- **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can inspect and validate documents, convert between the linked Squisq formats, retain media in DBK bundles, and materialize finished artifacts only when requested.
+- **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can convert plain text or Markdown directly, optionally inspect or preview documents, retain media in DBK bundles, and materialize finished artifacts only when requested.
 
 ## Documentation
 
@@ -79,23 +79,24 @@ The preferred workflow is:
 1. For durable output, call `list_roots` before drafting. If no root is
    write-enabled, restart the MCP server with `--allow-write`; do not switch to a
    shell or CLI converter.
-2. Call `get_authoring_context` once for a focused contract and safe defaults.
-   Use `recommend_templates` and `describe_template` for focused follow-up, or
-   read `docblocks://authoring-guide` only when the complete catalog is required.
-3. Keep the complete Squisq-compatible Markdown as the authoritative source and
-   pass it—or a bundle source when assets are needed—directly to `convert_document`.
-   Revise by editing the complete Markdown and converting again.
-4. Use `create_document_bundle` when the same complete draft will feed two or more
-   review or conversion operations, then reuse its artifact URI.
-5. Use `validate_document` as the routine export preflight. Use `inspect_document`
-   only for semantic structure, provenance, assets, metadata, or theme details.
-6. Use `preview_document` when bounded visual evidence is useful and inspect its
+2. Pass plain text or ordinary Markdown directly to `convert_document`; no
+   preflight, inspection, preview, or template annotation is required. For
+   deliberate PPTX slide boundaries, use one level-one heading per slide. Conversion
+   chooses compatible templates automatically.
+3. Squisq annotations are optional layout hints that override automatic choices.
+   Call `get_authoring_context` only
+   when exact starter examples, themes, transforms, or target details are useful.
+4. Use a bundle source when assets must travel with the document. Use
+   `create_document_bundle` only when the same complete draft will feed two or more
+   inspection, preview, or conversion operations.
+5. Use `inspect_document` or `preview_document` only when document analysis or
+   bounded visual evidence is explicitly useful. For previews, inspect
    `previewBasis`: Markdown/DBK are source renders, imported document artifacts
    are reconstructed previews rather than native-application pixels, and MP4
    or GIF sources return one natively extracted first-frame JPEG.
-7. Call `convert_document` once for one or more targets. Conversion returns
+6. Call `convert_document` once for one or more targets. Conversion returns
    immutable, session-scoped artifact references rather than writing files.
-8. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
+7. Read a bounded artifact through `docblocks://artifacts/{id}`, pass it into
    another document operation, or explicitly persist it with `save_artifact`.
 
 The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,
@@ -106,7 +107,7 @@ local-only limitations.
 
 ## Repository map
 
-npm-workspaces monorepo, Node ≥ 22.14:
+npm-workspaces monorepo, Node 22.22.2+, 24.15.0+, or 26+:
 
 | Package                                          | npm name                     | Purpose                                                                                                           |
 | ------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |

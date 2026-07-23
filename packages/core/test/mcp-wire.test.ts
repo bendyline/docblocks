@@ -15,7 +15,6 @@ import {
   parseMcpDiagnostic,
   parseMcpErrorResult,
   parsePreviewResult,
-  parseValidationResult,
   type ArtifactRef,
   type McpDiagnostic,
 } from '../src/mcp/index.js';
@@ -593,7 +592,7 @@ describe('DocBlocks MCP wire contracts', () => {
       expect(Object.keys(DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS)).to.deep.equal([
         ...DOCBLOCKS_MCP_TOOL_NAMES,
       ]);
-      expect(DOCBLOCKS_MCP_TOOL_NAMES).to.have.length(20);
+      expect(DOCBLOCKS_MCP_TOOL_NAMES).to.have.length(19);
 
       const error = {
         version: 1,
@@ -1003,27 +1002,6 @@ describe('DocBlocks MCP wire contracts', () => {
           ],
         }).success,
       ).to.equal(false);
-    });
-
-    it('requires validation summaries and valid status to agree with diagnostic counts', () => {
-      const warning = diagnostic({ count: 2 });
-      const result = {
-        version: DOCBLOCKS_MCP_WIRE_VERSION,
-        kind: 'validation',
-        sourceFormat: 'md',
-        targetFormat: 'pdf',
-        valid: true,
-        summary: { errorCount: 0, warningCount: 2, infoCount: 0 },
-        diagnostics: [warning],
-      };
-      expect(parseValidationResult(result)).to.deep.equal(result);
-      expect(
-        parseValidationResult({
-          ...result,
-          summary: { ...result.summary, warningCount: 1 },
-        }),
-      ).to.equal(null);
-      expect(parseValidationResult({ ...result, valid: false })).to.equal(null);
     });
 
     it('accepts bounded image previews and enforces total/truncation semantics', () => {

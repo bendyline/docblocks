@@ -6,7 +6,7 @@ Run `npm run generate:notices` from the repository root.
 Resolved runtime and optional dependency closure declared by packages/cli/package.json.
 
 Inventory source: package-lock.json.
-Components: 347.
+Components: 348.
 
 This notice is included in the published npm tarball. Transitive packages installed by npm also retain their package-local license files.
 
@@ -15,11 +15,11 @@ This notice is included in the published npm tarball. Transitive packages instal
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
 | @antfu/install-pkg | 1.1.0 | MIT | https://github.com/antfu/install-pkg |
-| @bendyline/squisq | 2.4.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-cli | 2.4.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.3.5 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.4.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.2.5 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.4.3 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-cli | 2.4.3 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.3.7 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.4.5 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.2.7 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @chevrotain/types | 11.1.2 | Apache-2.0 | https://github.com/Chevrotain/chevrotain |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
@@ -42,6 +42,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | @napi-rs/canvas-linux-x64-musl | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-x64-musl |
 | @napi-rs/canvas-win32-arm64-msvc | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-win32-arm64-msvc |
 | @napi-rs/canvas-win32-x64-msvc | 0.1.100 | MIT | https://github.com/Brooooooklyn/canvas |
+| @pdf-lib/fontkit | 1.1.1 | MIT | https://github.com/Hopding/fontkit |
 | @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
 | @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |
 | @types/d3 | 7.4.3 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
@@ -366,6 +367,14 @@ This notice is included in the published npm tarball. Transitive packages instal
 
 Package-local license, copying, and notice files are reproduced below. Where a published package omits its repository license, the reviewed aggregate or README identified in `Source files` supplies the retained material.
 
+### Packages whose npm archive omits license text
+
+The following locked packages declare a license identifier but publish no package-local license/copying/notice file. Their identifiers and source locations are retained here for distribution review:
+
+| Package | Version | Declared license | Source |
+| --- | --- | --- | --- |
+| @pdf-lib/fontkit | 1.1.1 | MIT | https://github.com/Hopding/fontkit |
+
 ==============================================================================
 Components: @antfu/install-pkg@1.1.0
 Source files: node_modules/@antfu/install-pkg/LICENSE
@@ -393,7 +402,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.4.1, @bendyline/squisq-formats@2.3.5, @bendyline/squisq-react@2.4.1, @bendyline/squisq-video@2.2.5, @bendyline/squisq@2.4.1
+Components: @bendyline/squisq-cli@2.4.3, @bendyline/squisq-formats@2.3.7, @bendyline/squisq-react@2.4.5, @bendyline/squisq-video@2.2.7, @bendyline/squisq@2.4.3
 Source files: node_modules/@bendyline/squisq-cli/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -663,7 +672,7 @@ This software contains code derived from the Puppeteer project (https://github.c
 available under the Apache 2.0 license (https://github.com/puppeteer/puppeteer/blob/master/LICENSE).
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.4.1
+Components: @bendyline/squisq-cli@2.4.3
 Source files: node_modules/@bendyline/squisq-cli/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-cli
@@ -683,12 +692,12 @@ Copyright and complete license texts for these dependencies are included in
 their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-cli@2.4.1
+Components: @bendyline/squisq-cli@2.4.3
 Source files: node_modules/@bendyline/squisq-cli/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-cli
 
-The inventory below covers the bundled light standalone player artifact.
+The inventory below covers the bundled light and full standalone player artifacts.
 
 Generated from the actual esbuild input graph. Package-local license, copying,
 and notice files are reproduced verbatim. When an npm tarball omits its
@@ -5171,7 +5180,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.3.5
+Components: @bendyline/squisq-formats@2.3.7
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -5182,20 +5191,21 @@ Third-party components remain under their respective license terms.
 
 ## Runtime dependencies
 
-| Package        | Version | License                 | Repository                       |
-| -------------- | ------- | ----------------------- | -------------------------------- |
-| @pdf-lib/upng  | 1.0.1   | MIT                     | https://github.com/Hopding/upng  |
-| @xmldom/xmldom | 0.9.10  | MIT                     | https://github.com/xmldom/xmldom |
-| jszip          | 3.10.1  | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip    |
-| pdf-lib        | 1.17.1  | MIT                     | https://pdf-lib.js.org           |
-| pdfjs-dist     | 4.10.38 | Apache-2.0              | https://mozilla.github.io/pdf.js |
+| Package          | Version | License                 | Repository                         |
+| ---------------- | ------- | ----------------------- | ---------------------------------- |
+| @pdf-lib/fontkit | 1.1.1   | MIT                     | https://github.com/Hopding/fontkit |
+| @pdf-lib/upng    | 1.0.1   | MIT                     | https://github.com/Hopding/upng    |
+| @xmldom/xmldom   | 0.9.10  | MIT                     | https://github.com/xmldom/xmldom   |
+| jszip            | 3.10.1  | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip      |
+| pdf-lib          | 1.17.1  | MIT                     | https://pdf-lib.js.org             |
+| pdfjs-dist       | 4.10.38 | Apache-2.0              | https://mozilla.github.io/pdf.js   |
 
 Squisq uses jszip under its MIT license option. Copyright and complete license
 texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.3.5
+Components: @bendyline/squisq-formats@2.3.7
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -5205,9 +5215,179 @@ and notice files are reproduced verbatim. When an npm tarball omits its
 repository license, the pinned upstream copy is vendored and identified below.
 
 COMPONENTS
+- @fortawesome/fontawesome-free@7.2.0 ((CC-BY-4.0 AND OFL-1.1 AND MIT)); files: LICENSE.txt
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.4.1
+@fortawesome/fontawesome-free@7.2.0 - LICENSE.txt
+==============================================================================
+Fonticons, Inc. (https://fontawesome.com)
+
+--------------------------------------------------------------------------------
+
+Font Awesome Free License
+
+Font Awesome Free is free, open source, and GPL friendly. You can use it for
+commercial projects, open source projects, or really almost whatever you want.
+Full Font Awesome Free license: https://fontawesome.com/license/free.
+
+--------------------------------------------------------------------------------
+
+# Icons: CC BY 4.0 License (https://creativecommons.org/licenses/by/4.0/)
+
+The Font Awesome Free download is licensed under a Creative Commons
+Attribution 4.0 International License and applies to all icons packaged
+as SVG and JS file types.
+
+--------------------------------------------------------------------------------
+
+# Fonts: SIL OFL 1.1 License
+
+In the Font Awesome Free download, the SIL OFL license applies to all icons
+packaged as web and desktop font files.
+
+Copyright (c) 2026 Fonticons, Inc. (https://fontawesome.com)
+with Reserved Font Name: "Font Awesome".
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+SIL OPEN FONT LICENSE
+Version 1.1 - 26 February 2007
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting — in part or in whole — any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+# Code: MIT License (https://opensource.org/licenses/MIT)
+
+In the Font Awesome Free download, the MIT license applies to all non-font and
+non-icon files.
+
+Copyright 2026 Fonticons, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in the
+Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+# Attribution
+
+Attribution is required by MIT, SIL OFL, and CC BY licenses. Downloaded Font
+Awesome Free files already contain embedded comments with sufficient
+attribution, so you shouldn't need to do anything additional when using these
+files normally.
+
+We've kept attribution comments terse, so we ask that you do not actively work
+to remove them from files, especially code. They're a great way for folks to
+learn about Font Awesome.
+
+--------------------------------------------------------------------------------
+
+# Brand Icons
+
+All brand icons are trademarks of their respective owners. The use of these
+trademarks does not indicate endorsement of the trademark holder by Font
+Awesome, nor vice versa. **Please do not use brand logos for any purpose except
+to represent the company, product, or service to which they refer.**
+
+==============================================================================
+Components: @bendyline/squisq-react@2.4.5
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -5231,7 +5411,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.4.1
+Components: @bendyline/squisq-react@2.4.5
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -9768,7 +9948,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.2.5
+Components: @bendyline/squisq-video@2.2.7
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -9793,7 +9973,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.2.5
+Components: @bendyline/squisq-video@2.2.7
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -9805,7 +9985,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.4.1
+Components: @bendyline/squisq@2.4.3
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -9836,7 +10016,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.4.1
+Components: @bendyline/squisq@2.4.3
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq

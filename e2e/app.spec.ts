@@ -334,7 +334,7 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(2); // +F, +D
+    await expect(buttons).toHaveCount(4); // Two sort controls plus +F and +D.
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
     const newFileIcon = newFileButton.locator('.fa-file-circle-plus');
@@ -479,7 +479,7 @@ test.describe('Folder context menu theming', () => {
     await openInitializedSite(page);
     await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('.db-explorer-btn').nth(1).click();
+    await page.getByRole('button', { name: 'New Folder' }).click();
     await page.locator('.db-new-item-input').fill('menu-theme-folder');
     await page.locator('.db-new-item-add').click();
 

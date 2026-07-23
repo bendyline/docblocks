@@ -332,7 +332,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('new file input (dark)', async () => {
-    await page.locator('.db-explorer-btn').first().click();
+    await page.getByRole('button', { name: 'New File' }).click();
     await page.locator('.db-new-item-input').waitFor({ state: 'visible', timeout: 5_000 });
     await shoot(page, 'explorer-new-file-input-dark', 'Inline new-file input in the explorer');
     await page.locator('.db-new-item-input').fill('ux-review-notes');

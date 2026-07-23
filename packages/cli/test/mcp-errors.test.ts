@@ -23,7 +23,7 @@ describe('MCP structured failures', () => {
     expect(parsed).to.deep.include({ version: 1, kind: 'error' });
     expect(parsed?.error).to.include({
       code: 'operation-failed',
-      stage: 'validate',
+      stage: 'inspect',
       format: null,
       retryable: false,
     });

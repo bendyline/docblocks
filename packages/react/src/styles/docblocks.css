@@ -195,7 +195,20 @@
 
 .db-explorer-actions {
   display: flex;
+  align-items: center;
   gap: 2px;
+}
+
+.db-explorer-sort-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.db-explorer-action-divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--db-border-strong);
 }
 
 .db-pinned-documents {
@@ -348,6 +361,23 @@
   background: var(--db-bg-hover);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
+}
+
+.db-explorer-btn[aria-pressed='true'] {
+  background: var(--db-bg-selected);
+  border-color: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-explorer-btn[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--db-bg-selected-hover);
+  border-color: var(--db-bg-selected-hover);
+  color: var(--db-text-on-selected);
+}
+
+.db-explorer-btn:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
 }
 
 .db-explorer-btn:disabled {
@@ -674,6 +704,23 @@
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.db-tree-last-modified {
+  width: 72px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--db-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+
+.db-tree-row--selected .db-tree-last-modified,
+.db-tree-row--drop-target .db-tree-last-modified {
+  color: inherit;
 }
 
 .db-tree-rename-input {
@@ -2771,6 +2818,41 @@ body.db-resizing-sidebar * {
   --squisq-text-on-accent: var(--db-text-on-accent);
   --squisq-editor-background: #ffffff;
   --squisq-editor-foreground: #1f2937;
+}
+
+/* Squisq's segmented mode controls otherwise retain their standalone
+   slate/blue palette. Bind the control surface and every interaction state
+   to the active DocBlocks appearance and accent. */
+.db-shell .squisq-editor-shell .squisq-preview-seg {
+  background: var(--db-bg);
+  border-color: var(--db-border);
+}
+
+.db-shell .squisq-editor-shell .squisq-preview-seg-btn {
+  border-left-color: var(--db-border);
+  color: var(--db-text-secondary);
+}
+
+.db-shell .squisq-editor-shell .squisq-preview-seg-btn:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-shell .squisq-editor-shell .squisq-preview-seg-btn--active {
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-preview-seg-btn--active:hover {
+  background: var(--db-accent-hover);
+  color: var(--db-text-on-accent);
+}
+
+.db-shell .squisq-editor-shell .squisq-preview-seg-btn:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: -2px;
 }
 
 .db-shell .squisq-editor-shell[data-theme='dark'] {

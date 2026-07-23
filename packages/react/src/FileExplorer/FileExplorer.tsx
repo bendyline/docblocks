@@ -24,12 +24,15 @@ import {
   treeKeyAction,
   TREE_NAV_KEYS,
 } from './tree-keyboard.js';
-import { NewFileIcon, NewFolderIcon } from '../icons.js';
+import { NewFileIcon, NewFolderIcon, SortByLastModifiedIcon, SortByNameIcon } from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
-import { filterVisibleFileEntries, isHiddenFileEntry } from './entry-visibility.js';
+import { filterVisibleFileEntries } from './entry-visibility.js';
+import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
+
+export type { FileExplorerSortMode } from './entry-sort.js';
 
 const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
@@ -101,8 +104,14 @@ function isInternalDrag(dataTransfer: DataTransfer): boolean {
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
+  /** Changes after a non-watch provider has durably updated file metadata. */
+  metadataRefreshKey?: string | number | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
   activeFilePath?: string | null;
+  /** Presentation order for files within each directory. */
+  sortMode?: FileExplorerSortMode;
+  /** Called when a file ordering toolbar button is selected. */
+  onSortModeChange?: (mode: FileExplorerSortMode) => void;
   /** Active workspace identity, used to decorate a selected cross-workspace pin. */
   activeWorkspaceId?: string | null;
   /** Documents pinned across every workspace, shown above the active file tree. */
@@ -146,7 +155,10 @@ export interface FileExplorerProps {
 
 export function FileExplorer({
   provider,
+  metadataRefreshKey,
   activeFilePath,
+  sortMode,
+  onSortModeChange,
   activeWorkspaceId,
   pinnedDocuments = [],
   pinnedPaths = [],
@@ -164,7 +176,7 @@ export function FileExplorer({
   onMoveToWorkspace,
   className,
 }: FileExplorerProps) {
-  const tree = useFileTree(provider);
+  const tree = useFileTree(provider, metadataRefreshKey, activeFilePath);
   const { childEntries, childIssues } = tree;
   const { reveal } = tree;
   // Null on surfaces without git (site, tests) — everything degrades.
@@ -175,6 +187,15 @@ export function FileExplorer({
   );
 
   const [newItemName, setNewItemName] = useState('');
+  const [uncontrolledSortMode, setUncontrolledSortMode] = useState<FileExplorerSortMode>('name');
+  const selectedSortMode = sortMode ?? uncontrolledSortMode;
+  const selectSortMode = useCallback(
+    (mode: FileExplorerSortMode) => {
+      if (sortMode === undefined) setUncontrolledSortMode(mode);
+      onSortModeChange?.(mode);
+    },
+    [onSortModeChange, sortMode],
+  );
   const [newItemType, setNewItemType] = useState<'file' | 'directory' | null>(null);
   const [newItemCreationPending, setNewItemCreationPending] = useState(false);
   const newItemCreationPendingRef = useRef(false);
@@ -300,6 +321,7 @@ export function FileExplorer({
         const filename = name.endsWith('.md') ? name : `${name}.md`;
         createdPath = `${prefix}${filename}`;
         await tree.createFile(createdPath, '');
+        handleSelect(createdPath);
       } else if (itemType === 'directory') {
         await tree.createDirectory(createdPath);
       }
@@ -317,7 +339,7 @@ export function FileExplorer({
     setNewItemName('');
     setNewItemType(null);
     onTreeChange?.({ type: 'create', path: createdPath });
-  }, [newItemName, newItemType, tree, onTreeChange]);
+  }, [newItemName, newItemType, tree, handleSelect, onTreeChange]);
 
   const handleMoveToWorkspace = useCallback(async () => {
     if (!onMoveToWorkspace || !moveDestinationId || movingToWorkspace) return;
@@ -472,17 +494,24 @@ export function FileExplorer({
     [git],
   );
 
+  const orderedVisibleEntries = useCallback(
+    (entries: readonly FileSystemEntry[]) =>
+      sortFileEntries(filterVisibleFileEntries(entries), selectedSortMode),
+    [selectedSortMode],
+  );
+
   // The same walk renderEntries performs, as data — so arrow keys move
   // through exactly the rows on screen, in the order they appear.
   const visibleRows = useMemo(
     () =>
       flattenVisibleRows({
-        roots: tree.entries,
-        childrenOf: (dirPath) => getEquivalentPathValue(childEntries, dirPath) ?? [],
+        roots: orderedVisibleEntries(tree.entries),
+        childrenOf: (dirPath) =>
+          orderedVisibleEntries(getEquivalentPathValue(childEntries, dirPath) ?? []),
         isExpanded: (dirPath) => hasEquivalentPath(tree.expanded, dirPath),
-        isVisible: (entry) => !isHiddenFileEntry(entry),
+        isVisible: () => true,
       }),
-    [tree.entries, tree.expanded, childEntries],
+    [tree.entries, tree.expanded, childEntries, orderedVisibleEntries],
   );
 
   // `selectedPath` can be slash-prefixed (reveal() takes the caller's form)
@@ -542,8 +571,8 @@ export function FileExplorer({
   );
 
   const renderEntries = useCallback(
-    (entries: FileSystemEntry[], depth: number): React.ReactNode => {
-      const visible = filterVisibleFileEntries(entries);
+    (entries: readonly FileSystemEntry[], depth: number): React.ReactNode => {
+      const visible = orderedVisibleEntries(entries);
       return visible.map((entry, index) => {
         const childIssue =
           entry.kind === 'directory' ? getEquivalentPathValue(childIssues, entry.path) : undefined;
@@ -622,6 +651,7 @@ export function FileExplorer({
       activeRowPath,
       pinnedPathSet,
       onTogglePin,
+      orderedVisibleEntries,
     ],
   );
 
@@ -649,7 +679,31 @@ export function FileExplorer({
       <div className="db-explorer-toolbar">
         <span className="db-explorer-title">Files</span>
         <div className="db-explorer-actions">
+          <div className="db-explorer-sort-actions" role="group" aria-label="File sorting">
+            <button
+              type="button"
+              className="db-explorer-btn"
+              onClick={() => selectSortMode('name')}
+              title="Sort by name"
+              aria-label="Sort by name"
+              aria-pressed={selectedSortMode === 'name'}
+            >
+              <SortByNameIcon />
+            </button>
+            <button
+              type="button"
+              className="db-explorer-btn"
+              onClick={() => selectSortMode('last-modified')}
+              title="Sort by last modified"
+              aria-label="Sort by last modified"
+              aria-pressed={selectedSortMode === 'last-modified'}
+            >
+              <SortByLastModifiedIcon />
+            </button>
+          </div>
+          <span className="db-explorer-action-divider" aria-hidden="true" />
           <button
+            type="button"
             className="db-explorer-btn"
             disabled={newItemCreationPending}
             onClick={() => {
@@ -662,6 +716,7 @@ export function FileExplorer({
             <NewFolderIcon />
           </button>
           <button
+            type="button"
             className="db-explorer-btn"
             disabled={newItemCreationPending}
             onClick={() => {

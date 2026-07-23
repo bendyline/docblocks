@@ -40,4 +40,19 @@ describe('appearance styles', () => {
       /\.db-tree::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*var\(--db-accent\);/s,
     );
   });
+
+  it('themes the segmented mode toolbar with the selected DocBlocks accent', () => {
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-preview-seg\s*\{[^}]*background:\s*var\(--db-bg\);[^}]*border-color:\s*var\(--db-border\);/s,
+    );
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-preview-seg-btn--active\s*\{[^}]*background:\s*var\(--db-accent\);[^}]*color:\s*var\(--db-text-on-accent\);/s,
+    );
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-preview-seg-btn--active:hover\s*\{[^}]*background:\s*var\(--db-accent-hover\);/s,
+    );
+    expect(styles).to.match(
+      /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-preview-seg-btn:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--db-focus,\s*var\(--db-accent\)\);/s,
+    );
+  });
 });

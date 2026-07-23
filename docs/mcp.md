@@ -9,7 +9,7 @@ The current server has these non-negotiable properties:
 
 - local stdio transport only;
 - wire version 1 with strict inputs and exact structured outputs;
-- exactly 20 canonical tools and no legacy aliases;
+- exactly 19 canonical tools and no legacy aliases;
 - no filesystem authority unless a root is granted at startup;
 - artifact-first conversion, bundling, previewing, and theme application;
 - durable output only through `save_artifact`;
@@ -25,10 +25,10 @@ flowchart LR
   transport <--> sdk["MCP SDK server"]
 
   subgraph docblocks["DocBlocks MCP process"]
-    sdk --> tools["20 strict tools"]
+    sdk --> tools["19 strict tools"]
     tools --> guard["Guarded expensive operations"]
     guard --> documents["DocumentService: source resolution and normalization"]
-    guard --> intelligence["Inspect, validate, compare, preview"]
+    guard --> intelligence["Inspect, compare, preview"]
     guard --> conversion["Fidelity and conversion orchestration"]
     tools --> authority["McpFileAuthority: granted roots and containment"]
     tools --> artifacts["Session ArtifactStore and reports"]
@@ -107,7 +107,6 @@ sources, targets, assets, and destinations. The tool list below is exhaustive.
 | `create_document_bundle` | artifact-creating | Stage Markdown and explicit assets as an immutable DBK working artifact.          |
 | `save_artifact`          | materializing     | Persist one artifact with no-replace or hash-conditional replacement.             |
 | `inspect_document`       | read-only         | Return bounded metadata, structure, items, assets, theme, and diagnostics.        |
-| `validate_document`      | read-only         | Validate structure, assets, accessibility metadata, and optional target fidelity. |
 | `preview_document`       | artifact-creating | Produce bounded, paginated image artifacts for visual review.                     |
 | `compare_documents`      | read-only         | Compare semantic and structural retention between two sources.                    |
 | `get_authoring_context`  | read-only         | Return a focused authoring contract, safe defaults, and optional recommendations. |
@@ -128,7 +127,7 @@ Four tools create temporary artifacts without writing a user path:
 `convert_document`, `create_document_bundle`, `preview_document`, and
 `apply_inferred_theme`. `save_artifact` is the sole materializing tool and is marked
 destructive because its conditional replacement mode can change an existing file.
-The other 15 tools are read-only and idempotent.
+The other 14 tools are read-only and idempotent.
 
 ### Important input bounds
 
@@ -136,7 +135,6 @@ The other 15 tools are read-only and idempotent.
 | ----------------------- | --------------------------------------------------------------------------------------------------- |
 | `convert_document`      | `source`; 1-12 distinct `targets`; optional `themeId`, `transformId`, `autoTemplates`, and `title`. |
 | `inspect_document`      | `maxBlocks` defaults to 200 and is at most 2,000; opaque nullable cursor.                           |
-| `validate_document`     | Optional nullable target format enables target-specific fidelity checks.                            |
 | `preview_document`      | `maxItems` is 1-20 per call; optional start index and 160-1920 by 90-1920 dimensions.               |
 | `recommend_templates`   | At most 256 candidate IDs and at most 100 analyzed blocks.                                          |
 | `get_authoring_context` | Optional target, goal, source, and at most 100 recommended blocks.                                  |
@@ -220,56 +218,28 @@ A robust agent workflow is:
    write-enabled, stop and explain that the server must restart with
    `--allow-write`; do not switch to a shell or CLI converter. Inline sources and
    transient artifacts still work without roots.
-2. Call `get_authoring_context` once for a focused contract, the target capability,
-   safe defaults, and optional source-based recommendations. Use
-   `recommend_templates` and `describe_template` for focused follow-up. Read
-   `docblocks://authoring-guide` only when the complete catalog is required.
-3. Treat supplied facts as a closed evidence set: preserve them exactly; use temporal
-   or correlational wording unless causality is supplied; label calculations,
-   assumptions, hypotheses, recommendations, and illustrative examples. Causal links,
-   rhetorical performance labels, superlatives, sole causes, targets, capabilities,
-   owners, dates, channels, and operational details must be supplied or explicitly
-   framed. Prefer `observed`, `coincided with`, `intended to`, or `proposed` over
-   `drove`, `addresses`, `protects`, or `proves`. Do not connect separate metrics,
-   audiences, segments, or workflows unless the relationship is supplied. Add
-   decision value through supplied baselines, goals, targets, rankings, and transparent
-   calculations. Do not call choices a sequence or capacity allocation unless order,
-   timing, or resource constraints were supplied. Generic option traits—control,
-   flexibility, vendor support, freed capacity, switching costs—are capability claims:
-   state one only when supplied or labeled as an assumption or judgment, even in table
-   cells and tradeoffs. When a requested policy, playbook, or training guide needs
-   unsupplied operating details, add one explicit proposed operating model scope note
-   placed before the first such detail so it governs all of them.
-4. Match explicit slide/page counts and word ranges exactly. For PPTX, use exactly
-   one level-one Markdown heading (`#`) per slide and no level-two through level-six
-   headings because every heading becomes a slide by default. Target at most 80 words
-   per slide and express within-slide structure with lists, tables, or bold labels.
-   Make slide one a supported point-of-view thesis. For requested choices, state concrete opportunity
-   costs grounded in supplied alternatives and one proposed accountable role per
-   choice. Label any unsupplied capacity or outcome claim as an assumption or
-   potential tradeoff, and label a new review cadence or measurement procedure as
-   proposed.
-5. Keep the complete Markdown as the authoritative source. Pass it directly to
-   `convert_document`, or use a bundle source directly when assets are needed. Revise
-   by editing the complete Markdown and converting again.
-6. When one draft will feed two or more validate, inspect, preview, or convert calls,
-   stage it once with `create_document_bundle` and pass the returned artifact URI as
-   each call's source instead of re-sending the Markdown; after edits, stage the
-   revised draft again.
-7. Before conversion, count slide sections or document words, verify every requested
-   element, and rewrite or label every unsupported claim. Use `validate_document` as
-   the routine export preflight and follow its repair diagnostics. Use
-   `inspect_document` only when semantic structure, provenance, assets, metadata, or
-   theme details are needed.
-8. Use `preview_document` when bounded visual evidence is useful. Check `previewBasis`
-   before treating pixels as native verification, and repair findings in the complete
-   Markdown.
-9. Call `convert_document` once with all desired targets. They share one normalized
+2. Pass plain text or ordinary Markdown directly to `convert_document`; no preflight,
+   inspection, preview, authoring-context call, or template annotation is required.
+   For deliberate PPTX slide boundaries, use one level-one Markdown heading (`#`) per
+   slide. Unstructured text is still accepted.
+3. `convert_document` chooses compatible templates automatically. Squisq annotations
+   on headings are optional layout hints that take precedence. Call
+   `get_authoring_context` only when exact starter examples, themes, transforms, target
+   details, or source-based template recommendations are useful. Use
+   `describe_template` for advanced author control and read `docblocks://authoring-guide`
+   only when the complete catalog is required.
+4. Use a bundle source when assets must travel with the document. When one complete
+   draft will feed two or more inspect, preview, or convert calls, stage it once with
+   `create_document_bundle` and reuse the returned artifact URI.
+5. Use `inspect_document` or `preview_document` only when the user asks for document
+   analysis or visual evidence. Check `previewBasis` before treating preview pixels as
+   native verification.
+6. Call `convert_document` once with all desired targets. They share one normalized
    source, and a failure rolls back every artifact created by that call.
-10. Reuse an artifact as another tool's source, read a bounded artifact resource, or
-    call `save_artifact` for durable output.
-11. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
-    and diagnostics matter.
+7. Reuse an artifact as another tool's source, read a bounded artifact resource, or
+   call `save_artifact` for durable output.
+8. Retrieve `get_conversion_report` for conversion-backed artifacts when provenance
+   and diagnostics matter.
 
 ### Example multi-target conversion
 
@@ -382,9 +352,6 @@ tables, links, page/slide/sheet/frame items, assets and attribution, theme/layou
 information, truncation flags, and diagnostics. Its opaque cursor paginates blocks;
 clients must not synthesize cursors.
 
-`validate_document` checks document structure, annotations/templates, assets,
-accessibility metadata, and—when supplied—target-format retention constraints.
-
 `compare_documents` compares text, structure, tables, media, themes, layouts,
 metadata, timing, and accessibility. Its semantic score and change categories are
 useful for round-trip regression testing but are not native-application pixel
@@ -417,39 +384,37 @@ otherwise survive silently.
 The authoring workflow stays linked-Squisq-native and starts with one consolidated
 call:
 
-1. `get_authoring_context` returns compact text plus focused structured content: the
+1. Plain text and ordinary Markdown can be converted without authoring discovery.
+   `get_authoring_context` optionally returns compact text plus focused structured content: the
    requested target capability, safe default template, themes, transforms, and
-   optional block-level recommendations. Without a source it returns only the safe
-   `content` template; with a source it adds templates recommended for those blocks.
+   optional block-level recommendations. For PPTX without a source it returns the safe
+   `content` template plus exact starter examples for `title`, `sectionHeader`,
+   `statHighlight`, and `quote`; with a source it adds templates recommended for those blocks.
    Call `describe_template` for exact selected inputs, or read
    `docblocks://authoring-guide` for the complete linked catalog. `list_templates`
    remains a lightweight summary catalog. When the linked registry declares that the
    target exporter ignores template annotations (for example DOCX), recommendations
    stay scoped to content-first defaults.
-2. Separate supplied facts from calculations, assumptions, hypotheses, and
-   recommendations before authoring. Preserve facts exactly and use temporal or
-   correlational wording unless causality is supplied. Do not infer end-to-end
-   feasibility from one phase duration. Introduce unsupplied policy, roles, gates,
-   timelines, and procedures as a proposed operating model.
-3. Author annotations on headings: `# Heading {[content]}`. A standalone
+2. `convert_document` chooses compatible templates automatically. Author optional
+   overrides on headings as `# Heading {[content]}`. A standalone
    `{[content]}` creates an additional heading-less block and is only appropriate
    when that extra block is deliberate. For PPTX, use exactly one `#` heading per
-   slide and no subordinate Markdown headings.
-4. Ordinary MCP headings default to the linked `content` template, which renders
-   the complete body. Use `validate_document` as the routine export preflight. Use
-   `inspect_document` only for semantic or metadata detail and `preview_document`
-   only when visual evidence is helpful before replacing selected blocks.
-5. Keep the complete Markdown as the authoritative source and pass it directly to
+   deliberate slide; unstructured text is still accepted.
+3. Source normalization keeps ordinary headings in the linked `content` template,
+   which renders the complete body; conversion may choose another compatible layout.
+   Use `inspect_document` or `preview_document` only when the user
+   requests semantic, metadata, or visual evidence.
+4. Keep the complete Markdown as the authoritative source and pass it directly to
    `convert_document`, or pass a bundle source directly when assets are needed. A
    temporary local Markdown file is unnecessary. When one draft will feed two or
-   more validate, inspect, preview, or convert calls, stage it once with
+   more inspect, preview, or convert calls, stage it once with
    `create_document_bundle` and reuse the artifact URI as each call's source.
-6. `describe_theme` resolves built-in themes and themes embedded in a source.
-7. `infer_theme_from_file` imports reusable colors, typography, and optionally
+5. `describe_theme` resolves built-in themes and themes embedded in a source.
+6. `infer_theme_from_file` imports reusable colors, typography, and optionally
    Office layout information.
-8. `inspect_pptx_layouts` reports slide size, masters, layouts, usage, classification,
+7. `inspect_pptx_layouts` reports slide size, masters, layouts, usage, classification,
    and mapped template IDs.
-9. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK artifact
+8. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK artifact
    without mutating the source.
 
 The binary inference boundary is intentionally narrower than `DocumentSource`:

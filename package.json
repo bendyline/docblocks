@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=22.14.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "scripts": {
     "all": "npm run build && npm run bundle:size && npm run check:site-precache && npm run check:site-fonts && npm run check:desktop-config && npm run check:vscode-package && npm run check:assurance && npm run lint && npm run format:check && npm run typecheck && npm run check:packages && npm run coverage:critical && npm test && npm run test:e2e:all",
@@ -26,7 +26,9 @@
     "check:vscode-package": "npm run check:package-contents -w docblocks-vscode",
     "check:extended": "npm run build && npm run check:notices && npm run check:agent-guidance",
     "check:notices": "node --import tsx scripts/generate-third-party-notices.ts",
+    "precheck:packages": "tsx scripts/sync-node-engine-policy.ts",
     "check:packages": "tsx scripts/check-package-consumers.ts",
+    "generate:node-engine-policy": "tsx scripts/sync-node-engine-policy.ts --write",
     "check:agent-guidance": "tsx scripts/check-agent-guidance.ts",
     "check:assurance": "tsx scripts/check-assurance-contract.ts",
     "check:squisq-linked": "tsx scripts/check-linked-squisq.ts",
@@ -86,7 +88,7 @@
     "c8": "11.0.0",
     "chai": "6.2.2",
     "conventional-changelog-conventionalcommits": "8.0.0",
-    "electron": "42.2.0",
+    "electron": "43.2.0",
     "eslint": "9.39.4",
     "eslint-config-prettier": "10.1.8",
     "eslint-plugin-react-hooks": "5.2.0",
@@ -100,6 +102,7 @@
     "prettier": "3.8.1",
     "rimraf": "5.0.10",
     "semantic-release": "25.0.3",
+    "semver": "7.8.0",
     "tsup": "8.5.1",
     "tsx": "4.21.0",
     "typescript": "5.9.3",

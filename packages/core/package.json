@@ -19,6 +19,9 @@
   "publishConfig": {
     "access": "public"
   },
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -103,7 +106,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.4.1",
+    "@bendyline/squisq": "2.4.3",
     "zod": "3.25.76"
   }
 }

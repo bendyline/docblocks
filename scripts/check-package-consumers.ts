@@ -1,14 +1,23 @@
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { isBuiltin } from 'node:module';
+import { createRequire, isBuiltin } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { preProcessFile } from 'typescript';
+import { WORKSPACE_NODE_ENGINE } from './node-engine-policy.js';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+
+interface SemverApi {
+  readonly subset: (candidate: string, allowed: string) => boolean;
+  readonly validRange: (range: string) => string | null;
+}
+
+const semver = require('semver') as SemverApi;
 
 interface PackageUnderTest {
   readonly name: string;
@@ -22,6 +31,7 @@ interface PackResult {
 
 interface InstalledManifest {
   readonly name?: string;
+  readonly version?: string;
   readonly main?: string;
   readonly module?: string;
   readonly types?: string;
@@ -29,8 +39,15 @@ interface InstalledManifest {
   readonly bin?: string | Readonly<Record<string, string>>;
   readonly exports?: unknown;
   readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependenciesMeta?: Readonly<Record<string, Readonly<{ optional?: boolean }>>>;
   readonly engines?: Readonly<Record<string, string>>;
+}
+
+interface InstalledPackage {
+  readonly root: string;
+  readonly manifest: InstalledManifest;
 }
 
 const packages: readonly PackageUnderTest[] = [
@@ -76,6 +93,9 @@ const consumerTypePackages = [
   'node_modules/@types/prop-types',
   'node_modules/csstype',
 ] as const;
+
+const REACT_TYPE_PEER_RANGE = '^18.0.0 || ^19.0.0';
+const REACT_DEV_TYPES_VERSION = '18.3.28';
 
 function parsePackResult(output: string, packageName: string): PackResult {
   let value: unknown;
@@ -220,6 +240,73 @@ async function assertDeclaredImports(
   }
 }
 
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+async function resolveInstalledDependency(
+  consumerRoot: string,
+  packageRoot: string,
+  dependencyName: string,
+): Promise<InstalledPackage> {
+  let searchRoot = packageRoot;
+  const dependencyPath = dependencyName.split('/');
+
+  while (true) {
+    const dependencyRoot = path.join(searchRoot, 'node_modules', ...dependencyPath);
+    try {
+      const manifest = JSON.parse(
+        await readFile(path.join(dependencyRoot, 'package.json'), 'utf8'),
+      ) as InstalledManifest;
+      return { root: dependencyRoot, manifest };
+    } catch (error) {
+      if (!isMissingFileError(error)) throw error;
+    }
+
+    if (path.resolve(searchRoot) === path.resolve(consumerRoot)) break;
+    const parent = path.dirname(searchRoot);
+    const relativeToConsumer = path.relative(consumerRoot, parent);
+    if (
+      parent === searchRoot ||
+      relativeToConsumer.startsWith('..') ||
+      path.isAbsolute(relativeToConsumer)
+    ) {
+      break;
+    }
+    searchRoot = parent;
+  }
+
+  throw new Error(`${dependencyName}: could not resolve the packed install's direct dependency`);
+}
+
+async function assertEffectiveNodeEngine(
+  consumerRoot: string,
+  packageRoot: string,
+  manifest: InstalledManifest,
+): Promise<void> {
+  const packageName = manifest.name ?? packageRoot;
+  const advertisedRange = manifest.engines?.node;
+  if (!advertisedRange || semver.validRange(advertisedRange) === null) {
+    throw new Error(`${packageName}: packed manifest has no valid Node engine range`);
+  }
+
+  for (const dependencyName of Object.keys(manifest.dependencies ?? {}).sort()) {
+    const dependency = await resolveInstalledDependency(consumerRoot, packageRoot, dependencyName);
+    const dependencyRange = dependency.manifest.engines?.node;
+    if (!dependencyRange) continue;
+    if (semver.validRange(dependencyRange) === null) {
+      throw new Error(
+        `${packageName}: dependency ${dependencyName}@${dependency.manifest.version ?? 'unknown'} has invalid engines.node ${JSON.stringify(dependencyRange)}`,
+      );
+    }
+    if (!semver.subset(advertisedRange, dependencyRange)) {
+      throw new Error(
+        `${packageName}: advertises Node ${advertisedRange}, but direct dependency ${dependencyName}@${dependency.manifest.version ?? 'unknown'} only supports ${dependencyRange}`,
+      );
+    }
+  }
+}
+
 async function assertInstalledManifest(consumerRoot: string, packageName: string): Promise<void> {
   const packageRoot = path.join(consumerRoot, 'node_modules', ...packageName.split('/'));
   const installedRealPath = await realpath(packageRoot);
@@ -263,6 +350,29 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
       throw new Error(`${packageName}: package target is missing: ${target}`);
     }
   }
+  if (manifest.name?.startsWith('@bendyline/docblocks')) {
+    if (manifest.engines?.node !== WORKSPACE_NODE_ENGINE) {
+      throw new Error(
+        `${packageName}: packed Node engine must match the workspace policy ${WORKSPACE_NODE_ENGINE}`,
+      );
+    }
+    await assertEffectiveNodeEngine(consumerRoot, packageRoot, manifest);
+  }
+  if (manifest.name === '@bendyline/docblocks-react') {
+    if (manifest.peerDependencies?.['@types/react'] !== REACT_TYPE_PEER_RANGE) {
+      throw new Error(
+        `${packageName}: packed React type peer must support ${REACT_TYPE_PEER_RANGE}`,
+      );
+    }
+    if (manifest.peerDependenciesMeta?.['@types/react']?.optional !== true) {
+      throw new Error(`${packageName}: packed React type peer must be optional`);
+    }
+    if (manifest.devDependencies?.['@types/react'] !== REACT_DEV_TYPES_VERSION) {
+      throw new Error(
+        `${packageName}: declaration testing must retain @types/react ${REACT_DEV_TYPES_VERSION}`,
+      );
+    }
+  }
   if (manifest.name === '@bendyline/docblocks-cli') {
     const binTarget = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.docblocks;
     if (!binTarget) {
@@ -276,9 +386,6 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
     }
     if (manifest.main === binTarget) {
       throw new Error(`${packageName}: package root and executable must use separate entry points`);
-    }
-    if (manifest.engines?.node !== '>=22.14.0') {
-      throw new Error(`${packageName}: Node >=22.14.0 must be encoded in engines`);
     }
     if (manifest.dependencies?.['@bendyline/squisq-editor-react'] !== undefined) {
       throw new Error(`${packageName}: CLI must not install the browser-only Squisq editor stack`);
@@ -295,15 +402,82 @@ async function assertInstalledManifest(consumerRoot: string, packageName: string
   await assertDeclaredImports(packageRoot, manifest);
 }
 
+async function installPackedConsumer(
+  npmCli: string,
+  consumerRoot: string,
+  name: string,
+  packageTarballs: readonly string[],
+  dependencies: readonly string[],
+): Promise<void> {
+  await mkdir(consumerRoot, { recursive: true });
+  await writeFile(
+    path.join(consumerRoot, 'package.json'),
+    JSON.stringify({ name, private: true, type: 'module' }),
+  );
+  await run(
+    process.execPath,
+    [
+      npmCli,
+      'install',
+      // This check is also the release-order guard for public DocBlocks
+      // dependencies. Force npm to revalidate registry metadata so a cached
+      // pre-release packument cannot report ETARGET after Squisq is published.
+      '--prefer-online',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--no-package-lock',
+      '--install-strategy=shallow',
+      '--strict-peer-deps',
+      ...packageTarballs,
+      ...dependencies,
+    ],
+    consumerRoot,
+    64 * 1024 * 1024,
+  );
+}
+
+async function assertStrictTypeConsumer(
+  consumerRoot: string,
+  typeSpecifiers: readonly string[],
+): Promise<void> {
+  const typeImports = typeSpecifiers.map(
+    (specifier, index) =>
+      `import * as module${index} from ${JSON.stringify(specifier)}; void module${index};`,
+  );
+  await writeFile(path.join(consumerRoot, 'consumer.ts'), `${typeImports.join('\n')}\n`);
+  await writeFile(
+    path.join(consumerRoot, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        target: 'ES2020',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        strict: true,
+        skipLibCheck: false,
+        noEmit: true,
+        lib: ['ES2020', 'DOM', 'DOM.Iterable'],
+        types: ['react', 'react-dom'],
+      },
+      include: ['consumer.ts'],
+    }),
+  );
+  await run(
+    process.execPath,
+    [path.join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tsconfig.json'],
+    consumerRoot,
+  );
+}
+
 async function main(): Promise<void> {
   const npmCli = process.env.npm_execpath;
   if (!npmCli) throw new Error('npm_execpath is unavailable; run this check through npm');
 
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'docblocks-packed-consumer-'));
   const packsRoot = path.join(temporaryRoot, 'packs');
-  const consumerRoot = path.join(temporaryRoot, 'consumer');
+  const react18ConsumerRoot = path.join(temporaryRoot, 'react-18-consumer');
+  const react19ConsumerRoot = path.join(temporaryRoot, 'react-19-consumer');
   await mkdir(packsRoot, { recursive: true });
-  await mkdir(consumerRoot, { recursive: true });
   await writeFile(
     path.join(temporaryRoot, 'package.json'),
     JSON.stringify({ private: true, type: 'module' }),
@@ -321,92 +495,59 @@ async function main(): Promise<void> {
       const packageRoot = path.join(repoRoot, packageUnderTest.directory);
       tarballs.push(await packPackage(npmCli, packageRoot, packageUnderTest.name, packsRoot));
     }
+    const react18TypeTarballs: string[] = [];
     for (const relativeDirectory of consumerTypePackages) {
       const packageRoot = path.join(repoRoot, relativeDirectory);
       const manifest = JSON.parse(
         await readFile(path.join(packageRoot, 'package.json'), 'utf8'),
       ) as InstalledManifest;
-      tarballs.push(
+      react18TypeTarballs.push(
         await packPackage(npmCli, packageRoot, manifest.name ?? relativeDirectory, packsRoot),
       );
     }
 
-    await writeFile(
-      path.join(consumerRoot, 'package.json'),
-      JSON.stringify({ name: 'docblocks-packed-consumer', private: true, type: 'module' }),
+    await installPackedConsumer(
+      npmCli,
+      react18ConsumerRoot,
+      'docblocks-packed-react-18-consumer',
+      [...tarballs, ...react18TypeTarballs],
+      ['react@18.3.1', 'react-dom@18.3.1'],
     );
-    await run(
-      process.execPath,
-      [
-        npmCli,
-        'install',
-        // This check is also the release-order guard for public DocBlocks
-        // dependencies. Force npm to revalidate registry metadata so a cached
-        // pre-release packument cannot report ETARGET after Squisq is published.
-        '--prefer-online',
-        '--ignore-scripts',
-        '--no-audit',
-        '--no-fund',
-        '--no-package-lock',
-        '--install-strategy=shallow',
-        '--strict-peer-deps',
-        ...tarballs,
-        'react@18.3.1',
-        'react-dom@18.3.1',
-      ],
-      consumerRoot,
-      64 * 1024 * 1024,
+    await installPackedConsumer(
+      npmCli,
+      react19ConsumerRoot,
+      'docblocks-packed-react-19-consumer',
+      tarballs,
+      ['react@19.2.8', 'react-dom@19.2.8', '@types/react@19.2.8', '@types/react-dom@19.2.3'],
     );
 
     for (const packageUnderTest of packages) {
-      await assertInstalledManifest(consumerRoot, packageUnderTest.name);
+      await assertInstalledManifest(react18ConsumerRoot, packageUnderTest.name);
     }
 
     const imports = packages.flatMap((entry) => entry.runtimeImports);
     await writeFile(
-      path.join(consumerRoot, 'runtime.mjs'),
+      path.join(react18ConsumerRoot, 'runtime.mjs'),
       `${imports.map((specifier) => `await import(${JSON.stringify(specifier)});`).join('\n')}\n`,
     );
-    await run(process.execPath, ['runtime.mjs'], consumerRoot);
+    await run(process.execPath, ['runtime.mjs'], react18ConsumerRoot);
 
-    const typeSpecifiers = [...imports, '@bendyline/docblocks-react'];
-    const typeImports = typeSpecifiers.map(
-      (specifier, index) =>
-        `import * as module${index} from ${JSON.stringify(specifier)}; void module${index};`,
-    );
-    await writeFile(path.join(consumerRoot, 'consumer.ts'), `${typeImports.join('\n')}\n`);
-    await writeFile(
-      path.join(consumerRoot, 'tsconfig.json'),
-      JSON.stringify({
-        compilerOptions: {
-          target: 'ES2020',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          strict: true,
-          skipLibCheck: false,
-          noEmit: true,
-          lib: ['ES2020', 'DOM', 'DOM.Iterable'],
-          types: ['react', 'react-dom'],
-        },
-        include: ['consumer.ts'],
-      }),
-    );
-    await run(
-      process.execPath,
-      [path.join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'), '-p', 'tsconfig.json'],
-      consumerRoot,
+    await Promise.all(
+      [react18ConsumerRoot, react19ConsumerRoot].map((consumerRoot) =>
+        assertStrictTypeConsumer(consumerRoot, imports),
+      ),
     );
 
     await writeFile(
-      path.join(consumerRoot, 'index.html'),
+      path.join(react18ConsumerRoot, 'index.html'),
       '<!doctype html><html><body><script type="module" src="/browser.ts"></script></body></html>',
     );
     await writeFile(
-      path.join(consumerRoot, 'browser.ts'),
+      path.join(react18ConsumerRoot, 'browser.ts'),
       "import * as docblocksReact from '@bendyline/docblocks-react';\nimport '@bendyline/docblocks-react/styles';\nvoid docblocksReact;\n",
     );
     await writeFile(
-      path.join(consumerRoot, 'vite.config.mjs'),
+      path.join(react18ConsumerRoot, 'vite.config.mjs'),
       "export default { worker: { format: 'es' } };\n",
     );
     await run(
@@ -419,24 +560,31 @@ async function main(): Promise<void> {
         'browser-dist',
         '--emptyOutDir',
       ],
-      consumerRoot,
+      react18ConsumerRoot,
       64 * 1024 * 1024,
     );
 
     await run(
       process.execPath,
       [
-        path.join(consumerRoot, 'node_modules', '@bendyline', 'docblocks-cli', 'dist', 'bin.js'),
+        path.join(
+          react18ConsumerRoot,
+          'node_modules',
+          '@bendyline',
+          'docblocks-cli',
+          'dist',
+          'bin.js',
+        ),
         '--help',
       ],
-      consumerRoot,
+      react18ConsumerRoot,
     );
     process.stdout.write(
       `Packed core, React, and CLI packages${
         linkedSquisqTarballs.length > 0
           ? ` with ${linkedSquisqTarballs.length} linked Squisq packages`
           : ''
-      } installed and passed export, dependency, type, runtime, and CLI consumer checks.\n`,
+      } installed and passed export, dependency, Node engine, strict React 18/19 type, runtime, and CLI consumer checks.\n`,
     );
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });

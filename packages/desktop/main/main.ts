@@ -46,9 +46,13 @@ import {
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
+import {
+  DESKTOP_DEVELOPMENT_SERVER_URL,
+  desktopContentSecurityPolicy,
+} from './content-security-policy.js';
 import { hostEnvironmentArguments } from '../shared/host-environment.js';
 
-const DEV_SERVER_URL = 'http://localhost:5221';
+const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
@@ -435,25 +439,7 @@ async function bootstrap(): Promise<void> {
         'Cross-Origin-Opener-Policy': ['same-origin'],
         'Cross-Origin-Embedder-Policy': ['credentialless'],
         'Cross-Origin-Resource-Policy': ['same-origin'],
-        'Content-Security-Policy': [
-          isDev
-            ? "default-src 'self' app: http://localhost:5221 ws://localhost:5221; " +
-              "script-src 'self' app: http://localhost:5221 'unsafe-inline' 'unsafe-eval'; " +
-              "style-src 'self' app: http://localhost:5221 'unsafe-inline'; " +
-              "img-src 'self' app: http://localhost:5221 data: blob:; " +
-              "font-src 'self' app: http://localhost:5221 data:; " +
-              "connect-src 'self' app: http://localhost:5221 ws://localhost:5221; " +
-              "worker-src 'self' app: http://localhost:5221 blob:; " +
-              "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';"
-            : "default-src 'self' app:; " +
-              "script-src 'self' app:; " +
-              "style-src 'self' app: 'unsafe-inline'; " +
-              "img-src 'self' app: data: blob:; " +
-              "font-src 'self' app: data:; " +
-              "connect-src 'self' app:; " +
-              "worker-src 'self' app: blob:; " +
-              "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';",
-        ],
+        'Content-Security-Policy': [desktopContentSecurityPolicy(isDev)],
       },
     });
   });

@@ -10,6 +10,7 @@ import {
   getFileSystemProviderV2,
   moveFileSystemEntry,
   parseWorkspacePath,
+  workspacePathDirname,
   type FileSystemProvider,
   type FileSystemEntry,
   type FsErrorCode,
@@ -57,7 +58,12 @@ async function readProviderDirectory(
     const providerV2 = getFileSystemProviderV2(provider);
     if (!providerV2) return provider.readDirectory(path);
     const entries = await providerV2.readDirectory(canonical);
-    return entries.map((entry) => ({ kind: entry.kind, name: entry.name, path: entry.path }));
+    return entries.map((entry) => ({
+      kind: entry.kind,
+      name: entry.name,
+      path: entry.path,
+      ...(entry.kind === 'file' ? { lastModified: entry.lastModified } : {}),
+    }));
   };
 
   for (let attempt = 0; ; attempt += 1) {
@@ -148,7 +154,11 @@ export interface FileTreeActions {
   retryDirectory: (path: string) => Promise<void>;
 }
 
-export function useFileTree(provider: FileSystemProvider | null): FileTreeState & FileTreeActions {
+export function useFileTree(
+  provider: FileSystemProvider | null,
+  metadataRefreshKey?: string | number | null,
+  metadataRefreshPath?: string | null,
+): FileTreeState & FileTreeActions {
   const [entries, setEntries] = useState<FileSystemEntry[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -169,7 +179,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     setRootIssue(readIssue(caught, ''));
   }, []);
 
-  const loadRoot = useCallback(async () => {
+  const loadRoot = useCallback(async (showLoading = true) => {
     const sourceProvider = providerRef.current;
     if (!sourceProvider) {
       setEntries([]);
@@ -180,7 +190,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
     directoryRequestsRef.current.set('', requestId);
     const isCurrent = () =>
       providerRef.current === sourceProvider && directoryRequestsRef.current.get('') === requestId;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const root = await readProviderDirectory(sourceProvider, '');
       if (!isCurrent()) return;
@@ -300,6 +310,32 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
+  const refreshDirectory = useCallback(
+    async (directoryPath: string) => {
+      if (directoryPath === '') await loadRoot(false);
+      else await loadChildren(directoryPath);
+    },
+    [loadChildren, loadRoot],
+  );
+
+  // IndexedDB and File System Access cannot watch their backing stores. The
+  // shell advances this key after the active DocumentSession acknowledges a
+  // save. Re-read only the active file's containing directory without entering
+  // the root loading state; replacing the tree with "Loading..." after every
+  // autosave made the otherwise-stable explorer visibly flicker. Watch-capable
+  // providers get the same targeted update from their event stream.
+  const previousMetadataRefreshKeyRef = useRef(metadataRefreshKey);
+  useEffect(() => {
+    if (Object.is(previousMetadataRefreshKeyRef.current, metadataRefreshKey)) return;
+    previousMetadataRefreshKeyRef.current = metadataRefreshKey;
+    if (!provider) return;
+    if (getFileSystemProviderV2(provider)?.capabilities.watch) return;
+    const directoryPath = metadataRefreshPath
+      ? workspacePathDirname(parseWorkspacePath(metadataRefreshPath))
+      : '';
+    void refreshDirectory(directoryPath).catch(reportRootIssue);
+  }, [metadataRefreshKey, metadataRefreshPath, provider, refreshDirectory, reportRootIssue]);
+
   // Keep the explorer synchronized with provider changes. Watch-capable
   // providers (including Electron's chokidar-backed provider) update in real
   // time. Calls are serialized and coalesced so event bursts cannot publish
@@ -311,37 +347,61 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
 
     let disposed = false;
     let refreshing = false;
-    let refreshAgain = false;
+    let fullRefreshRequested = false;
+    const directoriesToRefresh = new Set<string>();
 
-    const requestRefresh = () => {
+    const drainRefreshes = () => {
       if (disposed) return;
-      if (refreshing) {
-        refreshAgain = true;
-        return;
-      }
+      if (refreshing) return;
       refreshing = true;
       void (async () => {
         try {
-          do {
-            refreshAgain = false;
-            await refreshRef.current();
-          } while (refreshAgain && !disposed);
+          while (!disposed && (fullRefreshRequested || directoriesToRefresh.size > 0)) {
+            if (fullRefreshRequested) {
+              fullRefreshRequested = false;
+              directoriesToRefresh.clear();
+              await refreshRef.current();
+              continue;
+            }
+            const pending = [...directoriesToRefresh];
+            directoriesToRefresh.clear();
+            for (const directoryPath of pending) {
+              await refreshDirectory(directoryPath);
+            }
+          }
         } catch (caught: unknown) {
           reportRootIssue(caught);
         } finally {
           refreshing = false;
-          if (refreshAgain && !disposed) requestRefresh();
+          if (!disposed && (fullRefreshRequested || directoriesToRefresh.size > 0)) {
+            drainRefreshes();
+          }
         }
       })();
     };
 
+    const requestRefresh = () => {
+      if (disposed) return;
+      fullRefreshRequested = true;
+      directoriesToRefresh.clear();
+      drainRefreshes();
+    };
+
+    const requestMetadataRefresh = (path: string) => {
+      if (disposed || fullRefreshRequested) return;
+      directoriesToRefresh.add(workspacePathDirname(parseWorkspacePath(path)));
+      drainRefreshes();
+    };
+
     const subscription = providerV2.watch(
       (event) => {
-        // File content changes do not alter the directory tree. In particular,
-        // every Electron autosave emits a local `modified` event; refreshing in
-        // response briefly replaces the explorer with its loading state on
-        // every save and needlessly re-reads every expanded directory.
-        if (event.type === 'modified') return;
+        // Content changes leave the tree shape alone, but they do advance the
+        // file's displayed metadata. Refresh only its containing directory so
+        // an Electron autosave does not re-read the complete expanded tree.
+        if (event.type === 'modified') {
+          requestMetadataRefresh(event.path);
+          return;
+        }
         requestRefresh();
       },
       {
@@ -359,7 +419,7 @@ export function useFileTree(provider: FileSystemProvider | null): FileTreeState 
       disposed = true;
       void subscription.dispose();
     };
-  }, [provider, reportRootIssue]);
+  }, [provider, refreshDirectory, reportRootIssue]);
 
   // File System Access and IndexedDB do not expose a dependable external
   // watcher. Refreshing on resume catches changes made while this surface was

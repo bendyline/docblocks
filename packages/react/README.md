@@ -5,10 +5,15 @@ React components for DocBlocks — the complete editor shell (file explorer, wor
 ## Installation
 
 ```bash
-npm install @bendyline/docblocks-react
+npm install @bendyline/docblocks-react react react-dom
+npm install --save-dev @types/react @types/react-dom
 ```
 
-**Peer dependencies:** React 18 or 19. The DocBlocks core (`@bendyline/docblocks`) and the Squisq editor packages are regular dependencies and install automatically.
+**Peer dependencies:** React 18 or 19. TypeScript consumers must install the
+matching `@types/react` major (and normally `@types/react-dom`); the React type
+peer is optional so JavaScript-only consumers do not need type packages. The
+DocBlocks core (`@bendyline/docblocks`) and the Squisq editor packages are
+regular dependencies and install automatically.
 
 ## Usage
 

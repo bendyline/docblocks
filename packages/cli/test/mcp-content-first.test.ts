@@ -32,8 +32,8 @@ describe('MCP content-first authoring', () => {
     ).to.equal(false);
   });
 
-  it('warns when visual authoring would ignore body prose or create a heading-less block', async () => {
-    const result = await callTool(harness.client, 'validate_document', {
+  it('keeps authoring diagnostics available through optional inspection', async () => {
+    const result = await callTool(harness.client, 'inspect_document', {
       source: {
         kind: 'markdown',
         name: 'surprises.md',
@@ -41,7 +41,6 @@ describe('MCP content-first authoring', () => {
           '# Divider {[sectionHeader]}\n\nThis prose is not rendered by a divider.\n\n' +
           '{[factCard fact="A fact" explanation="Context"]}',
       },
-      targetFormat: 'pptx',
     });
 
     expect(result.isError, result.text).to.equal(false);
@@ -56,8 +55,8 @@ describe('MCP content-first authoring', () => {
     ).to.equal(true);
   });
 
-  it('flags malformed template annotations that the parser silently survives', async () => {
-    const result = await callTool(harness.client, 'validate_document', {
+  it('reports malformed template annotations only when inspection is requested', async () => {
+    const result = await callTool(harness.client, 'inspect_document', {
       source: {
         kind: 'markdown',
         name: 'typo.md',
@@ -66,7 +65,6 @@ describe('MCP content-first authoring', () => {
           '# Unclosed {[content\n\nBody.\n\n' +
           '# Clean {[factCard fact="Braces in {quotes} are fine"]}\n\nBody.',
       },
-      targetFormat: 'pptx',
     });
 
     expect(result.isError, result.text).to.equal(false);
@@ -78,6 +76,56 @@ describe('MCP content-first authoring', () => {
     );
     expect(malformed?.length).to.equal(2);
     expect(malformed?.map((diagnostic) => diagnostic.location?.line)).to.deep.equal([1, 5]);
+  });
+
+  it('converts unstructured text directly without discovery or preflight', async () => {
+    const converted = await callTool(harness.client, 'convert_document', {
+      source: {
+        kind: 'markdown',
+        name: 'plain-text.md',
+        markdown: 'A plain paragraph with no heading or Squisq annotation.',
+      },
+      targets: [{ format: 'pptx' }],
+    });
+
+    expect(converted.isError, converted.text).to.equal(false);
+    const results = converted.structuredContent?.results as
+      | Array<{
+          fidelity?: string;
+          artifact?: {
+            format?: string;
+            uri?: string;
+            appliedOptions?: Array<{ name?: string; value?: unknown }>;
+          };
+        }>
+      | undefined;
+    expect(results?.[0]?.fidelity).to.equal('editable-native');
+    expect(results?.[0]?.artifact).to.include({ format: 'pptx' });
+    expect(results?.[0]?.artifact?.uri).to.be.a('string');
+    expect(results?.[0]?.artifact?.appliedOptions).to.deep.include({
+      name: 'autoTemplates',
+      value: true,
+    });
+  });
+
+  it('converts recoverable annotation typos without a validation gate', async () => {
+    const converted = await callTool(harness.client, 'convert_document', {
+      source: {
+        kind: 'markdown',
+        name: 'recoverable-annotation.md',
+        markdown:
+          '# Retention {[comparisonBar leftLabel="Q1" leftValue="66" rightLabel="Q2" rightValue="71" unit="%"}]}\n\n' +
+          'The body remains available to the converter.',
+      },
+      targets: [{ format: 'pptx' }],
+    });
+
+    expect(converted.isError, converted.text).to.equal(false);
+    const results = converted.structuredContent?.results as
+      | Array<{ artifact?: { format?: string; uri?: string } }>
+      | undefined;
+    expect(results?.[0]?.artifact).to.include({ format: 'pptx' });
+    expect(results?.[0]?.artifact?.uri).to.be.a('string');
   });
 
   it('preserves the MCP content default across the native DBK conversion boundary', async () => {

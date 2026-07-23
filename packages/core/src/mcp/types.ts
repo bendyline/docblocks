@@ -13,7 +13,6 @@ export const DOCBLOCKS_MCP_TOOL_NAMES = [
   'create_document_bundle',
   'save_artifact',
   'inspect_document',
-  'validate_document',
   'preview_document',
   'compare_documents',
   'get_authoring_context',
@@ -124,7 +123,6 @@ export type DiagnosticStage =
   | 'import'
   | 'parse'
   | 'inspect'
-  | 'validate'
   | 'transform'
   | 'convert'
   | 'render'
@@ -310,22 +308,6 @@ export interface InspectionResult {
   readonly theme: ThemeSummary | null;
   readonly truncated: boolean;
   readonly detailsTruncated: boolean;
-  readonly diagnostics: readonly McpDiagnostic[];
-}
-
-export interface ValidationSummary {
-  readonly errorCount: number;
-  readonly warningCount: number;
-  readonly infoCount: number;
-}
-
-export interface ValidationResult {
-  readonly version: DocBlocksMcpWireVersion;
-  readonly kind: 'validation';
-  readonly sourceFormat: string;
-  readonly targetFormat: string | null;
-  readonly valid: boolean;
-  readonly summary: ValidationSummary;
   readonly diagnostics: readonly McpDiagnostic[];
 }
 

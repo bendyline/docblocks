@@ -346,7 +346,7 @@ export class SetupViewProvider {
     await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(folder.uri, '.vscode'));
     await vscode.workspace.fs.writeFile(mcpUri, bytes);
     await vscode.window.showInformationMessage(
-      'Registered DocBlocks MCP in the workspace .vscode/mcp.json.',
+      'Registered DocBlocks MCP with read and write access to the workspace folder.',
     );
   }
 
@@ -452,13 +452,13 @@ export class SetupViewProvider {
           ? {
               ...base,
               status: 'passed',
-              detail: 'Registered in .vscode/mcp.json with the workspace CLI',
+              detail: 'Registered with the workspace CLI and workspace read/write access',
             }
           : {
               ...base,
               status: 'failed',
               detail: mcpState.hasDocBlocksEntry
-                ? 'The existing docblocks server does not use the workspace CLI'
+                ? 'The existing docblocks server needs the workspace CLI and read/write access'
                 : 'Not registered in .vscode/mcp.json',
               action: 'configureMcp',
             };

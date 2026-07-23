@@ -152,13 +152,19 @@ describe('Core exports', () => {
     });
 
     it('FileSystemEntry types are correct', () => {
-      const file: FileEntry = { kind: 'file', name: 'readme.md', path: 'readme.md' };
+      const file: FileEntry = {
+        kind: 'file',
+        name: 'readme.md',
+        path: 'readme.md',
+        lastModified: '2026-07-22T12:00:00.000Z',
+      };
       const folder: FolderEntry = { kind: 'directory', name: 'docs', path: 'docs' };
       const entries: FileSystemEntry[] = [folder, file];
 
       expect(entries).to.have.length(2);
       expect(entries[0].kind).to.equal('directory');
       expect(entries[1].kind).to.equal('file');
+      expect(file.lastModified).to.equal('2026-07-22T12:00:00.000Z');
     });
 
     it('FileMeta has expected shape', () => {

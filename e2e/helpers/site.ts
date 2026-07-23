@@ -4,7 +4,7 @@ import { expect, type Page } from '@playwright/test';
 // subsequent tests transforming the site and its editor dependencies,
 // especially on Windows. Keep startup bounded without making ordinary test
 // actions inherit this larger allowance.
-const SITE_STARTUP_TIMEOUT_MS = 45_000;
+const SITE_STARTUP_TIMEOUT_MS = 75_000;
 
 /**
  * Open a fresh site context and wait for the asynchronous first-run workspace
@@ -20,8 +20,14 @@ export async function openInitializedSite(page: Page): Promise<void> {
     timeout: SITE_STARTUP_TIMEOUT_MS,
   });
 
-  const welcomeRow = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
-  await expect(welcomeRow).toBeVisible({ timeout: SITE_STARTUP_TIMEOUT_MS });
+  const welcomeRow = page.locator(
+    '.db-tree-row[data-path="aboutDocBlocks.md"], .db-tree-row[data-path="/aboutDocBlocks.md"]',
+  );
+  const startupError = page.locator('.db-save-toast--error');
+  await expect(welcomeRow.or(startupError)).toBeVisible({ timeout: SITE_STARTUP_TIMEOUT_MS });
+  if (await startupError.isVisible()) {
+    throw new Error(`Site workspace initialization failed: ${await startupError.innerText()}`);
+  }
 
   await expect
     .poll(() => decodeURIComponent(new URL(page.url()).hash), {

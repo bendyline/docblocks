@@ -72,14 +72,6 @@ describe('MCP content eval harness', () => {
         type: 'item.completed',
         item: {
           type: 'mcp_tool_call',
-          tool: 'docblocks.validate_document',
-          arguments: { source: { kind: 'markdown', markdown: '# Draft' } },
-        },
-      }),
-      JSON.stringify({
-        type: 'item.completed',
-        item: {
-          type: 'mcp_tool_call',
           tool: 'docblocks.convert_document',
           arguments: JSON.stringify({ source: { kind: 'markdown', markdown: '# Final' } }),
         },
@@ -102,8 +94,8 @@ describe('MCP content eval harness', () => {
       reasoningOutputTokens: 5,
     });
     expect(extractMcpTraceMetrics(jsonl)).to.deep.equal({
-      toolCallCount: 3,
-      toolArgumentCharacters: 125,
+      toolCallCount: 2,
+      toolArgumentCharacters: 74,
       toolResultCharacters: 120,
       authoringContextResultCharacters: 120,
       authoringContextTextCharacters: 42,

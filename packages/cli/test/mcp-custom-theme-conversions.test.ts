@@ -149,6 +149,7 @@ describe('MCP linked custom-theme and inferred-layout workflows', function () {
       });
       expect(result.artifact.suggestedFilename).to.match(new RegExp(`\\.${target.format}$`, 'u'));
       expect(result.artifact.appliedOptions).to.deep.equal([
+        { name: 'autoTemplates', value: true },
         { name: 'fidelity', value: target.fidelity },
       ]);
       expect(result.artifact.engineVersions.map((engine) => engine.name)).to.include(

@@ -68,7 +68,16 @@ describe('VS Code setup environment', () => {
         docblocks: {
           type: 'stdio',
           command: 'npm',
-          args: ['exec', '--', 'docblocks', 'mcp'],
+          args: [
+            'exec',
+            '--',
+            'docblocks',
+            'mcp',
+            '--allow-read',
+            '${workspaceFolder}',
+            '--allow-write',
+            '${workspaceFolder}',
+          ],
           cwd: '${workspaceFolder}',
         },
       },
@@ -118,13 +127,23 @@ describe('VS Code setup environment', () => {
       configured: true,
       hasDocBlocksEntry: true,
     });
+    expect(JSON.parse(created).servers.docblocks.args).to.deep.equal([
+      'exec',
+      '--',
+      'docblocks',
+      'mcp',
+      '--allow-read',
+      '${workspaceFolder}',
+      '--allow-write',
+      '${workspaceFolder}',
+    ]);
   });
 
   it('keeps custom DocBlocks MCP options while switching to the workspace CLI', () => {
     const existing = `{
   "servers": {
     "docblocks": {
-      // Keep explicit authority narrow.
+      // Keep the team's custom options.
       "command": "npx",
       "args": ["-y", "@bendyline/docblocks-cli", "mcp", "--allow-read", "./docs"],
       "env": { "DOCBLOCKS_MODE": "team" }
@@ -133,14 +152,54 @@ describe('VS Code setup environment', () => {
 }\n`;
     const updated = upsertDocBlocksMcpServer(existing);
 
-    expect(updated).to.contain('// Keep explicit authority narrow.');
+    expect(updated).to.contain("// Keep the team's custom options.");
     expect(updated).to.contain('"DOCBLOCKS_MODE": "team"');
     expect(updated).to.contain('"--allow-read"');
+    expect(updated).to.contain('"--allow-write"');
+    expect(updated).to.contain('"${workspaceFolder}"');
     expect(updated).to.contain('"./docs"');
     expect(inspectMcpJson(updated)).to.deep.equal({
       kind: 'valid',
       configured: true,
       hasDocBlocksEntry: true,
     });
+  });
+
+  it('upgrades an older workspace CLI entry with workspace read and write access', () => {
+    const existing = JSON.stringify({
+      servers: {
+        docblocks: {
+          type: 'stdio',
+          command: 'npm',
+          args: ['exec', '--', 'docblocks', 'mcp'],
+          cwd: '${workspaceFolder}',
+        },
+      },
+    });
+
+    expect(inspectMcpJson(existing)).to.deep.equal({
+      kind: 'valid',
+      configured: false,
+      hasDocBlocksEntry: true,
+    });
+    expect(JSON.parse(upsertDocBlocksMcpServer(existing)).servers.docblocks.args).to.deep.equal([
+      'exec',
+      '--',
+      'docblocks',
+      'mcp',
+      '--allow-read',
+      '${workspaceFolder}',
+      '--allow-write',
+      '${workspaceFolder}',
+    ]);
+  });
+
+  it('does not duplicate generated workspace authority when updated again', () => {
+    const created = upsertDocBlocksMcpServer(null);
+    const updated = upsertDocBlocksMcpServer(created);
+
+    expect(JSON.parse(updated).servers.docblocks.args).to.deep.equal(
+      JSON.parse(created).servers.docblocks.args,
+    );
   });
 });

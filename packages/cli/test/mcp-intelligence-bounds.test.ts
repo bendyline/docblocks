@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import {
   MCP_WIRE_LIMITS,
   parseInspectionResult,
-  parseValidationResult,
   type McpDiagnostic,
 } from '@bendyline/docblocks/mcp';
 import { MCP_MAX_PUBLISHED_DIAGNOSTICS, boundDiagnostics } from '../src/mcp/intelligence.js';
@@ -19,7 +18,7 @@ describe('MCP intelligence wire bounds', function () {
       (_unused, index) => ({
         code: `issue-${index}`,
         severity: index % 3 === 0 ? 'error' : index % 3 === 1 ? 'warning' : 'info',
-        stage: 'validate',
+        stage: 'inspect',
         format: 'md',
         count: 1,
         message: `Issue ${index}`,
@@ -28,7 +27,7 @@ describe('MCP intelligence wire bounds', function () {
         location: null,
       }),
     );
-    const bounded = boundDiagnostics(diagnostics, 'validate');
+    const bounded = boundDiagnostics(diagnostics, 'inspect');
 
     expect(bounded.length).to.equal(MCP_MAX_PUBLISHED_DIAGNOSTICS);
     const truncation = bounded.filter(({ code }) => code === 'diagnostics-truncated');
@@ -46,49 +45,25 @@ describe('MCP intelligence wire bounds', function () {
         countBySeverity(diagnostics, severity),
       );
     }
-
-    const summary = {
-      errorCount: countBySeverity(bounded, 'error'),
-      warningCount: countBySeverity(bounded, 'warning'),
-      infoCount: countBySeverity(bounded, 'info'),
-    };
-    expect(
-      parseValidationResult({
-        version: 1,
-        kind: 'validation',
-        sourceFormat: 'md',
-        targetFormat: null,
-        valid: false,
-        summary,
-        diagnostics: bounded,
-      }),
-    ).to.not.equal(null);
   });
 
-  it('normalizes validation targets and sums aggregated diagnostic counts', async () => {
+  it('publishes bounded authoring diagnostics through optional inspection', async () => {
     const harness = await startMcpHarness();
     try {
-      const response = await callTool(harness.client, 'validate_document', {
+      const response = await callTool(harness.client, 'inspect_document', {
         source: {
           kind: 'markdown',
           name: null,
           markdown: '# Accessibility\n\n![](one.png)\n\n![](two.png)',
         },
-        targetFormat: 'PPTX',
       });
       expect(response.isError).to.equal(false);
-      const validation = parseValidationResult(response.structuredContent);
-      expect(validation).to.not.equal(null);
-      expect(validation?.targetFormat).to.equal('pptx');
-      expect(validation?.diagnostics.find(({ code }) => code === 'missing-alt-text')).to.include({
+      const inspection = parseInspectionResult(response.structuredContent);
+      expect(inspection).to.not.equal(null);
+      expect(inspection?.diagnostics.find(({ code }) => code === 'missing-alt-text')).to.include({
         count: 2,
-        format: 'pptx',
+        format: 'md',
       });
-      expect(validation?.summary.warningCount).to.equal(
-        validation?.diagnostics
-          .filter(({ severity }) => severity === 'warning')
-          .reduce((sum, diagnostic) => sum + diagnostic.count, 0),
-      );
     } finally {
       await harness.dispose();
     }

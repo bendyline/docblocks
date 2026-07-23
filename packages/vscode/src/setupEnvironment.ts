@@ -3,10 +3,18 @@ import { applyEdits, modify, parse, type ParseError } from 'jsonc-parser';
 export const DOCBLOCKS_CLI_PACKAGE = '@bendyline/docblocks-cli';
 export const DOCBLOCKS_MCP_SERVER_NAME = 'docblocks';
 
+const DOCBLOCKS_MCP_LAUNCH_ARGS = ['exec', '--', 'docblocks', 'mcp'] as const;
+const DOCBLOCKS_MCP_WORKSPACE_AUTHORITY_ARGS = [
+  '--allow-read',
+  '${workspaceFolder}',
+  '--allow-write',
+  '${workspaceFolder}',
+] as const;
+
 export const DOCBLOCKS_MCP_SERVER_CONFIG = {
   type: 'stdio',
   command: 'npm',
-  args: ['exec', '--', 'docblocks', 'mcp'],
+  args: [...DOCBLOCKS_MCP_LAUNCH_ARGS, ...DOCBLOCKS_MCP_WORKSPACE_AUTHORITY_ARGS],
   cwd: '${workspaceFolder}',
 } as const;
 
@@ -167,19 +175,30 @@ function extractExistingDocBlocksMcpArgs(server: Record<string, unknown>): strin
   if (!Array.isArray(args) || !args.every((arg): arg is string => typeof arg === 'string'))
     return [];
 
-  if (server.command === 'docblocks' && args[0] === 'mcp') return args.slice(1);
+  let existingMcpArgs: string[] | null = null;
+
+  if (server.command === 'docblocks' && args[0] === 'mcp') {
+    existingMcpArgs = args.slice(1);
+  }
 
   const packageIndex = args.indexOf(DOCBLOCKS_CLI_PACKAGE);
-  if (packageIndex >= 0 && args[packageIndex + 1] === 'mcp') return args.slice(packageIndex + 2);
+  if (packageIndex >= 0 && args[packageIndex + 1] === 'mcp') {
+    existingMcpArgs = args.slice(packageIndex + 2);
+  }
 
   if (
     server.command === 'npm' &&
-    DOCBLOCKS_MCP_SERVER_CONFIG.args.every((arg, index) => args[index] === arg)
+    DOCBLOCKS_MCP_LAUNCH_ARGS.every((arg, index) => args[index] === arg)
   ) {
-    return args.slice(DOCBLOCKS_MCP_SERVER_CONFIG.args.length);
+    existingMcpArgs = args.slice(DOCBLOCKS_MCP_LAUNCH_ARGS.length);
   }
 
-  return [];
+  if (existingMcpArgs === null) return [];
+  const customArgs = existingMcpArgs;
+  if (DOCBLOCKS_MCP_WORKSPACE_AUTHORITY_ARGS.every((arg, index) => customArgs[index] === arg)) {
+    return customArgs.slice(DOCBLOCKS_MCP_WORKSPACE_AUTHORITY_ARGS.length);
+  }
+  return customArgs;
 }
 
 function isLocalDocBlocksMcpServer(value: unknown): boolean {

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { copyFile, rm } from 'node:fs/promises';
+import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 // Runs under playwright.offline.config.ts (vite preview over a production
@@ -23,7 +23,21 @@ async function expectControllingWorker(
 }
 
 test.describe('DocBlocks offline (PWA)', () => {
+  const legacyRegistrationPageName = 'legacy-worker-registration.fixture.html';
   const legacyWorkerName = 'legacy-navigation-worker.fixture.js';
+  const legacyRegistrationPageSource = path.join(
+    process.cwd(),
+    'e2e',
+    'fixtures',
+    'legacy-worker-registration.html',
+  );
+  const legacyRegistrationPageDestination = path.join(
+    process.cwd(),
+    'packages',
+    'site',
+    'dist',
+    legacyRegistrationPageName,
+  );
   const legacyWorkerSource = path.join(
     process.cwd(),
     'e2e',
@@ -37,13 +51,20 @@ test.describe('DocBlocks offline (PWA)', () => {
     'dist',
     legacyWorkerName,
   );
+  const serviceWorkerPath = path.join(process.cwd(), 'packages', 'site', 'dist', 'sw.js');
 
   test.beforeAll(async () => {
-    await copyFile(legacyWorkerSource, legacyWorkerDestination);
+    await Promise.all([
+      copyFile(legacyRegistrationPageSource, legacyRegistrationPageDestination),
+      copyFile(legacyWorkerSource, legacyWorkerDestination),
+    ]);
   });
 
   test.afterAll(async () => {
-    await rm(legacyWorkerDestination, { force: true });
+    await Promise.all([
+      rm(legacyRegistrationPageDestination, { force: true }),
+      rm(legacyWorkerDestination, { force: true }),
+    ]);
   });
 
   test('automatically migrates clients controlled by the legacy catch-all worker', async ({
@@ -53,7 +74,10 @@ test.describe('DocBlocks offline (PWA)', () => {
     // precache before activation. Match the cold-install budget used by the
     // end-to-end offline test below, especially for slower Windows runners.
     test.setTimeout(180_000);
-    await page.goto('/desktop/');
+    // Static product pages intentionally deny workers through CSP. Use a
+    // same-origin, test-only page that grants only worker loading so the
+    // historical worker can be installed without weakening production pages.
+    await page.goto(`/${legacyRegistrationPageName}`);
     await page.evaluate(async (scriptName) => {
       await caches.delete('docblocks-pwa-migrations');
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -66,7 +90,7 @@ test.describe('DocBlocks offline (PWA)', () => {
     // The legacy worker turns this static route into the editor shell. Loading
     // that shell registers the corrected worker, whose one-time migration
     // hook skips waiting and claims this client.
-    await page.reload();
+    await page.goto('/desktop/');
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 20_000 });
     await expectControllingWorker(page, '/sw.js', 120_000);
 
@@ -101,6 +125,78 @@ test.describe('DocBlocks offline (PWA)', () => {
       );
     } finally {
       await devtools.detach();
+    }
+  });
+
+  test('reloads an uncontrolled hard-refresh client after applying an update', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(180_000);
+
+    await page.goto('/');
+    await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await expectControllingWorker(page, '/sw.js', 120_000);
+
+    const originalServiceWorker = await readFile(serviceWorkerPath, 'utf8');
+    const updatedServiceWorker = `${originalServiceWorker}\n// PWA update E2E ${Date.now()}\n`;
+    await writeFile(serviceWorkerPath, updatedServiceWorker, 'utf8');
+
+    try {
+      await page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.update();
+      });
+
+      await expect(page.getByText('Update available', { exact: true })).toBeVisible({
+        timeout: 120_000,
+      });
+
+      // Shift-reload bypasses the service worker and leaves the resulting page
+      // uncontrolled. Masking `controller` before the app registers exercises
+      // the same Workbox branch deterministically: its `controlling` event is
+      // not classified as an update, so vite-plugin-pwa will not reload for us.
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator.serviceWorker, 'controller', {
+          configurable: true,
+          get: () => null,
+        });
+        const key = 'docblocks-pwa-update-e2e-loads';
+        const loads = Number(sessionStorage.getItem(key) ?? '0');
+        sessionStorage.setItem(key, String(loads + 1));
+      });
+      await page.reload();
+      await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText('Update available', { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
+      expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+
+      const loadCountBeforeApply = await page.evaluate(() =>
+        Number(sessionStorage.getItem('docblocks-pwa-update-e2e-loads') ?? '0'),
+      );
+      await page.getByText('Update available', { exact: true }).click();
+      await page.getByRole('button', { name: 'Reload', exact: true }).click();
+
+      await expect
+        .poll(
+          () =>
+            page.evaluate(() =>
+              Number(sessionStorage.getItem('docblocks-pwa-update-e2e-loads') ?? '0'),
+            ),
+          {
+            message: 'expected the activated worker to trigger a real page reload',
+            timeout: 30_000,
+          },
+        )
+        .toBe(loadCountBeforeApply + 1);
+      await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText('Update available', { exact: true })).toHaveCount(0);
+    } finally {
+      await writeFile(serviceWorkerPath, originalServiceWorker, 'utf8');
     }
   });
 

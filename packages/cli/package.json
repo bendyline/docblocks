@@ -36,7 +36,7 @@
     "docblocks": "./dist/bin.js"
   },
   "engines": {
-    "node": ">=22.14.0"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "files": [
     "dist",
@@ -48,11 +48,11 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.2.2",
-    "@bendyline/squisq": "2.4.1",
-    "@bendyline/squisq-cli": "2.4.1",
-    "@bendyline/squisq-formats": "2.3.5",
-    "@bendyline/squisq-react": "2.4.1",
-    "@bendyline/squisq-video": "2.2.5",
+    "@bendyline/squisq": "2.4.3",
+    "@bendyline/squisq-cli": "2.4.3",
+    "@bendyline/squisq-formats": "2.3.7",
+    "@bendyline/squisq-react": "2.4.5",
+    "@bendyline/squisq-video": "2.2.7",
     "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "13.1.0",
     "jszip": "3.10.1",

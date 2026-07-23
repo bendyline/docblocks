@@ -55,6 +55,66 @@ function baseProps(overrides: Partial<FileTreeNodeProps> = {}): FileTreeNodeProp
 }
 
 describe('FileTreeNode destructive confirmation', () => {
+  it('updates only the friendly timestamp leaf when the shared clock advances', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const originalNow = Date.now;
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    let currentTime = Date.parse('2026-07-22T12:00:00.000Z');
+    let clockTick: (() => void) | null = null;
+    let rowRenders = 0;
+    const lastModified = new Date(currentTime - 5 * 60 * 1_000).toISOString();
+
+    Date.now = () => currentTime;
+    globalThis.setInterval = ((handler: Parameters<typeof setInterval>[0]) => {
+      if (typeof handler === 'function') clockTick = handler;
+      return 1;
+    }) as typeof setInterval;
+    globalThis.clearInterval = (() => undefined) as typeof clearInterval;
+
+    function TimestampRow() {
+      rowRenders += 1;
+      return createElement(
+        FileTreeNode,
+        baseProps({
+          entry: {
+            ...FILE,
+            lastModified,
+          },
+        }),
+      );
+    }
+
+    try {
+      await act(async () => {
+        root.render(createElement(TimestampRow));
+      });
+
+      let timestamp = container.querySelector<HTMLTimeElement>('.db-tree-last-modified');
+      expect(timestamp?.textContent).to.equal('5m ago');
+      expect(timestamp?.dateTime).to.equal(lastModified);
+      expect(timestamp?.getAttribute('aria-label')).to.equal('Last modified 5 minutes ago');
+      expect(timestamp?.title).to.match(/^Last modified /);
+
+      expect(clockTick).not.to.equal(null);
+      currentTime += 60_000;
+      await act(async () => clockTick?.());
+
+      timestamp = container.querySelector<HTMLTimeElement>('.db-tree-last-modified');
+      expect(timestamp?.textContent).to.equal('6m ago');
+      expect(timestamp?.getAttribute('aria-label')).to.equal('Last modified 6 minutes ago');
+      expect(rowRenders, 'the owning tree row must remain stable').to.equal(1);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      Date.now = originalNow;
+      globalThis.setInterval = originalSetInterval;
+      globalThis.clearInterval = originalClearInterval;
+    }
+  });
+
   it('does not invoke the session/provider mutation boundary when deletion is cancelled', async () => {
     const container = document.createElement('div');
     document.body.append(container);

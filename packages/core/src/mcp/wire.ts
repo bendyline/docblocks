@@ -31,8 +31,6 @@ import {
   type SourceRange,
   type ThemeSummary,
   type TableSummary,
-  type ValidationResult,
-  type ValidationSummary,
 } from './types.js';
 
 /** Quantitative limits for untrusted MCP payloads. */
@@ -457,51 +455,6 @@ export function parseInspectionResult(value: unknown): InspectionResult | null {
     theme,
     truncated: value.truncated,
     detailsTruncated: value.detailsTruncated,
-    diagnostics,
-  };
-}
-
-export function parseValidationResult(value: unknown): ValidationResult | null {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      'version',
-      'kind',
-      'sourceFormat',
-      'targetFormat',
-      'valid',
-      'summary',
-      'diagnostics',
-    ]) ||
-    value.version !== DOCBLOCKS_MCP_WIRE_VERSION ||
-    value.kind !== 'validation' ||
-    !isFormat(value.sourceFormat) ||
-    !(value.targetFormat === null || isFormat(value.targetFormat)) ||
-    typeof value.valid !== 'boolean'
-  ) {
-    return null;
-  }
-
-  const summary = parseValidationSummary(value.summary);
-  const diagnostics = parseArray(value.diagnostics, parseMcpDiagnostic);
-  if (summary === null || diagnostics === null) return null;
-  const actualSummary = summarizeDiagnostics(diagnostics);
-  if (
-    summary.errorCount !== actualSummary.errorCount ||
-    summary.warningCount !== actualSummary.warningCount ||
-    summary.infoCount !== actualSummary.infoCount ||
-    value.valid !== (summary.errorCount === 0)
-  ) {
-    return null;
-  }
-
-  return {
-    version: DOCBLOCKS_MCP_WIRE_VERSION,
-    kind: 'validation',
-    sourceFormat: value.sourceFormat,
-    targetFormat: value.targetFormat,
-    valid: value.valid,
-    summary,
     diagnostics,
   };
 }
@@ -941,23 +894,6 @@ function parseThemeSummary(value: unknown): ThemeSummary | null {
   return { id: value.id, name: value.name, source: value.source, layouts };
 }
 
-function parseValidationSummary(value: unknown): ValidationSummary | null {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ['errorCount', 'warningCount', 'infoCount']) ||
-    !isNonNegativeInteger(value.errorCount) ||
-    !isNonNegativeInteger(value.warningCount) ||
-    !isNonNegativeInteger(value.infoCount)
-  ) {
-    return null;
-  }
-  return {
-    errorCount: value.errorCount,
-    warningCount: value.warningCount,
-    infoCount: value.infoCount,
-  };
-}
-
 function parsePreviewItem(value: unknown): PreviewItem | null {
   if (
     !isRecord(value) ||
@@ -1018,18 +954,6 @@ function parseComparisonMetric(value: unknown): ComparisonMetric | null {
     rightValue: value.rightValue,
     similarity: value.similarity,
   };
-}
-
-function summarizeDiagnostics(diagnostics: readonly McpDiagnostic[]): ValidationSummary {
-  let errorCount = 0;
-  let warningCount = 0;
-  let infoCount = 0;
-  for (const diagnostic of diagnostics) {
-    if (diagnostic.severity === 'error') errorCount += diagnostic.count;
-    else if (diagnostic.severity === 'warning') warningCount += diagnostic.count;
-    else infoCount += diagnostic.count;
-  }
-  return { errorCount, warningCount, infoCount };
 }
 
 function parseArray<T>(
@@ -1173,7 +1097,6 @@ function isDiagnosticStage(value: unknown): value is DiagnosticStage {
     value === 'import' ||
     value === 'parse' ||
     value === 'inspect' ||
-    value === 'validate' ||
     value === 'transform' ||
     value === 'convert' ||
     value === 'render' ||
