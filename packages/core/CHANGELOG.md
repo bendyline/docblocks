@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.3.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.2.2...@bendyline/docblocks@2.3.0) (2026-07-23)
+
+### Features
+
+* Sort files by modifed ([#17](https://github.com/bendyline/docblocks/issues/17)) ([9f0a510](https://github.com/bendyline/docblocks/commit/9f0a510d61434376efd00ad61f9a034961989de5))
+
 ## @bendyline/docblocks [2.2.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.2.1...@bendyline/docblocks@2.2.2) (2026-07-22)
 
 ### Bug Fixes
