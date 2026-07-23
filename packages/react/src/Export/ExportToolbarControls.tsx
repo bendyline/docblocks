@@ -20,6 +20,7 @@ import {
 import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-react';
 import type { SharedDocumentMode } from '@bendyline/docblocks/share';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
+import type { MediaProvider } from '@bendyline/squisq/schemas';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { DisplayMode } from '@bendyline/squisq-react';
@@ -56,6 +57,8 @@ export interface ExportToolbarControlsProps {
   selectedFile: string | null;
   /** Media container for resolving images during export. */
   mediaContainer?: ContentContainer | null;
+  /** Active document media provider used to preload audio and video export assets. */
+  mediaProvider?: MediaProvider | null;
   /** Override the default browser download behavior for host-provided save flows. */
   saveBlob?: ExportBlobSaver;
   /** Optional host adapter for displaying, picking, and saving to a native target path. */
@@ -206,6 +209,7 @@ function quickLabel(
 export function ExportToolbarControls({
   selectedFile,
   mediaContainer,
+  mediaProvider,
   saveBlob,
   destinationAdapter,
   trigger = 'menu',
@@ -743,6 +747,7 @@ export function ExportToolbarControls({
           <LoadedVideoExportModal
             doc={videoDoc}
             playerScript={videoModules.playerScript}
+            {...(mediaProvider ? { mediaProvider } : {})}
             colorScheme={colorScheme}
             uiPalette={videoExportPalette}
             defaultConfig={{

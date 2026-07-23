@@ -4325,6 +4325,7 @@ export function DocBlocksShell({
                           <ExportToolbarControls
                             selectedFile={selectedFile}
                             mediaContainer={mediaContainerRef.current}
+                            mediaProvider={mediaProvider}
                             destinationAdapter={exportDestinationAdapter}
                             colorScheme={resolvedTheme}
                             videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
