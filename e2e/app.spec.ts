@@ -313,7 +313,7 @@ test.describe('DocBlocks App', () => {
     const dialog = page.getByRole('dialog', { name: 'Export Document' });
     await dialog.getByRole('radio', { name: 'Markdown' }).click();
     const downloadPromise = page.waitForEvent('download');
-    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save MD to Downloads', exact: true }).click();
     const download = await downloadPromise;
 
     expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');

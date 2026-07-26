@@ -196,7 +196,7 @@ test('exports exact Markdown bytes through the remembered native target', async 
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
   await expect(dialog.getByLabel('Export to')).toHaveValue(target);
-  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save MD', exact: true }).click();
 
   await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
   const exported = fs.readFileSync(target, 'utf8');

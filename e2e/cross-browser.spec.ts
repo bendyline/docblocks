@@ -14,7 +14,7 @@ test('boots the editor and exports Markdown', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
   const downloadPromise = page.waitForEvent('download');
-  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Save MD to Downloads', exact: true }).click();
   const download = await downloadPromise;
   const downloadPath = await download.path();
   if (!downloadPath) throw new Error('Cross-browser export did not produce a file');
