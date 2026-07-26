@@ -1,3 +1,16 @@
+## docblocks-desktop [2.3.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.3.0...docblocks-desktop@2.3.1) (2026-07-26)
+
+### Bug Fixes
+
+* Lint updates ([ffcb4f0](https://github.com/bendyline/docblocks/commit/ffcb4f0f3589c52b194faeb205346ab20d29d3f3))
+* Update squisq ([323128b](https://github.com/bendyline/docblocks/commit/323128b137077f7e1089a564dc043e924ed17709))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.3.1
+* **@bendyline/docblocks-react:** upgraded to 2.3.1
+
 ## docblocks-desktop [2.3.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.2.2...docblocks-desktop@2.3.0) (2026-07-23)
 
 ### Features
