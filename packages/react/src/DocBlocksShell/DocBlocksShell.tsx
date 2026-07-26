@@ -86,6 +86,7 @@ import {
   ExportToolbarControls,
   type ExportDestinationAdapter,
 } from '../Export/DeferredExportToolbarControls.js';
+import { createBrowserSaveAsAdapter } from '../Export/browser-save.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
 // The editor is only needed after a document and its media container are
@@ -1083,16 +1084,19 @@ export function DocBlocksShell({
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
-    if (!isElectronHost() || !activeWorkspaceId || !selectedFile) return undefined;
-    const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
-    const host = getDocBlocksHost().exports;
-    return {
-      resolveTarget: (filename) => host.resolveTarget(documentId, filename),
-      pickTarget: (filename, currentTarget) =>
-        host.pickTarget(documentId, filename, currentTarget?.grantId ?? null),
-      saveBlob: async (blob, filename, target) =>
-        host.save(documentId, filename, target?.grantId ?? null, await blob.arrayBuffer()),
-    };
+    if (!selectedFile) return undefined;
+    if (isElectronHost() && activeWorkspaceId) {
+      const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
+      const host = getDocBlocksHost().exports;
+      return {
+        resolveTarget: (filename) => host.resolveTarget(documentId, filename),
+        pickTarget: (filename, currentTarget) =>
+          host.pickTarget(documentId, filename, currentTarget?.grantId ?? null),
+        saveBlob: async (blob, filename, target) =>
+          host.save(documentId, filename, target?.grantId ?? null, await blob.arrayBuffer()),
+      };
+    }
+    return createBrowserSaveAsAdapter();
   }, [activeWorkspaceId, selectedFile]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);

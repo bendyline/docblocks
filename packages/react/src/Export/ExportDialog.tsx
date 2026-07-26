@@ -26,6 +26,8 @@ export interface ExportDialogProps {
   onExport: (options: ExportOptions) => void;
   /** Called whenever the currently selected options change. */
   onOptionsChange?: (options: ExportOptions) => void;
+  /** Host-aware label for the final save action. Defaults to "Export". */
+  actionLabel?: (options: ExportOptions) => string;
   /** Called when the dialog is dismissed. */
   onClose: () => void;
 }
@@ -125,6 +127,7 @@ export function ExportDialog({
   destination,
   onExport,
   onOptionsChange,
+  actionLabel,
   onClose,
 }: ExportDialogProps) {
   const [format, setFormat] = useState<ExportFormat>(initial.format);
@@ -246,7 +249,7 @@ export function ExportDialog({
             onClick={handleExport}
             disabled={exporting || Boolean(destination?.error)}
           >
-            {exporting ? 'Exporting...' : 'Export'}
+            {exporting ? 'Exporting...' : (actionLabel?.(currentOptions) ?? 'Export')}
           </button>
         </>
       }

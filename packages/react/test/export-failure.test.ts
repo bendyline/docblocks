@@ -81,7 +81,10 @@ describe('Export failure surfacing', () => {
     await act(async () => trigger!.click());
 
     // ExportDialog is lazy.
-    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await waitFor(
+      () => buttonByText(document.body, 'Save PDF to Downloads') !== undefined,
+      'the export dialog',
+    );
 
     // Markdown is the cheapest pipeline that still round-trips through
     // the real converter and the failing saveBlob.
@@ -89,7 +92,7 @@ describe('Export failure surfacing', () => {
     expect(markdownChip, 'markdown format chip').not.to.equal(undefined);
     await act(async () => markdownChip!.click());
 
-    await act(async () => buttonByText(document.body, 'Export')!.click());
+    await act(async () => buttonByText(document.body, 'Save MD to Downloads')!.click());
     await waitFor(
       () => document.body.textContent?.includes(SAVE_FAILURE) === true,
       'the export failure to be surfaced',
@@ -109,7 +112,7 @@ describe('Export failure surfacing', () => {
       null,
     );
     // ...and the user can retry rather than being stuck.
-    expect(buttonByText(document.body, 'Export')?.disabled).to.equal(false);
+    expect(buttonByText(document.body, 'Save MD to Downloads')?.disabled).to.equal(false);
   });
 
   it('gives a failed quick export its own dialog', async () => {
@@ -140,7 +143,7 @@ describe('Export failure surfacing', () => {
     expect(menu, 'export menu trigger').not.to.equal(null);
     await act(async () => menu!.click());
 
-    const quick = buttonByText(document.body, 'Export MD');
+    const quick = buttonByText(document.body, 'Save MD to Downloads');
     expect(quick, 'quick export item').not.to.equal(undefined);
     await act(async () => quick!.click());
 
@@ -189,7 +192,7 @@ describe('Export failure surfacing', () => {
 
     const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
     await act(async () => menu!.click());
-    const expectedLabel = `Export DOCX to ${displayPath}`;
+    const expectedLabel = `Save DOCX to ${displayPath}`;
     await waitFor(
       () => buttonByText(document.body, expectedLabel) !== undefined,
       'the quick-export destination',
@@ -199,6 +202,51 @@ describe('Export failure surfacing', () => {
     expect(quick?.disabled).to.equal(false);
     expect(quick?.title).to.equal(expectedLabel);
     expect(resolvedFilenames).to.deep.equal(['notes/resume4.docx']);
+  });
+
+  it('picks an installed-app quick-export target before generating the file', async () => {
+    const events: string[] = [];
+    window.localStorage.setItem(
+      'docblocks-export-options',
+      JSON.stringify({ ...DEFAULT_OPTIONS, format: 'md' }),
+    );
+
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Export me\n' },
+          createElement(ExportToolbarControls, {
+            selectedFile: '/notes/draft.md',
+            showVideoExport: false,
+            destinationAdapter: {
+              pickBeforeSave: true,
+              showDestination: false,
+              resolveTarget: async (filename) => ({ grantId: null, displayPath: filename }),
+              pickTarget: async (filename) => {
+                events.push(`pick:${filename}`);
+                return { grantId: 'browser-save', displayPath: filename };
+              },
+              saveBlob: async (_blob, filename, target) => {
+                events.push(`save:${filename}`);
+                return target ?? null;
+              },
+            },
+          }),
+        ),
+      );
+    });
+
+    const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
+    await act(async () => menu!.click());
+    await waitFor(
+      () => buttonByText(document.body, 'Save MD as...') !== undefined,
+      'the installed-app quick export',
+    );
+    await act(async () => buttonByText(document.body, 'Save MD as...')!.click());
+    await waitFor(() => events.length === 2, 'the quick export to save');
+
+    expect(events).to.deep.equal(['pick:notes/draft.md', 'save:notes/draft.md']);
   });
 
   it('keeps the export dialog open without an error when native save is cancelled', async () => {
@@ -226,11 +274,11 @@ describe('Export failure surfacing', () => {
 
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
     await act(async () => trigger!.click());
-    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await waitFor(() => buttonByText(document.body, 'Save PDF') !== undefined, 'the export dialog');
     await act(async () => buttonByText(document.body, 'Markdown')!.click());
-    await act(async () => buttonByText(document.body, 'Export')!.click());
+    await act(async () => buttonByText(document.body, 'Save MD')!.click());
     await waitFor(
-      () => buttonByText(document.body, 'Export')?.disabled === false,
+      () => buttonByText(document.body, 'Save MD')?.disabled === false,
       'the cancelled export to settle',
     );
 
@@ -262,9 +310,12 @@ describe('Export failure surfacing', () => {
 
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
     await act(async () => trigger!.click());
-    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await waitFor(
+      () => buttonByText(document.body, 'Save PDF to Downloads') !== undefined,
+      'the export dialog',
+    );
     await act(async () => buttonByText(document.body, 'Markdown')!.click());
-    await act(async () => buttonByText(document.body, 'Export')!.click());
+    await act(async () => buttonByText(document.body, 'Save MD to Downloads')!.click());
     await waitFor(
       () => document.body.textContent?.includes(actionableFailure) === true,
       'the actionable export failure',
@@ -284,7 +335,10 @@ describe('Export failure surfacing', () => {
 
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
     await act(async () => trigger!.click());
-    await waitFor(() => buttonByText(document.body, 'Export') !== undefined, 'the export dialog');
+    await waitFor(
+      () => buttonByText(document.body, 'Save MD to Downloads') !== undefined,
+      'the export dialog',
+    );
     expect(document.body.textContent).to.not.include(SAVE_FAILURE);
   });
 });

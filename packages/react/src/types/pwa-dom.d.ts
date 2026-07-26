@@ -21,8 +21,20 @@ interface LaunchQueue {
   setConsumer(consumer: (params: LaunchParams) => void): void;
 }
 
+interface FilePickerAcceptType {
+  readonly description?: string;
+  readonly accept: Readonly<Record<string, readonly string[]>>;
+}
+
+interface SaveFilePickerOptions {
+  readonly suggestedName?: string;
+  readonly types?: readonly FilePickerAcceptType[];
+  readonly excludeAcceptAllOption?: boolean;
+}
+
 interface Window {
   launchQueue?: LaunchQueue;
+  showSaveFilePicker?: (options?: SaveFilePickerOptions) => Promise<FileSystemFileHandle>;
 }
 
 interface WindowEventMap {

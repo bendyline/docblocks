@@ -12,6 +12,7 @@ import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
+export { buildExportFilename } from './export-filename.js';
 
 export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
 
@@ -55,15 +56,6 @@ async function saveExportBlob(
 function buildFilename(selectedFile: string | null, format: ExportFormat): string {
   const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
   return base + FORMAT_EXTENSIONS[format];
-}
-
-export function buildExportFilename(selectedFile: string | null, options: ExportOptions): string {
-  const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
-  if (options.format === 'html') {
-    if (options.includeLinkedDocs || options.htmlBundle === 'zip') return `${base}.zip`;
-    if (options.entryAsIndex) return 'index.html';
-  }
-  return base + FORMAT_EXTENSIONS[options.format];
 }
 
 /** Run the export and trigger a download. */

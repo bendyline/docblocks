@@ -34,6 +34,8 @@ import {
   saveExportOptions,
 } from './export-options.js';
 import type { ExportBlobSaver } from './run-export.js';
+import { browserSaveMode, saveActionLabel } from './browser-save.js';
+import { buildExportFilename } from './export-filename.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
@@ -96,6 +98,10 @@ export interface ExportDestinationAdapter {
     filename: string,
     target?: ExportDestinationTarget | null,
   ) => Promise<ExportDestinationTarget | null>;
+  /** Open the picker from the initiating click before expensive conversion work. */
+  pickBeforeSave?: boolean;
+  /** Whether the export dialog should render the adapter's destination field. */
+  showDestination?: boolean;
   hint?: string;
 }
 
@@ -169,6 +175,7 @@ function exportErrorMessage(caught: unknown): string {
 function quickLabel(
   opts: ExportOptions,
   transformSummaries: ExportSummaryOption[],
+  saveMode: 'downloads' | 'save-as' | 'destination',
   destinationPath?: string,
 ): string {
   const baseExt = FORMAT_EXTENSIONS[opts.format].toUpperCase().replace('.', '');
@@ -198,11 +205,13 @@ function quickLabel(
     if (transform) parts.push(transform.name);
   }
 
+  const prefix = `Save ${ext}`;
+  let label = prefix;
   if (parts.length > 0) {
-    const label = `Export ${ext} with ${parts.join(' + ')}`;
-    return destinationPath ? `${label} to ${destinationPath}` : label;
+    label = `${prefix} with ${parts.join(' + ')}`;
   }
-  const label = `Export ${ext}`;
+  if (saveMode === 'save-as') return `${label} as...`;
+  if (saveMode === 'downloads') return `${label} to Downloads`;
   return destinationPath ? `${label} to ${destinationPath}` : label;
 }
 
@@ -324,10 +333,8 @@ export function ExportToolbarControls({
     let cancelled = false;
     setQuickDestination(null);
     setQuickDestinationPending(true);
-    void loadRunExportModule()
-      .then(({ buildExportFilename }) =>
-        destinationAdapter.resolveTarget(buildExportFilename(selectedFile, quickOptions)),
-      )
+    void destinationAdapter
+      .resolveTarget(buildExportFilename(selectedFile, quickOptions))
       .then((target) => {
         if (!cancelled) setQuickDestination({ key: quickDestinationKey, target });
       })
@@ -359,7 +366,6 @@ export function ExportToolbarControls({
       destinationRequestRef.current = requestId;
 
       try {
-        const { buildExportFilename } = await loadRunExportModule();
         const filename = buildExportFilename(selectedFile, options);
         const target = await destinationAdapter.resolveTarget(filename);
         if (destinationRequestRef.current === requestId) setDestinationTarget(target);
@@ -439,7 +445,6 @@ export function ExportToolbarControls({
     async (options: ExportOptions) => {
       if (!destinationAdapter) return;
       try {
-        const { buildExportFilename } = await loadRunExportModule();
         const filename = buildExportFilename(selectedFile, options);
         const pickedTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
         if (pickedTarget === null) return;
@@ -462,25 +467,27 @@ export function ExportToolbarControls({
     [destinationAdapter],
   );
 
-  const handleDestinationSaveBlob = useCallback(
-    async (blob: Blob, filename: string) => {
-      await saveToDestination(blob, filename, destinationTarget);
-    },
-    [destinationTarget, saveToDestination],
-  );
-
   const handleExport = useCallback(
     async (opts: ExportOptions) => {
       setExporting(true);
       setExportError(null);
       try {
+        let exportTarget = destinationTarget;
+        if (destinationAdapter?.pickBeforeSave) {
+          const filename = buildExportFilename(selectedFile, opts);
+          exportTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
+          if (!exportTarget) return;
+          setDestinationTarget(exportTarget);
+        }
         const { runExport } = await loadRunExportModule();
         await runExport(
           markdownSource,
           selectedFile,
           opts,
           mediaContainer,
-          destinationAdapter ? handleDestinationSaveBlob : saveBlob,
+          destinationAdapter
+            ? (blob, filename) => saveToDestination(blob, filename, exportTarget)
+            : saveBlob,
         );
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
@@ -496,7 +503,8 @@ export function ExportToolbarControls({
       selectedFile,
       mediaContainer,
       destinationAdapter,
-      handleDestinationSaveBlob,
+      destinationTarget,
+      saveToDestination,
       saveBlob,
     ],
   );
@@ -508,12 +516,18 @@ export function ExportToolbarControls({
     setExportError(null);
     try {
       saveExportOptions(lastOptions);
-      const { runExport } = await loadRunExportModule();
       let quickTarget: ExportDestinationTarget | null = null;
       if (destinationAdapter) {
-        if (!quickDestinationTarget) return;
-        quickTarget = quickDestinationTarget;
+        if (destinationAdapter.pickBeforeSave) {
+          const filename = buildExportFilename(selectedFile, lastOptions);
+          quickTarget = await destinationAdapter.pickTarget(filename, quickDestinationTarget);
+          if (!quickTarget) return;
+        } else {
+          if (!quickDestinationTarget) return;
+          quickTarget = quickDestinationTarget;
+        }
       }
+      const { runExport } = await loadRunExportModule();
       await runExport(
         markdownSource,
         selectedFile,
@@ -545,9 +559,24 @@ export function ExportToolbarControls({
     setExportError(null);
   }, []);
 
+  const handleVideoSave = useCallback(
+    async (blob: Blob, filename: string): Promise<boolean> => {
+      if (!destinationAdapter) return false;
+      const target = await destinationAdapter.pickTarget(filename, null);
+      if (!target) return false;
+      return (await destinationAdapter.saveBlob(blob, filename, target)) !== null;
+    },
+    [destinationAdapter],
+  );
+
   const LoadedVideoExportModal = videoModules?.Modal;
   const showAnimatedGifExport =
     showVideoExport && typeof ffmpegWasm?.coreURL === 'string' && ffmpegWasm.coreURL.length > 0;
+  const quickSaveMode = destinationAdapter
+    ? destinationAdapter.pickBeforeSave
+      ? 'save-as'
+      : 'destination'
+    : 'downloads';
 
   return (
     <>
@@ -600,7 +629,10 @@ export function ExportToolbarControls({
                       ? quickLabel(
                           lastOptions,
                           transformSummaries,
-                          quickDestinationTarget.displayPath,
+                          quickSaveMode,
+                          destinationAdapter?.pickBeforeSave
+                            ? undefined
+                            : quickDestinationTarget.displayPath,
                         )
                       : undefined
                   }
@@ -609,9 +641,12 @@ export function ExportToolbarControls({
                     ? quickLabel(
                         lastOptions,
                         transformSummaries,
-                        quickDestinationTarget.displayPath,
+                        quickSaveMode,
+                        destinationAdapter?.pickBeforeSave
+                          ? undefined
+                          : quickDestinationTarget.displayPath,
                       )
-                    : quickLabel(lastOptions, transformSummaries) +
+                    : quickLabel(lastOptions, transformSummaries, quickSaveMode) +
                       (destinationAdapter
                         ? quickDestinationPending
                           ? ' (finding destination...)'
@@ -674,7 +709,7 @@ export function ExportToolbarControls({
             exporting={exporting}
             error={exportError}
             destination={
-              destinationAdapter
+              destinationAdapter && destinationAdapter.showDestination !== false
                 ? {
                     value: destinationTarget?.displayPath ?? '',
                     onPick: handlePickDestination,
@@ -684,6 +719,20 @@ export function ExportToolbarControls({
             }
             onExport={handleExport}
             onOptionsChange={destinationAdapter ? handleOptionsChange : undefined}
+            actionLabel={(options) => {
+              const extension =
+                options.format === 'html' &&
+                (options.includeLinkedDocs || options.htmlBundle === 'zip')
+                  ? 'ZIP'
+                  : FORMAT_EXTENSIONS[options.format].slice(1);
+              if (destinationAdapter && !destinationAdapter.pickBeforeSave) {
+                return `Save ${extension.toUpperCase()}`;
+              }
+              return saveActionLabel(
+                extension,
+                destinationAdapter?.pickBeforeSave ? 'save-as' : browserSaveMode(),
+              );
+            }}
             onClose={handleCloseDialog}
           />
         </Suspense>
@@ -755,6 +804,12 @@ export function ExportToolbarControls({
               ...(ffmpegWasm ? { ffmpegWasm } : {}),
               outputFormat: videoOutputFormat,
             }}
+            {...(destinationAdapter
+              ? {
+                  saveOutput: handleVideoSave,
+                  saveActionLabel: (format: 'mp4' | 'gif') => saveActionLabel(format, 'save-as'),
+                }
+              : {})}
             onClose={handleCloseVideoModal}
           />
         )}
