@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.3.1](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.3.0...@bendyline/docblocks@2.3.1) (2026-07-26)
+
+### Bug Fixes
+
+* Update squisq ([323128b](https://github.com/bendyline/docblocks/commit/323128b137077f7e1089a564dc043e924ed17709))
+
 ## @bendyline/docblocks [2.3.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.2.2...@bendyline/docblocks@2.3.0) (2026-07-23)
 
 ### Features
