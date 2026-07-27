@@ -173,7 +173,7 @@ test('export dialog exposes a remembered native target control', async ({ launch
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await window.locator('.db-toolbar-menu-trigger').click();
-  await window.getByRole('menuitem', { name: 'Export...' }).click();
+  await window.getByRole('menuitem', { name: 'Export document...' }).click();
 
   const exportTarget = window.getByLabel('Export to');
   await expect(exportTarget).toBeVisible();
@@ -192,7 +192,7 @@ test('exports exact Markdown bytes through the remembered native target', async 
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
 
   await window.locator('.db-toolbar-menu-trigger').click();
-  await window.getByRole('menuitem', { name: 'Export...' }).click();
+  await window.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
   await expect(dialog.getByLabel('Export to')).toHaveValue(target);

@@ -57,7 +57,7 @@ test.describe('mobile web-editor ship readiness', () => {
     await moreActions.click();
 
     await exportAndShare.click();
-    await expect(page.getByRole('menuitem', { name: 'Export...' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Export document...' })).toBeVisible();
     await expect(
       page.getByRole('menuitem', { name: 'Share link with content embedded...' }),
     ).toBeVisible();

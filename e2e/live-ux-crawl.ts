@@ -359,12 +359,12 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
 
   await step('export menu (dark)', async () => {
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export...' }).waitFor({ timeout: 5_000 });
+    await page.getByRole('menuitem', { name: 'Export document...' }).waitFor({ timeout: 5_000 });
     await shoot(page, 'export-menu-dark', 'Export and share menu open');
   });
 
   await step('export dialog (dark)', async () => {
-    await page.getByRole('menuitem', { name: 'Export...' }).click();
+    await page.getByRole('menuitem', { name: 'Export document...' }).click();
     await page
       .getByRole('dialog', { name: 'Export Document' })
       .waitFor({ state: 'visible', timeout: 10_000 });
@@ -528,7 +528,7 @@ async function crawlAppDesktopLight(browser: Browser): Promise<void> {
 
   await step('export dialog (light)', async () => {
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export...' }).click();
+    await page.getByRole('menuitem', { name: 'Export document...' }).click();
     await page
       .getByRole('dialog', { name: 'Export Document' })
       .waitFor({ state: 'visible', timeout: 10_000 });
@@ -604,7 +604,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
 
     await step('mobile export menu (dark)', async () => {
       await page.getByRole('button', { name: 'Export and share' }).click();
-      await page.getByRole('menuitem', { name: 'Export...' }).waitFor({ timeout: 5_000 });
+      await page.getByRole('menuitem', { name: 'Export document...' }).waitFor({ timeout: 5_000 });
       await shoot(page, 'mobile-export-menu-dark', 'Mobile export menu');
       await dismissOpenLayer(page);
     });

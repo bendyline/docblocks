@@ -677,7 +677,7 @@ export function ExportToolbarControls({
                 className="db-toolbar-menu-item"
                 onClick={handleOpenDialog}
               >
-                Export...
+                Export document...
               </button>
               <button
                 type="button"

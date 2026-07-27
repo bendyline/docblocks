@@ -308,7 +308,7 @@ test.describe('DocBlocks App', () => {
 
   test('exports the active document as an exact Markdown download', async ({ page }) => {
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export...' }).click();
+    await page.getByRole('menuitem', { name: 'Export document...' }).click();
 
     const dialog = page.getByRole('dialog', { name: 'Export Document' });
     await dialog.getByRole('radio', { name: 'Markdown' }).click();

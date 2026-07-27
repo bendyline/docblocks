@@ -136,7 +136,7 @@ test.describe('a11y - application dialogs', () => {
   test('no WCAG A/AA violations in the Export dialog', async ({ page }, info) => {
     await waitForShell(page);
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export...' }).click();
+    await page.getByRole('menuitem', { name: 'Export document...' }).click();
     await expect(page.getByRole('dialog', { name: 'Export Document' })).toBeVisible();
 
     const violations = await scanAndReport(page, info, 'export-dialog');
