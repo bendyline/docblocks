@@ -339,7 +339,13 @@ jobs:
         run: npm run build
 
       - name: Build + package desktop (Linux)
-        run: npm run dist:linux -w docblocks-desktop -- --publish never
+        # Keep the architectures in separate processes. electron-builder's npm
+        # dependency collector can read incomplete JSON while multi-arch package
+        # tasks overlap in one process.
+        working-directory: packages/desktop
+        run: |
+          npm run package:linux:x64 -- --publish never
+          npm run package:linux:arm64 -- --publish never
 
       - name: Verify Linux architecture artifacts
         shell: bash
