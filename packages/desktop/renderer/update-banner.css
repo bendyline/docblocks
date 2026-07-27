@@ -16,6 +16,7 @@
   align-items: center;
   gap: 8px;
   color: var(--db-accent-deep);
+  font-family: 'Hanken Grotesk', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 

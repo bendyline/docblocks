@@ -59,6 +59,12 @@ export interface ExportToolbarControlsProps {
   selectedFile: string | null;
   /** Media container for resolving images during export. */
   mediaContainer?: ContentContainer | null;
+  /**
+   * Document-scoped container used to resolve narration timing sidecars.
+   * Video preview and export must use the same audio-mapping projection so
+   * recorded narration, camera media, and block transitions share one clock.
+   */
+  workspaceContainer?: ContentContainer | null;
   /** Active document media provider used to preload audio and video export assets. */
   mediaProvider?: MediaProvider | null;
   /** Override the default browser download behavior for host-provided save flows. */
@@ -117,6 +123,10 @@ type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
 interface VideoExportModules {
   Modal: ComponentType<VideoExportModalProps>;
   markdownToDoc: (doc: ParsedMarkdown) => VideoExportModalProps['doc'];
+  resolveAudioMapping: (
+    doc: VideoExportModalProps['doc'],
+    container: ContentContainer,
+  ) => Promise<VideoExportModalProps['doc']>;
   playerScript: string;
 }
 
@@ -153,6 +163,7 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
   ]).then(([docModule, videoModule, playerModule]) => ({
     Modal: videoModule.VideoExportModal,
     markdownToDoc: docModule.markdownToDoc,
+    resolveAudioMapping: docModule.resolveAudioMapping,
     playerScript: playerModule.PLAYER_BUNDLE,
   }));
   return videoExportModulesPromise;
@@ -218,6 +229,7 @@ function quickLabel(
 export function ExportToolbarControls({
   selectedFile,
   mediaContainer,
+  workspaceContainer,
   mediaProvider,
   saveBlob,
   destinationAdapter,
@@ -418,14 +430,18 @@ export function ExportToolbarControls({
       try {
         const modules = videoModules ?? (await loadVideoExportModules());
         setVideoModules(modules);
-        setVideoDoc(modules.markdownToDoc(parseMarkdown(markdownSource)));
+        const parsedDoc = modules.markdownToDoc(parseMarkdown(markdownSource));
+        const exportDoc = workspaceContainer
+          ? await modules.resolveAudioMapping(parsedDoc, workspaceContainer)
+          : parsedDoc;
+        setVideoDoc(exportDoc);
       } catch {
         setVideoLoadError('Video export could not be loaded.');
       } finally {
         setVideoLoading(false);
       }
     },
-    [markdownSource, videoModules],
+    [markdownSource, videoModules, workspaceContainer],
   );
 
   const handleCloseVideoModal = useCallback(() => {
@@ -661,7 +677,7 @@ export function ExportToolbarControls({
                 className="db-toolbar-menu-item"
                 onClick={handleOpenDialog}
               >
-                Export...
+                Export document...
               </button>
               <button
                 type="button"

@@ -10,7 +10,7 @@ test('boots the editor and exports Markdown', async ({ page }) => {
   );
 
   await page.getByRole('button', { name: 'Export and share' }).click();
-  await page.getByRole('menuitem', { name: 'Export...' }).click();
+  await page.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
   const downloadPromise = page.waitForEvent('download');

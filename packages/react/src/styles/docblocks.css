@@ -2816,6 +2816,10 @@ body.db-resizing-sidebar * {
   --squisq-accent: var(--db-accent);
   --squisq-accent-hover: var(--db-accent-hover);
   --squisq-text-on-accent: var(--db-text-on-accent);
+  /* Hover/open surface for toolbar dropdown triggers (e.g. the cover-slide
+     control). Squisq leaves this token undefined and falls back to its own
+     palette; bind it so the open trigger keeps DocBlocks hover contrast. */
+  --squisq-hover-bg: var(--db-bg-hover);
   --squisq-editor-background: #ffffff;
   --squisq-editor-foreground: #1f2937;
 }
@@ -3723,6 +3727,26 @@ html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-summary {
 
 html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-check {
   color: var(--db-accent-hover);
+}
+
+/* The cover-slide settings menu is portaled to document.body, so the editor
+   shell's Squisq token bindings cannot reach it. It channels every surface
+   through its own `--cover-*` tokens; re-point those (plus the accent its
+   checkbox/radio/slider controls consume) at the palette hoisted to `html`
+   so the panel follows the active DocBlocks appearance and accent instead
+   of Squisq's standalone slate look. */
+html:has(.db-shell) .squisq-cover-slide-menu {
+  --cover-bg: var(--db-bg);
+  --cover-control: var(--db-bg-subtle);
+  --cover-border: var(--db-border);
+  --cover-text: var(--db-text);
+  --cover-muted: var(--db-text-muted);
+  --squisq-accent: var(--db-accent);
+  --squisq-accent-hover: var(--db-accent-hover);
+  --squisq-text-on-accent: var(--db-text-on-accent);
+  box-shadow:
+    0 12px 32px var(--db-shadow),
+    0 2px 6px var(--db-shadow);
 }
 
 /* Custom layout authoring is portaled to document.body. Bind its host-facing

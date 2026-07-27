@@ -324,6 +324,22 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
   if (!isRecord(linuxJob) || !Array.isArray(linuxJob.steps)) {
     throw new Error(`${relativePath}: build-linux has no steps`);
   }
+  const linuxPackageStep = linuxJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Build + package desktop (Linux)',
+  );
+  const linuxX64Command = 'npm run package:linux:x64 -- --publish never';
+  const linuxArm64Command = 'npm run package:linux:arm64 -- --publish never';
+  if (
+    !isRecord(linuxPackageStep) ||
+    linuxPackageStep['working-directory'] !== 'packages/desktop' ||
+    typeof linuxPackageStep.run !== 'string' ||
+    linuxPackageStep.run.indexOf(linuxX64Command) < 0 ||
+    linuxPackageStep.run.indexOf(linuxArm64Command) <= linuxPackageStep.run.indexOf(linuxX64Command)
+  ) {
+    throw new Error(
+      `${relativePath}: build-linux must package x64 and then arm64 in separate processes`,
+    );
+  }
   const linuxVerifyStep = linuxJob.steps.find(
     (step) => isRecord(step) && step.name === 'Verify Linux architecture artifacts',
   );
@@ -457,6 +473,14 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
   requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
+  requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:x64');
+  requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:arm64');
+  requireScript(desktopPackage, 'package:linux:x64', 'electron-builder --linux AppImage deb --x64');
+  requireScript(
+    desktopPackage,
+    'package:linux:arm64',
+    'electron-builder --linux AppImage deb --arm64',
+  );
 
   const reactPackage = await readPackage('packages/react/package.json');
   const sitePackage = await readPackage('packages/site/package.json');
