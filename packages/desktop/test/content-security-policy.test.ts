@@ -22,6 +22,7 @@ describe('desktop renderer content security policy', () => {
       expect(policy.get('media-src')).to.include.members(["'self'", 'app:', 'blob:', 'data:']);
       expect(policy.get('img-src')).to.include('blob:');
       expect(policy.get('worker-src')).to.include('blob:');
+      expect(policy.get('connect-src')).to.include('blob:');
       expect(policy.get('script-src')).not.to.include('blob:');
       expect(policy.get('object-src')).to.deep.equal(["'none'"]);
       expect(policy.get('frame-src')).to.deep.equal(["'none'"]);

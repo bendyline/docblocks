@@ -1,10 +1,18 @@
 import { expect } from 'chai';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { EditorProvider, StatusBar } from '@bendyline/squisq-editor-react';
 import { UpdateStatusItem } from '../renderer/UpdateStatusBanner.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
+
+const updateStyles = readFileSync(
+  fileURLToPath(new URL('../renderer/update-banner.css', import.meta.url)),
+  'utf8',
+);
 
 describe('desktop update status', () => {
   let container: HTMLDivElement;
@@ -30,6 +38,31 @@ describe('desktop update status', () => {
     expect(progress?.textContent).to.equal('Downloading update… 6%');
     expect(progress?.getAttribute('role')).to.equal('progressbar');
     expect(progress?.getAttribute('aria-valuenow')).to.equal('6');
+  });
+
+  it('renders download progress inside the Squisq status bar slot', async () => {
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Draft', articleId: 'update-status-test' },
+          createElement(StatusBar, {
+            slotRight: createElement(UpdateStatusItem, {
+              status: { kind: 'downloading', percent: 6.2 },
+            }),
+          }),
+        ),
+      );
+    });
+
+    const progress = container.querySelector('.db-desktop-update-status');
+    expect(progress?.parentElement?.classList.contains('squisq-status-bar')).to.equal(true);
+  });
+
+  it('uses Hanken Grotesk for desktop updater text', () => {
+    expect(updateStyles).to.match(
+      /\.db-desktop-update-status\s*\{[^}]*font-family:\s*'Hanken Grotesk',\s*system-ui,\s*sans-serif;/s,
+    );
   });
 
   it('puts the ready message and restart action in the status item', async () => {

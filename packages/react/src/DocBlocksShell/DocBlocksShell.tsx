@@ -4329,6 +4329,7 @@ export function DocBlocksShell({
                           <ExportToolbarControls
                             selectedFile={selectedFile}
                             mediaContainer={mediaContainerRef.current}
+                            workspaceContainer={versionsContainer}
                             mediaProvider={mediaProvider}
                             destinationAdapter={exportDestinationAdapter}
                             colorScheme={resolvedTheme}
