@@ -12,6 +12,7 @@ import {
   type ArtifactRef,
   type AuthoringContextResult,
   type ConversionFidelity,
+  type ConversionResult,
   type DocumentSource,
 } from '@bendyline/docblocks/mcp';
 import { ArtifactStore } from './artifact-store.js';
@@ -126,7 +127,12 @@ const conversionTargetSchema = z.discriminatedUnion('format', [
       format: z.literal('pptx'),
       fidelity: fidelitySchemas.pptx.optional(),
       ...metadataFields,
-      slideBreak: z.enum(['h1', 'h2', 'heading']).optional(),
+      slideBreak: z
+        .enum(['h1', 'h2', 'heading'])
+        .optional()
+        .describe(
+          'Heading depths that start slides. Headings alone create slide boundaries; do not add --- between them unless a visible horizontal rule is intended.',
+        ),
       defaultFont: z.string().max(256).optional(),
       defaultFontSize: z.number().min(6).max(96).optional(),
       width: z.number().int().min(160).max(1_920).optional(),
@@ -265,7 +271,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
     'convert_document',
     {
       description:
-        'Convert plain text, Markdown, bundles, or linked-registry inputs directly into one or more immutable artifacts. Plain Markdown needs no preflight or annotations; valid Squisq annotations are optional layout hints. Use save_artifact only for durable filesystem output.',
+        'Convert plain text, Markdown, bundles, or linked-registry inputs directly into one or more immutable artifacts. Plain Markdown needs no preflight or annotations; valid Squisq annotations are optional layout hints. For PPTX, heading-based slide boundaries do not need --- separators. Use save_artifact only for durable filesystem output.',
       inputSchema: z
         .object({
           source: documentSourceSchema,
@@ -306,8 +312,10 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
           );
           for (const result of results) requireWire(parseConversionResult(result), 'conversion');
           const payload = { results };
+          const warningSummary = conversionWarningSummary(results);
           return {
             content: [
+              ...(warningSummary ? [{ type: 'text' as const, text: warningSummary }] : []),
               { type: 'text' as const, text: JSON.stringify(payload) },
               ...results.map((result) => artifactLink(result.artifact)),
             ],
@@ -609,10 +617,10 @@ function registerAuthoringGuideResource(server: McpServer): void {
         import('@bendyline/squisq/transform'),
       ]);
       const guide = {
-        version: 8,
+        version: 9,
         workflow: [
           'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
-          'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; unstructured text is still accepted',
+          'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended',
           'convert_document chooses compatible templates automatically; Squisq annotations on headings are optional layout hints that take precedence',
           'use a bundle source when assets must travel with the document, or create_document_bundle when one draft will be reused by two or more inspect, preview, or convert calls',
           'use inspect_document or preview_document only when the user asks for document analysis or visual evidence',
@@ -775,7 +783,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
             workflow: [
               'For durable local output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not fall back to a shell or CLI converter. A transient artifact is acceptable only when the user did not require a file.',
               normalizedTarget === 'pptx'
-                ? 'Plain text and ordinary Markdown convert directly. Use one level-one Markdown heading (#) for each deliberate slide boundary; unstructured text is still accepted.'
+                ? 'Plain text and ordinary Markdown convert directly. Use one level-one Markdown heading (#) for each deliberate slide boundary. Headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended; unstructured text is still accepted.'
                 : 'Plain text and ordinary Markdown convert directly without a preflight.',
               'convert_document chooses compatible templates automatically. Annotations on headings are optional layout hints that take precedence; use the returned exact starter examples when useful.',
               annotationHandling === 'ignored'
@@ -1275,6 +1283,33 @@ function artifactLink(artifact: ArtifactRef) {
     mimeType: artifact.mimeType,
     size: artifact.size,
   };
+}
+
+function conversionWarningSummary(results: readonly ConversionResult[]): string | null {
+  const warnings = results.flatMap((result) =>
+    result.diagnostics
+      .filter((diagnostic) => diagnostic.severity === 'warning')
+      .map((diagnostic) => ({ format: result.targetFormat, diagnostic })),
+  );
+  if (warnings.length === 0) return null;
+
+  const totalOccurrences = warnings.reduce((total, { diagnostic }) => total + diagnostic.count, 0);
+  const visible = warnings.slice(0, 10);
+  const lines = [
+    `Conversion warnings: ${totalOccurrences} occurrence(s) across ${warnings.length} diagnostic(s).`,
+    ...visible.map(({ format, diagnostic }) => {
+      const count = diagnostic.count > 1 ? ` x${diagnostic.count}` : '';
+      const remediation = diagnostic.remediation ? ` Remediation: ${diagnostic.remediation}` : '';
+      return `- [${diagnostic.code}] ${format}${count}: ${diagnostic.message}${remediation}`;
+    }),
+  ];
+  if (visible.length < warnings.length) {
+    lines.push(
+      `- ${warnings.length - visible.length} additional diagnostic(s) remain in structuredContent.`,
+    );
+  }
+  lines.push('The complete JSON result follows in the next text content item.');
+  return lines.join('\n');
 }
 
 async function sendProgress(

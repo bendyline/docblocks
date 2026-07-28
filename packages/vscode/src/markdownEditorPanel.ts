@@ -434,6 +434,10 @@ export class MarkdownEditorPanel {
         await this.handleOpenLink(message.href);
         break;
 
+      case 'copyCode':
+        await this.handleCopyCode(message.requestId, message.code);
+        break;
+
       case 'save':
         await this.handleSave(message, await this.syncReady);
         break;
@@ -646,6 +650,19 @@ export class MarkdownEditorPanel {
     }
   }
 
+  private async handleCopyCode(requestId: number, code: string): Promise<void> {
+    try {
+      await vscode.env.clipboard.writeText(code);
+      this.postMessage({ type: 'codeCopied', requestId });
+    } catch (error: unknown) {
+      this.postMessage({
+        type: 'codeCopyError',
+        requestId,
+        message: boundedMessage(`VS Code could not copy the code: ${toError(error).message}`),
+      });
+    }
+  }
+
   private async applyEditorSettings(): Promise<void> {
     const settings = readVscodeEditorSettings(this.uri);
     const sync = await this.syncReady;
@@ -682,6 +699,13 @@ export class MarkdownEditorPanel {
       case 'readWorkspaceFile':
         this.postMessage({
           type: 'workspaceFileError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'copyCode':
+        this.postMessage({
+          type: 'codeCopyError',
           requestId: message.requestId,
           message: responseMessage,
         });
@@ -1076,6 +1100,8 @@ function estimateWireCharacters(message: QueuedWebviewMessage): number {
     case 'addMedia':
     case 'saveExport':
       return message.dataBase64.length;
+    case 'copyCode':
+      return message.code.length;
     default:
       return 0;
   }

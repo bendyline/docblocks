@@ -10,6 +10,7 @@ export type {
   DocBlocksHostExternalAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostShellAPI,
+  DocBlocksHostClipboardAPI,
   DocBlocksHostExportAPI,
   DocBlocksHostFfmpegAPI,
   DocBlocksHostUpdaterAPI,

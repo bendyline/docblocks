@@ -128,7 +128,7 @@ function presentationPrompt(
   return `Create a presentation about: ${topic}
 
 1. For durable output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not use a shell or CLI converter.
-2. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint} Call get_authoring_context only when exact annotation examples or theme details would help.
+2. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; headings alone create the boundaries, so do not add \`---\` between them unless a visible horizontal rule is intended. Unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint} Call get_authoring_context only when exact annotation examples or theme details would help.
 3. Pass the Markdown directly to convert_document with a pptx target${themeHint}${styleHint}. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
 4. Use inspect_document or preview_document only when the user explicitly asks for document analysis or visual evidence.
 5. Call save_artifact only when a durable file is required.`;

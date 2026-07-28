@@ -100,6 +100,7 @@ describe('MCP protocol surface', function () {
     expect(h.client.getInstructions()).to.include('plain text or ordinary Markdown');
     expect(h.client.getInstructions()).to.include('no preflight');
     expect(h.client.getInstructions()).to.include('optional layout hints');
+    expect(h.client.getInstructions()).to.include('do not add ---');
     expect(h.client.getInstructions()).to.include('directly to convert_document');
     expect(h.client.getInstructions()).to.include('reused by two or more');
     expect(h.client.getInstructions()).to.include('never invent root ids');
@@ -178,6 +179,9 @@ describe('MCP protocol surface', function () {
       expect(annotations?.destructiveHint, name).to.equal(false);
       expect(annotations?.idempotentHint, name).to.equal(false);
     }
+    expect(JSON.stringify(findTool(tools, 'convert_document').inputSchema)).to.include(
+      'do not add ---',
+    );
     const saveAnnotations = findTool(tools, 'save_artifact').annotations;
     expect(saveAnnotations?.readOnlyHint).to.equal(false);
     expect(saveAnnotations?.destructiveHint).to.equal(true);
@@ -401,7 +405,7 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(8);
+    expect(authoringPayload.version).to.equal(9);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(
@@ -413,6 +417,9 @@ describe('MCP protocol surface', function () {
       authoringPayload.workflow?.some((step) =>
         String(step).includes('without a preflight or template annotations'),
       ),
+    ).to.equal(true);
+    expect(
+      authoringPayload.workflow?.some((step) => String(step).includes('do not add ---')),
     ).to.equal(true);
     expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
       bodyPolicy: 'complete',
@@ -517,6 +524,7 @@ describe('MCP protocol surface', function () {
     expect(presentationDefault).to.include('list_roots before drafting');
     expect(presentationDefault).to.include('do not use a shell or CLI converter');
     expect(presentationDefault).to.include('level-one heading');
+    expect(presentationDefault).to.include('do not add `---`');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 
     const presentationOption = promptText(

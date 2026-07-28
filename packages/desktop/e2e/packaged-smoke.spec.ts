@@ -62,3 +62,162 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
     '# DocBlocks: one Markdown file, many finished forms',
   );
 });
+
+test('grants capture only to the trusted renderer and exposes only working presentation targets', async ({
+  launchPackagedApp,
+}) => {
+  const packaged = await launchPackagedApp(['--use-fake-device-for-media-stream']);
+  await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  const grantedMedia = await packaged.window.evaluate(async () => {
+    const request = async (constraints: MediaStreamConstraints) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        const result = {
+          status: 'granted' as const,
+          audioTracks: stream.getAudioTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+        };
+        stream.getTracks().forEach((track) => track.stop());
+        return result;
+      } catch (error: unknown) {
+        return {
+          status: 'denied' as const,
+          name: error instanceof DOMException ? error.name : 'Error',
+        };
+      }
+    };
+    return {
+      microphone: await request({ audio: true, video: false }),
+      camera: await request({ audio: false, video: true }),
+    };
+  });
+  expect(grantedMedia).toEqual({
+    microphone: { status: 'granted', audioTracks: 1, videoTracks: 0 },
+    camera: { status: 'granted', audioTracks: 0, videoTracks: 1 },
+  });
+
+  // An automation-only exact popup route creates a genuine second
+  // BrowserWindow/WebContents in the same Electron session. Its canonical
+  // app:// URL is not enough to inherit the main window's media authority.
+  const unownedPagePromise = packaged.context.waitForEvent('page');
+  const popupOpened = await packaged.window.evaluate(
+    () =>
+      window.open(
+        'app://docblocks/index.html?docblocks-e2e-permission-probe=1',
+        'docblocks-e2e-permission-probe',
+      ) !== null,
+  );
+  expect(popupOpened).toBe(true);
+  const unownedPage = await unownedPagePromise;
+  try {
+    await unownedPage.waitForURL('app://docblocks/index.html?docblocks-e2e-permission-probe=1', {
+      waitUntil: 'domcontentloaded',
+    });
+    const deniedMedia = await unownedPage.evaluate(async () => {
+      const request = async (constraints: MediaStreamConstraints) => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          stream.getTracks().forEach((track) => track.stop());
+          return 'granted';
+        } catch (error: unknown) {
+          return error instanceof DOMException ? error.name : 'Error';
+        }
+      };
+      return {
+        microphone: await request({ audio: true, video: false }),
+        camera: await request({ audio: false, video: true }),
+      };
+    });
+    expect(deniedMedia).toEqual({
+      microphone: 'NotAllowedError',
+      camera: 'NotAllowedError',
+    });
+  } finally {
+    await unownedPage.close();
+  }
+
+  // Exercise getDisplayMedia through a real click so the main process sees
+  // Chromium's required transient user activation.
+  // A headless macOS runner cannot operate the native screen picker or grant
+  // TCC screen-recording consent. Windows exercises loopback audio too.
+  if (process.platform !== 'darwin') {
+    const requestSystemAudio = process.platform === 'win32';
+    await packaged.window.evaluate((audio) => {
+      const trigger = document.createElement('button');
+      trigger.id = 'docblocks-e2e-display-capture';
+      trigger.textContent = 'Capture display';
+      trigger.style.position = 'fixed';
+      trigger.style.top = '8px';
+      trigger.style.left = '8px';
+      trigger.style.zIndex = '2147483647';
+      trigger.addEventListener('click', () => {
+        void navigator.mediaDevices
+          .getDisplayMedia({ video: true, audio })
+          .then((stream) => {
+            const result = {
+              status: 'granted',
+              audioTracks: stream.getAudioTracks().length,
+              videoTracks: stream.getVideoTracks().length,
+            };
+            stream.getTracks().forEach((track) => track.stop());
+            Reflect.set(globalThis, 'docBlocksE2eDisplayCapture', result);
+          })
+          .catch((error: unknown) => {
+            Reflect.set(globalThis, 'docBlocksE2eDisplayCapture', {
+              status: 'denied',
+              name: error instanceof DOMException ? error.name : 'Error',
+            });
+          });
+      });
+      document.body.appendChild(trigger);
+    }, requestSystemAudio);
+    await packaged.window.locator('#docblocks-e2e-display-capture').click();
+    await expect
+      .poll(
+        () => packaged.window.evaluate(() => Reflect.get(globalThis, 'docBlocksE2eDisplayCapture')),
+        { timeout: 30_000 },
+      )
+      .toEqual({
+        status: 'granted',
+        audioTracks: requestSystemAudio ? 1 : 0,
+        videoTracks: 1,
+      });
+  }
+
+  const gateway = packaged.window.locator('.db-welcome-gateway');
+  if (await gateway.isVisible()) {
+    await packaged.window.locator('.db-welcome-gateway-cta').click();
+  }
+  await packaged.window.locator('[role="tab"][data-view="preview"]').click();
+  const presentationOptions = packaged.window.getByRole('button', {
+    name: 'Presentation options',
+  });
+  await expect(presentationOptions).toBeVisible({ timeout: 15_000 });
+
+  await presentationOptions.click();
+  const menu = packaged.window.getByRole('menu', { name: 'Presentation options' });
+  await expect(menu.getByRole('menuitemradio', { name: /Fill canvas/ })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: /Full screen/ })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: /New window/ })).toHaveCount(0);
+
+  await packaged.window.getByRole('button', { name: 'Present: Fill canvas' }).click();
+  await expect(
+    packaged.window.locator('.squisq-editor-shell[data-presentation-mode="control"]'),
+  ).toBeVisible();
+  await packaged.window.getByRole('button', { name: 'Exit presentation' }).click();
+
+  await presentationOptions.click();
+  await menu.getByRole('menuitemradio', { name: /Full screen/ }).click();
+  await packaged.window.getByRole('button', { name: 'Present: Full screen' }).click();
+  await expect
+    .poll(() => packaged.window.evaluate(() => document.fullscreenElement !== null))
+    .toBe(true);
+  await expect(
+    packaged.window.locator('.squisq-editor-shell[data-presentation-mode="fullscreen"]'),
+  ).toBeVisible();
+  await packaged.window.getByRole('button', { name: 'Exit presentation' }).click();
+  await expect
+    .poll(() => packaged.window.evaluate(() => document.fullscreenElement === null))
+    .toBe(true);
+});

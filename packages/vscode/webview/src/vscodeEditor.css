@@ -48,3 +48,9 @@
 .db-vscode-editor .squisq-use-mode-trigger {
   padding-bottom: 7px;
 }
+
+/* VS Code's tighter heading metrics leave the properties chip just below the
+   adjacent block-template control. Keep this correction webview-specific. */
+.db-vscode-editor .squisq-props-badge {
+  transform: translateY(-1px);
+}

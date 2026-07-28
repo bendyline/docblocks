@@ -83,7 +83,8 @@ permission and I/O failures remain errors rather than being reported as absence.
 
 The render path is shared with `serve`: DocBlocks asks Squisq to parse Markdown,
 project it into the Squisq document model, and export HTML, then embeds Squisq's
-standalone player bundle. Referenced local images are embedded only after physical
+standalone player bundle. Ordinary fenced code blocks include the player's Copy
+control; Mermaid fences remain diagrams. Referenced local images are embedded only after physical
 containment checks. The default image budget is 100 images, 20 MiB per image, and
 50 MiB in aggregate. Every image dropped for exceeding one of those budgets is named
 on stderr with the reason, so a document whose images silently fail to embed reports
@@ -339,7 +340,9 @@ resource, prompt, authority, fidelity, and lifecycle contract is in the
 
 For durable output, agents call `list_roots` before drafting. If no returned root is
 write-enabled, the server must be restarted with `--allow-write`; the MCP workflow
-does not fall back to the direct `convert` CLI command.
+does not fall back to the direct `convert` CLI command. For PPTX authoring, a
+level-one heading creates each deliberate slide boundary by itself; agents should
+not add `---` between slide headings unless a visible horizontal rule is intended.
 
 | Option                               |    Default | Hard ceiling |
 | ------------------------------------ | ---------: | -----------: |

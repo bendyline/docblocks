@@ -179,6 +179,7 @@ async function runHtmlExport(
         title: baseName,
         themeId,
         mode: 'static',
+        showCodeCopyButton: true,
         entryAsIndex: options.entryAsIndex,
       });
       await saveExportBlob(blob, zipName, saveBlob);
@@ -218,6 +219,7 @@ async function runHtmlExport(
         images,
         mode: 'static',
         title: baseName,
+        showCodeCopyButton: true,
       });
       await saveExportBlob(blob, zipName, saveBlob);
       return;
@@ -228,6 +230,7 @@ async function runHtmlExport(
       images,
       mode: 'static',
       title: baseName,
+      showCodeCopyButton: true,
     });
     await saveExportBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename, saveBlob);
     return;

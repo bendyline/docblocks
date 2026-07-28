@@ -108,6 +108,50 @@ describe('VS Code authority boundary', () => {
     ).to.deep.equal({ type: 'openLink', href: '../guide/agent-loop.md#start' });
   });
 
+  it('accepts only exact, bounded code-copy requests and responses', () => {
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'copyCode',
+        requestId: 7,
+        code: 'console.log("hello");',
+      }),
+    ).to.deep.equal({
+      type: 'copyCode',
+      requestId: 7,
+      code: 'console.log("hello");',
+    });
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'copyCode',
+        requestId: 7,
+        code: 'x'.repeat(HOST_WIRE_LIMITS.documentCharacters + 1),
+      }),
+    ).to.equal(null);
+    expect(
+      parseWebviewToExtensionMessage({
+        type: 'copyCode',
+        requestId: 7,
+        code: 'echo safe',
+        target: 'system',
+      }),
+    ).to.equal(null);
+    expect(parseExtensionToWebviewMessage({ type: 'codeCopied', requestId: 7 })).to.deep.equal({
+      type: 'codeCopied',
+      requestId: 7,
+    });
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'codeCopyError',
+        requestId: 7,
+        message: 'Clipboard unavailable',
+      }),
+    ).to.deep.equal({
+      type: 'codeCopyError',
+      requestId: 7,
+      message: 'Clipboard unavailable',
+    });
+  });
+
   it('accepts only an opaque grant ID for an export write', () => {
     expect(
       parseWebviewToExtensionMessage({

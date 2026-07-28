@@ -56,6 +56,8 @@ The canonical DocBlocks experience in one component — file explorer, workspace
 - `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
 - `logoUrl` — brand mark for the app menu button
 - `ffmpegWasm` — optional same-origin ffmpeg core URLs; supplying them enables the built-in Animated GIF flow on cross-origin-isolated hosts
+- `showCodeCopyButton` — shows Copy controls on ordinary fenced code blocks (default: `true`; Mermaid fences remain diagrams)
+- `onCopyCode` — optional clipboard adapter for native hosts; browser hosts fall back to `navigator.clipboard.writeText`
 
 Storage is abstracted behind the byte-authoritative `FileSystemProviderV2` contract from `@bendyline/docblocks/filesystem`: browser-local (IndexedDB), native folders (File System Access API), transient memory workspaces, or the Electron host. Built-in compatibility facades expose it as `provider.v2`; first-party shell and file-tree operations are v2-first.
 
@@ -94,6 +96,8 @@ workspace; generated links warn after 4,096 characters and are capped at
 32,768 characters.
 
 The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, EPUB, HTML, Markdown), visual theme, and page size. Hosts that supply `ffmpegWasm` also expose Animated GIF with timing, orientation, captions, looping, and color controls.
+
+Rendered HTML and HTML ZIP exports include Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams.
 
 ## Hooks
 

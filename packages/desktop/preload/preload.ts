@@ -13,6 +13,7 @@ import type {
   DocBlocksHostGitAPI,
   DocBlocksHostLifecycleAPI,
   DocBlocksHostShellAPI,
+  DocBlocksHostClipboardAPI,
   DocBlocksHostExportAPI,
   DocBlocksHostWorkspacesAPI,
   DocBlocksHostFfmpegAPI,
@@ -157,6 +158,10 @@ const shellApi: DocBlocksHostShellAPI = {
   revealInFolder: (workspaceId, workspacePath) =>
     ipcRenderer.invoke('shell:revealInFolder', workspaceId, workspacePath ?? ''),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+};
+
+const clipboardApi: DocBlocksHostClipboardAPI = {
+  writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
 };
 
 // â”€â”€ exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -363,6 +368,7 @@ const host: DocBlocksHostAPI = {
   external: externalApi,
   workspaces: workspacesApi,
   shell: shellApi,
+  clipboard: clipboardApi,
   exports: exportApi,
   ffmpeg: ffmpegApi,
   git: gitApi,

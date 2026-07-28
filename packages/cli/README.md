@@ -69,12 +69,15 @@ For durable output, call `list_roots` before drafting. If no root is write-enabl
 restart the server with `--allow-write`; do not bypass MCP with the direct `convert`
 command. Plain text or ordinary Markdown can be passed directly to
 `convert_document` without a preflight; compatible templates are chosen automatically,
-and explicit Squisq annotations remain optional overrides. `get_authoring_context` is
-optional discovery for exact annotation examples and safe defaults; the complete catalog remains
-available at `docblocks://authoring-guide`.
+and explicit Squisq annotations remain optional overrides. For PPTX, a level-one
+heading creates each deliberate slide boundary by itself; do not add `---` between
+slide headings unless a visible horizontal rule is intended. `get_authoring_context`
+is optional discovery for exact annotation examples and safe defaults; the complete
+catalog remains available at `docblocks://authoring-guide`.
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
-import-capable linked-registry formats. `build` replaces generated HTML files;
+import-capable linked-registry formats. `build`/`serve` standalone HTML includes
+Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams. `build` replaces generated HTML files;
 `convert` and `video` refuse existing destinations unless `--allow-overwrite` is
 passed. Multi-target conversion stages the complete batch and rolls back replacements
 if publication fails. Build traversal, input bytes, and output bytes are bounded, as

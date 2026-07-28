@@ -6,7 +6,17 @@
  * stable across updates.
  */
 
-import { app, BrowserWindow, dialog, protocol, screen, shell, net } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  net,
+  protocol,
+  screen,
+  session,
+  shell,
+} from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -18,6 +28,7 @@ import { registerFsV2Ipc } from './ipc-fs-v2.js';
 import { registerExternalIpc } from './ipc-external.js';
 import { ensureDevelopmentWorkspace, registerWorkspaceIpc } from './ipc-workspaces.js';
 import { registerShellIpc } from './ipc-shell.js';
+import { registerClipboardIpc } from './ipc-clipboard.js';
 import { registerExportIpc } from './ipc-export.js';
 import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerGitIpc } from './ipc-git.js';
@@ -46,6 +57,7 @@ import {
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
+import { configureDesktopPermissionPolicy } from './permission-policy.js';
 import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
@@ -302,6 +314,28 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   // A popup never inherits renderer authority. Only canonical HTTP(S) URLs may
   // leave the app, and they always open in the user's default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAutomation) {
+      try {
+        const candidate = new URL(url);
+        if (
+          candidate.protocol === 'app:' &&
+          candidate.hostname === 'docblocks' &&
+          candidate.port === '' &&
+          candidate.username === '' &&
+          candidate.password === '' &&
+          candidate.pathname === '/index.html' &&
+          candidate.search === '?docblocks-e2e-permission-probe=1' &&
+          candidate.hash === ''
+        ) {
+          // Packaged permission tests need a genuine second WebContents to
+          // prove that a canonical URL without main-window ownership is still
+          // denied. This exact route is unreachable outside automation.
+          return { action: 'allow' };
+        }
+      } catch {
+        // Malformed popup targets continue to the deny-by-default policy.
+      }
+    }
     const externalUrl = parseExternalHttpUrl(url);
     if (externalUrl) {
       void shell.openExternal(externalUrl).catch(() => undefined);
@@ -421,12 +455,18 @@ function reportFatalStartupFailure(error: unknown): void {
 }
 
 async function bootstrap(): Promise<void> {
-  // Restrict permissions by default.
-  const session = (await import('electron')).session;
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => {
-    callback(false);
+  configureDesktopPermissionPolicy({
+    session: session.defaultSession,
+    getOwner: () => mainWindow?.webContents ?? null,
+    developmentOrigin: isDev ? DEV_SERVER_URL : undefined,
+    platform: process.platform,
+    getPrimaryDisplayId: () => screen.getPrimaryDisplay().id,
+    getDisplaySources: () =>
+      desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: 0, height: 0 },
+      }),
   });
-  session.defaultSession.setPermissionCheckHandler(() => false);
 
   // Strict CSP on the renderer.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -488,6 +528,7 @@ async function bootstrap(): Promise<void> {
   registerExternalIpc();
   registerWorkspaceIpc();
   registerShellIpc();
+  registerClipboardIpc();
   registerExportIpc();
   registerFfmpegIpc();
   registerGitIpc();

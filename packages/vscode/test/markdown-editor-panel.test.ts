@@ -329,6 +329,22 @@ describe('MarkdownEditorPanel', () => {
     });
   });
 
+  describe('code copy', () => {
+    it('writes fenced code through the VS Code clipboard API and acknowledges it', async () => {
+      const { panel } = await openPanel('# code\n');
+
+      panel.onDidReceiveMessageEmitter.fire({
+        type: 'copyCode',
+        requestId: 19,
+        code: 'npm run all',
+      });
+      await settle();
+
+      expect(stub.clipboardWrites).to.deep.equal(['npm run all']);
+      expect(panel.posted).to.deep.include({ type: 'codeCopied', requestId: 19 });
+    });
+  });
+
   describe('bursts of external changes', () => {
     /**
      * The panel's bounded message queue holds 128 pending operations, and it is

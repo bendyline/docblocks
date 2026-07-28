@@ -44,6 +44,44 @@ describe('MCP canonical linked warning matrix', function () {
 
   afterEach(async () => harness.dispose());
 
+  it('classifies redundant PPTX slide separators and front-loads their warning', async () => {
+    const result = await callTool(harness.client, 'convert_document', {
+      source: {
+        kind: 'markdown',
+        name: 'redundant-slide-separators.md',
+        markdown: `# One
+
+- First item
+
+---
+
+# Two
+
+Second slide.
+
+---
+
+# Three
+
+Third slide.
+`,
+      },
+      targets: [{ format: 'pptx', fidelity: 'editable-native', slideBreak: 'h1' }],
+    });
+
+    expect(result.isError, result.text).to.equal(false);
+    const converted = requireTarget(requireConversions(result.structuredContent?.results), 'pptx');
+    const warning = requireWarning(converted.diagnostics, 'pptx', 'redundant-slide-separator');
+    expect(warning.count).to.equal(2);
+    expect(warning.message).to.include('removed 2 redundant thematic break(s)');
+    expect(warning.remediation).to.include('Remove --- between slide headings');
+    expect(result.text).to.match(/^Conversion warnings:/u);
+    expect(result.text).to.include('[redundant-slide-separator] pptx x2');
+    expect(result.text).to.include(
+      'The complete JSON result follows in the next text content item.',
+    );
+  });
+
   it('projects unsupported directives, multiple CSV tables, and XLSX omissions exactly', async () => {
     const result = await callTool(harness.client, 'convert_document', {
       source: {

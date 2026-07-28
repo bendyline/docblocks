@@ -81,6 +81,7 @@ describe('MCP linked template recommendations', () => {
     expect(
       payload.workflow.some((step) => step.includes('unstructured text is still accepted')),
     ).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('do not add ---'))).to.equal(true);
     expect(
       payload.workflow.some((step) => step.includes('Pass Markdown directly to convert_document')),
     ).to.equal(true);

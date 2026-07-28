@@ -139,6 +139,12 @@ describe('CLI build and serve commands', () => {
     expect(html.toLowerCase()).not.to.contain('<iframe src="https://example.com/track"');
   });
 
+  it('enables fenced-code Copy controls in standalone output', async () => {
+    const html = await renderMarkdownHtml('```sh\nnpm run all\n```', { title: 'Build' });
+
+    expect(html).to.contain('showCodeCopyButton: true');
+  });
+
   // The standalone export's real XSS boundary is the player's runtime render,
   // not the emitted string: every hostile construct above survives verbatim in
   // the embedded doc JSON by design. `docToHtml` exposes no `htmlPolicy`

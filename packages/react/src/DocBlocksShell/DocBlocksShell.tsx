@@ -11,6 +11,7 @@ import type {
   EditorView,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
+import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
@@ -332,6 +333,19 @@ export interface DocBlocksShellProps {
   onApplyUpdate?: () => void;
   /** Host-supplied content rendered at the right edge of the editor status bar. */
   statusBarSlotRight?: React.ReactNode;
+  /** Show Copy controls on ordinary fenced code blocks (default: true). */
+  showCodeCopyButton?: boolean;
+  /**
+   * Optional host clipboard adapter. Browser hosts can omit this to use the
+   * Clipboard API; Electron/native hosts should supply their trusted bridge.
+   */
+  onCopyCode?: CodeBlockCopyHandler;
+  /** Whether the editor may expose microphone, camera, and screen recording. */
+  allowRecording?: boolean;
+  /** Whether presentation may open a synchronized audience window. */
+  allowPresentationWindow?: boolean;
+  /** Whether presentation may enter the browser/Electron Fullscreen API. */
+  allowPresentationFullscreen?: boolean;
   /**
    * True once the app has been fully cached for offline use (browser PWA
    * hosts). Shown to the user once as a passive notice.
@@ -673,6 +687,11 @@ export function DocBlocksShell({
   updateAvailable = false,
   onApplyUpdate,
   statusBarSlotRight,
+  showCodeCopyButton = true,
+  onCopyCode,
+  allowRecording = true,
+  allowPresentationWindow = true,
+  allowPresentationFullscreen = true,
   offlineReady = false,
 }: DocBlocksShellProps) {
   const osTheme = useOsTheme();
@@ -4282,6 +4301,11 @@ export function DocBlocksShell({
                       placeholder={editorPlaceholder}
                       outlineWidth={280}
                       mediaProvider={mediaProvider}
+                      showCodeCopyButton={showCodeCopyButton}
+                      onCopyCode={onCopyCode}
+                      allowRecording={allowRecording}
+                      allowPresentationWindow={allowPresentationWindow}
+                      allowPresentationFullscreen={allowPresentationFullscreen}
                       documentLinkProvider={documentLinkProvider}
                       workspaceContainer={versionsContainer ?? undefined}
                       allowVersioning={effectiveVersioning}

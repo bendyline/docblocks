@@ -255,6 +255,7 @@ export interface VscodeStub {
   workspaceFolders: { uri: FakeUri; name: string; index: number }[];
   workspaceFiles: Set<string>;
   externalUris: FakeUri[];
+  clipboardWrites: string[];
   /** Reply used by showWarningMessage, e.g. a modal conflict choice. */
   warningResponse: string | undefined;
   onDidChangeTextDocumentEmitter: FakeEmitter<{
@@ -306,6 +307,7 @@ function resetVscodeStub(stub: VscodeStub): void {
   stub.workspaceFolders.length = 0;
   stub.workspaceFiles.clear();
   stub.externalUris.length = 0;
+  stub.clipboardWrites.length = 0;
   stub.statusBarItems.length = 0;
   stub.createdWebviewPanels.length = 0;
   stub.executedCommands.length = 0;
@@ -323,6 +325,7 @@ function createVscodeStub(): VscodeStub {
     workspaceFolders: [],
     workspaceFiles: new Set(),
     externalUris: [],
+    clipboardWrites: [],
     warningResponse: undefined,
     onDidChangeTextDocumentEmitter: new FakeEmitter(),
     onDidSaveTextDocumentEmitter: new FakeEmitter(),
@@ -412,6 +415,12 @@ function createVscodeStub(): VscodeStub {
       openExternal: (uri: FakeUri): Promise<boolean> => {
         stub.externalUris.push(uri);
         return Promise.resolve(true);
+      },
+      clipboard: {
+        writeText: (text: string): Promise<void> => {
+          stub.clipboardWrites.push(text);
+          return Promise.resolve();
+        },
       },
     },
     workspace: {
