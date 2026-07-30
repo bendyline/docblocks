@@ -54,6 +54,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     const editorHeaderRect = editorHeader?.getBoundingClientRect();
     const sidebarHeaderRect = sidebarHeader?.getBoundingClientRect();
     return {
+      devicePixelRatio: globalThis.devicePixelRatio,
       toolbarHeight: element.getBoundingClientRect().height,
       editorHeaderHeight: editorHeaderRect?.height,
       sidebarHeaderHeight: sidebarHeaderRect?.height,
@@ -65,10 +66,15 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
         style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
     };
   });
-  expect(chrome.toolbarHeight).toBe(41);
-  expect(chrome.editorHeaderHeight).toBe(42);
-  expect(chrome.sidebarHeaderHeight).toBe(42);
-  expect(chrome.headerBottomDelta).toBe(0);
+  const physicalPixel = 1 / chrome.devicePixelRatio;
+  // At fractional Windows display scales, Chromium snaps CSS edges to the
+  // physical-pixel grid (for example, 41px can measure as 41.333px at 150%).
+  // Keep the contract tighter than one physical pixel so a real 1px layout
+  // regression still fails.
+  expect(Math.abs(chrome.toolbarHeight - 41)).toBeLessThan(physicalPixel);
+  expect(Math.abs((chrome.editorHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
+  expect(Math.abs((chrome.sidebarHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
+  expect(Math.abs(chrome.headerBottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
   expect(chrome.appRegion).toBe('drag');
 
   // The shared shell lifts the tabs within its roomier 48px browser toolbar.
@@ -155,6 +161,7 @@ test('aligns the sidebar footer with the editor status bar', async ({ launchApp 
     const sidebarFooter = document.querySelector('.db-shell-sidebar-footer');
     const sidebarFooterRect = sidebarFooter?.getBoundingClientRect();
     return {
+      devicePixelRatio: globalThis.devicePixelRatio,
       statusBarHeight: statusBarRect.height,
       sidebarFooterHeight: sidebarFooterRect?.height,
       topDelta: sidebarFooterRect ? statusBarRect.top - sidebarFooterRect.top : null,
@@ -166,9 +173,12 @@ test('aligns the sidebar footer with the editor status bar', async ({ launchApp 
     };
   });
 
-  expect(chrome.statusBarHeight).toBe(chrome.sidebarFooterHeight);
-  expect(chrome.topDelta).toBe(0);
-  expect(chrome.bottomDelta).toBe(0);
+  const physicalPixel = 1 / chrome.devicePixelRatio;
+  expect(Math.abs(chrome.statusBarHeight - (chrome.sidebarFooterHeight ?? Infinity))).toBeLessThan(
+    physicalPixel,
+  );
+  expect(Math.abs(chrome.topDelta ?? Infinity)).toBeLessThan(physicalPixel);
+  expect(Math.abs(chrome.bottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
   expect(chrome.statusBarBorderColor).toBe(chrome.sidebarFooterBorderColor);
 });
 
