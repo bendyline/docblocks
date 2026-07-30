@@ -343,6 +343,9 @@ write-enabled, the server must be restarted with `--allow-write`; the MCP workfl
 does not fall back to the direct `convert` CLI command. For PPTX authoring, a
 level-one heading creates each deliberate slide boundary by itself; agents should
 not add `---` between slide headings unless a visible horizontal rule is intended.
+MCP guidance asks agents to infer theme and Squisq Summarize style from the brief,
+choose for the user, and ask at most one high-level style question only when the
+choice is materially ambiguous.
 
 | Option                               |    Default | Hard ceiling |
 | ------------------------------------ | ---------: | -----------: |

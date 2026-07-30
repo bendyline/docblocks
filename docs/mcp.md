@@ -420,6 +420,23 @@ call:
 8. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK artifact
    without mutating the source.
 
+Style selection is model-led by default. Agents infer theme and Squisq
+Summarize/transform style from the brief, audience, tone, content shape, brand
+constraints, and accessibility needs. They do not present raw IDs to the user or ask
+separate theme, summarization, animation, and template questions. When the choice is
+both materially ambiguous and important, an interactive agent asks one concise
+high-level question with at most four semantic directions plus a “choose for me”
+option; otherwise it uses safe defaults and proceeds.
+
+`transformId` is consequential: the Squisq Summarize styles can change emphasis,
+density, pacing, and structure. For source-preserving work, agents leave it unset
+unless summarization or visual restructuring is requested or permitted. When a
+transform is selected without an explicit user-requested theme, agents omit
+`themeId` so Squisq can apply the transform’s preferred compatible theme. Motion is
+treated as a high-level `none`, `subtle`, or `dynamic` preference rather than a list
+of individual transitions; themes supply motion defaults, while
+`animationsEnabled` honors explicit MP4/GIF motion preferences.
+
 The binary inference boundary is intentionally narrower than `DocumentSource`:
 
 - `infer_theme_from_file` accepts only file/artifact DOCX, PPTX, or XLSX sources;
@@ -606,9 +623,11 @@ The server publishes three prompts:
 | `create-document`     | required `topic`; optional `format` (`docx`/`pdf`), `theme`, `template`.                |
 
 Style, theme, and template completion is prefix-based, capped at 100 values, and
-comes directly from linked Squisq. Prompt output guides the agent toward the same
-canonical tool workflow; prompts do not create artifacts by themselves. `topic` is
-limited to 10,000 characters and style/theme/template IDs to 256 characters.
+comes directly from linked Squisq. Prompt output tells the agent to infer a semantic
+direction, choose automatically, and avoid presenting raw combinations to the user;
+exact prompt arguments remain available for callers that already know the desired
+IDs. Prompts do not create artifacts by themselves. `topic` is limited to 10,000
+characters and style/theme/template IDs to 256 characters.
 
 ## How linked Squisq is used
 

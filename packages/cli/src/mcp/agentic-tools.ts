@@ -49,6 +49,11 @@ import {
   requireWireIdentifier,
   toWireIdentifier,
 } from './output-bounds.js';
+import {
+  MOTION_SELECTION_GUIDANCE,
+  STYLE_SELECTION_GUIDANCE,
+  TRANSFORM_SELECTION_GUIDANCE,
+} from './style-guidance.js';
 
 const READ_ONLY = {
   readOnlyHint: true,
@@ -194,7 +199,12 @@ const conversionTargetSchema = z.discriminatedUnion('format', [
       height: z.number().int().min(16).max(3_840).optional(),
       captionStyle: z.enum(['standard', 'social']).optional(),
       coverPreRoll: z.number().min(0).max(60).optional(),
-      animationsEnabled: z.boolean().optional(),
+      animationsEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'Explicit rendered-media motion switch. Use it only to honor a user preference such as no motion or dynamic motion; otherwise rely on the theme/target default. It does not select an individual transition.',
+        ),
     })
     .strict(),
   z
@@ -207,7 +217,12 @@ const conversionTargetSchema = z.discriminatedUnion('format', [
       height: z.number().int().min(16).max(1_920).optional(),
       captionStyle: z.enum(['standard', 'social']).optional(),
       coverPreRoll: z.number().min(0).max(60).optional(),
-      animationsEnabled: z.boolean().optional(),
+      animationsEnabled: z
+        .boolean()
+        .optional()
+        .describe(
+          'Explicit rendered-media motion switch. Use it only to honor a user preference such as no motion or dynamic motion; otherwise rely on the theme/target default. It does not select an individual transition.',
+        ),
       loop: z.number().int().min(-1).max(65_535).optional(),
       maxColors: z.number().int().min(2).max(256).optional(),
       dither: z
@@ -276,8 +291,16 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
         .object({
           source: documentSourceSchema,
           targets: z.array(conversionTargetSchema).min(1).max(12),
-          themeId: identifierSchema.optional(),
-          transformId: identifierSchema.optional(),
+          themeId: identifierSchema
+            .optional()
+            .describe(
+              'Exact Squisq theme id. Infer it from the brief when the visual direction is clear. If transformId is set and no exact theme was requested, omit themeId so the transform can apply its preferred compatible theme.',
+            ),
+          transformId: identifierSchema
+            .optional()
+            .describe(
+              'Optional Squisq Summarize style id. It can change content emphasis, density, pacing, and structure; leave it unset for source-preserving work unless summarization or visual restructuring is requested or permitted.',
+            ),
           autoTemplates: z
             .boolean()
             .optional()
@@ -617,11 +640,14 @@ function registerAuthoringGuideResource(server: McpServer): void {
         import('@bendyline/squisq/transform'),
       ]);
       const guide = {
-        version: 9,
+        version: 10,
         workflow: [
           'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
           'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended',
           'convert_document chooses compatible templates automatically; Squisq annotations on headings are optional layout hints that take precedence',
+          STYLE_SELECTION_GUIDANCE,
+          TRANSFORM_SELECTION_GUIDANCE,
+          MOTION_SELECTION_GUIDANCE,
           'use a bundle source when assets must travel with the document, or create_document_bundle when one draft will be reused by two or more inspect, preview, or convert calls',
           'use inspect_document or preview_document only when the user asks for document analysis or visual evidence',
           'convert_document creates immutable artifacts; save_artifact only when a durable file is required',
@@ -675,7 +701,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
     'get_authoring_context',
     {
       description:
-        'Optionally discover target capabilities, safe defaults, themes, transforms, and exact starter annotation examples. Plain Markdown can be converted without calling this tool.',
+        'Optionally discover target capabilities, safe defaults, semantically described themes and Squisq Summarize styles, and exact starter annotation examples. Use these descriptions to choose for the user rather than presenting raw ids. Plain Markdown can be converted without calling this tool.',
       inputSchema: z
         .object({
           targetFormat: formatInputSchema.optional(),
@@ -785,6 +811,15 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               normalizedTarget === 'pptx'
                 ? 'Plain text and ordinary Markdown convert directly. Use one level-one Markdown heading (#) for each deliberate slide boundary. Headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended; unstructured text is still accepted.'
                 : 'Plain text and ordinary Markdown convert directly without a preflight.',
+              STYLE_SELECTION_GUIDANCE,
+              TRANSFORM_SELECTION_GUIDANCE,
+              ...(normalizedTarget === 'pptx' ||
+              normalizedTarget === 'html' ||
+              normalizedTarget === 'htmlzip' ||
+              normalizedTarget === 'mp4' ||
+              normalizedTarget === 'gif'
+                ? [MOTION_SELECTION_GUIDANCE]
+                : []),
               'convert_document chooses compatible templates automatically. Annotations on headings are optional layout hints that take precedence; use the returned exact starter examples when useful.',
               annotationHandling === 'ignored'
                 ? 'This target flattens template annotations to semantic content, so annotations are unnecessary for the exported file.'
@@ -1381,8 +1416,17 @@ function compactAuthoringContextText(context: AuthoringContextResult): string {
     ...context.templates
       .filter(({ id }) => id !== 'content')
       .map(({ annotationExample }) => `Optional example: ${annotationExample}`),
-    `Themes (${context.themes.length}): ${context.themes.map(({ id }) => id).join(', ')}`,
-    `Transform styles (${context.transformStyles.length}): ${context.transformStyles.map(({ id }) => id).join(', ')}.`,
+    '',
+    `Theme choices with descriptions (${context.themes.length}):`,
+    ...context.themes.map(
+      ({ id, name, description }) =>
+        `- ${id} (${name}): ${description ?? 'No additional description.'}`,
+    ),
+    '',
+    `Squisq Summarize choices for transformId (${context.transformStyles.length}):`,
+    ...context.transformStyles.map(
+      ({ id, name, description }) => `- ${id} (${name}): ${description}`,
+    ),
   ];
   if (context.recommendations.length > 0) {
     lines.push(

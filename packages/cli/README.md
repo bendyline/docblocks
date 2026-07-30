@@ -72,8 +72,11 @@ command. Plain text or ordinary Markdown can be passed directly to
 and explicit Squisq annotations remain optional overrides. For PPTX, a level-one
 heading creates each deliberate slide boundary by itself; do not add `---` between
 slide headings unless a visible horizontal rule is intended. `get_authoring_context`
-is optional discovery for exact annotation examples and safe defaults; the complete
-catalog remains available at `docblocks://authoring-guide`.
+is optional discovery for exact annotation examples, safe defaults, and semantically
+described theme/Summarize choices. MCP guidance tells agents to infer and choose a
+style from the brief rather than presenting raw IDs, asking one compact high-level
+question only when the choice is materially ambiguous. The complete catalog remains
+available at `docblocks://authoring-guide`.
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
 import-capable linked-registry formats. `build`/`serve` standalone HTML includes

@@ -11,6 +11,11 @@ import { ArtifactStore, type ArtifactStoreOptions } from './artifact-store.js';
 import { McpFileAuthority, type McpFileAuthorityOptions } from './authority.js';
 import { registerDiscoveryTools } from './discovery-tools.js';
 import { registerAuthoringPrompts } from './prompts.js';
+import {
+  MOTION_SELECTION_GUIDANCE,
+  STYLE_SELECTION_GUIDANCE,
+  TRANSFORM_SELECTION_GUIDANCE,
+} from './style-guidance.js';
 
 const DEFAULT_MAX_CONCURRENT_OPERATIONS = 2;
 const DEFAULT_OPERATION_TIMEOUT_MS = 2 * 60 * 1_000;
@@ -242,6 +247,9 @@ export function createMcpServer(options: McpServerOptions = {}): McpServer {
         'For durable local output, call list_roots before drafting and use a returned write-enabled root id exactly as given. If none is writable, stop and explain that the server must restart with --allow-write; do not fall back to a shell or CLI converter.',
         'Pass plain text or ordinary Markdown directly to convert_document; no preflight, inspection, preview, or template annotation is required. For deliberate PPTX slide boundaries, use one level-one heading per slide. Headings alone create slide boundaries; do not add --- between them unless a visible horizontal rule is intended.',
         'convert_document chooses compatible templates automatically. Squisq annotations on headings are optional layout hints that take precedence. Call get_authoring_context only when exact starter examples, themes, transforms, or target details are useful; read the full authoring-guide or call describe_template only for advanced author control.',
+        STYLE_SELECTION_GUIDANCE,
+        TRANSFORM_SELECTION_GUIDANCE,
+        MOTION_SELECTION_GUIDANCE,
         'Use a bundle source when assets must travel with the document. Use create_document_bundle only when one complete draft will be reused by two or more inspect, preview, or convert calls.',
         'Use inspect_document or preview_document only when the user asks for document analysis or visual evidence.',
         'convert_document returns immutable artifacts and diagnostics. Save only final durable output with save_artifact; never invent root ids or switch conversion to a shell or CLI.',

@@ -1354,8 +1354,8 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   gap: 6px;
-  /* Match Squisq's rendered line box + 4px vertical padding + 1px border. */
-  height: 23px;
+  /* Match Squisq's rendered line box + 8px vertical padding + 1px border. */
+  height: 25px;
   padding: 0 12px 0 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
@@ -3037,7 +3037,7 @@ body.db-resizing-sidebar * {
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-status-bar {
   background: var(--db-bg-subtle);
-  border-top-color: var(--db-border);
+  border-top-color: var(--db-border-strong);
 }
 
 .db-shell[data-theme='dark'] .squisq-image-viewer--dark,
@@ -4441,7 +4441,7 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-status-bar {
   background: var(--db-accent-tint-strong);
-  border-top-color: var(--db-border);
+  border-top-color: var(--db-border-strong);
 }
 
 /* Status bar "✓ OK" indicator — squisq paints this in saturated emerald
@@ -5581,13 +5581,20 @@ button.db-git-file-row:hover {
   /* The first shell row replaces the native titlebar. Empty space can drag
      the window; every interactive descendant opts back out below. */
   .db-shell .db-shell-sidebar-header,
-  .db-shell .squisq-toolbar,
-  .db-shell .squisq-editor-header--image {
+  .db-shell .squisq-editor-header {
     app-region: drag;
     -webkit-app-region: drag;
     box-sizing: border-box;
     height: var(--db-wco-titlebar-height);
     min-height: var(--db-wco-titlebar-height);
+  }
+
+  .db-shell .squisq-toolbar {
+    app-region: drag;
+    -webkit-app-region: drag;
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
   }
 
   .db-shell .db-shell-sidebar-header {
