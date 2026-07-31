@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.3.3](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.3.2...@bendyline/docblocks-react@2.3.3) (2026-07-31)
+
+### Bug Fixes
+
+* App and MCP updates ([#19](https://github.com/bendyline/docblocks/issues/19)) ([0737e41](https://github.com/bendyline/docblocks/commit/0737e41ce99bae61486e34283f59c3366446fc69))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.3.3
+
 ## @bendyline/docblocks-react [2.3.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.3.1...@bendyline/docblocks-react@2.3.2) (2026-07-27)
 
 ### Bug Fixes
