@@ -98,7 +98,40 @@ test.describe('DocBlocks App', () => {
     ).toBeVisible();
     await expect(diagram.getByRole('button', { name: 'Squisq, rect Mermaid node' })).toBeVisible();
     await expect(page.locator('.squisq-mermaid-render-error')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Copy code to clipboard' })).toHaveCount(0);
   });
+
+  for (const preview of [
+    { label: 'Page', sharedMode: 'page', iframe: false },
+    { label: 'Document', sharedMode: 'document', iframe: true },
+  ] as const) {
+    test(`copies ordinary fenced code from the ${preview.label} preview`, async ({ page }) => {
+      const code = 'npm run all';
+      const archive = await createSharedDocumentArchive(
+        `# Build\n\n\`\`\`shell\n${code}\n\`\`\`\n`,
+        'build.md',
+      );
+      const sharedUrl = buildSharedDocumentUrl(page.url(), archive, preview.sharedMode);
+      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
+        origin: new URL(page.url()).origin,
+      });
+
+      await page.evaluate((url) => {
+        window.history.pushState(null, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, sharedUrl);
+
+      await page.getByRole('button', { name: 'Choose Use mode' }).click();
+      await page.getByRole('menuitemradio', { name: preview.label }).click();
+      const copyButton = preview.iframe
+        ? page.frameLocator('iframe').getByRole('button', { name: 'Copy code to clipboard' })
+        : page.getByRole('button', { name: 'Copy code to clipboard' });
+      await expect(copyButton).toBeVisible({ timeout: 15_000 });
+      await copyButton.click();
+      await expect(copyButton).toHaveText('Copied');
+      await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(code);
+    });
+  }
 
   test('has a sidebar with workspace picker', async ({ page }) => {
     const sidebar = page.locator('.db-shell-sidebar');
@@ -373,18 +406,17 @@ test.describe('DocBlocks App', () => {
     expect(issueBody).toMatch(/^- DocBlocks: \d+\.\d+\.\d+ web$/m);
     expect(issueBody).toContain('- User agent: Mozilla/5.0');
 
-    const statusItem = page.locator('.squisq-status-item').first();
-    await expect(statusItem).toBeVisible();
-    const [linkBox, statusBox] = await Promise.all([
-      termsLink.boundingBox(),
-      statusItem.boundingBox(),
+    const statusBar = page.locator('.squisq-status-bar');
+    await expect(statusBar).toBeVisible();
+    const [footerBox, statusBarBox] = await Promise.all([
+      footer.boundingBox(),
+      statusBar.boundingBox(),
     ]);
-    if (!linkBox || !statusBox) throw new Error('Footer alignment elements not found');
+    if (!footerBox || !statusBarBox) throw new Error('Footer alignment elements not found');
 
-    const linkCenter = linkBox.y + linkBox.height / 2;
-    const statusCenter = statusBox.y + statusBox.height / 2;
-    // Font metrics can round the two line boxes to adjacent device pixels.
-    expect(Math.abs(linkCenter - statusCenter)).toBeLessThanOrEqual(1);
+    // The two chrome regions should share a continuous top border. Their text
+    // uses different font sizes, so comparing line-box centers is not stable.
+    expect(Math.abs(footerBox.y - statusBarBox.y)).toBeLessThanOrEqual(1);
   });
 });
 

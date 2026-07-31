@@ -1,9 +1,64 @@
 import { expect } from 'chai';
 import type { WebviewToExtensionMessage } from '@bendyline/docblocks/vscode';
+import { createVscodeClipboardBridge } from '../webview/src/vscodeClipboardBridge.js';
 import { createVscodeExportBridge } from '../webview/src/vscodeExportBridge.js';
 import { createVscodeMediaBridge } from '../webview/src/vscodeMediaProvider.js';
 
 describe('VS Code webview request bridges', () => {
+  it('resolves a validated clipboard acknowledgement', async () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    const bridge = createVscodeClipboardBridge((message) => posted.push(message), {
+      requestTimeoutMs: 100,
+    });
+    try {
+      const pending = bridge.copyCode('npm run all');
+      const request = posted[0];
+      if (!request || request.type !== 'copyCode') {
+        throw new Error('Expected a copyCode request');
+      }
+      expect(request.code).to.equal('npm run all');
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'codeCopied', requestId: request.requestId },
+        }),
+      );
+      await pending;
+    } finally {
+      bridge.dispose();
+    }
+  });
+
+  it('propagates a validated clipboard failure to the code-copy control', async () => {
+    const posted: WebviewToExtensionMessage[] = [];
+    const bridge = createVscodeClipboardBridge((message) => posted.push(message), {
+      requestTimeoutMs: 100,
+    });
+    try {
+      const pending = bridge.copyCode('npm run all');
+      const request = posted[0];
+      if (!request || request.type !== 'copyCode') {
+        throw new Error('Expected a copyCode request');
+      }
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: {
+            type: 'codeCopyError',
+            requestId: request.requestId,
+            message: 'Clipboard unavailable',
+          },
+        }),
+      );
+      const failure = await pending.then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).to.be.instanceOf(Error);
+      expect((failure as Error).message).to.equal('Clipboard unavailable');
+    } finally {
+      bridge.dispose();
+    }
+  });
+
   it('times out an unanswered export request and releases its slot', async () => {
     const posted: WebviewToExtensionMessage[] = [];
     const bridge = createVscodeExportBridge(

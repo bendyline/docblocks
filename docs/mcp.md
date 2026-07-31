@@ -221,7 +221,8 @@ A robust agent workflow is:
 2. Pass plain text or ordinary Markdown directly to `convert_document`; no preflight,
    inspection, preview, authoring-context call, or template annotation is required.
    For deliberate PPTX slide boundaries, use one level-one Markdown heading (`#`) per
-   slide. Unstructured text is still accepted.
+   slide. Headings alone create the boundaries; do not add `---` between them unless
+   a visible horizontal rule is intended. Unstructured text is still accepted.
 3. `convert_document` chooses compatible templates automatically. Squisq annotations
    on headings are optional layout hints that take precedence. Call
    `get_authoring_context` only when exact starter examples, themes, transforms, target
@@ -311,7 +312,7 @@ Target objects expose format-specific controls:
 | `md`, `dbk`       | Fidelity only.                                                                                                      |
 | `docx`            | `title`, `author`, `description`, `defaultFont`, `defaultFontSize` (6-96).                                          |
 | `pdf`             | `title`, `author`, `pageSize` (`letter`/`a4`), `margin` (0-288), `defaultFontSize` (6-96), render `width`/`height`. |
-| `pptx`            | Metadata; `slideBreak` (`h1`/`h2`/`heading`); font and render dimensions.                                           |
+| `pptx`            | Metadata; `slideBreak` (`h1`/`h2`/`heading`—headings need no `---` separator); font and render dimensions.          |
 | `xlsx`            | `title`, `author`, `sheetNamePrefix` (at most 31 characters).                                                       |
 | `csv`             | `delimiter` (1-4 characters), `tableIndex` (0-10,000).                                                              |
 | `html`, `htmlzip` | `mode` (`slideshow`/`static`), `autoPlay`, `title`.                                                                 |
@@ -377,7 +378,8 @@ to a template whose renderer ignores it, and `rendered-content-omitted` is an er
 when a complete-body template does not materialize all of its body text.
 `malformed-template-annotation` warns when an annotation-like span has unbalanced or
 stray delimiters (for example `{[comparisonBar unit="%"}]}`) that the parser would
-otherwise survive silently.
+otherwise survive silently. `redundant-slide-separator` reports thematic breaks
+removed immediately before PPTX slide-heading boundaries.
 
 ## Themes, templates, and layouts
 
@@ -399,7 +401,8 @@ call:
    overrides on headings as `# Heading {[content]}`. A standalone
    `{[content]}` creates an additional heading-less block and is only appropriate
    when that extra block is deliberate. For PPTX, use exactly one `#` heading per
-   deliberate slide; unstructured text is still accepted.
+   deliberate slide and do not add `---` between slide headings unless a visible
+   horizontal rule is intended; unstructured text is still accepted.
 3. Source normalization keeps ordinary headings in the linked `content` template,
    which renders the complete body; conversion may choose another compatible layout.
    Use `inspect_document` or `preview_document` only when the user
@@ -416,6 +419,23 @@ call:
    and mapped template IDs.
 8. `apply_inferred_theme` writes the inferred theme/layout set into a new DBK artifact
    without mutating the source.
+
+Style selection is model-led by default. Agents infer theme and Squisq
+Summarize/transform style from the brief, audience, tone, content shape, brand
+constraints, and accessibility needs. They do not present raw IDs to the user or ask
+separate theme, summarization, animation, and template questions. When the choice is
+both materially ambiguous and important, an interactive agent asks one concise
+high-level question with at most four semantic directions plus a “choose for me”
+option; otherwise it uses safe defaults and proceeds.
+
+`transformId` is consequential: the Squisq Summarize styles can change emphasis,
+density, pacing, and structure. For source-preserving work, agents leave it unset
+unless summarization or visual restructuring is requested or permitted. When a
+transform is selected without an explicit user-requested theme, agents omit
+`themeId` so Squisq can apply the transform’s preferred compatible theme. Motion is
+treated as a high-level `none`, `subtle`, or `dynamic` preference rather than a list
+of individual transitions; themes supply motion defaults, while
+`animationsEnabled` honors explicit MP4/GIF motion preferences.
 
 The binary inference boundary is intentionally narrower than `DocumentSource`:
 
@@ -587,7 +607,10 @@ Failures use:
 Nullable keys remain present. `operationLoad`, when non-null, contains `active` and
 `capacity`. The envelope and every nested result are parsed against exact core
 schemas before publication. Tool responses also include a bounded text mirror for
-clients that do not consume structured content.
+clients that do not consume structured content. When a conversion succeeds with
+warnings, a concise warning summary is the first text content item and the complete
+JSON mirror follows as the next text item; conversions without warnings retain the
+JSON mirror as their first text item.
 
 ## Prompts and completions
 
@@ -600,9 +623,11 @@ The server publishes three prompts:
 | `create-document`     | required `topic`; optional `format` (`docx`/`pdf`), `theme`, `template`.                |
 
 Style, theme, and template completion is prefix-based, capped at 100 values, and
-comes directly from linked Squisq. Prompt output guides the agent toward the same
-canonical tool workflow; prompts do not create artifacts by themselves. `topic` is
-limited to 10,000 characters and style/theme/template IDs to 256 characters.
+comes directly from linked Squisq. Prompt output tells the agent to infer a semantic
+direction, choose automatically, and avoid presenting raw combinations to the user;
+exact prompt arguments remain available for callers that already know the desired
+IDs. Prompts do not create artifacts by themselves. `topic` is limited to 10,000
+characters and style/theme/template IDs to 256 characters.
 
 ## How linked Squisq is used
 

@@ -49,13 +49,32 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
 
   const chrome = await toolbar.evaluate((element) => {
     const style = getComputedStyle(element);
+    const editorHeader = element.closest('.squisq-editor-header');
+    const sidebarHeader = document.querySelector('.db-shell-sidebar-header');
+    const editorHeaderRect = editorHeader?.getBoundingClientRect();
+    const sidebarHeaderRect = sidebarHeader?.getBoundingClientRect();
     return {
-      height: element.getBoundingClientRect().height,
+      devicePixelRatio: globalThis.devicePixelRatio,
+      toolbarHeight: element.getBoundingClientRect().height,
+      editorHeaderHeight: editorHeaderRect?.height,
+      sidebarHeaderHeight: sidebarHeaderRect?.height,
+      headerBottomDelta:
+        editorHeaderRect && sidebarHeaderRect
+          ? editorHeaderRect.bottom - sidebarHeaderRect.bottom
+          : null,
       appRegion:
         style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
     };
   });
-  expect(chrome.height).toBe(42);
+  const physicalPixel = 1 / chrome.devicePixelRatio;
+  // At fractional Windows display scales, Chromium snaps CSS edges to the
+  // physical-pixel grid (for example, 41px can measure as 41.333px at 150%).
+  // Keep the contract tighter than one physical pixel so a real 1px layout
+  // regression still fails.
+  expect(Math.abs(chrome.toolbarHeight - 41)).toBeLessThan(physicalPixel);
+  expect(Math.abs((chrome.editorHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
+  expect(Math.abs((chrome.sidebarHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
+  expect(Math.abs(chrome.headerBottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
   expect(chrome.appRegion).toBe('drag');
 
   // The shared shell lifts the tabs within its roomier 48px browser toolbar.
@@ -130,6 +149,37 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   if (process.platform !== 'darwin') {
     await expect(window.locator('.db-shell [role="menubar"]')).toHaveCount(0);
   }
+});
+
+test('aligns the sidebar footer with the editor status bar', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const statusBar = window.locator('.squisq-status-bar');
+  await expect(statusBar).toBeVisible({ timeout: 30_000 });
+
+  const chrome = await statusBar.evaluate((element) => {
+    const statusBarRect = element.getBoundingClientRect();
+    const sidebarFooter = document.querySelector('.db-shell-sidebar-footer');
+    const sidebarFooterRect = sidebarFooter?.getBoundingClientRect();
+    return {
+      devicePixelRatio: globalThis.devicePixelRatio,
+      statusBarHeight: statusBarRect.height,
+      sidebarFooterHeight: sidebarFooterRect?.height,
+      topDelta: sidebarFooterRect ? statusBarRect.top - sidebarFooterRect.top : null,
+      bottomDelta: sidebarFooterRect ? statusBarRect.bottom - sidebarFooterRect.bottom : null,
+      statusBarBorderColor: getComputedStyle(element).borderTopColor,
+      sidebarFooterBorderColor: sidebarFooter
+        ? getComputedStyle(sidebarFooter).borderTopColor
+        : null,
+    };
+  });
+
+  const physicalPixel = 1 / chrome.devicePixelRatio;
+  expect(Math.abs(chrome.statusBarHeight - (chrome.sidebarFooterHeight ?? Infinity))).toBeLessThan(
+    physicalPixel,
+  );
+  expect(Math.abs(chrome.topDelta ?? Infinity)).toBeLessThan(physicalPixel);
+  expect(Math.abs(chrome.bottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
+  expect(chrome.statusBarBorderColor).toBe(chrome.sidebarFooterBorderColor);
 });
 
 test('default workspace folder exists on disk after first launch', async ({

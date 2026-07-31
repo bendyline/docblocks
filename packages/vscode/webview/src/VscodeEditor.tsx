@@ -26,6 +26,10 @@ import {
   parseExtensionToWebviewMessage,
 } from '@bendyline/docblocks/vscode';
 import { createVscodeExportBridge, type VscodeExportBridge } from './vscodeExportBridge.js';
+import {
+  createVscodeClipboardBridge,
+  type VscodeClipboardBridge,
+} from './vscodeClipboardBridge.js';
 import { createVscodeMediaBridge, type VscodeMediaBridge } from './vscodeMediaProvider.js';
 import { isAutoSavePending } from './autosaveStatus.js';
 import { readVscodeBodyTheme, type VscodeColorScheme } from './vscodeBodyTheme.js';
@@ -75,6 +79,7 @@ export function VscodeEditor() {
   const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
+  const [clipboardBridge, setClipboardBridge] = useState<VscodeClipboardBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
   const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
@@ -193,6 +198,12 @@ export function VscodeEditor() {
       () => fileNameRef.current,
     );
     setExportBridge(bridge);
+    return () => bridge.dispose();
+  }, []);
+
+  useEffect(() => {
+    const bridge = createVscodeClipboardBridge((message) => vscode.postMessage(message));
+    setClipboardBridge(bridge);
     return () => bridge.dispose();
   }, []);
 
@@ -369,7 +380,9 @@ export function VscodeEditor() {
       />
     );
   }
-  if (mediaBridge === null || exportBridge === null) return <EditorLoading />;
+  if (mediaBridge === null || exportBridge === null || clipboardBridge === null) {
+    return <EditorLoading />;
+  }
 
   return (
     <div
@@ -392,8 +405,11 @@ export function VscodeEditor() {
           initialMarkdown={markdown}
           initialView="wysiwyg"
           defaultViewportPreset={defaultPreviewViewportPreset}
+          blockTagVisibility="none"
           onChange={handleChange}
           onLinkClick={handleLinkClick}
+          showCodeCopyButton
+          onCopyCode={clipboardBridge.copyCode}
           colorScheme={theme}
           writeCanvasSettings={editorWriteCanvasSettings}
           height="100%"

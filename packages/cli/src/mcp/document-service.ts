@@ -420,6 +420,14 @@ function classifyWarning(
   format: string | null,
 ): { code: string; count: number; remediation: string | null } {
   const normalized = message.toLowerCase();
+  if (normalized.includes('redundant thematic break')) {
+    return {
+      code: 'redundant-slide-separator',
+      count: warningCount(message, /removed\s+(\d+)\s+redundant thematic break/iu),
+      remediation:
+        'Remove --- between slide headings because heading-based slide breaks already create the boundaries. Keep --- only for an intentional visible horizontal rule within a slide.',
+    };
+  }
   if (normalized.includes('unsupported markdown node')) {
     return {
       code: 'unsupported-markdown-node',

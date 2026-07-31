@@ -70,6 +70,8 @@ describe('MCP linked template recommendations', () => {
         safeForContentFirst: boolean;
         annotationExample: string;
       }>;
+      themes: Array<{ id: string; name: string; description?: string }>;
+      transformStyles: Array<{ id: string; name: string; description: string }>;
       recommendations: Array<{ recommendedTemplateIds: string[] }>;
     };
     expect(payload.defaultTemplateId).to.equal('content');
@@ -81,6 +83,21 @@ describe('MCP linked template recommendations', () => {
     expect(
       payload.workflow.some((step) => step.includes('unstructured text is still accepted')),
     ).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('do not add ---'))).to.equal(true);
+    expect(
+      payload.workflow.some((step) =>
+        step.includes('Choose theme and Squisq Summarize/transform style automatically'),
+      ),
+    ).to.equal(true);
+    expect(
+      payload.workflow.some((step) => step.includes('raw theme/transform ids to the user')),
+    ).to.equal(true);
+    expect(payload.workflow.some((step) => step.includes('leave transformId unset'))).to.equal(
+      true,
+    );
+    expect(payload.workflow.some((step) => step.includes('none, subtle, or dynamic'))).to.equal(
+      true,
+    );
     expect(
       payload.workflow.some((step) => step.includes('Pass Markdown directly to convert_document')),
     ).to.equal(true);
@@ -104,11 +121,21 @@ describe('MCP linked template recommendations', () => {
       true,
     );
     expect(payload.recommendations[0]?.recommendedTemplateIds[0]).to.equal('content');
+    expect(payload.themes.find(({ id }) => id === 'standard')?.description).to.include(
+      'Clean and safe',
+    );
+    expect(payload.transformStyles.find(({ id }) => id === 'data-driven')?.description).to.include(
+      'Aggressively highlights',
+    );
     expect(result.text).to.include('DocBlocks authoring contract: pptx, content-first');
     expect(result.text).to.include('Optional example: # Heading {[statHighlight');
+    expect(result.text).to.include('Theme choices with descriptions');
+    expect(result.text).to.include('standard (Standard Light): Clean and safe');
+    expect(result.text).to.include('Squisq Summarize choices for transformId');
+    expect(result.text).to.include('data-driven (Data-Driven): Aggressively highlights statistics');
     expect(result.text).to.include('intentionally focused');
     expect(result.text).to.include('docblocks://authoring-guide');
-    expect(result.text.length).to.be.lessThan(4_000);
+    expect(result.text.length).to.be.lessThan(6_000);
     expect(JSON.stringify(payload).length).to.be.lessThan(12_000);
   });
 

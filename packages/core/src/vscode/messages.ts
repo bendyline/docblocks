@@ -142,6 +142,8 @@ export type ExtensionToWebviewMessage =
     }
   | { type: 'themeChange'; theme: 'light' | 'dark' }
   | { type: 'editorSettings'; settings: VscodeEditorSettings }
+  | { type: 'codeCopied'; requestId: number }
+  | { type: 'codeCopyError'; requestId: number; message: string }
   | { type: 'mediaResolved'; requestId: number; url: string }
   | { type: 'mediaListed'; requestId: number; entries: MediaEntryMessage[] }
   | { type: 'mediaAdded'; requestId: number; path: string }
@@ -161,6 +163,7 @@ export type WebviewToExtensionMessage =
   | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
   | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
   | { type: 'openLink'; href: string }
+  | { type: 'copyCode'; requestId: number; code: string }
   | {
       type: 'edit';
       content: string;
@@ -234,6 +237,12 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       return hasOnlyKeys(value, ['type', 'href']) &&
         hasBoundedString(value, 'href', HOST_WIRE_LIMITS.urlCharacters, 1)
         ? { type: 'openLink', href: value.href }
+        : null;
+    case 'copyCode':
+      return hasOnlyKeys(value, ['type', 'requestId', 'code']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'code', HOST_WIRE_LIMITS.documentCharacters)
+        ? { type: 'copyCode', requestId: value.requestId, code: value.code }
         : null;
     case 'edit':
       return hasOnlyKeys(value, [
@@ -505,6 +514,16 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
       const settings = parseVscodeEditorSettings(value.settings);
       return settings ? { type: 'editorSettings', settings } : null;
     }
+    case 'codeCopied':
+      return hasOnlyKeys(value, ['type', 'requestId']) && hasRequestId(value)
+        ? { type: 'codeCopied', requestId: value.requestId }
+        : null;
+    case 'codeCopyError':
+      return hasOnlyKeys(value, ['type', 'requestId', 'message']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters, 1)
+        ? { type: 'codeCopyError', requestId: value.requestId, message: value.message }
+        : null;
     case 'mediaResolved':
       return hasOnlyKeys(value, ['type', 'requestId', 'url']) &&
         hasRequestId(value) &&

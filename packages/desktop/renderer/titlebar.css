@@ -13,13 +13,20 @@
 /* The first shell row replaces the native titlebar. Empty space can drag
    the window; every interactive descendant opts back out below. */
 .db-desktop-root .db-shell-sidebar-header,
-.db-desktop-root .squisq-toolbar,
-.db-desktop-root .squisq-editor-header--image {
+.db-desktop-root .squisq-editor-header {
   app-region: drag;
   -webkit-app-region: drag;
   box-sizing: border-box;
   height: var(--db-desktop-titlebar-height);
   min-height: var(--db-desktop-titlebar-height);
+}
+
+.db-desktop-root .squisq-toolbar {
+  app-region: drag;
+  -webkit-app-region: drag;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
 }
 
 .db-desktop-root .db-shell-sidebar-header {

@@ -75,6 +75,12 @@ export interface DocBlocksHostShellAPI {
   openExternal(url: string): Promise<void>;
 }
 
+/** Native clipboard operations exposed through the trusted host boundary. */
+export interface DocBlocksHostClipboardAPI {
+  /** Replace the system clipboard's plain-text contents. */
+  writeText(text: string): Promise<void>;
+}
+
 /** Exact, main-owned export authority. The display path is never authority. */
 export interface HostExportTargetGrant {
   /** Null means this is a display-only suggestion and save must show a picker. */
@@ -300,6 +306,7 @@ export interface DocBlocksHostAPI {
   external: DocBlocksHostExternalAPI;
   workspaces: DocBlocksHostWorkspacesAPI;
   shell: DocBlocksHostShellAPI;
+  clipboard: DocBlocksHostClipboardAPI;
   exports: DocBlocksHostExportAPI;
   ffmpeg: DocBlocksHostFfmpegAPI;
   git: DocBlocksHostGitAPI;

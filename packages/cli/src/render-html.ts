@@ -57,6 +57,7 @@ export async function renderMarkdownHtml(
     title: options.title,
     mode: options.mode ?? 'static',
     themeId: options.themeId,
+    showCodeCopyButton: true,
   });
 }
 

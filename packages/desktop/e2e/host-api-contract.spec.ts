@@ -40,6 +40,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
         getDefault(): Promise<{ id: string; rootPath: string }>;
       };
       shell: { openExternal(url: string): Promise<void> };
+      clipboard: { writeText(text: string): Promise<void> };
       external: { readText(resourceId: string): Promise<unknown> };
       git: { capabilities(): Promise<{ gitAvailable: boolean }> };
       ffmpeg: { available(): Promise<boolean>; version(): Promise<string | null> };
@@ -65,6 +66,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     for (const [label, operation] of [
       ['external', () => typedHost.external.readText('unknown-grant')],
       ['shell', () => typedHost.shell.openExternal('javascript:alert(1)')],
+      ['clipboard', () => typedHost.clipboard.writeText('\0')],
     ] as const) {
       try {
         await operation();
@@ -83,6 +85,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'external',
           'workspaces',
           'shell',
+          'clipboard',
           'exports',
           'ffmpeg',
           'git',
@@ -105,6 +108,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   });
 
   expect(contract.topLevel).toEqual([
+    'clipboard',
     'env',
     'exports',
     'external',
@@ -166,6 +170,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'unregister',
   ]);
   expect(contract.methods.shell).toEqual(['openExternal', 'revealInFolder']);
+  expect(contract.methods.clipboard).toEqual(['writeText']);
   expect(contract.methods.exports).toEqual(['pickTarget', 'resolveTarget', 'save']);
   expect(contract.methods.ffmpeg).toEqual(['available', 'version']);
   expect(contract.methods.updater).toEqual([
@@ -208,7 +213,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.opened.ok).toBe(true);
   expect(contract.root.ok).toBe(true);
   expect(contract.disposed.ok).toBe(true);
-  expect(contract.rejected).toEqual(['external', 'shell']);
+  expect(contract.rejected).toEqual(['external', 'shell', 'clipboard']);
   expect(typeof contract.git.gitAvailable).toBe('boolean');
   expect(typeof contract.ffmpegAvailable).toBe('boolean');
   expect(

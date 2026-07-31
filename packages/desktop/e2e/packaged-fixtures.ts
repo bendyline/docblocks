@@ -31,7 +31,7 @@ export interface PackagedApplication {
 interface PackagedFixtures {
   userDataDir: string;
   workspaceDir: string;
-  launchPackagedApp: () => Promise<PackagedApplication>;
+  launchPackagedApp: (extraArgs?: string[]) => Promise<PackagedApplication>;
 }
 
 function makeTmpDir(prefix: string): string {
@@ -144,6 +144,7 @@ async function launchPackagedApplication(
   artifact: PackagedArtifact,
   userDataDir: string,
   workspaceDir: string,
+  extraArgs: string[],
 ): Promise<PackagedApplication> {
   const args = [
     '--remote-debugging-port=0',
@@ -154,6 +155,7 @@ async function launchPackagedApplication(
     // Packaged smoke runs inside an already isolated automation boundary.
     // Avoid a nested Chromium sandbox launch failure on managed runners.
     '--no-sandbox',
+    ...extraArgs,
   ];
 
   const child = spawn(artifact.executablePath, args, {
@@ -234,13 +236,14 @@ export const test = base.extend<PackagedFixtures>({
 
   launchPackagedApp: async ({ userDataDir, workspaceDir }, use, testInfo) => {
     let running: PackagedApplication | undefined;
-    await use(async () => {
+    await use(async (extraArgs = []) => {
       if (running)
         throw new Error('The packaged fixture supports one active application per test.');
       running = await launchPackagedApplication(
         resolvePackagedArtifact(),
         userDataDir,
         workspaceDir,
+        extraArgs,
       );
       return running;
     });

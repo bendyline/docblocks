@@ -100,6 +100,14 @@ describe('MCP protocol surface', function () {
     expect(h.client.getInstructions()).to.include('plain text or ordinary Markdown');
     expect(h.client.getInstructions()).to.include('no preflight');
     expect(h.client.getInstructions()).to.include('optional layout hints');
+    expect(h.client.getInstructions()).to.include('do not add ---');
+    expect(h.client.getInstructions()).to.include(
+      'Choose theme and Squisq Summarize/transform style automatically',
+    );
+    expect(h.client.getInstructions()).to.include('raw theme/transform ids to the user');
+    expect(h.client.getInstructions()).to.include('at most four semantic directions');
+    expect(h.client.getInstructions()).to.include('leave transformId unset');
+    expect(h.client.getInstructions()).to.include('motion as a high-level');
     expect(h.client.getInstructions()).to.include('directly to convert_document');
     expect(h.client.getInstructions()).to.include('reused by two or more');
     expect(h.client.getInstructions()).to.include('never invent root ids');
@@ -178,6 +186,18 @@ describe('MCP protocol surface', function () {
       expect(annotations?.destructiveHint, name).to.equal(false);
       expect(annotations?.idempotentHint, name).to.equal(false);
     }
+    expect(JSON.stringify(findTool(tools, 'convert_document').inputSchema)).to.include(
+      'do not add ---',
+    );
+    expect(JSON.stringify(findTool(tools, 'convert_document').inputSchema)).to.include(
+      'Squisq Summarize style id',
+    );
+    expect(JSON.stringify(findTool(tools, 'convert_document').inputSchema)).to.include(
+      'preferred compatible theme',
+    );
+    expect(JSON.stringify(findTool(tools, 'convert_document').inputSchema)).to.include(
+      'does not select an individual transition',
+    );
     const saveAnnotations = findTool(tools, 'save_artifact').annotations;
     expect(saveAnnotations?.readOnlyHint).to.equal(false);
     expect(saveAnnotations?.destructiveHint).to.equal(true);
@@ -310,6 +330,9 @@ describe('MCP protocol surface', function () {
     expect(findTool(tools, 'get_authoring_context').description).to.include(
       'Plain Markdown can be converted without calling this tool',
     );
+    expect(findTool(tools, 'get_authoring_context').description).to.include(
+      'choose for the user rather than presenting raw ids',
+    );
 
     const save = findTool(tools, 'save_artifact');
     expect(save.inputSchema.required).to.deep.equal(['artifactUri', 'destination']);
@@ -401,7 +424,7 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(8);
+    expect(authoringPayload.version).to.equal(10);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(
@@ -412,6 +435,19 @@ describe('MCP protocol surface', function () {
     expect(
       authoringPayload.workflow?.some((step) =>
         String(step).includes('without a preflight or template annotations'),
+      ),
+    ).to.equal(true);
+    expect(
+      authoringPayload.workflow?.some((step) => String(step).includes('do not add ---')),
+    ).to.equal(true);
+    expect(
+      authoringPayload.workflow?.some((step) =>
+        String(step).includes('at most four semantic directions'),
+      ),
+    ).to.equal(true);
+    expect(
+      authoringPayload.workflow?.some((step) =>
+        String(step).includes('preferred compatible theme'),
       ),
     ).to.equal(true);
     expect(authoringPayload.templates?.find(({ id }) => id === 'content')).to.include({
@@ -517,6 +553,13 @@ describe('MCP protocol surface', function () {
     expect(presentationDefault).to.include('list_roots before drafting');
     expect(presentationDefault).to.include('do not use a shell or CLI converter');
     expect(presentationDefault).to.include('level-one heading');
+    expect(presentationDefault).to.include('do not add `---`');
+    expect(presentationDefault).to.include(
+      'Choose theme and Squisq Summarize/transform style automatically',
+    );
+    expect(presentationDefault).to.include('at most four semantic directions');
+    expect(presentationDefault).to.include('"choose for me"');
+    expect(presentationDefault).to.include('none, subtle, or dynamic');
     expect(presentationDefault).to.match(/\bpptx\b/iu);
 
     const presentationOption = promptText(
@@ -526,6 +569,9 @@ describe('MCP protocol surface', function () {
       }),
     );
     expect(presentationOption).to.include('minimal');
+    expect(presentationOption).to.include('Honor the caller-supplied transform style `minimal`');
+    expect(presentationOption).to.include('do not ask for another style choice');
+    expect(presentationOption).to.include('omit themeId');
 
     const videoDefault = promptText(
       await h.client.getPrompt({ name: 'create-video', arguments: { topic: 'Tides' } }),
