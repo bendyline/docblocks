@@ -406,18 +406,17 @@ test.describe('DocBlocks App', () => {
     expect(issueBody).toMatch(/^- DocBlocks: \d+\.\d+\.\d+ web$/m);
     expect(issueBody).toContain('- User agent: Mozilla/5.0');
 
-    const statusItem = page.locator('.squisq-status-item').first();
-    await expect(statusItem).toBeVisible();
-    const [linkBox, statusBox] = await Promise.all([
-      termsLink.boundingBox(),
-      statusItem.boundingBox(),
+    const statusBar = page.locator('.squisq-status-bar');
+    await expect(statusBar).toBeVisible();
+    const [footerBox, statusBarBox] = await Promise.all([
+      footer.boundingBox(),
+      statusBar.boundingBox(),
     ]);
-    if (!linkBox || !statusBox) throw new Error('Footer alignment elements not found');
+    if (!footerBox || !statusBarBox) throw new Error('Footer alignment elements not found');
 
-    const linkCenter = linkBox.y + linkBox.height / 2;
-    const statusCenter = statusBox.y + statusBox.height / 2;
-    // Font metrics can round the two line boxes to adjacent device pixels.
-    expect(Math.abs(linkCenter - statusCenter)).toBeLessThanOrEqual(1);
+    // The two chrome regions should share a continuous top border. Their text
+    // uses different font sizes, so comparing line-box centers is not stable.
+    expect(Math.abs(footerBox.y - statusBarBox.y)).toBeLessThanOrEqual(1);
   });
 });
 
