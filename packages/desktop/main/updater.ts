@@ -22,13 +22,13 @@ import { registerTrustedIpcHandler } from './ipc-authority.js';
 import {
   classifyUpdateCheck,
   failedUpdateCheck,
+  releaseUrlFor,
   updaterStatusForError,
   type UpdaterActivity,
 } from './updater-result.js';
 
 const { autoUpdater } = pkg;
 
-const RELEASE_URL_BASE = 'https://github.com/bendyline/docblocks/releases/tag';
 let updateDownloaded = false;
 let updaterActivity: UpdaterActivity = 'idle';
 
@@ -40,10 +40,6 @@ let updaterActivity: UpdaterActivity = 'idle';
  */
 export function isStoreBuild(): boolean {
   return process.mas === true || process.windowsStore === true;
-}
-
-function releaseUrlFor(version: string): string {
-  return `${RELEASE_URL_BASE}/v${version}`;
 }
 
 function releaseNotesOf(info: UpdateInfo): string | undefined {

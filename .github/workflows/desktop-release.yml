@@ -285,15 +285,81 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
 
+      # electron-builder signs the .dmg (dmg.sign) but never notarizes it — it
+      # only notarizes the .app it packages. A signed-but-unticketed disk image
+      # still fails Gatekeeper, so submit each image and staple the ticket so the
+      # download is trusted offline. `dmg.writeUpdateInfo: false` keeps the .dmg
+      # out of latest-mac.yml, so rewriting it here invalidates no published hash.
+      - name: Notarize and staple macOS disk images
+        working-directory: packages/desktop/dist/artifacts
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          shopt -s nullglob
+          images=(*.dmg)
+          if [ ${#images[@]} -eq 0 ]; then echo "No .dmg produced to notarize" >&2; exit 1; fi
+          for dmg in "${images[@]}"; do
+            echo "Notarizing $dmg"
+            # `notarytool submit --wait` exits 0 even when the service returns
+            # Invalid — it only fails on transport errors. Read the terminal
+            # status instead of trusting the exit code, otherwise a rejected
+            # image would reach `stapler staple` and fail there as a bare
+            # "Error 65" with nothing explaining why.
+            submission=$(xcrun notarytool submit "$dmg" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait --output-format json)
+            echo "$submission"
+            status=$(printf '%s' "$submission" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')
+            submission_id=$(printf '%s' "$submission" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')
+            if [ "$status" != "Accepted" ]; then
+              echo "::error::Notarization for $dmg returned '$status'"
+              # The notary log is the only thing that explains a rejection.
+              if [ -n "$submission_id" ]; then
+                xcrun notarytool log "$submission_id" \
+                  --apple-id "$APPLE_ID" \
+                  --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+                  --team-id "$APPLE_TEAM_ID" || true
+              fi
+              exit 1
+            fi
+            xcrun stapler staple "$dmg"
+          done
+
       - name: Verify macOS signing (fail if unsigned)
         run: |
-          # codesign and the notarization staple are both mandatory release gates.
-          APP=$(find packages/desktop/dist/artifacts -maxdepth 2 -name 'DocBlocks.app' | head -n1)
-          if [ -z "$APP" ]; then echo "No DocBlocks.app produced to verify"; exit 1; fi
-          echo "Verifying code signature on $APP"
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          echo "Verifying notarization staple:"
-          xcrun stapler validate "$APP"
+          # codesign and the notarization staple are mandatory release gates, and
+          # they apply to every artifact a user can download — each per-arch .app
+          # and each .dmg. This previously verified `head -n1` of the .app list,
+          # so one architecture went unchecked and the disk images were never
+          # looked at, which is why an unsigned .dmg shipped for several releases.
+          cd packages/desktop/dist/artifacts
+          shopt -s nullglob
+
+          apps=(*/DocBlocks.app)
+          if [ ${#apps[@]} -eq 0 ]; then echo "No DocBlocks.app produced to verify" >&2; exit 1; fi
+          for app in "${apps[@]}"; do
+            echo "== $app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+          done
+
+          images=(*.dmg)
+          if [ ${#images[@]} -eq 0 ]; then echo "No .dmg produced to verify" >&2; exit 1; fi
+          for dmg in "${images[@]}"; do
+            echo "== $dmg"
+            codesign --verify --strict --verbose=2 "$dmg"
+            xcrun stapler validate "$dmg"
+            # Assess the way Gatekeeper does for a downloaded disk image.
+            spctl --assess --type open --context context:primary-signature -vv "$dmg"
+          done
+
+          archives=(*.zip)
+          if [ ${#archives[@]} -eq 0 ]; then echo "No .zip produced to verify" >&2; exit 1; fi
+          echo "Verified ${#apps[@]} app bundle(s), ${#images[@]} disk image(s), ${#archives[@]} archive(s)"
 
       - name: Clean up keychain
         if: always()
@@ -307,7 +373,6 @@ jobs:
           name: macos-artifacts
           path: |
             packages/desktop/dist/artifacts/*.dmg
-            packages/desktop/dist/artifacts/*.dmg.blockmap
             packages/desktop/dist/artifacts/*.zip
             packages/desktop/dist/artifacts/*.zip.blockmap
             packages/desktop/dist/artifacts/latest-mac.yml

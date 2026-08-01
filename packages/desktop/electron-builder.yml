@@ -161,6 +161,21 @@ mas:
   hardenedRuntime: false
 
 dmg:
+  # electron-builder defaults `sign` to false, so the .dmg shipped unsigned even
+  # though the .app inside it was signed, notarized, and stapled. The app still
+  # launched correctly, but the container the user actually downloads assessed as
+  # "rejected: no usable signature" under Gatekeeper. Signing alone is not enough
+  # — Gatekeeper wants a notarization ticket for the disk image itself — so the
+  # release workflow submits each .dmg to notarytool and staples it after this
+  # build step. Keep the two in sync: signing here without notarizing there is
+  # the one combination electron-builder warns produces confusing failures.
+  sign: true
+  # `stapler staple` rewrites the .dmg in place, which would invalidate any
+  # blockmap or sha512/size electron-builder had already recorded for it. The
+  # macOS updater never reads the .dmg anyway — MacUpdater calls
+  # findFile(files, 'zip', ['pkg', 'dmg']) — so keep the disk image out of
+  # latest-mac.yml entirely rather than publishing hashes that stapling breaks.
+  writeUpdateInfo: false
   # Uncomment once a proper dmg background asset is designed.
   # background: resources/dmg-background.png
   contents:
