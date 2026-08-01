@@ -23,6 +23,8 @@ const ARCHIVE_LIMITS = {
   maxEntryUncompressedBytes: 100 * 1024 * 1024,
   maxUncompressedBytes: 100 * 1024 * 1024,
 } as const;
+/** Cover slide + the authored slide the fixture image lives on. */
+const PPTX_COVER_SLIDE_IMAGE_COPIES = 2;
 
 describe('MCP artifact media round-trips through linked Office formats', function () {
   this.timeout(60_000);
@@ -132,8 +134,16 @@ describe('MCP artifact media round-trips through linked Office formats', functio
     const pptxBytes = await readArtifactBytes(harness.client, pptx.artifact.uri);
     const { pptxToContainer } = await import('@bendyline/squisq-formats/pptx');
     const linkedImport = await pptxToContainer(ownedArrayBuffer(pptxBytes), ARCHIVE_LIMITS);
-    await expectExactImportedPng(linkedImport);
-    await expectCanonicalImport(harness.client, pptx.artifact, 'pptx');
+    // Squisq's PPTX cover slide (on by default) is built from the document's
+    // opening block, so the fixture image lands on both the cover and its
+    // authored slide. DOCX has no cover and still round-trips a single copy.
+    await expectExactImportedPng(linkedImport, PPTX_COVER_SLIDE_IMAGE_COPIES);
+    await expectCanonicalImport(
+      harness.client,
+      pptx.artifact,
+      'pptx',
+      PPTX_COVER_SLIDE_IMAGE_COPIES,
+    );
   });
 });
 
@@ -159,6 +169,7 @@ async function expectCanonicalImport(
   client: Client,
   artifact: ArtifactRef,
   sourceFormat: 'docx' | 'pptx',
+  expectedCopies = 1,
 ): Promise<void> {
   const inspected = await callTool(client, 'inspect_document', {
     source: { kind: 'artifact', uri: artifact.uri },
@@ -167,12 +178,14 @@ async function expectCanonicalImport(
   const inspection = parseInspectionResult(inspected.structuredContent);
   if (!inspection) throw new Error(`Expected canonical ${sourceFormat} inspection`);
   expect(inspection.sourceFormat).to.equal(sourceFormat);
-  expect(inspection.assets).to.have.length(1);
-  expect(inspection.assets[0]).to.include({
-    mimeType: 'image/png',
-    size: EXACT_PNG.byteLength,
-    sha256: EXACT_PNG_SHA256,
-  });
+  expect(inspection.assets).to.have.length(expectedCopies);
+  for (const asset of inspection.assets) {
+    expect(asset).to.include({
+      mimeType: 'image/png',
+      size: EXACT_PNG.byteLength,
+      sha256: EXACT_PNG_SHA256,
+    });
+  }
 
   const imported = await callTool(client, 'convert_document', {
     source: { kind: 'artifact', uri: artifact.uri },
@@ -189,27 +202,34 @@ async function expectCanonicalImport(
     targetFormat: 'dbk',
     fidelity: 'semantic',
   });
-  expect(result.sourceAssets).to.have.length(1);
-  expect(result.sourceAssets[0]).to.include({
-    mimeType: 'image/png',
-    size: EXACT_PNG.byteLength,
-    sha256: EXACT_PNG_SHA256,
-  });
+  expect(result.sourceAssets).to.have.length(expectedCopies);
+  for (const asset of result.sourceAssets) {
+    expect(asset).to.include({
+      mimeType: 'image/png',
+      size: EXACT_PNG.byteLength,
+      sha256: EXACT_PNG_SHA256,
+    });
+  }
 
   const { zipToContainer } = await import('@bendyline/squisq-formats/container');
   const canonicalBundle = await zipToContainer(
     ownedArrayBuffer(await readArtifactBytes(client, result.artifact.uri)),
     ARCHIVE_LIMITS,
   );
-  await expectExactImportedPng(canonicalBundle);
+  await expectExactImportedPng(canonicalBundle, expectedCopies);
 }
 
-async function expectExactImportedPng(container: ContentContainer): Promise<void> {
+async function expectExactImportedPng(
+  container: ContentContainer,
+  expectedCopies = 1,
+): Promise<void> {
   const imageEntries = (await container.listFiles()).filter((entry) =>
     entry.mimeType.startsWith('image/'),
   );
-  expect(imageEntries).to.have.length(1);
-  await expectExactPng(container, imageEntries[0]!.path);
+  expect(imageEntries).to.have.length(expectedCopies);
+  // Every copy must survive byte-identical — the point of this suite is exact
+  // media preservation, not how many slides the exporter chose to place it on.
+  for (const entry of imageEntries) await expectExactPng(container, entry.path);
 }
 
 async function expectExactPng(container: ContentContainer, path: string): Promise<void> {

@@ -220,7 +220,16 @@ export async function packageRenderedPptx(
   const converted = await convert(
     { kind: 'markdown', markdown: scaffold, baseName: 'rendered' },
     'pptx',
-    { ...(title === undefined ? {} : { title }), signal },
+    {
+      ...(title === undefined ? {} : { title }),
+      signal,
+      // The scaffold is a throwaway 1:1 frame->slide vehicle whose slides are
+      // all overwritten below with captured images. Squisq's cover slide is on
+      // by default; here it would prepend a slide built from the placeholder
+      // text, shifting every frame by one and leaving the last scaffold slide
+      // un-overwritten as a visible "Rendered slide N / Placeholder" page.
+      formatOptions: { pptx: { includeCoverSlide: false } },
+    },
   );
   throwIfAborted(signal);
   const archive = await JSZip.loadAsync(converted.bytes);
