@@ -44,39 +44,28 @@ describe('MCP canonical linked warning matrix', function () {
 
   afterEach(async () => harness.dispose());
 
-  it('classifies redundant PPTX slide separators and front-loads their warning', async () => {
+  // Squisq 2.4.2 switched PPTX export from `markdownDocToPptx` to `docToPptx`
+  // so `###`-level slides stop collapsing into their H2 parent. The redundant
+  // thematic-break warning is raised by the markdown segmentation path only, so
+  // no PPTX conversion emits it any more; this exercises the same front-loading
+  // contract through a warning that the current pipeline still raises.
+  it('front-loads multi-occurrence conversion warnings ahead of the JSON result', async () => {
     const result = await callTool(harness.client, 'convert_document', {
       source: {
         kind: 'markdown',
-        name: 'redundant-slide-separators.md',
-        markdown: `# One
-
-- First item
-
----
-
-# Two
-
-Second slide.
-
----
-
-# Three
-
-Third slide.
-`,
+        markdown: LOSSY_MARKDOWN,
+        name: 'front-loaded-warnings.md',
       },
-      targets: [{ format: 'pptx', fidelity: 'editable-native', slideBreak: 'h1' }],
+      targets: [{ format: 'docx', fidelity: 'editable-native' }],
     });
 
     expect(result.isError, result.text).to.equal(false);
-    const converted = requireTarget(requireConversions(result.structuredContent?.results), 'pptx');
-    const warning = requireWarning(converted.diagnostics, 'pptx', 'redundant-slide-separator');
-    expect(warning.count).to.equal(2);
-    expect(warning.message).to.include('removed 2 redundant thematic break(s)');
-    expect(warning.remediation).to.include('Remove --- between slide headings');
+    const converted = requireTarget(requireConversions(result.structuredContent?.results), 'docx');
+    const warning = requireWarning(converted.diagnostics, 'docx', 'unsupported-markdown-node');
+    expect(warning.count).to.equal(3);
     expect(result.text).to.match(/^Conversion warnings:/u);
-    expect(result.text).to.include('[redundant-slide-separator] pptx x2');
+    expect(result.text).to.include('3 occurrence(s) across 1 diagnostic(s).');
+    expect(result.text).to.include(`- [unsupported-markdown-node] docx x3: ${warning.message}`);
     expect(result.text).to.include(
       'The complete JSON result follows in the next text content item.',
     );

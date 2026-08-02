@@ -34,5 +34,7 @@
       }
     ],
     ["@semantic-release/github"]
-  ]
+  ],
+  "publish": [["@semantic-release/npm", { "npmPublish": true, "provenance": true }]],
+  "addChannel": [["@semantic-release/npm", { "npmPublish": true, "provenance": true }]]
 }

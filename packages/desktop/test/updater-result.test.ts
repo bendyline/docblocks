@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect } from 'chai';
 import {
   classifyUpdateCheck,
   failedUpdateCheck,
+  releaseUrlFor,
   updaterStatusForError,
 } from '../main/updater-result.js';
 
@@ -23,6 +26,28 @@ describe('desktop updater results', () => {
     const bounded = failedUpdateCheck('x'.repeat(10_000));
     expect(bounded.kind).to.equal('error');
     if (bounded.kind === 'error') expect(bounded.message.length).to.equal(2_000);
+  });
+
+  it('builds release links against the tag scheme the release workflow publishes', () => {
+    // The workflow is the source of truth for the tag scheme; assert against it
+    // rather than a second hardcoded copy, so renaming the tag breaks this test.
+    const workflow = readFileSync(
+      fileURLToPath(new URL('../../../.github/workflows/desktop-release.yml', import.meta.url)),
+      'utf8',
+    );
+    const prefix = /format\('([a-z-]+)\{0\}',\s*needs\.build-windows\.outputs\.version\)/.exec(
+      workflow,
+    )?.[1];
+    expect(prefix, 'release workflow tag_name prefix').to.equal('desktop-v');
+
+    expect(releaseUrlFor('2.3.3')).to.equal(
+      `https://github.com/bendyline/docblocks/releases/tag/${prefix}2.3.3`,
+    );
+    // Regression: a plain `v<version>` tag has never existed in this repo, and
+    // the banner's "What's new" button opened a 404 for every release that used it.
+    expect(releaseUrlFor('2.3.3')).to.not.equal(
+      'https://github.com/bendyline/docblocks/releases/tag/v2.3.3',
+    );
   });
 
   it('keeps unavailable update services quiet while surfacing download failures', () => {
