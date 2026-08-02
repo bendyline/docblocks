@@ -1,6 +1,6 @@
 {
   "name": "@bendyline/docblocks",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "Core data structures and filesystem abstractions for DocBlocks",
   "license": "MIT",
   "author": "Bendyline",
