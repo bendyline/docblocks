@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.3.4](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.3.3...@bendyline/docblocks-react@2.3.4) (2026-08-02)
+
+### Bug Fixes
+
+* Pick up squisq fixes for record, encode, pages ([#20](https://github.com/bendyline/docblocks/issues/20)) ([263e660](https://github.com/bendyline/docblocks/commit/263e660719c77898b00bd054ee7817dba3b98875))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.3.4
+
 ## @bendyline/docblocks-react [2.3.3](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.3.2...@bendyline/docblocks-react@2.3.3) (2026-07-31)
 
 ### Bug Fixes
