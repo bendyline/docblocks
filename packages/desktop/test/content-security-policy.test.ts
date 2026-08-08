@@ -29,6 +29,28 @@ describe('desktop renderer content security policy', () => {
     }
   });
 
+  it('allows WebAssembly in both branches so ffmpeg.wasm encoding works when packaged', () => {
+    // Chromium gates WebAssembly.compile/instantiate on script-src. Without
+    // this token the production renderer throws a CompileError on every
+    // WebAssembly call, which disables Squisq's GIF/video encoders in packaged
+    // builds only — development keeps working because 'unsafe-eval' permits
+    // WebAssembly as a side effect, so this regressed silently once before.
+    for (const isDevelopment of [false, true]) {
+      const scriptSrc = directives(desktopContentSecurityPolicy(isDevelopment)).get('script-src');
+      expect(scriptSrc, `script-src for isDevelopment=${isDevelopment}`).to.include(
+        "'wasm-unsafe-eval'",
+      );
+    }
+  });
+
+  it('does not re-enable JavaScript eval in the production renderer', () => {
+    // 'wasm-unsafe-eval' unblocks WebAssembly only; the broader 'unsafe-eval'
+    // escape hatch must stay confined to the development origin.
+    expect(directives(desktopContentSecurityPolicy(false)).get('script-src')).not.to.include(
+      "'unsafe-eval'",
+    );
+  });
+
   it('limits the development media exception to the trusted Vite origin', () => {
     const production = directives(desktopContentSecurityPolicy(false));
     const development = directives(desktopContentSecurityPolicy(true));
