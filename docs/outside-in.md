@@ -32,6 +32,19 @@ squisq-output-format: html
 ---
 ```
 
+The imported companion initially opens read-only. Choosing **Allow editing via
+markdown** from the rendered file's context menu first copies the byte-exact
+original to `<stem>_files/.original/original.<format>`, using create-only
+semantics so a later opt-in can never replace the restoration point. It then
+adds the exact boolean authorization flag:
+
+```yaml
+squisq-updatefrommarkdown: true
+```
+
+Only that boolean value enables Markdown-driven regeneration; missing, string,
+or false values remain read-only.
+
 The workspace provider and selected outer path remain authoritative. A save is
 prepared by Squisq's format registry, then the active `DocumentSession` commits
 the Markdown source before writing the regenerated outer file. Media uploads and

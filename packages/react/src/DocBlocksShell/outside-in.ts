@@ -14,9 +14,11 @@ import { providerEntryExists, writeProviderText } from './provider-io.js';
 import {
   chooseOutsideInMarkdownPath,
   importOutsideInDocument,
+  isOutsideInMarkdownEditingEnabled,
   readOutsideInMetadata,
   renderOutsideInDocument,
   resolveOutsideInLayout,
+  withOutsideInMarkdownEditing,
   withOutsideInMetadata,
   type OutsideInLayout,
 } from './outside-in-contract.js';
@@ -35,6 +37,13 @@ export interface EditableShellDocument {
   sourcePath: string;
   content: string;
   outsideIn: OutsideInLayout | null;
+  /** Whether edits may regenerate an outside-in rendered target. */
+  outsideInEditingEnabled: boolean;
+}
+
+export interface EditableOutsideInDocument extends EditableShellDocument {
+  outsideIn: OutsideInLayout;
+  outsideInEditingEnabled: true;
 }
 
 function withoutLeadingSlash(path: string): string {
@@ -165,6 +174,7 @@ export async function loadEditableShellDocument(
           sourcePath: selectedPath,
           content,
           outsideIn: null,
+          outsideInEditingEnabled: true,
         };
   }
 
@@ -198,6 +208,7 @@ export async function loadEditableShellDocument(
       sourcePath: chosen,
       content: linkedContent,
       outsideIn: { ...layout, markdownPath: chosen },
+      outsideInEditingEnabled: await isOutsideInMarkdownEditingEnabled(linkedContent),
     };
   }
 
@@ -220,7 +231,33 @@ export async function loadEditableShellDocument(
     sourcePath: importedLayout.markdownPath,
     content: imported.markdown,
     outsideIn: importedLayout,
+    outsideInEditingEnabled: false,
   };
+}
+
+/**
+ * Preserve the original rendered bytes, then explicitly authorize Markdown-
+ * driven regeneration. The create-only backup is never replaced by a later
+ * opt-in, so it remains a stable restoration point.
+ */
+export async function enableOutsideInMarkdownEditing(
+  provider: FileSystemProvider,
+  document: EditableShellDocument,
+): Promise<EditableOutsideInDocument> {
+  const layout = document.outsideIn;
+  if (!layout) throw new Error('This file does not support outside-in Markdown editing.');
+
+  const original = await readBytes(provider, layout.targetPath);
+  if (!original) throw new Error(`The rendered file "${layout.targetPath}" was not found.`);
+  try {
+    await writeBytes(provider, layout.backupPath, original, 'create');
+  } catch (error: unknown) {
+    if (!(error instanceof FsError && error.code === 'already-exists')) throw error;
+  }
+
+  const content = await withOutsideInMarkdownEditing(document.content, layout);
+  if (content !== document.content) await writeProviderText(provider, document.sourcePath, content);
+  return { ...document, content, outsideIn: layout, outsideInEditingEnabled: true };
 }
 
 async function findRuntimePath(provider: FileSystemProvider, targetPath: string): Promise<string> {
@@ -267,6 +304,11 @@ export function createOutsideInDocumentTarget(
   return {
     key: `${provider.id}:outside-in:${parseWorkspacePath(layout.targetPath)}`,
     async commit(request) {
+      if (!(await isOutsideInMarkdownEditingEnabled(request.content))) {
+        throw new Error(
+          'Outside-in editing is read-only until squisq-updatefrommarkdown: true is set.',
+        );
+      }
       const runtimePath =
         layout.format === 'html' ? await findRuntimePath(provider, layout.targetPath) : null;
       const outputDirectory = dirname(layout.targetPath);

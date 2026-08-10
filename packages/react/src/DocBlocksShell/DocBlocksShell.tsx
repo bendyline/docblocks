@@ -146,11 +146,13 @@ import { importDroppedFiles, summariseImport } from './import-files.js';
 import {
   createOutsideInContentContainer,
   createOutsideInDocumentTarget,
+  enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
   removeOutsideInCompanion,
   resolveOutsideInLayout,
   withOutsideInMetadata,
   type EditableShellDocument,
+  type EditableOutsideInDocument,
   type OutsideInLayout,
 } from './outside-in.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
@@ -1113,21 +1115,25 @@ export function DocBlocksShell({
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
   const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
+  const [selectedOutsideInEditingEnabled, setSelectedOutsideInEditingEnabled] = useState(false);
   const adoptSelectedDocument = useCallback((document: EditableShellDocument | null) => {
     setSelectedFile(document?.displayPath ?? null);
     setSelectedSourceFile(document?.sourcePath ?? null);
     setSelectedOutsideIn(document?.outsideIn ?? null);
+    setSelectedOutsideInEditingEnabled(document?.outsideInEditingEnabled ?? false);
   }, []);
   const adoptRegularDocument = useCallback((path: string | null) => {
     if (path === null) {
       setSelectedFile(null);
       setSelectedSourceFile(null);
       setSelectedOutsideIn(null);
+      setSelectedOutsideInEditingEnabled(false);
       return;
     }
     setSelectedFile(path);
     setSelectedSourceFile(path);
     setSelectedOutsideIn(null);
+    setSelectedOutsideInEditingEnabled(false);
   }, []);
   useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
@@ -3132,6 +3138,80 @@ export function DocBlocksShell({
     ],
   );
 
+  const handleEnableOutsideInEditing = useCallback(
+    async (path: string) => {
+      if (!provider || !activeWorkspaceId) {
+        throw new Error('Open the workspace before enabling Markdown editing.');
+      }
+      const requestId = ++navigationRequestRef.current;
+      const editableRef: { current: EditableOutsideInDocument | null } = { current: null };
+      const transitioned = await documentSession.transitionWithLoad(async () => {
+        if (requestId !== navigationRequestRef.current) return null;
+        const opened = await loadEditableShellDocument(provider, path);
+        if (!opened?.outsideIn) {
+          throw new Error('This file does not support outside-in Markdown editing.');
+        }
+        const editable = await enableOutsideInMarkdownEditing(provider, opened);
+        editableRef.current = editable;
+        return {
+          target: createDocumentTarget(
+            provider,
+            activeWorkspaceId,
+            editable.sourcePath,
+            editable.outsideIn,
+          ),
+          content: editable.content,
+        };
+      });
+      const editable = editableRef.current;
+      if (!transitioned || !editable || requestId !== navigationRequestRef.current) return;
+      adoptSelectedDocument(editable);
+      setSelectedFolder(null);
+      setFolderEntries([]);
+      setInitialView('wysiwyg');
+      setInitialSharedMode(null);
+      closeWelcomeGateway();
+      pushHash(activeWorkspaceId, path);
+      saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
+      if (effectiveCompact) setMobileShowEditor(true);
+      showToast(
+        'success',
+        `Markdown editing enabled. The original is backed up at ${editable.outsideIn.backupPath}.`,
+      );
+    },
+    [
+      activeWorkspaceId,
+      adoptSelectedDocument,
+      closeWelcomeGateway,
+      createDocumentTarget,
+      documentSession,
+      effectiveCompact,
+      provider,
+      pushHash,
+      showToast,
+    ],
+  );
+
+  const outsideInActionsForEntry = useCallback(
+    (entry: FileSystemEntry) => {
+      if (entry.kind !== 'file' || resolveOutsideInLayout(entry.path) === null) return [];
+      if (
+        selectedOutsideInEditingEnabled &&
+        selectedFile !== null &&
+        sameProviderPath(selectedFile, entry.path)
+      ) {
+        return [];
+      }
+      return [
+        {
+          label: 'Allow editing via markdown',
+          onSelect: () => handleEnableOutsideInEditing(entry.path),
+        },
+      ];
+    },
+    [handleEnableOutsideInEditing, selectedFile, selectedOutsideInEditingEnabled],
+  );
+
   const handleEditorLinkClick = useCallback(
     (href: string): boolean => {
       const target = resolveShellEditorLinkTarget(href, selectedSourceFile ?? selectedFile);
@@ -4273,6 +4353,7 @@ export function DocBlocksShell({
                 onPinnedDocumentDelete={handlePinnedDocumentDelete}
                 onTogglePin={handleTogglePin}
                 onSelect={handleSelect}
+                actionsForEntry={outsideInActionsForEntry}
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
                 onImportFiles={handleImportFiles}
@@ -4395,6 +4476,7 @@ export function DocBlocksShell({
                     <EditorShell
                       key={`${selectedFile}-${editorKey}`}
                       initialMarkdown={editorContent}
+                      readOnly={selectedOutsideIn !== null && !selectedOutsideInEditingEnabled}
                       initialView={initialView}
                       defaultViewportPreset={defaultPreviewViewportPreset}
                       articleId={selectedFile}

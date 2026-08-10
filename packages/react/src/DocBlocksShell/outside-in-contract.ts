@@ -14,6 +14,16 @@ import type { ConversionResult, ConvertOptions } from '@bendyline/squisq-formats
 export const OUTSIDE_IN_FORMAT_IDS = ['html', 'docx', 'pdf', 'pptx', 'xlsx'] as const;
 export type OutsideInFormatId = (typeof OUTSIDE_IN_FORMAT_IDS)[number];
 const FORMAT_IDS = new Set<string>(OUTSIDE_IN_FORMAT_IDS);
+const UPDATE_FROM_MARKDOWN_KEY = 'squisq-updatefrommarkdown';
+
+interface OutsideInEditingModule {
+  isOutsideInMarkdownEditingEnabled?: (source: string | MarkdownDocument) => boolean;
+  withOutsideInMarkdownEditing?: (
+    source: string,
+    layout: OutsideInLayout,
+    enabled?: boolean,
+  ) => string;
+}
 
 export interface OutsideInLayout {
   targetPath: string;
@@ -25,12 +35,16 @@ export interface OutsideInLayout {
   markdownFilename: string;
   markdownPath: string;
   relativeTargetPath: string;
+  backupDirectory: string;
+  backupFilename: string;
+  backupPath: string;
 }
 
 export interface OutsideInMetadata {
   version: 1;
   format: OutsideInFormatId;
   target: string;
+  updateFromMarkdown: boolean;
 }
 
 function normalizePath(path: string): string {
@@ -72,6 +86,8 @@ export function resolveOutsideInLayout(path: string): OutsideInLayout | null {
   const companionName = `${stem}_files`;
   const companionDirectory = join(parentDirectory, companionName);
   const markdownFilename = `${slug(stem)}.md`;
+  const backupDirectory = join(companionDirectory, '.original');
+  const backupFilename = `original.${format}`;
   return {
     targetPath,
     format: format as OutsideInFormatId,
@@ -82,6 +98,9 @@ export function resolveOutsideInLayout(path: string): OutsideInLayout | null {
     markdownFilename,
     markdownPath: join(companionDirectory, markdownFilename),
     relativeTargetPath: `../${filename}`,
+    backupDirectory,
+    backupFilename,
+    backupPath: join(backupDirectory, backupFilename),
   };
 }
 
@@ -110,7 +129,13 @@ export function chooseOutsideInMarkdownPath(
 export async function readOutsideInMetadata(source: string): Promise<OutsideInMetadata | null> {
   const { readOutsideInMetadata: readMetadata } =
     await import('@bendyline/squisq-formats/outside-in');
-  return readMetadata(source);
+  const metadata = readMetadata(source);
+  return metadata
+    ? {
+        ...metadata,
+        updateFromMarkdown: await isOutsideInMarkdownEditingEnabled(source),
+      }
+    : null;
 }
 
 export async function withOutsideInMetadata(
@@ -122,13 +147,47 @@ export async function withOutsideInMetadata(
   return addMetadata(source, layout);
 }
 
+export async function isOutsideInMarkdownEditingEnabled(source: string): Promise<boolean> {
+  const module =
+    (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
+  if (module.isOutsideInMarkdownEditingEnabled) {
+    return module.isOutsideInMarkdownEditingEnabled(source);
+  }
+  const { parseFrontmatter, splitFrontmatterBlock } = await import('@bendyline/squisq/markdown');
+  const block = splitFrontmatterBlock(source).frontmatter;
+  if (!block) return false;
+  const firstBreak = block.indexOf('\n');
+  if (firstBreak < 0) return false;
+  const yaml = block.slice(firstBreak + 1).replace(/\r?\n---(?:\r?\n)?$/, '');
+  return parseFrontmatter(yaml)?.[UPDATE_FROM_MARKDOWN_KEY] === true;
+}
+
+export async function withOutsideInMarkdownEditing(
+  source: string,
+  layout: OutsideInLayout,
+  enabled = true,
+): Promise<string> {
+  const module =
+    (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
+  if (module.withOutsideInMarkdownEditing) {
+    return module.withOutsideInMarkdownEditing(source, layout, enabled);
+  }
+  const { setFrontmatterValues } = await import('@bendyline/squisq/markdown');
+  return setFrontmatterValues(await withOutsideInMetadata(source, layout), {
+    [UPDATE_FROM_MARKDOWN_KEY]: enabled,
+  });
+}
+
 export async function importOutsideInDocument(
   source: { data: ArrayBuffer | Uint8Array; targetPath: string },
   options: ConvertOptions = {},
 ): Promise<{ layout: OutsideInLayout; markdown: string; container: ContentContainer }> {
   const { importOutsideInDocument: importDocument } =
     await import('@bendyline/squisq-formats/outside-in');
-  return importDocument(source, options);
+  const imported = await importDocument(source, options);
+  const layout = resolveOutsideInLayout(source.targetPath);
+  if (!layout) throw new Error(`Outside-in editing does not support "${source.targetPath}".`);
+  return { ...imported, layout };
 }
 
 export async function renderOutsideInDocument(

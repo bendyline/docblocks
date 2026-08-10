@@ -15,6 +15,7 @@ import {
 import { useFileTree } from './useFileTree.js';
 import {
   FileTreeNode,
+  type FileTreeNodeAction,
   type FileTreeNodeBadge,
   type FileTreeNodeGitActions,
 } from './FileTreeNode.js';
@@ -141,6 +142,8 @@ export interface FileExplorerProps {
   onTogglePin?: (path: string) => void | Promise<void>;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
+  /** Host-owned context actions for an entry. */
+  actionsForEntry?: (entry: FileSystemEntry) => readonly FileTreeNodeAction[];
   /**
    * Wraps destructive tree mutations so the active document session can
    * flush, cancel, or retarget itself before storage changes.
@@ -179,6 +182,7 @@ export function FileExplorer({
   onPinnedDocumentDelete,
   onTogglePin,
   onSelect,
+  actionsForEntry,
   onTreeMutation,
   onTreeChange,
   onImportFiles,
@@ -603,6 +607,7 @@ export function FileExplorer({
             }
             badge={badgeFor(entry)}
             gitActions={gitActionsFor(entry)}
+            actions={actionsForEntry?.(entry)}
             onToggle={tree.toggleExpand}
             onSelect={handleSelect}
             confirmDelete={confirmDelete}
@@ -653,6 +658,7 @@ export function FileExplorer({
       childIssues,
       badgeFor,
       gitActionsFor,
+      actionsForEntry,
       draggedEntry,
       dropTarget,
       handleInternalDragStart,

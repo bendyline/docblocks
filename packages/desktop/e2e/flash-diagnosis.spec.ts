@@ -37,11 +37,11 @@ test('records what mutates in the desktop explorer while typing', async ({
   git('add', '.');
   git('commit', '-m', 'seed');
 
-  const { window } = await launchApp();
-  await window.waitForSelector('.db-shell', { timeout: 30_000 });
-  await window.waitForSelector('.db-tree-row', { timeout: 30_000 });
+  const { window: page } = await launchApp();
+  await page.waitForSelector('.db-shell', { timeout: 30_000 });
+  await page.waitForSelector('.db-tree-row', { timeout: 30_000 });
 
-  await window.evaluate(() => {
+  await page.evaluate(() => {
     const explorer = document.querySelector('.db-shell-sidebar') ?? document.querySelector('aside');
     if (!explorer) throw new Error('no sidebar');
     const start = performance.now();
@@ -112,20 +112,20 @@ test('records what mutates in the desktop explorer while typing', async ({
     requestAnimationFrame(sample);
   });
 
-  await window.locator('.db-tree-row').filter({ hasText: 'doc-0' }).first().click();
-  const writeTab = window.getByRole('tab', { name: 'Write' });
+  await page.locator('.db-tree-row').filter({ hasText: 'doc-0' }).first().click();
+  const writeTab = page.getByRole('tab', { name: 'Write' });
   await writeTab.waitFor({ state: 'visible', timeout: 30_000 });
   await writeTab.click();
-  const editor = window.locator('[contenteditable="true"]').first();
+  const editor = page.locator('[contenteditable="true"]').first();
   await editor.waitFor({ state: 'visible', timeout: 30_000 });
   await editor.click();
   for (let i = 0; i < 5; i += 1) {
     await editor.pressSequentially(`hello world ${i} `, { delay: 60 });
-    await window.waitForTimeout(1500);
+    await page.waitForTimeout(1500);
   }
 
-  const records = await window.evaluate(() => window.__flashRecords ?? []);
-  const samples = await window.evaluate(
+  const records = await page.evaluate(() => window.__flashRecords ?? []);
+  const samples = await page.evaluate(
     () => (window as unknown as { __flashSamples?: string[] }).__flashSamples ?? [],
   );
   // eslint-disable-next-line no-console
