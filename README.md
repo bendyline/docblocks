@@ -21,6 +21,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 - **Three views of every document** — **Editor** (rich WYSIWYG), **Markdown** (raw source), and **Play**, which presents the same file as a **Video**, **Slideshow**, **Document**, or **Page**.
 - **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; the CLI follows the linked Squisq registry for Markdown, DOCX, PPTX, PDF, XLSX, CSV, HTML / HTML ZIP, EPUB, DBK, **MP4 video**, and GIF (with directional support varying by format).
+- **Outside-in editing** — open an HTML, DOCX, PDF, PPTX, or XLSX file as Markdown while DocBlocks keeps its editable source, media, and version history in a hidden sibling `_files` folder and regenerates the visible file on every save. See [Outside-in editing](docs/outside-in.md).
 - **Copy-by-link sharing** — create a bounded URL containing a compressed Markdown-only copy of the current document, optionally opening directly in Slideshow, Video, Page, Document, or Narrate mode.
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.

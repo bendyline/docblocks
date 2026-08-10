@@ -34,7 +34,18 @@ import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
 
-const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
+const SUPPORTED_EXTENSIONS = new Set([
+  '.txt',
+  '.md',
+  '.html',
+  '.htm',
+  '.docx',
+  '.pdf',
+  '.pptx',
+  '.xlsx',
+  '.dbk',
+  '.zip',
+]);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';

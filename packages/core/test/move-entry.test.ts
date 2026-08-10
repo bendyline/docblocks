@@ -40,6 +40,20 @@ describe('moveFileSystemEntry', () => {
     expect(await fs.exists('/draft_files')).to.equal(false);
   });
 
+  it('moves an outside-in rendered file with its editable companion', async () => {
+    const fs = new MemoryFileSystemProvider('outside-in-move', 'Outside-in move');
+    await fs.writeBinary('/Tucson.pptx', new Uint8Array([1, 2, 3]));
+    await fs.writeFile('/Tucson_files/tucson.md', '# Tucson');
+    await fs.createDirectory('/archive');
+
+    await moveFileSystemEntry(fs, '/Tucson.pptx', '/archive/Phoenix.pptx', 'file');
+
+    expect(await fs.exists('/Tucson.pptx')).to.equal(false);
+    expect(await fs.exists('/Tucson_files')).to.equal(false);
+    expect(await fs.exists('/archive/Phoenix.pptx')).to.equal(true);
+    expect(await fs.readFile('/archive/Phoenix_files/tucson.md')).to.equal('# Tucson');
+  });
+
   it('rejects a move when the destination or companion destination exists', async () => {
     const fs = new MemoryFileSystemProvider('collision', 'Collision');
     await fs.writeFile('/notes.md', 'notes');

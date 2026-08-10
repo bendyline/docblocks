@@ -23,25 +23,19 @@
  */
 
 import type { DbkWorkspaceSnapshot, FileSystemProvider } from '@bendyline/docblocks/filesystem';
-import { FsError } from '@bendyline/docblocks/filesystem';
+import {
+  FsError,
+  getFileSystemProviderV2,
+  parseWorkspacePath,
+} from '@bendyline/docblocks/filesystem';
 import { decodeDbkWorkspace } from './dbk-import.js';
-import { removeProviderEntry, writeProviderText } from './provider-io.js';
-
-/** The shape `docxToContainer` / `pdfToContainer` results expose to the shell. */
-export interface ImportedMediaSource {
-  listFiles(): Promise<Array<{ path: string; mimeType: string }>>;
-  readFile(path: string): Promise<ArrayBuffer | null>;
-}
-
-export interface ImportFilesDeps {
-  /** Copy a converted container's media into `<path minus ext>_files/`. */
-  persistMedia: (source: ImportedMediaSource, path: string) => Promise<void>;
-}
+import { importOutsideInDocument, resolveOutsideInLayout } from './outside-in-contract.js';
+import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 
 export interface ImportedDocument {
   /** The dropped file's original name, e.g. `report.docx`. */
   source: string;
-  /** The path actually written, e.g. `report (2).md`. */
+  /** The user-facing path actually written, e.g. `report (2).docx`. */
   path: string;
   /** True when a name collision moved this import aside. */
   renamed: boolean;
@@ -98,29 +92,92 @@ async function claimAvailablePath(
   throw new Error(`Too many documents are already named like “${desiredPath}”.`);
 }
 
+async function writeProviderBytes(
+  provider: FileSystemProvider,
+  path: string,
+  data: ArrayBuffer | Uint8Array,
+  mode: 'create' | 'upsert',
+): Promise<void> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  if (providerV2) {
+    await providerV2.writeFile(parseWorkspacePath(path), data, {
+      mode,
+      createParents: true,
+      expectedVersion: mode === 'create' ? null : undefined,
+    });
+    return;
+  }
+  if (mode === 'create' && (await providerEntryExists(provider, path))) {
+    throw new FsError('already-exists', 'File already exists.', { operation: 'write', path });
+  }
+  await provider.writeBinary(path, data);
+}
+
+const OUTSIDE_IN_EXTENSIONS = new Set(['.html', '.htm', '.docx', '.pdf', '.pptx', '.xlsx']);
+
+async function claimOutsideInTarget(
+  provider: FileSystemProvider,
+  desiredPath: string,
+): Promise<{ path: string; renamed: boolean }> {
+  for (let attempt = 1; attempt <= MAX_NAME_ATTEMPTS; attempt++) {
+    const candidate = attempt === 1 ? desiredPath : withCopySuffix(desiredPath, attempt);
+    const layout = resolveOutsideInLayout(candidate);
+    if (!layout) throw new Error(`Outside-in editing does not support “${desiredPath}”.`);
+    // A sidecar without its rendered file may contain recoverable user data.
+    // Move the new import aside rather than claiming or deleting that folder.
+    if (await providerEntryExists(provider, layout.companionDirectory)) continue;
+    try {
+      await writeProviderBytes(provider, candidate, new Uint8Array(), 'create');
+      return { path: candidate, renamed: attempt > 1 };
+    } catch (error: unknown) {
+      if (!isAlreadyExists(error)) throw error;
+    }
+  }
+  throw new Error(`Too many documents are already named like “${desiredPath}”.`);
+}
+
+async function importOutsideInFile(
+  file: File,
+  provider: FileSystemProvider,
+): Promise<{ path: string; renamed: boolean }> {
+  const claim = await claimOutsideInTarget(provider, file.name);
+  const created: string[] = [claim.path];
+  try {
+    const sourceBytes = await file.arrayBuffer();
+    const imported = await importOutsideInDocument({
+      data: sourceBytes,
+      targetPath: claim.path,
+    });
+    for (const entry of await imported.container.listFiles()) {
+      if (/\.md$/i.test(entry.path)) continue;
+      const data = await imported.container.readFile(entry.path);
+      if (!data) continue;
+      const destination = `${imported.layout.companionDirectory}/${entry.path.replace(/^\/+/, '')}`;
+      await writeProviderBytes(provider, destination, data, 'create');
+      created.push(destination);
+    }
+    await writeProviderText(provider, imported.layout.markdownPath, imported.markdown, 'create');
+    created.push(imported.layout.markdownPath);
+    await writeProviderBytes(provider, claim.path, sourceBytes, 'upsert');
+    return claim;
+  } catch (error: unknown) {
+    // Remove only entries this import created; never recursively remove an
+    // entire companion directory that another writer could now own.
+    for (const path of created.reverse()) {
+      await removeProviderEntry(provider, path).catch(() => undefined);
+    }
+    throw error;
+  }
+}
+
 async function readImportedMarkdown(
   file: File,
   ext: string,
   destPath: string,
   provider: FileSystemProvider,
-  deps: ImportFilesDeps,
 ): Promise<string> {
   if (ext === '.md' || ext === '.txt') {
     return file.text();
-  }
-  if (ext === '.docx') {
-    const { docxToContainer } = await import('@bendyline/squisq-formats/docx');
-    const container = await docxToContainer(await file.arrayBuffer());
-    const markdown = (await container.readDocument()) ?? '';
-    await deps.persistMedia(container, destPath);
-    return markdown;
-  }
-  if (ext === '.pdf') {
-    const { pdfToContainer } = await import('@bendyline/squisq-formats/pdf');
-    const container = await pdfToContainer(await file.arrayBuffer());
-    const markdown = (await container.readDocument()) ?? '';
-    await deps.persistMedia(container, destPath);
-    return markdown;
   }
   const snapshot = await decodeDbkWorkspace(await file.arrayBuffer(), {
     targetDocumentPath: destPath,
@@ -159,7 +216,7 @@ async function writeDbkCompanions(
   }
 }
 
-const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt', '.docx', '.pdf', '.dbk', '.zip']);
+const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt', ...OUTSIDE_IN_EXTENSIONS, '.dbk', '.zip']);
 
 /**
  * Import each dropped file as a markdown document, never clobbering an
@@ -168,7 +225,6 @@ const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt', '.docx', '.pdf', '.dbk', '.
 export async function importDroppedFiles(
   files: readonly File[],
   provider: FileSystemProvider,
-  deps: ImportFilesDeps,
 ): Promise<ImportFilesResult> {
   const result: ImportFilesResult = { imported: [], failed: [], unsupported: [] };
 
@@ -184,9 +240,14 @@ export async function importDroppedFiles(
     const baseName = file.name.replace(/\.[^.]+$/, '');
     let claimed: string | null = null;
     try {
+      if (OUTSIDE_IN_EXTENSIONS.has(ext)) {
+        const imported = await importOutsideInFile(file, provider);
+        result.imported.push({ source: file.name, ...imported });
+        continue;
+      }
       const claim = await claimAvailablePath(provider, `${baseName}.md`);
       claimed = claim.path;
-      const markdown = await readImportedMarkdown(file, ext, claim.path, provider, deps);
+      const markdown = await readImportedMarkdown(file, ext, claim.path, provider);
       await writeProviderText(provider, claim.path, markdown);
       result.imported.push({ source: file.name, path: claim.path, renamed: claim.renamed });
     } catch (error: unknown) {
@@ -231,13 +292,13 @@ export function summariseImport(
   }
 
   // Renames are the one success worth narrating: the user dropped `report.docx`
-  // and got `report (2).md`, and silence there looks like the import went
+  // and got `report (2).docx`, and silence there looks like the import went
   // somewhere unexpected.
   const renamed = imported.filter((entry) => entry.renamed);
   if (renamed.length === 1) {
     return {
       kind: 'success',
-      message: `Imported as ${renamed[0].path} — a document named ${renamed[0].source.replace(/\.[^.]+$/, '')}.md already exists.`,
+      message: `Imported as ${renamed[0].path} — a document with that name or companion folder already exists.`,
     };
   }
   if (renamed.length > 1) {

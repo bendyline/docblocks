@@ -32,13 +32,14 @@ export function documentCompanionPath(documentPath: string): string {
   return rooted ? `/${name}_files` : `${name}_files`;
 }
 
-function isMarkdownPath(path: string): boolean {
-  return /\.md$/i.test(basename(path));
+function hasDocumentCompanion(path: string): boolean {
+  return /\.(?:md|html?|docx|pdf|pptx|xlsx)$/i.test(basename(path));
 }
 
 /**
- * Move an explorer entry without overwriting an existing entry. Markdown files
- * carry their hidden `<basename>_files` companion directory with them.
+ * Move an explorer entry without overwriting an existing entry. Markdown and
+ * outside-in rendered documents carry their hidden `<basename>_files`
+ * companion directory with them.
  */
 export async function moveFileSystemEntry(
   provider: FileSystemProvider,
@@ -73,7 +74,7 @@ export async function moveFileSystemEntry(
 
   let oldCompanion: string | null = null;
   let newCompanion: string | null = null;
-  if (kind === 'file' && isMarkdownPath(oldPath)) {
+  if (kind === 'file' && hasDocumentCompanion(oldPath)) {
     const candidate = documentCompanionPath(oldPath);
     if (await exists(candidate)) {
       oldCompanion = candidate;

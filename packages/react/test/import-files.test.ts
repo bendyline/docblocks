@@ -10,12 +10,7 @@
  */
 import { expect } from 'chai';
 import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
-import {
-  importDroppedFiles,
-  summariseImport,
-  type ImportFilesDeps,
-  type ImportedMediaSource,
-} from '../src/DocBlocksShell/import-files.js';
+import { importDroppedFiles, summariseImport } from '../src/DocBlocksShell/import-files.js';
 
 function textFile(name: string, content: string): File {
   return new File([content], name, { type: 'text/markdown' });
@@ -34,18 +29,12 @@ function makeProvider(): MemoryFileSystemProvider {
   return new MemoryFileSystemProvider('test-ws', 'Test workspace');
 }
 
-const noMedia: ImportFilesDeps = {
-  persistMedia: async () => undefined,
-};
-
 describe('importDroppedFiles', () => {
   it('never overwrites an existing document — it imports alongside it', async () => {
     const provider = makeProvider();
     provider.seedText('report.md', '# The original — do not lose me\n');
 
-    const result = await importDroppedFiles([textFile('report.md', '# Dropped\n')], provider, {
-      ...noMedia,
-    });
+    const result = await importDroppedFiles([textFile('report.md', '# Dropped\n')], provider);
 
     // The pre-existing document is untouched. This is the whole bug.
     expect(await provider.readFile('report.md')).to.equal('# The original — do not lose me\n');
@@ -61,7 +50,7 @@ describe('importDroppedFiles', () => {
     provider.seedText('notes.md', 'first');
     provider.seedText('notes (2).md', 'second');
 
-    await importDroppedFiles([textFile('notes.md', 'third')], provider, noMedia);
+    await importDroppedFiles([textFile('notes.md', 'third')], provider);
 
     expect(await provider.readFile('notes.md')).to.equal('first');
     expect(await provider.readFile('notes (2).md')).to.equal('second');
@@ -71,7 +60,7 @@ describe('importDroppedFiles', () => {
   it('writes straight to the dropped name when nothing collides', async () => {
     const provider = makeProvider();
 
-    const result = await importDroppedFiles([textFile('fresh.md', '# Fresh\n')], provider, noMedia);
+    const result = await importDroppedFiles([textFile('fresh.md', '# Fresh\n')], provider);
 
     expect(await provider.readFile('fresh.md')).to.equal('# Fresh\n');
     expect(result.imported[0]).to.deep.equal({
@@ -86,9 +75,7 @@ describe('importDroppedFiles', () => {
   it('reports a failed import instead of swallowing it', async () => {
     const provider = makeProvider();
 
-    const result = await importDroppedFiles([failingFile('broken.md', 'disk on fire')], provider, {
-      ...noMedia,
-    });
+    const result = await importDroppedFiles([failingFile('broken.md', 'disk on fire')], provider);
 
     expect(result.imported).to.deep.equal([]);
     expect(result.failed).to.deep.equal([{ source: 'broken.md', message: 'disk on fire' }]);
@@ -102,7 +89,7 @@ describe('importDroppedFiles', () => {
   it('leaves no empty placeholder behind when an import fails', async () => {
     const provider = makeProvider();
 
-    await importDroppedFiles([failingFile('broken.md', 'nope')], provider, noMedia);
+    await importDroppedFiles([failingFile('broken.md', 'nope')], provider);
 
     // The name is claimed up-front to reserve it; a later failure must undo it.
     expect(await provider.readFile('broken.md')).to.equal(null);
@@ -118,7 +105,6 @@ describe('importDroppedFiles', () => {
         textFile('two.md', '# Two\n'),
       ],
       provider,
-      noMedia,
     );
 
     expect(await provider.readFile('one.md')).to.equal('# One\n');
@@ -128,34 +114,47 @@ describe('importDroppedFiles', () => {
     expect(summariseImport(result)?.kind).to.equal('error');
   });
 
-  it('keys the media folder off the final, de-duplicated name', async () => {
+  it('keys an outside-in companion off the final, de-duplicated rendered name', async () => {
     const provider = makeProvider();
-    provider.seedText('deck.md', 'original');
-    const mediaPaths: string[] = [];
-    const deps: ImportFilesDeps = {
-      persistMedia: async (_source: ImportedMediaSource, path: string) => {
-        mediaPaths.push(path);
-      },
-    };
+    provider.seedText('deck.html', '<h1>Original</h1>');
+    const result = await importDroppedFiles(
+      [new File(['<h1>Dropped</h1>'], 'deck.html', { type: 'text/html' })],
+      provider,
+    );
 
-    // .dbk routes through the bundle decoder, which also needs the final path.
-    const result = await importDroppedFiles([textFile('deck.md', 'dropped')], provider, deps);
-
-    expect(result.imported[0].path).to.equal('deck (2).md');
-    // Markdown/text imports carry no media, so nothing should be persisted.
-    expect(mediaPaths).to.deep.equal([]);
+    expect(result.imported[0].path).to.equal('deck (2).html');
+    expect(await provider.readFile('deck (2)_files/deck-2.md')).to.contain('# Dropped');
   });
 
   it('skips file types it cannot import without touching the workspace', async () => {
     const provider = makeProvider();
 
-    const result = await importDroppedFiles([textFile('photo.png', 'binary-ish')], provider, {
-      ...noMedia,
-    });
+    const result = await importDroppedFiles([textFile('photo.png', 'binary-ish')], provider);
 
     expect(result.imported).to.deep.equal([]);
     expect(result.unsupported).to.deep.equal(['photo.png']);
     expect(await provider.readFile('photo.md')).to.equal(null);
+  });
+
+  it('keeps a rendered HTML import outside and creates its editable source inside', async () => {
+    const provider = makeProvider();
+    const result = await importDroppedFiles(
+      [new File(['<h1>Battle of Britain</h1>'], 'battle-of-britain.html', { type: 'text/html' })],
+      provider,
+    );
+
+    expect(result.failed).to.deep.equal([]);
+    expect(result.imported[0]).to.deep.equal({
+      source: 'battle-of-britain.html',
+      path: 'battle-of-britain.html',
+      renamed: false,
+    });
+    expect(await provider.readFile('battle-of-britain.html')).to.equal(
+      '<h1>Battle of Britain</h1>',
+    );
+    expect(await provider.readFile('battle-of-britain_files/battle-of-britain.md')).to.contain(
+      'squisq-output: ../battle-of-britain.html',
+    );
   });
 });
 
@@ -221,7 +220,7 @@ describe('importDroppedFiles — .dbk bundles', () => {
       'main.md',
     );
 
-    const result = await importDroppedFiles([file], provider, noMedia);
+    const result = await importDroppedFiles([file], provider);
 
     expect(result.failed).to.deep.equal([]);
     expect(await provider.readFile('bundle.md')).to.equal('# Primary\n');

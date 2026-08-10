@@ -45,7 +45,7 @@ import {
   type DocumentCommitTarget,
   type DocumentSessionEditScope,
 } from '@bendyline/docblocks/document';
-import type { ContentContainer } from '@bendyline/squisq/storage';
+import { createMediaProviderFromContainer, type ContentContainer } from '@bendyline/squisq/storage';
 import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
 import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
 import {
@@ -143,6 +143,16 @@ import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
+import {
+  createOutsideInContentContainer,
+  createOutsideInDocumentTarget,
+  loadEditableShellDocument,
+  removeOutsideInCompanion,
+  resolveOutsideInLayout,
+  withOutsideInMetadata,
+  type EditableShellDocument,
+  type OutsideInLayout,
+} from './outside-in.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
@@ -1101,6 +1111,24 @@ export function DocBlocksShell({
     [activeWorkspaceDescriptor],
   );
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
+  const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
+  const adoptSelectedDocument = useCallback((document: EditableShellDocument | null) => {
+    setSelectedFile(document?.displayPath ?? null);
+    setSelectedSourceFile(document?.sourcePath ?? null);
+    setSelectedOutsideIn(document?.outsideIn ?? null);
+  }, []);
+  const adoptRegularDocument = useCallback((path: string | null) => {
+    if (path === null) {
+      setSelectedFile(null);
+      setSelectedSourceFile(null);
+      setSelectedOutsideIn(null);
+      return;
+    }
+    setSelectedFile(path);
+    setSelectedSourceFile(path);
+    setSelectedOutsideIn(null);
+  }, []);
   useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
     if (!selectedFile) return undefined;
@@ -1166,7 +1194,11 @@ export function DocBlocksShell({
       fsProvider: FileSystemProvider,
       workspaceId: string,
       filePath: string,
+      outsideIn: OutsideInLayout | null = null,
     ): DocumentCommitTarget => {
+      if (outsideIn) {
+        return createOutsideInDocumentTarget(fsProvider, outsideIn, gitScheduleRefresh);
+      }
       const transient = getTransientWorkspace(workspaceId);
       const baseTarget = createFileSystemDocumentTarget(fsProvider, filePath);
 
@@ -1437,25 +1469,29 @@ export function DocBlocksShell({
         await touchWorkspace(ws.id);
         if (requestId !== navigationRequestRef.current) return null;
 
-        let openedFile: string | null = null;
-        let openedContent = '';
+        let openedDocument: EditableShellDocument | null = null;
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
           if (filePath) {
-            const content = await readProviderText(fsProvider, filePath);
+            const document = await loadEditableShellDocument(fsProvider, filePath);
             if (requestId !== navigationRequestRef.current) return null;
-            if (content !== null) {
-              openedFile = filePath;
-              openedContent = content;
-            }
+            if (document !== null) openedDocument = document;
           }
 
           return {
-            target: openedFile ? createDocumentTarget(fsProvider, ws.id, openedFile) : null,
-            content: openedContent,
+            target: openedDocument
+              ? createDocumentTarget(
+                  fsProvider,
+                  ws.id,
+                  openedDocument.sourcePath,
+                  openedDocument.outsideIn,
+                )
+              : null,
+            content: openedDocument?.content ?? '',
           };
         });
         if (!transitioned) return null;
+        const acceptedDocument = openedDocument as EditableShellDocument | null;
 
         // Once the session has accepted this target, ownership must follow it
         // even if a newer navigation request arrived in the final microtask.
@@ -1463,8 +1499,8 @@ export function DocBlocksShell({
         setProvider(fsProvider);
         adopted = true;
         setActiveWorkspaceId(ws.id);
-        if (openedFile) {
-          setSelectedFile(openedFile);
+        if (acceptedDocument) {
+          adoptSelectedDocument(acceptedDocument);
           setSelectedFolder(null);
           setFolderEntries([]);
           const effectiveView = view ?? 'wysiwyg';
@@ -1473,24 +1509,28 @@ export function DocBlocksShell({
           // Transient workspaces are session-only; don't persist them as the
           // "last opened" state (the id won't exist after a reload).
           if (!transient) {
-            saveLastState({ workspaceId: wsId, filePath: openedFile, view: effectiveView });
+            saveLastState({
+              workspaceId: wsId,
+              filePath: acceptedDocument.displayPath,
+              view: effectiveView,
+            });
           }
         } else {
-          setSelectedFile(null);
+          adoptSelectedDocument(null);
           setSelectedFolder(null);
           setFolderEntries([]);
           setInitialSharedMode(null);
         }
 
         if (push) {
-          pushHash(ws.id, openedFile);
+          pushHash(ws.id, acceptedDocument?.displayPath ?? null);
         }
         return fsProvider;
       } finally {
         if (!transient && !adopted) await getFileSystemProviderV2(fsProvider)?.dispose();
       }
     },
-    [createDocumentTarget, documentSession, pushHash],
+    [adoptSelectedDocument, createDocumentTarget, documentSession, pushHash],
   );
 
   const adoptTransientWorkspace = useCallback(
@@ -1585,7 +1625,7 @@ export function DocBlocksShell({
         if (content !== null && isCurrent()) {
           await documentSession.transitionTo(createDocumentTarget(fs, fs.id, aboutPath), content);
           if (!isCurrent()) return;
-          setSelectedFile(aboutPath);
+          adoptRegularDocument(aboutPath);
           setInitialView('preview');
           setInitialSharedMode(null);
           setExplorerKey((k) => k + 1);
@@ -1616,7 +1656,7 @@ export function DocBlocksShell({
         seededContent,
       );
       if (!isCurrent()) return;
-      setSelectedFile(welcomePath);
+      adoptRegularDocument(welcomePath);
       setInitialView('preview');
       setInitialSharedMode(null);
       setExplorerKey((k) => k + 1);
@@ -1624,7 +1664,7 @@ export function DocBlocksShell({
       saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'preview' });
       if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
     },
-    [createDocumentTarget, documentSession, pushHash],
+    [adoptRegularDocument, createDocumentTarget, documentSession, pushHash],
   );
 
   // Startup is a mount lifecycle, not a reaction to callback identity. Keep
@@ -2119,6 +2159,15 @@ export function DocBlocksShell({
       setVersionsContainer(null);
       return;
     }
+    if (selectedOutsideIn) {
+      const container = createOutsideInContentContainer(provider, selectedOutsideIn);
+      const mp = createMediaProviderFromContainer(container);
+      mediaContainerRef.current = container;
+      versionsContainerRef.current = container;
+      setMediaProvider(mp);
+      setVersionsContainer(container);
+      return () => mp.dispose();
+    }
     const parentDir = dirnameOf(selectedFile);
     const base = basenameOf(selectedFile);
     const baseNoExt = base.replace(/\.[^.]+$/, '');
@@ -2133,9 +2182,13 @@ export function DocBlocksShell({
     return () => {
       mp.dispose();
     };
-  }, [provider, selectedFile, mediaEpoch]);
+  }, [provider, selectedFile, selectedOutsideIn, mediaEpoch]);
 
-  const documentLinkProvider = useDocumentLinkProvider(provider, selectedFile, documentLinkEpoch);
+  const documentLinkProvider = useDocumentLinkProvider(
+    provider,
+    selectedSourceFile ?? selectedFile,
+    documentLinkEpoch,
+  );
 
   // Expose a DocumentVersionManager via versioningRef when requested.
   useEffect(() => {
@@ -2162,8 +2215,8 @@ export function DocBlocksShell({
     if (!provider) return;
     const providerV2 = getFileSystemProviderV2(provider);
     if (!providerV2?.capabilities.watch) return;
-    if (!selectedFile || !documentSnapshot.targetKey) return;
-    const watchedFile = selectedFile;
+    const watchedFile = selectedSourceFile ?? selectedFile;
+    if (!watchedFile || !documentSnapshot.targetKey) return;
     const targetKey = documentSnapshot.targetKey;
     let disposed = false;
     let reading = false;
@@ -2226,7 +2279,7 @@ export function DocBlocksShell({
       disposed = true;
       void subscription.dispose();
     };
-  }, [provider, selectedFile, documentSession, documentSnapshot.targetKey]);
+  }, [provider, selectedFile, selectedSourceFile, documentSession, documentSnapshot.targetKey]);
 
   const transitionAwayFromDocument = useCallback(
     async (requestId: number): Promise<boolean> => {
@@ -2263,7 +2316,7 @@ export function DocBlocksShell({
       }
       const snapshot = await documentSession.resolveConflict('use-external');
       if (!snapshot.targetKey) {
-        setSelectedFile(null);
+        adoptSelectedDocument(null);
         if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
       }
     } catch (error: unknown) {
@@ -2272,7 +2325,7 @@ export function DocBlocksShell({
         message: error instanceof Error ? error.message : 'Could not reload the external document.',
       });
     }
-  }, [activeWorkspaceId, documentSession, pushHash]);
+  }, [activeWorkspaceId, adoptSelectedDocument, documentSession, pushHash]);
 
   const handleKeepLocalDocument = useCallback(async () => {
     const conflictKey = documentSession.getSnapshot().conflict?.targetKey;
@@ -2377,12 +2430,12 @@ export function DocBlocksShell({
       if (!(await transitionAwayFromDocument(requestId))) return;
       setProvider(nextProvider);
       setActiveWorkspaceId(ws.id);
-      setSelectedFile(null);
+      adoptSelectedDocument(null);
       setSelectedFolder(null);
       setFolderEntries([]);
       pushHash(ws.id, null);
     },
-    [pushHash, transitionAwayFromDocument],
+    [adoptSelectedDocument, pushHash, transitionAwayFromDocument],
   );
 
   const unpinDocument = useCallback((document: Pick<PinnedDocument, 'workspaceId' | 'path'>) => {
@@ -2514,17 +2567,23 @@ export function DocBlocksShell({
         }
 
         let disappearedDuringRead = false;
+        let openedDocument: EditableShellDocument | null = null;
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
-          const content = await readProviderText(openedProvider, document.path);
-          if (content === null) {
+          openedDocument = await loadEditableShellDocument(openedProvider, document.path);
+          if (openedDocument === null) {
             disappearedDuringRead = true;
             return null;
           }
           if (requestId !== navigationRequestRef.current) return null;
           return {
-            target: createDocumentTarget(openedProvider, workspace.id, document.path),
-            content,
+            target: createDocumentTarget(
+              openedProvider,
+              workspace.id,
+              openedDocument.sourcePath,
+              openedDocument.outsideIn,
+            ),
+            content: openedDocument.content,
           };
         });
         if (!transitioned) {
@@ -2537,7 +2596,8 @@ export function DocBlocksShell({
         setProvider(openedProvider);
         setActiveWorkspaceId(workspace.id);
         setActiveWorkspaceDescriptor(workspace);
-        setSelectedFile(document.path);
+        if (!openedDocument) return;
+        adoptSelectedDocument(openedDocument);
         setSelectedFolder(null);
         setFolderEntries([]);
         setInitialView('wysiwyg');
@@ -2566,6 +2626,7 @@ export function DocBlocksShell({
     },
     [
       activeWorkspaceId,
+      adoptSelectedDocument,
       closeWelcomeGateway,
       confirmMissingPinnedDocument,
       createDocumentTarget,
@@ -2639,7 +2700,7 @@ export function DocBlocksShell({
         setProvider(openedDestination);
         setActiveWorkspaceId(destination.id);
         setActiveWorkspaceDescriptor(destination);
-        setSelectedFile(selectedFile);
+        adoptRegularDocument(selectedFile);
         setPinnedDocuments((current) =>
           movePinnedDocumentsToWorkspace(current, activeWorkspaceId, {
             workspaceId: destination.id,
@@ -2690,6 +2751,7 @@ export function DocBlocksShell({
     },
     [
       activeWorkspaceId,
+      adoptRegularDocument,
       closeWelcomeGateway,
       createDocumentTarget,
       documentSession,
@@ -2722,7 +2784,7 @@ export function DocBlocksShell({
         if (!(await transitionAwayFromDocument(requestId))) return;
         setProvider(provider);
         setActiveWorkspaceId(descriptor.id);
-        setSelectedFile(null);
+        adoptSelectedDocument(null);
         setSelectedFolder(null);
         setFolderEntries([]);
         pushHash(descriptor.id, null);
@@ -2742,14 +2804,14 @@ export function DocBlocksShell({
       if (!(await transitionAwayFromDocument(requestId))) return;
       setProvider(nativeProvider);
       setActiveWorkspaceId(descriptor.id);
-      setSelectedFile(null);
+      adoptSelectedDocument(null);
       setSelectedFolder(null);
       setFolderEntries([]);
       pushHash(descriptor.id, null);
     } catch {
       // User cancelled or API not supported
     }
-  }, [pushHash, transitionAwayFromDocument]);
+  }, [adoptSelectedDocument, pushHash, transitionAwayFromDocument]);
 
   // A clone finished: the host already registered + persisted the folder,
   // so opening it mirrors the pickFolder success path exactly.
@@ -2774,13 +2836,13 @@ export function DocBlocksShell({
         if (!(await transitionAwayFromDocument(requestId))) return;
         setProvider(cloneProvider);
         setActiveWorkspaceId(descriptor.id);
-        setSelectedFile(null);
+        adoptSelectedDocument(null);
         setSelectedFolder(null);
         setFolderEntries([]);
         pushHash(descriptor.id, null);
       })();
     },
-    [pushHash, transitionAwayFromDocument],
+    [adoptSelectedDocument, pushHash, transitionAwayFromDocument],
   );
 
   const handleNewFile = useCallback(async () => {
@@ -2831,7 +2893,7 @@ export function DocBlocksShell({
       showToast('error', error instanceof Error ? error.message : 'Could not create the document.');
       return;
     }
-    setSelectedFile(path);
+    adoptRegularDocument(path);
     setInitialView('wysiwyg');
     setInitialSharedMode(null);
     setExplorerKey((k) => k + 1);
@@ -2841,6 +2903,7 @@ export function DocBlocksShell({
     }
   }, [
     provider,
+    adoptRegularDocument,
     activeWorkspaceId,
     pushHash,
     closeWelcomeGateway,
@@ -2885,7 +2948,7 @@ export function DocBlocksShell({
       showToast('error', message);
       return;
     }
-    setSelectedFile(null);
+    adoptSelectedDocument(null);
     setSelectedFolder(path);
     setFolderEntries([]);
     setExplorerKey((key) => key + 1);
@@ -2894,6 +2957,7 @@ export function DocBlocksShell({
     if (effectiveCompact) setMobileShowEditor(true);
   }, [
     provider,
+    adoptSelectedDocument,
     promptForText,
     showToast,
     closeWelcomeGateway,
@@ -3010,22 +3074,27 @@ export function DocBlocksShell({
       if (kind === 'directory') {
         if (!(await transitionAwayFromDocument(requestId))) return;
         if (requestId !== navigationRequestRef.current) return;
-        setSelectedFile(null);
+        adoptSelectedDocument(null);
         setSelectedFolder(path);
         const entries = await readProviderDirectory(provider, path);
         if (requestId !== navigationRequestRef.current) return;
         setFolderEntries(entries);
         pushHash(activeWorkspaceId, null);
       } else {
-        let content: string | null = null;
+        let openedDocument: EditableShellDocument | null = null;
         try {
           const transitioned = await documentSession.transitionWithLoad(async () => {
             if (requestId !== navigationRequestRef.current) return null;
-            content = await readProviderText(provider, path);
-            if (requestId !== navigationRequestRef.current || content === null) return null;
+            openedDocument = await loadEditableShellDocument(provider, path);
+            if (requestId !== navigationRequestRef.current || openedDocument === null) return null;
             return {
-              target: createDocumentTarget(provider, activeWorkspaceId, path),
-              content,
+              target: createDocumentTarget(
+                provider,
+                activeWorkspaceId,
+                openedDocument.sourcePath,
+                openedDocument.outsideIn,
+              ),
+              content: openedDocument.content,
             };
           });
           if (!transitioned) return;
@@ -3037,7 +3106,8 @@ export function DocBlocksShell({
           return;
         }
         if (requestId !== navigationRequestRef.current) return;
-        setSelectedFile(path);
+        if (!openedDocument) return;
+        adoptSelectedDocument(openedDocument);
         setSelectedFolder(null);
         setFolderEntries([]);
         setInitialView('wysiwyg');
@@ -3054,6 +3124,7 @@ export function DocBlocksShell({
       pushHash,
       effectiveCompact,
       closeWelcomeGateway,
+      adoptSelectedDocument,
       createDocumentTarget,
       documentSession,
       transitionAwayFromDocument,
@@ -3063,7 +3134,7 @@ export function DocBlocksShell({
 
   const handleEditorLinkClick = useCallback(
     (href: string): boolean => {
-      const target = resolveShellEditorLinkTarget(href, selectedFile);
+      const target = resolveShellEditorLinkTarget(href, selectedSourceFile ?? selectedFile);
       if (!target) {
         showToast(
           'error',
@@ -3113,35 +3184,101 @@ export function DocBlocksShell({
       })();
       return true;
     },
-    [handleSelect, provider, selectedFile, showToast],
+    [handleSelect, provider, selectedFile, selectedSourceFile, showToast],
   );
 
   const handleTreeMutation = useCallback<FileTreeMutationHandler>(
     async (change, mutate) => {
-      if (!provider || !activeWorkspaceId || !selectedFile) {
+      if (!provider) {
         await mutate();
+        return;
+      }
+
+      let mutateDocument = mutate;
+      if (change.kind === 'file') {
+        const oldLayout = resolveOutsideInLayout(
+          change.type === 'move' ? change.oldPath : change.path,
+        );
+        if (oldLayout && change.type === 'move') {
+          const nextLayout = resolveOutsideInLayout(change.newPath);
+          if (!nextLayout || nextLayout.format !== oldLayout.format) {
+            throw new Error(
+              `Keep the .${oldLayout.format} extension when renaming this outside-in document.`,
+            );
+          }
+        }
+        if (oldLayout && change.type === 'delete') {
+          mutateDocument = async () => {
+            await mutate();
+            try {
+              await removeOutsideInCompanion(provider, oldLayout);
+            } catch (error: unknown) {
+              showToast(
+                'error',
+                error instanceof Error
+                  ? `The rendered file was deleted, but its companion could not be removed: ${error.message}`
+                  : 'The rendered file was deleted, but its companion could not be removed.',
+              );
+            }
+          };
+        }
+      }
+
+      if (!activeWorkspaceId || !selectedFile) {
+        await mutateDocument();
         return;
       }
 
       if (change.type === 'move') {
         const nextFile = relocateProviderPath(selectedFile, change.oldPath, change.newPath);
         if (nextFile !== selectedFile) {
-          await documentSession.retarget(
-            createDocumentTarget(provider, activeWorkspaceId, nextFile),
-            mutate,
+          const nextSource = relocateProviderPath(
+            selectedSourceFile ?? selectedFile,
+            change.oldPath,
+            change.newPath,
           );
+          let nextOutsideIn: OutsideInLayout | null = null;
+          if (selectedOutsideIn) {
+            const resolved = resolveOutsideInLayout(nextFile);
+            if (!resolved)
+              throw new Error('The outside-in target must keep a supported extension.');
+            nextOutsideIn = { ...resolved, markdownPath: nextSource };
+          }
+          const snapshot = await documentSession.retarget(
+            createDocumentTarget(provider, activeWorkspaceId, nextSource, nextOutsideIn),
+            mutateDocument,
+          );
+          if (nextOutsideIn) {
+            const linkedContent = await withOutsideInMetadata(snapshot.content, nextOutsideIn);
+            if (linkedContent !== snapshot.content && snapshot.targetKey) {
+              documentSession.edit(linkedContent, {
+                targetKey: snapshot.targetKey,
+                generation: snapshot.generation,
+              });
+              await documentSession.flush('transition');
+            }
+          }
           return;
         }
       }
 
       if (change.type === 'delete' && pathContains(change.path, selectedFile)) {
-        await documentSession.delete(mutate);
+        await documentSession.delete(mutateDocument);
         return;
       }
 
-      await mutate();
+      await mutateDocument();
     },
-    [provider, activeWorkspaceId, selectedFile, documentSession, createDocumentTarget],
+    [
+      provider,
+      activeWorkspaceId,
+      selectedFile,
+      selectedSourceFile,
+      selectedOutsideIn,
+      documentSession,
+      createDocumentTarget,
+      showToast,
+    ],
   );
 
   const handleTreeChange = useCallback(
@@ -3162,7 +3299,12 @@ export function DocBlocksShell({
           : null;
 
         if (nextFile !== selectedFile) {
-          setSelectedFile(nextFile);
+          if (nextFile && selectedOutsideIn) {
+            const opened = await loadEditableShellDocument(provider, nextFile);
+            adoptSelectedDocument(opened);
+          } else {
+            adoptRegularDocument(nextFile);
+          }
           if (activeWorkspaceId) {
             pushHash(activeWorkspaceId, nextFile);
             if (nextFile) {
@@ -3194,7 +3336,7 @@ export function DocBlocksShell({
       if (selectedFile) {
         const exists = await providerEntryExists(provider, selectedFile);
         if (!exists) {
-          setSelectedFile(null);
+          adoptSelectedDocument(null);
           if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
         }
       }
@@ -3205,7 +3347,10 @@ export function DocBlocksShell({
     },
     [
       provider,
+      adoptRegularDocument,
+      adoptSelectedDocument,
       selectedFile,
+      selectedOutsideIn,
       selectedFolder,
       activeWorkspaceId,
       pinnedDocuments,
@@ -3426,57 +3571,17 @@ export function DocBlocksShell({
     ],
   );
 
-  /**
-   * Copy non-markdown files from an imported container into the target
-   * markdown file's `_files/` sibling folder, preserving the source's
-   * relative structure.
-   */
-  const persistImportedMedia = useCallback(
-    async (
-      source: {
-        listFiles(): Promise<Array<{ path: string; mimeType: string }>>;
-        readFile(path: string): Promise<ArrayBuffer | null>;
-      },
-      target: FileSystemProvider,
-      importedMarkdownPath: string,
-    ) => {
-      const parentDir = dirnameOf(importedMarkdownPath);
-      const folder = basenameOf(importedMarkdownPath).replace(/\.[^.]+$/, '') + '_files';
-      const mediaRoot = parentDir ? `${parentDir}/${folder}` : folder;
-      const entries = await source.listFiles();
-      const targetV2 = getFileSystemProviderV2(target);
-      for (const entry of entries) {
-        if (entry.path.endsWith('.md')) continue;
-        const data = await source.readFile(entry.path);
-        if (!data) continue;
-        const cleanPath = entry.path.replace(/^\/+/, '');
-        const destination = `${mediaRoot}/${cleanPath}`;
-        if (targetV2) {
-          await targetV2.writeFile(parseWorkspacePath(destination), data, {
-            mode: 'upsert',
-            createParents: true,
-          });
-        } else {
-          await target.writeBinary(destination, data);
-        }
-      }
-    },
-    [],
-  );
-
   const handleImportFiles = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      const result = await importDroppedFiles(files, provider, {
-        persistMedia: (source, path) => persistImportedMedia(source, provider, path),
-      });
+      const result = await importDroppedFiles(files, provider);
       // Refresh file tree so the new markdown files + _files folders show up.
       setExplorerKey((k) => k + 1);
       // A drop that failed used to be indistinguishable from no drop at all.
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
     },
-    [provider, persistImportedMedia, showToast],
+    [provider, showToast],
   );
 
   const handleEditorChange = useCallback(
@@ -3988,7 +4093,7 @@ export function DocBlocksShell({
       const p = await createElectronFileSystemProvider(info.id, info.name, info.rootPath);
       setProvider(p);
       setActiveWorkspaceId(info.id);
-      setSelectedFile(null);
+      adoptSelectedDocument(null);
       setSelectedFolder(null);
       setFolderEntries([]);
     } else {
@@ -3996,12 +4101,13 @@ export function DocBlocksShell({
       const fsProvider = await createIndexedDbFileSystemProvider(defaultWs.id, defaultWs.name);
       setProvider(fsProvider);
       setActiveWorkspaceId(defaultWs.id);
-      setSelectedFile(null);
+      adoptSelectedDocument(null);
       setSelectedFolder(null);
       setFolderEntries([]);
     }
   }, [
     activeWorkspaceId,
+    adoptSelectedDocument,
     confirmAction,
     handleWorkspaceSelect,
     pinnedDocuments,
