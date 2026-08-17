@@ -1,3 +1,14 @@
+## @bendyline/docblocks-cli [2.4.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.3.4...@bendyline/docblocks-cli@2.4.0) (2026-08-17)
+
+### Features
+
+* Dashboards ([#21](https://github.com/bendyline/docblocks/issues/21)) ([f2763b2](https://github.com/bendyline/docblocks/commit/f2763b2cb48091fc8b0fdfae3df9b338436917de))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.4.0
+
 ## @bendyline/docblocks-cli [2.3.4](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.3.3...@bendyline/docblocks-cli@2.3.4) (2026-08-02)
 
 ### Bug Fixes
