@@ -12,7 +12,7 @@ This file is the distribution-level entry point for third-party software used by
 | @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 344 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 349 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 208 locked components |
-| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 200 locked components |
+| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 201 locked components |
 | DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 238 locked components |
 
 The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
@@ -25,7 +25,7 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-cli@2.5.2, @bendyline/squisq-editor-react@2.7.0, @bendyline/squisq-formats@2.4.1, @bendyline/squisq-react@2.7.0, @bendyline/squisq-video-react@2.3.2, @bendyline/squisq-video@2.2.11, @bendyline/squisq@2.7.0.
+- Squisq packages: @bendyline/squisq-cli@2.6.0, @bendyline/squisq-editor-react@2.8.0, @bendyline/squisq-formats@2.4.5, @bendyline/squisq-react@2.8.0, @bendyline/squisq-video-react@2.4.0, @bendyline/squisq-video@2.3.0, @bendyline/squisq@2.8.0.
 - MCP SDK: @modelcontextprotocol/sdk@1.29.0.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.

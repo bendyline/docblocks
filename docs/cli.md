@@ -229,8 +229,9 @@ linked registry-native conversion pipeline.
 ### Linked format registry
 
 This catalog is read from the linked `createCliRegistry()` contract. Squisq Formats
-provides the document formats; the linked Squisq CLI adds Node-only MP4 and GIF
-exporters. Direction is significant: HTML ZIP, EPUB, MP4, and GIF are export-only.
+provides the document formats; the linked Squisq CLI adds Node-only MP4, GIF, and
+PNG exporters. Direction is significant: HTML ZIP, EPUB, MP4, GIF, and PNG are
+export-only.
 
 <!-- BEGIN FORMAT CATALOG -->
 
@@ -248,6 +249,7 @@ exporters. Direction is significant: HTML ZIP, EPUB, MP4, and GIF are export-onl
 | `dbk`     |  yes   |  yes   |
 | `mp4`     |   no   |  yes   |
 | `gif`     |   no   |  yes   |
+| `png`     |   no   |  yes   |
 
 <!-- END FORMAT CATALOG -->
 
@@ -255,6 +257,50 @@ exporters. Direction is significant: HTML ZIP, EPUB, MP4, and GIF are export-onl
 Use `docblocks video` when you need explicit MP4 frame rate, quality, orientation,
 captions, or dimensions. Use the MCP surface when untrusted or very large inputs
 need configurable read, concurrency, time, artifact, and report budgets.
+
+### Dashboard images (`--formats png`)
+
+`png` renders the document's **Dashboard** rendition — Squisq's projection of a
+whole document onto one canvas, alongside slideshow and video — to a single raster
+image. It needs headless Chromium but no FFmpeg, which is why it stays out of the
+default format set rather than costing every `convert` run a browser launch.
+
+```bash
+# The document's own dashboard frontmatter, at 1920x1080
+docblocks convert report.md --formats png
+
+# A square social image with accent-tinted cards and no title band
+docblocks convert report.md --formats png \
+  --image-resolution square --image-style accent --no-image-title
+
+# Explicit pixels and a named layout, exported next to a PDF
+docblocks convert report.md --formats pdf,png \
+  --image-width 2400 --image-height 1350 --image-layout hero-split
+```
+
+Three axes shape the image, each defaulting to what the document itself declares:
+
+| Option                               | Controls                                                                                                 |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `--image-resolution <preset>`        | Size, by name: `hd`, `fhd` (default), `4k`, `square`, `square-2k`, `portrait`, `portrait-4k`, `standard` |
+| `--image-width` / `--image-height`   | Size, in exact pixels. Both are required together and exclude `--image-resolution`                       |
+| `--image-layout <id>`                | Which layout places the cells. `auto` picks by block count                                               |
+| `--image-style <variant>`            | Cell dressing: `basic`, `card`, `panel`, `accent`                                                        |
+| `--image-title` / `--no-image-title` | Whether the document-title band renders                                                                  |
+
+Omitting an option defers to the document's `squisq-dashboard-layout`,
+`squisq-dashboard-style`, and `squisq-dashboard-title` frontmatter, so an
+unqualified `convert --formats png` reproduces what the author sees in the
+editor's Dashboard view. The aspect ratio implied by the chosen size selects the
+layout's landscape, portrait, or square variant.
+
+`--theme` and `--transform` compose with all of it: the transform restyles the
+content before projection, and the theme supplies the palette every cell style
+derives from. Layout ids are validated against the built-ins **plus** any custom
+layouts the document declares in `squisq-dashboard-layouts` frontmatter; every
+other `--image-*` value is checked before the document is read, so a typo fails
+without launching a browser. Passing an `--image-*` option without `png` in
+`--formats` is refused rather than silently ignored.
 
 ## `docblocks video <input> [output]`
 

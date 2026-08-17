@@ -11,7 +11,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   'squisq-cover-slide: false',
   '---',
   '',
-  '# DocBlocks: one Markdown file, many finished forms {[title subtitle="Local-first writing for pages, documents, slideshows, and video"]}',
+  '# DocBlocks {[title subtitle="Local-first writing for pages, documents, slideshows, and video"]}',
   '',
   'Write in plain Markdown. Shape it visually. Keep it portable.',
   '',

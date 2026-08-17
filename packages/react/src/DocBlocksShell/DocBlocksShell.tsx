@@ -88,6 +88,7 @@ import {
   type ExportDestinationAdapter,
 } from '../Export/DeferredExportToolbarControls.js';
 import { createBrowserSaveAsAdapter } from '../Export/browser-save.js';
+import { createImageSaveOutput } from '../Export/image-save.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
 // The editor is only needed after a document and its media container are
@@ -1151,6 +1152,15 @@ export function DocBlocksShell({
     }
     return createBrowserSaveAsAdapter();
   }, [activeWorkspaceId, selectedFile]);
+  // Cover and Dashboard images travel the same host destination flow, so one
+  // adapter serves both of Squisq's rendered-image save hooks.
+  const saveRenderedImageOutput = useMemo(
+    () =>
+      isElectronHost() && exportDestinationAdapter
+        ? createImageSaveOutput(exportDestinationAdapter)
+        : undefined,
+    [exportDestinationAdapter],
+  );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
   const visibleFolderEntries = useMemo(
@@ -4481,6 +4491,8 @@ export function DocBlocksShell({
                       defaultViewportPreset={defaultPreviewViewportPreset}
                       articleId={selectedFile}
                       fileName={selectedFile}
+                      saveCoverImageOutput={saveRenderedImageOutput}
+                      saveDashboardImageOutput={saveRenderedImageOutput}
                       onChange={handleEditorChange}
                       onLinkClick={handleEditorLinkClick}
                       colorScheme={resolvedTheme}

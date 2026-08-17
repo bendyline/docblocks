@@ -67,6 +67,7 @@ describe('MCP target fidelity contracts', () => {
       dbk: ['semantic', 'editable-native'],
       mp4: ['rendered-fidelity'],
       gif: ['rendered-fidelity'],
+      png: ['rendered-fidelity'],
     });
 
     const artifacts = new ArtifactStore();

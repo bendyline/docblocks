@@ -19,8 +19,9 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 ## What it does
 
-- **Three views of every document** — **Editor** (rich WYSIWYG), **Markdown** (raw source), and **Play**, which presents the same file as a **Video**, **Slideshow**, **Document**, or **Page**.
-- **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; the CLI follows the linked Squisq registry for Markdown, DOCX, PPTX, PDF, XLSX, CSV, HTML / HTML ZIP, EPUB, DBK, **MP4 video**, and GIF (with directional support varying by format).
+- **Three views of every document** — **Editor** (rich WYSIWYG), **Markdown** (raw source), and **Play**, which presents the same file as a **Video**, **Slideshow**, **Dashboard**, **Document**, or **Page**.
+- **Dashboards** — arrange every block of a document on one canvas, pick a layout and cell style, and export it as an image at any of eight named sizes or exact pixel dimensions. Available in Play mode on every surface and from the CLI/MCP as the `png` conversion target.
+- **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; the CLI follows the linked Squisq registry for Markdown, DOCX, PPTX, PDF, XLSX, CSV, HTML / HTML ZIP, EPUB, DBK, **MP4 video**, GIF, and **PNG dashboard images** (with directional support varying by format).
 - **Outside-in editing** — open an HTML, DOCX, PDF, PPTX, or XLSX file as Markdown while DocBlocks keeps its editable source, media, and version history in a hidden sibling `_files` folder and regenerates the visible file on every save. See [Outside-in editing](docs/outside-in.md).
 - **Copy-by-link sharing** — create a bounded URL containing a compressed Markdown-only copy of the current document, optionally opening directly in Slideshow, Video, Page, Document, or Narrate mode.
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
@@ -101,8 +102,8 @@ The preferred workflow is:
    another document operation, or explicitly persist it with `save_artifact`.
 
 The linked Squisq registry currently covers Markdown, DOCX, PDF, PPTX, XLSX,
-CSV, HTML, HTML ZIP, EPUB, DBK, MP4, and GIF; support is directional for formats
-that are export-only. See the [MCP architecture and protocol guide](docs/mcp.md)
+CSV, HTML, HTML ZIP, EPUB, DBK, MP4, GIF, and PNG (a Dashboard image); support is
+directional for formats that are export-only. See the [MCP architecture and protocol guide](docs/mcp.md)
 for source shapes, authority rules, the complete tool surface, and current
 local-only limitations.
 

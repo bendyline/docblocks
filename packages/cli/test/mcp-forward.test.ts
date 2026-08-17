@@ -130,7 +130,7 @@ describe('MCP canonical authoring surface', function () {
     expect(formats.isError, formats.text).to.equal(false);
     expect(themes.isError, themes.text).to.equal(false);
     expect(transforms.isError, transforms.text).to.equal(false);
-    expect(formats.structuredContent?.formats).to.be.an('array').with.length(12);
+    expect(formats.structuredContent?.formats).to.be.an('array').with.length(13);
     expect(themes.structuredContent?.themes).to.be.an('array').with.length.greaterThan(0);
     expect(transforms.structuredContent?.styles).to.be.an('array').with.length.greaterThan(0);
   });

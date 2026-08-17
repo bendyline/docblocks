@@ -40,6 +40,7 @@ const LINKED_FORMAT_IDS = [
   'dbk',
   'mp4',
   'gif',
+  'png',
 ] as const;
 
 const PROMPT_ARGUMENTS = {
@@ -52,6 +53,13 @@ const PROMPT_ARGUMENTS = {
   'create-video': [
     { name: 'topic', required: true },
     { name: 'orientation', required: false },
+    { name: 'theme', required: false },
+    { name: 'template', required: false },
+  ],
+  'create-dashboard': [
+    { name: 'topic', required: true },
+    { name: 'resolution', required: false },
+    { name: 'style', required: false },
     { name: 'theme', required: false },
     { name: 'template', required: false },
   ],
@@ -305,6 +313,7 @@ describe('MCP protocol surface', function () {
       dbk: ['semantic', 'editable-native'],
       mp4: ['rendered-fidelity'],
       gif: ['rendered-fidelity'],
+      png: ['rendered-fidelity'],
     };
     for (const target of targetAlternatives) {
       const format = schemaConst(target, 'format');

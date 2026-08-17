@@ -34,8 +34,21 @@ import { isLinkUnsupportedError } from '../internal/link-support.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { throwIfAborted as throwIfSignalAborted } from '../internal/cancellation.js';
 import { assertKnownThemeId } from '../internal/theme.js';
+import {
+  assertKnownDashboardLayout,
+  hasDashboardImageInput,
+  resolveDashboardImageOptions,
+  type DashboardImageOptions,
+} from '../internal/dashboard-image.js';
 
 const DEFAULT_FORMATS = ['docx', 'pptx', 'pdf', 'html', 'dbk'] as const;
+
+/**
+ * The registry's Dashboard image target. Excluded from {@link DEFAULT_FORMATS}
+ * because it renders through headless Chromium, the same reason `mp4`/`gif`
+ * stay opt-in.
+ */
+const DASHBOARD_IMAGE_FORMAT = 'png';
 
 export interface ConvertOptions {
   outputDir?: string;
@@ -47,6 +60,18 @@ export interface ConvertOptions {
    * before any conversion work when a destination already exists.
    */
   allowOverwrite?: boolean;
+  /** Named dashboard-image resolution preset for the `png` target. */
+  imageResolution?: string;
+  /** Custom dashboard-image width; requires `imageHeight`. */
+  imageWidth?: string | number;
+  /** Custom dashboard-image height; requires `imageWidth`. */
+  imageHeight?: string | number;
+  /** Dashboard layout id, or `auto` to pick by block count. */
+  imageLayout?: string;
+  /** Dashboard cell style variant (`basic`, `card`, `panel`, `accent`). */
+  imageStyle?: string;
+  /** Render the dashboard's document-title band. */
+  imageTitle?: boolean;
   /** Cancel reading, transformation, conversion, or publication at a bounded boundary. */
   signal?: AbortSignal;
   /** Programmatic registry override; the CLI defaults to the linked Squisq registry. */
@@ -169,6 +194,31 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     );
   }
 
+  // Dashboard image controls. Validated before anything is read or rendered
+  // so a bad preset, dimension, or style never reaches headless Chromium.
+  const dashboardImageInput = {
+    resolution: opts.imageResolution,
+    width: opts.imageWidth,
+    height: opts.imageHeight,
+    layout: opts.imageLayout,
+    style: opts.imageStyle,
+    title: opts.imageTitle,
+  };
+  const wantsDashboardImage = formats.includes(DASHBOARD_IMAGE_FORMAT as FormatId);
+  if (hasDashboardImageInput(dashboardImageInput) && !wantsDashboardImage) {
+    // Silently ignoring these would produce a default-sized image, or no
+    // image at all, under a success status.
+    throw new squisq.ConversionError(
+      'unknown-format',
+      `The --image-* options only apply to the "${DASHBOARD_IMAGE_FORMAT}" target. Add it to --formats.`,
+      { format: DASHBOARD_IMAGE_FORMAT, hint: registryHint },
+    );
+  }
+  const dashboardImageOptions: DashboardImageOptions | undefined = wantsDashboardImage
+    ? await resolveDashboardImageOptions(dashboardImageInput)
+    : undefined;
+  throwIfAborted(opts.signal);
+
   // Validate transform
   if (opts.transform) {
     const { getTransformStyleIds } = await import('@bendyline/squisq/transform');
@@ -201,6 +251,9 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
     opts.theme,
     result.doc.customThemes?.map((theme) => theme.id),
   );
+  // Deferred until the document is in hand: a document may declare its own
+  // dashboard layouts in frontmatter alongside the built-ins.
+  await assertKnownDashboardLayout(dashboardImageOptions?.layout, result.doc);
   throwIfAborted(opts.signal);
 
   // Keep DocBlocks' source-preserving Markdown transform projection for
@@ -233,6 +286,9 @@ export async function runConvert(inputPath: string, opts: ConvertOptions): Promi
       title: baseName,
       themeId: opts.theme,
       ...(!exportMarkdownDoc && opts.transform ? { transformStyle: opts.transform } : {}),
+      ...(format === DASHBOARD_IMAGE_FORMAT && dashboardImageOptions
+        ? { formatOptions: { [DASHBOARD_IMAGE_FORMAT]: dashboardImageOptions } }
+        : {}),
     });
     throwIfAborted(opts.signal);
     if (conversion.bytes.byteLength > maxOutputBytes) {
@@ -808,6 +864,22 @@ export const convertCommand = new Command('convert')
     '--transform <style>',
     'Transform style to apply before export (e.g., documentary, magazine, minimal)',
   )
+  .option(
+    '--image-resolution <preset>',
+    'Dashboard image size preset for the png target (hd, fhd, 4k, square, square-2k, portrait, portrait-4k, standard)',
+  )
+  .option('--image-width <pixels>', 'Custom dashboard image width (requires --image-height)')
+  .option('--image-height <pixels>', 'Custom dashboard image height (requires --image-width)')
+  .option(
+    '--image-layout <id>',
+    'Dashboard layout id, or "auto" to pick by block count (default: the document\'s own setting)',
+  )
+  .option(
+    '--image-style <variant>',
+    "Dashboard cell style: basic, card, panel, accent (default: the document's own setting)",
+  )
+  .option('--image-title', 'Include the dashboard document-title band')
+  .option('--no-image-title', 'Hide the dashboard document-title band')
   .option('--allow-overwrite', 'replace existing output files instead of refusing the run')
   .action(async (inputPath: string, opts: ConvertOptions) => {
     try {
