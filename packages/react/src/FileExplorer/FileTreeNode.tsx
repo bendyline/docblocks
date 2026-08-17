@@ -37,6 +37,13 @@ export interface FileTreeNodeGitActions {
   openOnRemote?: () => void;
 }
 
+/** Host-owned row action shown in both pointer and keyboard menus. */
+export interface FileTreeNodeAction {
+  label: string;
+  onSelect: () => void | Promise<void>;
+  disabled?: boolean;
+}
+
 /**
  * Last-resort confirmation for a host that supplies none. Native `confirm` is
  * the wrong look for the product -- `<DocBlocksShell>` passes its own dialog --
@@ -55,6 +62,7 @@ export interface FileTreeNodeProps {
   selected: boolean;
   badge?: FileTreeNodeBadge;
   gitActions?: FileTreeNodeGitActions;
+  actions?: readonly FileTreeNodeAction[];
   children?: FileSystemEntry[];
   /**
    * Roving tabindex: true only for the tree's single tab stop. Defaults to
@@ -103,6 +111,7 @@ export function FileTreeNode({
   selected,
   badge,
   gitActions,
+  actions = [],
   focusable = true,
   posInSet,
   setSize,
@@ -324,6 +333,19 @@ export function FileTreeNode({
     }
   }, [closeMenu, entry.path, onTogglePin, pinned]);
 
+  const handleCustomAction = useCallback(
+    async (action: FileTreeNodeAction) => {
+      closeMenu(false);
+      setActionError(null);
+      try {
+        await action.onSelect();
+      } catch (caught: unknown) {
+        setActionError(caught instanceof Error ? caught.message : `Unable to ${action.label}.`);
+      }
+    },
+    [closeMenu],
+  );
+
   // Close context menu on outside click or scroll
   useEffect(() => {
     if (!showContext) return;
@@ -539,6 +561,24 @@ export function FileTreeNode({
               >
                 {pinned ? 'Unpin' : 'Pin'}
               </button>
+            )}
+            {actions.length > 0 && (
+              <>
+                <div className="db-tree-context-divider" role="separator" />
+                {actions.map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    className="db-tree-context-item"
+                    disabled={action.disabled}
+                    onClick={() => void handleCustomAction(action)}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </>
             )}
             {gitActions && (gitActions.viewChanges || gitActions.fileHistory) && (
               <>

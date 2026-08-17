@@ -1,6 +1,7 @@
 import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { MCP_DASHBOARD_RESOLUTION_IDS, MCP_DASHBOARD_STYLE_IDS } from './conversion-service.js';
 import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
@@ -102,6 +103,47 @@ export function registerAuthoringPrompts(server: McpServer): void {
   );
   video.argsSchema = videoArgs;
 
+  const dashboardArgs = z
+    .object({
+      topic: z.string().max(MAX_TOPIC_CHARACTERS).describe('Dashboard topic or subject.'),
+      resolution: z
+        .enum(MCP_DASHBOARD_RESOLUTION_IDS)
+        .optional()
+        .describe('Named output size for the image.'),
+      style: z
+        .enum(MCP_DASHBOARD_STYLE_IDS)
+        .optional()
+        .describe('Cell dressing around each block.'),
+      theme,
+      template,
+    })
+    .strict();
+  const dashboard = server.registerPrompt(
+    'create-dashboard',
+    {
+      description: 'Convert model-authored Markdown into an artifact-first dashboard image.',
+      argsSchema: dashboardArgs.shape,
+    },
+    async (args) => ({
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: dashboardPrompt(
+              args.topic,
+              args.resolution,
+              args.style,
+              args.theme,
+              args.template,
+            ),
+          },
+        },
+      ],
+    }),
+  );
+  dashboard.argsSchema = dashboardArgs;
+
   const documentArgs = z
     .object({
       topic: z.string().max(MAX_TOPIC_CHARACTERS).describe('Document topic or subject.'),
@@ -177,6 +219,28 @@ function videoPrompt(
 1. For durable output, call list_roots before drafting and stop if no root is write-enabled; do not use a shell or CLI converter.
 2. Author plain Markdown. Squisq annotations are optional layout hints.${templateHint} Call get_authoring_context only when exact annotation examples or theme details would help.
 3. Pass the Markdown directly to convert_document with an mp4 target, orientation "${orientation ?? 'landscape'}"${themeHint}. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
+4. Use preview_document only when the user explicitly asks for visual evidence.
+5. Call save_artifact only when a durable file is required.`;
+}
+
+function dashboardPrompt(
+  topic: string,
+  resolution: string | undefined,
+  style: string | undefined,
+  theme: string | undefined,
+  template: string | undefined,
+): string {
+  const templateHint = template
+    ? ` Use the requested \`${template}\` annotation where appropriate.`
+    : '';
+  const themeHint = theme ? ` and themeId \`${theme}\`` : '';
+  const sizeHint = resolution ? `, resolution "${resolution}"` : '';
+  const styleHint = style ? `, style "${style}"` : '';
+  return `Create a dashboard image about: ${topic}
+
+1. For durable output, call list_roots before drafting and stop if no root is write-enabled; do not use a shell or CLI converter.
+2. A dashboard renders the WHOLE document onto one canvas, one block per cell, so write for a single screen. Aim for four to eight short, self-contained blocks — a lead statement, a table or metric, a short list, a closing note. Long prose does not fit a cell and will be clipped.${templateHint} Call get_authoring_context only when exact annotation examples or theme details would help.
+3. Pass the Markdown directly to convert_document with a png target${sizeHint}${styleHint}${themeHint}. Omit layout to let the block count pick one. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
 4. Use preview_document only when the user explicitly asks for visual evidence.
 5. Call save_artifact only when a durable file is required.`;
 }

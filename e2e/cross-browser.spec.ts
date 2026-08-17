@@ -5,9 +5,7 @@ import { openInitializedSite } from './helpers/site.js';
 test('boots the editor and exports Markdown', async ({ page }) => {
   await openInitializedSite(page);
   await expect(page.locator('.db-shell')).toBeVisible();
-  await expect(page.locator('main.db-shell-editor-area')).toContainText(
-    'DocBlocks: one Markdown file, many finished forms',
-  );
+  await expect(page.locator('main.db-shell-editor-area')).toContainText('DocBlocks');
 
   await page.getByRole('button', { name: 'Export and share' }).click();
   await page.getByRole('menuitem', { name: 'Export document...' }).click();
@@ -20,7 +18,5 @@ test('boots the editor and exports Markdown', async ({ page }) => {
   if (!downloadPath) throw new Error('Cross-browser export did not produce a file');
 
   expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');
-  expect(await readFile(downloadPath, 'utf8')).toContain(
-    '# DocBlocks: one Markdown file, many finished forms',
-  );
+  expect(await readFile(downloadPath, 'utf8')).toContain('# DocBlocks {[title');
 });

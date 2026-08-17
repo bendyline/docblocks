@@ -54,6 +54,9 @@ docblocks convert report.docx --formats md,pdf,pptx --output-dir ./exports
 # Render MP4 with explicit media controls
 docblocks video story.md --quality high --orientation portrait
 
+# Render the Dashboard rendition to a square image with accent cards
+docblocks convert report.md --formats png --image-resolution square --image-style accent
+
 # Discover authoring vocabulary from linked Squisq
 docblocks themes
 docblocks transforms
@@ -93,9 +96,10 @@ The package root is a side-effect-free programmatic API for `runBuild`, `runConv
 the separate `docblocks` bin entry.
 
 The live linked registry currently covers Markdown, DOCX, PDF, PPTX, XLSX, CSV,
-HTML, HTML ZIP, EPUB, DBK, MP4, and GIF. Direction varies by format, so use the
-CLI reference or MCP `list_formats` rather than assuming every format imports.
+HTML, HTML ZIP, EPUB, DBK, MP4, GIF, and PNG. Direction varies by format, so use
+the CLI reference or MCP `list_formats` rather than assuming every format imports.
 
 MP4/GIF rendering requires Chromium and FFmpeg. Install Chromium with
 `npx playwright install chromium`; Squisq resolves FFmpeg from `SQUISQ_FFMPEG`,
-`PATH`, or `ffmpeg-static`, in that order.
+`PATH`, or `ffmpeg-static`, in that order. PNG renders the document's Dashboard
+rendition to a single image and needs Chromium only.

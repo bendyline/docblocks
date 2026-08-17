@@ -4,6 +4,7 @@ import { ConversionError } from '@bendyline/squisq-formats';
 import { ArtifactStore } from '../src/mcp/artifact-store.js';
 import { McpFileAuthority } from '../src/mcp/authority.js';
 import {
+  DashboardImageBudgetError,
   MediaRenderBudgetError,
   convertPreparedDocument,
   type ConversionServiceDependencies,
@@ -141,6 +142,93 @@ describe('MCP rendered-media preflight budgets', () => {
       await artifacts.dispose();
     }
   });
+
+  it('rejects an oversized dashboard image before launching a renderer', async () => {
+    const artifacts = new ArtifactStore();
+    let preparedConversions = 0;
+    try {
+      const prepared = await prepare(artifacts, 2);
+      let caught: unknown;
+      try {
+        await convertPreparedDocument(
+          artifacts,
+          prepared,
+          { targets: [{ format: 'png', options: { width: 7_680, height: 7_680 } }] },
+          undefined,
+          undefined,
+          dependencies(() => {
+            preparedConversions += 1;
+          }),
+        );
+      } catch (error: unknown) {
+        caught = error;
+      }
+
+      expect(caught).to.be.instanceOf(DashboardImageBudgetError);
+      expect(caught).to.include({ code: 'media-budget-exceeded', format: 'png' });
+      expect(String(caught)).to.include('total pixels');
+      expect(preparedConversions).to.equal(0);
+      expect(await artifacts.completeIds('')).to.deep.equal([]);
+    } finally {
+      await artifacts.dispose();
+    }
+  });
+
+  it('rejects a dashboard image that names both a preset and custom pixels', async () => {
+    const artifacts = new ArtifactStore();
+    try {
+      const prepared = await prepare(artifacts, 2);
+      let caught: unknown;
+      try {
+        await convertPreparedDocument(artifacts, prepared, {
+          targets: [{ format: 'png', options: { resolution: 'fhd', width: 800, height: 600 } }],
+        });
+      } catch (error: unknown) {
+        caught = error;
+      }
+      expect(caught).to.be.instanceOf(DashboardImageBudgetError);
+      expect(String(caught)).to.include('not both');
+    } finally {
+      await artifacts.dispose();
+    }
+  });
+
+  it('allows a bounded dashboard image and reports its rendered fidelity', async () => {
+    const artifacts = new ArtifactStore();
+    try {
+      const prepared = await prepare(artifacts, 2);
+      const [result] = await convertPreparedDocument(
+        artifacts,
+        prepared,
+        { targets: [{ format: 'png', options: { resolution: 'square', style: 'accent' } }] },
+        undefined,
+        undefined,
+        dependencies(() => undefined),
+      );
+
+      expect(result).to.include({ targetFormat: 'png', fidelity: 'rendered-fidelity' });
+    } finally {
+      await artifacts.dispose();
+    }
+  });
+
+  it('leaves a preset-only dashboard image unbounded by the custom-pixel rules', async () => {
+    const artifacts = new ArtifactStore();
+    try {
+      const prepared = await prepare(artifacts, 2);
+      const [result] = await convertPreparedDocument(
+        artifacts,
+        prepared,
+        { targets: [{ format: 'png', options: { resolution: 'portrait-4k' } }] },
+        undefined,
+        undefined,
+        dependencies(() => undefined),
+      );
+      expect(result).to.include({ targetFormat: 'png' });
+    } finally {
+      await artifacts.dispose();
+    }
+  });
 });
 
 async function prepare(artifacts: ArtifactStore, duration: number) {
@@ -154,6 +242,12 @@ async function prepare(artifacts: ArtifactStore, duration: number) {
   return prepared;
 }
 
+const MEDIA_MIME_TYPES: Record<string, string> = {
+  mp4: 'video/mp4',
+  gif: 'image/gif',
+  png: 'image/png',
+};
+
 function dependencies(onPrepare: () => void, convertError?: Error): ConversionServiceDependencies {
   return {
     async prepareNativeConversion() {
@@ -163,7 +257,7 @@ function dependencies(onPrepare: () => void, convertError?: Error): ConversionSe
           if (convertError) throw convertError;
           return {
             bytes: new TextEncoder().encode(`bounded ${format}`),
-            mimeType: format === 'mp4' ? 'video/mp4' : 'image/gif',
+            mimeType: MEDIA_MIME_TYPES[format] ?? 'application/octet-stream',
             suggestedFilename: `bounded.${format}`,
             warnings: [],
           };
@@ -171,7 +265,7 @@ function dependencies(onPrepare: () => void, convertError?: Error): ConversionSe
       };
     },
     async convertRenderedDocument() {
-      throw new Error('The office-document rasterizer must not handle MP4/GIF');
+      throw new Error('The office-document rasterizer must not handle MP4/GIF/PNG');
     },
   };
 }

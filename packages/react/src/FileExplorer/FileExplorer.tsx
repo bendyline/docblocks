@@ -15,6 +15,7 @@ import {
 import { useFileTree } from './useFileTree.js';
 import {
   FileTreeNode,
+  type FileTreeNodeAction,
   type FileTreeNodeBadge,
   type FileTreeNodeGitActions,
 } from './FileTreeNode.js';
@@ -34,7 +35,18 @@ import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
 
-const SUPPORTED_EXTENSIONS = new Set(['.txt', '.md', '.docx', '.pdf', '.dbk', '.zip']);
+const SUPPORTED_EXTENSIONS = new Set([
+  '.txt',
+  '.md',
+  '.html',
+  '.htm',
+  '.docx',
+  '.pdf',
+  '.pptx',
+  '.xlsx',
+  '.dbk',
+  '.zip',
+]);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';
@@ -130,6 +142,8 @@ export interface FileExplorerProps {
   onTogglePin?: (path: string) => void | Promise<void>;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
+  /** Host-owned context actions for an entry. */
+  actionsForEntry?: (entry: FileSystemEntry) => readonly FileTreeNodeAction[];
   /**
    * Wraps destructive tree mutations so the active document session can
    * flush, cancel, or retarget itself before storage changes.
@@ -168,6 +182,7 @@ export function FileExplorer({
   onPinnedDocumentDelete,
   onTogglePin,
   onSelect,
+  actionsForEntry,
   onTreeMutation,
   onTreeChange,
   onImportFiles,
@@ -592,6 +607,7 @@ export function FileExplorer({
             }
             badge={badgeFor(entry)}
             gitActions={gitActionsFor(entry)}
+            actions={actionsForEntry?.(entry)}
             onToggle={tree.toggleExpand}
             onSelect={handleSelect}
             confirmDelete={confirmDelete}
@@ -642,6 +658,7 @@ export function FileExplorer({
       childIssues,
       badgeFor,
       gitActionsFor,
+      actionsForEntry,
       draggedEntry,
       dropTarget,
       handleInternalDragStart,

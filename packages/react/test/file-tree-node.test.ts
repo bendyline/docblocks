@@ -364,6 +364,38 @@ describe('FileTreeNode rename', () => {
 });
 
 describe('FileTreeNode context menu', () => {
+  it('runs host-defined file actions from the context menu', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const actions: string[] = [];
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(FileTreeNode, {
+            ...baseProps(),
+            actions: [
+              {
+                label: 'Allow editing via markdown',
+                onSelect: () => actions.push('enabled'),
+              },
+            ],
+          }),
+        );
+      });
+
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click(),
+      );
+      await act(async () => clickContextItem('Allow editing via markdown'));
+      expect(actions).to.deep.equal(['enabled']);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it('pins and unpins files from the document context menu', async () => {
     const container = document.createElement('div');
     document.body.append(container);

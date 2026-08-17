@@ -15,6 +15,7 @@ import {
   type CliConvertOptions,
   type PreparedConversion,
 } from '@bendyline/squisq-cli/api';
+import { DASHBOARD_STYLE_IDS } from '@bendyline/squisq/doc';
 import { getDocPlaybackDuration } from '@bendyline/squisq/schemas';
 import { getDependencyRuntimeVersion, getPackageVersion } from '../version.js';
 import { ArtifactStore } from './artifact-store.js';
@@ -51,7 +52,42 @@ export const MCP_FORMAT_FIDELITIES = {
   dbk: ['semantic', 'editable-native'],
   mp4: ['rendered-fidelity'],
   gif: ['rendered-fidelity'],
+  png: ['rendered-fidelity'],
 } as const satisfies Record<string, readonly ConversionFidelity[]>;
+
+/**
+ * Bounds for the Dashboard image target. A PNG is a single frame, so the
+ * video budget's duration/fps/frame-count axes do not apply; what remains is
+ * the per-edge and total-pixel ceiling, mirroring the limits Squisq's own
+ * `validateDashboardImageDimensions` enforces.
+ */
+export const MCP_DASHBOARD_IMAGE_LIMITS = Object.freeze({
+  minimumDimension: 64,
+  maximumDimension: 7_680,
+  maximumPixels: 33_177_600,
+});
+
+/**
+ * Dashboard cell styles, taken straight from Squisq's closed vocabulary so a
+ * new style upstream cannot silently go missing from the tool schema.
+ */
+export const MCP_DASHBOARD_STYLE_IDS = DASHBOARD_STYLE_IDS;
+
+/**
+ * Named Dashboard image sizes. Spelled out rather than derived because Zod
+ * needs a literal tuple at module load; `mcp-dashboard-image.test.ts` asserts
+ * this stays equal to the linked `DASHBOARD_RESOLUTIONS` ids.
+ */
+export const MCP_DASHBOARD_RESOLUTION_IDS = [
+  'hd',
+  'fhd',
+  '4k',
+  'square',
+  'square-2k',
+  'portrait',
+  'portrait-4k',
+  'standard',
+] as const;
 
 export const MCP_MEDIA_RENDER_LIMITS = Object.freeze({
   mp4: Object.freeze({
@@ -447,7 +483,7 @@ function canonicalJson(value: unknown): string {
 }
 
 function defaultFidelity(format: string): ConversionFidelity {
-  if (format === 'mp4' || format === 'gif') return 'rendered-fidelity';
+  if (format === 'mp4' || format === 'gif' || format === 'png') return 'rendered-fidelity';
   return format === 'docx' || format === 'pptx' ? 'editable-native' : 'semantic';
 }
 
@@ -463,6 +499,10 @@ export function assertMediaRenderBudget(
   prepared: Pick<PreparedDocument, 'doc'>,
   target: ConversionTargetRequest,
 ): void {
+  if (target.format === 'png') {
+    assertDashboardImageBudget(target);
+    return;
+  }
   if (target.format !== 'mp4' && target.format !== 'gif') return;
   const format = target.format;
   const limits = MCP_MEDIA_RENDER_LIMITS[format];
@@ -512,6 +552,49 @@ export function assertMediaRenderBudget(
   if (violations.length > 0) throw new MediaRenderBudgetError(format, violations, limits);
 }
 
+/**
+ * Reject a Dashboard image request before headless Chromium is launched.
+ *
+ * Only custom dimensions need checking: every named preset is inside the
+ * ceiling by construction. A request that names a preset AND custom pixels is
+ * contradictory, and Squisq's resolver would reject it only after the render
+ * pipeline had already started, so it is caught here instead.
+ */
+export function assertDashboardImageBudget(target: ConversionTargetRequest): void {
+  const options = target.options ?? {};
+  const hasCustom = options.width !== undefined || options.height !== undefined;
+  if (!hasCustom) return;
+  if (options.resolution !== undefined) {
+    throw new DashboardImageBudgetError(
+      'Pass either a resolution preset or custom width and height, not both.',
+    );
+  }
+  if (options.width === undefined || options.height === undefined) {
+    throw new DashboardImageBudgetError('Custom dimensions require both width and height.');
+  }
+  const width = numericOption(options.width, 0);
+  const height = numericOption(options.height, 0);
+  const limits = MCP_DASHBOARD_IMAGE_LIMITS;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) {
+    throw new DashboardImageBudgetError('Width and height must be whole pixel counts.');
+  }
+  if (
+    width < limits.minimumDimension ||
+    height < limits.minimumDimension ||
+    width > limits.maximumDimension ||
+    height > limits.maximumDimension
+  ) {
+    throw new DashboardImageBudgetError(
+      `Each dimension must be between ${limits.minimumDimension} and ${limits.maximumDimension} pixels; received ${width}x${height}.`,
+    );
+  }
+  if (width * height > limits.maximumPixels) {
+    throw new DashboardImageBudgetError(
+      `The image may not exceed ${limits.maximumPixels} total pixels; ${width}x${height} is ${width * height}.`,
+    );
+  }
+}
+
 function numericOption(
   value: string | number | boolean | null | undefined,
   fallback: number,
@@ -550,6 +633,24 @@ export class MediaRenderBudgetError extends Error {
       `${limits.maximumDurationSeconds}s, ${limits.maximumFps} fps, ` +
       `${limits.maximumPixelsPerFrame} pixels/frame, ${limits.maximumPixelFrames} frame-pixels, ` +
       `and ${limits.maximumCapturedFrameBytes} retained captured-PNG bytes.`;
+  }
+}
+
+/** Raised when a Dashboard image request exceeds the MCP raster budget. */
+export class DashboardImageBudgetError extends Error {
+  public readonly code = 'media-budget-exceeded';
+  public readonly retryable = false;
+  public readonly format = 'png';
+  public readonly hint: string;
+
+  public constructor(message: string) {
+    super(`The Dashboard image render exceeds MCP raster budgets: ${message}`);
+    this.name = 'DashboardImageBudgetError';
+    this.hint =
+      `Use a named resolution preset, or custom dimensions between ` +
+      `${MCP_DASHBOARD_IMAGE_LIMITS.minimumDimension} and ` +
+      `${MCP_DASHBOARD_IMAGE_LIMITS.maximumDimension} pixels per edge totaling at most ` +
+      `${MCP_DASHBOARD_IMAGE_LIMITS.maximumPixels} pixels.`;
   }
 }
 

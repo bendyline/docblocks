@@ -55,6 +55,9 @@ export {
   loadLastExportOptions,
   runExport,
   updateExportTargetExtension,
+  createCoverImageSaveOutput,
+  createDashboardImageSaveOutput,
+  createImageSaveOutput,
   ExportToolbarControls,
 } from './Export/index.js';
 export type {
@@ -67,6 +70,12 @@ export type {
   HtmlStyle,
   ExportOptions,
   ExportBlobSaver,
+  CoverImageSaveAdapter,
+  CoverImageSaveOutput,
+  DashboardImageSaveAdapter,
+  DashboardImageSaveOutput,
+  ImageSaveAdapter,
+  ImageSaveOutput,
 } from './Export/index.js';
 export { ExportDialog } from './Export/index.js';
 export type { ExportDialogProps } from './Export/index.js';

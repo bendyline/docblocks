@@ -14,6 +14,7 @@ import {
   useResponsivePreviewViewportPreset,
 } from '@bendyline/docblocks-react/editor';
 import { resolveWriteCanvasFonts } from '@bendyline/docblocks-react/settings';
+import { createImageSaveOutput } from '@bendyline/docblocks-react/export';
 import type {
   DocBlocksAccentColor,
   DocumentSessionMessageStatus,
@@ -350,6 +351,18 @@ export function VscodeEditor() {
     }),
     [settings.writeCanvasSettings],
   );
+  // Cover and Dashboard images share one host destination flow, so a single
+  // adapter feeds both of Squisq's rendered-image save hooks.
+  const saveRenderedImageOutput = useMemo(
+    () =>
+      exportBridge
+        ? createImageSaveOutput({
+            pickTarget: exportBridge.pickExportTarget,
+            saveBlob: exportBridge.saveBlob,
+          })
+        : undefined,
+    [exportBridge],
+  );
 
   const restoreRecoveredDraft = useCallback(() => {
     if (recoveryConflict === null || editorScope === null) return;
@@ -405,6 +418,9 @@ export function VscodeEditor() {
           initialMarkdown={markdown}
           initialView="wysiwyg"
           defaultViewportPreset={defaultPreviewViewportPreset}
+          fileName={fileName ?? undefined}
+          saveCoverImageOutput={saveRenderedImageOutput}
+          saveDashboardImageOutput={saveRenderedImageOutput}
           blockTagVisibility="none"
           onChange={handleChange}
           onLinkClick={handleLinkClick}

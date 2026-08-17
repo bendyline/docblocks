@@ -18,6 +18,8 @@ import {
 import { ArtifactStore } from './artifact-store.js';
 import { McpFileAuthority } from './authority.js';
 import {
+  MCP_DASHBOARD_RESOLUTION_IDS,
+  MCP_DASHBOARD_STYLE_IDS,
   MCP_FORMAT_CAPABILITIES,
   MCP_FORMAT_FIDELITIES,
   convertPreparedDocument,
@@ -229,6 +231,49 @@ const conversionTargetSchema = z.discriminatedUnion('format', [
         .enum(['none', 'bayer', 'heckbert', 'floyd_steinberg', 'sierra2', 'sierra2_4a'])
         .optional(),
       bayerScale: z.number().int().min(0).max(5).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      format: z.literal('png'),
+      fidelity: z.enum(MCP_FORMAT_FIDELITIES.png).optional(),
+      resolution: z
+        .enum(MCP_DASHBOARD_RESOLUTION_IDS)
+        .optional()
+        .describe(
+          'Named output size for the Dashboard image. Mutually exclusive with width/height.',
+        ),
+      width: z
+        .number()
+        .int()
+        .min(64)
+        .max(7_680)
+        .optional()
+        .describe('Custom pixel width. Requires height and excludes resolution.'),
+      height: z
+        .number()
+        .int()
+        .min(64)
+        .max(7_680)
+        .optional()
+        .describe('Custom pixel height. Requires width and excludes resolution.'),
+      layout: z
+        .string()
+        .max(64)
+        .optional()
+        .describe(
+          'Dashboard layout id, or "auto" to pick by block count. Omit to honor the document\'s own squisq-dashboard-layout frontmatter.',
+        ),
+      style: z
+        .enum(MCP_DASHBOARD_STYLE_IDS)
+        .optional()
+        .describe(
+          "Cell dressing around each block. Omit to honor the document's own squisq-dashboard-style frontmatter.",
+        ),
+      title: z
+        .boolean()
+        .optional()
+        .describe('Render the document-title band. Omit to honor the document’s own setting.'),
     })
     .strict(),
 ]);

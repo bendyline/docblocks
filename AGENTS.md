@@ -214,6 +214,17 @@ command, tool, and format catalogs aligned with these runtime contracts.
 
 Site and the desktop renderer both mount `<DocBlocksShell>`. The VS Code webview ([packages/vscode/webview/src/VscodeEditor.tsx](packages/vscode/webview/src/VscodeEditor.tsx)) is the documented exception: it mounts squisq's `EditorShell` directly because VS Code provides the file explorer, workspace, and theme via its own activity bar / API. New cross-surface UI that lives **inside the shell chrome** (file tree, workspace picker, app menu, export dialog) belongs in `packages/react/src/`. New editor-area features that need to work in vscode too either go in squisq, or get wired into both `DocBlocksShell` and `VscodeEditor` explicitly.
 
+### Outside-in documents keep the rendered file outside
+
+HTML, DOCX, PDF, PPTX, and XLSX workspace entries may be edited through a
+hidden `<stem>_files/<slug>.md` companion. The rendered path remains the shell's
+navigation identity; `DocumentSession` observes and commits the Markdown path,
+then the Squisq outside-in registry adapter regenerates the rendered target.
+Media and `.versions/` live at the companion root. HTML targets share the
+nearest ancestor `_squisq/squisq-player.js`. Keep companion path/frontmatter
+rules in `@bendyline/squisq-formats/outside-in`; hosts own filesystem authority,
+transaction ordering, visibility, and lifecycle behavior.
+
 ### Squisq is a dependency, not a fork
 
 Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in the optional `..\squisq` checkout and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.

@@ -297,11 +297,12 @@ source of truth. This checked catalog mirrors the linked checkout:
 | `dbk`     |  yes   |  yes   | `semantic`, `editable-native`                                |
 | `mp4`     |   no   |  yes   | `rendered-fidelity`                                          |
 | `gif`     |   no   |  yes   | `rendered-fidelity`                                          |
+| `png`     |   no   |  yes   | `rendered-fidelity`                                          |
 
 <!-- END FORMAT CATALOG -->
 
 Default fidelity is `editable-native` for DOCX and PPTX,
-`rendered-fidelity` for MP4 and GIF, and `semantic` for every other format.
+`rendered-fidelity` for MP4, GIF, and PNG, and `semantic` for every other format.
 Rendered-fidelity and hybrid PPTX/PDF use Squisq player capture; native/editable
 targets use the linked registry exporter.
 
@@ -319,9 +320,43 @@ Target objects expose format-specific controls:
 | `epub`            | Metadata, `language`, `publisher`.                                                                                  |
 | `mp4`             | `fps` (1-60), quality, orientation, dimensions, caption style, cover pre-roll, animations.                          |
 | `gif`             | `fps` (1-30), orientation, dimensions, captions, pre-roll, animations, loop, palette, dithering, Bayer scale.       |
+| `png`             | Dashboard image: `resolution` preset **or** `width`/`height`, `layout`, `style`, `title` band.                      |
 
 The format-specific schema is stricter than a generic options map. Unsupported
 fidelity is a machine-actionable error with the accepted alternatives.
+
+### Dashboard images (`png`)
+
+The `png` target converts a document to a single raster image by rendering its
+**Dashboard** rendition — Squisq's projection of a whole document onto one canvas,
+alongside slideshow and video. It needs headless Chromium but no FFmpeg.
+
+Every field is optional, and each one omitted defers to the document's own
+`squisq-dashboard-*` frontmatter, so a bare `{"format":"png"}` reproduces what the
+author sees in the editor's Dashboard view.
+
+| Field              | Accepted values                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| `resolution`       | `hd`, `fhd` (default), `4k`, `square`, `square-2k`, `portrait`, `portrait-4k`, `standard`    |
+| `width` / `height` | 64-7,680 pixels each. Both required together; mutually exclusive with `resolution`           |
+| `layout`           | A layout id, or `auto` to pick by block count. Document-declared custom layouts are accepted |
+| `style`            | `basic`, `card`, `panel`, `accent` — the cell dressing, orthogonal to the layout's geometry  |
+| `title`            | Whether the document-title band renders                                                      |
+
+```json
+{
+  "format": "png",
+  "resolution": "square",
+  "layout": "auto",
+  "style": "accent",
+  "title": false
+}
+```
+
+`themeId` and `transformId` on the request compose with these: the transform
+restyles content before projection, and the theme supplies the palette every cell
+style derives its surfaces and accents from. The aspect ratio implied by the chosen
+size selects the layout's landscape, portrait, or square variant.
 
 ### Media render budgets
 
@@ -345,6 +380,13 @@ of general artifact quotas.
 
 The linked renderer also applies a retained captured-PNG byte budget. Budget errors
 tell the client to reduce duration, frame rate, or dimensions.
+
+A Dashboard image is a single frame, so the duration, frame-rate, and frame-count
+axes do not apply to it. What remains is checked before Chromium launches: each edge
+must be 64-7,680 pixels and the image may not exceed 33,177,600 total pixels. Named
+resolution presets are inside that ceiling by construction; only custom `width`/
+`height` can breach it. Naming a preset **and** custom pixels is rejected as
+contradictory rather than silently resolved.
 
 ## Understanding and visual QA
 
