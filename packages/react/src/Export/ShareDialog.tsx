@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SHARED_DOCUMENT_LIMITS, type SharedDocumentMode } from '@bendyline/docblocks/share';
-import { buildSharedDocumentUrl, createSharedDocumentArchive } from './shared-document.js';
+import {
+  buildSharedDocumentQrUrl,
+  buildSharedDocumentUrl,
+  createSharedDocumentArchive,
+  sharedDocumentQrFilename,
+} from './shared-document.js';
+import { qrPngDataUrlToBlob, renderSharedDocumentQrPng } from './share-qr.js';
 
 export interface ShareDialogProps {
   markdown: string;
@@ -18,11 +24,19 @@ const MODES: ReadonlyArray<{ value: SharedDocumentMode | ''; label: string }> = 
   { value: 'narrate', label: 'Narrate' },
 ];
 
-export function ShareDialog({ markdown, selectedFile, baseUrl, onClose }: ShareDialogProps) {
+export function ShareDialog({
+  markdown,
+  selectedFile,
+  baseUrl,
+  onClose,
+}: ShareDialogProps): React.ReactElement {
   const [mode, setMode] = useState<SharedDocumentMode | ''>('');
   const [archive, setArchive] = useState<Uint8Array | null>(null);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrRenderError, setQrRenderError] = useState<string | null>(null);
+  const [qrCopyStatus, setQrCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const linkRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -58,6 +72,41 @@ export function ShareDialog({ markdown, selectedFile, baseUrl, onClose }: ShareD
     }
   }, [archive, archiveError, baseUrl, mode]);
 
+  const qrLinkResult = useMemo(() => {
+    if (!archive) return { url: '', error: archiveError };
+    try {
+      return { url: buildSharedDocumentQrUrl(archive, mode || null), error: null };
+    } catch (error: unknown) {
+      return {
+        url: '',
+        error: error instanceof Error ? error.message : 'DocBlocks could not create the QR code.',
+      };
+    }
+  }, [archive, archiveError, mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setQrDataUrl(null);
+    setQrRenderError(null);
+    setQrCopyStatus('idle');
+    if (!qrLinkResult.url) return;
+
+    void renderSharedDocumentQrPng(qrLinkResult.url)
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setQrRenderError(
+            error instanceof Error ? error.message : 'DocBlocks could not render the QR code.',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qrLinkResult.url]);
+
   useEffect(() => setCopyStatus('idle'), [linkResult.url]);
 
   useEffect(() => {
@@ -88,7 +137,33 @@ export function ShareDialog({ markdown, selectedFile, baseUrl, onClose }: ShareD
     }
   }, [linkResult.url]);
 
+  const copyQrImage = useCallback(async () => {
+    if (!qrDataUrl) return;
+    try {
+      if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+        throw new Error('Image clipboard access is unavailable.');
+      }
+      const png = qrPngDataUrlToBlob(qrDataUrl);
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+      setQrCopyStatus('copied');
+    } catch {
+      setQrCopyStatus('failed');
+    }
+  }, [qrDataUrl]);
+
+  const saveQrImage = useCallback(() => {
+    if (!qrDataUrl) return;
+    const download = document.createElement('a');
+    download.href = qrDataUrl;
+    download.download = sharedDocumentQrFilename(selectedFile);
+    download.style.display = 'none';
+    document.body.append(download);
+    download.click();
+    download.remove();
+  }, [qrDataUrl, selectedFile]);
+
   const isLong = linkResult.url.length > SHARED_DOCUMENT_LIMITS.portableUrlCharacters;
+  const qrError = qrLinkResult.error ?? qrRenderError;
 
   return (
     <div
@@ -105,7 +180,7 @@ export function ShareDialog({ markdown, selectedFile, baseUrl, onClose }: ShareD
       >
         <div className="db-dialog-header">
           <h2 className="db-dialog-title" id="db-share-dialog-title">
-            Share document via URL
+            Share document
           </h2>
           <button className="db-dialog-close" type="button" onClick={onClose} aria-label="Close">
             &times;
@@ -168,6 +243,62 @@ export function ShareDialog({ markdown, selectedFile, baseUrl, onClose }: ShareD
                   : 'Compressing this document into a Markdown-only DBK...'}
             </span>
           </div>
+
+          <section className="db-share-qr" aria-labelledby="db-share-qr-title">
+            <div className="db-share-qr-heading">
+              <div>
+                <h3 id="db-share-qr-title">QR code</h3>
+                <span className="db-export-hint">
+                  A self-contained docblocks.com link. No document content is uploaded.
+                </span>
+              </div>
+              <div className="db-share-qr-actions">
+                <button
+                  className="db-export-btn db-export-btn--secondary"
+                  type="button"
+                  onClick={() => void copyQrImage()}
+                  disabled={!qrDataUrl}
+                >
+                  {qrCopyStatus === 'copied'
+                    ? 'Copied QR'
+                    : qrCopyStatus === 'failed'
+                      ? 'Copy unavailable'
+                      : 'Copy QR image'}
+                </button>
+                <button
+                  className="db-export-btn db-export-btn--secondary"
+                  type="button"
+                  onClick={saveQrImage}
+                  disabled={!qrDataUrl}
+                >
+                  Save QR PNG
+                </button>
+              </div>
+            </div>
+
+            {qrDataUrl ? (
+              <img
+                className="db-share-qr-image"
+                src={qrDataUrl}
+                alt="QR code for this shared DocBlocks document"
+              />
+            ) : (
+              <div
+                className={`db-share-qr-placeholder${qrError ? ' db-share-qr-placeholder--error' : ''}`}
+                role={qrError ? 'note' : 'status'}
+              >
+                {qrError ?? 'Rendering QR code...'}
+              </div>
+            )}
+
+            <span className="db-export-hint db-share-qr-status" aria-live="polite">
+              {qrCopyStatus === 'failed'
+                ? 'This browser could not copy the PNG. Save it instead.'
+                : qrDataUrl
+                  ? `${qrLinkResult.url.length.toLocaleString()} of ${SHARED_DOCUMENT_LIMITS.qrUrlCharacters.toLocaleString()} supported QR characters.`
+                  : ''}
+            </span>
+          </section>
 
           <p className="db-share-temporary-note">
             Opening the link creates a temporary workspace. Changes there do not alter this document

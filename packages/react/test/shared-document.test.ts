@@ -1,10 +1,12 @@
 import { expect } from 'chai';
 import { SHARED_DOCUMENT_LIMITS, parseSharedDocumentHash } from '@bendyline/docblocks/share';
 import {
+  buildSharedDocumentQrUrl,
   buildSharedDocumentUrl,
   createSharedDocumentArchive,
   resolveSharedDocumentBaseUrl,
   sharedDocumentFilename,
+  sharedDocumentQrFilename,
 } from '../src/Export/shared-document.js';
 import { decodeDbkWorkspace } from '../src/DocBlocksShell/dbk-import.js';
 
@@ -35,9 +37,23 @@ describe('shared document links', () => {
       'https://example.test/app/',
     );
     expect(resolveSharedDocumentBaseUrl('app://docblocks/index.html#old')).to.equal(
-      'https://bendyline.github.io/docblocks/',
+      'https://docblocks.com/',
     );
     expect(sharedDocumentFilename('/drafts/launch plan.md')).to.equal('launch-plan.md');
+    expect(sharedDocumentQrFilename('/drafts/launch plan.md')).to.equal('launch-plan-qr.png');
+  });
+
+  it('builds QR links against the canonical public site and enforces the QR budget', async () => {
+    const archive = await createSharedDocumentArchive('# QR share', 'qr.md');
+    const url = buildSharedDocumentQrUrl(archive, 'page');
+    expect(url).to.match(/^https:\/\/docblocks\.com\/#shared\(/u);
+    expect(url.length).to.be.at.most(SHARED_DOCUMENT_LIMITS.qrUrlCharacters);
+
+    const oversizedArchive = new Uint8Array(1_600);
+    oversizedArchive.set([0x50, 0x4b, 0x03, 0x04]);
+    expect(() => buildSharedDocumentQrUrl(oversizedArchive, null)).to.throw(
+      'too large for a reliable QR code',
+    );
   });
 
   it('rejects Markdown beyond the explicit uncompressed content budget', async () => {

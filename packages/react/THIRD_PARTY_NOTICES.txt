@@ -6,7 +6,7 @@ Run `npm run generate:notices` from the repository root.
 Resolved runtime and optional dependency closure declared by packages/react/package.json. Peer dependencies are supplied by the consuming application and are not included.
 
 Inventory source: package-lock.json.
-Components: 344.
+Components: 373.
 
 This notice is included in the published npm tarball. Transitive packages installed by npm also retain their package-local license files.
 
@@ -130,14 +130,20 @@ This notice is included in the published npm tarball. Transitive packages instal
 | @types/use-sync-external-store | 0.0.6 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | @upsetjs/venn.js | 2.0.0 | MIT | https://github.com/upsetjs/venn.js |
 | @xmldom/xmldom | 0.9.11 | MIT | https://github.com/xmldom/xmldom |
+| ansi-regex | 5.0.1 | MIT | https://github.com/chalk/ansi-regex |
+| ansi-styles | 4.3.0 | MIT | https://github.com/chalk/ansi-styles |
 | argparse | 2.0.1 | Python-2.0 | https://github.com/nodeca/argparse |
 | bail | 2.0.2 | MIT | https://github.com/wooorm/bail |
 | base64-arraybuffer | 1.0.2 | MIT | https://github.com/niklasvh/base64-arraybuffer |
+| camelcase | 5.3.1 | MIT | https://github.com/sindresorhus/camelcase |
 | ccount | 2.0.1 | MIT | https://github.com/wooorm/ccount |
 | character-entities | 2.0.2 | MIT | https://github.com/wooorm/character-entities |
 | character-entities-html4 | 2.1.0 | MIT | https://github.com/wooorm/character-entities-html4 |
 | character-entities-legacy | 3.0.0 | MIT | https://github.com/wooorm/character-entities-legacy |
 | character-reference-invalid | 2.0.1 | MIT | https://github.com/wooorm/character-reference-invalid |
+| cliui | 6.0.0 | ISC | http://github.com/yargs/cliui |
+| color-convert | 2.0.1 | MIT | https://github.com/Qix-/color-convert |
+| color-name | 1.1.4 | MIT | git@github.com:colorjs/color-name |
 | comma-separated-tokens | 2.0.3 | MIT | https://github.com/wooorm/comma-separated-tokens |
 | commander | 7.2.0 | MIT | https://github.com/tj/commander.js |
 | commander | 8.3.0 | MIT | https://github.com/tj/commander.js |
@@ -187,11 +193,14 @@ This notice is included in the published npm tarball. Transitive packages instal
 | dagre-d3-es | 7.0.14 | MIT | https://github.com/tbo47/dagre-es |
 | dayjs | 1.11.21 | MIT | https://github.com/iamkun/dayjs |
 | debug | 4.4.3 | MIT | https://github.com/debug-js/debug |
+| decamelize | 1.2.0 | MIT | https://github.com/sindresorhus/decamelize |
 | decode-named-character-reference | 1.3.0 | MIT | https://github.com/wooorm/decode-named-character-reference |
 | delaunator | 5.1.0 | ISC | https://github.com/mapbox/delaunator |
 | dequal | 2.0.3 | MIT | https://github.com/lukeed/dequal |
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
+| dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| emoji-regex | 8.0.0 | MIT | https://github.com/mathiasbynens/emoji-regex |
 | entities | 4.5.0 | BSD-2-Clause | https://github.com/fb55/entities |
 | entities | 6.0.1 | BSD-2-Clause | https://github.com/fb55/entities |
 | es-toolkit | 1.50.0 | MIT | https://github.com/toss/es-toolkit |
@@ -200,8 +209,10 @@ This notice is included in the published npm tarball. Transitive packages instal
 | extend | 3.0.2 | MIT | https://github.com/justmoon/node-extend |
 | fast-deep-equal | 3.1.3 | MIT | https://github.com/epoberezkin/fast-deep-equal |
 | fault | 2.0.1 | MIT | https://github.com/wooorm/fault |
+| find-up | 4.1.0 | MIT | https://github.com/sindresorhus/find-up |
 | format | 0.2.2 | MIT | https://github.com/samsonjs/format |
 | genson-js | 0.0.8 | Apache-2.0 | git+ssh://git@github.com/aspecto-io/genson-js |
+| get-caller-file | 2.0.5 | ISC | https://github.com/stefanpenner/get-caller-file |
 | hachure-fill | 0.5.2 | MIT | https://github.com/pshihn/hachure-fill |
 | hast-util-from-html | 2.0.3 | MIT | https://github.com/syntax-tree/hast-util-from-html |
 | hast-util-from-parse5 | 8.0.3 | MIT | https://github.com/syntax-tree/hast-util-from-parse5 |
@@ -217,6 +228,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | is-alphabetical | 2.0.1 | MIT | https://github.com/wooorm/is-alphabetical |
 | is-alphanumerical | 2.0.1 | MIT | https://github.com/wooorm/is-alphanumerical |
 | is-decimal | 2.0.1 | MIT | https://github.com/wooorm/is-decimal |
+| is-fullwidth-code-point | 3.0.0 | MIT | https://github.com/sindresorhus/is-fullwidth-code-point |
 | is-hexadecimal | 2.0.1 | MIT | https://github.com/wooorm/is-hexadecimal |
 | is-plain-obj | 4.1.0 | MIT | https://github.com/sindresorhus/is-plain-obj |
 | isarray | 1.0.0 | MIT | https://github.com/juliangruber/isarray |
@@ -230,6 +242,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | linkify-it | 5.0.2 | MIT | https://github.com/markdown-it/linkify-it |
 | linkifyjs | 4.3.3 | MIT | https://github.com/nfrasser/linkifyjs |
 | localforage | 1.10.0 | Apache-2.0 | https://github.com/localForage/localForage |
+| locate-path | 5.0.0 | MIT | https://github.com/sindresorhus/locate-path |
 | lodash-es | 4.18.1 | MIT | https://github.com/lodash/lodash |
 | longest-streak | 3.1.0 | MIT | https://github.com/wooorm/longest-streak |
 | markdown-it | 14.3.0 | MIT | https://github.com/markdown-it/markdown-it |
@@ -285,13 +298,18 @@ This notice is included in the published npm tarball. Transitive packages instal
 | ms | 2.1.3 | MIT | https://github.com/vercel/ms |
 | ngeohash | 0.6.3 | MIT | https://github.com/sunng87/node-geohash |
 | orderedmap | 2.1.1 | MIT | https://github.com/marijnh/orderedmap |
+| p-limit | 2.3.0 | MIT | https://github.com/sindresorhus/p-limit |
+| p-locate | 4.1.0 | MIT | https://github.com/sindresorhus/p-locate |
+| p-try | 2.2.0 | MIT | https://github.com/sindresorhus/p-try |
 | package-manager-detector | 1.8.0 | MIT | https://github.com/antfu-collective/package-manager-detector |
 | pako | 1.0.11 | (MIT AND Zlib) | https://github.com/nodeca/pako |
 | parse-entities | 4.0.2 | MIT | https://github.com/wooorm/parse-entities |
 | parse5 | 7.3.0 | MIT | https://github.com/inikulin/parse5 |
 | path-data-parser | 0.1.0 | MIT | https://github.com/pshihn/path-data-parser |
+| path-exists | 4.0.0 | MIT | https://github.com/sindresorhus/path-exists |
 | pdf-lib | 1.17.1 | MIT | https://github.com/Hopding/pdf-lib |
 | pdfjs-dist | 4.10.38 | Apache-2.0 | https://github.com/mozilla/pdf.js |
+| pngjs | 5.0.0 | MIT | https://github.com/lukeapage/pngjs |
 | points-on-curve | 0.2.0 | MIT | https://github.com/pshihn/bezier-points |
 | points-on-path | 0.2.1 | MIT | https://github.com/pshihn/points-on-path |
 | process-nextick-args | 2.0.1 | MIT | https://github.com/calvinmetcalf/process-nextick-args |
@@ -315,6 +333,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | prosemirror-transform | 1.11.0 | MIT | https://github.com/prosemirror/prosemirror-transform |
 | prosemirror-view | 1.42.1 | MIT | https://code.haverbeke.berlin/prosemirror/prosemirror-view |
 | punycode.js | 2.3.1 | MIT | https://github.com/mathiasbynens/punycode.js |
+| qrcode | 1.5.4 | MIT | https://github.com/soldair/node-qrcode |
 | readable-stream | 2.3.8 | MIT | https://github.com/nodejs/readable-stream |
 | remark-directive | 3.0.1 | MIT | https://github.com/remarkjs/remark-directive |
 | remark-frontmatter | 5.0.0 | MIT | https://github.com/remarkjs/remark-frontmatter |
@@ -322,16 +341,21 @@ This notice is included in the published npm tarball. Transitive packages instal
 | remark-math | 6.0.0 | MIT | https://github.com/remarkjs/remark-math/tree/main/packages/remark-math |
 | remark-parse | 11.0.0 | MIT | https://github.com/remarkjs/remark/tree/main/packages/remark-parse |
 | remark-stringify | 11.0.0 | MIT | https://github.com/remarkjs/remark/tree/main/packages/remark-stringify |
+| require-directory | 2.1.1 | MIT | https://github.com/troygoode/node-require-directory |
+| require-main-filename | 2.0.0 | ISC | git+ssh://git@github.com/yargs/require-main-filename |
 | robust-predicates | 3.0.3 | Unlicense | https://github.com/mourner/robust-predicates |
 | rope-sequence | 1.3.4 | MIT | https://github.com/marijnh/rope-sequence |
 | roughjs | 4.6.6 | MIT | https://github.com/pshihn/rough |
 | rw | 1.3.3 | BSD-3-Clause | http://github.com/mbostock/rw |
 | safe-buffer | 5.1.2 | MIT | https://github.com/feross/safe-buffer |
 | safer-buffer | 2.1.2 | MIT | https://github.com/ChALkeR/safer-buffer |
+| set-blocking | 2.0.0 | ISC | https://github.com/yargs/set-blocking |
 | setimmediate | 1.0.5 | MIT | https://github.com/YuzuJS/setImmediate |
 | space-separated-tokens | 2.0.2 | MIT | https://github.com/wooorm/space-separated-tokens |
 | string_decoder | 1.1.1 | MIT | https://github.com/nodejs/string_decoder |
+| string-width | 4.2.3 | MIT | https://github.com/sindresorhus/string-width |
 | stringify-entities | 4.0.4 | MIT | https://github.com/wooorm/stringify-entities |
+| strip-ansi | 6.0.1 | MIT | https://github.com/chalk/strip-ansi |
 | stylis | 4.4.0 | MIT | https://github.com/thysultan/stylis.js |
 | text-segmentation | 1.0.3 | MIT | git+ssh://git@github.com/niklasvh/text-segmentation |
 | tinyexec | 1.1.2 | MIT | https://github.com/tinylibs/tinyexec |
@@ -356,6 +380,11 @@ This notice is included in the published npm tarball. Transitive packages instal
 | vfile-message | 4.0.3 | MIT | https://github.com/vfile/vfile-message |
 | w3c-keyname | 2.2.8 | MIT | https://github.com/marijnh/w3c-keyname |
 | web-namespaces | 2.0.1 | MIT | https://github.com/wooorm/web-namespaces |
+| which-module | 2.0.1 | ISC | https://github.com/nexdrew/which-module |
+| wrap-ansi | 6.2.0 | MIT | https://github.com/chalk/wrap-ansi |
+| y18n | 4.0.3 | ISC | git@github.com:yargs/y18n |
+| yargs | 15.4.1 | MIT | https://github.com/yargs/yargs |
+| yargs-parser | 18.1.3 | ISC | https://github.com/yargs/yargs-parser |
 | zod | 3.25.76 | MIT | https://github.com/colinhacks/zod |
 | zwitch | 2.0.4 | MIT | https://github.com/wooorm/zwitch |
 
@@ -7267,6 +7296,44 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
+Components: color-convert@2.0.1
+Source files: node_modules/color-convert/LICENSE
+==============================================================================
+Copyright (c) 2011-2016 Heather Arthur <fayearthur@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: color-name@1.1.4
+Source files: node_modules/color-name/LICENSE
+==============================================================================
+The MIT License (MIT)
+Copyright (c) 2015 Dmitry Ivanov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
 Components: comma-separated-tokens@2.0.3, hast-util-parse-selector@4.0.0, is-alphabetical@2.0.1, is-alphanumerical@2.0.1, is-decimal@2.0.1, is-hexadecimal@2.0.1, space-separated-tokens@2.0.2, unist-util-remove-position@5.0.0, unist-util-stringify-position@4.0.0, unist-util-visit-parents@6.0.2, vfile-location@5.0.3, web-namespaces@2.0.1, zwitch@2.0.4
 Source files: node_modules/comma-separated-tokens/license, node_modules/hast-util-parse-selector/license, node_modules/is-alphabetical/license, node_modules/is-alphanumerical/license, node_modules/is-decimal/license, node_modules/is-hexadecimal/license, node_modules/space-separated-tokens/license, node_modules/unist-util-remove-position/license, node_modules/unist-util-stringify-position/license, node_modules/unist-util-visit-parents/license, node_modules/vfile-location/license, node_modules/web-namespaces/license, node_modules/zwitch/license
 ==============================================================================
@@ -8176,6 +8243,30 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
+Components: dijkstrajs@1.0.3
+Source files: node_modules/dijkstrajs/LICENSE.md
+==============================================================================
+```
+Dijkstra path-finding functions. Adapted from the Dijkstar Python project.
+
+Copyright (C) 2008
+  Wyatt Baldwin <self@wyattbaldwin.com>
+  All rights reserved
+
+Licensed under the MIT license.
+
+  http://www.opensource.org/licenses/mit-license.php
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+==============================================================================
 Components: dompurify@3.4.13
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
@@ -8905,6 +8996,17 @@ Source files: node_modules/genson-js/LICENSE
    limitations under the License.
 
 ==============================================================================
+Components: get-caller-file@2.0.5
+Source files: node_modules/get-caller-file/LICENSE.md
+==============================================================================
+ISC License (ISC)
+Copyright 2018 Stefan Penner
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted, provided that the above copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
 Components: hachure-fill@0.5.2
 Source files: node_modules/hachure-fill/LICENSE
 ==============================================================================
@@ -9080,6 +9182,20 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
 LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
+Components: ansi-regex@5.0.1, ansi-styles@4.3.0, camelcase@5.3.1, find-up@4.1.0, is-fullwidth-code-point@3.0.0, locate-path@5.0.0, p-limit@2.3.0, p-locate@4.1.0, p-try@2.2.0, path-exists@4.0.0, string-width@4.2.3, strip-ansi@6.0.1, wrap-ansi@6.2.0
+Source files: node_modules/is-fullwidth-code-point/license, node_modules/p-try/license, node_modules/qrcode/node_modules/ansi-regex/license, node_modules/qrcode/node_modules/ansi-styles/license, node_modules/qrcode/node_modules/camelcase/license, node_modules/qrcode/node_modules/find-up/license, node_modules/qrcode/node_modules/locate-path/license, node_modules/qrcode/node_modules/p-limit/license, node_modules/qrcode/node_modules/p-locate/license, node_modules/qrcode/node_modules/path-exists/license, node_modules/qrcode/node_modules/string-width/license, node_modules/qrcode/node_modules/strip-ansi/license, node_modules/qrcode/node_modules/wrap-ansi/license
+==============================================================================
+MIT License
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: isarray@1.0.0
@@ -10860,6 +10976,31 @@ Source files: node_modules/pdfjs-dist/LICENSE
    END OF TERMS AND CONDITIONS
 
 ==============================================================================
+Components: pngjs@5.0.0
+Source files: node_modules/pngjs/LICENSE
+==============================================================================
+pngjs2 original work Copyright (c) 2015 Luke Page & Original Contributors
+pngjs derived work Copyright (c) 2012 Kuba Niegowski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
 Components: points-on-path@0.2.1
 Source files: node_modules/points-on-path/LICENSE
 ==============================================================================
@@ -10982,8 +11123,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-Components: punycode.js@2.3.1, uc.micro@2.1.0
-Source files: node_modules/punycode.js/LICENSE-MIT.txt, node_modules/uc.micro/LICENSE.txt
+Components: emoji-regex@8.0.0, punycode.js@2.3.1, uc.micro@2.1.0
+Source files: node_modules/punycode.js/LICENSE-MIT.txt, node_modules/qrcode/node_modules/emoji-regex/LICENSE-MIT.txt, node_modules/uc.micro/LICENSE.txt
 ==============================================================================
 Copyright Mathias Bynens <https://mathiasbynens.be/>
 
@@ -11005,6 +11146,128 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: qrcode@1.5.4
+Source files: node_modules/qrcode/license
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) 2012 Ryan Day
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: cliui@6.0.0
+Source files: node_modules/qrcode/node_modules/cliui/LICENSE.txt
+==============================================================================
+Copyright (c) 2015, Contributors
+
+Permission to use, copy, modify, and/or distribute this software
+for any purpose with or without fee is hereby granted, provided
+that the above copyright notice and this permission notice
+appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
+Components: decamelize@1.2.0
+Source files: node_modules/qrcode/node_modules/decamelize/license
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (sindresorhus.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+Components: y18n@4.0.3
+Source files: node_modules/qrcode/node_modules/y18n/LICENSE
+==============================================================================
+Copyright (c) 2015, Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+==============================================================================
+Components: require-main-filename@2.0.0, set-blocking@2.0.0, yargs-parser@18.1.3
+Source files: node_modules/qrcode/node_modules/yargs-parser/LICENSE.txt, node_modules/require-main-filename/LICENSE.txt, node_modules/set-blocking/LICENSE.txt
+==============================================================================
+Copyright (c) 2016, Contributors
+
+Permission to use, copy, modify, and/or distribute this software
+for any purpose with or without fee is hereby granted, provided
+that the above copyright notice and this permission notice
+appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE
+LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
+Components: yargs@15.4.1
+Source files: node_modules/qrcode/node_modules/yargs/LICENSE
+==============================================================================
+MIT License
+
+Copyright 2010 James Halliday (mail@substack.net); Modified work Copyright 2014 Contributors (ben@npmjs.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ==============================================================================
 Components: readable-stream@2.3.8, string_decoder@1.1.1
@@ -11462,6 +11725,33 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+==============================================================================
+Components: require-directory@2.1.1
+Source files: node_modules/require-directory/LICENSE
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) 2011 Troy Goode <troygoode@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: robust-predicates@3.0.3
@@ -11945,6 +12235,24 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: which-module@2.0.1
+Source files: node_modules/which-module/LICENSE
+==============================================================================
+Copyright (c) 2016, Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
 
 ==============================================================================
 Components: zod@3.25.76

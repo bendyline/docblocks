@@ -4,7 +4,7 @@ import {
   type SharedDocumentMode,
 } from '@bendyline/docblocks/share';
 
-export const PUBLIC_DOCBLOCKS_SHARE_URL = 'https://bendyline.github.io/docblocks/';
+export const PUBLIC_DOCBLOCKS_SHARE_URL = 'https://docblocks.com/';
 
 /** Use the current web deployment, but never emit an unopenable app:// link. */
 export function resolveSharedDocumentBaseUrl(currentUrl: string): string {
@@ -56,4 +56,24 @@ export function buildSharedDocumentUrl(
   mode: SharedDocumentMode | null,
 ): string {
   return createSharedDocumentUrl(resolveSharedDocumentBaseUrl(baseUrl), archive, mode);
+}
+
+/** Build the canonical public URL encoded by the QR sharing experience. */
+export function buildSharedDocumentQrUrl(
+  archive: Uint8Array,
+  mode: SharedDocumentMode | null,
+): string {
+  const url = createSharedDocumentUrl(PUBLIC_DOCBLOCKS_SHARE_URL, archive, mode);
+  if (url.length > SHARED_DOCUMENT_LIMITS.qrUrlCharacters) {
+    throw new Error(
+      'This document is too large for a reliable QR code (maximum ' +
+        SHARED_DOCUMENT_LIMITS.qrUrlCharacters.toLocaleString() +
+        ' URL characters). Copy the share link instead.',
+    );
+  }
+  return url;
+}
+
+export function sharedDocumentQrFilename(selectedFile: string | null): string {
+  return sharedDocumentFilename(selectedFile).replace(/\.md$/iu, '-qr.png');
 }

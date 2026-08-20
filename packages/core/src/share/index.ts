@@ -23,6 +23,8 @@ export type SharedDocumentHashParseResult =
   | { readonly kind: 'invalid'; readonly message: string };
 
 export const SHARED_DOCUMENT_LIMITS = Object.freeze({
+  /** Conservative ceiling for a locally rendered, medium-correction QR code. */
+  qrUrlCharacters: 2_048,
   /** A conservative interoperability threshold, not a universal browser limit. */
   portableUrlCharacters: 4_096,
   /** Hard cap applied before a hash is copied or decoded. */
