@@ -238,6 +238,42 @@ describe('DocBlocks MCP wire contracts', () => {
       ).to.deep.equal({ kind: 'artifact', uri: 'docblocks://artifacts/artifact-1' });
     });
 
+    it('accepts the flat-string and omitted-rootId convenience forms', () => {
+      // Models emitting flat text arguments send `source` as a plain
+      // path string; the wire accepts it as a default-root file source.
+      expect(parseDocumentSource('powerpoint/eval/deck.md')).to.deep.equal({
+        kind: 'file',
+        rootId: null,
+        path: 'powerpoint/eval/deck.md',
+        format: null,
+      });
+      expect(parseDocumentSource('docblocks://artifacts/artifact-1')).to.deep.equal({
+        kind: 'artifact',
+        uri: 'docblocks://artifacts/artifact-1',
+      });
+      expect(parseDocumentSource('{"kind":"file","path":"a/b.md"}')).to.deep.equal({
+        kind: 'file',
+        rootId: null,
+        path: 'a/b.md',
+        format: null,
+      });
+      expect(parseDocumentSource({ kind: 'file', path: 'a/b.md' })).to.deep.equal({
+        kind: 'file',
+        rootId: null,
+        path: 'a/b.md',
+        format: null,
+      });
+      // Schema boundary agrees with the wire parser.
+      expect(documentSourceSchema.parse('powerpoint/eval/deck.md')).to.deep.equal({
+        kind: 'file',
+        rootId: null,
+        path: 'powerpoint/eval/deck.md',
+        format: null,
+      });
+      // A traversal path is still rejected, string form or not.
+      expect(parseDocumentSource('../outside.md')).to.equal(null);
+    });
+
     it('accepts bundle assets backed by exactly one file or artifact source', () => {
       const source = {
         kind: 'bundle',

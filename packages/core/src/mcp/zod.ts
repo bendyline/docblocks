@@ -161,7 +161,7 @@ export const bundleDocumentSourceSchema = z
   })
   .strict();
 
-export const documentSourceSchema = z.discriminatedUnion('kind', [
+const structuredDocumentSourceSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('markdown'),
@@ -175,7 +175,12 @@ export const documentSourceSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('file'),
-      rootId: idSchema,
+      // Nullable-with-default: a null rootId means "the server's sole
+      // read-enabled root". Agents on a one-root server (the common MCP
+      // setup) no longer round-trip list_roots before every conversion;
+      // multi-root servers still get an actionable error naming the
+      // candidates. See McpFileAuthority.authorizeRootRead.
+      rootId: idSchema.nullable().optional().default(null),
       path: workspacePathSchema,
       format: formatSchema.nullable().optional().default(null),
     })
@@ -183,6 +188,35 @@ export const documentSourceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('artifact'), uri: artifactUriSchema }).strict(),
   bundleDocumentSourceSchema,
 ]);
+
+/**
+ * Document source, with a flat-string convenience form.
+ *
+ * Small local models emitting tool calls through textual salvage produce
+ * flat KEY→string argument maps, so a structured `source` object arrives
+ * as a plain string — historically an instant .strict() rejection, and
+ * the first structural-args toolset turned that into unbreakable retry
+ * loops for every sub-frontier model (gezel's 2026-08-22 scorecard:
+ * PPTX production 0/33 across 11 local models). Accept the string
+ * spelling at the schema boundary instead: an artifact URI string is an
+ * artifact source, anything else is a root-relative file path. Inline
+ * markdown must still use the structured `{kind:"markdown"}` form — a
+ * bare string is far more often a path, and silently turning a mistyped
+ * path into a one-line document would be worse than rejecting it.
+ */
+export const documentSourceSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (text.startsWith('{')) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return value;
+    }
+  }
+  if (ARTIFACT_URI_PATTERN.test(text)) return { kind: 'artifact', uri: text };
+  return { kind: 'file', path: text };
+}, structuredDocumentSourceSchema);
 
 const appliedOptionSchema = z
   .object({

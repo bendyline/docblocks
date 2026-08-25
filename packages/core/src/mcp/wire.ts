@@ -135,6 +135,24 @@ export function parseArtifactRef(value: unknown): ArtifactRef | null {
 }
 
 export function parseDocumentSource(value: unknown): DocumentSource | null {
+  // Flat-string convenience form, mirroring documentSourceSchema: an
+  // artifact URI string is an artifact source, any other string is a
+  // root-relative file path on the default (sole) read root. Kept in both
+  // layers deliberately — the zod schema guards the SDK boundary, this
+  // parser guards every other wire entry.
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (text.startsWith('{')) {
+      try {
+        return parseDocumentSource(JSON.parse(text));
+      } catch {
+        return null;
+      }
+    }
+    if (isArtifactUri(text)) return { kind: 'artifact', uri: text };
+    const parsedPath = parseNonRootWorkspacePath(text);
+    return parsedPath === null ? null : { kind: 'file', rootId: null, path: parsedPath, format: null };
+  }
   if (!isRecord(value) || typeof value.kind !== 'string') return null;
 
   switch (value.kind) {
@@ -158,14 +176,21 @@ export function parseDocumentSource(value: unknown): DocumentSource | null {
     case 'file': {
       if (
         !hasExactKeys(value, ['kind', 'rootId', 'path']) &&
-        !hasExactKeys(value, ['kind', 'rootId', 'path', 'format'])
+        !hasExactKeys(value, ['kind', 'rootId', 'path', 'format']) &&
+        !hasExactKeys(value, ['kind', 'path']) &&
+        !hasExactKeys(value, ['kind', 'path', 'format'])
       ) {
         return null;
       }
-      const { rootId, path } = value;
+      const path = value.path;
+      const rootId = Object.prototype.hasOwnProperty.call(value, 'rootId') ? value.rootId : null;
       const format = Object.prototype.hasOwnProperty.call(value, 'format') ? value.format : null;
       const parsedPath = parseNonRootWorkspacePath(path);
-      if (!isIdentifier(rootId) || parsedPath === null || !(format === null || isFormat(format))) {
+      if (
+        !(rootId === null || isIdentifier(rootId)) ||
+        parsedPath === null ||
+        !(format === null || isFormat(format))
+      ) {
         return null;
       }
       return { kind: 'file', rootId, path: parsedPath, format };

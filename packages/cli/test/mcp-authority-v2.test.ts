@@ -108,6 +108,19 @@ describe('MCP root aliases and safe materialization', function () {
     await expectFailure(authority.authorizeRootWrite(rootId, 'missing/output.bin'), 'parent');
   });
 
+  it('defaults a null rootId to the sole read root, and refuses to guess between several', async () => {
+    // The wire schema's flat-string source form carries no rootId; on the
+    // common one-root server it must Just Work, and on a multi-root server
+    // it must name the candidates rather than pick one.
+    const sole = await McpFileAuthority.create({ readRoots: [allowed] });
+    expect(await sole.authorizeRootRead(null, 'nested/input.md')).to.equal(
+      await realpath(path.join(allowed, 'nested', 'input.md')),
+    );
+
+    const multi = await McpFileAuthority.create({ readRoots: [allowed, outside] });
+    await expectFailure(multi.authorizeRootRead(null, 'nested/input.md'), 'Ambiguous');
+  });
+
   it('rejects traversal, absolute paths, platform aliases, and symlink escapes', async () => {
     await symlink(
       outside,

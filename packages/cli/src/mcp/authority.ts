@@ -136,10 +136,29 @@ export class McpFileAuthority {
     return [...roots.values()].sort((left, right) => left.id.localeCompare(right.id));
   }
 
-  /** Resolve a root-relative read without ever treating the alias as new authority. */
-  public async authorizeRootRead(rootId: string, workspacePath: string): Promise<string> {
-    const root = this.readRoots.find((candidate) => candidate.id === rootId);
+  /**
+   * Resolve a root-relative read without ever treating the alias as new
+   * authority. A null rootId (the wire schema's flat-string and
+   * omitted-rootId convenience forms) selects the SOLE read root; with
+   * several roots configured the ambiguity is an error naming the
+   * candidates, never a guess — defaulting must not widen authority.
+   */
+  public async authorizeRootRead(rootId: string | null, workspacePath: string): Promise<string> {
+    const root =
+      rootId === null
+        ? this.readRoots.length === 1
+          ? this.readRoots[0]
+          : undefined
+        : this.readRoots.find((candidate) => candidate.id === rootId);
     if (!root) {
+      if (rootId === null && this.readRoots.length > 1) {
+        throw authorityError(
+          'Ambiguous MCP root — several read roots are configured',
+          `Pass source.rootId explicitly. Configured read roots: ${this.readRoots
+            .map((candidate) => candidate.id)
+            .join(', ')}.`,
+        );
+      }
       throw authorityError(
         'Unknown or unreadable MCP root',
         'Call list_roots and copy a returned read-enabled root id. If no roots are listed, use an inline markdown or bundle source, or restart the server with --allow-read.',

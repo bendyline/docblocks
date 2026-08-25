@@ -283,6 +283,48 @@ export const MCP_CONVERSION_TARGET_FORMATS = Object.freeze(
   conversionTargetSchema.options.map((schema) => schema.shape.format.value),
 );
 
+/**
+ * Conversion targets, with flat convenience forms.
+ *
+ * Mirrors documentSourceSchema's leniency and exists for the same
+ * incident: models emitting flat text arguments send `targets` as
+ * `"pptx"` or `["pptx"]`, which the strict object-array spelling
+ * rejected outright. A bare format string (or a JSON-encoded array in a
+ * string, the common salvage artifact) normalizes to the object form
+ * before validation; every per-format option still validates exactly as
+ * before.
+ */
+const conversionTargetsSchema = z.preprocess(
+  (value) => {
+    const normalizeEntry = (entry: unknown): unknown =>
+      typeof entry === 'string' && !entry.trim().startsWith('{')
+        ? { format: entry.trim().toLowerCase().replace(/^\./u, '') }
+        : typeof entry === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(entry);
+              } catch {
+                return entry;
+              }
+            })()
+          : entry;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text.startsWith('[')) {
+        try {
+          return (JSON.parse(text) as unknown[]).map(normalizeEntry);
+        } catch {
+          return value;
+        }
+      }
+      return [normalizeEntry(text)];
+    }
+    if (Array.isArray(value)) return value.map(normalizeEntry);
+    return value;
+  },
+  z.array(conversionTargetSchema).min(1).max(12),
+);
+
 export function registerAgenticTools(server: McpServer, context: AgenticToolContext): void {
   registerArtifactResource(server, context.artifacts);
   registerConversionReportResource(server, context.artifacts);
@@ -335,7 +377,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
       inputSchema: z
         .object({
           source: documentSourceSchema,
-          targets: z.array(conversionTargetSchema).min(1).max(12),
+          targets: conversionTargetsSchema,
           themeId: identifierSchema
             .optional()
             .describe(
