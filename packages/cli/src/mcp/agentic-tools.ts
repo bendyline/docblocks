@@ -294,36 +294,33 @@ export const MCP_CONVERSION_TARGET_FORMATS = Object.freeze(
  * before validation; every per-format option still validates exactly as
  * before.
  */
-const conversionTargetsSchema = z.preprocess(
-  (value) => {
-    const normalizeEntry = (entry: unknown): unknown =>
-      typeof entry === 'string' && !entry.trim().startsWith('{')
-        ? { format: entry.trim().toLowerCase().replace(/^\./u, '') }
-        : typeof entry === 'string'
-          ? (() => {
-              try {
-                return JSON.parse(entry);
-              } catch {
-                return entry;
-              }
-            })()
-          : entry;
-    if (typeof value === 'string') {
-      const text = value.trim();
-      if (text.startsWith('[')) {
-        try {
-          return (JSON.parse(text) as unknown[]).map(normalizeEntry);
-        } catch {
-          return value;
-        }
+const conversionTargetsSchema = z.preprocess((value) => {
+  const normalizeEntry = (entry: unknown): unknown =>
+    typeof entry === 'string' && !entry.trim().startsWith('{')
+      ? { format: entry.trim().toLowerCase().replace(/^\./u, '') }
+      : typeof entry === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(entry);
+            } catch {
+              return entry;
+            }
+          })()
+        : entry;
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (text.startsWith('[')) {
+      try {
+        return (JSON.parse(text) as unknown[]).map(normalizeEntry);
+      } catch {
+        return value;
       }
-      return [normalizeEntry(text)];
     }
-    if (Array.isArray(value)) return value.map(normalizeEntry);
-    return value;
-  },
-  z.array(conversionTargetSchema).min(1).max(12),
-);
+    return [normalizeEntry(text)];
+  }
+  if (Array.isArray(value)) return value.map(normalizeEntry);
+  return value;
+}, z.array(conversionTargetSchema).min(1).max(12));
 
 export function registerAgenticTools(server: McpServer, context: AgenticToolContext): void {
   registerArtifactResource(server, context.artifacts);

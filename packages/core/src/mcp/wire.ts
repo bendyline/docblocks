@@ -151,7 +151,9 @@ export function parseDocumentSource(value: unknown): DocumentSource | null {
     }
     if (isArtifactUri(text)) return { kind: 'artifact', uri: text };
     const parsedPath = parseNonRootWorkspacePath(text);
-    return parsedPath === null ? null : { kind: 'file', rootId: null, path: parsedPath, format: null };
+    return parsedPath === null
+      ? null
+      : { kind: 'file', rootId: null, path: parsedPath, format: null };
   }
   if (!isRecord(value) || typeof value.kind !== 'string') return null;
 
