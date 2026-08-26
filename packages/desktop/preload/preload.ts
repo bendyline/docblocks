@@ -157,11 +157,15 @@ const workspacesApi: DocBlocksHostWorkspacesAPI = {
 const shellApi: DocBlocksHostShellAPI = {
   revealInFolder: (workspaceId, workspacePath) =>
     ipcRenderer.invoke('shell:revealInFolder', workspaceId, workspacePath ?? ''),
+  openWorkspaceFolder: (workspaceId) =>
+    ipcRenderer.invoke('shell:openWorkspaceFolder', workspaceId),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 };
 
 const clipboardApi: DocBlocksHostClipboardAPI = {
   writeText: (text) => ipcRenderer.invoke('clipboard:writeText', text),
+  writeWorkspacePath: (workspaceId, workspacePath) =>
+    ipcRenderer.invoke('clipboard:writeWorkspacePath', workspaceId, workspacePath),
 };
 
 // â”€â”€ exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

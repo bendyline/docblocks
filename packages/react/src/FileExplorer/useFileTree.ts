@@ -49,6 +49,35 @@ function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {
   return equivalentPathKeys(path).some((candidate) => paths.has(candidate));
 }
 
+function sameEntry(left: FileSystemEntry, right: FileSystemEntry): boolean {
+  if (left.kind !== right.kind || left.name !== right.name || left.path !== right.path)
+    return false;
+  if (left.kind === 'file' && right.kind === 'file') {
+    return left.lastModified === right.lastModified;
+  }
+  return true;
+}
+
+/**
+ * Keep both the listing and its unchanged entries referentially stable. A
+ * watcher can report several events for one native write, and provider reads
+ * necessarily allocate fresh objects even when nothing visible changed.
+ */
+function reconcileEntries(
+  current: FileSystemEntry[],
+  incoming: readonly FileSystemEntry[],
+): FileSystemEntry[] {
+  const currentByPath = new Map(current.map((entry) => [entry.path, entry]));
+  const reconciled = incoming.map((entry) => {
+    const previous = currentByPath.get(entry.path);
+    return previous && sameEntry(previous, entry) ? previous : entry;
+  });
+  return reconciled.length === current.length &&
+    reconciled.every((entry, index) => entry === current[index])
+    ? current
+    : reconciled;
+}
+
 async function readProviderDirectory(
   provider: FileSystemProvider,
   path: string,
@@ -194,7 +223,7 @@ export function useFileTree(
     try {
       const root = await readProviderDirectory(sourceProvider, '');
       if (!isCurrent()) return;
-      setEntries(root);
+      setEntries((current) => reconcileEntries(current, root));
       setRootIssue(null);
     } catch (caught: unknown) {
       if (isCurrent()) setRootIssue(readIssue(caught, ''));
@@ -216,8 +245,11 @@ export function useFileTree(
       const children = await readProviderDirectory(sourceProvider, dirPath);
       if (!isCurrent()) return;
       setChildEntries((prev) => {
+        const current = prev.get(canonical) ?? [];
+        const reconciled = reconcileEntries(current, children);
+        if (prev.has(canonical) && reconciled === current) return prev;
         const next = new Map(prev);
-        next.set(canonical, children);
+        next.set(canonical, reconciled);
         return next;
       });
       setChildIssues((prev) => {
@@ -291,7 +323,9 @@ export function useFileTree(
   );
 
   const refresh = useCallback(async () => {
-    await loadRoot();
+    // Refreshes retain the last healthy tree while reads are in flight. The
+    // blocking loading state is reserved for the initial provider load.
+    await loadRoot(false);
     // Reload all expanded directories
     const expandedPaths = [...expanded];
     for (const dirPath of expandedPaths) {
@@ -387,7 +421,7 @@ export function useFileTree(
       drainRefreshes();
     };
 
-    const requestMetadataRefresh = (path: string) => {
+    const requestDirectoryRefresh = (path: string) => {
       if (disposed || fullRefreshRequested) return;
       directoriesToRefresh.add(workspacePathDirname(parseWorkspacePath(path)));
       drainRefreshes();
@@ -395,14 +429,18 @@ export function useFileTree(
 
     const subscription = providerV2.watch(
       (event) => {
-        // Content changes leave the tree shape alone, but they do advance the
-        // file's displayed metadata. Refresh only its containing directory so
-        // an Electron autosave does not re-read the complete expanded tree.
-        if (event.type === 'modified') {
-          requestMetadataRefresh(event.path);
-          return;
+        // Ordinary changes affect only their containing listings. In
+        // particular, native atomic writes can surface as more than one watch
+        // event; re-reading every expanded directory for each event made the
+        // explorer flash even when the effective listings were unchanged.
+        if (event.type !== 'overflow') {
+          requestDirectoryRefresh(event.path);
+          if (event.type === 'moved' && event.destinationPath !== null) {
+            requestDirectoryRefresh(event.destinationPath);
+          }
+        } else {
+          requestRefresh();
         }
-        requestRefresh();
       },
       {
         onError: (caught) => {

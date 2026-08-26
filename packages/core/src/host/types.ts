@@ -71,6 +71,8 @@ export interface DocBlocksHostWorkspacesAPI {
 export interface DocBlocksHostShellAPI {
   /** Reveal a registered workspace root or one root-relative entry. */
   revealInFolder(workspaceId: string, workspacePath?: string): Promise<void>;
+  /** Open a registered workspace root in Finder or the platform file manager. */
+  openWorkspaceFolder(workspaceId: string): Promise<void>;
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>;
 }
@@ -79,6 +81,8 @@ export interface DocBlocksHostShellAPI {
 export interface DocBlocksHostClipboardAPI {
   /** Replace the system clipboard's plain-text contents. */
   writeText(text: string): Promise<void>;
+  /** Resolve a registered workspace entry in main and copy its absolute path. */
+  writeWorkspacePath(workspaceId: string, workspacePath: string): Promise<void>;
 }
 
 /** Exact, main-owned export authority. The display path is never authority. */

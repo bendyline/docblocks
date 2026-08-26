@@ -76,15 +76,17 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.4.0",
-    "@bendyline/squisq": "2.8.0",
-    "@bendyline/squisq-editor-react": "2.8.0",
-    "@bendyline/squisq-formats": "2.4.5",
-    "@bendyline/squisq-react": "2.8.0",
-    "@bendyline/squisq-video": "2.3.0",
-    "@bendyline/squisq-video-react": "2.4.0"
+    "@bendyline/squisq": "2.9.0",
+    "@bendyline/squisq-editor-react": "2.9.0",
+    "@bendyline/squisq-formats": "2.4.6",
+    "@bendyline/squisq-react": "2.9.0",
+    "@bendyline/squisq-video": "2.3.1",
+    "@bendyline/squisq-video-react": "2.4.1",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "20.9.0",
+    "@types/qrcode": "1.5.6",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "happy-dom": "20.9.0",

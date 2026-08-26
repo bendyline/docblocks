@@ -35,6 +35,57 @@ describe('ShareDialog', () => {
     expect(select).not.to.equal(null);
     expect(link?.value).to.include('#shared(');
 
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (container.querySelector<HTMLImageElement>('.db-share-qr-image')) break;
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+
+    const qrImage = container.querySelector<HTMLImageElement>('.db-share-qr-image');
+    const saveQrButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent === 'Save QR PNG',
+    );
+    expect(qrImage?.src).to.match(/^data:image\/png;base64,/u);
+    expect(qrImage?.alt).to.include('QR code');
+    expect(container.textContent).to.include('docblocks.com link');
+    expect(saveQrButton?.disabled).to.equal(false);
+
+    const previousClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const previousClipboardItem = Object.getOwnPropertyDescriptor(globalThis, 'ClipboardItem');
+    const copied: Array<Record<string, Blob>> = [];
+    class TestClipboardItem {
+      constructor(readonly data: Record<string, Blob>) {
+        copied.push(data);
+      }
+    }
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { write: async () => undefined },
+    });
+    Object.defineProperty(globalThis, 'ClipboardItem', {
+      configurable: true,
+      value: TestClipboardItem,
+    });
+
+    try {
+      const copyQrButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent === 'Copy QR image',
+      );
+      await act(async () => copyQrButton?.click());
+      expect(copied).to.have.length(1);
+      expect(copied[0]?.['image/png']).to.be.instanceOf(Blob);
+      expect(copyQrButton?.textContent).to.equal('Copied QR');
+    } finally {
+      if (previousClipboard) Object.defineProperty(navigator, 'clipboard', previousClipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+      if (previousClipboardItem) {
+        Object.defineProperty(globalThis, 'ClipboardItem', previousClipboardItem);
+      } else {
+        Reflect.deleteProperty(globalThis, 'ClipboardItem');
+      }
+    }
+
     await act(async () => {
       if (!select) return;
       select.value = 'video';

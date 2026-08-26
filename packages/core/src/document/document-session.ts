@@ -365,6 +365,23 @@ export class DocumentSession {
         return 'ignored';
       }
 
+      // Cloud-sync clients commonly publish a replacement as unlink + add.
+      // A clean session may therefore observe a momentary deletion and enter
+      // conflict before the replacement appears. If the local branch is still
+      // exactly the persisted baseline, the later file is another clean
+      // external observation: adopt it without writing the old bytes back.
+      const localBranchIsStillClean =
+        this.savingRevision === null &&
+        this.lifecycle === 'open' &&
+        this.persistedRevision === this.revision &&
+        this.persistedContent === this.content &&
+        this.conflict.localRevision === this.revision &&
+        this.conflict.localContent === this.content;
+      if (localBranchIsStillClean && change.content !== null) {
+        this.adoptExternalContent(change.content);
+        return 'applied';
+      }
+
       this.clearAutoSaveTimer();
       this.haltDrain = true;
       this.conflict = {
@@ -395,13 +412,7 @@ export class DocumentSession {
       this.conflict === null;
 
     if (isClean && change.content !== null) {
-      this.content = change.content;
-      this.revision += 1;
-      this.persistedRevision = this.revision;
-      this.persistedContent = change.content;
-      this.generation += 1;
-      this.discardRecoverySnapshot();
-      this.emit();
+      this.adoptExternalContent(change.content);
       return 'applied';
     }
 
@@ -418,6 +429,21 @@ export class DocumentSession {
     this.writeRecoverySnapshot();
     this.emit();
     return 'conflict';
+  }
+
+  private adoptExternalContent(content: string): void {
+    this.clearAutoSaveTimer();
+    this.autoSaveRetryAttempt = 0;
+    this.content = content;
+    this.revision += 1;
+    this.persistedRevision = this.revision;
+    this.persistedContent = content;
+    this.generation += 1;
+    this.haltDrain = false;
+    this.error = null;
+    this.conflict = null;
+    this.discardRecoverySnapshot();
+    this.emit();
   }
 
   public resolveConflict(strategy: DocumentConflictStrategy): Promise<DocumentSessionSnapshot> {

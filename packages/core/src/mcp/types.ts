@@ -88,10 +88,17 @@ export interface MarkdownDocumentSource {
   readonly name: string | null;
 }
 
-/** A file selected from a server-configured, authority-scoped root. */
+/**
+ * A file selected from a server-configured, authority-scoped root.
+ *
+ * A null rootId means "the server's sole read-enabled root": callers on
+ * a one-root server may omit it, and the authority resolves or rejects
+ * with the candidate ids. It never grants new authority — resolution
+ * still goes through the same root allow-list.
+ */
 export interface FileDocumentSource {
   readonly kind: 'file';
-  readonly rootId: string;
+  readonly rootId: string | null;
   readonly path: WorkspacePath;
   readonly format: string | null;
 }

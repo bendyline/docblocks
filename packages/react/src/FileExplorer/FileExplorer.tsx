@@ -25,7 +25,13 @@ import {
   treeKeyAction,
   TREE_NAV_KEYS,
 } from './tree-keyboard.js';
-import { NewFileIcon, NewFolderIcon, SortByLastModifiedIcon, SortByNameIcon } from '../icons.js';
+import {
+  NewFileIcon,
+  NewFolderIcon,
+  OpenFolderIcon,
+  SortByLastModifiedIcon,
+  SortByNameIcon,
+} from '../icons.js';
 import { useGitContext } from '../Git/GitContext.js';
 import { BADGE_GLYPHS, BADGE_LABELS, isFileDirty } from '../Git/git-status.js';
 import { PinnedDocuments } from './PinnedDocuments.js';
@@ -142,6 +148,8 @@ export interface FileExplorerProps {
   onTogglePin?: (path: string) => void | Promise<void>;
   /** Called when any entry is selected (file or directory). */
   onSelect?: (path: string, kind: 'file' | 'directory') => void;
+  /** Opens the active native workspace root in the platform file manager. */
+  onOpenWorkspaceFolder?: () => void;
   /** Host-owned context actions for an entry. */
   actionsForEntry?: (entry: FileSystemEntry) => readonly FileTreeNodeAction[];
   /**
@@ -182,6 +190,7 @@ export function FileExplorer({
   onPinnedDocumentDelete,
   onTogglePin,
   onSelect,
+  onOpenWorkspaceFolder,
   actionsForEntry,
   onTreeMutation,
   onTreeChange,
@@ -719,6 +728,17 @@ export function FileExplorer({
             </button>
           </div>
           <span className="db-explorer-action-divider" aria-hidden="true" />
+          {onOpenWorkspaceFolder && (
+            <button
+              type="button"
+              className="db-explorer-btn"
+              onClick={onOpenWorkspaceFolder}
+              title="Open this folder"
+              aria-label="Open this folder"
+            >
+              <OpenFolderIcon />
+            </button>
+          )}
           <button
             type="button"
             className="db-explorer-btn"
