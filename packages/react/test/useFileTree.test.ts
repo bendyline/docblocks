@@ -197,6 +197,106 @@ describe('useFileTree', () => {
     await provider.v2.dispose();
   });
 
+  it('keeps an unchanged refreshed listing referentially stable', async () => {
+    const provider = makeProvider({
+      '': [file('note.md'), dir('docs')],
+      '/docs': [file('other.md', '/docs')],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => handle.result.current.toggleExpand('/docs'));
+    await advanceTime(SETTLE);
+
+    const rootEntries = handle.result.current.entries;
+    const childEntries = handle.result.current.childEntries;
+    const childListing = childEntries.get('docs');
+    const normalRead = provider.readDirectory.bind(provider);
+    let releaseRoot!: () => void;
+    const rootReleased = new Promise<void>((resolve) => {
+      releaseRoot = resolve;
+    });
+    provider.readDirectory = async (path: string) => {
+      if (normalisePath(path) === '') await rootReleased;
+      return normalRead(path);
+    };
+    let refresh!: Promise<void>;
+    await act(async () => {
+      refresh = handle.result.current.refresh();
+      await Promise.resolve();
+    });
+
+    expect(handle.result.current.loading).to.equal(false);
+    expect(handle.result.current.entries).to.equal(rootEntries);
+    await act(async () => {
+      releaseRoot();
+      await refresh;
+    });
+    expect(handle.result.current.childEntries).to.equal(childEntries);
+    expect(handle.result.current.childEntries.get('docs')).to.equal(childListing);
+    await handle.unmount();
+  });
+
+  it('reuses unaffected entries when refreshed metadata changes', async () => {
+    const provider = makeProvider({
+      '': [
+        { ...file('note.md'), lastModified: '2026-07-22T10:00:00.000Z' },
+        { ...file('other.md'), lastModified: '2026-07-21T10:00:00.000Z' },
+      ],
+    });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+
+    const note = handle.result.current.entries[0];
+    const other = handle.result.current.entries[1];
+    provider.tree[''] = [
+      { ...file('note.md'), lastModified: '2026-07-22T11:00:00.000Z' },
+      { ...file('other.md'), lastModified: '2026-07-21T10:00:00.000Z' },
+    ];
+    await act(async () => handle.result.current.refresh());
+
+    expect(handle.result.current.entries[0]).not.to.equal(note);
+    expect(handle.result.current.entries[1]).to.equal(other);
+    await handle.unmount();
+  });
+
+  it('refreshes only affected parent listings for watched structural changes', async () => {
+    const provider = new MemoryFileSystemProvider('watched-structure', 'Watched structure');
+    await provider.v2.createDirectory(parseWorkspacePath('docs'), { mode: 'create' });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider },
+    );
+    await advanceTime(SETTLE);
+    await act(async () => handle.result.current.toggleExpand('docs'));
+    await advanceTime(SETTLE);
+
+    const readDirectory = provider.v2.readDirectory.bind(provider.v2);
+    const refreshedPaths: string[] = [];
+    provider.v2.readDirectory = async (path) => {
+      refreshedPaths.push(path);
+      return readDirectory(path);
+    };
+    await act(async () => {
+      await provider.v2.writeFile(parseWorkspacePath('docs/new.md'), new Uint8Array([1]), {
+        mode: 'create',
+      });
+    });
+    await advanceTime(SETTLE);
+
+    expect(refreshedPaths).to.deep.equal(['docs']);
+    expect(
+      handle.result.current.childEntries.get('docs')?.map((entry) => entry.name),
+    ).to.deep.equal(['new.md']);
+    await handle.unmount();
+    await provider.v2.dispose();
+  });
+
   it('silently refreshes only the active file listing when a non-watch provider saves', async () => {
     const provider = makeProvider({
       '': [

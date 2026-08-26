@@ -353,6 +353,71 @@ describe('DocumentSession', () => {
     expect(reloaded.status).to.equal('saved');
   });
 
+  it('adopts a clean external replacement after its transient deletion without writing back', async () => {
+    const commits: DocumentCommitRequest[] = [];
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async (request) => {
+        commits.push(request);
+      }),
+      'A',
+    );
+
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: null,
+        version: null,
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+    expect(session.getSnapshot().status).to.equal('conflict');
+
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'B',
+        version: 2,
+        sequence: 2,
+      }),
+    ).to.equal('applied');
+
+    const adopted = session.getSnapshot();
+    expect(adopted.content).to.equal('B');
+    expect(adopted.persistedContent).to.equal('B');
+    expect(adopted.persistedRevision).to.equal(adopted.revision);
+    expect(adopted.status).to.equal('saved');
+    await session.flush('manual');
+    expect(commits).to.deep.equal([]);
+  });
+
+  it('preserves an edit made while an external replacement is between deletion and recreation', async () => {
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async () => undefined),
+      'A',
+    );
+
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: null,
+        sequence: 1,
+      }),
+    ).to.equal('conflict');
+    edit(session, 'local draft');
+
+    expect(
+      session.observeExternal({
+        targetKey: 'workspace:a.md',
+        content: 'external replacement',
+        sequence: 2,
+      }),
+    ).to.equal('conflict');
+    expect(session.getSnapshot().content).to.equal('local draft');
+    expect(session.getSnapshot().conflict?.externalContent).to.equal('external replacement');
+  });
+
   it('acknowledges an external branch that converges to the latest local revision', async () => {
     const commits: DocumentCommitRequest[] = [];
     const session = new DocumentSession({ autoSaveDelayMs: 1_000 });

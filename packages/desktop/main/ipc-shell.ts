@@ -29,6 +29,22 @@ export function registerShellIpc(): void {
   );
 
   registerTrustedIpcHandler(
+    'shell:openWorkspaceFolder',
+    1,
+    async (_event, workspaceValue: unknown): Promise<void> => {
+      if (!isBoundedString(workspaceValue, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+        throw new Error('Invalid workspace capability');
+      }
+      const roots = getWorkspaceRoots();
+      const workspace = roots.get(workspaceValue);
+      if (!workspace) throw new Error('Workspace capability is not registered');
+      const absolutePath = await roots.resolvePhysical(workspace.rootPath, '');
+      const errorMessage = await shell.openPath(absolutePath);
+      if (errorMessage) throw new Error(errorMessage);
+    },
+  );
+
+  registerTrustedIpcHandler(
     'shell:openExternal',
     1,
     async (_event, urlValue: unknown): Promise<void> => {

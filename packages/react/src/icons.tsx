@@ -16,6 +16,10 @@ export function NewFolderIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-folder-plus" />;
 }
 
+export function OpenFolderIcon() {
+  return <FontAwesomeIcon icon="fa-solid fa-folder-open" />;
+}
+
 export function SortByNameIcon() {
   return <FontAwesomeIcon icon="fa-solid fa-arrow-down-a-z" />;
 }

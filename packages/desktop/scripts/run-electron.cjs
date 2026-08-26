@@ -15,6 +15,7 @@
 
 const { spawn } = require('child_process');
 const path = require('path');
+const { notifyDevSupervisor } = require('./dev-lifecycle.cjs');
 
 // require('electron') returns the binary path (string) when the current
 // process has ELECTRON_RUN_AS_NODE=1 — exactly the case we're in.
@@ -39,7 +40,12 @@ const child = spawn(electronPath, args, {
 });
 
 child.on('close', (code) => {
-  process.exit(code ?? 0);
+  const exitCode = code ?? 1;
+  // tsup owns this launcher as an --onSuccess child and intentionally stays
+  // alive after that child exits. Tell the top-level dev supervisor that the
+  // app itself closed so it can stop tsup and Vite together. `npm start` has no
+  // supervisor environment variable and retains its standalone behavior.
+  void notifyDevSupervisor(exitCode).finally(() => process.exit(exitCode));
 });
 
 child.on('error', (err) => {

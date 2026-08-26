@@ -104,6 +104,29 @@ describe('FileExplorer new item failures', () => {
     ]);
   });
 
+  it('shows the native workspace button only when its host action is provided', async () => {
+    expect(container.querySelector('[aria-label="Open this folder"]')).to.equal(null);
+    let openCalls = 0;
+
+    await act(async () => {
+      root.render(
+        createElement(FileExplorer, {
+          provider,
+          onOpenWorkspaceFolder: () => {
+            openCalls += 1;
+          },
+        }),
+      );
+    });
+
+    const openButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open this folder"]',
+    );
+    expect(openButton).to.not.equal(null);
+    await act(async () => openButton?.click());
+    expect(openCalls).to.equal(1);
+  });
+
   it('surfaces a duplicate name instead of sitting there silently', async () => {
     await submitNewFile('taken');
 

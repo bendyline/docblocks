@@ -6,8 +6,18 @@
    sync; their compact vertical metrics intentionally differ because Electron
    uses a 42px overlay while the installed PWA follows the OS-provided 32px. */
 
-.db-desktop-root {
+:root {
   --db-desktop-titlebar-height: max(42px, env(titlebar-area-height, 32px));
+}
+
+/* Squisq portals the block-type gallery to document.body and bounds it to
+   the editor shell, whose first row is also this renderer's custom titlebar.
+   Keep the large gallery below the native caption band so its panel and close
+   button never sit underneath the OS minimize/maximize/close controls. The
+   inline bounds supplied by the portal require these two focused overrides. */
+html:has(.db-desktop-root) .squisq-template-gallery-dialog {
+  top: var(--db-desktop-titlebar-height) !important;
+  height: calc(100% - var(--db-desktop-titlebar-height)) !important;
 }
 
 /* The first shell row replaces the native titlebar. Empty space can drag

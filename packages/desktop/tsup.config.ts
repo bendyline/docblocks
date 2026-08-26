@@ -1,4 +1,4 @@
-import { defineConfig } from 'tsup';
+import { defineConfig, type Options } from 'tsup';
 
 const emitSourceMaps = process.env.DOCBLOCKS_SOURCEMAPS === 'true';
 
@@ -9,7 +9,7 @@ const emitSourceMaps = process.env.DOCBLOCKS_SOURCEMAPS === 'true';
  * file accidentally importing a main-only module (or vice versa) is
  * caught at compile time rather than surfacing as a runtime crash.
  */
-export default defineConfig([
+export const desktopTsupOptions = [
   // Main process — Node runtime, no DOM globals.
   {
     entry: { main: 'main/main.ts' },
@@ -48,4 +48,6 @@ export default defineConfig([
     external: ['electron'],
     outExtension: () => ({ js: '.cjs' }),
   },
-]);
+] satisfies [Options, Options];
+
+export default defineConfig(desktopTsupOptions);

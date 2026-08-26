@@ -1,4 +1,26 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { test, expect } from './fixtures.js';
+
+test('shows native path actions in a file context menu', async ({ launchApp, workspaceDir }) => {
+  fs.writeFileSync(path.join(workspaceDir, 'native-actions.md'), '# Native actions\n');
+
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const row = window.locator('.db-tree-row').filter({ hasText: 'native-actions' });
+  await expect(row).toBeVisible();
+  await expect(window.getByRole('button', { name: 'Open this folder' })).toBeVisible();
+  await row.click({ button: 'right' });
+
+  const menu = window.getByRole('menu', { name: 'Actions for native-actions.md' });
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Rename',
+    'Pin',
+    'Open containing folder',
+    'Copy full path',
+    'Delete',
+  ]);
+});
 
 test('preload exposes the complete typed host and reaches representative IPC handlers', async ({
   launchApp,
@@ -39,8 +61,14 @@ test('preload exposes the complete typed host and reaches representative IPC han
       workspaces: {
         getDefault(): Promise<{ id: string; rootPath: string }>;
       };
-      shell: { openExternal(url: string): Promise<void> };
-      clipboard: { writeText(text: string): Promise<void> };
+      shell: {
+        openExternal(url: string): Promise<void>;
+        openWorkspaceFolder(workspaceId: string): Promise<void>;
+      };
+      clipboard: {
+        writeText(text: string): Promise<void>;
+        writeWorkspacePath(workspaceId: string, workspacePath: string): Promise<void>;
+      };
       external: { readText(resourceId: string): Promise<unknown> };
       git: { capabilities(): Promise<{ gitAvailable: boolean }> };
       ffmpeg: { available(): Promise<boolean>; version(): Promise<string | null> };
@@ -66,7 +94,9 @@ test('preload exposes the complete typed host and reaches representative IPC han
     for (const [label, operation] of [
       ['external', () => typedHost.external.readText('unknown-grant')],
       ['shell', () => typedHost.shell.openExternal('javascript:alert(1)')],
+      ['shell-folder', () => typedHost.shell.openWorkspaceFolder('unknown-workspace')],
       ['clipboard', () => typedHost.clipboard.writeText('\0')],
+      ['clipboard-path', () => typedHost.clipboard.writeWorkspacePath('unknown-workspace', '')],
     ] as const) {
       try {
         await operation();
@@ -169,8 +199,8 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'register',
     'unregister',
   ]);
-  expect(contract.methods.shell).toEqual(['openExternal', 'revealInFolder']);
-  expect(contract.methods.clipboard).toEqual(['writeText']);
+  expect(contract.methods.shell).toEqual(['openExternal', 'openWorkspaceFolder', 'revealInFolder']);
+  expect(contract.methods.clipboard).toEqual(['writeText', 'writeWorkspacePath']);
   expect(contract.methods.exports).toEqual(['pickTarget', 'resolveTarget', 'save']);
   expect(contract.methods.ffmpeg).toEqual(['available', 'version']);
   expect(contract.methods.updater).toEqual([
@@ -213,7 +243,13 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.opened.ok).toBe(true);
   expect(contract.root.ok).toBe(true);
   expect(contract.disposed.ok).toBe(true);
-  expect(contract.rejected).toEqual(['external', 'shell', 'clipboard']);
+  expect(contract.rejected).toEqual([
+    'external',
+    'shell',
+    'shell-folder',
+    'clipboard',
+    'clipboard-path',
+  ]);
   expect(typeof contract.git.gitAvailable).toBe('boolean');
   expect(typeof contract.ffmpegAvailable).toBe('boolean');
   expect(

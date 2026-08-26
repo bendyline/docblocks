@@ -151,6 +151,59 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   }
 });
 
+test('keeps the block type dialog below the custom titlebar', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 30_000 });
+  await window.locator('.db-welcome-gateway-cta').click();
+
+  const heading = window.locator('.squisq-wysiwyg-editor h1').first();
+  await expect(heading).toBeVisible({ timeout: 30_000 });
+  await heading.click();
+
+  const inlineTrigger = window.locator('.squisq-template-picker-trigger').first();
+  await expect(inlineTrigger).toHaveCount(1);
+  if (!(await inlineTrigger.isVisible())) {
+    await window.locator('.squisq-toolbar-overflow-trigger').click();
+  }
+  const trigger = window.locator('.squisq-template-picker-trigger:visible').first();
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+
+  const dialog = window.locator('.squisq-template-gallery-dialog');
+  const panel = dialog.locator('.squisq-template-gallery-dialog-panel');
+  await expect(panel).toBeVisible();
+
+  const geometry = await dialog.evaluate((element) => {
+    const dialogRect = element.getBoundingClientRect();
+    const panelRect = element
+      .querySelector('.squisq-template-gallery-dialog-panel')
+      ?.getBoundingClientRect();
+    const editorHeaderRect = document
+      .querySelector('.squisq-editor-header')
+      ?.getBoundingClientRect();
+    return {
+      dialogTop: dialogRect.top,
+      dialogBottom: dialogRect.bottom,
+      dialogWidth: dialogRect.width,
+      panelTop: panelRect?.top,
+      panelWidth: panelRect?.width,
+      panelHeight: panelRect?.height,
+      titlebarBottom: editorHeaderRect?.bottom,
+      viewportWidth: globalThis.innerWidth,
+      viewportHeight: globalThis.innerHeight,
+    };
+  });
+
+  expect(geometry.titlebarBottom).not.toBeUndefined();
+  expect(geometry.panelTop).not.toBeUndefined();
+  expect(geometry.dialogTop).toBeGreaterThanOrEqual(geometry.titlebarBottom ?? Infinity);
+  expect(geometry.panelTop).toBeGreaterThan(geometry.titlebarBottom ?? Infinity);
+  expect(geometry.dialogBottom).toBeLessThanOrEqual(geometry.viewportHeight);
+  expect(geometry.panelWidth ?? 0).toBeGreaterThan(geometry.dialogWidth * 0.85);
+  expect(geometry.panelHeight ?? 0).toBeGreaterThan(geometry.viewportHeight * 0.75);
+});
+
 test('aligns the sidebar footer with the editor status bar', async ({ launchApp }) => {
   const { window } = await launchApp();
   const statusBar = window.locator('.squisq-status-bar');

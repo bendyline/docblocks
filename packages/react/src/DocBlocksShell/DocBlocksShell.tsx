@@ -179,6 +179,7 @@ import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
+import { createNativeFileActions } from './native-file-actions.js';
 import { WELCOME_DOCUMENT_CONTENT, WELCOME_DOCUMENT_PATH } from './welcome-document.js';
 import {
   loadPinnedDocuments,
@@ -1077,14 +1078,14 @@ export function DocBlocksShell({
   }, [activeWorkspaceDescriptor]);
 
   // All git UI state/actions -- null-renders on surfaces without git.
-  const gitWorkspaceId =
+  const nativeWorkspaceId =
     provider &&
     activeWorkspaceDescriptor?.id === activeWorkspaceId &&
     provider.id === activeWorkspaceId &&
     activeWorkspaceDescriptor.type === 'electron-native'
       ? activeWorkspaceDescriptor.id
       : null;
-  const git = useGit(provider, gitWorkspaceId, resolvedTheme);
+  const git = useGit(provider, nativeWorkspaceId, resolvedTheme);
   const gitRef = useRef(git);
   gitRef.current = git;
   const { scheduleRefresh: gitScheduleRefresh } = git;
@@ -3010,6 +3011,18 @@ export function DocBlocksShell({
     }
   }, [activeWorkspaceId]);
 
+  const handleOpenWorkspaceFolder = useCallback(() => {
+    if (!isElectronHost() || !nativeWorkspaceId) return;
+    void getDocBlocksHost()
+      .shell.openWorkspaceFolder(nativeWorkspaceId)
+      .catch((error: unknown) => {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'Could not open this workspace folder.',
+        );
+      });
+  }, [nativeWorkspaceId, showToast]);
+
   // Subscribe to native menu commands (Electron host).
   useEffect(() => {
     if (!isElectronHost()) return;
@@ -3220,6 +3233,16 @@ export function DocBlocksShell({
       ];
     },
     [handleEnableOutsideInEditing, selectedFile, selectedOutsideInEditingEnabled],
+  );
+
+  const actionsForEntry = useCallback(
+    (entry: FileSystemEntry) => {
+      const nativeActions = isElectronHost()
+        ? createNativeFileActions(entry, nativeWorkspaceId, getDocBlocksHost())
+        : [];
+      return [...nativeActions, ...outsideInActionsForEntry(entry)];
+    },
+    [nativeWorkspaceId, outsideInActionsForEntry],
   );
 
   const handleEditorLinkClick = useCallback(
@@ -4363,7 +4386,10 @@ export function DocBlocksShell({
                 onPinnedDocumentDelete={handlePinnedDocumentDelete}
                 onTogglePin={handleTogglePin}
                 onSelect={handleSelect}
-                actionsForEntry={outsideInActionsForEntry}
+                onOpenWorkspaceFolder={
+                  isElectronHost() && nativeWorkspaceId ? handleOpenWorkspaceFolder : undefined
+                }
+                actionsForEntry={actionsForEntry}
                 onTreeMutation={handleTreeMutation}
                 onTreeChange={handleTreeChange}
                 onImportFiles={handleImportFiles}
