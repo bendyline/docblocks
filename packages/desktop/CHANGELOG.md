@@ -1,3 +1,15 @@
+## docblocks-desktop [2.5.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.4.0...docblocks-desktop@2.5.0) (2026-08-26)
+
+### Features
+
+* Add QR Codes & Flashcards ([#22](https://github.com/bendyline/docblocks/issues/22)) ([2f878f9](https://github.com/bendyline/docblocks/commit/2f878f994da8e848345ff993a14b8bcc18b47347))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.5.0
+* **@bendyline/docblocks-react:** upgraded to 2.5.0
+
 ## docblocks-desktop [2.4.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.3.4...docblocks-desktop@2.4.0) (2026-08-17)
 
 ### Features
