@@ -47,6 +47,11 @@
       "import": "./dist/export/index.js",
       "default": "./dist/export/index.js"
     },
+    "./proofing": {
+      "types": "./dist/proofing/index.d.ts",
+      "import": "./dist/proofing/index.js",
+      "default": "./dist/proofing/index.js"
+    },
     "./settings": {
       "types": "./dist/settings/index.d.ts",
       "import": "./dist/settings/index.js",

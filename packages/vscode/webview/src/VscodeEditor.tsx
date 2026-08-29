@@ -40,6 +40,8 @@ import { VscodeWebviewRecovery } from './webviewRecovery.js';
 import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
+import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
+import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 const vscode = getVscodeApi();
 
@@ -77,6 +79,12 @@ export function VscodeEditor() {
   // wrong theme until then and visibly flip. `themeChange` still drives live
   // theme switches below.
   const [theme, setTheme] = useState<VscodeColorScheme>(readVscodeBodyTheme);
+  // Proofing is deliberately NOT part of the bridges the editor waits on. The
+  // provider needs the host's dictionary before it can be built, and gating
+  // the document on that round-trip would trade a fast open for a preference.
+  // It arrives a moment later and proofing lights up then.
+  const [proofingBridge, setProofingBridge] = useState<VscodeProofingBridge | null>(null);
+  const [proofing, setProofing] = useState<ProofingProvider | null>(null);
   const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
@@ -206,6 +214,24 @@ export function VscodeEditor() {
     const bridge = createVscodeClipboardBridge((message) => vscode.postMessage(message));
     setClipboardBridge(bridge);
     return () => bridge.dispose();
+  }, []);
+
+  useEffect(() => {
+    const bridge = createVscodeProofingBridge((message) => vscode.postMessage(message));
+    setProofingBridge(bridge);
+    let cancelled = false;
+    // Publishing the provider only once the host's dictionary is in hand keeps
+    // the engine lazy: constructing it fetches nothing, but seeding words into
+    // an already-built provider would load the WASM before anyone asked.
+    void bridge.ready.then((provider) => {
+      if (!cancelled) setProofing(provider);
+    });
+    return () => {
+      cancelled = true;
+      setProofing(null);
+      setProofingBridge(null);
+      bridge.dispose();
+    };
   }, []);
 
   // Post every complete editor snapshot immediately. The extension host owns
@@ -431,6 +457,8 @@ export function VscodeEditor() {
           height="100%"
           placeholder={editorPlaceholder}
           mediaProvider={mediaBridge.mediaProvider}
+          proofing={proofing}
+          proofingIgnoreStore={proofingBridge?.ignoreStore ?? null}
           allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
           allowPresentationWindow={false}
           allowPresentationFullscreen={false}

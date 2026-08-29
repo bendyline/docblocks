@@ -19,6 +19,11 @@ export type { FileTreeActions, FileTreeReadIssue, FileTreeState } from './FileEx
 export { WorkspacePicker } from './WorkspacePicker/index.js';
 export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 
+// Proofing (grammar + spellcheck) is reached through the
+// '@bendyline/docblocks-react/proofing' subpath rather than re-exported here:
+// it pulls Squisq's harper adapter, and a host that never wires the capability
+// should not carry it. See src/Proofing/public-api.ts.
+
 // DocBlocksShell
 export { DocBlocksShell } from './DocBlocksShell/index.js';
 export type { DocBlocksShellProps } from './DocBlocksShell/index.js';

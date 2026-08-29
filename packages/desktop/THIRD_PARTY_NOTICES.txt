@@ -15,12 +15,12 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/squisq | 2.8.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-editor-react | 2.8.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.4.5 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.8.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.3.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video-react | 2.4.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.9.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-editor-react | 2.9.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.4.6 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.9.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.3.1 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video-react | 2.4.1 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | @iconify/utils | 3.1.4 | MIT | https://github.com/iconify/iconify |
@@ -67,7 +67,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | bail | 2.0.2 | MIT | https://github.com/wooorm/bail |
 | binary-extensions | 2.3.0 | MIT | https://github.com/sindresorhus/binary-extensions |
 | braces | 3.0.3 | MIT | https://github.com/micromatch/braces |
-| builder-util-runtime | 9.2.10 | MIT | https://github.com/electron-userland/electron-builder |
+| builder-util-runtime | 9.7.0 | MIT | https://github.com/electron-userland/electron-builder |
 | ccount | 2.0.1 | MIT | https://github.com/wooorm/ccount |
 | character-entities-legacy | 3.0.0 | MIT | https://github.com/wooorm/character-entities-legacy |
 | character-reference-invalid | 2.0.1 | MIT | https://github.com/wooorm/character-reference-invalid |
@@ -108,7 +108,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | electron | 43.2.0 | MIT | https://github.com/electron/electron |
-| electron-updater | 6.3.9 | MIT | https://github.com/electron-userland/electron-builder |
+| electron-updater | 6.8.9 | MIT | https://github.com/electron-userland/electron-builder |
 | electron-window-state | 5.0.3 | MIT | https://github.com/mawie81/electron-window-state |
 | entities | 6.0.1 | BSD-2-Clause | https://github.com/fb55/entities |
 | es-toolkit | 1.50.0 | MIT | https://github.com/toss/es-toolkit |
@@ -137,7 +137,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | is-hexadecimal | 2.0.1 | MIT | https://github.com/wooorm/is-hexadecimal |
 | is-number | 7.0.0 | MIT | https://github.com/jonschlinkert/is-number |
 | is-plain-obj | 4.1.0 | MIT | https://github.com/sindresorhus/is-plain-obj |
-| js-yaml | 4.3.0 | MIT | https://github.com/nodeca/js-yaml |
+| js-yaml | 4.3.1 | MIT | https://github.com/nodeca/js-yaml |
 | jsonfile | 4.0.0 | MIT | git@github.com:jprichardson/node-jsonfile |
 | jsonfile | 6.2.1 | MIT | git@github.com:jprichardson/node-jsonfile |
 | jszip | 3.10.1 | (MIT OR GPL-3.0-or-later) | https://github.com/Stuk/jszip |
@@ -233,7 +233,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | roughjs | 4.6.6 | MIT | https://github.com/pshihn/rough |
 | sax | 1.6.0 | BlueOak-1.0.0 | git+ssh://git@github.com/isaacs/sax-js |
 | scheduler | 0.23.2 | MIT | https://github.com/facebook/react |
-| semver | 7.8.0 | ISC | https://github.com/npm/node-semver |
+| semver | 7.7.4 | ISC | https://github.com/npm/node-semver |
 | space-separated-tokens | 2.0.2 | MIT | https://github.com/wooorm/space-separated-tokens |
 | stringify-entities | 4.0.4 | MIT | https://github.com/wooorm/stringify-entities |
 | stylis | 4.4.0 | MIT | https://github.com/thysultan/stylis.js |
@@ -271,7 +271,7 @@ The following locked packages declare a license identifier but publish no packag
 | lazy-val | 1.0.5 | MIT | https://github.com/develar/lazy-val |
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.8.0, @bendyline/squisq-formats@2.4.5, @bendyline/squisq-react@2.8.0, @bendyline/squisq-video-react@2.4.0, @bendyline/squisq-video@2.3.0, @bendyline/squisq@2.8.0
+Components: @bendyline/squisq-editor-react@2.9.0, @bendyline/squisq-formats@2.4.6, @bendyline/squisq-react@2.9.0, @bendyline/squisq-video-react@2.4.1, @bendyline/squisq-video@2.3.1, @bendyline/squisq@2.9.0
 Source files: node_modules/@bendyline/squisq-editor-react/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -297,7 +297,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.8.0
+Components: @bendyline/squisq-editor-react@2.9.0
 Source files: node_modules/@bendyline/squisq-editor-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-editor-react
@@ -344,7 +344,7 @@ Exact third-party license texts for the bundled adapter, loader, state helper,
 and Font Awesome assets are shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.8.0, @tiptap/core@2.27.2, @tiptap/extension-blockquote@2.27.2, @tiptap/extension-bold@2.27.2, @tiptap/extension-bullet-list@2.27.2, @tiptap/extension-code-block@2.27.2, @tiptap/extension-code@2.27.2, @tiptap/extension-document@2.27.2, @tiptap/extension-dropcursor@2.27.2, @tiptap/extension-gapcursor@2.27.2, @tiptap/extension-hard-break@2.27.2, @tiptap/extension-heading@2.27.2, @tiptap/extension-history@2.27.2, @tiptap/extension-horizontal-rule@2.27.2, @tiptap/extension-image@2.27.2, @tiptap/extension-italic@2.27.2, @tiptap/extension-link@2.27.2, @tiptap/extension-list-item@2.27.2, @tiptap/extension-mention@2.27.2, @tiptap/extension-ordered-list@2.27.2, @tiptap/extension-paragraph@2.27.2, @tiptap/extension-placeholder@2.27.2, @tiptap/extension-strike@2.27.2, @tiptap/extension-table-cell@2.27.2, @tiptap/extension-table-header@2.27.2, @tiptap/extension-table-row@2.27.2, @tiptap/extension-table@2.27.2, @tiptap/extension-task-item@2.27.2, @tiptap/extension-task-list@2.27.2, @tiptap/extension-text@2.27.2, @tiptap/react@2.27.2, @tiptap/starter-kit@2.27.2, @tiptap/suggestion@2.27.2
+Components: @bendyline/squisq-editor-react@2.9.0, @tiptap/core@2.27.2, @tiptap/extension-blockquote@2.27.2, @tiptap/extension-bold@2.27.2, @tiptap/extension-bullet-list@2.27.2, @tiptap/extension-code-block@2.27.2, @tiptap/extension-code@2.27.2, @tiptap/extension-document@2.27.2, @tiptap/extension-dropcursor@2.27.2, @tiptap/extension-gapcursor@2.27.2, @tiptap/extension-hard-break@2.27.2, @tiptap/extension-heading@2.27.2, @tiptap/extension-history@2.27.2, @tiptap/extension-horizontal-rule@2.27.2, @tiptap/extension-image@2.27.2, @tiptap/extension-italic@2.27.2, @tiptap/extension-link@2.27.2, @tiptap/extension-list-item@2.27.2, @tiptap/extension-mention@2.27.2, @tiptap/extension-ordered-list@2.27.2, @tiptap/extension-paragraph@2.27.2, @tiptap/extension-placeholder@2.27.2, @tiptap/extension-strike@2.27.2, @tiptap/extension-table-cell@2.27.2, @tiptap/extension-table-header@2.27.2, @tiptap/extension-table-row@2.27.2, @tiptap/extension-table@2.27.2, @tiptap/extension-task-item@2.27.2, @tiptap/extension-task-list@2.27.2, @tiptap/extension-text@2.27.2, @tiptap/react@2.27.2, @tiptap/starter-kit@2.27.2, @tiptap/suggestion@2.27.2
 Source files: node_modules/@bendyline/squisq-editor-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-editor-react
@@ -617,7 +617,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.4.5
+Components: @bendyline/squisq-formats@2.4.6
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -642,7 +642,7 @@ texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.4.5
+Components: @bendyline/squisq-formats@2.4.6
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -824,7 +824,7 @@ Awesome, nor vice versa. **Please do not use brand logos for any purpose except
 to represent the company, product, or service to which they refer.**
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.8.0
+Components: @bendyline/squisq-react@2.9.0
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -849,7 +849,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.8.0
+Components: @bendyline/squisq-react@2.9.0
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -5322,7 +5322,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.0
+Components: @bendyline/squisq-video-react@2.4.1
 Source files: node_modules/@bendyline/squisq-video-react/COPYING.GPL-2.0.txt
 ==============================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -5665,7 +5665,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.0
+Components: @bendyline/squisq-video-react@2.4.1
 Source files: node_modules/@bendyline/squisq-video-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video-react
@@ -5710,7 +5710,7 @@ global WebCodecs declaration dependencies are not installed for consumers. Its
 exact license text is shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.0, @ffmpeg/ffmpeg@0.12.15
+Components: @bendyline/squisq-video-react@2.4.1, @ffmpeg/ffmpeg@0.12.15
 Source files: node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video-react
@@ -5774,7 +5774,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.3.0
+Components: @bendyline/squisq-video@2.3.1
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -5799,7 +5799,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.3.0
+Components: @bendyline/squisq-video@2.3.1
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -5811,7 +5811,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.8.0
+Components: @bendyline/squisq@2.9.0
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -5842,7 +5842,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.8.0
+Components: @bendyline/squisq@2.9.0
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq
@@ -6554,7 +6554,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ==============================================================================
-Components: builder-util-runtime@9.2.10, electron-updater@6.3.9
+Components: builder-util-runtime@9.7.0, electron-updater@6.8.9
 Source files: node_modules/builder-util-runtime/LICENSE, node_modules/electron-updater/LICENSE
 ==============================================================================
 The MIT License (MIT)
@@ -7815,6 +7815,26 @@ OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHE
  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
+Components: semver@7.7.4
+Source files: node_modules/electron-updater/node_modules/semver/LICENSE
+==============================================================================
+The ISC License
+
+Copyright (c) Isaac Z. Schlueter and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
+IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+==============================================================================
 Components: electron-window-state@5.0.3
 Source files: node_modules/electron-window-state/license
 ==============================================================================
@@ -8385,7 +8405,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: js-yaml@4.3.0
+Components: js-yaml@4.3.1
 Source files: node_modules/js-yaml/LICENSE
 ==============================================================================
 (The MIT License)
@@ -10700,26 +10720,6 @@ No contributor can revoke this license.
 without any warranty or condition, and no contributor
 will be liable to anyone for any damages related to this
 software or this license, under any kind of legal claim.***
-
-==============================================================================
-Components: semver@7.8.0
-Source files: node_modules/semver/LICENSE
-==============================================================================
-The ISC License
-
-Copyright (c) Isaac Z. Schlueter and Contributors
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
-IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
 Components: stylis@4.4.0

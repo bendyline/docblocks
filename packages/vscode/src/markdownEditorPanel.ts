@@ -32,6 +32,7 @@ import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueu
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
+import { handleProofStateMessage } from './proofStateBridge.js';
 import { resolveEditorLinkTarget } from './editorLinkNavigation.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
@@ -399,6 +400,18 @@ export class MarkdownEditorPanel {
         await handleMediaMessage(message, await this.ensureDocument(), this.panel.webview);
         return;
 
+      case 'loadProofDictionary':
+      case 'addProofDictionaryWord':
+      case 'loadProofIgnores':
+      case 'saveProofIgnores':
+        // Proofing preferences never touch the document; the key comes from
+        // this panel's own URI, never from the webview.
+        await handleProofStateMessage(message, this.uri, this.panel.webview, {
+          dictionary: this.context.globalState,
+          ignores: this.context.workspaceState,
+        });
+        return;
+
       case 'saveExport':
       case 'resolveExportTarget':
       case 'pickExportTarget':
@@ -699,6 +712,14 @@ export class MarkdownEditorPanel {
       case 'readWorkspaceFile':
         this.postMessage({
           type: 'workspaceFileError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'loadProofDictionary':
+      case 'loadProofIgnores':
+        this.postMessage({
+          type: 'proofStateError',
           requestId: message.requestId,
           message: responseMessage,
         });

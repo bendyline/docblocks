@@ -354,9 +354,130 @@ if (
 }
 
 interface DesktopManifest {
+  readonly devDependencies?: Readonly<Record<string, string>>;
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly version?: string;
 }
+
+type DependencySection = 'dependencies' | 'devDependencies';
+
+function parseExactVersion(
+  version: string,
+  description: string,
+): readonly [number, number, number] {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/u.exec(version);
+  if (!match) {
+    failConfigPolicy(`${description} must use an exact semantic-version pin; found ${version}.`);
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function requireAtLeast(version: string, minimum: string, description: string): void {
+  const actualParts = parseExactVersion(version, description);
+  const minimumParts = parseExactVersion(minimum, `${description} minimum`);
+  for (let index = 0; index < actualParts.length; index += 1) {
+    if (actualParts[index] > minimumParts[index]) return;
+    if (actualParts[index] < minimumParts[index]) {
+      failConfigPolicy(`${description} ${version} is below the safe minimum ${minimum}.`);
+    }
+  }
+}
+
+function readPackageManifest(manifestPath: string): DesktopManifest {
+  return JSON.parse(readFileSync(manifestPath, 'utf8')) as DesktopManifest;
+}
+
+function requireSafePin(
+  manifest: DesktopManifest,
+  section: DependencySection,
+  packageName: string,
+  minimum: string,
+  description: string,
+): string {
+  const pin = manifest[section]?.[packageName];
+  if (!pin) {
+    failConfigPolicy(`${description} must declare ${packageName} in ${section}.`);
+  }
+  requireAtLeast(pin, minimum, `${description} ${packageName}`);
+  return pin;
+}
+
+function requireResolvedVersion(
+  manifestPath: string,
+  minimum: string,
+  description: string,
+  expected?: string,
+): void {
+  const version = readPackageManifest(manifestPath).version;
+  if (!version) {
+    failConfigPolicy(`${description} has no package version at ${manifestPath}.`);
+  }
+  requireAtLeast(version, minimum, description);
+  if (expected !== undefined && version !== expected) {
+    failConfigPolicy(`${description} resolved to ${version}, but the manifest pins ${expected}.`);
+  }
+}
+
+// These floors close the audited desktop release findings:
+// - GHSA-7g7r-gx96-252g: unsafe AppImage LD_LIBRARY_PATH construction
+// - GHSA-p2f4-r6v6-j797: electron-updater signature validation bypass
+// - GHSA-5p4m-2wfm-xmqj: js-yaml prototype pollution
+// Validate both the direct pins and the dependency closures that electron-builder
+// will place into the distributable, so a lockfile regression fails `npm run all`.
+function requireSafeDesktopReleaseDependencies(): void {
+  const rootManifest = readPackageManifest(path.join(repoRoot, 'package.json'));
+  const desktopManifest = readPackageManifest(desktopManifestPath);
+  const builderPin = requireSafePin(
+    desktopManifest,
+    'devDependencies',
+    'electron-builder',
+    '26.15.0',
+    'desktop packager',
+  );
+  const updaterPin = requireSafePin(
+    desktopManifest,
+    'dependencies',
+    'electron-updater',
+    '6.8.9',
+    'desktop runtime',
+  );
+  const yamlPin = requireSafePin(
+    rootManifest,
+    'devDependencies',
+    'js-yaml',
+    '4.3.1',
+    'workspace runtime resolution',
+  );
+
+  const builderManifestPath = require.resolve('electron-builder/package.json');
+  const builderRequire = createRequire(builderManifestPath);
+  requireResolvedVersion(builderManifestPath, '26.15.0', 'resolved electron-builder', builderPin);
+  requireResolvedVersion(
+    builderRequire.resolve('app-builder-lib/package.json'),
+    '26.15.0',
+    'resolved AppImage builder',
+  );
+
+  const updaterManifestPath = require.resolve('electron-updater/package.json');
+  const updaterRequire = createRequire(updaterManifestPath);
+  requireResolvedVersion(updaterManifestPath, '6.8.9', 'resolved electron-updater', updaterPin);
+  requireResolvedVersion(
+    updaterRequire.resolve('builder-util-runtime/package.json'),
+    '9.7.0',
+    'resolved updater runtime',
+  );
+  requireResolvedVersion(
+    updaterRequire.resolve('js-yaml/package.json'),
+    '4.3.1',
+    'resolved updater YAML parser',
+    yamlPin,
+  );
+
+  process.stdout.write('desktop release dependencies: audited safe floors OK\n');
+}
+
+requireSafeDesktopReleaseDependencies();
 
 function collectRuntimeRequires(source: string): Set<string> {
   const runtimeRequires = new Set<string>();

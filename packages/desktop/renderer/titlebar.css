@@ -120,6 +120,48 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
   padding-left: env(titlebar-area-x, 0px);
 }
 
+/* The two-row wrapped toolbar itself is shared with the site and lives in
+   packages/react/src/styles/docblocks.css. What is Electron-only is lining
+   those rows up with the native caption row and keeping the window-controls
+   overlay clear, which is all this section adds.
+
+   Sizing the wrapped row to the caption height keeps the view tabs inside the
+   native titlebar, so the second row starts below the caption buttons. */
+.db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) {
+  --db-toolbar-wrapped-row: var(--db-desktop-titlebar-height);
+}
+
+.db-desktop-root
+  .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile):has(.squisq-toolbar)
+  :is(.db-shell-sidebar-header, .squisq-editor-header) {
+  height: calc(var(--db-toolbar-wrapped-row) * 2);
+  min-height: calc(var(--db-toolbar-wrapped-row) * 2);
+}
+
+.db-desktop-root
+  .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile):has(.squisq-toolbar)
+  .db-shell-sidebar-header {
+  padding-top: 7px;
+  padding-bottom: calc(var(--db-desktop-titlebar-height) + 7px);
+}
+
+/* Fill the doubled header, and give back the toolbar-wide overlay reservation
+   set further up: only the first row meets the caption buttons now, so the
+   full-width tab row below carries that inset instead. */
+.db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar {
+  height: 100%;
+  padding-right: 12px;
+}
+
+.db-desktop-root
+  .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile)
+  .squisq-toolbar-view-tabs {
+  padding-right: max(
+    16px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px)
+  );
+}
+
 .db-desktop-root
   :is(button, a, input, select, textarea, [contenteditable='true'], [role='button'], [role='tab']) {
   app-region: no-drag;

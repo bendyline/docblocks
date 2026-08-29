@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     index: 'src/index.ts',
     'export/index': 'src/Export/public-api.ts',
+    'proofing/index': 'src/Proofing/public-api.ts',
     'settings/index': 'src/Settings/public-api.ts',
     editor: 'src/editor.ts',
   },
@@ -18,6 +19,7 @@ export default defineConfig({
     '@bendyline/squisq',
     '@bendyline/squisq-react',
     '@bendyline/squisq-editor-react',
+    '@bendyline/squisq-editor-react/proofing',
     '@bendyline/squisq-formats',
     '@bendyline/squisq-video',
     '@bendyline/squisq-video-react',

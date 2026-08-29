@@ -45,9 +45,16 @@
   --db-badge-bg: #f3eede;
   --db-badge-text: #3d3220;
   --db-badge-text-hover: #2a2419;
-  /* Outline pane + inline-preview gutter background. Sits one step
-     lighter than the toolbar (`--db-accent-tint-strong`) so the chrome
-     panes read as distinct from the action bar above the canvas. */
+  /* The editor "desk": every chrome surface the page floats on — the
+     outline pane, the inline-preview gutter, the Monaco line-number
+     margin, and (via `--squisq-desk-bg`) the field behind the WYSIWYG
+     page in light mode. Squisq's own default for that field is a cool
+     `#dcd8d0`, which read as a grey slab against this cream palette;
+     binding it here keeps the whole editor area one continuous tone.
+     Dark mode re-points that one field at `--db-editor-canvas` so the
+     page still sits lighter than what it floats on.
+     Sits one step lighter than the toolbar (`--db-accent-tint-strong`)
+     so the chrome still reads as distinct from the action bar. */
   --db-gutter-bg: #efe8d4;
   --db-input-border: #c4b693;
   --db-danger: #b22b1b;
@@ -97,10 +104,12 @@
   --db-danger-bg: #1c1917;
   --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
-  /* In dark mode, "lighter than the toolbar" means brighter — so this
-     sits a step above `--db-accent-tint-strong` instead of between it
-     and tint. */
-  --db-gutter-bg: #4a4538;
+  /* Dark mode reads contrast the other way round: a pane lighter than
+     the toolbar becomes a lit slab beside a near-black canvas. So the
+     desk recedes to the same tone as `--db-editor-canvas` — the field
+     the page already floats on — and the panes flanking that field
+     match it instead of bracketing it in a brighter frame. */
+  --db-gutter-bg: #16110b;
   --db-git-modified: #e5b567;
   --db-git-added: #81c784;
   --db-git-untracked: #81c784;
@@ -138,7 +147,7 @@
     --db-danger-bg: #1c1917;
     --db-text-on-danger: #1c1917;
     --db-shadow: rgba(0, 0, 0, 0.4);
-    --db-gutter-bg: #4a4538;
+    --db-gutter-bg: #16110b;
     --db-git-modified: #e5b567;
     --db-git-added: #81c784;
     --db-git-untracked: #81c784;
@@ -1511,10 +1520,10 @@ body.db-resizing-sidebar * {
 }
 
 /* The compact editor uses two deliberate toolbar rows: navigation/views on
-   top and actions below. Squisq's formatting actions remain available through
-   its measured More menu; hiding their inline copies removes clipped,
-   keyboard-focusable controls while leaving room for versioning, document
-   settings, Files, and DocBlocks' Export and share control. */
+   top and actions below. The second row keeps versioning, document settings,
+   Files, and DocBlocks' Export and share control at its right; Squisq's
+   formatting actions fill whatever width is left over and spill the remainder
+   into its measured More menu. */
 .db-shell--mobile .squisq-toolbar {
   min-height: 88px;
   flex-wrap: wrap;
@@ -1538,14 +1547,14 @@ body.db-resizing-sidebar * {
   height: 44px;
 }
 
+/* A zero flex basis keeps the actions row out of flex line-breaking — its
+   intrinsic width is far wider than the row, and breaking uses the base size,
+   so any other basis would push the right-side controls onto a third row.
+   Growing from zero then hands it every pixel the fixed controls leave. */
 .db-shell--mobile .squisq-toolbar-actions {
-  flex: 0 1 0;
-  width: 0;
+  flex: 1 1 0;
+  min-width: 0;
   height: 44px;
-}
-
-.db-shell--mobile .squisq-toolbar-actions > * {
-  visibility: hidden;
 }
 
 .db-shell--mobile .squisq-toolbar-overflow,
@@ -1554,15 +1563,42 @@ body.db-resizing-sidebar * {
   flex: 0 0 auto;
 }
 
-/* The compact layout moves Squisq's overflow trigger to the left edge of
-   the second row. Its desktop right-aligned placement can consequently put
-   the menu off-canvas, so anchor the mobile popover to the viewport instead. */
+/* The compact layout puts Squisq's overflow trigger part-way along the second
+   row, wherever the formatting buttons stop. Its desktop right-aligned
+   placement would hang the menu off-canvas from there, so anchor the mobile
+   popover to the viewport instead. */
 .db-shell--mobile .squisq-editor-shell .squisq-toolbar-overflow-menu {
   right: auto !important;
   left: max(4px, env(safe-area-inset-left)) !important;
   max-width: calc(100vw - 8px);
   max-height: calc(100dvh - 96px);
   overflow-y: auto;
+}
+
+/* A wide sidebar or a narrow window can leave the editor pane too small for
+   the view tabs, formatting controls, and host controls to share one row —
+   the actions lane is the only flexible item, so it is what gets squeezed to
+   nothing. Past the measured pane width the view tabs take a row of their own
+   and everything else drops below them: the same two-row shape the compact
+   layout uses, without giving up the split view. The shell class comes from a
+   ResizeObserver on the editor pane, so dragging the sidebar is handled too.
+   Electron overrides the row height to line these rows up with its native
+   caption buttons; see packages/desktop/renderer/titlebar.css. */
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) {
+  --db-toolbar-wrapped-row: 44px;
+}
+
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar {
+  min-height: calc(var(--db-toolbar-wrapped-row) * 2);
+  flex-wrap: wrap;
+  align-content: stretch;
+}
+
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar-view-tabs {
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  width: 100%;
+  height: var(--db-toolbar-wrapped-row);
 }
 
 .db-mobile-back {
@@ -2996,6 +3032,27 @@ body.db-resizing-sidebar * {
   --squisq-text-muted: var(--db-text-muted);
 }
 
+/* ── Editor desk ─────────────────────────────────────────────── */
+/* Squisq paints its outline pane, block card, block-preview panel, and the
+   field behind the WYSIWYG page from one `--squisq-desk-bg` token — the
+   "desk" the page floats on. Bind it to the DocBlocks desk tone once, and
+   paint those surfaces from it here as well so the pairing also holds
+   against a published squisq predating the token. Anything that wants to
+   sit apart from the desk shades from `--db-gutter-bg`; it should not pick
+   a tone of its own, which is how the panes drifted into slabs that read
+   as brighter chrome rather than as the surface under the page.
+   (The inline-preview gutter is left to `--squisq-preview-gutter-bg`,
+   bound to the same value below, so hosts can still peel it off.) */
+.db-shell .squisq-editor-shell {
+  --squisq-desk-bg: var(--db-gutter-bg);
+}
+
+.db-shell
+  .squisq-editor-shell
+  :is(.squisq-wysiwyg-container, .squisq-block-card, .squisq-block-preview-panel, .squisq-outline) {
+  background: var(--squisq-desk-bg);
+}
+
 /* ── Inline preview gutter: thematic green ──────────────────── */
 /* Rebind squisq's `--squisq-preview-*` custom properties so the
    gutter chrome (vertical bracket, diagonal connector + dots,
@@ -3053,10 +3110,6 @@ body.db-resizing-sidebar * {
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
   background: var(--db-bg);
-}
-
-.db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-container {
-  background: var(--db-editor-canvas);
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] .squisq-wysiwyg-editor {
@@ -3414,7 +3467,7 @@ html:has(.db-shell[data-theme='dark']) {
   --db-accent-soft-25: rgba(200, 180, 143, 0.28);
   --db-accent-tint-strong: #3a382e;
   --db-accent-deep: #e6dcc0;
-  --db-gutter-bg: #4a4538;
+  --db-gutter-bg: #16110b;
 }
 
 html:has(.db-shell[data-theme='light']) {
@@ -3515,7 +3568,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='green']) {
   --db-text-on-selected: #e2ebe4;
   --db-accent-tint-strong: #2f4034;
   --db-accent-deep: #d4e8d9;
-  --db-gutter-bg: #3b4d40;
+  --db-gutter-bg: #0e1510;
   --db-input-border: #9ec2a8;
   --db-editor-canvas: #0e1510;
   --db-badge-bg: #294031;
@@ -3564,7 +3617,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='blue']) {
   --db-text-on-selected: #e2e8ef;
   --db-accent-tint-strong: #2e3b49;
   --db-accent-deep: #d8e5f2;
-  --db-gutter-bg: #394858;
+  --db-gutter-bg: #0f1318;
   --db-input-border: #a7bdd8;
   --db-editor-canvas: #0f1318;
   --db-badge-bg: #28394a;
@@ -3613,7 +3666,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='purple']) {
   --db-text-on-selected: #ece3ef;
   --db-accent-tint-strong: #413348;
   --db-accent-deep: #eadcf1;
-  --db-gutter-bg: #493b50;
+  --db-gutter-bg: #120f15;
   --db-input-border: #c2a9d4;
   --db-editor-canvas: #120f15;
   --db-badge-bg: #3b2a44;
@@ -3662,7 +3715,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='maroon']) {
   --db-text-on-selected: #f0e3e7;
   --db-accent-tint-strong: #473139;
   --db-accent-deep: #f0d8e0;
-  --db-gutter-bg: #503b42;
+  --db-gutter-bg: #150e11;
   --db-input-border: #d0a5b4;
   --db-editor-canvas: #150e11;
   --db-badge-bg: #442832;
@@ -3711,7 +3764,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='orange']) {
   --db-text-on-selected: #f0e7dc;
   --db-accent-tint-strong: #493a2a;
   --db-accent-deep: #f1dbc4;
-  --db-gutter-bg: #514333;
+  --db-gutter-bg: #15100c;
   --db-input-border: #d7b08a;
   --db-editor-canvas: #15100c;
   --db-badge-bg: #44301f;
@@ -3760,7 +3813,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-text-on-selected: #e8e8e8;
   --db-accent-tint-strong: #383838;
   --db-accent-deep: #e2e2e2;
-  --db-gutter-bg: #444444;
+  --db-gutter-bg: #111111;
   --db-input-border: #b8b8b8;
   --db-editor-canvas: #111111;
   --db-badge-bg: #333333;
@@ -4546,38 +4599,28 @@ html:has(.db-shell[data-theme='dark'])
   opacity: 0.62;
 }
 
-/* Outline pane (left of the editor) — squisq paints a warm beige
-   (#dcd8d0 light / dark slate in dark mode). Re-tone to `--db-gutter-bg`
-   so it matches the inline-preview gutter on the right and reads as
-   one step lighter than the toolbar above. */
-.db-shell[data-theme='light'] .squisq-outline {
-  background: var(--db-gutter-bg);
-  color: var(--db-text);
-}
-
-.db-shell[data-theme='light'] .squisq-outline-row:hover {
-  background: var(--db-accent-soft-15);
-}
-
-.db-shell[data-theme='dark'] .squisq-outline {
-  background: var(--db-gutter-bg);
-  color: var(--db-text);
-}
-
-.db-shell[data-theme='dark'] .squisq-outline-row:hover {
-  background: var(--db-accent-soft-15);
-}
-
-/* Explicit borders on the canvas side of each chrome pane so the
-   white editor area reads as a clearly-edged "page" rather than
-   blending into the cream gutters. Uses --db-border-strong to match
-   the hairline under the toolbar. */
+/* Outline pane (left of the editor). Its background comes from
+   `--squisq-desk-bg` above, same as every other desk surface — only the
+   text and hover tint need binding to the DocBlocks palette. */
 .db-shell .squisq-outline {
-  border-right: 1px solid var(--db-border-strong);
+  color: var(--db-text);
+}
+
+.db-shell .squisq-outline-row:hover {
+  background: var(--db-accent-soft-15);
+}
+
+/* Hairlines on the canvas side of each chrome pane. The desk is one
+   continuous tone across the panes and the field behind the page, so
+   these mark where the panes end without the --db-border-strong stripe
+   that used to divide two different surfaces — the page's own shadow
+   does the heavier separating. */
+.db-shell .squisq-outline {
+  border-right: 1px solid var(--db-border);
 }
 
 .db-shell .squisq-inline-preview-gutter {
-  border-left: 1px solid var(--db-border-strong);
+  border-left: 1px solid var(--db-border);
 }
 
 /* Toolbar overflow menu. Squisq intentionally ships a neutral slate

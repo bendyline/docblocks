@@ -5,6 +5,7 @@ import {
   CROSS_ORIGIN_ISOLATION_HEADERS,
   ffmpegCorePlugin,
 } from '../../scripts/vite-ffmpeg-core.js';
+import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
@@ -54,6 +55,7 @@ export default defineConfig({
   plugins: [
     stripBrokenSourcemapPragmas(),
     ffmpegCorePlugin(),
+    harperWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
     react(),
   ],
@@ -184,6 +186,10 @@ export default defineConfig({
       '@ffmpeg/ffmpeg',
       '@ffmpeg/util',
       'html2canvas',
+      // See packages/site/vite.config.ts — harper is reached by a dynamic
+      // import inside the excluded editor package and must be pre-optimized
+      // rather than discovered when the first document opens.
+      'harper.js',
       // Mermaid is a lazy dependency of the excluded squisq-react package.
       // Explicit optimization provides ESM interop for its CommonJS deps.
       'mermaid',

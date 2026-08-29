@@ -76,6 +76,7 @@ const packages: readonly PackageUnderTest[] = [
     runtimeImports: [
       '@bendyline/docblocks-react',
       '@bendyline/docblocks-react/export',
+      '@bendyline/docblocks-react/proofing',
       '@bendyline/docblocks-react/settings',
       '@bendyline/docblocks-react/editor',
     ],

@@ -2,10 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { thirdPartyComponentManifestPlugin } from '../../../scripts/vite-third-party-manifest.js';
+import { harperWasmPlugin } from '../../../scripts/vite-harper-wasm.js';
 
 export default defineConfig({
   base: './',
-  plugins: [thirdPartyComponentManifestPlugin(), react()],
+  plugins: [harperWasmPlugin(), thirdPartyComponentManifestPlugin(), react()],
   root: path.resolve(__dirname),
   build: {
     outDir: path.resolve(__dirname, '../dist/webview'),
@@ -126,6 +127,10 @@ export default defineConfig({
       '@tiptap/pm/commands',
       '@tiptap/pm/schema-list',
       'mermaid',
+      // See packages/site/vite.config.ts — harper is reached by a dynamic
+      // import inside the excluded editor package and must be pre-optimized
+      // rather than discovered when the first document opens.
+      'harper.js',
     ],
     exclude: [
       '@bendyline/squisq',

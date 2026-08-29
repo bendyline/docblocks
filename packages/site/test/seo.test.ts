@@ -100,7 +100,11 @@ describe('site SEO surface', () => {
     expect(policyDirectives.get('default-src')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('media-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
     expect(policyDirectives.get('connect-src')).to.deep.equal(["'self'", 'blob:', 'data:']);
-    expect(policyDirectives.get('script-src')).to.deep.equal(["'self'"]);
+    // 'wasm-unsafe-eval' is the narrow WebAssembly grant, not an eval() grant:
+    // it ungates WASM compilation (the proofing engine and ffmpeg core) while
+    // leaving 'unsafe-eval' and 'unsafe-inline' refused. Widening this list any
+    // further is what this assertion exists to catch.
+    expect(policyDirectives.get('script-src')).to.deep.equal(["'self'", "'wasm-unsafe-eval'"]);
     expect(policyDirectives.get('manifest-src')).to.deep.equal(["'self'"]);
     expect(policyDirectives.get('object-src')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('base-uri')).to.deep.equal(["'none'"]);

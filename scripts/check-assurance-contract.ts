@@ -423,6 +423,7 @@ async function main(): Promise<void> {
     'npm run check:site-fonts',
     'npm run check:desktop-config',
     'npm run check:vscode-package',
+    'npm run check:notices',
     'npm run check:assurance',
     'npm run lint',
     'npm run format:check',

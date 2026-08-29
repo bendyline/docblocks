@@ -118,10 +118,11 @@ const surfaces: readonly Surface[] = [
     id: 'site',
     title: 'DocBlocks site distribution',
     description:
-      'Packages present in the emitted Vite/Rollup module graph, plus copied ffmpeg.wasm and Workbox service-worker components.',
+      'Packages present in the emitted Vite/Rollup module graph, plus the copied ffmpeg.wasm and harper.js WebAssembly engines and Workbox service-worker components.',
     artifactManifest: 'packages/site/dist/THIRD_PARTY_COMPONENTS.json',
     supplementalPackages: [
       '@ffmpeg/core',
+      'harper.js',
       'workbox-core',
       'workbox-precaching',
       'workbox-routing',
@@ -133,20 +134,20 @@ const surfaces: readonly Surface[] = [
     id: 'vscode',
     title: 'DocBlocks VS Code extension (VSIX)',
     description:
-      'Packages present in the emitted webview Vite/Rollup module graph, plus jsonc-parser bundled into the desktop and web extension-host entry points.',
+      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js WebAssembly engine and jsonc-parser bundled into the desktop and web extension-host entry points.',
     artifactManifest: 'packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json',
-    supplementalPackages: ['jsonc-parser'],
+    supplementalPackages: ['harper.js', 'jsonc-parser'],
     output: 'packages/vscode/THIRD_PARTY_NOTICES.txt',
   },
   {
     id: 'desktop',
     title: 'DocBlocks desktop distribution',
     description:
-      'Packages present in the emitted renderer Vite/Rollup module graph, Electron itself, and the production dependencies copied beside the bundled main process.',
+      'Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js WebAssembly engine, Electron itself, and the production dependencies copied beside the bundled main process.',
     artifactManifest: 'packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json',
     workspace: 'packages/desktop',
     optionalDependencyNames: new Set(['fsevents']),
-    supplementalPackages: ['electron'],
+    supplementalPackages: ['electron', 'harper.js'],
     output: 'packages/desktop/THIRD_PARTY_NOTICES.txt',
   },
 ];
@@ -616,7 +617,7 @@ function renderRootNotice(
     '',
     '## Regeneration and drift checking',
     '',
-    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it is a standalone check (not part of `npm run all`) and should be run before publishing a release. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
+    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; the canonical `npm run all` release gate runs it automatically. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
   ]
     .join('\n')
     .trimEnd()}\n`;

@@ -70,7 +70,7 @@ test.describe('DocBlocks offline (PWA)', () => {
   test('automatically migrates clients controlled by the legacy catch-all worker', async ({
     page,
   }) => {
-    // Replacing the legacy worker also performs the full ~55 MiB production
+    // Replacing the legacy worker also performs the full ~89 MiB production
     // precache before activation. Match the cold-install budget used by the
     // end-to-end offline test below, especially for slower Windows runners.
     test.setTimeout(180_000);
@@ -110,7 +110,8 @@ test.describe('DocBlocks offline (PWA)', () => {
     await devtools.send('Storage.overrideQuotaForOrigin', {
       origin: 'http://localhost:5230',
       // Enough for normal IndexedDB startup, deliberately below the checked
-      // ~55 MiB application precache (including the deferred ffmpeg core).
+      // ~89 MiB application precache (including the deferred ffmpeg core and the
+      // harper proofing engine).
       quotaSize: 4 * 1024 * 1024,
     });
     try {
@@ -201,7 +202,7 @@ test.describe('DocBlocks offline (PWA)', () => {
   });
 
   test('precaches the full app and works offline end-to-end', async ({ page, context }) => {
-    // The first visit downloads the whole ~55 MB precache in the background.
+    // The first visit downloads the whole ~89 MB precache in the background.
     test.setTimeout(180_000);
 
     await page.goto('/');
@@ -214,8 +215,9 @@ test.describe('DocBlocks offline (PWA)', () => {
     });
 
     // Precache completeness: `maximumFileSizeToCacheInBytes` silently drops
-    // anything above its cap, so assert the two families most at risk — the
-    // 6 MB Monaco ts.worker, 31 MB ffmpeg core, and theme fonts — actually made it in.
+    // anything above its cap, so assert the families most at risk — the 6 MB
+    // Monaco ts.worker, the 31 MB ffmpeg core, the two ~15 MB harper proofing
+    // binaries, and theme fonts — actually made it in.
     const precachedUrls = await page.evaluate(async () => {
       const names = await caches.keys();
       const precacheName = names.find((name) => name.includes('precache'));
@@ -228,6 +230,13 @@ test.describe('DocBlocks offline (PWA)', () => {
     expect(precachedUrls.some((url) => /ts\.worker/.test(url))).toBeTruthy();
     expect(precachedUrls.some((url) => /fonts\/.+\.woff2/.test(url))).toBeTruthy();
     expect(precachedUrls.some((url) => /ffmpeg-core\/ffmpeg-core\.wasm/.test(url))).toBeTruthy();
+    // Both harper binaries: the engine derives the slim sibling from the full
+    // one's URL and loads the pair, so precaching only the full binary leaves
+    // proofing reaching the network on a cold offline start.
+    expect(precachedUrls.some((url) => url.endsWith('/harper/harper_wasm_bg.wasm'))).toBeTruthy();
+    expect(
+      precachedUrls.some((url) => url.endsWith('/harper/harper_wasm_slim_bg.wasm')),
+    ).toBeTruthy();
 
     // The one-time legacy-route migration claims a fresh installation. A
     // reload remains useful here to exercise a cold controlled navigation;

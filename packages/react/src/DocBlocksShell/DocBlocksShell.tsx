@@ -9,6 +9,8 @@ import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } fro
 import type {
   EditorColorScheme,
   EditorView,
+  ProofingCapability,
+  ProofingIgnoreStore,
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
 import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
@@ -162,6 +164,7 @@ import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { resolveShellTheme } from './resolve-theme.js';
 import { buildIssueReportUrl } from './issue-report.js';
 import { loadLastState, saveLastState } from './last-state.js';
+import { createLocalProofingIgnoreStore } from '../Proofing/proofing-ignores.js';
 import {
   isWelcomeGatewayDismissed,
   loadFileExplorerSortMode,
@@ -314,6 +317,30 @@ export interface DocBlocksShellProps {
   appBuildDate?: string;
   /** Self-hosted ffmpeg.wasm core. Supplying it enables Animated GIF export. */
   ffmpegWasm?: FfmpegWasmLoadConfig;
+  /**
+   * Grammar and spellcheck engine, normally a harper-backed provider pointed
+   * at the surface's self-hosted WASM. Omit it and no proofing UI renders and
+   * no engine bytes are ever fetched. Pass an *instance* to keep one warm
+   * engine alive across shell remounts; pass a factory to let the editor own
+   * its lifetime and dispose it on unmount.
+   */
+  proofing?: ProofingCapability | null;
+  /**
+   * Whether proofing checks documents by default once the capability is
+   * present (default `true`). The user's session toggle and a document's
+   * `squisq-proofing` frontmatter both outrank this.
+   */
+  proofingDefaultEnabled?: boolean;
+  /**
+   * Where dismissed ("Ignore") findings persist. Squisq never writes them into
+   * the document, so without a store they last only for the session.
+   *
+   * Omit it and the shell keeps them in browser-local storage, scoped by
+   * workspace and path like every other per-document preference. Pass `null`
+   * to deliberately make dismissals session-only, or a store of your own to
+   * put them somewhere else.
+   */
+  proofingIgnoreStore?: ProofingIgnoreStore | null;
   /** Stable host title used before a document opens and for the optional home document. */
   homeDocumentTitle?: string;
   /** Document path that represents the host's indexable home experience. */
@@ -653,6 +680,14 @@ function useIsMobile(breakpoint = 768): boolean {
   return isMobile;
 }
 
+// Below these pane widths the view tabs take a row of their own and every
+// remaining control drops below them. Electron needs the extra headroom
+// because its caption buttons eat into the editor header; a browser tab has
+// no such inset, so the site holds one row down to a narrower pane rather
+// than spending 44px of chrome on a toolbar that was still mostly usable.
+const DESKTOP_TOOLBAR_WRAP_WIDTH = 900;
+const WEB_TOOLBAR_WRAP_WIDTH = 700;
+
 function FolderGlyph() {
   return (
     <svg
@@ -690,6 +725,9 @@ export function DocBlocksShell({
   issueReportVersion,
   appBuildDate,
   ffmpegWasm,
+  proofing,
+  proofingDefaultEnabled,
+  proofingIgnoreStore,
   homeDocumentTitle,
   homeDocumentPath,
   allowVersioning = true,
@@ -791,6 +829,30 @@ export function DocBlocksShell({
   // persisted across reloads. */
   const [compactLayout, setCompactLayout] = useState(false);
   const effectiveCompact = isMobile || compactLayout;
+  const editorAreaRef = useRef<HTMLElement>(null);
+  const [desktopToolbarWrapped, setDesktopToolbarWrapped] = useState(false);
+  useEffect(() => {
+    const editorArea = editorAreaRef.current;
+    if (!editorArea || effectiveCompact) {
+      setDesktopToolbarWrapped(false);
+      return;
+    }
+
+    const wrapWidth = isElectronHost() ? DESKTOP_TOOLBAR_WRAP_WIDTH : WEB_TOOLBAR_WRAP_WIDTH;
+    const updateWrappedState = () => {
+      setDesktopToolbarWrapped(editorArea.getBoundingClientRect().width <= wrapWidth);
+    };
+    updateWrappedState();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWrappedState);
+      return () => window.removeEventListener('resize', updateWrappedState);
+    }
+
+    const observer = new ResizeObserver(updateWrappedState);
+    observer.observe(editorArea);
+    return () => observer.disconnect();
+  }, [effectiveCompact]);
   const showBrowserStorageWarning = !isElectronHost();
   const appVersion = isElectronHost()
     ? `${getDocBlocksHost().env.appVersion} desktop`
@@ -924,6 +986,16 @@ export function DocBlocksShell({
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
     useState<WorkspaceDescriptor | null>(null);
+  // Dismissed findings are keyed by workspace as well as path, so the store is
+  // rebuilt when the active workspace changes. Squisq re-reads it per render,
+  // so a fresh object costs nothing. `undefined` means "use the default";
+  // `null` is a host deliberately choosing session-only dismissals.
+  const defaultProofingIgnoreStore = useMemo(
+    () => createLocalProofingIgnoreStore(() => activeWorkspaceId),
+    [activeWorkspaceId],
+  );
+  const effectiveProofingIgnoreStore =
+    proofingIgnoreStore === undefined ? defaultProofingIgnoreStore : proofingIgnoreStore;
   useEffect(() => {
     if (!provider || getTransientWorkspace(provider.id)) return;
     const providerV2 = getFileSystemProviderV2(provider);
@@ -4230,7 +4302,7 @@ export function DocBlocksShell({
 
   return (
     <div
-      className={`db-shell${effectiveCompact ? ' db-shell--mobile' : ''}`}
+      className={`db-shell${effectiveCompact ? ' db-shell--mobile' : ''}${desktopToolbarWrapped ? ' db-shell--desktop-toolbar-wrapped' : ''}`}
       data-theme={resolvedTheme}
       data-accent={accentColor}
       data-document-status={documentSnapshot.status}
@@ -4486,6 +4558,7 @@ export function DocBlocksShell({
           {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
           {(!effectiveCompact || mobileShowEditor) && (
             <main
+              ref={editorAreaRef}
               aria-label="Document editor"
               className={
                 updateAvailable && onApplyUpdate && updateStatusBarVisible
@@ -4527,6 +4600,9 @@ export function DocBlocksShell({
                       placeholder={editorPlaceholder}
                       outlineWidth={280}
                       mediaProvider={mediaProvider}
+                      proofing={proofing}
+                      proofingDefaultEnabled={proofingDefaultEnabled}
+                      proofingIgnoreStore={effectiveProofingIgnoreStore}
                       showCodeCopyButton={showCodeCopyButton}
                       onCopyCode={onCopyCode}
                       allowRecording={allowRecording}

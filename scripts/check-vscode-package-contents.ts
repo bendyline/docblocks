@@ -180,6 +180,18 @@ export async function checkVsixPackageContents(): Promise<void> {
       throw new Error(`VSIX is missing required legal inventory: ${requiredNotice}`);
     }
   }
+  // Proofing has no CDN fallback: an extension shipped without these binaries
+  // does not degrade loudly, it just never finishes loading the engine. The
+  // license rides along because harper is Apache-2.0.
+  for (const requiredEngineFile of [
+    'dist/webview/harper/harper_wasm_bg.wasm',
+    'dist/webview/harper/harper_wasm_slim_bg.wasm',
+    'dist/webview/harper/LICENSE.txt',
+  ]) {
+    if (!files.includes(requiredEngineFile)) {
+      throw new Error(`VSIX is missing the packaged proofing engine: ${requiredEngineFile}`);
+    }
+  }
   const forbidden = findForbiddenVsixPaths(files);
   if (forbidden.length > 0) {
     throw new Error(
