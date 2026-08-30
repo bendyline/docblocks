@@ -175,8 +175,8 @@
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
     "@bendyline/squisq": "2.10.0",
-    "@bendyline/squisq-editor-react": "2.10.0",
-    "@bendyline/squisq-formats": "2.5.0",
+    "@bendyline/squisq-editor-react": "2.10.1",
+    "@bendyline/squisq-formats": "2.5.1",
     "@bendyline/squisq-react": "2.10.0",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"
