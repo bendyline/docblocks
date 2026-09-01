@@ -99,10 +99,26 @@ export const DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS: Readonly<VscodeWriteCanvasSet
   fontScheme: 'theme',
 };
 
+/**
+ * Which inline proofing squiggles the editor draws. Two switches, not
+ * one: harper's grammar rules are English-only, so a writer working in
+ * another language wants spelling alone. Both off means no engine loads.
+ */
+export interface VscodeProofingSettings {
+  spelling: boolean;
+  grammar: boolean;
+}
+
+export const DEFAULT_VSCODE_PROOFING_SETTINGS: Readonly<VscodeProofingSettings> = {
+  spelling: true,
+  grammar: true,
+};
+
 export interface VscodeEditorSettings {
   autoSave: boolean;
   accentColor: DocBlocksAccentColor;
   writeCanvasSettings: VscodeWriteCanvasSettings;
+  proofingSettings: VscodeProofingSettings;
 }
 
 /**
@@ -179,6 +195,7 @@ export type WebviewToExtensionMessage =
   | { type: 'setAutoSave'; enabled: boolean }
   | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
   | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
+  | { type: 'setProofingSettings'; settings: VscodeProofingSettings }
   | { type: 'openLink'; href: string }
   | { type: 'copyCode'; requestId: number; code: string }
   | {
@@ -256,6 +273,11 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
       const settings = parseVscodeWriteCanvasSettings(value.settings);
       return settings ? { type: 'setWriteCanvasSettings', settings } : null;
+    }
+    case 'setProofingSettings': {
+      if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
+      const settings = parseVscodeProofingSettings(value.settings);
+      return settings ? { type: 'setProofingSettings', settings } : null;
     }
     case 'openLink':
       return hasOnlyKeys(value, ['type', 'href']) &&
@@ -693,15 +715,30 @@ function parseDocumentConflictDetails(
 function parseVscodeEditorSettings(value: unknown): VscodeEditorSettings | null {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ['autoSave', 'accentColor', 'writeCanvasSettings']) ||
+    !hasOnlyKeys(value, ['autoSave', 'accentColor', 'writeCanvasSettings', 'proofingSettings']) ||
     typeof value.autoSave !== 'boolean' ||
     !isDocBlocksAccentColor(value.accentColor)
   ) {
     return null;
   }
   const writeCanvasSettings = parseVscodeWriteCanvasSettings(value.writeCanvasSettings);
-  return writeCanvasSettings
-    ? { autoSave: value.autoSave, accentColor: value.accentColor, writeCanvasSettings }
+  const proofingSettings = parseVscodeProofingSettings(value.proofingSettings);
+  return writeCanvasSettings && proofingSettings
+    ? {
+        autoSave: value.autoSave,
+        accentColor: value.accentColor,
+        writeCanvasSettings,
+        proofingSettings,
+      }
+    : null;
+}
+
+function parseVscodeProofingSettings(value: unknown): VscodeProofingSettings | null {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ['spelling', 'grammar']) &&
+    typeof value.spelling === 'boolean' &&
+    typeof value.grammar === 'boolean'
+    ? { spelling: value.spelling, grammar: value.grammar }
     : null;
 }
 

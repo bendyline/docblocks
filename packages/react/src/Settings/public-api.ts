@@ -1,5 +1,6 @@
 export {
   AccentColorSettings,
+  ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
   WriteCanvasSettingsControls,
@@ -7,11 +8,18 @@ export {
 export type {
   AccentColor,
   AccentColorSettingsProps,
+  ProofingPreferences,
+  ProofingSettingsControlsProps,
   SettingsDialogProps,
   ThemePreference,
   ThemeSettingsProps,
   WriteCanvasSettingsControlsProps,
 } from './Settings.js';
+export {
+  DEFAULT_PROOFING_PREFERENCES,
+  loadProofingPreferences,
+  saveProofingPreferences,
+} from '../preferences/proofing.js';
 export {
   DEFAULT_WRITE_CANVAS_FONT_SCHEME,
   resolveWriteCanvasFonts,

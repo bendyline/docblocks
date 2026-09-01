@@ -15,11 +15,14 @@ describe('appearance styles', () => {
   });
 
   it('themes the first Source-view frame while Monaco loads', () => {
+    // Bound in the chrome-palette bridge, which — unlike a
+    // `.db-shell .squisq-editor-shell` rule — also reaches the menus and
+    // dialogs Squisq portals onto <body>.
     expect(styles).to.match(
-      /\.db-shell\s+\.squisq-editor-shell\s*\{[^}]*--squisq-editor-background:\s*#ffffff;[^}]*--squisq-editor-foreground:\s*#1f2937;/s,
+      /^:root,\n\[data-theme\] \{[^}]*--squisq-editor-background: var\(--db-editor-canvas\);[^}]*--squisq-editor-foreground: var\(--db-text\);/ms,
     );
     expect(styles).to.match(
-      /\.db-shell\s+\.squisq-editor-shell\[data-theme='dark'\]\s*\{[^}]*--squisq-editor-background:\s*#1e1e1e;[^}]*--squisq-editor-foreground:\s*#d4d4d4;/s,
+      /\.squisq-editor-shell\[data-theme='dark'\] \{[^}]*--squisq-editor-background: #1e1e1e;[^}]*--squisq-editor-foreground: #d4d4d4;/s,
     );
   });
 

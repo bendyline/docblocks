@@ -35,8 +35,12 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Settings
 export {
   AccentColorSettings,
+  DEFAULT_PROOFING_PREFERENCES,
   DEFAULT_WRITE_CANVAS_FONT_SCHEME,
+  loadProofingPreferences,
+  ProofingSettingsControls,
   resolveWriteCanvasFonts,
+  saveProofingPreferences,
   SettingsDialog,
   ThemeSettings,
   WRITE_CANVAS_FONT_SCHEMES,
@@ -44,6 +48,8 @@ export {
 } from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
+  ProofingPreferences,
+  ProofingSettingsControlsProps,
   SettingsDialogProps,
   ThemeSettingsProps,
   WriteCanvasFontScheme,

@@ -141,6 +141,11 @@ import {
   saveWriteCanvasPreferences,
   type WriteCanvasPreferences,
 } from '../preferences/write-canvas.js';
+import {
+  loadProofingPreferences,
+  saveProofingPreferences,
+  type ProofingPreferences,
+} from '../preferences/proofing.js';
 import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
@@ -796,6 +801,13 @@ export function DocBlocksShell({
   const handleWriteCanvasSettingsChange = useCallback((settings: WriteCanvasPreferences) => {
     setWriteCanvasSettings(settings);
     saveWriteCanvasPreferences(settings);
+  }, []);
+
+  const [proofingPreferences, setProofingPreferences] =
+    useState<ProofingPreferences>(loadProofingPreferences);
+  const handleProofingPreferencesChange = useCallback((settings: ProofingPreferences) => {
+    setProofingPreferences(settings);
+    saveProofingPreferences(settings);
   }, []);
 
   const [viewPreferences, setViewPreferences] = useState<ViewPreferences>(loadViewPreferences);
@@ -4389,6 +4401,8 @@ export function DocBlocksShell({
                   onAccentColorChange={handleAccentColorChange}
                   writeCanvasSettings={writeCanvasSettings}
                   onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
+                  proofingPreferences={proofingPreferences}
+                  onProofingPreferencesChange={handleProofingPreferencesChange}
                   versioningPreference={versioningPreference}
                   onVersioningPreferenceChange={handleVersioningPreferenceChange}
                   onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
@@ -4602,6 +4616,8 @@ export function DocBlocksShell({
                       mediaProvider={mediaProvider}
                       proofing={proofing}
                       proofingDefaultEnabled={proofingDefaultEnabled}
+                      proofingSpellingEnabled={proofingPreferences.spelling}
+                      proofingGrammarEnabled={proofingPreferences.grammar}
                       proofingIgnoreStore={effectiveProofingIgnoreStore}
                       showCodeCopyButton={showCodeCopyButton}
                       onCopyCode={onCopyCode}

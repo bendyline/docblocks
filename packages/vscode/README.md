@@ -56,6 +56,8 @@ Open **DocBlocks for VS Code settings** from the gear beside the export destinat
 | `docblocks.accentColor`            | Sets the editor control accent                 | `brown` |
 | `docblocks.writeCanvasTextSize`    | Sets the writing canvas text size              | `16`    |
 | `docblocks.writeCanvasLineSpacing` | Sets the writing canvas line-height multiplier | `1.7`   |
+| `docblocks.inlineSpellChecking`    | Shows inline spell checking                    | `true`  |
+| `docblocks.inlineGrammarChecking`  | Shows inline grammar checking (English only)   | `true`  |
 
 Manual Save and the editor's close-time safety flush remain active when automatic save is disabled.
 

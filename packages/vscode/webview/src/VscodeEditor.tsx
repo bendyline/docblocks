@@ -20,9 +20,11 @@ import type {
   DocumentSessionMessageStatus,
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
+  VscodeProofingSettings,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
 import {
+  DEFAULT_VSCODE_PROOFING_SETTINGS,
   DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   parseExtensionToWebviewMessage,
 } from '@bendyline/docblocks/vscode';
@@ -62,6 +64,7 @@ const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
   autoSave: false,
   accentColor: 'brown',
   writeCanvasSettings: { ...DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS },
+  proofingSettings: { ...DEFAULT_VSCODE_PROOFING_SETTINGS },
 };
 
 // Keep host capability decisions together at the EditorShell boundary. VS Code
@@ -343,6 +346,11 @@ export function VscodeEditor() {
     [],
   );
 
+  const handleProofingSettingsChange = useCallback((proofingSettings: VscodeProofingSettings) => {
+    setSettings((current) => ({ ...current, proofingSettings }));
+    vscode.postMessage({ type: 'setProofingSettings', settings: proofingSettings });
+  }, []);
+
   const handleLinkClick = useCallback((href: string): boolean => {
     if (href.startsWith('#')) return false;
     vscode.postMessage({ type: 'openLink', href });
@@ -458,6 +466,8 @@ export function VscodeEditor() {
           placeholder={editorPlaceholder}
           mediaProvider={mediaBridge.mediaProvider}
           proofing={proofing}
+          proofingSpellingEnabled={settings.proofingSettings.spelling}
+          proofingGrammarEnabled={settings.proofingSettings.grammar}
           proofingIgnoreStore={proofingBridge?.ignoreStore ?? null}
           allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
           allowPresentationWindow={false}
@@ -478,6 +488,7 @@ export function VscodeEditor() {
                 onAutoSaveChange={handleAutoSaveChange}
                 onAccentColorChange={handleAccentColorChange}
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
+                onProofingSettingsChange={handleProofingSettingsChange}
               />
             </Suspense>
           }

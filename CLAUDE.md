@@ -143,12 +143,13 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
-| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                       |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |
+| Task                       | Start with                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                    |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                    |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
+| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                           |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                  |
+| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule |

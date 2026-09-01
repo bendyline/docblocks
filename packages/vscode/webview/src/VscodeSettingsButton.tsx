@@ -2,10 +2,12 @@ import { useState } from 'react';
 import type {
   DocBlocksAccentColor,
   VscodeEditorSettings,
+  VscodeProofingSettings,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
 import {
   AccentColorSettings,
+  ProofingSettingsControls,
   SettingsDialog,
   WriteCanvasSettingsControls,
 } from '@bendyline/docblocks-react/settings';
@@ -15,6 +17,7 @@ export interface VscodeSettingsButtonProps {
   onAutoSaveChange: (enabled: boolean) => void;
   onAccentColorChange: (color: DocBlocksAccentColor) => void;
   onWriteCanvasSettingsChange: (settings: VscodeWriteCanvasSettings) => void;
+  onProofingSettingsChange: (settings: VscodeProofingSettings) => void;
 }
 
 export function VscodeSettingsButton({
@@ -22,6 +25,7 @@ export function VscodeSettingsButton({
   onAutoSaveChange,
   onAccentColorChange,
   onWriteCanvasSettingsChange,
+  onProofingSettingsChange,
 }: VscodeSettingsButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -47,6 +51,10 @@ export function VscodeSettingsButton({
           <WriteCanvasSettingsControls
             value={settings.writeCanvasSettings}
             onChange={onWriteCanvasSettingsChange}
+          />
+          <ProofingSettingsControls
+            value={settings.proofingSettings}
+            onChange={onProofingSettingsChange}
           />
 
           <fieldset className="db-settings-fieldset">
