@@ -118,10 +118,11 @@ const surfaces: readonly Surface[] = [
     id: 'site',
     title: 'DocBlocks site distribution',
     description:
-      'Packages present in the emitted Vite/Rollup module graph, plus the copied ffmpeg.wasm and harper.js WebAssembly engines and Workbox service-worker components.',
+      'Packages present in the emitted Vite/Rollup module graph, plus the copied ffmpeg.wasm, harper.js, and IronCalc WebAssembly engines and Workbox service-worker components.',
     artifactManifest: 'packages/site/dist/THIRD_PARTY_COMPONENTS.json',
     supplementalPackages: [
       '@ffmpeg/core',
+      '@ironcalc/wasm',
       'harper.js',
       'workbox-core',
       'workbox-precaching',
@@ -134,20 +135,20 @@ const surfaces: readonly Surface[] = [
     id: 'vscode',
     title: 'DocBlocks VS Code extension (VSIX)',
     description:
-      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js WebAssembly engine and jsonc-parser bundled into the desktop and web extension-host entry points.',
+      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.',
     artifactManifest: 'packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json',
-    supplementalPackages: ['harper.js', 'jsonc-parser'],
+    supplementalPackages: ['@ironcalc/wasm', 'harper.js', 'jsonc-parser'],
     output: 'packages/vscode/THIRD_PARTY_NOTICES.txt',
   },
   {
     id: 'desktop',
     title: 'DocBlocks desktop distribution',
     description:
-      'Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js WebAssembly engine, Electron itself, and the production dependencies copied beside the bundled main process.',
+      'Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines, Electron itself, and the production dependencies copied beside the bundled main process.',
     artifactManifest: 'packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json',
     workspace: 'packages/desktop',
     optionalDependencyNames: new Set(['fsevents']),
-    supplementalPackages: ['electron', 'harper.js'],
+    supplementalPackages: ['@ironcalc/wasm', 'electron', 'harper.js'],
     output: 'packages/desktop/THIRD_PARTY_NOTICES.txt',
   },
 ];
@@ -388,6 +389,9 @@ function fallbackLicenseFiles(component: Component): readonly string[] {
       'node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt',
     ];
   }
+  if (component.name === '@ironcalc/wasm') {
+    return ['scripts/licenses/ironcalc/LICENSE-MIT.txt'];
+  }
   if (component.name.startsWith('@ffmpeg/')) {
     return ['node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt'];
   }
@@ -455,18 +459,21 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
     return [
       'Font license texts are shipped beside the font assets in `fonts/licenses/`.',
       'The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices in `ffmpeg-core/`.',
+      'The copied IronCalc formula engine ships its selected upstream MIT license in `ironcalc/`.',
       'This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.',
     ];
   }
   if (surface.id === 'desktop') {
     return [
       'The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices inside the renderer at `ffmpeg-core/`.',
+      'The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.',
       "Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.",
     ];
   }
   if (surface.id === 'vscode') {
     return [
       'This notice and the emitted `dist/webview/THIRD_PARTY_COMPONENTS.json` are included in the VSIX.',
+      'The IronCalc formula engine and its selected upstream MIT license are included under `dist/webview/ironcalc/`.',
     ];
   }
   return [
@@ -584,6 +591,7 @@ function renderRootNotice(
     `- The site ships ${fontLicenseCount} font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.`,
     `- Site and desktop renderer builds ship @ffmpeg/core@${lockedVersion('@ffmpeg/core')} (` +
       'GPL-2.0-or-later) as `ffmpeg-core.js` and `ffmpeg-core.wasm`. The same directory contains `COPYING.GPL-2.0.txt`, upstream notices, third-party licenses, and exact source-release pointers.',
+    `- Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@${lockedVersion('@ironcalc/wasm')} as a deferred formula engine, together with the selected upstream MIT license.`,
     `- Desktop distributions embed Electron ${lockedVersion('electron')}. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.`,
     '',
     '## Major runtime components',

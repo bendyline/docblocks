@@ -192,6 +192,17 @@ export async function checkVsixPackageContents(): Promise<void> {
       throw new Error(`VSIX is missing the packaged proofing engine: ${requiredEngineFile}`);
     }
   }
+  // Formula sessions fall back to the in-house tier if this optional engine
+  // is missing, so pin its VSIX payload explicitly instead of accepting a
+  // silently reduced package.
+  for (const requiredEngineFile of [
+    'dist/webview/ironcalc/wasm_bg.wasm',
+    'dist/webview/ironcalc/LICENSE-MIT.txt',
+  ]) {
+    if (!files.includes(requiredEngineFile)) {
+      throw new Error(`VSIX is missing the packaged calculation engine: ${requiredEngineFile}`);
+    }
+  }
   const forbidden = findForbiddenVsixPaths(files);
   if (forbidden.length > 0) {
     throw new Error(

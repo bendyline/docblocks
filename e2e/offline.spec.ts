@@ -233,9 +233,13 @@ test.describe('DocBlocks offline (PWA)', () => {
     // Both harper binaries: the engine derives the slim sibling from the full
     // one's URL and loads the pair, so precaching only the full binary leaves
     // proofing reaching the network on a cold offline start.
-    expect(precachedUrls.some((url) => url.endsWith('/harper/harper_wasm_bg.wasm'))).toBeTruthy();
     expect(
-      precachedUrls.some((url) => url.endsWith('/harper/harper_wasm_slim_bg.wasm')),
+      precachedUrls.some((url) => new URL(url).pathname.endsWith('/harper/harper_wasm_bg.wasm')),
+    ).toBeTruthy();
+    expect(
+      precachedUrls.some((url) =>
+        new URL(url).pathname.endsWith('/harper/harper_wasm_slim_bg.wasm'),
+      ),
     ).toBeTruthy();
 
     // The one-time legacy-route migration claims a fresh installation. A
@@ -277,11 +281,18 @@ test.describe('DocBlocks offline (PWA)', () => {
     }
     const editor = page.locator('[contenteditable="true"]').first();
     await expect(editor).toBeVisible({ timeout: 15_000 });
+    const shell = page.locator('.db-shell');
+    await expect(shell).toHaveAttribute('data-document-status', 'saved');
+    const editBecameDirty = page
+      .locator('.db-shell:not([data-document-status="saved"])')
+      .waitFor({ state: 'visible', timeout: 10_000 });
     await editor.click();
-    await page.keyboard.type('Offline note from the e2e suite. ');
-    await expect(page.locator('.db-shell[data-document-status="saved"]')).toBeVisible({
-      timeout: 10_000,
-    });
+    await page.keyboard.press('Control+End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.insertText('Offline note from the e2e suite. ');
+    await expect(editor).toContainText('Offline note from the e2e suite.');
+    await editBecameDirty;
+    await expect(shell).toHaveAttribute('data-document-status', 'saved', { timeout: 10_000 });
 
     // Still offline: a full reload must bring the edit back from IndexedDB.
     await page.reload();

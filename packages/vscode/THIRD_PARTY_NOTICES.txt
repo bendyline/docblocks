@@ -3,29 +3,35 @@ Run `npm run generate:notices` from the repository root.
 
 # Third-Party Notices: DocBlocks VS Code extension (VSIX)
 
-Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js WebAssembly engine and jsonc-parser bundled into the desktop and web extension-host entry points.
+Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.
 
 Inventory source: package-lock.json and packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json.
-Components: 202.
+Components: 207.
 
 This notice and the emitted `dist/webview/THIRD_PARTY_COMPONENTS.json` are included in the VSIX.
+The IronCalc formula engine and its selected upstream MIT license are included under `dist/webview/ironcalc/`.
 
 ## Component manifest
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/squisq | 2.10.0 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-editor-react | 2.10.3 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.5.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.10.1 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.3.2 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video-react | 2.4.3 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.11.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-calc | 2.11.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-editor-react | 2.11.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.6.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-grid-react | 2.11.1 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.11.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.3.3 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video-react | 2.4.4 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @iconify/utils | 3.1.4 | MIT | https://github.com/iconify/iconify |
+| @ironcalc/wasm | 0.8.4 | MIT/Apache-2.0 | https://github.com/ironcalc/IronCalc |
 | @mermaid-js/parser | 1.2.0 | MIT | https://github.com/mermaid-js/mermaid |
 | @pdf-lib/fontkit | 1.1.1 | MIT | https://github.com/Hopding/fontkit |
 | @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
 | @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |
+| @tanstack/react-virtual | 3.14.10 | MIT | https://github.com/TanStack/virtual |
+| @tanstack/virtual-core | 3.17.8 | MIT | https://github.com/TanStack/virtual |
 | @tiptap/core | 2.27.2 | MIT | https://github.com/ueberdosis/tiptap |
 | @tiptap/extension-blockquote | 2.27.2 | MIT | https://github.com/ueberdosis/tiptap |
 | @tiptap/extension-bold | 2.27.2 | MIT | https://github.com/ueberdosis/tiptap |
@@ -230,8 +236,8 @@ The following locked packages declare a license identifier but publish no packag
 | @pdf-lib/fontkit | 1.1.1 | MIT | https://github.com/Hopding/fontkit |
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.10.3, @bendyline/squisq-formats@2.5.1, @bendyline/squisq-react@2.10.1, @bendyline/squisq-video-react@2.4.3, @bendyline/squisq-video@2.3.2, @bendyline/squisq@2.10.0
-Source files: node_modules/@bendyline/squisq-editor-react/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
+Components: @bendyline/squisq-calc@2.11.0, @bendyline/squisq-editor-react@2.11.0, @bendyline/squisq-formats@2.6.0, @bendyline/squisq-grid-react@2.11.1, @bendyline/squisq-react@2.11.0, @bendyline/squisq-video-react@2.4.4, @bendyline/squisq-video@2.3.3, @bendyline/squisq@2.11.0
+Source files: node_modules/@bendyline/squisq-calc/LICENSE, node_modules/@bendyline/squisq-editor-react/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-grid-react/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
 
@@ -256,7 +262,41 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.10.3
+Components: @bendyline/squisq-calc@2.11.0
+Source files: node_modules/@bendyline/squisq-calc/NOTICE.md
+==============================================================================
+# Third-Party Notices for @bendyline/squisq-calc
+
+This notice applies to the `@bendyline/squisq-calc` npm package.
+Squisq-authored code is licensed under the MIT license in `LICENSE`.
+Third-party components remain under their respective license terms.
+
+## Runtime and peer dependencies
+
+| Package                 | Version | License        | Repository                           |
+| ----------------------- | ------- | -------------- | ------------------------------------ |
+| @ironcalc/wasm _(peer)_ | ^0.8.4  | MIT/Apache-2.0 | https://github.com/ironcalc/IronCalc |
+
+The IronCalc wasm backend is an optional peer dependency, reached only through
+the `@bendyline/squisq-calc/ironcalc` subpath via dynamic import. It is not
+bundled, and consumers who never construct an IronCalc engine do not install
+it. Copyright and complete license texts for the listed dependencies are
+included in their respective npm distributions and source repositories.
+
+==============================================================================
+Components: @bendyline/squisq-calc@2.11.0
+Source files: node_modules/@bendyline/squisq-calc/THIRD_PARTY_LICENSES.txt
+==============================================================================
+THIRD-PARTY LICENSES FOR @bendyline/squisq-calc
+
+Generated from the actual esbuild input graph. Package-local license, copying,
+and notice files are reproduced verbatim. When an npm tarball omits its
+repository license, the pinned upstream copy is vendored and identified below.
+
+COMPONENTS
+
+==============================================================================
+Components: @bendyline/squisq-editor-react@2.11.0
 Source files: node_modules/@bendyline/squisq-editor-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-editor-react
@@ -304,7 +344,7 @@ Exact third-party license texts for the bundled adapter, loader, state helper,
 and Font Awesome assets are shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.10.3, @tiptap/core@2.27.2, @tiptap/extension-blockquote@2.27.2, @tiptap/extension-bold@2.27.2, @tiptap/extension-bullet-list@2.27.2, @tiptap/extension-code-block@2.27.2, @tiptap/extension-code@2.27.2, @tiptap/extension-document@2.27.2, @tiptap/extension-dropcursor@2.27.2, @tiptap/extension-gapcursor@2.27.2, @tiptap/extension-hard-break@2.27.2, @tiptap/extension-heading@2.27.2, @tiptap/extension-history@2.27.2, @tiptap/extension-horizontal-rule@2.27.2, @tiptap/extension-image@2.27.2, @tiptap/extension-italic@2.27.2, @tiptap/extension-link@2.27.2, @tiptap/extension-list-item@2.27.2, @tiptap/extension-mention@2.27.2, @tiptap/extension-ordered-list@2.27.2, @tiptap/extension-paragraph@2.27.2, @tiptap/extension-placeholder@2.27.2, @tiptap/extension-strike@2.27.2, @tiptap/extension-table-cell@2.27.2, @tiptap/extension-table-header@2.27.2, @tiptap/extension-table-row@2.27.2, @tiptap/extension-table@2.27.2, @tiptap/extension-task-item@2.27.2, @tiptap/extension-task-list@2.27.2, @tiptap/extension-text@2.27.2, @tiptap/react@2.27.2, @tiptap/starter-kit@2.27.2, @tiptap/suggestion@2.27.2
+Components: @bendyline/squisq-editor-react@2.11.0, @tiptap/core@2.27.2, @tiptap/extension-blockquote@2.27.2, @tiptap/extension-bold@2.27.2, @tiptap/extension-bullet-list@2.27.2, @tiptap/extension-code-block@2.27.2, @tiptap/extension-code@2.27.2, @tiptap/extension-document@2.27.2, @tiptap/extension-dropcursor@2.27.2, @tiptap/extension-gapcursor@2.27.2, @tiptap/extension-hard-break@2.27.2, @tiptap/extension-heading@2.27.2, @tiptap/extension-history@2.27.2, @tiptap/extension-horizontal-rule@2.27.2, @tiptap/extension-image@2.27.2, @tiptap/extension-italic@2.27.2, @tiptap/extension-link@2.27.2, @tiptap/extension-list-item@2.27.2, @tiptap/extension-mention@2.27.2, @tiptap/extension-ordered-list@2.27.2, @tiptap/extension-paragraph@2.27.2, @tiptap/extension-placeholder@2.27.2, @tiptap/extension-strike@2.27.2, @tiptap/extension-table-cell@2.27.2, @tiptap/extension-table-header@2.27.2, @tiptap/extension-table-row@2.27.2, @tiptap/extension-table@2.27.2, @tiptap/extension-task-item@2.27.2, @tiptap/extension-task-list@2.27.2, @tiptap/extension-text@2.27.2, @tiptap/react@2.27.2, @tiptap/starter-kit@2.27.2, @tiptap/suggestion@2.27.2
 Source files: node_modules/@bendyline/squisq-editor-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-editor-react
@@ -577,7 +617,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.5.1
+Components: @bendyline/squisq-formats@2.6.0
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -586,23 +626,24 @@ This notice applies to the `@bendyline/squisq-formats` npm package.
 Squisq-authored code is licensed under the MIT license in `LICENSE`.
 Third-party components remain under their respective license terms.
 
-## Runtime dependencies
+## Runtime and peer dependencies
 
-| Package          | Version | License                 | Repository                         |
-| ---------------- | ------- | ----------------------- | ---------------------------------- |
-| @pdf-lib/fontkit | 1.1.1   | MIT                     | https://github.com/Hopding/fontkit |
-| @pdf-lib/upng    | 1.0.1   | MIT                     | https://github.com/Hopding/upng    |
-| @xmldom/xmldom   | 0.9.12  | MIT                     | https://github.com/xmldom/xmldom   |
-| jszip            | 3.10.1  | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip      |
-| pdf-lib          | 1.17.1  | MIT                     | https://pdf-lib.js.org             |
-| pdfjs-dist       | 4.10.38 | Apache-2.0              | https://mozilla.github.io/pdf.js   |
+| Package            | Version | License                 | Repository                           |
+| ------------------ | ------- | ----------------------- | ------------------------------------ |
+| @pdf-lib/fontkit   | 1.1.1   | MIT                     | https://github.com/Hopding/fontkit   |
+| @pdf-lib/upng      | 1.0.1   | MIT                     | https://github.com/Hopding/upng      |
+| @xmldom/xmldom     | 0.9.12  | MIT                     | https://github.com/xmldom/xmldom     |
+| jszip              | 3.10.1  | MIT OR GPL-3.0-or-later | https://github.com/Stuk/jszip        |
+| pdf-lib            | 1.17.1  | MIT                     | https://pdf-lib.js.org               |
+| pdfjs-dist         | 4.10.38 | Apache-2.0              | https://mozilla.github.io/pdf.js     |
+| hyparquet _(peer)_ | ^1.29.1 | MIT                     | https://github.com/hyparam/hyparquet |
 
 Squisq uses jszip under its MIT license option. Copyright and complete license
 texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.5.1
+Components: @bendyline/squisq-formats@2.6.0
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -784,7 +825,40 @@ Awesome, nor vice versa. **Please do not use brand logos for any purpose except
 to represent the company, product, or service to which they refer.**
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.10.1
+Components: @bendyline/squisq-grid-react@2.11.1
+Source files: node_modules/@bendyline/squisq-grid-react/NOTICE.md
+==============================================================================
+# Third-Party Notices for @bendyline/squisq-grid-react
+
+This notice applies to the `@bendyline/squisq-grid-react` npm package.
+Squisq-authored code is licensed under the MIT license in `LICENSE`.
+Third-party components remain under their respective license terms.
+
+## Runtime and peer dependencies
+
+| Package                 | Version              | License | Repository                          |
+| ----------------------- | -------------------- | ------- | ----------------------------------- |
+| @tanstack/react-virtual | 3.14.10              | MIT     | https://github.com/TanStack/virtual |
+| react _(peer)_          | ^18.0.0 \|\| ^19.0.0 | MIT     | https://github.com/facebook/react   |
+| react-dom _(peer)_      | ^18.0.0 \|\| ^19.0.0 | MIT     | https://github.com/facebook/react   |
+
+Copyright and complete license texts for these dependencies are included in
+their respective npm distributions and source repositories.
+
+==============================================================================
+Components: @bendyline/squisq-grid-react@2.11.1
+Source files: node_modules/@bendyline/squisq-grid-react/THIRD_PARTY_LICENSES.txt
+==============================================================================
+THIRD-PARTY LICENSES FOR @bendyline/squisq-grid-react
+
+Generated from the actual esbuild input graph. Package-local license, copying,
+and notice files are reproduced verbatim. When an npm tarball omits its
+repository license, the pinned upstream copy is vendored and identified below.
+
+COMPONENTS
+
+==============================================================================
+Components: @bendyline/squisq-react@2.11.0
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -809,7 +883,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.10.1
+Components: @bendyline/squisq-react@2.11.0
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -5282,7 +5356,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.3
+Components: @bendyline/squisq-video-react@2.4.4
 Source files: node_modules/@bendyline/squisq-video-react/COPYING.GPL-2.0.txt
 ==============================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -5625,7 +5699,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.3
+Components: @bendyline/squisq-video-react@2.4.4
 Source files: node_modules/@bendyline/squisq-video-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video-react
@@ -5670,7 +5744,7 @@ global WebCodecs declaration dependencies are not installed for consumers. Its
 exact license text is shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.3
+Components: @bendyline/squisq-video-react@2.4.4
 Source files: node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video-react
@@ -5734,7 +5808,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.3.2
+Components: @bendyline/squisq-video@2.3.3
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -5759,7 +5833,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.3.2
+Components: @bendyline/squisq-video@2.3.3
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -5771,7 +5845,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.10.0
+Components: @bendyline/squisq@2.11.0
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -5802,7 +5876,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.10.0
+Components: @bendyline/squisq@2.11.0
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq
@@ -6094,6 +6168,32 @@ Source files: node_modules/@pdf-lib/upng/LICENSE
 MIT License
 
 Copyright (c) 2017 Photopea
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Components: @tanstack/react-virtual@3.14.10, @tanstack/virtual-core@3.17.8
+Source files: node_modules/@tanstack/react-virtual/LICENSE, node_modules/@tanstack/virtual-core/LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2021-present Tanner Linsley
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9994,3 +10094,29 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: @ironcalc/wasm@0.8.4
+Source files: scripts/licenses/ironcalc/LICENSE-MIT.txt
+==============================================================================
+MIT License
+
+Copyright (c) 2023 EqualTo GmbH, 2023 Nicolás Hatcher
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

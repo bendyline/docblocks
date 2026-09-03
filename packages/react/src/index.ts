@@ -25,6 +25,11 @@ export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
 // it pulls Squisq's harper adapter, and a host that never wires the capability
 // should not carry it. See src/Proofing/public-api.ts.
 
+// Calculation is likewise exposed only through the
+// '@bendyline/docblocks-react/calculation' subpath. Its async factory is the
+// boundary that keeps the optional IronCalc adapter out of hosts that do not
+// ship the WASM engine. See src/Calculation/public-api.ts.
+
 // DocBlocksShell
 export { DocBlocksShell } from './DocBlocksShell/index.js';
 export type { DocBlocksShellProps } from './DocBlocksShell/index.js';

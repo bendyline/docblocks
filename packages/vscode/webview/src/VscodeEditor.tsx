@@ -43,9 +43,11 @@ import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
+import { createVscodeCalcEngineFactory } from './calculationConfig.js';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 const vscode = getVscodeApi();
+const VSCODE_CALC_ENGINE_FACTORY = createVscodeCalcEngineFactory();
 
 // The host cannot render an editor until the extension sends a document.
 // Keep the large Squisq implementation out of the startup entry and load it
@@ -465,6 +467,7 @@ export function VscodeEditor() {
           height="100%"
           placeholder={editorPlaceholder}
           mediaProvider={mediaBridge.mediaProvider}
+          calcEngineFactory={VSCODE_CALC_ENGINE_FACTORY ?? undefined}
           proofing={proofing}
           proofingSpellingEnabled={settings.proofingSettings.spelling}
           proofingGrammarEnabled={settings.proofingSettings.grammar}

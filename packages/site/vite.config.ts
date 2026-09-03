@@ -9,6 +9,7 @@ import {
   ffmpegCorePlugin,
 } from '../../scripts/vite-ffmpeg-core.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
+import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Linked Squisq packages resolve to their already-compiled workspace `dist`
@@ -95,8 +96,8 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
 
 // PWA packaging. The whole dist is precached (~89 MB) so every feature —
 // export formats, Monaco language workers, theme fonts, ffmpeg.wasm, and the
-// harper proofing engine — works offline even if the user never touched it
-// while online. That is a deliberate product decision: never let functionality
+// harper proofing and IronCalc formula engines — works offline even if the user
+// never touched them while online. That is a deliberate product decision: never let functionality
 // break offline to save bandwidth. Precaching runs during service-worker
 // install, which never blocks the page, so the app stays usable throughout.
 const docblocksPwa = (): Plugin[] =>
@@ -181,6 +182,7 @@ export default defineConfig({
     serveStaticDirectoryIndexes(),
     ffmpegCorePlugin(),
     harperWasmPlugin(),
+    ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
     react({ exclude: linkedSquisqDistJavaScript }),
     docblocksPwa(),
@@ -323,6 +325,9 @@ export default defineConfig({
       // undeclared it is found the moment a document opens, and the resulting
       // re-optimization reloads the page out from under the editor.
       'harper.js',
+      // Formula sessions dynamically import the optional IronCalc backend.
+      // Pre-optimize its glue so first use does not invalidate the dev graph.
+      '@ironcalc/wasm',
       // CJS transitive deps of squisq packages that need pre-bundling.
       // The squisq packages themselves are excluded (served from source
       // via symlinks for live dev), but their CJS deps must be bundled.

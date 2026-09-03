@@ -6,6 +6,7 @@ import {
   ffmpegCorePlugin,
 } from '../../scripts/vite-ffmpeg-core.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
+import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
@@ -56,6 +57,7 @@ export default defineConfig({
     stripBrokenSourcemapPragmas(),
     ffmpegCorePlugin(),
     harperWasmPlugin(),
+    ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
     react(),
   ],
@@ -190,6 +192,9 @@ export default defineConfig({
       // import inside the excluded editor package and must be pre-optimized
       // rather than discovered when the first document opens.
       'harper.js',
+      // The optional formula backend is reached through a dynamic import.
+      // Pre-optimize its glue so first use cannot reload the renderer.
+      '@ironcalc/wasm',
       // Mermaid is a lazy dependency of the excluded squisq-react package.
       // Explicit optimization provides ESM interop for its CommonJS deps.
       'mermaid',

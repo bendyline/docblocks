@@ -3987,8 +3987,14 @@ html:has(.db-shell) .squisq-cover-slide-menu {
 /* Custom layout authoring is portaled to document.body. Bind its host-facing
    accent tokens at that portal boundary so selected layouts, palette states,
    primary actions, and focus rings follow the active DocBlocks accent instead
-   of Squisq's standalone indigo defaults. */
-html:has(.db-shell) :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay) {
+   of Squisq's standalone indigo defaults. Squisq repeats `data-theme` on the
+   nested layout-manager panel, so that second theme root needs the same bridge. */
+html:has(.db-shell)
+  :is(
+    .squisq-template-designer-overlay,
+    .squisq-layout-manager-overlay,
+    .squisq-layout-manager-panel
+  ) {
   --squisq-layout-accent-text: var(--db-accent-hover);
   --squisq-layout-accent-bg: var(--db-accent);
   --squisq-layout-accent-bg-hover: var(--db-accent-hover);
@@ -4000,13 +4006,21 @@ html:has(.db-shell) :is(.squisq-template-designer-overlay, .squisq-layout-manage
 }
 
 html:has(.db-shell)
-  :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay)
+  :is(
+    .squisq-template-designer-overlay,
+    .squisq-layout-manager-overlay,
+    .squisq-layout-manager-panel
+  )
   .squisq-template-designer-btn--primary {
   color: var(--db-text-on-accent);
 }
 
 html:has(.db-shell)
-  :is(.squisq-template-designer-overlay, .squisq-layout-manager-overlay)
+  :is(
+    .squisq-template-designer-overlay,
+    .squisq-layout-manager-overlay,
+    .squisq-layout-manager-panel
+  )
   .squisq-template-designer-field
   input:focus {
   box-shadow: 0 0 0 3px var(--db-accent-soft-25);
@@ -4348,7 +4362,7 @@ html:has(.db-shell)
   color: var(--squisq-template-gallery-section-title);
 }
 
-html:has(.db-shell[data-theme='dark']) #squisq-template-gallery-portal {
+html:has(.db-shell[data-theme='dark']) [data-squisq-template-gallery-portal] {
   background: var(--db-bg-subtle);
   border-color: var(--db-border);
   box-shadow:
@@ -4357,46 +4371,46 @@ html:has(.db-shell[data-theme='dark']) #squisq-template-gallery-portal {
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-none {
   background: transparent;
   border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-none:hover {
   background: var(--db-bg-hover);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-none.squisq-template-gallery-card--selected {
   background: var(--db-accent-tint-strong);
   border-color: var(--db-accent);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-none-label {
   color: var(--db-text);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-none-desc {
   color: var(--db-text-muted);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card {
   background: transparent;
   border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card:hover {
   background: var(--db-bg-hover);
   border-color: var(--db-accent);
@@ -4404,7 +4418,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card--selected {
   background: var(--db-accent-tint-strong);
   border-color: var(--db-accent-hover);
@@ -4412,27 +4426,27 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card-icon {
   background: var(--db-bg);
   border-color: var(--db-border);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card-name {
   color: var(--db-text);
 }
 
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-gallery-card-desc {
   color: var(--db-text-muted);
 }
 
 /* Recolor the indigo accent fills inside template thumbnail SVGs */
 html:has(.db-shell[data-theme='dark'])
-  #squisq-template-gallery-portal
+  [data-squisq-template-gallery-portal]
   .squisq-template-picker-icon
   [fill='#818cf8'] {
   fill: var(--db-accent-hover);

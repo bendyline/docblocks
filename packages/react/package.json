@@ -47,6 +47,11 @@
       "import": "./dist/export/index.js",
       "default": "./dist/export/index.js"
     },
+    "./calculation": {
+      "types": "./dist/calculation/index.d.ts",
+      "import": "./dist/calculation/index.js",
+      "default": "./dist/calculation/index.js"
+    },
     "./proofing": {
       "types": "./dist/proofing/index.d.ts",
       "import": "./dist/proofing/index.js",
@@ -81,12 +86,13 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.5.0",
-    "@bendyline/squisq": "2.10.0",
-    "@bendyline/squisq-editor-react": "2.10.3",
-    "@bendyline/squisq-formats": "2.5.1",
-    "@bendyline/squisq-react": "2.10.1",
-    "@bendyline/squisq-video": "2.3.2",
-    "@bendyline/squisq-video-react": "2.4.3",
+    "@bendyline/squisq": "2.11.0",
+    "@bendyline/squisq-calc": "2.11.0",
+    "@bendyline/squisq-editor-react": "2.11.0",
+    "@bendyline/squisq-formats": "2.6.0",
+    "@bendyline/squisq-react": "2.11.0",
+    "@bendyline/squisq-video": "2.3.3",
+    "@bendyline/squisq-video-react": "2.4.4",
     "qrcode": "1.5.4"
   },
   "devDependencies": {

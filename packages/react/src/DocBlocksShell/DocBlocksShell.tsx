@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import type {
+  CalcEngineFactory,
   EditorColorScheme,
   EditorView,
   ProofingCapability,
@@ -322,6 +323,12 @@ export interface DocBlocksShellProps {
   appBuildDate?: string;
   /** Self-hosted ffmpeg.wasm core. Supplying it enables Animated GIF export. */
   ffmpegWasm?: FfmpegWasmLoadConfig;
+  /**
+   * Optional spreadsheet calculation backend. DocBlocks surfaces normally
+   * pass the lazy IronCalc factory from the `calculation` package subpath;
+   * omitting it keeps Squisq's in-house calculation tier.
+   */
+  calcEngineFactory?: CalcEngineFactory;
   /**
    * Grammar and spellcheck engine, normally a harper-backed provider pointed
    * at the surface's self-hosted WASM. Omit it and no proofing UI renders and
@@ -730,6 +737,7 @@ export function DocBlocksShell({
   issueReportVersion,
   appBuildDate,
   ffmpegWasm,
+  calcEngineFactory,
   proofing,
   proofingDefaultEnabled,
   proofingIgnoreStore,
@@ -4614,6 +4622,7 @@ export function DocBlocksShell({
                       placeholder={editorPlaceholder}
                       outlineWidth={280}
                       mediaProvider={mediaProvider}
+                      calcEngineFactory={calcEngineFactory}
                       proofing={proofing}
                       proofingDefaultEnabled={proofingDefaultEnabled}
                       proofingSpellingEnabled={proofingPreferences.spelling}

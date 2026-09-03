@@ -19,7 +19,7 @@ describe('appearance styles', () => {
     // `.db-shell .squisq-editor-shell` rule — also reaches the menus and
     // dialogs Squisq portals onto <body>.
     expect(styles).to.match(
-      /^:root,\n\[data-theme\] \{[^}]*--squisq-editor-background: var\(--db-editor-canvas\);[^}]*--squisq-editor-foreground: var\(--db-text\);/ms,
+      /^:root,\r?\n\[data-theme\] \{[^}]*--squisq-editor-background: var\(--db-editor-canvas\);[^}]*--squisq-editor-foreground: var\(--db-text\);/ms,
     );
     expect(styles).to.match(
       /\.squisq-editor-shell\[data-theme='dark'\] \{[^}]*--squisq-editor-background: #1e1e1e;[^}]*--squisq-editor-foreground: #d4d4d4;/s,
@@ -56,6 +56,15 @@ describe('appearance styles', () => {
     );
     expect(styles).to.match(
       /\.db-shell\s+\.squisq-editor-shell\s+\.squisq-preview-seg-btn:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--db-focus,\s*var\(--db-accent\)\);/s,
+    );
+  });
+
+  it('keeps Squisq portal accents across generated gallery IDs and nested theme roots', () => {
+    expect(styles).to.match(
+      /html:has\(\.db-shell\[data-theme='dark'\]\)\s+\[data-squisq-template-gallery-portal\]\s+\.squisq-template-gallery-card--selected\s*\{[^}]*border-color:\s*var\(--db-accent-hover\);/s,
+    );
+    expect(styles).to.match(
+      /html:has\(\.db-shell\)\s+:is\([^)]*\.squisq-layout-manager-panel[^)]*\)\s*\{[^}]*--squisq-layout-accent-soft:\s*var\(--db-accent-tint-strong\);/s,
     );
   });
 });

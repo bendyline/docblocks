@@ -30,6 +30,9 @@ export function getVscodeTheme(): 'light' | 'dark' {
  */
 export const HARPER_WASM_META_NAME = 'docblocks-harper-wasm';
 
+/** Where the webview reads the packaged IronCalc engine's location. */
+export const IRONCALC_WASM_META_NAME = 'docblocks-ironcalc-wasm';
+
 /**
  * Generate the HTML for the editor webview.
  */
@@ -42,6 +45,9 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
   // named here. The VSIX carries them; nothing is downloaded at runtime.
   const harperWasmUri = webview.asWebviewUri(
     vscode.Uri.joinPath(distUri, 'harper', 'harper_wasm_bg.wasm'),
+  );
+  const ironCalcWasmUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(distUri, 'ironcalc', 'wasm_bg.wasm'),
   );
   const nonce = getNonce();
 
@@ -60,6 +66,7 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
       connect-src ${webview.cspSource};
       worker-src ${webview.cspSource} blob:;">
   <meta name="${HARPER_WASM_META_NAME}" content="${harperWasmUri.toString()}">
+  <meta name="${IRONCALC_WASM_META_NAME}" content="${ironCalcWasmUri.toString()}">
   <link rel="stylesheet" href="${styleUri}">
   <style>
     html, body, #root {
