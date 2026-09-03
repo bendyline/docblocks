@@ -15,12 +15,15 @@ import {
   chooseOutsideInMarkdownPath,
   importOutsideInDocument,
   isOutsideInMarkdownEditingEnabled,
+  readOutsideInHtmlOutput,
   readOutsideInMetadata,
   renderOutsideInDocument,
   resolveOutsideInLayout,
+  withOutsideInHtmlOutput,
   withOutsideInMarkdownEditing,
   withOutsideInMetadata,
   type OutsideInLayout,
+  type OutsideInHtmlOutput,
 } from './outside-in-contract.js';
 
 export type { OutsideInLayout } from './outside-in-contract.js';
@@ -289,6 +292,121 @@ async function writeRuntimeIfNeeded(
   if (current !== PLAYER_BUNDLE) await writeProviderText(provider, runtimePath, PLAYER_BUNDLE);
 }
 
+async function renderPlainOutsideInHtml(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  markdown: string,
+): Promise<Uint8Array> {
+  const [{ parseMarkdown }, { markdownDocToPlainHtml }] = await Promise.all([
+    import('@bendyline/squisq/markdown'),
+    import('@bendyline/squisq-formats/html'),
+  ]);
+  const container = new FileSystemContentContainer(provider, layout.companionDirectory);
+  const images = new Map<string, string>();
+  for (const entry of await container.listFiles()) {
+    const outputPath = `${layout.companionName}/${entry.path}`;
+    images.set(entry.path, outputPath);
+    images.set(`./${entry.path}`, outputPath);
+  }
+  return new TextEncoder().encode(
+    markdownDocToPlainHtml(parseMarkdown(markdown), {
+      title: layout.stem,
+      images: images.size > 0 ? images : undefined,
+    }),
+  );
+}
+
+interface PreparedOutsideInRender {
+  bytes: Uint8Array;
+  runtimePath: string | null;
+}
+
+async function prepareOutsideInRender(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  markdown: string,
+): Promise<PreparedOutsideInRender> {
+  const htmlOutput = layout.format === 'html' ? await readOutsideInHtmlOutput(markdown) : null;
+  if (htmlOutput === 'static') {
+    return {
+      bytes: await renderPlainOutsideInHtml(provider, layout, markdown),
+      runtimePath: null,
+    };
+  }
+
+  const runtimePath =
+    layout.format === 'html' ? await findRuntimePath(provider, layout.targetPath) : null;
+  const outputDirectory = dirname(layout.targetPath);
+  const rendered = await renderOutsideInDocument(
+    {
+      markdown,
+      targetPath: layout.targetPath,
+      container: new FileSystemContentContainer(provider, layout.companionDirectory),
+    },
+    runtimePath
+      ? {
+          html: {
+            playerScriptPath: relativePath(outputDirectory, runtimePath),
+            basePath: relativePath(outputDirectory, layout.companionDirectory),
+          },
+          ...(htmlOutput === 'interactive'
+            ? { formatOptions: { html: { mode: 'slideshow' as const } } }
+            : {}),
+        }
+      : {},
+  );
+  return { bytes: rendered.bytes, runtimePath };
+}
+
+/**
+ * Create a rendered outside-in document from a fresh Markdown source. New
+ * documents opt into regeneration immediately because there is no imported
+ * original to preserve or ask permission to replace.
+ */
+export async function createNewOutsideInDocument(
+  provider: FileSystemProvider,
+  targetPath: string,
+  htmlOutput?: OutsideInHtmlOutput,
+): Promise<EditableOutsideInDocument> {
+  const layout = resolveOutsideInLayout(targetPath);
+  if (!layout) throw new Error(`Outside-in editing does not support "${targetPath}".`);
+  if (layout.format !== 'html' && htmlOutput !== undefined) {
+    throw new Error('Only Web pages have an HTML output style.');
+  }
+  if (
+    (await providerEntryExists(provider, layout.targetPath)) ||
+    (await providerEntryExists(provider, layout.companionDirectory))
+  ) {
+    throw new FsError(
+      'already-exists',
+      'A file or companion folder with that name already exists.',
+      {
+        operation: 'write',
+        path: layout.targetPath,
+      },
+    );
+  }
+
+  let content = await withOutsideInMarkdownEditing(`# ${layout.stem}\n`, layout);
+  if (layout.format === 'html') {
+    content = await withOutsideInHtmlOutput(content, htmlOutput ?? 'interactive');
+  }
+  const prepared = await prepareOutsideInRender(provider, layout, content);
+  if (prepared.runtimePath) await writeRuntimeIfNeeded(provider, prepared.runtimePath);
+  // Publish the visible target first. If the second create loses a race, the
+  // rendered file remains a valid importable document instead of leaving only
+  // a hidden companion behind.
+  await writeBytes(provider, layout.targetPath, prepared.bytes, 'create');
+  await writeProviderText(provider, layout.markdownPath, content, 'create');
+  return {
+    displayPath: layout.targetPath,
+    sourcePath: layout.markdownPath,
+    content,
+    outsideIn: layout,
+    outsideInEditingEnabled: true,
+  };
+}
+
 /**
  * Commit target that persists the Markdown source and then regenerates its
  * user-facing format. Conversion completes before either durable write; a
@@ -309,27 +427,10 @@ export function createOutsideInDocumentTarget(
           'Outside-in editing is read-only until squisq-updatefrommarkdown: true is set.',
         );
       }
-      const runtimePath =
-        layout.format === 'html' ? await findRuntimePath(provider, layout.targetPath) : null;
-      const outputDirectory = dirname(layout.targetPath);
-      const rendered = await renderOutsideInDocument(
-        {
-          markdown: request.content,
-          targetPath: layout.targetPath,
-          container: new FileSystemContentContainer(provider, layout.companionDirectory),
-        },
-        runtimePath
-          ? {
-              html: {
-                playerScriptPath: relativePath(outputDirectory, runtimePath),
-                basePath: relativePath(outputDirectory, layout.companionDirectory),
-              },
-            }
-          : {},
-      );
+      const rendered = await prepareOutsideInRender(provider, layout, request.content);
 
       await sourceTarget.commit({ ...request, targetKey: sourceTarget.key });
-      if (runtimePath) await writeRuntimeIfNeeded(provider, runtimePath);
+      if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
       await writeBytes(provider, layout.targetPath, rendered.bytes);
       onCommitted?.();
       return {};

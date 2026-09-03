@@ -66,6 +66,27 @@ async function requirePinnedWorkflowActions(relativePath: string): Promise<void>
   }
 }
 
+async function requireGovernedNpmBeforeInstalls(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    for (const [stepIndex, step] of job.steps.entries()) {
+      if (!isRecord(step) || typeof step.run !== 'string' || !/\bnpm ci\b/mu.test(step.run)) {
+        continue;
+      }
+      const setupStep = job.steps[stepIndex - 1];
+      if (!isRecord(setupStep) || setupStep.uses !== './.github/actions/setup-npm') {
+        throw new Error(
+          `${relativePath}: ${jobName} must run ./.github/actions/setup-npm immediately before npm ci`,
+        );
+      }
+    }
+  }
+}
+
 async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise<void> {
   const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
   if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
@@ -417,6 +438,7 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
 async function main(): Promise<void> {
   const rootPackage = await readPackage('package.json');
   const expectedGate = [
+    'npm run check:dependency-governance',
     'npm run build',
     'npm run bundle:size',
     'npm run check:site-precache',
@@ -535,7 +557,15 @@ async function main(): Promise<void> {
       requireWorkflowScript(commands, requirement, workflow);
     }
     await requirePinnedWorkflowActions(workflow);
+    await requireGovernedNpmBeforeInstalls(workflow);
     await requireCanonicalGatePlaywrightBrowsers(workflow);
+  }
+  const npmSetupAction = await readFile(
+    path.join(repoRoot, '.github/actions/setup-npm/action.yml'),
+    'utf8',
+  );
+  if (!npmSetupAction.includes('npm install --global npm@12.0.2')) {
+    throw new Error('governed npm setup action must install exact npm@12.0.2');
   }
   await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
   await requireDesktopReleasePackaging('.github/workflows/desktop-release.yml');

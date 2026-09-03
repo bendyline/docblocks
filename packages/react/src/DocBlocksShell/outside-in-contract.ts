@@ -15,6 +15,9 @@ export const OUTSIDE_IN_FORMAT_IDS = ['html', 'docx', 'pdf', 'pptx', 'xlsx'] as 
 export type OutsideInFormatId = (typeof OUTSIDE_IN_FORMAT_IDS)[number];
 const FORMAT_IDS = new Set<string>(OUTSIDE_IN_FORMAT_IDS);
 const UPDATE_FROM_MARKDOWN_KEY = 'squisq-updatefrommarkdown';
+const HTML_OUTPUT_KEY = 'squisq-html-output';
+
+export type OutsideInHtmlOutput = 'interactive' | 'static';
 
 interface OutsideInEditingModule {
   isOutsideInMarkdownEditingEnabled?: (source: string | MarkdownDocument) => boolean;
@@ -176,6 +179,31 @@ export async function withOutsideInMarkdownEditing(
   return setFrontmatterValues(await withOutsideInMetadata(source, layout), {
     [UPDATE_FROM_MARKDOWN_KEY]: enabled,
   });
+}
+
+/**
+ * Read the authored HTML output choice for a newly created Web page. Older
+ * outside-in HTML documents have no value and retain the historical rendered
+ * player behavior.
+ */
+export async function readOutsideInHtmlOutput(source: string): Promise<OutsideInHtmlOutput | null> {
+  const { parseFrontmatter, splitFrontmatterBlock } = await import('@bendyline/squisq/markdown');
+  const block = splitFrontmatterBlock(source).frontmatter;
+  if (!block) return null;
+  const firstBreak = block.indexOf('\n');
+  if (firstBreak < 0) return null;
+  const yaml = block.slice(firstBreak + 1).replace(/\r?\n---(?:\r?\n)?$/, '');
+  const value = parseFrontmatter(yaml)?.[HTML_OUTPUT_KEY];
+  return value === 'interactive' || value === 'static' ? value : null;
+}
+
+/** Persist which Web page renderer every later outside-in save must use. */
+export async function withOutsideInHtmlOutput(
+  source: string,
+  output: OutsideInHtmlOutput,
+): Promise<string> {
+  const { setFrontmatterValues } = await import('@bendyline/squisq/markdown');
+  return setFrontmatterValues(source, { [HTML_OUTPUT_KEY]: output });
 }
 
 export async function importOutsideInDocument(

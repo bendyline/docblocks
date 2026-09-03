@@ -38,6 +38,7 @@ import { PinnedDocuments } from './PinnedDocuments.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 import { filterVisibleFileEntries } from './entry-visibility.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
+import { createNewOutsideInDocument } from '../DocBlocksShell/outside-in.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
 
@@ -56,6 +57,19 @@ const SUPPORTED_EXTENSIONS = new Set([
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';
+
+export type NewFileFormat = 'markdown' | 'docx' | 'xlsx' | 'pdf' | 'web-interactive' | 'web-static';
+
+const NEW_FILE_EXTENSIONS: Record<NewFileFormat, string> = {
+  markdown: '.md',
+  docx: '.docx',
+  xlsx: '.xlsx',
+  pdf: '.pdf',
+  'web-interactive': '.html',
+  'web-static': '.html',
+};
+
+const SELECTABLE_FILE_EXTENSION = /\.(?:md|docx|xlsx|pdf|html?)$/i;
 
 export type FileTreeChange =
   | { type: 'create'; path: string; kind?: 'file' | 'directory' }
@@ -211,6 +225,7 @@ export function FileExplorer({
   );
 
   const [newItemName, setNewItemName] = useState('');
+  const [newFileFormat, setNewFileFormat] = useState<NewFileFormat>('markdown');
   const [uncontrolledSortMode, setUncontrolledSortMode] = useState<FileExplorerSortMode>('name');
   const selectedSortMode = sortMode ?? uncontrolledSortMode;
   const selectSortMode = useCallback(
@@ -342,9 +357,28 @@ export function FileExplorer({
     setNewItemCreationPending(true);
     try {
       if (itemType === 'file') {
-        const filename = name.endsWith('.md') ? name : `${name}.md`;
+        const stem = name.replace(SELECTABLE_FILE_EXTENSION, '');
+        if (!stem) {
+          setNewItemError('Enter a file name before the extension.');
+          return;
+        }
+        const filename = `${stem}${NEW_FILE_EXTENSIONS[newFileFormat]}`;
         createdPath = `${prefix}${filename}`;
-        await tree.createFile(createdPath, '');
+        if (newFileFormat === 'markdown') {
+          await tree.createFile(createdPath, '');
+        } else {
+          if (!provider) throw new Error('Open a workspace before creating a document.');
+          await createNewOutsideInDocument(
+            provider,
+            createdPath,
+            newFileFormat === 'web-static'
+              ? 'static'
+              : newFileFormat === 'web-interactive'
+                ? 'interactive'
+                : undefined,
+          );
+          await tree.refresh();
+        }
         handleSelect(createdPath);
       } else if (itemType === 'directory') {
         await tree.createDirectory(createdPath);
@@ -363,7 +397,7 @@ export function FileExplorer({
     setNewItemName('');
     setNewItemType(null);
     onTreeChange?.({ type: 'create', path: createdPath });
-  }, [newItemName, newItemType, tree, handleSelect, onTreeChange]);
+  }, [newFileFormat, newItemName, newItemType, onTreeChange, provider, tree, handleSelect]);
 
   const handleMoveToWorkspace = useCallback(async () => {
     if (!onMoveToWorkspace || !moveDestinationId || movingToWorkspace) return;
@@ -758,6 +792,7 @@ export function FileExplorer({
             disabled={newItemCreationPending}
             onClick={() => {
               setNewItemError(null);
+              setNewFileFormat('markdown');
               setNewItemType('file');
             }}
             title="New File"
@@ -846,7 +881,7 @@ export function FileExplorer({
       {newItemType && (
         <div className="db-new-item">
           <form
-            className="db-new-item-row"
+            className={`db-new-item-row db-new-item-row--${newItemType}`}
             aria-busy={newItemCreationPending}
             onSubmit={(e) => {
               e.preventDefault();
@@ -871,15 +906,44 @@ export function FileExplorer({
                 if (e.key === 'Escape') {
                   setNewItemType(null);
                   setNewItemName('');
+                  setNewFileFormat('markdown');
                   setNewItemError(null);
                 }
               }}
               autoFocus
             />
-            {newItemType === 'file' && <span className="db-new-item-suffix">.md</span>}
-            <button type="submit" className="db-new-item-add" disabled={newItemCreationPending}>
-              {newItemCreationPending ? 'Adding…' : 'Add'}
-            </button>
+            {newItemType === 'file' ? (
+              <div className="db-new-item-file-controls">
+                <select
+                  className="db-new-item-format"
+                  aria-label="New file type"
+                  value={newFileFormat}
+                  disabled={newItemCreationPending}
+                  onChange={(event) => {
+                    setNewFileFormat(event.currentTarget.value as NewFileFormat);
+                    setNewItemError(null);
+                  }}
+                >
+                  <optgroup label="Document">
+                    <option value="markdown">Markdown (.md)</option>
+                    <option value="docx">Word document (.docx)</option>
+                    <option value="xlsx">Excel workbook (.xlsx)</option>
+                    <option value="pdf">PDF document (.pdf)</option>
+                  </optgroup>
+                  <optgroup label="Web page">
+                    <option value="web-interactive">Web page — Interactive (.html)</option>
+                    <option value="web-static">Web page — Static (.html)</option>
+                  </optgroup>
+                </select>
+                <button type="submit" className="db-new-item-add" disabled={newItemCreationPending}>
+                  {newItemCreationPending ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+            ) : (
+              <button type="submit" className="db-new-item-add" disabled={newItemCreationPending}>
+                {newItemCreationPending ? 'Adding…' : 'Add'}
+              </button>
+            )}
           </form>
           {newItemError && (
             <div id={NEW_ITEM_ERROR_ID} className="db-tree-error" role="alert">

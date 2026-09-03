@@ -9,6 +9,7 @@ export type {
   FileExplorerSortMode,
   FileTreeChange,
   FileTreeMutationHandler,
+  NewFileFormat,
 } from './FileExplorer/index.js';
 export { FileTreeNode } from './FileExplorer/index.js';
 export type { FileTreeNodeProps } from './FileExplorer/index.js';

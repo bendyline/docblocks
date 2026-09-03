@@ -513,14 +513,25 @@
 /* ── New Item Input ──────────────────────────────────────────── */
 
 .db-new-item {
-  padding: 4px 8px;
+  padding: 8px;
   border-bottom: 1px solid var(--db-border);
 }
 
 .db-new-item-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.db-new-item-row--file {
+  display: grid;
+  align-items: stretch;
+}
+
+.db-new-item-file-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .db-new-item-input {
@@ -550,15 +561,23 @@
   border-color: var(--db-danger);
 }
 
-.db-new-item-add:focus-visible {
+.db-new-item-add:focus-visible,
+.db-new-item-format:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 1px;
 }
 
-.db-new-item-suffix {
+.db-new-item-format {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 24px 4px 7px;
+  font: inherit;
   font-size: 12px;
-  color: var(--db-text-muted);
-  flex-shrink: 0;
+  background: var(--db-bg);
+  color: var(--db-text);
+  border: 1px solid var(--db-input-border);
+  border-radius: 3px;
 }
 
 .db-new-item-add {
@@ -577,6 +596,7 @@
 }
 
 .db-new-item-input:disabled,
+.db-new-item-format:disabled,
 .db-new-item-add:disabled {
   cursor: default;
   opacity: 0.65;

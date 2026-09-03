@@ -92,4 +92,24 @@ describe('desktop update status', () => {
 
     expect(container.childElementCount).to.equal(0);
   });
+
+  it('shows the complete human-readable error without a misleading check prefix', async () => {
+    await act(async () => {
+      root.render(
+        createElement(UpdateStatusItem, {
+          status: {
+            kind: 'error',
+            message: 'DocBlocks couldn\u2019t reach the update server. Check your connection.',
+          },
+        }),
+      );
+    });
+
+    const error = container.querySelector('.db-desktop-update-status--error');
+    expect(error?.textContent).to.contain(
+      'DocBlocks couldn\u2019t reach the update server. Check your connection.',
+    );
+    expect(error?.textContent).not.to.contain('Update check failed');
+    expect(error?.getAttribute('role')).to.equal('alert');
+  });
 });

@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
 import type { DocumentCommitRequest } from '@bendyline/docblocks/document';
 import {
+  createNewOutsideInDocument,
   createOutsideInDocumentTarget,
   enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
@@ -23,7 +24,71 @@ function request(
 }
 
 describe('DocBlocks outside-in editing', function () {
-  this.timeout(10_000);
+  this.timeout(30_000);
+
+  it('creates an interactive Web page and keeps regenerating its player output', async () => {
+    const provider = new MemoryFileSystemProvider('outside-interactive', 'Interactive');
+    const created = await createNewOutsideInDocument(
+      provider,
+      '/demos/Flash cards.html',
+      'interactive',
+    );
+
+    expect(created.sourcePath).to.equal('/demos/Flash cards_files/flash-cards.md');
+    expect(created.content).to.contain('squisq-updatefrommarkdown: true');
+    expect(created.content).to.contain('squisq-html-output: interactive');
+    expect(await provider.readFile('/demos/Flash cards.html')).to.contain(
+      '<script src="../_squisq/squisq-player.js"></script>',
+    );
+    expect(await provider.readFile('/demos/Flash cards.html')).to.contain('mode: "slideshow"');
+    expect(await provider.readFile('/_squisq/squisq-player.js')).to.contain('SquisqPlayer');
+
+    const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+    const next = created.content.replace('# Flash cards', '# Updated cards');
+    await target.commit(request(target.key, next, created.content));
+    expect(await provider.readFile('/demos/Flash cards.html')).to.contain('Updated cards');
+  });
+
+  it('creates a conventional static Web page and preserves that output on save', async () => {
+    const provider = new MemoryFileSystemProvider('outside-static', 'Static');
+    const created = await createNewOutsideInDocument(provider, '/guide.html', 'static');
+
+    const initialHtml = await provider.readFile('/guide.html');
+    expect(initialHtml).to.contain('<h1>guide</h1>');
+    expect(initialHtml).not.to.contain('<script');
+    expect(initialHtml).not.to.contain('data-squisq-doc');
+    expect(await provider.readFile('/_squisq/squisq-player.js')).to.equal(null);
+
+    await provider.writeBinary('/guide_files/hero.png', new Uint8Array([1, 2, 3]).buffer);
+    const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+    const next = `${created.content}\n![Hero](hero.png)\n`;
+    await target.commit(request(target.key, next, created.content));
+    const updatedHtml = await provider.readFile('/guide.html');
+    expect(updatedHtml).to.contain('src="guide_files/hero.png"');
+    expect(updatedHtml).not.to.contain('<script');
+  });
+
+  it('creates DOCX, XLSX, and PDF files with editable Markdown companions', async () => {
+    for (const extension of ['docx', 'xlsx', 'pdf'] as const) {
+      const provider = new MemoryFileSystemProvider(`outside-${extension}`, extension);
+      const created = await createNewOutsideInDocument(provider, `/Quarterly Report.${extension}`);
+      const bytes = await provider.readBinary(`/Quarterly Report.${extension}`);
+
+      expect(bytes, `${extension} target`).to.not.equal(null);
+      expect(bytes!.byteLength, `${extension} target bytes`).to.be.greaterThan(100);
+      expect(created.sourcePath).to.equal('/Quarterly Report_files/quarterly-report.md');
+      expect(await provider.readFile(created.sourcePath)).to.contain(
+        `squisq-output-format: ${extension}`,
+      );
+      expect(created.content).to.contain('squisq-updatefrommarkdown: true');
+
+      const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+      const next = created.content.replace('# Quarterly Report', '# Updated Report');
+      await target.commit(request(target.key, next, created.content));
+      expect(await provider.readFile(created.sourcePath)).to.equal(next);
+      await provider.v2.dispose();
+    }
+  });
   it('imports an HTML target once and reopens its durable companion Markdown', async () => {
     const provider = new MemoryFileSystemProvider('outside', 'Outside');
     await provider.writeFile('/battle-of-britain.html', '<h1>Battle of Britain</h1>');
