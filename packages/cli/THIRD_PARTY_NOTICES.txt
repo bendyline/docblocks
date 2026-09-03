@@ -42,7 +42,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | @napi-rs/canvas-linux-x64-gnu | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-x64-gnu |
 | @napi-rs/canvas-linux-x64-musl | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-linux-x64-musl |
 | @napi-rs/canvas-win32-arm64-msvc | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-win32-arm64-msvc |
-| @napi-rs/canvas-win32-x64-msvc | 0.1.100 | MIT | https://github.com/Brooooooklyn/canvas |
+| @napi-rs/canvas-win32-x64-msvc | 0.1.100 | MIT | https://www.npmjs.com/package/@napi-rs/canvas-win32-x64-msvc |
 | @pdf-lib/fontkit | 1.1.1 | MIT | https://github.com/Hopding/fontkit |
 | @pdf-lib/standard-fonts | 1.0.0 | MIT | https://github.com/Hopding/standard-fonts |
 | @pdf-lib/upng | 1.0.1 | MIT | https://github.com/Hopding/upng |

@@ -4,10 +4,17 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format as formatWithPrettier } from 'prettier';
+import {
+  normalizeNoticeText,
+  noticeTextMatches,
+  repositoryUrl,
+} from './third-party-notice-utils.js';
 
 interface LockPackage {
+  readonly cpu?: readonly string[];
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly os?: readonly string[];
   readonly optionalDependencies?: Readonly<Record<string, string>>;
   readonly license?: string;
   readonly link?: boolean;
@@ -290,24 +297,6 @@ function manifestLicense(manifest: PackageManifest | null): string | null {
   return types.length > 0 ? types.join(' OR ') : null;
 }
 
-function repositoryUrl(manifest: PackageManifest | null, name: string): string {
-  const repository = manifest?.repository;
-  const raw =
-    typeof repository === 'string'
-      ? repository
-      : isRecord(repository) && typeof repository.url === 'string'
-        ? repository.url
-        : typeof manifest?.homepage === 'string'
-          ? manifest.homepage
-          : null;
-  if (!raw) return `https://www.npmjs.com/package/${name}`;
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(raw)) return `https://github.com/${raw}`;
-  return raw
-    .replace(/^git\+https:/u, 'https:')
-    .replace(/^git:\/\/github\.com\//u, 'https://github.com/')
-    .replace(/\.git$/u, '');
-}
-
 function componentFromLockKey(lockKey: string): Component | null {
   const canonicalKey = canonicalLockKey(lockKey);
   const lockEntry = lockPackages[canonicalKey];
@@ -324,7 +313,11 @@ function componentFromLockKey(lockKey: string): Component | null {
     version: lockEntry.version,
     license,
     lockKey: canonicalKey,
-    repository: repositoryUrl(manifest, name),
+    repository: repositoryUrl(
+      manifest,
+      name,
+      Boolean(lockEntry.cpu?.length || lockEntry.os?.length),
+    ),
   };
 }
 
@@ -415,7 +408,7 @@ function addLicenseMaterial(
   if (!existsSync(absolutePath)) {
     throw new Error(`License material for ${component.name} is missing: ${absolutePath}`);
   }
-  const content = readdirSafeFile(absolutePath).trimEnd();
+  const content = normalizeNoticeText(readdirSafeFile(absolutePath)).trimEnd();
   const hash = createHash('sha256').update(content).digest('hex');
   const existing = materials.get(hash) ?? {
     content,
@@ -662,7 +655,7 @@ async function main(): Promise<void> {
   for (const [relativePath, expected] of outputs) {
     const absolutePath = path.join(repoRoot, relativePath);
     const actual = existsSync(absolutePath) ? await readFile(absolutePath, 'utf8') : null;
-    if (actual !== expected) stale.push(relativePath);
+    if (actual === null || !noticeTextMatches(actual, expected)) stale.push(relativePath);
   }
   if (stale.length > 0) {
     process.stderr.write(
