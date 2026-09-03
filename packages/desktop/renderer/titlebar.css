@@ -8,6 +8,17 @@
 
 :root {
   --db-desktop-titlebar-height: max(42px, env(titlebar-area-height, 32px));
+  --db-desktop-editor-header-height: var(--db-desktop-titlebar-height);
+}
+
+/* A constrained editor pane moves the view tabs onto their own caption-height
+   row. The gallery is portaled to body, so it cannot inherit this state from
+   the shell; reflect the doubled header on the root where the portal can use
+   it. Keep the selector aligned with the wrapped-header rule below. */
+html:has(
+  .db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar
+) {
+  --db-desktop-editor-header-height: calc(var(--db-desktop-titlebar-height) * 2);
 }
 
 /* Squisq portals the block-type gallery to document.body and bounds it to
@@ -16,8 +27,8 @@
    button never sit underneath the OS minimize/maximize/close controls. The
    inline bounds supplied by the portal require these two focused overrides. */
 html:has(.db-desktop-root) .squisq-template-gallery-dialog {
-  top: var(--db-desktop-titlebar-height) !important;
-  height: calc(100% - var(--db-desktop-titlebar-height)) !important;
+  top: var(--db-desktop-editor-header-height) !important;
+  height: calc(100% - var(--db-desktop-editor-header-height)) !important;
 }
 
 /* The first shell row replaces the native titlebar. Empty space can drag
