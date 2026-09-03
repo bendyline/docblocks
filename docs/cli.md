@@ -5,7 +5,7 @@ It documents the behavior shipped from `packages/cli`, including the capabilitie
 delegated to the linked Squisq checkout. The separate [MCP architecture
 guide](mcp.md) is authoritative for the protocol started by `docblocks mcp`.
 
-The executable requires Node.js 22.22.2+, 24.15.0+, or 26+ and is published as
+The executable requires Node.js 24.18.0+ or 26+ and is published as
 `@bendyline/docblocks-cli`:
 
 ```bash

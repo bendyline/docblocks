@@ -110,7 +110,7 @@ local-only limitations.
 
 ## Repository map
 
-npm-workspaces monorepo, Node 22.22.2+, 24.15.0+, or 26+, with npm 12.0.2:
+npm-workspaces monorepo, Node 24.18.0+ or 26+, with npm 12.0.2:
 
 | Package                                          | npm name                     | Purpose                                                                                                           |
 | ------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |

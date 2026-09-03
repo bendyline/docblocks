@@ -26,7 +26,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 
 ## Build, test, dev commands
 
-Node 22.22.2+, 24.15.0+, or 26+ and npm 12.0.2 required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
+Node 24.18.0+ or 26+ and npm 12.0.2 required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
 
 ```bash
 # The big green button — build, artifact/config checks, package consumers, guidance, static checks,
