@@ -39,6 +39,17 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
   min-height: 0;
 }
 
+/* Squisq's flexible actions lane owns the unused space between its final
+   formatting control (normally Insert) and the fixed document controls on
+   the right. Mark that child explicitly: Chromium does not reliably carry a
+   parent's drag region through a flex item with overflow clipping. Buttons
+   and other controls remain clickable through the no-drag rule below. */
+.db-desktop-root .squisq-toolbar-actions {
+  app-region: drag;
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
 .db-desktop-root .db-shell-sidebar-header {
   padding-block: 0;
   padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));

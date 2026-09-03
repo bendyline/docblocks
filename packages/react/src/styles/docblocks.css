@@ -5802,6 +5802,16 @@ button.db-git-file-row:hover {
     min-height: 0;
   }
 
+  /* The flexible actions lane owns the otherwise-empty gap between Squisq's
+     formatting controls and the fixed document controls. Mark the child
+     explicitly because its overflow clipping can prevent the toolbar's drag
+     region from reaching those pixels. Controls opt out below. */
+  .db-shell .squisq-toolbar-actions {
+    app-region: drag;
+    -webkit-app-region: drag;
+    cursor: grab;
+  }
+
   .db-shell .db-shell-sidebar-header {
     padding-block: 0;
     padding-left: max(4px, calc(env(titlebar-area-x, 0px) + 4px));

@@ -29,6 +29,16 @@ interface PackResult {
   readonly filename: string;
 }
 
+interface ConcurrentCheck {
+  readonly label: string;
+  readonly execute: () => Promise<void>;
+}
+
+interface ConcurrentCheckFailure {
+  readonly label: string;
+  readonly reason: unknown;
+}
+
 interface InstalledManifest {
   readonly name?: string;
   readonly version?: string;
@@ -143,6 +153,26 @@ async function run(
     }
     throw error;
   }
+}
+
+async function runConcurrentChecks(checks: readonly ConcurrentCheck[]): Promise<void> {
+  const results = await Promise.all(
+    checks.map(async (check): Promise<ConcurrentCheckFailure | null> => {
+      try {
+        await check.execute();
+        return null;
+      } catch (reason: unknown) {
+        return { label: check.label, reason };
+      }
+    }),
+  );
+  const failures = results.filter((result): result is ConcurrentCheckFailure => result !== null);
+  if (failures.length === 0) return;
+  if (failures.length === 1) throw failures[0].reason;
+  throw new AggregateError(
+    failures.map((failure) => failure.reason),
+    `Concurrent package checks failed: ${failures.map((failure) => failure.label).join(', ')}`,
+  );
 }
 
 async function packPackage(
@@ -484,6 +514,7 @@ async function main(): Promise<void> {
     JSON.stringify({ private: true, type: 'module' }),
   );
 
+  let primaryFailure: { readonly reason: unknown } | null = null;
   try {
     // `npm run link:squisq` is a supported parallel-development workflow.
     // Pack those symlinked packages into the isolated consumer too so the
@@ -533,10 +564,11 @@ async function main(): Promise<void> {
     );
     await run(process.execPath, ['runtime.mjs'], react18ConsumerRoot);
 
-    await Promise.all(
-      [react18ConsumerRoot, react19ConsumerRoot].map((consumerRoot) =>
-        assertStrictTypeConsumer(consumerRoot, imports),
-      ),
+    await runConcurrentChecks(
+      [react18ConsumerRoot, react19ConsumerRoot].map((consumerRoot) => ({
+        label: path.basename(consumerRoot),
+        execute: () => assertStrictTypeConsumer(consumerRoot, imports),
+      })),
     );
 
     await writeFile(
@@ -587,9 +619,28 @@ async function main(): Promise<void> {
           : ''
       } installed and passed export, dependency, Node engine, strict React 18/19 type, runtime, and CLI consumer checks.\n`,
     );
-  } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
+  } catch (reason: unknown) {
+    primaryFailure = { reason };
   }
+
+  try {
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  } catch (cleanupReason: unknown) {
+    if (primaryFailure) {
+      throw new AggregateError(
+        [primaryFailure.reason, cleanupReason],
+        `The package consumer check failed and its temporary directory could not be removed: ${temporaryRoot}`,
+      );
+    }
+    throw cleanupReason;
+  }
+
+  if (primaryFailure) throw primaryFailure.reason;
 }
 
 await main();

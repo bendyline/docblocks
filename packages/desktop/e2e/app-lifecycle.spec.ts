@@ -137,6 +137,35 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(grip.gutterIsGrip).toBe(true);
   expect(grip.gutterAppRegion).toBe('drag');
 
+  // Squisq's flexible actions lane owns the empty space between its final
+  // formatting control and the fixed document controls. That exact gap must
+  // remain draggable even though the lane clips overflowing action buttons.
+  await writeTab.click();
+  await expect(writeTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+  const actionsLane = toolbar.locator('.squisq-toolbar-actions');
+  const actionsGap = await actionsLane.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const visibleButton = [...element.querySelectorAll<HTMLElement>('.squisq-toolbar-button')].find(
+      (button) => getComputedStyle(button).visibility !== 'hidden',
+    );
+    const buttonStyle = visibleButton ? getComputedStyle(visibleButton) : null;
+    return {
+      flexGrow: style.flexGrow,
+      overflow: style.overflow,
+      cursor: style.cursor,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+      buttonAppRegion:
+        buttonStyle?.getPropertyValue('-webkit-app-region') ||
+        buttonStyle?.getPropertyValue('app-region'),
+    };
+  });
+  expect(actionsGap.flexGrow).toBe('1');
+  expect(actionsGap.overflow).toBe('hidden');
+  expect(actionsGap.cursor).toBe('grab');
+  expect(actionsGap.appRegion).toBe('drag');
+  expect(actionsGap.buttonAppRegion).toBe('no-drag');
+
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
   await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
