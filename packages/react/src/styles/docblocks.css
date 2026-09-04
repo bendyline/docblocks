@@ -1299,6 +1299,62 @@
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
+  position: relative;
+}
+
+.db-sidebar-collapse-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  background: color-mix(in srgb, var(--db-bg) 78%, transparent);
+  color: var(--db-text);
+  backdrop-filter: blur(1px) grayscale(0.3);
+  transition:
+    opacity 120ms ease,
+    visibility 0s linear 120ms;
+}
+
+.db-shell-sidebar--collapse-preview .db-sidebar-collapse-preview {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+.db-sidebar-collapse-preview-icon {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 22px;
+  background: var(--db-bg-subtle);
+  color: var(--db-accent);
+  box-shadow: 0 10px 30px var(--db-shadow);
+}
+
+.db-sidebar-collapse-preview-icon svg {
+  width: 64px;
+  height: 64px;
+}
+
+.db-sidebar-collapse-preview-label {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--db-bg-subtle);
+  box-shadow: 0 4px 14px var(--db-shadow);
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* Drag handle between sidebar and editor. The visible line is the
@@ -5756,6 +5812,7 @@ button.db-git-file-row:hover {
   .db-app-menu-caret,
   .db-ws-settings-btn,
   .db-shell-sidebar-resizer,
+  .db-sidebar-collapse-preview,
   .db-export-chip,
   .db-git-progress-bar > span {
     transition: none;

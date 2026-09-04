@@ -157,4 +157,37 @@ describe('DocBlocks outside-in editing', function () {
       '<h1>Original</h1>',
     );
   });
+
+  it('regenerates a dropped CSV after outside-in editing is enabled', async () => {
+    const provider = new MemoryFileSystemProvider('outside-csv', 'Outside CSV');
+    await provider.writeBinary(
+      'inventory.csv',
+      new TextEncoder().encode('Item,Qty\nWidget,2\n').buffer,
+    );
+    const opened = await loadEditableShellDocument(provider, 'inventory.csv');
+    const editable = await enableOutsideInMarkdownEditing(provider, opened!);
+    const target = createOutsideInDocumentTarget(provider, editable.outsideIn);
+    const next = editable.content.replace(/\| Widget\s+\| 2\s+\|/, '| Widget | 3 |');
+
+    await target.commit(request(target.key, next, editable.content));
+
+    expect(await provider.readFile('inventory.csv')).to.equal('Item,Qty\r\nWidget,3');
+    expect(await provider.readFile('inventory_files/.original/original.csv')).to.equal(
+      'Item,Qty\nWidget,2\n',
+    );
+  });
+});
+
+describe('binary image documents', () => {
+  it('loads a dropped image for Squisq image-viewer mode without decoding it as text', async () => {
+    const provider = new MemoryFileSystemProvider('image-viewer', 'Image viewer');
+    const bytes = new Uint8Array([137, 80, 78, 71]);
+    await provider.writeBinary('photo.png', bytes.buffer);
+
+    const opened = await loadEditableShellDocument(provider, 'photo.png');
+
+    expect(opened?.content).to.equal('');
+    expect(opened?.image?.mimeType).to.equal('image/png');
+    expect(new Uint8Array(opened!.image!.data)).to.deep.equal(bytes);
+  });
 });

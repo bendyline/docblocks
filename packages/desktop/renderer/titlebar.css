@@ -17,7 +17,8 @@
    it. Keep the selector aligned with the wrapped-header rule below. */
 html:has(
   .db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar
-) {
+),
+html:has(.db-desktop-root .db-shell--mobile .squisq-toolbar) {
   --db-desktop-editor-header-height: calc(var(--db-desktop-titlebar-height) * 2);
 }
 
@@ -140,6 +141,26 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
 .db-desktop-root .db-shell--mobile .squisq-toolbar,
 .db-desktop-root .db-shell--mobile .squisq-editor-header--image {
   padding-left: env(titlebar-area-x, 0px);
+}
+
+/* Collapsing the sidebar reuses the compact two-row toolbar even on a wide
+   desktop window. The generic Electron titlebar rule above otherwise pins
+   its parent header to one caption row and clips the actions row completely.
+   Keep both compact rows at the native caption height so formatting, restore,
+   and export controls remain visible without encroaching on window controls. */
+.db-desktop-root .db-shell--mobile:has(.squisq-toolbar) .squisq-editor-header {
+  height: calc(var(--db-desktop-titlebar-height) * 2);
+  min-height: calc(var(--db-desktop-titlebar-height) * 2);
+}
+
+.db-desktop-root .db-shell--mobile .squisq-toolbar {
+  min-height: 0;
+}
+
+.db-desktop-root .db-shell--mobile .squisq-toolbar > .db-mobile-back,
+.db-desktop-root .db-shell--mobile .squisq-toolbar-view-tabs,
+.db-desktop-root .db-shell--mobile .squisq-toolbar-actions {
+  height: var(--db-desktop-titlebar-height);
 }
 
 /* The two-row wrapped toolbar itself is shared with the site and lives in

@@ -39,21 +39,10 @@ import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.
 import { filterVisibleFileEntries } from './entry-visibility.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
 import { createNewOutsideInDocument } from '../DocBlocksShell/outside-in.js';
+import { isSupportedImportFile } from '../DocBlocksShell/import-file-types.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
 
-const SUPPORTED_EXTENSIONS = new Set([
-  '.txt',
-  '.md',
-  '.html',
-  '.htm',
-  '.docx',
-  '.pdf',
-  '.pptx',
-  '.xlsx',
-  '.dbk',
-  '.zip',
-]);
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';
@@ -173,7 +162,7 @@ export interface FileExplorerProps {
   onTreeMutation?: FileTreeMutationHandler;
   /** Called after any mutation, with move details when paths change. */
   onTreeChange?: (change?: FileTreeChange) => void;
-  /** Called when supported files are dropped onto the explorer. */
+  /** Called with every external file dropped onto the explorer. */
   onImportFiles?: (files: File[]) => void;
   /**
    * Ask the user to confirm an irreversible delete. Resolve `false` to abort.
@@ -265,13 +254,13 @@ export function FileExplorer({
   const hasSupported = useCallback((dt: DataTransfer): boolean => {
     for (const item of Array.from(dt.items)) {
       if (item.kind !== 'file') continue;
-      const name = (item as DataTransferItem & { getAsFile(): File | null }).getAsFile?.()?.name;
-      // During dragover the filename may not be available, so accept broadly
-      if (!name) return true;
-      const ext = name.slice(name.lastIndexOf('.')).toLowerCase();
-      if (SUPPORTED_EXTENSIONS.has(ext)) return true;
+      const file = item.getAsFile();
+      // During dragover the file may not be available, so accept broadly and
+      // let the importer produce the definitive result on drop.
+      if (!file) return true;
+      if (isSupportedImportFile(file)) return true;
     }
-    return dt.items.length > 0;
+    return Array.from(dt.files).some(isSupportedImportFile);
   }, []);
 
   const handleDragEnter = useCallback(
@@ -309,11 +298,11 @@ export function FileExplorer({
       e.preventDefault();
       dragCounter.current = 0;
       setDragOver(false);
-      const supported = Array.from(e.dataTransfer.files).filter((f) => {
-        const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
-        return SUPPORTED_EXTENSIONS.has(ext);
-      });
-      if (supported.length > 0) onImportFiles?.(supported);
+      // Forward the complete drop. The importer owns the policy and reports
+      // rejected files; filtering here used to make an unsupported drop look
+      // exactly like no drop at all.
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) onImportFiles?.(files);
     },
     [onImportFiles],
   );

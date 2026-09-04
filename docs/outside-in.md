@@ -21,7 +21,7 @@ The corresponding convention for `Tucson.pptx` is
 `Tucson_files/tucson.md`. The outer filename and companion directory preserve
 the user's casing; the Markdown filename is a stable lowercase slug.
 
-Supported outer formats are HTML, DOCX, PDF, PPTX, and XLSX. The companion
+Supported outer formats are HTML, DOCX, PDF, PPTX, XLSX, and CSV. The companion
 frontmatter records the relationship without granting filesystem authority:
 
 ```yaml
@@ -73,3 +73,6 @@ Moving or renaming a visible outside-in document carries its companion with it;
 the frontmatter relationship is refreshed before the next save. Dropping a
 supported rendered file into a workspace preserves that file and creates the
 same companion layout instead of flattening it into a standalone Markdown file.
+Common source, plaintext, data, and image files are copied byte-for-byte under
+their original name. A rejected file type produces an error instead of being
+silently omitted from the drop.

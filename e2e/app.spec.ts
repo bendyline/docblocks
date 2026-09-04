@@ -156,6 +156,18 @@ test.describe('DocBlocks App', () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(100, box.y + box.height / 2);
+
+    const collapsePreview = page.locator('.db-sidebar-collapse-preview');
+    await expect(collapsePreview).toBeVisible();
+    await expect(collapsePreview).toContainText('Release to hide files');
+    await expect(collapsePreview.locator('svg')).toBeVisible();
+
+    // Crossing back over the threshold cancels the preview; crossing it once
+    // more restores the affordance before the pointer is released.
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    await expect(collapsePreview).not.toBeVisible();
+    await page.mouse.move(100, box.y + box.height / 2);
+    await expect(collapsePreview).toBeVisible();
     await page.mouse.up();
 
     await expect(page.locator('.db-shell-sidebar')).not.toBeVisible();

@@ -29,7 +29,17 @@ import {
 export type { OutsideInLayout } from './outside-in-contract.js';
 export { resolveOutsideInLayout, withOutsideInMetadata } from './outside-in-contract.js';
 
-const OUTSIDE_IN_EXTENSION = /\.(?:html?|docx|pdf|pptx|xlsx)$/i;
+const OUTSIDE_IN_EXTENSION = /\.(?:html?|docx|pdf|pptx|xlsx|csv)$/i;
+const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  gif: 'image/gif',
+  ico: 'image/x-icon',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+};
 const SQUISQ_RUNTIME_DIRECTORY = '_squisq';
 const SQUISQ_RUNTIME_FILENAME = 'squisq-player.js';
 
@@ -42,6 +52,8 @@ export interface EditableShellDocument {
   outsideIn: OutsideInLayout | null;
   /** Whether edits may regenerate an outside-in rendered target. */
   outsideInEditingEnabled: boolean;
+  /** Binary image payload rendered through Squisq's image-viewer mode. */
+  image?: { data: ArrayBuffer; mimeType: string };
 }
 
 export interface EditableOutsideInDocument extends EditableShellDocument {
@@ -168,6 +180,22 @@ export async function loadEditableShellDocument(
   provider: FileSystemProvider,
   selectedPath: string,
 ): Promise<EditableShellDocument | null> {
+  const imageExtension = selectedPath.slice(selectedPath.lastIndexOf('.') + 1).toLowerCase();
+  const imageMimeType = IMAGE_MIME_TYPES[imageExtension];
+  if (imageMimeType) {
+    const data = await readBytes(provider, selectedPath);
+    return data === null
+      ? null
+      : {
+          displayPath: selectedPath,
+          sourcePath: selectedPath,
+          content: '',
+          outsideIn: null,
+          outsideInEditingEnabled: false,
+          image: { data, mimeType: imageMimeType },
+        };
+  }
+
   if (!OUTSIDE_IN_EXTENSION.test(selectedPath)) {
     const content = await readText(provider, selectedPath);
     return content === null

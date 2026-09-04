@@ -731,6 +731,24 @@ function FileGlyph() {
   );
 }
 
+function CollapseSidebarGlyph() {
+  return (
+    <svg
+      viewBox="0 0 64 64"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="7" y="10" width="50" height="44" rx="6" />
+      <path d="M24 10v44" />
+      <path d="m17 25-7 7 7 7" />
+    </svg>
+  );
+}
+
 export function DocBlocksShell({
   theme: hostTheme = 'auto',
   logoUrl,
@@ -955,10 +973,11 @@ export function DocBlocksShell({
         lastRaw = drag.startWidth + (ev.clientX - drag.startX);
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD && sidebarRef.current) {
           // Below threshold -- preview the collapse by snapping to the
-          // minimum width and fading the sidebar, so the user can see
-          // they've crossed into "release to collapse" territory.
+          // minimum width and covering the dimmed sidebar with a large
+          // directional affordance, so the user can see they've crossed
+          // into "release to collapse" territory.
           sidebarRef.current.style.width = `${SIDEBAR_WIDTH_MIN}px`;
-          sidebarRef.current.style.opacity = '0.45';
+          sidebarRef.current.classList.add('db-shell-sidebar--collapse-preview');
           return;
         }
         const clamped = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, lastRaw));
@@ -966,7 +985,7 @@ export function DocBlocksShell({
           // Update the DOM directly during the drag for jank-free
           // dragging; React state syncs on release.
           sidebarRef.current.style.width = `${clamped}px`;
-          sidebarRef.current.style.opacity = '';
+          sidebarRef.current.classList.remove('db-shell-sidebar--collapse-preview');
         }
       };
       const onUp = () => {
@@ -975,7 +994,7 @@ export function DocBlocksShell({
         document.body.style.userSelect = '';
         document.body.classList.remove('db-resizing-sidebar');
         if (sidebarRef.current) {
-          sidebarRef.current.style.opacity = '';
+          sidebarRef.current.classList.remove('db-shell-sidebar--collapse-preview');
         }
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD) {
           // Released below threshold -- switch to compact (single-pane)
@@ -1210,11 +1229,13 @@ export function DocBlocksShell({
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
   const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
   const [selectedOutsideInEditingEnabled, setSelectedOutsideInEditingEnabled] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<EditableShellDocument['image']>(undefined);
   const adoptSelectedDocument = useCallback((document: EditableShellDocument | null) => {
     setSelectedFile(document?.displayPath ?? null);
     setSelectedSourceFile(document?.sourcePath ?? null);
     setSelectedOutsideIn(document?.outsideIn ?? null);
     setSelectedOutsideInEditingEnabled(document?.outsideInEditingEnabled ?? false);
+    setSelectedImage(document?.image);
   }, []);
   const adoptRegularDocument = useCallback((path: string | null) => {
     if (path === null) {
@@ -1222,13 +1243,27 @@ export function DocBlocksShell({
       setSelectedSourceFile(null);
       setSelectedOutsideIn(null);
       setSelectedOutsideInEditingEnabled(false);
+      setSelectedImage(undefined);
       return;
     }
     setSelectedFile(path);
     setSelectedSourceFile(path);
     setSelectedOutsideIn(null);
     setSelectedOutsideInEditingEnabled(false);
+    setSelectedImage(undefined);
   }, []);
+  const selectedImageUrl = useMemo(() => {
+    if (!selectedImage || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+      return undefined;
+    }
+    return URL.createObjectURL(new Blob([selectedImage.data], { type: selectedImage.mimeType }));
+  }, [selectedImage]);
+  useEffect(
+    () => () => {
+      if (selectedImageUrl) URL.revokeObjectURL(selectedImageUrl);
+    },
+    [selectedImageUrl],
+  );
   useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
     if (!selectedFile) return undefined;
@@ -2325,7 +2360,7 @@ export function DocBlocksShell({
     const providerV2 = getFileSystemProviderV2(provider);
     if (!providerV2?.capabilities.watch) return;
     const watchedFile = selectedSourceFile ?? selectedFile;
-    if (!watchedFile || !documentSnapshot.targetKey) return;
+    if (!watchedFile || !documentSnapshot.targetKey || selectedImage) return;
     const targetKey = documentSnapshot.targetKey;
     let disposed = false;
     let reading = false;
@@ -2388,7 +2423,14 @@ export function DocBlocksShell({
       disposed = true;
       void subscription.dispose();
     };
-  }, [provider, selectedFile, selectedSourceFile, documentSession, documentSnapshot.targetKey]);
+  }, [
+    provider,
+    selectedFile,
+    selectedSourceFile,
+    selectedImage,
+    documentSession,
+    documentSnapshot.targetKey,
+  ]);
 
   const transitionAwayFromDocument = useCallback(
     async (requestId: number): Promise<boolean> => {
@@ -3504,7 +3546,7 @@ export function DocBlocksShell({
           : null;
 
         if (nextFile !== selectedFile) {
-          if (nextFile && selectedOutsideIn) {
+          if (nextFile) {
             const opened = await loadEditableShellDocument(provider, nextFile);
             adoptSelectedDocument(opened);
           } else {
@@ -3555,7 +3597,6 @@ export function DocBlocksShell({
       adoptRegularDocument,
       adoptSelectedDocument,
       selectedFile,
-      selectedOutsideIn,
       selectedFolder,
       activeWorkspaceId,
       pinnedDocuments,
@@ -4562,6 +4603,12 @@ export function DocBlocksShell({
                   </>
                 )}
               </div>
+              <div className="db-sidebar-collapse-preview" aria-hidden="true">
+                <span className="db-sidebar-collapse-preview-icon">
+                  <CollapseSidebarGlyph />
+                </span>
+                <span className="db-sidebar-collapse-preview-label">Release to hide files</span>
+              </div>
             </aside>
           )}
 
@@ -4607,11 +4654,16 @@ export function DocBlocksShell({
                     <EditorShell
                       key={`${selectedFile}-${editorKey}`}
                       initialMarkdown={editorContent}
-                      readOnly={selectedOutsideIn !== null && !selectedOutsideInEditingEnabled}
+                      readOnly={
+                        selectedImage !== undefined ||
+                        (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                      }
                       initialView={initialView}
                       defaultViewportPreset={defaultPreviewViewportPreset}
                       articleId={selectedFile}
                       fileName={selectedFile}
+                      imageSrc={selectedImageUrl}
+                      imageAlt={basenameOf(selectedFile)}
                       saveCoverImageOutput={saveRenderedImageOutput}
                       saveDashboardImageOutput={saveRenderedImageOutput}
                       onChange={handleEditorChange}
@@ -4635,7 +4687,7 @@ export function DocBlocksShell({
                       allowPresentationFullscreen={allowPresentationFullscreen}
                       documentLinkProvider={documentLinkProvider}
                       workspaceContainer={versionsContainer ?? undefined}
-                      allowVersioning={effectiveVersioning}
+                      allowVersioning={selectedImage === undefined && effectiveVersioning}
                       viewPreferences={viewPreferences}
                       onViewPreferencesChange={handleViewPreferencesChange}
                       versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
