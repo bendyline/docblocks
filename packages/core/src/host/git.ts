@@ -63,10 +63,16 @@ export interface GitRepoDetection {
   isRepo: boolean;
   /** False when the workspace root is a subdirectory of a larger repo. */
   rootIsToplevel?: boolean;
-  /** Main-owned repository authority; absent when expanded access was declined. */
+  /** Main-owned repository authority; absent while expanded access is ungranted. */
   repositoryId?: string;
   /** True when Git metadata or the work tree extends beyond the workspace grant. */
   requiresExpandedGrant?: boolean;
+  /**
+   * Display path of the enclosing repository root. Present only alongside
+   * `requiresExpandedGrant` so the in-app consent surface can name what the
+   * user would be granting access to.
+   */
+  repositoryRoot?: string;
 }
 
 export type GitFileStatusCode =
@@ -184,8 +190,23 @@ export interface GitCloneHandle {
 
 export interface DocBlocksHostGitAPI {
   capabilities(): Promise<GitCapabilities>;
-  /** Detect a persisted workspace by opaque workspace id and mint repository authority. */
+  /**
+   * Detect a persisted workspace by opaque workspace id and mint repository
+   * authority. Never prompts: a workspace inside a larger repository comes
+   * back with `requiresExpandedGrant` and no `repositoryId` until the user
+   * opts in through `grantExpandedRepo`.
+   */
   detectRepo(workspaceId: string): Promise<GitResult<GitRepoDetection>>;
+  /**
+   * Grant expanded access to the repository enclosing the workspace and mint
+   * repository authority. Must be called from an explicit user gesture. The
+   * choice is remembered for that repository; `always` remembers it for every
+   * repository opened from a subfolder.
+   */
+  grantExpandedRepo(
+    workspaceId: string,
+    opts?: { always?: boolean },
+  ): Promise<GitResult<GitRepoDetection>>;
   init(workspaceId: string): Promise<GitResult<void>>;
 
   status(repositoryId: string): Promise<GitResult<GitStatus>>;

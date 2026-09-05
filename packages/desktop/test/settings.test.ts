@@ -37,8 +37,25 @@ describe('desktop settings boundary', () => {
     });
   });
 
+  it('round-trips the remembered git repository grants', () => {
+    // These are what replaced the "Allow access to the full Git repository?"
+    // modal — if they stop persisting, the question comes back every launch.
+    expect(
+      parseSettings({
+        workspaces: [],
+        git: { allowExpandedByDefault: true, allowedRepositories: [rootPath] },
+      }),
+    ).to.deep.equal({
+      workspaces: [],
+      git: { allowExpandedByDefault: true, allowedRepositories: [rootPath] },
+    });
+  });
+
   for (const [label, value] of [
     ['unknown root field', { workspaces: [], surprise: true }],
+    ['unknown git field', { workspaces: [], git: { allowEverything: true } }],
+    ['non-boolean git default', { workspaces: [], git: { allowExpandedByDefault: 'yes' } }],
+    ['relative allowed repository', { workspaces: [], git: { allowedRepositories: ['relative'] } }],
     ['missing workspaces', {}],
     [
       'relative workspace root',

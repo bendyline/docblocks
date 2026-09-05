@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { test, expect } from './fixtures.js';
@@ -47,4 +48,58 @@ test('detects, commits, and displays history through the desktop Git UI', async 
   await expect(history.getByText('Commit from desktop E2E', { exact: true })).toBeVisible({
     timeout: 20_000,
   });
+});
+
+/**
+ * Opening a folder whose Git metadata lives outside it (a subfolder of a
+ * larger repository, or a separate `--separate-git-dir`) used to greet the
+ * user with a native "Allow access to the full Git repository?" message box
+ * at launch. It must now stay quiet: git off, and an unobtrusive offer at the
+ * foot of the sidebar.
+ */
+test('offers expanded repository access from the status bar instead of a launch modal', async ({
+  launchApp,
+  workspaceDir,
+}) => {
+  const externalGitDir = fs.mkdtempSync(
+    path.join(fs.realpathSync.native(os.tmpdir()), 'db-gitdir-'),
+  );
+  try {
+    git(workspaceDir, ['init', `--separate-git-dir=${externalGitDir}`]);
+    git(workspaceDir, ['config', 'user.name', 'DocBlocks E2E']);
+    git(workspaceDir, ['config', 'user.email', 'docblocks-e2e@example.invalid']);
+    fs.writeFileSync(path.join(workspaceDir, 'tracked.md'), '# Initial\n', 'utf8');
+    git(workspaceDir, ['add', '--', 'tracked.md']);
+    git(workspaceDir, ['commit', '-m', 'Initial fixture']);
+
+    const first = await launchApp();
+    const window = first.window;
+    await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+    const offer = window.getByRole('button', { name: /^Enable Git for this folder/u });
+    await expect(offer).toBeVisible({ timeout: 20_000 });
+    await expect(window.getByRole('button', { name: /Git: branch/u })).toHaveCount(0);
+
+    await offer.click();
+    const dialog = window.getByRole('dialog', { name: 'Enable Git for this folder?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Enable Git' }).click();
+
+    await expect(window.getByRole('button', { name: /Git: branch/u })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // The answer is remembered: the next launch is not asked again.
+    await first.close();
+    const second = await launchApp();
+    await second.window.waitForSelector('.db-shell', { timeout: 30_000 });
+    await expect(second.window.getByRole('button', { name: /Git: branch/u })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      second.window.getByRole('button', { name: /^Enable Git for this folder/u }),
+    ).toHaveCount(0);
+  } finally {
+    fs.rmSync(externalGitDir, { recursive: true, force: true });
+  }
 });

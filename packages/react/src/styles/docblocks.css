@@ -5449,6 +5449,55 @@ html:has(.db-shell[data-theme='dark'])
   flex-shrink: 0;
 }
 
+/* The offer to turn Git on for a folder inside a larger repository. It sits
+   directly above the sidebar footer and borrows its voice: muted, 11px, no
+   icon and no accent — this is a default the user may change, not a fault. */
+.db-git-grant-notice {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px 6px 18px;
+  border-top: 1px solid var(--db-border);
+  color: var(--db-text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.db-git-grant-notice-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-git-grant-notice-action {
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: underline;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-git-grant-notice-action:hover {
+  color: var(--db-text-secondary);
+}
+
+.db-git-grant-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--db-text);
+  cursor: pointer;
+}
+
 /* Actions dropdown (mirrors db-ws-settings-dropdown) */
 .db-git-menu {
   position: absolute;

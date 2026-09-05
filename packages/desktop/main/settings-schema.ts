@@ -20,12 +20,24 @@ export interface PersistedExportTarget {
   byExtension?: Record<string, PersistedExportTargetAccess>;
 }
 
+/**
+ * Remembered answers to "may Git operate on the repository above this
+ * workspace?" — the question that used to be a modal on every folder open.
+ */
+export interface PersistedGitSettings {
+  /** Grant expanded repository access for every workspace, without asking. */
+  allowExpandedByDefault?: boolean;
+  /** Repository top-level paths the user has already allowed. */
+  allowedRepositories?: string[];
+}
+
 export interface Settings {
   defaultWorkspaceRoot?: string;
   workspaces: PersistedWorkspace[];
   iCloudPromptShown?: boolean;
   lastCloneParentDir?: string;
   exportTargets?: Record<string, PersistedExportTarget>;
+  git?: PersistedGitSettings;
 }
 
 export const SETTINGS_MAX_BYTES = 4 * 1024 * 1024;
@@ -36,6 +48,7 @@ const SETTINGS_KEYS = [
   'iCloudPromptShown',
   'lastCloneParentDir',
   'exportTargets',
+  'git',
 ] as const;
 
 /** Parse the complete persisted settings boundary; unknown fields are rejected. */
@@ -65,6 +78,32 @@ export function parseSettings(value: unknown): Settings {
   }
   if (record.exportTargets !== undefined) {
     parsed.exportTargets = parseExportTargets(record.exportTargets);
+  }
+  if (record.git !== undefined) {
+    parsed.git = parseGitSettings(record.git);
+  }
+  return parsed;
+}
+
+function parseGitSettings(value: unknown): PersistedGitSettings {
+  const record = exactRecord(value, ['allowExpandedByDefault', 'allowedRepositories'], 'git');
+  const parsed: PersistedGitSettings = {};
+  if (record.allowExpandedByDefault !== undefined) {
+    if (typeof record.allowExpandedByDefault !== 'boolean') {
+      invalid('git.allowExpandedByDefault must be a boolean');
+    }
+    parsed.allowExpandedByDefault = record.allowExpandedByDefault;
+  }
+  if (record.allowedRepositories !== undefined) {
+    if (!Array.isArray(record.allowedRepositories)) {
+      invalid('git.allowedRepositories must be an array');
+    }
+    if (record.allowedRepositories.length > HOST_WIRE_LIMITS.arrayEntries) {
+      invalid('git.allowedRepositories exceeds the entry limit');
+    }
+    parsed.allowedRepositories = record.allowedRepositories.map((entry, index) =>
+      absolutePath(entry, `git.allowedRepositories[${index}]`),
+    );
   }
   return parsed;
 }

@@ -175,6 +175,81 @@ describe('useGit', () => {
     });
   });
 
+  describe('expanded repository grant', () => {
+    it('holds git off and offers the grant when the workspace is inside a larger repo', async () => {
+      // Detection must never prompt: opening a subfolder of a big repo used
+      // to throw a native modal before the user had asked for anything.
+      let grantCalls = 0;
+      installHost(
+        makeGitApi({
+          detectRepo: () =>
+            Promise.resolve({
+              ok: true,
+              value: {
+                isRepo: true,
+                rootIsToplevel: false,
+                requiresExpandedGrant: true,
+                repositoryRoot: 'D:/gh/molen-internal',
+              },
+            }),
+          grantExpandedRepo: () => {
+            grantCalls += 1;
+            return Promise.resolve({
+              ok: true,
+              value: { isRepo: true, repositoryId: 'repo-1', requiresExpandedGrant: true },
+            });
+          },
+        }),
+      );
+
+      const handle = await renderHook(useGitHook, { workspaceId: '/ws' });
+      await advanceTime(1);
+      expect(handle.result.current.repo, 'git stays off until the user opts in').to.equal(null);
+      expect(handle.result.current.pendingGrant?.repositoryRoot).to.equal('D:/gh/molen-internal');
+      expect(grantCalls, 'detection must not grant on its own').to.equal(0);
+
+      await act(async () => {
+        await handle.result.current.enableExpandedRepo({ always: true });
+      });
+      expect(grantCalls).to.equal(1);
+      expect(handle.result.current.repositoryId).to.equal('repo-1');
+      expect(handle.result.current.pendingGrant).to.equal(null);
+      await handle.unmount();
+    });
+
+    it('keeps the offer up when the grant fails', async () => {
+      installHost(
+        makeGitApi({
+          detectRepo: () =>
+            Promise.resolve({
+              ok: true,
+              value: { isRepo: true, rootIsToplevel: false, requiresExpandedGrant: true },
+            }),
+          grantExpandedRepo: () =>
+            Promise.resolve({
+              ok: false,
+              error: { code: 'permission-denied', message: 'nope' },
+            }),
+        }),
+      );
+
+      const handle = await renderHook(useGitHook, { workspaceId: '/ws' });
+      await advanceTime(1);
+      let granted = true;
+      await act(async () => {
+        granted = await handle.result.current.enableExpandedRepo();
+      });
+      expect(granted).to.equal(false);
+      expect(handle.result.current.repositoryId).to.equal(null);
+      expect(
+        handle.result.current.pendingGrant,
+        'the offer must survive a failed grant',
+      ).to.not.equal(null);
+      expect(handle.result.current.grantBusy).to.equal(false);
+      await handle.unmount();
+    });
+  });
+
   describe('lastResult', () => {
     it('clears a previous failure when a dialog is opened', async () => {
       // Regression (SF-4): lastResult is one shared slot, never cleared on

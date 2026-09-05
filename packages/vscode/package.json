@@ -186,10 +186,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.11.0",
-    "@bendyline/squisq-editor-react": "2.11.0",
-    "@bendyline/squisq-formats": "2.6.0",
-    "@bendyline/squisq-react": "2.11.0",
+    "@bendyline/squisq": "2.11.1",
+    "@bendyline/squisq-editor-react": "2.11.1",
+    "@bendyline/squisq-formats": "2.6.1",
+    "@bendyline/squisq-react": "2.11.1",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"

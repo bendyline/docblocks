@@ -4,6 +4,9 @@
  * Tier 1 (`available`): running under the Electron host with a working git —
  * gates only the clone entry. Tier 2 (`repo`): the active workspace is an
  * electron-native folder that is a git repository — gates everything else.
+ * A repo we detected but hold no authority over (the workspace is a subfolder
+ * of a larger repository, and the user hasn't allowed reaching outside it)
+ * lands in `pendingGrant`, not `repo`, so git stays off until they opt in.
  * On the site / VS Code webview / store builds every surface null-renders.
  *
  * Actions never throw: typed GitErrors are routed to the auth-guidance or
@@ -98,34 +101,77 @@ export function useGit(
 
   const [repo, setRepo] = useState<GitRepoDetection | null>(null);
   const [remoteWeb, setRemoteWeb] = useState<GitValue['remoteWeb']>(null);
+  /**
+   * A repository we detected but hold no authority over: the workspace sits
+   * inside a larger repo and the user hasn't allowed reaching outside it.
+   * Kept apart from `repo` so every existing consumer keeps reading `repo`
+   * as "git is usable here" — this only powers the status-bar offer.
+   */
+  const [pendingGrant, setPendingGrant] = useState<GitValue['pendingGrant']>(null);
+
+  // Shared by detection and the explicit grant — a repo without its remote
+  // still works, so a failed probe degrades to "no remote".
+  const loadRemote = useCallback(
+    (repositoryId: string, isCancelled: () => boolean) => {
+      if (!gitApi) return;
+      void gitApi.listRemotes(repositoryId).then(
+        (remotes) => {
+          if (isCancelled() || !remotes.ok) return;
+          const first: GitRemoteInfo | undefined = remotes.value[0];
+          setRemoteWeb(first?.web ?? null);
+        },
+        () => undefined,
+      );
+    },
+    [gitApi],
+  );
+
   useEffect(() => {
     setRepo(null);
     setRemoteWeb(null);
+    setPendingGrant(null);
     if (!gitApi || !workspaceId || !available) return;
     let cancelled = false;
+    const isCancelled = () => cancelled;
     void gitApi.detectRepo(workspaceId).then(
       (result) => {
-        if (cancelled || !result.ok || !result.value.isRepo || !result.value.repositoryId) {
+        if (cancelled || !result.ok || !result.value.isRepo) return;
+        if (!result.value.repositoryId) {
+          // Detection never prompts. When the repo extends past the
+          // workspace we surface the offer instead of a modal.
+          if (result.value.requiresExpandedGrant) {
+            setPendingGrant({ repositoryRoot: result.value.repositoryRoot ?? null });
+          }
           return;
         }
         setRepo(result.value);
-        void gitApi.listRemotes(result.value.repositoryId).then(
-          (remotes) => {
-            if (cancelled || !remotes.ok) return;
-            const first: GitRemoteInfo | undefined = remotes.value[0];
-            setRemoteWeb(first?.web ?? null);
-          },
-          // No remote is a supported state; a failed probe degrades to it
-          // rather than surfacing an unhandled rejection.
-          () => undefined,
-        );
+        loadRemote(result.value.repositoryId, isCancelled);
       },
       /* detection failure → not a repo, which is the default state */ () => undefined,
     );
     return () => {
       cancelled = true;
     };
-  }, [gitApi, workspaceId, available]);
+  }, [gitApi, workspaceId, available, loadRemote]);
+
+  const [grantBusy, setGrantBusy] = useState(false);
+  const enableExpandedRepo = useCallback(
+    async (opts?: { always?: boolean }): Promise<boolean> => {
+      if (!gitApi || !workspaceId) return false;
+      setGrantBusy(true);
+      try {
+        const result = await gitApi.grantExpandedRepo(workspaceId, opts);
+        if (!result.ok || !result.value.repositoryId) return false;
+        setRepo(result.value);
+        setPendingGrant(null);
+        loadRemote(result.value.repositoryId, () => false);
+        return true;
+      } finally {
+        setGrantBusy(false);
+      }
+    },
+    [gitApi, workspaceId, loadRemote],
+  );
 
   const repositoryId = repo?.repositoryId ?? null;
   const isRepo = repositoryId !== null;
@@ -318,6 +364,9 @@ export function useGit(
       capabilities,
       repo,
       repositoryId,
+      pendingGrant,
+      grantBusy,
+      enableExpandedRepo,
       remoteWeb,
       gitApi,
       provider,
@@ -345,6 +394,9 @@ export function useGit(
       capabilities,
       repo,
       repositoryId,
+      pendingGrant,
+      grantBusy,
+      enableExpandedRepo,
       remoteWeb,
       gitApi,
       provider,

@@ -25,6 +25,8 @@ export type GitDialogState =
   /** `revision` absent → working tree vs HEAD; present → that commit vs its parent. */
   | { kind: 'diff'; path: string; revision?: { sha: string } }
   | { kind: 'clone' }
+  /** Offer to allow git operations on the repository above the workspace. */
+  | { kind: 'expanded-grant' }
   | {
       kind: 'auth-guidance';
       operation: 'push' | 'pull' | 'fetch' | 'clone' | 'pr';
@@ -47,6 +49,20 @@ export interface GitValue {
   repo: GitRepoDetection | null;
   /** Main-owned repository capability; never a native path. */
   repositoryId: string | null;
+  /**
+   * Set when the workspace is inside a larger repository the user hasn't
+   * allowed git to touch yet. Git stays off (`repo` is null) until
+   * `enableExpandedRepo` succeeds; the status bar offers the switch.
+   */
+  pendingGrant: { repositoryRoot: string | null } | null;
+  /** A grant request is in flight. */
+  grantBusy: boolean;
+  /**
+   * Allow git to operate on the enclosing repository. Remembers the choice
+   * for that repository, or for every repository with `always`. Must be
+   * called from an explicit user gesture.
+   */
+  enableExpandedRepo: (opts?: { always?: boolean }) => Promise<boolean>;
   /** Parsed web location of the first remote, when one exists and parses. */
   remoteWeb: { host: string; owner: string; repo: string; webUrl: string } | null;
   /** Raw host API for read-heavy dialogs (log, branches, file-at-revision). */

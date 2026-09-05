@@ -14,6 +14,7 @@ import { GitDiffDialog } from './GitDiffDialog.js';
 import { GitCloneDialog } from './GitCloneDialog.js';
 import { GitAuthGuidanceDialog } from './GitAuthGuidanceDialog.js';
 import { GitConflictsDialog } from './GitConflictsDialog.js';
+import { GitExpandedGrantDialog } from './GitExpandedGrantDialog.js';
 
 export interface GitUIProps {
   /** Open a workspace file in the editor (from conflicts/history dialogs). */
@@ -60,6 +61,7 @@ export function GitUI({ onOpenFile, onWorkspaceCloned }: GitUIProps) {
           onClose={closeDialog}
         />
       )}
+      {dialog.kind === 'expanded-grant' && <GitExpandedGrantDialog onClose={closeDialog} />}
       {dialog.kind === 'conflicts' && (
         <GitConflictsDialog paths={dialog.paths} onOpenFile={onOpenFile} onClose={closeDialog} />
       )}

@@ -118,6 +118,9 @@ const EditorShell = lazy(loadEditorShell);
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
 const GitUI = lazy(() => import('../Git/GitUI.js').then((m) => ({ default: m.GitUI })));
+const GitGrantNotice = lazy(() =>
+  import('../Git/GitGrantNotice.js').then((m) => ({ default: m.GitGrantNotice })),
+);
 const GitToolbarControl = lazy(() =>
   import('../Git/GitToolbarControl.js').then((m) => ({ default: m.GitToolbarControl })),
 );
@@ -4570,6 +4573,11 @@ export function DocBlocksShell({
                     </button>
                   </div>
                 </section>
+              )}
+              {git.available && git.pendingGrant && (
+                <Suspense fallback={null}>
+                  <GitGrantNotice />
+                </Suspense>
               )}
               <div className="db-shell-sidebar-footer">
                 <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
