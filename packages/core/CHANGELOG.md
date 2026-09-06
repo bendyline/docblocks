@@ -1,3 +1,9 @@
+## @bendyline/docblocks [2.6.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.5.0...@bendyline/docblocks@2.6.0) (2026-09-06)
+
+### Features
+
+* Integrate grammar/spell fixes ([#23](https://github.com/bendyline/docblocks/issues/23)) ([7ccf9b6](https://github.com/bendyline/docblocks/commit/7ccf9b6e40780239477a480d86200bc6d148ca30))
+
 ## @bendyline/docblocks [2.5.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks@2.4.0...@bendyline/docblocks@2.5.0) (2026-08-26)
 
 ### Features
