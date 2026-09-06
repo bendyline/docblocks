@@ -23,8 +23,10 @@ The exclusion feature requires npm 11.17 or newer. The repository pins the
 newer npm 12.0.2 for contributor and CI commands; it was the latest stable npm
 release when reviewed and had been published since July 29, 2026, well beyond
 the seven-day window. CI installs that exact npm version before installing
-project dependencies. The `packageManager` field is the exact toolchain pin;
-`engines.npm` communicates the minimum to npm clients.
+project dependencies. The `packageManager` field is the exact toolchain pin,
+and the root development dependency ensures nested `npm run` commands resolve
+that same CLI instead of a transitive npm executable. `engines.npm`
+communicates the minimum to npm clients.
 
 If `npm audit fix` reports that a patched version is too new, leave the current
 pin in place until the seven-day window expires. Do not use

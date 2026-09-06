@@ -108,17 +108,34 @@ const consumerTypePackages = [
 const REACT_TYPE_PEER_RANGE = '^18.0.0 || ^19.0.0';
 const REACT_DEV_TYPES_VERSION = '18.3.28';
 
-function parsePackResult(output: string, packageName: string): PackResult {
+export function parsePackResult(output: string, packageName: string): PackResult {
   let value: unknown;
   try {
     value = JSON.parse(output);
   } catch {
     throw new Error(`${packageName}: npm pack did not return JSON`);
   }
-  if (!Array.isArray(value) || value.length !== 1) {
+
+  let first: unknown;
+  if (Array.isArray(value)) {
+    if (value.length !== 1) {
+      throw new Error(`${packageName}: npm pack returned an unexpected result count`);
+    }
+    first = value[0];
+  } else if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value);
+    if (entries.length !== 1) {
+      throw new Error(`${packageName}: npm pack returned an unexpected result count`);
+    }
+    const [reportedName, result] = entries[0];
+    if (reportedName !== packageName) {
+      throw new Error(`${packageName}: npm pack reported unexpected package ${reportedName}`);
+    }
+    first = result;
+  } else {
     throw new Error(`${packageName}: npm pack returned an unexpected result count`);
   }
-  const first: unknown = value[0];
+
   if (
     typeof first !== 'object' ||
     first === null ||
@@ -643,4 +660,7 @@ async function main(): Promise<void> {
   if (primaryFailure) throw primaryFailure.reason;
 }
 
-await main();
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  await main();
+}

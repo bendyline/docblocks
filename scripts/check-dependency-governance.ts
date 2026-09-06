@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 interface RootManifest {
   readonly allowScripts?: Readonly<Record<string, boolean>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
   readonly engines?: Readonly<Record<string, string>>;
   readonly packageManager?: string;
 }
@@ -137,6 +138,11 @@ export function validateDependencyToolchain(manifest: RootManifest, npmrcSource:
   }
   if (manifest.packageManager !== 'npm@12.0.2') {
     throw new Error('package.json packageManager must pin npm@12.0.2');
+  }
+  if (manifest.devDependencies?.npm !== '12.0.2') {
+    throw new Error(
+      'package.json devDependencies.npm must pin npm@12.0.2 so nested npm scripts use the governed CLI',
+    );
   }
 
   const npmrc = parseNpmrc(npmrcSource);

@@ -54,6 +54,7 @@ describe('dependency governance', () => {
 
   it('pins the npm feature floor and the sole Squisq cooldown exception', () => {
     const manifest = {
+      devDependencies: { npm: '12.0.2' },
       engines: { npm: '>=12.0.2' },
       packageManager: 'npm@12.0.2',
     } as const;
@@ -73,5 +74,8 @@ describe('dependency governance', () => {
         `${npmrc}min-release-age-exclude[]=@bendyline/docblocks*\n`,
       ),
     ).to.throw('min-release-age-exclude[] must be @bendyline/squisq*');
+    expect(() =>
+      validateDependencyToolchain({ ...manifest, devDependencies: { npm: '11.18.0' } }, npmrc),
+    ).to.throw('devDependencies.npm must pin npm@12.0.2');
   });
 });
