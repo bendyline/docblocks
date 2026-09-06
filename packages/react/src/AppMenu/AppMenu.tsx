@@ -10,8 +10,10 @@ import {
   DEFAULT_WRITE_CANVAS_PREFERENCES,
   type WriteCanvasPreferences,
 } from '../preferences/write-canvas.js';
+import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
 import {
   AccentColorSettings,
+  ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
   WriteCanvasSettingsControls,
@@ -36,6 +38,10 @@ export interface AppMenuProps {
   writeCanvasSettings?: WriteCanvasPreferences;
   /** Called when the user changes the Write canvas typography. */
   onWriteCanvasSettingsChange?: (settings: WriteCanvasPreferences) => void;
+  /** Current inline spelling/grammar checking preferences. */
+  proofingPreferences?: ProofingPreferences;
+  /** Called when the user toggles inline spelling or grammar checking. */
+  onProofingPreferencesChange?: (settings: ProofingPreferences) => void;
   /** Current global versioning preference. */
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
@@ -90,6 +96,8 @@ export function AppMenu({
   onAccentColorChange,
   writeCanvasSettings = DEFAULT_WRITE_CANVAS_PREFERENCES,
   onWriteCanvasSettingsChange,
+  proofingPreferences = DEFAULT_PROOFING_PREFERENCES,
+  onProofingPreferencesChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
   onDownloadAllWorkspaces,
@@ -265,6 +273,10 @@ export function AppMenu({
           <WriteCanvasSettingsControls
             value={writeCanvasSettings}
             onChange={(settings) => onWriteCanvasSettingsChange?.(settings)}
+          />
+          <ProofingSettingsControls
+            value={proofingPreferences}
+            onChange={(settings) => onProofingPreferencesChange?.(settings)}
           />
 
           {getStorageEstimate && (

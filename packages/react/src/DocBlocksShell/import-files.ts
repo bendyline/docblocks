@@ -16,7 +16,10 @@
  *     to expect the numbered-suffix behaviour. Nothing is lost either way, and
  *     an unwanted extra file is one delete away -- an overwritten document is
  *     gone for good.
- *  2. **A failed import is reported.** Failures used to be `console.error`-only,
+ *  2. **Accepted files keep their bytes and names.** Rendered document formats
+ *     become outside-in documents, DBK bundles keep their document-aware
+ *     handling, and ordinary text/source/image files are copied byte-for-byte.
+ *  3. **A failed or unsupported import is reported.** Failures used to be `console.error`-only,
  *     so a bad drop looked identical to no drop at all. Each file is isolated:
  *     one failure never aborts the rest of the batch, and the caller receives
  *     everything it needs to tell the user what happened.
@@ -31,6 +34,12 @@ import {
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { importOutsideInDocument, resolveOutsideInLayout } from './outside-in-contract.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
+import {
+  BUNDLE_IMPORT_EXTENSIONS,
+  extensionOfFileName,
+  isSupportedImportFile,
+  OUTSIDE_IN_IMPORT_EXTENSIONS,
+} from './import-file-types.js';
 
 export interface ImportedDocument {
   /** The dropped file's original name, e.g. `report.docx`. */
@@ -113,8 +122,6 @@ async function writeProviderBytes(
   await provider.writeBinary(path, data);
 }
 
-const OUTSIDE_IN_EXTENSIONS = new Set(['.html', '.htm', '.docx', '.pdf', '.pptx', '.xlsx']);
-
 async function claimOutsideInTarget(
   provider: FileSystemProvider,
   desiredPath: string,
@@ -172,13 +179,9 @@ async function importOutsideInFile(
 
 async function readImportedMarkdown(
   file: File,
-  ext: string,
   destPath: string,
   provider: FileSystemProvider,
 ): Promise<string> {
-  if (ext === '.md' || ext === '.txt') {
-    return file.text();
-  }
   const snapshot = await decodeDbkWorkspace(await file.arrayBuffer(), {
     targetDocumentPath: destPath,
   });
@@ -216,11 +219,11 @@ async function writeDbkCompanions(
   }
 }
 
-const SUPPORTED_EXTENSIONS = new Set(['.md', '.txt', ...OUTSIDE_IN_EXTENSIONS, '.dbk', '.zip']);
-
 /**
- * Import each dropped file as a markdown document, never clobbering an
- * existing one. Always resolves: per-file failures are collected, not thrown.
+ * Import each supported dropped file without clobbering an existing entry.
+ * Rendered formats become outside-in documents; DBK/ZIP bundles become
+ * Markdown; ordinary text/source/image files retain their original bytes.
+ * Always resolves: per-file failures are collected, not thrown.
  */
 export async function importDroppedFiles(
   files: readonly File[],
@@ -229,26 +232,29 @@ export async function importDroppedFiles(
   const result: ImportFilesResult = { imported: [], failed: [], unsupported: [] };
 
   for (const file of files) {
-    // Matches the historical extension sniff, including its treatment of a
-    // name with no dot at all (which lands on an unsupported extension).
-    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
-    if (!SUPPORTED_EXTENSIONS.has(ext)) {
+    const ext = extensionOfFileName(file.name);
+    if (!isSupportedImportFile(file)) {
       result.unsupported.push(file.name);
       continue;
     }
 
-    const baseName = file.name.replace(/\.[^.]+$/, '');
     let claimed: string | null = null;
     try {
-      if (OUTSIDE_IN_EXTENSIONS.has(ext)) {
+      if (OUTSIDE_IN_IMPORT_EXTENSIONS.has(ext)) {
         const imported = await importOutsideInFile(file, provider);
         result.imported.push({ source: file.name, ...imported });
         continue;
       }
-      const claim = await claimAvailablePath(provider, `${baseName}.md`);
+      const isBundle = BUNDLE_IMPORT_EXTENSIONS.has(ext);
+      const desiredPath = isBundle ? `${file.name.replace(/\.[^.]+$/, '')}.md` : file.name;
+      const claim = await claimAvailablePath(provider, desiredPath);
       claimed = claim.path;
-      const markdown = await readImportedMarkdown(file, ext, claim.path, provider);
-      await writeProviderText(provider, claim.path, markdown);
+      if (isBundle) {
+        const markdown = await readImportedMarkdown(file, claim.path, provider);
+        await writeProviderText(provider, claim.path, markdown);
+      } else {
+        await writeProviderBytes(provider, claim.path, await file.arrayBuffer(), 'upsert');
+      }
       result.imported.push({ source: file.name, path: claim.path, renamed: claim.renamed });
     } catch (error: unknown) {
       // The placeholder only ever exists to hold the name; a conversion that
@@ -272,23 +278,19 @@ export function summariseImport(
 ): { kind: 'success' | 'error'; message: string } | null {
   const { imported, failed, unsupported } = result;
 
-  if (failed.length > 0) {
+  const rejectedCount = failed.length + unsupported.length;
+  if (rejectedCount > 0) {
     const detail =
-      failed.length === 1
+      failed.length === 1 && unsupported.length === 0
         ? `Could not import ${failed[0].source} — ${failed[0].message}`
-        : `Could not import ${failed.length} of ${failed.length + imported.length} files.`;
+        : unsupported.length === 1 && failed.length === 0
+          ? `${unsupported[0]} is not a file type DocBlocks can import.`
+          : `Could not import ${rejectedCount} of ${rejectedCount + imported.length} files.`;
     return { kind: 'error', message: detail };
   }
 
   if (imported.length === 0) {
-    if (unsupported.length === 0) return null;
-    return {
-      kind: 'error',
-      message:
-        unsupported.length === 1
-          ? `${unsupported[0]} is not a file type DocBlocks can import.`
-          : `${unsupported.length} dropped files are not file types DocBlocks can import.`,
-    };
+    return null;
   }
 
   // Renames are the one success worth narrating: the user dropped `report.docx`

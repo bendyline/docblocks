@@ -21,7 +21,7 @@
     "access": "public"
   },
   "engines": {
-    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+    "node": "^24.18.0 || >=26.0.0"
   },
   "type": "module",
   "main": "./dist/index.js",
@@ -46,6 +46,16 @@
       "types": "./dist/export/index.d.ts",
       "import": "./dist/export/index.js",
       "default": "./dist/export/index.js"
+    },
+    "./calculation": {
+      "types": "./dist/calculation/index.d.ts",
+      "import": "./dist/calculation/index.js",
+      "default": "./dist/calculation/index.js"
+    },
+    "./proofing": {
+      "types": "./dist/proofing/index.d.ts",
+      "import": "./dist/proofing/index.js",
+      "default": "./dist/proofing/index.js"
     },
     "./settings": {
       "types": "./dist/settings/index.d.ts",
@@ -76,12 +86,13 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.5.0",
-    "@bendyline/squisq": "2.9.0",
-    "@bendyline/squisq-editor-react": "2.9.0",
-    "@bendyline/squisq-formats": "2.4.6",
-    "@bendyline/squisq-react": "2.9.0",
-    "@bendyline/squisq-video": "2.3.1",
-    "@bendyline/squisq-video-react": "2.4.1",
+    "@bendyline/squisq": "2.11.1",
+    "@bendyline/squisq-calc": "2.11.0",
+    "@bendyline/squisq-editor-react": "2.11.1",
+    "@bendyline/squisq-formats": "2.6.1",
+    "@bendyline/squisq-react": "2.11.1",
+    "@bendyline/squisq-video": "2.3.4",
+    "@bendyline/squisq-video-react": "2.4.5",
     "qrcode": "1.5.4"
   },
   "devDependencies": {

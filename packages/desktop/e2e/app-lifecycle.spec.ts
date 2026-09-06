@@ -53,11 +53,13 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     const sidebarHeader = document.querySelector('.db-shell-sidebar-header');
     const editorHeaderRect = editorHeader?.getBoundingClientRect();
     const sidebarHeaderRect = sidebarHeader?.getBoundingClientRect();
+    const shell = element.closest('.db-shell');
     return {
       devicePixelRatio: globalThis.devicePixelRatio,
       toolbarHeight: element.getBoundingClientRect().height,
       editorHeaderHeight: editorHeaderRect?.height,
       sidebarHeaderHeight: sidebarHeaderRect?.height,
+      wrapped: shell?.classList.contains('db-shell--desktop-toolbar-wrapped') ?? false,
       headerBottomDelta:
         editorHeaderRect && sidebarHeaderRect
           ? editorHeaderRect.bottom - sidebarHeaderRect.bottom
@@ -71,9 +73,15 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   // physical-pixel grid (for example, 41px can measure as 41.333px at 150%).
   // Keep the contract tighter than one physical pixel so a real 1px layout
   // regression still fails.
-  expect(Math.abs(chrome.toolbarHeight - 41)).toBeLessThan(physicalPixel);
-  expect(Math.abs((chrome.editorHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
-  expect(Math.abs((chrome.sidebarHeaderHeight ?? Infinity) - 42)).toBeLessThan(physicalPixel);
+  const expectedHeaderHeight = chrome.wrapped ? 84 : 42;
+  const expectedToolbarHeight = chrome.wrapped ? 84 : 41;
+  expect(Math.abs(chrome.toolbarHeight - expectedToolbarHeight)).toBeLessThan(physicalPixel);
+  expect(Math.abs((chrome.editorHeaderHeight ?? Infinity) - expectedHeaderHeight)).toBeLessThan(
+    physicalPixel,
+  );
+  expect(Math.abs((chrome.sidebarHeaderHeight ?? Infinity) - expectedHeaderHeight)).toBeLessThan(
+    physicalPixel,
+  );
   expect(Math.abs(chrome.headerBottomDelta ?? Infinity)).toBeLessThan(physicalPixel);
   expect(chrome.appRegion).toBe('drag');
 
@@ -85,13 +93,13 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
     const style = getComputedStyle(element);
     const label = element.querySelector('.squisq-toolbar-view-tab-label--long');
     const labelRect = label?.getBoundingClientRect();
-    const toolbarRect = element.closest('.squisq-toolbar')?.getBoundingClientRect();
+    const tabsRect = element.closest('.squisq-toolbar-view-tabs')?.getBoundingClientRect();
     return {
       paddingTop: style.paddingTop,
       paddingBottom: style.paddingBottom,
       centerDelta:
-        labelRect && toolbarRect
-          ? labelRect.top + labelRect.height / 2 - (toolbarRect.top + toolbarRect.height / 2)
+        labelRect && tabsRect
+          ? labelRect.top + labelRect.height / 2 - (tabsRect.top + tabsRect.height / 2)
           : null,
     };
   });
@@ -137,6 +145,35 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(grip.gutterIsGrip).toBe(true);
   expect(grip.gutterAppRegion).toBe('drag');
 
+  // Squisq's flexible actions lane owns the empty space between its final
+  // formatting control and the fixed document controls. That exact gap must
+  // remain draggable even though the lane clips overflowing action buttons.
+  await writeTab.click();
+  await expect(writeTab).toHaveClass(/squisq-toolbar-view-tab--active/);
+  const actionsLane = toolbar.locator('.squisq-toolbar-actions');
+  const actionsGap = await actionsLane.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const visibleButton = [...element.querySelectorAll<HTMLElement>('.squisq-toolbar-button')].find(
+      (button) => getComputedStyle(button).visibility !== 'hidden',
+    );
+    const buttonStyle = visibleButton ? getComputedStyle(visibleButton) : null;
+    return {
+      flexGrow: style.flexGrow,
+      overflow: style.overflow,
+      cursor: style.cursor,
+      appRegion:
+        style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region'),
+      buttonAppRegion:
+        buttonStyle?.getPropertyValue('-webkit-app-region') ||
+        buttonStyle?.getPropertyValue('app-region'),
+    };
+  });
+  expect(actionsGap.flexGrow).toBe('1');
+  expect(actionsGap.overflow).toBe('hidden');
+  expect(actionsGap.cursor).toBe('grab');
+  expect(actionsGap.appRegion).toBe('drag');
+  expect(actionsGap.buttonAppRegion).toBe('no-drag');
+
   // Interactive controls inside the drag region must remain clickable.
   await sidebarHeader.getByRole('button', { name: 'Workspace settings' }).click();
   await expect(window.getByRole('menuitem', { name: /Workspace settings/ })).toBeVisible();
@@ -153,6 +190,9 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
 
 test('keeps the block type dialog below the custom titlebar', async ({ launchApp }) => {
   const { window } = await launchApp();
+  await window.evaluate(() => globalThis.resizeTo(972, 600));
+  await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThan(1_000);
+  await expect(window.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
   const gateway = window.locator('.db-welcome-gateway');
   await expect(gateway).toBeVisible({ timeout: 30_000 });
   await window.locator('.db-welcome-gateway-cta').click();

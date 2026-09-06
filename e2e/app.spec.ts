@@ -121,6 +121,15 @@ test.describe('DocBlocks App', () => {
         window.dispatchEvent(new PopStateEvent('popstate'));
       }, sharedUrl);
 
+      // Popstate starts shared-archive decoding asynchronously. Wait until
+      // the transient document has replaced the welcome document before
+      // interacting with its toolbar, or this click can target the obsolete
+      // editor and be lost when the shared document mounts.
+      await expect(page.locator('.db-tree-row[data-path$="shared.md"]')).toHaveAttribute(
+        'aria-selected',
+        'true',
+        { timeout: 15_000 },
+      );
       await page.getByRole('button', { name: 'Choose Use mode' }).click();
       await page.getByRole('menuitemradio', { name: preview.label }).click();
       const copyButton = preview.iframe
@@ -156,6 +165,18 @@ test.describe('DocBlocks App', () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     await page.mouse.move(100, box.y + box.height / 2);
+
+    const collapsePreview = page.locator('.db-sidebar-collapse-preview');
+    await expect(collapsePreview).toBeVisible();
+    await expect(collapsePreview).toContainText('Release to hide files');
+    await expect(collapsePreview.locator('svg')).toBeVisible();
+
+    // Crossing back over the threshold cancels the preview; crossing it once
+    // more restores the affordance before the pointer is released.
+    await page.mouse.move(box.x + 20, box.y + box.height / 2);
+    await expect(collapsePreview).not.toBeVisible();
+    await page.mouse.move(100, box.y + box.height / 2);
+    await expect(collapsePreview).toBeVisible();
     await page.mouse.up();
 
     await expect(page.locator('.db-shell-sidebar')).not.toBeVisible();

@@ -226,6 +226,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'detectRepo',
     'discard',
     'fetch',
+    'grantExpandedRepo',
     'init',
     'listBranches',
     'listRemotes',

@@ -36,6 +36,23 @@ import { defineConfig } from 'vite';
 export default defineConfig({ worker: { format: 'es' } });
 ```
 
+Formula grids can opt into the full IronCalc engine through the separately
+built calculation entry point. Publish `@ironcalc/wasm/wasm_bg.wasm` at a
+same-origin URL and keep the factory at module scope so the engine remains
+lazy and reusable:
+
+```tsx
+import { createDocBlocksCalcEngineFactory } from '@bendyline/docblocks-react/calculation';
+
+const calcEngineFactory = createDocBlocksCalcEngineFactory({
+  wasmSource: '/ironcalc/wasm_bg.wasm',
+});
+
+function App() {
+  return <DocBlocksShell calcEngineFactory={calcEngineFactory} />;
+}
+```
+
 ## Components
 
 ### DocBlocksShell
@@ -55,6 +72,7 @@ The canonical DocBlocks experience in one component — file explorer, workspace
 
 - `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
 - `logoUrl` — brand mark for the app menu button
+- `calcEngineFactory` — optional lazy calculation backend; use the calculation entry point above to enable IronCalc formulas
 - `ffmpegWasm` — optional same-origin ffmpeg core URLs; supplying them enables the built-in Animated GIF flow on cross-origin-isolated hosts
 - `showCodeCopyButton` — shows Copy controls on ordinary fenced code blocks (default: `true`; Mermaid fences remain diagrams)
 - `onCopyCode` — optional clipboard adapter for native hosts; browser hosts fall back to `navigator.clipboard.writeText`

@@ -20,9 +20,11 @@ import type {
   DocumentSessionMessageStatus,
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
+  VscodeProofingSettings,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
 import {
+  DEFAULT_VSCODE_PROOFING_SETTINGS,
   DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   parseExtensionToWebviewMessage,
 } from '@bendyline/docblocks/vscode';
@@ -40,8 +42,12 @@ import { VscodeWebviewRecovery } from './webviewRecovery.js';
 import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
+import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
+import { createVscodeCalcEngineFactory } from './calculationConfig.js';
+import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 const vscode = getVscodeApi();
+const VSCODE_CALC_ENGINE_FACTORY = createVscodeCalcEngineFactory();
 
 // The host cannot render an editor until the extension sends a document.
 // Keep the large Squisq implementation out of the startup entry and load it
@@ -60,6 +66,7 @@ const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
   autoSave: false,
   accentColor: 'brown',
   writeCanvasSettings: { ...DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS },
+  proofingSettings: { ...DEFAULT_VSCODE_PROOFING_SETTINGS },
 };
 
 // Keep host capability decisions together at the EditorShell boundary. VS Code
@@ -77,6 +84,12 @@ export function VscodeEditor() {
   // wrong theme until then and visibly flip. `themeChange` still drives live
   // theme switches below.
   const [theme, setTheme] = useState<VscodeColorScheme>(readVscodeBodyTheme);
+  // Proofing is deliberately NOT part of the bridges the editor waits on. The
+  // provider needs the host's dictionary before it can be built, and gating
+  // the document on that round-trip would trade a fast open for a preference.
+  // It arrives a moment later and proofing lights up then.
+  const [proofingBridge, setProofingBridge] = useState<VscodeProofingBridge | null>(null);
+  const [proofing, setProofing] = useState<ProofingProvider | null>(null);
   const [editorScope, setEditorScope] = useState<WebviewDocumentScope | null>(null);
   const [mediaBridge, setMediaBridge] = useState<VscodeMediaBridge | null>(null);
   const [exportBridge, setExportBridge] = useState<VscodeExportBridge | null>(null);
@@ -208,6 +221,24 @@ export function VscodeEditor() {
     return () => bridge.dispose();
   }, []);
 
+  useEffect(() => {
+    const bridge = createVscodeProofingBridge((message) => vscode.postMessage(message));
+    setProofingBridge(bridge);
+    let cancelled = false;
+    // Publishing the provider only once the host's dictionary is in hand keeps
+    // the engine lazy: constructing it fetches nothing, but seeding words into
+    // an already-built provider would load the WASM before anyone asked.
+    void bridge.ready.then((provider) => {
+      if (!cancelled) setProofing(provider);
+    });
+    return () => {
+      cancelled = true;
+      setProofing(null);
+      setProofingBridge(null);
+      bridge.dispose();
+    };
+  }, []);
+
   // Post every complete editor snapshot immediately. The extension host owns
   // the debounce and serialized persistence queue, so closing the webview
   // cannot strand a timer-held draft in renderer memory.
@@ -316,6 +347,11 @@ export function VscodeEditor() {
     },
     [],
   );
+
+  const handleProofingSettingsChange = useCallback((proofingSettings: VscodeProofingSettings) => {
+    setSettings((current) => ({ ...current, proofingSettings }));
+    vscode.postMessage({ type: 'setProofingSettings', settings: proofingSettings });
+  }, []);
 
   const handleLinkClick = useCallback((href: string): boolean => {
     if (href.startsWith('#')) return false;
@@ -431,6 +467,11 @@ export function VscodeEditor() {
           height="100%"
           placeholder={editorPlaceholder}
           mediaProvider={mediaBridge.mediaProvider}
+          calcEngineFactory={VSCODE_CALC_ENGINE_FACTORY ?? undefined}
+          proofing={proofing}
+          proofingSpellingEnabled={settings.proofingSettings.spelling}
+          proofingGrammarEnabled={settings.proofingSettings.grammar}
+          proofingIgnoreStore={proofingBridge?.ignoreStore ?? null}
           allowRecording={VSCODE_EDITOR_MEDIA_CAPABILITIES.allowRecording}
           allowPresentationWindow={false}
           allowPresentationFullscreen={false}
@@ -450,6 +491,7 @@ export function VscodeEditor() {
                 onAutoSaveChange={handleAutoSaveChange}
                 onAccentColorChange={handleAccentColorChange}
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
+                onProofingSettingsChange={handleProofingSettingsChange}
               />
             </Suspense>
           }

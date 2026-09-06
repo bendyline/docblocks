@@ -22,12 +22,33 @@ export function getVscodeTheme(): 'light' | 'dark' {
 }
 
 /**
+ * Where the webview reads the proofing engine's location. A webview resource
+ * only becomes fetchable once `asWebviewUri` has rewritten it for the host,
+ * and only the extension side can do that — so the URL is stamped into the
+ * document rather than derived in the bundle, which resolves relative to
+ * whichever chunk the resolving module landed in.
+ */
+export const HARPER_WASM_META_NAME = 'docblocks-harper-wasm';
+
+/** Where the webview reads the packaged IronCalc engine's location. */
+export const IRONCALC_WASM_META_NAME = 'docblocks-ironcalc-wasm';
+
+/**
  * Generate the HTML for the editor webview.
  */
 export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const distUri = vscode.Uri.joinPath(extensionUri, 'dist', 'webview');
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'index.js'));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'index.css'));
+  // harper derives its slim sibling from this file name, so both binaries are
+  // published side by side under dist/webview/harper/ and only the full one is
+  // named here. The VSIX carries them; nothing is downloaded at runtime.
+  const harperWasmUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(distUri, 'harper', 'harper_wasm_bg.wasm'),
+  );
+  const ironCalcWasmUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(distUri, 'ironcalc', 'wasm_bg.wasm'),
+  );
   const nonce = getNonce();
 
   return `<!DOCTYPE html>
@@ -38,11 +59,14 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline';
-      script-src ${webview.cspSource} 'nonce-${nonce}';
+      script-src ${webview.cspSource} 'nonce-${nonce}' 'wasm-unsafe-eval';
       font-src ${webview.cspSource};
       img-src ${webview.cspSource} blob: data:;
       media-src blob: data:;
+      connect-src ${webview.cspSource};
       worker-src ${webview.cspSource} blob:;">
+  <meta name="${HARPER_WASM_META_NAME}" content="${harperWasmUri.toString()}">
+  <meta name="${IRONCALC_WASM_META_NAME}" content="${ironCalcWasmUri.toString()}">
   <link rel="stylesheet" href="${styleUri}">
   <style>
     html, body, #root {

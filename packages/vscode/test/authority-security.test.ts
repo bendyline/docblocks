@@ -243,6 +243,7 @@ describe('VS Code authority boundary', () => {
           autoSave: true,
           accentColor: 'purple',
           writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'hanken-lora' },
+          proofingSettings: { spelling: true, grammar: false },
         },
       }),
     ).to.deep.equal({
@@ -251,6 +252,7 @@ describe('VS Code authority boundary', () => {
         autoSave: true,
         accentColor: 'purple',
         writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'hanken-lora' },
+        proofingSettings: { spelling: true, grammar: false },
       },
     });
     expect(
@@ -258,6 +260,30 @@ describe('VS Code authority boundary', () => {
         type: 'editorSettings',
         settings: {
           autoSave: 'yes',
+          accentColor: 'purple',
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'theme' },
+          proofingSettings: { spelling: true, grammar: true },
+        },
+      }),
+    ).to.equal(null);
+    // A non-boolean category, or a missing one, fails the whole payload
+    // rather than silently defaulting to "checked".
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'editorSettings',
+        settings: {
+          autoSave: true,
+          accentColor: 'purple',
+          writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'theme' },
+          proofingSettings: { spelling: 'on', grammar: true },
+        },
+      }),
+    ).to.equal(null);
+    expect(
+      parseExtensionToWebviewMessage({
+        type: 'editorSettings',
+        settings: {
+          autoSave: true,
           accentColor: 'purple',
           writeCanvasSettings: { textSize: 18, lineSpacing: 2, fontScheme: 'theme' },
         },

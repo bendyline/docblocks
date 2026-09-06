@@ -113,7 +113,7 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
           role="alert"
           aria-live="assertive"
         >
-          <span>Update check failed: {status.message}</span>
+          <span>{status.message}</span>
           <button
             type="button"
             className="db-desktop-update-dismiss"

@@ -58,6 +58,7 @@ import {
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
+import { attachEditorContextMenu } from './context-menu.js';
 import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
@@ -298,6 +299,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
 
   winState.manage(win);
   attachWindowCloseGuard(win);
+  attachEditorContextMenu(win);
 
   if (isAutomation) {
     win.webContents.on('render-process-gone', (_event, details) => {

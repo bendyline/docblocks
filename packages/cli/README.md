@@ -8,7 +8,7 @@ agents.
 
 ## Installation
 
-Node.js 22.22.2+, 24.15.0+, or 26+ is required.
+Node.js 24.18.0+ or 26+ is required.
 
 ```bash
 npm install -g @bendyline/docblocks-cli

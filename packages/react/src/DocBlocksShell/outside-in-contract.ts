@@ -11,18 +11,39 @@ import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { ConversionResult, ConvertOptions } from '@bendyline/squisq-formats/registry';
 
-export const OUTSIDE_IN_FORMAT_IDS = ['html', 'docx', 'pdf', 'pptx', 'xlsx'] as const;
+export const OUTSIDE_IN_FORMAT_IDS = ['html', 'docx', 'pdf', 'pptx', 'xlsx', 'csv'] as const;
 export type OutsideInFormatId = (typeof OUTSIDE_IN_FORMAT_IDS)[number];
 const FORMAT_IDS = new Set<string>(OUTSIDE_IN_FORMAT_IDS);
 const UPDATE_FROM_MARKDOWN_KEY = 'squisq-updatefrommarkdown';
+const HTML_OUTPUT_KEY = 'squisq-html-output';
+
+export type OutsideInHtmlOutput = 'interactive' | 'static';
 
 interface OutsideInEditingModule {
+  readOutsideInMetadata: (source: string | MarkdownDocument) => OutsideInMetadata | null;
+  withOutsideInMetadata: (source: string, layout: OutsideInLayout) => string;
   isOutsideInMarkdownEditingEnabled?: (source: string | MarkdownDocument) => boolean;
   withOutsideInMarkdownEditing?: (
     source: string,
     layout: OutsideInLayout,
     enabled?: boolean,
   ) => string;
+  importOutsideInDocument: (
+    source: { data: ArrayBuffer | Uint8Array; targetPath: string },
+    options?: ConvertOptions,
+  ) => Promise<{ markdown: string; container: ContentContainer }>;
+  renderOutsideInDocument: (
+    source: {
+      markdown: string | MarkdownDocument;
+      targetPath: string;
+      container?: ContentContainer;
+    },
+    options?: ConvertOptions & { html?: { playerScriptPath: string; basePath?: string } },
+  ) => Promise<ConversionResult>;
+}
+
+async function loadOutsideInModule(): Promise<OutsideInEditingModule> {
+  return (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
 }
 
 export interface OutsideInLayout {
@@ -127,8 +148,7 @@ export function chooseOutsideInMarkdownPath(
 }
 
 export async function readOutsideInMetadata(source: string): Promise<OutsideInMetadata | null> {
-  const { readOutsideInMetadata: readMetadata } =
-    await import('@bendyline/squisq-formats/outside-in');
+  const { readOutsideInMetadata: readMetadata } = await loadOutsideInModule();
   const metadata = readMetadata(source);
   return metadata
     ? {
@@ -142,14 +162,12 @@ export async function withOutsideInMetadata(
   source: string,
   layout: OutsideInLayout,
 ): Promise<string> {
-  const { withOutsideInMetadata: addMetadata } =
-    await import('@bendyline/squisq-formats/outside-in');
+  const { withOutsideInMetadata: addMetadata } = await loadOutsideInModule();
   return addMetadata(source, layout);
 }
 
 export async function isOutsideInMarkdownEditingEnabled(source: string): Promise<boolean> {
-  const module =
-    (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
+  const module = await loadOutsideInModule();
   if (module.isOutsideInMarkdownEditingEnabled) {
     return module.isOutsideInMarkdownEditingEnabled(source);
   }
@@ -167,8 +185,7 @@ export async function withOutsideInMarkdownEditing(
   layout: OutsideInLayout,
   enabled = true,
 ): Promise<string> {
-  const module =
-    (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
+  const module = await loadOutsideInModule();
   if (module.withOutsideInMarkdownEditing) {
     return module.withOutsideInMarkdownEditing(source, layout, enabled);
   }
@@ -178,12 +195,36 @@ export async function withOutsideInMarkdownEditing(
   });
 }
 
+/**
+ * Read the authored HTML output choice for a newly created Web page. Older
+ * outside-in HTML documents have no value and retain the historical rendered
+ * player behavior.
+ */
+export async function readOutsideInHtmlOutput(source: string): Promise<OutsideInHtmlOutput | null> {
+  const { parseFrontmatter, splitFrontmatterBlock } = await import('@bendyline/squisq/markdown');
+  const block = splitFrontmatterBlock(source).frontmatter;
+  if (!block) return null;
+  const firstBreak = block.indexOf('\n');
+  if (firstBreak < 0) return null;
+  const yaml = block.slice(firstBreak + 1).replace(/\r?\n---(?:\r?\n)?$/, '');
+  const value = parseFrontmatter(yaml)?.[HTML_OUTPUT_KEY];
+  return value === 'interactive' || value === 'static' ? value : null;
+}
+
+/** Persist which Web page renderer every later outside-in save must use. */
+export async function withOutsideInHtmlOutput(
+  source: string,
+  output: OutsideInHtmlOutput,
+): Promise<string> {
+  const { setFrontmatterValues } = await import('@bendyline/squisq/markdown');
+  return setFrontmatterValues(source, { [HTML_OUTPUT_KEY]: output });
+}
+
 export async function importOutsideInDocument(
   source: { data: ArrayBuffer | Uint8Array; targetPath: string },
   options: ConvertOptions = {},
 ): Promise<{ layout: OutsideInLayout; markdown: string; container: ContentContainer }> {
-  const { importOutsideInDocument: importDocument } =
-    await import('@bendyline/squisq-formats/outside-in');
+  const { importOutsideInDocument: importDocument } = await loadOutsideInModule();
   const imported = await importDocument(source, options);
   const layout = resolveOutsideInLayout(source.targetPath);
   if (!layout) throw new Error(`Outside-in editing does not support "${source.targetPath}".`);
@@ -194,7 +235,6 @@ export async function renderOutsideInDocument(
   source: { markdown: string | MarkdownDocument; targetPath: string; container?: ContentContainer },
   options: ConvertOptions & { html?: { playerScriptPath: string; basePath?: string } } = {},
 ): Promise<ConversionResult> {
-  const { renderOutsideInDocument: renderDocument } =
-    await import('@bendyline/squisq-formats/outside-in');
+  const { renderOutsideInDocument: renderDocument } = await loadOutsideInModule();
   return renderDocument(source, options);
 }

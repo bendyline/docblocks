@@ -126,14 +126,66 @@ describe('importDroppedFiles', () => {
     expect(await provider.readFile('deck (2)_files/deck-2.md')).to.contain('# Dropped');
   });
 
-  it('skips file types it cannot import without touching the workspace', async () => {
+  it('copies browser-viewable images byte-for-byte under their original name', async () => {
+    const provider = makeProvider();
+    const bytes = new Uint8Array([137, 80, 78, 71]);
+
+    const result = await importDroppedFiles(
+      [new File([bytes], 'photo.png', { type: 'image/png' })],
+      provider,
+    );
+
+    expect(result.imported).to.deep.equal([
+      { source: 'photo.png', path: 'photo.png', renamed: false },
+    ]);
+    expect(new Uint8Array((await provider.readBinary('photo.png'))!)).to.deep.equal(bytes);
+  });
+
+  it('preserves common source and text files instead of flattening them to Markdown', async () => {
     const provider = makeProvider();
 
-    const result = await importDroppedFiles([textFile('photo.png', 'binary-ish')], provider);
+    const result = await importDroppedFiles(
+      [new File(['{"enabled":true}\n'], 'settings.json', { type: 'application/json' })],
+      provider,
+    );
+
+    expect(result.imported[0]).to.deep.equal({
+      source: 'settings.json',
+      path: 'settings.json',
+      renamed: false,
+    });
+    expect(await provider.readFile('settings.json')).to.equal('{"enabled":true}\n');
+  });
+
+  it('accepts unfamiliar text and image extensions when the browser supplies their MIME type', async () => {
+    const provider = makeProvider();
+    const result = await importDroppedFiles(
+      [
+        new File(['plain text'], 'notes.customtext', { type: 'text/x-custom' }),
+        new File([new Uint8Array([1, 2, 3])], 'art.customimage', { type: 'image/x-custom' }),
+      ],
+      provider,
+    );
+
+    expect(result.imported.map((entry) => entry.path)).to.deep.equal([
+      'notes.customtext',
+      'art.customimage',
+    ]);
+    expect(result.unsupported).to.deep.equal([]);
+  });
+
+  it('reports file types outside the broad import allowlist', async () => {
+    const provider = makeProvider();
+
+    const result = await importDroppedFiles(
+      [new File([new Uint8Array([77, 90])], 'installer.exe', { type: 'application/x-msdownload' })],
+      provider,
+    );
 
     expect(result.imported).to.deep.equal([]);
-    expect(result.unsupported).to.deep.equal(['photo.png']);
-    expect(await provider.readFile('photo.md')).to.equal(null);
+    expect(result.unsupported).to.deep.equal(['installer.exe']);
+    expect(summariseImport(result)?.message).to.contain('installer.exe');
+    expect(await provider.readBinary('installer.exe')).to.equal(null);
   });
 
   it('keeps a rendered HTML import outside and creates its editable source inside', async () => {
@@ -155,6 +207,27 @@ describe('importDroppedFiles', () => {
     expect(await provider.readFile('battle-of-britain_files/battle-of-britain.md')).to.contain(
       'squisq-output: ../battle-of-britain.html',
     );
+  });
+
+  it('prepares a dropped CSV for outside-in editing', async () => {
+    const provider = makeProvider();
+    const result = await importDroppedFiles(
+      [new File(['Name,Count\nWidgets,2\n'], 'inventory.csv', { type: 'text/csv' })],
+      provider,
+    );
+
+    expect(result.failed).to.deep.equal([]);
+    expect(result.imported[0]).to.deep.equal({
+      source: 'inventory.csv',
+      path: 'inventory.csv',
+      renamed: false,
+    });
+    expect(await provider.readFile('inventory.csv')).to.equal('Name,Count\nWidgets,2\n');
+    const markdown = await provider.readFile('inventory_files/inventory.md');
+    expect(markdown).to.contain('squisq-output: ../inventory.csv');
+    expect(markdown).to.contain('squisq-output-format: csv');
+    expect(markdown).to.contain('| Name');
+    expect(markdown).to.contain('| Widgets');
   });
 });
 
@@ -180,6 +253,18 @@ describe('summariseImport', () => {
     });
     expect(summary?.kind).to.equal('error');
     expect(summary?.message).to.equal('Could not import 2 of 3 files.');
+  });
+
+  it('reports a rejected file even when the rest of the drop imported', () => {
+    const summary = summariseImport({
+      imported: [{ source: 'notes.md', path: 'notes.md', renamed: false }],
+      failed: [],
+      unsupported: ['installer.exe'],
+    });
+    expect(summary).to.deep.equal({
+      kind: 'error',
+      message: 'installer.exe is not a file type DocBlocks can import.',
+    });
   });
 });
 

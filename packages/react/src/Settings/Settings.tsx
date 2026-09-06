@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { Dialog } from '../components/Dialog.js';
 import { ACCENT_COLORS, type AccentColor, type ThemePreference } from '../preferences/theme.js';
+import type { ProofingPreferences } from '../preferences/proofing.js';
 import {
   WRITE_CANVAS_FONT_SCHEMES,
   WRITE_CANVAS_LINE_SPACING_MAX,
@@ -25,6 +26,7 @@ import {
 } from '../preferences/write-canvas.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
+export type { ProofingPreferences } from '../preferences/proofing.js';
 
 const ACCENT_LABELS: Record<AccentColor, string> = {
   brown: 'Brown',
@@ -135,6 +137,45 @@ export function AccentColorSettings({
           </label>
         ))}
       </div>
+    </fieldset>
+  );
+}
+
+export interface ProofingSettingsControlsProps {
+  value: ProofingPreferences;
+  onChange: (settings: ProofingPreferences) => void;
+}
+
+/**
+ * Spelling and grammar squiggles, as two switches. Grammar is separable
+ * because harper's grammar rules are English-only — a writer working in
+ * another language wants the spell checker and none of the green
+ * underlines. With both off no checking engine is ever downloaded.
+ */
+export function ProofingSettingsControls({ value, onChange }: ProofingSettingsControlsProps) {
+  return (
+    <fieldset className="db-settings-fieldset">
+      <legend className="db-settings-legend">Spelling and grammar</legend>
+      <p className="db-settings-hint">
+        Checking runs on this device — nothing you write is sent anywhere.
+      </p>
+      <label className="db-settings-checkbox">
+        <input
+          type="checkbox"
+          checked={value.spelling}
+          onChange={(event) => onChange({ ...value, spelling: event.currentTarget.checked })}
+        />
+        Show inline spell checking
+      </label>
+      <label className="db-settings-checkbox">
+        <input
+          type="checkbox"
+          checked={value.grammar}
+          onChange={(event) => onChange({ ...value, grammar: event.currentTarget.checked })}
+        />
+        Show inline grammar checking
+      </label>
+      <p className="db-settings-hint">(Grammar checking is currently only available for English)</p>
     </fieldset>
   );
 }

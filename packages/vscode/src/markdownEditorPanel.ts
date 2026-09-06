@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
+  DEFAULT_VSCODE_PROOFING_SETTINGS,
   DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
   isDocBlocksAccentColor,
   isDocBlocksWriteCanvasFontScheme,
@@ -32,6 +33,7 @@ import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueu
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
 import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.js';
 import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
+import { handleProofStateMessage } from './proofStateBridge.js';
 import { resolveEditorLinkTarget } from './editorLinkNavigation.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
@@ -309,7 +311,9 @@ export class MarkdownEditorPanel {
           !event.affectsConfiguration('docblocks.accentColor', this.uri) &&
           !event.affectsConfiguration('docblocks.writeCanvasTextSize', this.uri) &&
           !event.affectsConfiguration('docblocks.writeCanvasLineSpacing', this.uri) &&
-          !event.affectsConfiguration('docblocks.writeCanvasFontScheme', this.uri)
+          !event.affectsConfiguration('docblocks.writeCanvasFontScheme', this.uri) &&
+          !event.affectsConfiguration('docblocks.inlineSpellChecking', this.uri) &&
+          !event.affectsConfiguration('docblocks.inlineGrammarChecking', this.uri)
         ) {
           return;
         }
@@ -399,6 +403,18 @@ export class MarkdownEditorPanel {
         await handleMediaMessage(message, await this.ensureDocument(), this.panel.webview);
         return;
 
+      case 'loadProofDictionary':
+      case 'addProofDictionaryWord':
+      case 'loadProofIgnores':
+      case 'saveProofIgnores':
+        // Proofing preferences never touch the document; the key comes from
+        // this panel's own URI, never from the webview.
+        await handleProofStateMessage(message, this.uri, this.panel.webview, {
+          dictionary: this.context.globalState,
+          ignores: this.context.workspaceState,
+        });
+        return;
+
       case 'saveExport':
       case 'resolveExportTarget':
       case 'pickExportTarget':
@@ -427,6 +443,7 @@ export class MarkdownEditorPanel {
       case 'setAutoSave':
       case 'setAccentColor':
       case 'setWriteCanvasSettings':
+      case 'setProofingSettings':
         await this.handleSettingsUpdate(message);
         break;
 
@@ -581,7 +598,7 @@ export class MarkdownEditorPanel {
   private async handleSettingsUpdate(
     message: Extract<
       WebviewToExtensionMessage,
-      { type: 'setAutoSave' | 'setAccentColor' | 'setWriteCanvasSettings' }
+      { type: 'setAutoSave' | 'setAccentColor' | 'setWriteCanvasSettings' | 'setProofingSettings' }
     >,
   ): Promise<void> {
     const configuration = vscode.workspace.getConfiguration('docblocks', this.uri);
@@ -590,11 +607,16 @@ export class MarkdownEditorPanel {
         ? [['autoSave', message.enabled]]
         : message.type === 'setAccentColor'
           ? [['accentColor', message.accentColor]]
-          : [
-              ['writeCanvasTextSize', message.settings.textSize],
-              ['writeCanvasLineSpacing', message.settings.lineSpacing],
-              ['writeCanvasFontScheme', message.settings.fontScheme],
-            ];
+          : message.type === 'setWriteCanvasSettings'
+            ? [
+                ['writeCanvasTextSize', message.settings.textSize],
+                ['writeCanvasLineSpacing', message.settings.lineSpacing],
+                ['writeCanvasFontScheme', message.settings.fontScheme],
+              ]
+            : [
+                ['inlineSpellChecking', message.settings.spelling],
+                ['inlineGrammarChecking', message.settings.grammar],
+              ];
     try {
       for (const [key, value] of updates) {
         await configuration.update(key, value, getConfigurationTarget(configuration, key));
@@ -699,6 +721,14 @@ export class MarkdownEditorPanel {
       case 'readWorkspaceFile':
         this.postMessage({
           type: 'workspaceFileError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
+      case 'loadProofDictionary':
+      case 'loadProofIgnores':
+        this.postMessage({
+          type: 'proofStateError',
           requestId: message.requestId,
           message: responseMessage,
         });
@@ -1020,6 +1050,8 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const textSize = configuration.get<unknown>('writeCanvasTextSize');
   const lineSpacing = configuration.get<unknown>('writeCanvasLineSpacing');
   const fontScheme = configuration.get<unknown>('writeCanvasFontScheme');
+  const spelling = configuration.get<unknown>('inlineSpellChecking');
+  const grammar = configuration.get<unknown>('inlineGrammarChecking');
   return {
     autoSave: typeof autoSave === 'boolean' ? autoSave : false,
     accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
@@ -1034,6 +1066,11 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
         ? fontScheme
         : DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS.fontScheme,
     },
+    proofingSettings: {
+      spelling:
+        typeof spelling === 'boolean' ? spelling : DEFAULT_VSCODE_PROOFING_SETTINGS.spelling,
+      grammar: typeof grammar === 'boolean' ? grammar : DEFAULT_VSCODE_PROOFING_SETTINGS.grammar,
+    },
   };
 }
 
@@ -1042,7 +1079,9 @@ type VscodeEditorConfigurationKey =
   | 'accentColor'
   | 'writeCanvasTextSize'
   | 'writeCanvasLineSpacing'
-  | 'writeCanvasFontScheme';
+  | 'writeCanvasFontScheme'
+  | 'inlineSpellChecking'
+  | 'inlineGrammarChecking';
 
 function getConfigurationTarget(
   configuration: vscode.WorkspaceConfiguration,

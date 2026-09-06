@@ -22,7 +22,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 - **Three views of every document** — **Editor** (rich WYSIWYG), **Markdown** (raw source), and **Play**, which presents the same file as a **Video**, **Slideshow**, **Dashboard**, **Document**, or **Page**.
 - **Dashboards** — arrange every block of a document on one canvas, pick a layout and cell style, and export it as an image at any of eight named sizes or exact pixel dimensions. Available in Play mode on every surface and from the CLI/MCP as the `png` conversion target.
 - **Multi-format export** — PDF, Word (DOCX), PowerPoint (PPTX), HTML, and Markdown from the editor; the CLI follows the linked Squisq registry for Markdown, DOCX, PPTX, PDF, XLSX, CSV, HTML / HTML ZIP, EPUB, DBK, **MP4 video**, GIF, and **PNG dashboard images** (with directional support varying by format).
-- **Outside-in editing** — open an HTML, DOCX, PDF, PPTX, or XLSX file as Markdown while DocBlocks keeps its editable source, media, and version history in a hidden sibling `_files` folder and regenerates the visible file on every save. See [Outside-in editing](docs/outside-in.md).
+- **Outside-in editing** — open an HTML, DOCX, PDF, PPTX, XLSX, or CSV file as Markdown while DocBlocks keeps its editable source, media, and version history in a hidden sibling `_files` folder and regenerates the visible file on every save. See [Outside-in editing](docs/outside-in.md).
 - **Copy-by-link sharing** — create a bounded URL containing a compressed Markdown-only copy of the current document, optionally opening directly in Slideshow, Video, Page, Document, or Narrate mode.
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.
@@ -31,15 +31,16 @@ DocBlocks ships as **four surfaces** from this one repository:
 
 ## Documentation
 
-| Guide                                              | Scope                                                                                          |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [CLI reference](docs/cli.md)                       | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
-| [MCP architecture and protocol guide](docs/mcp.md) | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
-| [Agent/contributor guidance](AGENTS.md)            | Repository architecture, hard rules, test gates, and development conventions.                  |
-| [Contributing](CONTRIBUTING.md)                    | Proposal-only contribution policy and submission terms.                                        |
-| [Support](SUPPORT.md)                              | Where and how to request help or report a problem.                                             |
-| [Security policy](SECURITY.md)                     | How to report vulnerabilities and sensitive security concerns.                                 |
-| [Code of Conduct](CODE_OF_CONDUCT.md)              | Expected behavior for project interactions.                                                    |
+| Guide                                                  | Scope                                                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| [CLI reference](docs/cli.md)                           | Authoritative commands, options, I/O behavior, format directions, and linked Squisq ownership. |
+| [MCP architecture and protocol guide](docs/mcp.md)     | Authoritative tools, sources, schemas, artifacts, fidelity, authority, budgets, and lifecycle. |
+| [Agent/contributor guidance](AGENTS.md)                | Repository architecture, hard rules, test gates, and development conventions.                  |
+| [Contributing](CONTRIBUTING.md)                        | Proposal-only contribution policy and submission terms.                                        |
+| [Support](SUPPORT.md)                                  | Where and how to request help or report a problem.                                             |
+| [Security policy](SECURITY.md)                         | How to report vulnerabilities and sensitive security concerns.                                 |
+| [Dependency governance](docs/dependency-governance.md) | Seven-day package cooldown, Squisq exception, and exact install-script approvals.              |
+| [Code of Conduct](CODE_OF_CONDUCT.md)                  | Expected behavior for project interactions.                                                    |
 
 ## Agent workflows
 
@@ -109,7 +110,7 @@ local-only limitations.
 
 ## Repository map
 
-npm-workspaces monorepo, Node 22.22.2+, 24.15.0+, or 26+:
+npm-workspaces monorepo, Node 24.18.0+ or 26+, with npm 12.0.2:
 
 | Package                                          | npm name                     | Purpose                                                                                                           |
 | ------------------------------------------------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
@@ -125,6 +126,7 @@ The rich-text editor itself is **Squisq**, a sister project that ships as `@bend
 ## Development
 
 ```bash
+npm install --global npm@12.0.2
 npm install
 
 # Use a Node version satisfying package.json#engines.
@@ -149,6 +151,11 @@ npm run check:squisq-linked
 # Or rebuild, verify, run focused sibling tests, and run the complete MCP suite:
 npm run test:mcp:linked
 ```
+
+Dependency installs enforce a seven-day release cooldown and an exact
+install-script allowlist. The internally maintained `@bendyline/squisq*`
+packages are the only cooldown exception; see
+[Dependency governance](docs/dependency-governance.md).
 
 ### Testing
 

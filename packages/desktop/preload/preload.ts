@@ -195,6 +195,8 @@ function mintId(prefix: string): string {
 const gitApi: DocBlocksHostGitAPI = {
   capabilities: () => ipcRenderer.invoke('git:capabilities'),
   detectRepo: (workspaceId) => ipcRenderer.invoke('git:detectRepo', workspaceId),
+  grantExpandedRepo: (workspaceId, opts) =>
+    ipcRenderer.invoke('git:grantExpandedRepo', workspaceId, opts),
   init: (workspaceId) => ipcRenderer.invoke('git:init', workspaceId),
   status: (repositoryId) => ipcRenderer.invoke('git:status', repositoryId),
   stage: (repositoryId, paths) => ipcRenderer.invoke('git:stage', repositoryId, paths),

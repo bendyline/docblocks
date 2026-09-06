@@ -122,20 +122,35 @@ describe('MCP document preparation cancellation', () => {
       });
       const registry = createCliRegistry();
       const csv = registry.get('csv');
-      if (!csv?.importDoc) throw new Error('Expected the linked CSV importer');
-      const originalImport = csv.importDoc;
+      if (!csv?.importContainer && !csv?.importDoc) {
+        throw new Error('Expected the linked CSV importer');
+      }
       const controller = new AbortController();
       const reason = new Error('cancelled inside linked importer');
       let receivedSignal: AbortSignal | undefined;
-      registry.register({
-        ...csv,
-        importDoc: async (data, options) => {
-          receivedSignal = options.signal;
-          const imported = await originalImport(data, options);
-          controller.abort(reason);
-          return imported;
-        },
-      });
+      if (csv.importContainer) {
+        const originalImport = csv.importContainer;
+        registry.register({
+          ...csv,
+          importContainer: async (data, options) => {
+            receivedSignal = options.signal;
+            const imported = await originalImport(data, options);
+            controller.abort(reason);
+            return imported;
+          },
+        });
+      } else if (csv.importDoc) {
+        const originalImport = csv.importDoc;
+        registry.register({
+          ...csv,
+          importDoc: async (data, options) => {
+            receivedSignal = options.signal;
+            const imported = await originalImport(data, options);
+            controller.abort(reason);
+            return imported;
+          },
+        });
+      }
       const service = new DocumentService(await McpFileAuthority.create(), artifacts, registry);
 
       let caught: unknown;

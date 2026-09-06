@@ -30,7 +30,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 
 ## Build, test, dev commands
 
-Node 22.22.2+, 24.15.0+, or 26+ required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
+Node 24.18.0+ or 26+ required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
 
 ```bash
 # The big green button — build, bundle-size, site precache + fonts, desktop config,
@@ -126,8 +126,9 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
 - **Playwright runs from four configs.** Root (`playwright.config.ts`) drives the site dev server. Root `playwright.offline.config.ts` runs the PWA/offline spec against `vite preview` of a production build (`npm run test:e2e:offline`) — the SW never registers on the dev server, which is why the default config testIgnores `offline.spec.ts`. `packages/desktop/e2e/playwright.config.ts` launches Electron. `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100. Each writes to its own `test-results/`.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
-- **The site is an installable PWA with the entire dist precached (~22 MB).** `vite-plugin-pwa` config lives in `packages/site/vite.config.ts`; SW registration + update prompts in `packages/site/src/pwa.ts` → shell props. Two traps: the service worker exists **only in build/preview** (`devOptions` off), and **any chunk over the 10 MiB `maximumFileSizeToCacheInBytes` cap silently falls out of the precache** — after adding a heavy dependency, confirm it appears in `dist/sw.js` (the offline e2e asserts ts.worker and the fonts as canaries).
+- **The site is an installable PWA with the entire dist precached (~89 MiB).** `vite-plugin-pwa` config lives in `packages/site/vite.config.ts`; SW registration + update prompts in `packages/site/src/pwa.ts` → shell props. Both size limits are in `scripts/site-precache-policy.ts` and both are enforced after the build by `npm run check:site-precache`. Two traps: the service worker exists **only in build/preview** (`devOptions` off), and **any file over the per-file `maximumFileSizeToCacheInBytes` cap silently falls out of the precache** — after adding a heavy dependency, confirm it appears in `dist/sw.js` (the offline e2e asserts ts.worker, the fonts, the ffmpeg core, and both harper binaries as canaries). Precaching runs during service-worker install and never blocks the page, so a large budget costs background bandwidth, not startup.
 - **Theme fonts are served from `packages/site/public/fonts/`** (copied from squisq's site; squisq `fontStacks` expect the host page to supply the `@font-face`s — regenerate upstream via squisq's `download-fonts.ps1`). Electron's renderer does not load them yet (known parity gap).
+- **Proofing ships the engine, it never downloads one.** harper.js (Apache-2.0) is published by `scripts/vite-harper-wasm.ts` into all three browser surfaces — **both** binaries, since the engine derives the slim sibling from the full one's URL and loads the pair. Surfaces wire it through `@bendyline/docblocks-react/proofing` as a module-scope singleton, and `script-src` must carry `'wasm-unsafe-eval'`. Dismissed findings and the app dictionary are host-persisted and never written into the document — browser-local storage on site/desktop, `globalState`/`workspaceState` via `proofStateBridge.ts` in VS Code.
 
 ## Claude skills
 
@@ -142,12 +143,13 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
-| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                       |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |
+| Task                       | Start with                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                    |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                    |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
+| Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                           |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                  |
+| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule |

@@ -6,6 +6,20 @@ import { HOST_WIRE_LIMITS, isBoundedString } from '../host/wire-policy.js';
 
 const MAX_REQUEST_ID = 2_147_483_647;
 
+/**
+ * Bounds for host-persisted proofing state.
+ *
+ * Both payloads are written by the webview and stored in extension-host state,
+ * which is memory-resident and serialized on every VS Code shutdown, so neither
+ * may grow without limit. The ignore payload is the engine's opaque export —
+ * a list of context hashes — and grows only with dismissals in one document.
+ */
+export const PROOF_STATE_LIMITS = Object.freeze({
+  dictionaryWords: 5_000,
+  wordCharacters: 128,
+  ignoredJsonCharacters: 64 * 1024,
+});
+
 export type DocumentSessionMessageStatus =
   | 'idle'
   | 'saved'
@@ -85,10 +99,26 @@ export const DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS: Readonly<VscodeWriteCanvasSet
   fontScheme: 'theme',
 };
 
+/**
+ * Which inline proofing squiggles the editor draws. Two switches, not
+ * one: harper's grammar rules are English-only, so a writer working in
+ * another language wants spelling alone. Both off means no engine loads.
+ */
+export interface VscodeProofingSettings {
+  spelling: boolean;
+  grammar: boolean;
+}
+
+export const DEFAULT_VSCODE_PROOFING_SETTINGS: Readonly<VscodeProofingSettings> = {
+  spelling: true,
+  grammar: true,
+};
+
 export interface VscodeEditorSettings {
   autoSave: boolean;
   accentColor: DocBlocksAccentColor;
   writeCanvasSettings: VscodeWriteCanvasSettings;
+  proofingSettings: VscodeProofingSettings;
 }
 
 /**
@@ -154,7 +184,10 @@ export type ExtensionToWebviewMessage =
   | { type: 'exportTargetResolved'; requestId: number; target: ExportTargetGrantMessage | null }
   | { type: 'exportTargetPicked'; requestId: number; target: ExportTargetGrantMessage | null }
   | { type: 'workspaceFileRead'; requestId: number; dataBase64: string | null }
-  | { type: 'workspaceFileError'; requestId: number; message: string };
+  | { type: 'workspaceFileError'; requestId: number; message: string }
+  | { type: 'proofDictionaryLoaded'; requestId: number; words: string[] }
+  | { type: 'proofIgnoresLoaded'; requestId: number; ignoredJson: string | null }
+  | { type: 'proofStateError'; requestId: number; message: string };
 
 /** Messages sent from the webview to the extension host. */
 export type WebviewToExtensionMessage =
@@ -162,6 +195,7 @@ export type WebviewToExtensionMessage =
   | { type: 'setAutoSave'; enabled: boolean }
   | { type: 'setAccentColor'; accentColor: DocBlocksAccentColor }
   | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
+  | { type: 'setProofingSettings'; settings: VscodeProofingSettings }
   | { type: 'openLink'; href: string }
   | { type: 'copyCode'; requestId: number; code: string }
   | {
@@ -200,7 +234,14 @@ export type WebviewToExtensionMessage =
       filename: string;
       currentGrantId: string | null;
     }
-  | { type: 'readWorkspaceFile'; requestId: number; path: string };
+  | { type: 'readWorkspaceFile'; requestId: number; path: string }
+  // Proofing state is host-persisted and never written into the document.
+  // Neither message names a document: a panel owns exactly one, so the host
+  // derives the key from its own URI rather than trusting the webview.
+  | { type: 'loadProofDictionary'; requestId: number }
+  | { type: 'addProofDictionaryWord'; word: string }
+  | { type: 'loadProofIgnores'; requestId: number }
+  | { type: 'saveProofIgnores'; ignoredJson: string };
 
 export interface MediaEntryMessage {
   name: string;
@@ -232,6 +273,11 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
       const settings = parseVscodeWriteCanvasSettings(value.settings);
       return settings ? { type: 'setWriteCanvasSettings', settings } : null;
+    }
+    case 'setProofingSettings': {
+      if (!hasOnlyKeys(value, ['type', 'settings'])) return null;
+      const settings = parseVscodeProofingSettings(value.settings);
+      return settings ? { type: 'setProofingSettings', settings } : null;
     }
     case 'openLink':
       return hasOnlyKeys(value, ['type', 'href']) &&
@@ -365,6 +411,21 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
         hasRequestId(value) &&
         hasBoundedString(value, 'path', HOST_WIRE_LIMITS.pathCharacters, 1)
         ? { type: 'readWorkspaceFile', requestId: value.requestId, path: value.path }
+        : null;
+    case 'loadProofDictionary':
+    case 'loadProofIgnores':
+      return hasOnlyKeys(value, ['type', 'requestId']) && hasRequestId(value)
+        ? { type: value.type, requestId: value.requestId }
+        : null;
+    case 'addProofDictionaryWord':
+      return hasOnlyKeys(value, ['type', 'word']) &&
+        hasBoundedString(value, 'word', PROOF_STATE_LIMITS.wordCharacters, 1)
+        ? { type: 'addProofDictionaryWord', word: value.word }
+        : null;
+    case 'saveProofIgnores':
+      return hasOnlyKeys(value, ['type', 'ignoredJson']) &&
+        hasBoundedString(value, 'ignoredJson', PROOF_STATE_LIMITS.ignoredJsonCharacters)
+        ? { type: 'saveProofIgnores', ignoredJson: value.ignoredJson }
         : null;
     default:
       return null;
@@ -547,8 +608,24 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
       return hasOnlyKeys(value, ['type', 'requestId']) && hasRequestId(value)
         ? { type: 'mediaRemoved', requestId: value.requestId }
         : null;
+    case 'proofDictionaryLoaded': {
+      if (!hasOnlyKeys(value, ['type', 'requestId', 'words']) || !hasRequestId(value)) return null;
+      const words = parseProofDictionaryWords(value.words);
+      return words ? { type: 'proofDictionaryLoaded', requestId: value.requestId, words } : null;
+    }
+    case 'proofIgnoresLoaded':
+      return hasOnlyKeys(value, ['type', 'requestId', 'ignoredJson']) &&
+        hasRequestId(value) &&
+        hasNullableBoundedString(value, 'ignoredJson', PROOF_STATE_LIMITS.ignoredJsonCharacters)
+        ? {
+            type: 'proofIgnoresLoaded',
+            requestId: value.requestId,
+            ignoredJson: value.ignoredJson,
+          }
+        : null;
     case 'mediaError':
     case 'exportError':
+    case 'proofStateError':
     case 'workspaceFileError':
       return hasOnlyKeys(value, ['type', 'requestId', 'message']) &&
         hasRequestId(value) &&
@@ -573,6 +650,17 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
     default:
       return null;
   }
+}
+
+/** Accepted words, deduplicated and bounded. Order is not meaningful. */
+function parseProofDictionaryWords(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > PROOF_STATE_LIMITS.dictionaryWords) return null;
+  const words: string[] = [];
+  for (const entry of value) {
+    if (!isBoundedString(entry, PROOF_STATE_LIMITS.wordCharacters, 1)) return null;
+    words.push(entry);
+  }
+  return words;
 }
 
 function parseExportTargetGrant(value: unknown): ExportTargetGrantMessage | null | undefined {
@@ -627,15 +715,30 @@ function parseDocumentConflictDetails(
 function parseVscodeEditorSettings(value: unknown): VscodeEditorSettings | null {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ['autoSave', 'accentColor', 'writeCanvasSettings']) ||
+    !hasOnlyKeys(value, ['autoSave', 'accentColor', 'writeCanvasSettings', 'proofingSettings']) ||
     typeof value.autoSave !== 'boolean' ||
     !isDocBlocksAccentColor(value.accentColor)
   ) {
     return null;
   }
   const writeCanvasSettings = parseVscodeWriteCanvasSettings(value.writeCanvasSettings);
-  return writeCanvasSettings
-    ? { autoSave: value.autoSave, accentColor: value.accentColor, writeCanvasSettings }
+  const proofingSettings = parseVscodeProofingSettings(value.proofingSettings);
+  return writeCanvasSettings && proofingSettings
+    ? {
+        autoSave: value.autoSave,
+        accentColor: value.accentColor,
+        writeCanvasSettings,
+        proofingSettings,
+      }
+    : null;
+}
+
+function parseVscodeProofingSettings(value: unknown): VscodeProofingSettings | null {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ['spelling', 'grammar']) &&
+    typeof value.spelling === 'boolean' &&
+    typeof value.grammar === 'boolean'
+    ? { spelling: value.spelling, grammar: value.grammar }
     : null;
 }
 

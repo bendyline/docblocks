@@ -2,7 +2,8 @@
  * GitStatusBar — slim sidebar row showing branch, ahead/behind, and dirty
  * count, with the repo actions menu (commit, sync, branches, history,
  * remote conveniences). Renders nothing unless the active workspace is a
- * git repository.
+ * git repository — a repo we detected but hold no authority over is offered
+ * by GitGrantNotice down beside the sidebar footer, not here.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';

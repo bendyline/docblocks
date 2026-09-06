@@ -12,12 +12,13 @@
  * before any menu item is built.
  */
 
-import { Tray, Menu, nativeImage, BrowserWindow, ipcMain } from 'electron';
+import { app, Tray, Menu, nativeImage, BrowserWindow, ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePinnedMenuDocuments } from '@bendyline/docblocks/host';
 import type { HostPinnedDocument, MenuCommand } from '@bendyline/docblocks/host';
 import { sendOpenRequest } from './open-requests.js';
+import { showAndFocusWindow } from './window-activation.js';
 
 let tray: Tray | null = null;
 let getWindow: (() => BrowserWindow | null) | null = null;
@@ -32,9 +33,7 @@ export function resolveIconPath(): string | null {
 }
 
 function focusWindow(win: BrowserWindow): void {
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+  showAndFocusWindow(app, win);
 }
 
 function pinnedLabel(document: HostPinnedDocument): string {

@@ -9,6 +9,7 @@ export type {
   FileExplorerSortMode,
   FileTreeChange,
   FileTreeMutationHandler,
+  NewFileFormat,
 } from './FileExplorer/index.js';
 export { FileTreeNode } from './FileExplorer/index.js';
 export type { FileTreeNodeProps } from './FileExplorer/index.js';
@@ -18,6 +19,16 @@ export type { FileTreeActions, FileTreeReadIssue, FileTreeState } from './FileEx
 // WorkspacePicker
 export { WorkspacePicker } from './WorkspacePicker/index.js';
 export type { WorkspacePickerProps } from './WorkspacePicker/index.js';
+
+// Proofing (grammar + spellcheck) is reached through the
+// '@bendyline/docblocks-react/proofing' subpath rather than re-exported here:
+// it pulls Squisq's harper adapter, and a host that never wires the capability
+// should not carry it. See src/Proofing/public-api.ts.
+
+// Calculation is likewise exposed only through the
+// '@bendyline/docblocks-react/calculation' subpath. Its async factory is the
+// boundary that keeps the optional IronCalc adapter out of hosts that do not
+// ship the WASM engine. See src/Calculation/public-api.ts.
 
 // DocBlocksShell
 export { DocBlocksShell } from './DocBlocksShell/index.js';
@@ -30,8 +41,12 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Settings
 export {
   AccentColorSettings,
+  DEFAULT_PROOFING_PREFERENCES,
   DEFAULT_WRITE_CANVAS_FONT_SCHEME,
+  loadProofingPreferences,
+  ProofingSettingsControls,
   resolveWriteCanvasFonts,
+  saveProofingPreferences,
   SettingsDialog,
   ThemeSettings,
   WRITE_CANVAS_FONT_SCHEMES,
@@ -39,6 +54,8 @@ export {
 } from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
+  ProofingPreferences,
+  ProofingSettingsControlsProps,
   SettingsDialogProps,
   ThemeSettingsProps,
   WriteCanvasFontScheme,

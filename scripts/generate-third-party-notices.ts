@@ -4,10 +4,18 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format as formatWithPrettier } from 'prettier';
+import {
+  normalizeNoticeText,
+  noticeTextMatches,
+  retainedLicenseFiles,
+  repositoryUrl,
+} from './third-party-notice-utils.js';
 
 interface LockPackage {
+  readonly cpu?: readonly string[];
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly os?: readonly string[];
   readonly optionalDependencies?: Readonly<Record<string, string>>;
   readonly license?: string;
   readonly link?: boolean;
@@ -118,10 +126,12 @@ const surfaces: readonly Surface[] = [
     id: 'site',
     title: 'DocBlocks site distribution',
     description:
-      'Packages present in the emitted Vite/Rollup module graph, plus copied ffmpeg.wasm and Workbox service-worker components.',
+      'Packages present in the emitted Vite/Rollup module graph, plus the copied ffmpeg.wasm, harper.js, and IronCalc WebAssembly engines and Workbox service-worker components.',
     artifactManifest: 'packages/site/dist/THIRD_PARTY_COMPONENTS.json',
     supplementalPackages: [
       '@ffmpeg/core',
+      '@ironcalc/wasm',
+      'harper.js',
       'workbox-core',
       'workbox-precaching',
       'workbox-routing',
@@ -133,20 +143,20 @@ const surfaces: readonly Surface[] = [
     id: 'vscode',
     title: 'DocBlocks VS Code extension (VSIX)',
     description:
-      'Packages present in the emitted webview Vite/Rollup module graph, plus jsonc-parser bundled into the desktop and web extension-host entry points.',
+      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.',
     artifactManifest: 'packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json',
-    supplementalPackages: ['jsonc-parser'],
+    supplementalPackages: ['@ironcalc/wasm', 'harper.js', 'jsonc-parser'],
     output: 'packages/vscode/THIRD_PARTY_NOTICES.txt',
   },
   {
     id: 'desktop',
     title: 'DocBlocks desktop distribution',
     description:
-      'Packages present in the emitted renderer Vite/Rollup module graph, Electron itself, and the production dependencies copied beside the bundled main process.',
+      'Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines, Electron itself, and the production dependencies copied beside the bundled main process.',
     artifactManifest: 'packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json',
     workspace: 'packages/desktop',
     optionalDependencyNames: new Set(['fsevents']),
-    supplementalPackages: ['electron'],
+    supplementalPackages: ['@ironcalc/wasm', 'electron', 'harper.js'],
     output: 'packages/desktop/THIRD_PARTY_NOTICES.txt',
   },
 ];
@@ -288,24 +298,6 @@ function manifestLicense(manifest: PackageManifest | null): string | null {
   return types.length > 0 ? types.join(' OR ') : null;
 }
 
-function repositoryUrl(manifest: PackageManifest | null, name: string): string {
-  const repository = manifest?.repository;
-  const raw =
-    typeof repository === 'string'
-      ? repository
-      : isRecord(repository) && typeof repository.url === 'string'
-        ? repository.url
-        : typeof manifest?.homepage === 'string'
-          ? manifest.homepage
-          : null;
-  if (!raw) return `https://www.npmjs.com/package/${name}`;
-  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(raw)) return `https://github.com/${raw}`;
-  return raw
-    .replace(/^git\+https:/u, 'https:')
-    .replace(/^git:\/\/github\.com\//u, 'https://github.com/')
-    .replace(/\.git$/u, '');
-}
-
 function componentFromLockKey(lockKey: string): Component | null {
   const canonicalKey = canonicalLockKey(lockKey);
   const lockEntry = lockPackages[canonicalKey];
@@ -322,7 +314,11 @@ function componentFromLockKey(lockKey: string): Component | null {
     version: lockEntry.version,
     license,
     lockKey: canonicalKey,
-    repository: repositoryUrl(manifest, name),
+    repository: repositoryUrl(
+      manifest,
+      name,
+      Boolean(lockEntry.cpu?.length || lockEntry.os?.length),
+    ),
   };
 }
 
@@ -387,6 +383,9 @@ function fallbackLicenseFiles(component: Component): readonly string[] {
       'node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt',
     ];
   }
+  if (component.name === '@ironcalc/wasm') {
+    return ['scripts/licenses/ironcalc/LICENSE-MIT.txt'];
+  }
   if (component.name.startsWith('@ffmpeg/')) {
     return ['node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt'];
   }
@@ -410,7 +409,7 @@ function addLicenseMaterial(
   if (!existsSync(absolutePath)) {
     throw new Error(`License material for ${component.name} is missing: ${absolutePath}`);
   }
-  const content = readdirSafeFile(absolutePath).trimEnd();
+  const content = normalizeNoticeText(readdirSafeFile(absolutePath)).trimEnd();
   const hash = createHash('sha256').update(content).digest('hex');
   const existing = materials.get(hash) ?? {
     content,
@@ -426,11 +425,14 @@ function collectLicenseMaterials(components: readonly Component[]): LicenseMater
   const materials = new Map<string, LicenseMaterial>();
   const missing: Component[] = [];
   for (const component of components) {
+    const retainedFiles = retainedLicenseFiles(component.name);
     const packageFiles = packageLicenseFiles(component);
     const files =
-      packageFiles.length > 0
-        ? packageFiles
-        : fallbackLicenseFiles(component).map((file) => path.join(repoRoot, file));
+      retainedFiles.length > 0
+        ? retainedFiles.map((file) => path.join(repoRoot, file))
+        : packageFiles.length > 0
+          ? packageFiles
+          : fallbackLicenseFiles(component).map((file) => path.join(repoRoot, file));
     if (files.length === 0) {
       missing.push(component);
       continue;
@@ -454,18 +456,21 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
     return [
       'Font license texts are shipped beside the font assets in `fonts/licenses/`.',
       'The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices in `ffmpeg-core/`.',
+      'The copied IronCalc formula engine ships its selected upstream MIT license in `ironcalc/`.',
       'This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.',
     ];
   }
   if (surface.id === 'desktop') {
     return [
       'The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices inside the renderer at `ffmpeg-core/`.',
+      'The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.',
       "Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.",
     ];
   }
   if (surface.id === 'vscode') {
     return [
       'This notice and the emitted `dist/webview/THIRD_PARTY_COMPONENTS.json` are included in the VSIX.',
+      'The IronCalc formula engine and its selected upstream MIT license are included under `dist/webview/ironcalc/`.',
     ];
   }
   return [
@@ -583,6 +588,7 @@ function renderRootNotice(
     `- The site ships ${fontLicenseCount} font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.`,
     `- Site and desktop renderer builds ship @ffmpeg/core@${lockedVersion('@ffmpeg/core')} (` +
       'GPL-2.0-or-later) as `ffmpeg-core.js` and `ffmpeg-core.wasm`. The same directory contains `COPYING.GPL-2.0.txt`, upstream notices, third-party licenses, and exact source-release pointers.',
+    `- Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@${lockedVersion('@ironcalc/wasm')} as a deferred formula engine, together with the selected upstream MIT license.`,
     `- Desktop distributions embed Electron ${lockedVersion('electron')}. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.`,
     '',
     '## Major runtime components',
@@ -616,7 +622,7 @@ function renderRootNotice(
     '',
     '## Regeneration and drift checking',
     '',
-    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; it is a standalone check (not part of `npm run all`) and should be run before publishing a release. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
+    'Run `npm run generate:notices` after dependency or bundle changes. `npm run check:notices` regenerates the expected content in memory and fails on drift; the canonical `npm run all` release gate runs it automatically. Artifact-specific checks additionally verify that the generated notices are present in npm tarballs, the VSIX, the site/PWA, and packaged desktop resources.',
   ]
     .join('\n')
     .trimEnd()}\n`;
@@ -653,7 +659,7 @@ async function main(): Promise<void> {
   for (const [relativePath, expected] of outputs) {
     const absolutePath = path.join(repoRoot, relativePath);
     const actual = existsSync(absolutePath) ? await readFile(absolutePath, 'utf8') : null;
-    if (actual !== expected) stale.push(relativePath);
+    if (actual === null || !noticeTextMatches(actual, expected)) stale.push(relativePath);
   }
   if (stale.length > 0) {
     process.stderr.write(

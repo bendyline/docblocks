@@ -77,13 +77,22 @@ describe('FileExplorer new item failures', () => {
   });
 
   /** Open the New File form and submit `name`. */
-  async function submitNewFile(name: string): Promise<void> {
+  async function submitNewFile(
+    name: string,
+    format: 'markdown' | 'docx' | 'xlsx' | 'pdf' | 'web-interactive' | 'web-static' = 'markdown',
+  ): Promise<void> {
     const newFile = container.querySelector<HTMLButtonElement>('[aria-label="New File"]');
     if (!newFile) throw new Error('New File button missing');
     await act(async () => newFile.click());
     const input = container.querySelector<HTMLInputElement>('.db-new-item-input');
     if (!input) throw new Error('new item input missing');
     await act(async () => typeInto(input, name));
+    const select = container.querySelector<HTMLSelectElement>('.db-new-item-format');
+    if (!select) throw new Error('new file type select missing');
+    await act(async () => {
+      select.value = format;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     const form = container.querySelector<HTMLFormElement>('.db-new-item-row');
     await act(async () => {
       form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -101,6 +110,26 @@ describe('FileExplorer new item failures', () => {
       'Sort by last modified',
       'New Folder',
       'New File',
+    ]);
+  });
+
+  it('offers Markdown by default plus rendered document and Web page formats', async () => {
+    const newFile = container.querySelector<HTMLButtonElement>('[aria-label="New File"]');
+    await act(async () => newFile?.click());
+
+    const select = container.querySelector<HTMLSelectElement>('.db-new-item-format');
+    expect(select?.value).to.equal('markdown');
+    expect([...select!.options].map((option) => option.textContent)).to.deep.equal([
+      'Markdown (.md)',
+      'Word document (.docx)',
+      'Excel workbook (.xlsx)',
+      'PDF document (.pdf)',
+      'Web page — Interactive (.html)',
+      'Web page — Static (.html)',
+    ]);
+    expect([...select!.querySelectorAll('optgroup')].map((group) => group.label)).to.deep.equal([
+      'Document',
+      'Web page',
     ]);
   });
 
@@ -176,8 +205,9 @@ describe('FileExplorer new item failures', () => {
     await act(async () => newFile.click());
 
     const input = container.querySelector<HTMLInputElement>('.db-new-item-input');
+    const format = container.querySelector<HTMLSelectElement>('.db-new-item-format');
     const form = container.querySelector<HTMLFormElement>('.db-new-item-row');
-    if (!input || !form) throw new Error('new-file form missing');
+    if (!input || !format || !form) throw new Error('new-file form missing');
     await act(async () => typeInto(input, 'delayed'));
     await act(async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -188,6 +218,7 @@ describe('FileExplorer new item failures', () => {
     expect(newFile.disabled).to.equal(true);
     expect(newFolder.disabled).to.equal(true);
     expect(input.disabled).to.equal(true);
+    expect(format.disabled).to.equal(true);
     expect(add?.disabled).to.equal(true);
     expect(form.getAttribute('aria-busy')).to.equal('true');
 
@@ -234,6 +265,22 @@ describe('FileExplorer new item failures', () => {
     expect(selections).to.deep.equal([{ path: 'fresh.md', kind: 'file' }]);
     const createdRow = container.querySelector<HTMLElement>('[data-path="fresh.md"]');
     expect(createdRow?.getAttribute('aria-selected')).to.equal('true');
+  });
+
+  it('creates a selected static Web page with a hidden editable companion', async () => {
+    await submitNewFile('guide.md', 'web-static');
+
+    expect(await provider.readFile('guide.html')).to.contain('<h1>guide</h1>');
+    expect(await provider.readFile('guide.html')).not.to.contain('<script');
+    expect(await provider.readFile('guide_files/guide.md')).to.contain(
+      'squisq-html-output: static',
+    );
+    expect(selections).to.deep.equal([{ path: 'guide.html', kind: 'file' }]);
+    const visiblePaths = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')].map(
+      (row) => row.dataset.path,
+    );
+    expect(visiblePaths).to.include('guide.html');
+    expect(visiblePaths).not.to.include('guide_files');
   });
 
   it('recovers: a corrected name creates after a failure', async () => {

@@ -102,6 +102,18 @@
             "Inter"
           ],
           "description": "Default font scheme for the DocBlocks Write canvas. Applies only when no theme font override is active."
+        },
+        "docblocks.inlineSpellChecking": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Show inline spell checking in the DocBlocks editor. Checking runs on this device; nothing you write is sent anywhere."
+        },
+        "docblocks.inlineGrammarChecking": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "description": "Show inline grammar checking in the DocBlocks editor. Grammar checking is currently only available for English."
         }
       }
     },
@@ -174,10 +186,12 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.9.0",
-    "@bendyline/squisq-editor-react": "2.9.0",
-    "@bendyline/squisq-formats": "2.4.6",
-    "@bendyline/squisq-react": "2.9.0",
+    "@bendyline/squisq": "2.11.1",
+    "@bendyline/squisq-editor-react": "2.11.1",
+    "@bendyline/squisq-formats": "2.6.1",
+    "@bendyline/squisq-react": "2.11.1",
+    "@ironcalc/wasm": "0.8.4",
+    "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"
   },
   "devDependencies": {

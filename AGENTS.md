@@ -26,7 +26,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 
 ## Build, test, dev commands
 
-Node 22.22.2+, 24.15.0+, or 26+ required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
+Node 24.18.0+ or 26+ and npm 12.0.2 required. PowerShell users — these all work as plain `npm` commands; no shell-specific syntax.
 
 ```bash
 # The big green button — build, artifact/config checks, package consumers, guidance, static checks,
@@ -56,6 +56,7 @@ npm run test:e2e:desktop:packaged # smoke the electron-builder unpacked artifact
 npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
 
 # Quality gates
+npm run check:dependency-governance # exact install-script allowlist + seven-day dependency cooldown
 npm run typecheck           # core, react, CLI, VS Code host + webview, site, and desktop
 npm run lint                # eslint flat config
 npm run format:check        # prettier
@@ -248,6 +249,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Privileged work is budgeted.** Bound strings, arrays, files, decoded payloads, child-process output, execution time, concurrency, and recursive traversal. A fixed argv is still unsafe if it can run forever or return unbounded data.
 - **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, unit/integration tests, and every site, VS Code Web, source-desktop, and packaged-desktop E2E suite runnable on the current OS. Cross-platform CI jobs still cover desktop behavior and artifacts for the other operating systems.
 - **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
+- **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; `@bendyline/squisq*` is the only exception. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
 ## Gotchas worth knowing
@@ -257,7 +259,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.
 - **Electron workspace paths are display-only.** Filesystem, reveal, FFmpeg, and Git detection IPC accept a registered workspace ID, never `WorkspaceDescriptor.rootPath`. Export, external-file, and repository operations use owner-scoped opaque grants.
 - **Electron workspace identity is main-authoritative.** New roots use canonical-path SHA-256 IDs. Main repairs legacy collisions before registering roots, and the renderer reconciles/remaps its IndexedDB descriptors from `workspaces.list()` before restoring hash or last-session state.
-- **Git repository expansion is explicit.** A workspace nested in a parent repository or linked to external Git metadata requires a native main-process confirmation. Every command must use the granted, pinned `GIT_DIR` and work tree rather than rediscovering a repository from renderer input.
+- **Git repository expansion is explicit, but never a startup modal.** A workspace nested in a parent repository or linked to external Git metadata gets no repository grant from `git:detectRepo` — detection reports `requiresExpandedGrant` and git stays off. The renderer shows a quiet one-line offer above the sidebar footer (`GitGrantNotice`, deliberately unstyled as a warning — nothing is broken) whose dialog calls `git:grantExpandedRepo`, and main persists that answer (`settings.git`, per repository or `allowExpandedByDefault`) so the question is asked at most once. Do not reintroduce a confirmation on the detection path. Every command must use the granted, pinned `GIT_DIR` and work tree rather than rediscovering a repository from renderer input.
 - **Clone cleanup owns staging only.** Reserve the final directory exclusively, clone into a hidden operation-owned staging tree, and publish with no-replace entry creation. Never recursively delete the final target on failure or cancellation.
 - **Launch-file requests supersede startup navigation.** Main queues OS and second-instance argv received before a window exists; preload installs the `open-request` IPC listener before React mounts and retains a bounded FIFO backlog until the renderer subscribes. The shell claims a navigation generation as soon as each OS request arrives, before reading or decoding the resource; workspace-file requests await main-authoritative descriptor reconciliation, while async startup restoration and welcome seeding stop when that generation is superseded.
 - **VS Code edits are complete coalescible snapshots.** The webview scopes every edit to its mounted host branch. Host ingress may collapse superseded client revisions into the latest snapshot, but close/save/external-change boundaries must drain that snapshot before acting.
@@ -272,6 +274,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
 - **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. Electron's renderer does not load them yet (known parity gap). Verify any addition is actually referenced before adding.
+- **Proofing ships the engine, it never downloads one.** Grammar and spellcheck are Squisq's `proofing` capability backed by harper.js (Apache-2.0, no CDN fallback). `scripts/vite-harper-wasm.ts` publishes **both** binaries — the engine derives `harper_wasm_slim_bg.wasm` from the full one's URL and loads the pair — plus the license, under `harper/` on the site, in `app.asar`, and in the VSIX. Each surface passes a module-scope provider from `@bendyline/docblocks-react/proofing` (a factory would be disposed on every document switch and pay the cold WASM setup again). `script-src` needs `'wasm-unsafe-eval'` or compilation is refused and the status sticks on "Proofing…"; the VS Code webview also needs `connect-src`, because the fetch happens inside a blob worker under `default-src 'none'`. That webview reads the engine URL from a `<meta>` tag the host stamps with `asWebviewUri` — a bundle-relative URL resolves against whichever chunk it landed in. Dismissed findings and the app-wide dictionary are **host-persisted, never written into the document** — a file through git carries neither. Site and desktop keep both in browser-local storage (ignores keyed by workspace + path, like `last-state`); the VS Code webview has no durable storage, so `proofStateBridge.ts` puts the dictionary in `globalState` (a personal vocabulary spans workspaces) and ignores in `workspaceState` (their keys are workspace-relative paths). Neither VS Code message names a document: the panel owns one, so the host derives the key from its own URI. Wiring `onDictionaryWord` is what makes Squisq offer "Add to dictionary" at all (`hasAppDictionary`), and the dictionary must be in hand _before_ the provider is built — seeding words afterwards calls `addWords`, which forces the engine to load. Which squiggles appear is a user preference in Settings — "Show inline spell checking" / "Show inline grammar checking", the latter English-only — carried to Squisq as `proofingSpellingEnabled` / `proofingGrammarEnabled`. They are app-level, so they live outside the per-doc `squisq-proofing` frontmatter stack: `packages/react/src/preferences/proofing.ts` (localStorage) on site and desktop, `docblocks.inlineSpellChecking` / `docblocks.inlineGrammarChecking` in VS Code. Turning **both** off is what turns the feature off — the engine is never fetched — so a host that wants no checking at all can simply leave both unchecked rather than dropping the capability.
 
 <!-- BEGIN GENERATED: assurance -->
 
@@ -279,10 +282,11 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 
 _This section is generated by `npm run generate:agent-guidance`; run `npm run check:agent-guidance` to verify it (not part of `npm run all`)._
 
-- Canonical local and CI gate: use a Node version satisfying `package.json#engines`, then run `npm run all`; success includes every repository unit/integration test and all locally runnable E2E suites on the current OS.
+- Canonical local and CI gate: use Node and npm versions satisfying `package.json#engines`, then run `npm run all`; success includes dependency-governance checks, every repository unit/integration test, and all locally runnable E2E suites on the current OS.
+- Dependency governance: `npm run check:dependency-governance` verifies the exact install-script allowlist, the pinned npm 12.0.2 toolchain, the seven-day release cooldown, and the sole `@bendyline/squisq*` cooldown exception. See `docs/dependency-governance.md`.
 - Packed public-package consumer check: `npm run check:packages`.
 - Assurance-contract freshness check: `npm run check:assurance`.
-- Third-party distribution notice drift check: `npm run check:notices`; regenerate after a dependency or bundle change with `npm run generate:notices`.
+- Third-party distribution notice drift check: `npm run check:notices` (included in `npm run all`); regenerate after a dependency or bundle change with `npm run generate:notices`.
 - All E2E suites together: `npm run test:e2e:all`.
 - Individual site E2E: `npm run test:e2e`, `npm run test:e2e:browsers`, and `npm run test:e2e:offline`.
 - Individual desktop source E2E: `npm run test:e2e:desktop`.
@@ -301,12 +305,13 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture           |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`            |
-| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/index.ts`                |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                   |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure        |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes              |
+| Task                       | Start with                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture               |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
+| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/index.ts`                    |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
+| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure            |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                  |
+| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule |

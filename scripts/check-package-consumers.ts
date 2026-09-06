@@ -29,6 +29,16 @@ interface PackResult {
   readonly filename: string;
 }
 
+interface ConcurrentCheck {
+  readonly label: string;
+  readonly execute: () => Promise<void>;
+}
+
+interface ConcurrentCheckFailure {
+  readonly label: string;
+  readonly reason: unknown;
+}
+
 interface InstalledManifest {
   readonly name?: string;
   readonly version?: string;
@@ -76,6 +86,7 @@ const packages: readonly PackageUnderTest[] = [
     runtimeImports: [
       '@bendyline/docblocks-react',
       '@bendyline/docblocks-react/export',
+      '@bendyline/docblocks-react/proofing',
       '@bendyline/docblocks-react/settings',
       '@bendyline/docblocks-react/editor',
     ],
@@ -97,17 +108,34 @@ const consumerTypePackages = [
 const REACT_TYPE_PEER_RANGE = '^18.0.0 || ^19.0.0';
 const REACT_DEV_TYPES_VERSION = '18.3.28';
 
-function parsePackResult(output: string, packageName: string): PackResult {
+export function parsePackResult(output: string, packageName: string): PackResult {
   let value: unknown;
   try {
     value = JSON.parse(output);
   } catch {
     throw new Error(`${packageName}: npm pack did not return JSON`);
   }
-  if (!Array.isArray(value) || value.length !== 1) {
+
+  let first: unknown;
+  if (Array.isArray(value)) {
+    if (value.length !== 1) {
+      throw new Error(`${packageName}: npm pack returned an unexpected result count`);
+    }
+    first = value[0];
+  } else if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value);
+    if (entries.length !== 1) {
+      throw new Error(`${packageName}: npm pack returned an unexpected result count`);
+    }
+    const [reportedName, result] = entries[0];
+    if (reportedName !== packageName) {
+      throw new Error(`${packageName}: npm pack reported unexpected package ${reportedName}`);
+    }
+    first = result;
+  } else {
     throw new Error(`${packageName}: npm pack returned an unexpected result count`);
   }
-  const first: unknown = value[0];
+
   if (
     typeof first !== 'object' ||
     first === null ||
@@ -142,6 +170,26 @@ async function run(
     }
     throw error;
   }
+}
+
+async function runConcurrentChecks(checks: readonly ConcurrentCheck[]): Promise<void> {
+  const results = await Promise.all(
+    checks.map(async (check): Promise<ConcurrentCheckFailure | null> => {
+      try {
+        await check.execute();
+        return null;
+      } catch (reason: unknown) {
+        return { label: check.label, reason };
+      }
+    }),
+  );
+  const failures = results.filter((result): result is ConcurrentCheckFailure => result !== null);
+  if (failures.length === 0) return;
+  if (failures.length === 1) throw failures[0].reason;
+  throw new AggregateError(
+    failures.map((failure) => failure.reason),
+    `Concurrent package checks failed: ${failures.map((failure) => failure.label).join(', ')}`,
+  );
 }
 
 async function packPackage(
@@ -483,6 +531,7 @@ async function main(): Promise<void> {
     JSON.stringify({ private: true, type: 'module' }),
   );
 
+  let primaryFailure: { readonly reason: unknown } | null = null;
   try {
     // `npm run link:squisq` is a supported parallel-development workflow.
     // Pack those symlinked packages into the isolated consumer too so the
@@ -532,10 +581,11 @@ async function main(): Promise<void> {
     );
     await run(process.execPath, ['runtime.mjs'], react18ConsumerRoot);
 
-    await Promise.all(
-      [react18ConsumerRoot, react19ConsumerRoot].map((consumerRoot) =>
-        assertStrictTypeConsumer(consumerRoot, imports),
-      ),
+    await runConcurrentChecks(
+      [react18ConsumerRoot, react19ConsumerRoot].map((consumerRoot) => ({
+        label: path.basename(consumerRoot),
+        execute: () => assertStrictTypeConsumer(consumerRoot, imports),
+      })),
     );
 
     await writeFile(
@@ -586,9 +636,31 @@ async function main(): Promise<void> {
           : ''
       } installed and passed export, dependency, Node engine, strict React 18/19 type, runtime, and CLI consumer checks.\n`,
     );
-  } finally {
-    await rm(temporaryRoot, { recursive: true, force: true });
+  } catch (reason: unknown) {
+    primaryFailure = { reason };
   }
+
+  try {
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  } catch (cleanupReason: unknown) {
+    if (primaryFailure) {
+      throw new AggregateError(
+        [primaryFailure.reason, cleanupReason],
+        `The package consumer check failed and its temporary directory could not be removed: ${temporaryRoot}`,
+      );
+    }
+    throw cleanupReason;
+  }
+
+  if (primaryFailure) throw primaryFailure.reason;
 }
 
-await main();
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
+if (invokedPath === fileURLToPath(import.meta.url)) {
+  await main();
+}

@@ -2,9 +2,10 @@
  * IPC handlers for git operations.
  *
  * Thin Electron shim over main/git/commands.ts. Detection accepts only a
- * registered workspace id, resolves physical Git metadata in main, prompts
- * before expanding into a parent repository, and returns an owner-scoped
- * opaque repository grant. Every later operation revalidates that grant.
+ * registered workspace id, resolves physical Git metadata in main, withholds
+ * the grant until the user has allowed expanding into a parent repository,
+ * and returns an owner-scoped opaque repository grant. Every later operation
+ * revalidates that grant.
  *
  * Also owns the throttled per-repository status stream (repo watcher + shared
  * workspace watcher + post-mutation pokes) and the clone / gh helpers.
@@ -15,7 +16,6 @@ import {
   dialog,
   shell,
   type IpcMainInvokeEvent,
-  type MessageBoxOptions,
   type OpenDialogOptions,
   type WebContents,
 } from 'electron';
@@ -78,6 +78,9 @@ interface GrantedRepository extends RepositoryGrant {
   readonly id: string;
 }
 
+/** How many individually-allowed repositories are remembered on disk. */
+const EXPANDED_GRANT_MEMORY_LIMIT = 100;
+
 const repositoryGrants = new OwnerGrantStore<RepositoryGrant>('repo');
 const registeredGrantOwners = new Set<number>();
 
@@ -112,27 +115,37 @@ function requiresExpandedGrant(context: RepoContext): boolean {
   );
 }
 
-async function confirmExpandedGrant(
-  event: IpcMainInvokeEvent,
-  context: RepoContext,
-): Promise<boolean> {
-  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-  const options: MessageBoxOptions = {
-    type: 'warning',
-    title: 'Allow access to the full Git repository?',
-    message: 'This workspace is part of a larger Git repository.',
-    detail:
-      `Git operations such as pull, branch switching, and commit can change files outside ` +
-      `the workspace. Repository: ${context.toplevel}`,
-    buttons: ['Allow Full Repository', 'Keep Git Disabled'],
-    defaultId: 1,
-    cancelId: 1,
-    noLink: true,
-  };
-  const result = owner
-    ? await dialog.showMessageBox(owner, options)
-    : await dialog.showMessageBox(options);
-  return result.response === 0;
+/**
+ * Consent for expanding past the workspace grant is *remembered*, never
+ * prompted for at open time: opening a folder inside a big repository used to
+ * throw a modal in the user's face before they had done anything. Detection
+ * now reports the ungranted state, the renderer shows a status-bar warning,
+ * and the grant is minted from an explicit click through `git:grantExpandedRepo`.
+ */
+async function expandedGrantRemembered(toplevel: string): Promise<boolean> {
+  const settings = await readSettings();
+  if (settings.git?.allowExpandedByDefault === true) return true;
+  return (settings.git?.allowedRepositories ?? []).some((allowed) => samePath(allowed, toplevel));
+}
+
+async function rememberExpandedGrant(toplevel: string, always: boolean): Promise<void> {
+  await updateSettings((current) => {
+    const previous = current.git ?? {};
+    const allowed = (previous.allowedRepositories ?? []).filter(
+      (entry) => !samePath(entry, toplevel),
+    );
+    allowed.push(toplevel);
+    // Bounded like every other persisted list — keep the most recent grants.
+    const trimmed = allowed.slice(-EXPANDED_GRANT_MEMORY_LIMIT);
+    return {
+      ...current,
+      git: {
+        ...previous,
+        ...(always ? { allowExpandedByDefault: true } : {}),
+        allowedRepositories: trimmed,
+      },
+    };
+  });
 }
 
 function registerGrantOwner(sender: WebContents): void {
@@ -557,13 +570,14 @@ export function registerGitIpc(): void {
             },
           };
         }
-        if (expanded && !(await confirmExpandedGrant(event, context))) {
+        if (expanded && !(await expandedGrantRemembered(context.toplevel))) {
           return {
             ok: true,
             value: {
               isRepo: true,
               rootIsToplevel: detection.rootIsToplevel,
               requiresExpandedGrant: true,
+              repositoryRoot: context.toplevel,
             },
           };
         }
@@ -575,6 +589,43 @@ export function registerGitIpc(): void {
             rootIsToplevel: detection.rootIsToplevel,
             repositoryId: grant.id,
             requiresExpandedGrant: expanded,
+          },
+        };
+      } catch (error: unknown) {
+        return fail(
+          'permission-denied',
+          error instanceof Error ? error.message : 'Workspace capability is unavailable',
+        );
+      }
+    },
+  );
+
+  registerTrustedIpcHandler(
+    'git:grantExpandedRepo',
+    [1, 2],
+    async (event, workspaceId: unknown, opts?: unknown): Promise<GitResult<GitRepoDetection>> => {
+      if (opts !== undefined && (!isRecord(opts) || !hasOnlyKeys(opts, ['always']))) {
+        return fail('permission-denied', 'Invalid grant options');
+      }
+      const always = isRecord(opts) && opts.always === true;
+      const bin = await gitBinOrNull();
+      if (!bin) return fail('git-not-available', 'Git is not available');
+      try {
+        const workspace = await resolveWorkspace(workspaceId);
+        const { detection, context } = await git.detectRepo(bin, workspace.rootPath);
+        if (!context || !detection.isRepo) return { ok: true, value: { isRepo: false } };
+        // The click is the consent; persist it before minting so a crash
+        // can't leave the user re-answering a question they already answered.
+        await rememberExpandedGrant(context.toplevel, always);
+        const grant = mintRepositoryGrant(event, workspace.id, context);
+        return {
+          ok: true,
+          value: {
+            isRepo: true,
+            rootIsToplevel: detection.rootIsToplevel,
+            repositoryId: grant.id,
+            requiresExpandedGrant: requiresExpandedGrant(context),
+            repositoryRoot: context.toplevel,
           },
         };
       } catch (error: unknown) {
