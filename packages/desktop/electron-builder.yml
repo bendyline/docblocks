@@ -36,6 +36,11 @@ afterExtract: scripts/copy-electron-licenses.cjs
 # Lock production binaries to the signed ASAR and disable Node/Electron
 # environment-variable escape hatches that the app does not use.
 electronFuses:
+  # Flipping fuses modifies Electron Framework after its linker signature was
+  # created. Unsigned local Apple Silicon builds are not followed by
+  # electron-builder's Developer ID signing pass, so restore a valid ad-hoc
+  # signature here; signed release builds replace it immediately afterward.
+  resetAdHocDarwinSignature: true
   runAsNode: false
   enableCookieEncryption: true
   enableNodeOptionsEnvironmentVariable: false

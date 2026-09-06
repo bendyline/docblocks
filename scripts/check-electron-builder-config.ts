@@ -57,6 +57,21 @@ function failConfigPolicy(message: string): never {
   process.exit(1);
 }
 
+function requireValidUnsignedMacFuseSignature(): void {
+  if (!isRecord(config) || !isRecord(config.electronFuses)) {
+    failConfigPolicy('electron-builder.yml must configure Electron fuses.');
+  }
+  if (config.electronFuses.resetAdHocDarwinSignature !== true) {
+    failConfigPolicy(
+      'electron-builder.yml must reset the ad-hoc macOS signature after flipping Electron fuses.',
+    );
+  }
+
+  process.stdout.write('electron-builder.yml: unsigned macOS fuse signature reset OK\n');
+}
+
+requireValidUnsignedMacFuseSignature();
+
 function requireLegalResources(): void {
   if (!isRecord(config) || !Array.isArray(config.extraResources)) {
     failConfigPolicy('electron-builder.yml must copy distribution legal notices.');
