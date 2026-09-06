@@ -7,6 +7,7 @@ import { format as formatWithPrettier } from 'prettier';
 import {
   normalizeNoticeText,
   noticeTextMatches,
+  retainedLicenseFiles,
   repositoryUrl,
 } from './third-party-notice-utils.js';
 
@@ -424,11 +425,14 @@ function collectLicenseMaterials(components: readonly Component[]): LicenseMater
   const materials = new Map<string, LicenseMaterial>();
   const missing: Component[] = [];
   for (const component of components) {
+    const retainedFiles = retainedLicenseFiles(component.name);
     const packageFiles = packageLicenseFiles(component);
     const files =
-      packageFiles.length > 0
-        ? packageFiles
-        : fallbackLicenseFiles(component).map((file) => path.join(repoRoot, file));
+      retainedFiles.length > 0
+        ? retainedFiles.map((file) => path.join(repoRoot, file))
+        : packageFiles.length > 0
+          ? packageFiles
+          : fallbackLicenseFiles(component).map((file) => path.join(repoRoot, file));
     if (files.length === 0) {
       missing.push(component);
       continue;

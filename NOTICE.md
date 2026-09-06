@@ -36,7 +36,6 @@ The public npm package notices are explicitly included by each package's `files`
 The following upstream npm archives declare a license identifier but omit a package-local license/copying/notice file:
 
 - @pdf-lib/fontkit@1.1.1 (MIT); affected artifact: @bendyline/docblocks-cli npm package, @bendyline/docblocks-react npm package, DocBlocks VS Code extension (VSIX), DocBlocks desktop distribution, DocBlocks site distribution; source: https://github.com/Hopding/fontkit.
-- fsevents@2.3.2 (MIT); affected artifact: DocBlocks desktop distribution; source: https://www.npmjs.com/package/fsevents.
 - lazy-val@1.0.5 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/develar/lazy-val.
 
 ## Development-only repository inputs

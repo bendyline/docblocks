@@ -15,6 +15,16 @@ export function noticeTextMatches(actual: string, expected: string): boolean {
   return normalizeNoticeText(actual) === normalizeNoticeText(expected);
 }
 
+export function retainedLicenseFiles(packageName: string): readonly string[] {
+  // fsevents is installed only on macOS, even though it belongs to the desktop
+  // dependency closure on every host. A retained copy keeps notice generation
+  // identical on macOS, Linux, and Windows.
+  if (packageName === 'fsevents') {
+    return ['scripts/licenses/fsevents/LICENSE-MIT.txt'];
+  }
+  return [];
+}
+
 export function repositoryUrl(
   manifest: NoticePackageManifest | null,
   name: string,
