@@ -1,3 +1,14 @@
+## @bendyline/docblocks-cli [2.6.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.5.0...@bendyline/docblocks-cli@2.6.0) (2026-09-06)
+
+### Features
+
+* Integrate grammar/spell fixes ([#23](https://github.com/bendyline/docblocks/issues/23)) ([7ccf9b6](https://github.com/bendyline/docblocks/commit/7ccf9b6e40780239477a480d86200bc6d148ca30))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.6.0
+
 ## @bendyline/docblocks-cli [2.5.0](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-cli@2.4.0...@bendyline/docblocks-cli@2.5.0) (2026-08-26)
 
 ### Features
