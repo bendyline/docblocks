@@ -341,6 +341,9 @@ export default defineConfig({
       'format',
       'genson-js',
       'jszip',
+      // Squisq formats is excluded for linked development, so its nested CJS
+      // XML parser must receive an ESM interop wrapper explicitly.
+      '@bendyline/squisq-formats > @xmldom/xmldom',
       'ngeohash',
       'pako',
       'lie',

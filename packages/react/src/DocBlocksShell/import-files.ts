@@ -32,7 +32,12 @@ import {
   parseWorkspacePath,
 } from '@bendyline/docblocks/filesystem';
 import { decodeDbkWorkspace } from './dbk-import.js';
-import { importOutsideInDocument, resolveOutsideInLayout } from './outside-in-contract.js';
+import {
+  importOutsideInDataSidecar,
+  importOutsideInDocument,
+  isOutsideInDataFormat,
+  resolveOutsideInLayout,
+} from './outside-in-contract.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import {
   BUNDLE_IMPORT_EXTENSIONS,
@@ -151,10 +156,11 @@ async function importOutsideInFile(
   const created: string[] = [claim.path];
   try {
     const sourceBytes = await file.arrayBuffer();
-    const imported = await importOutsideInDocument({
-      data: sourceBytes,
-      targetPath: claim.path,
-    });
+    const layout = resolveOutsideInLayout(claim.path);
+    if (!layout) throw new Error(`Outside-in editing does not support “${claim.path}”.`);
+    const imported = await (isOutsideInDataFormat(layout.format)
+      ? importOutsideInDataSidecar({ data: sourceBytes, targetPath: claim.path })
+      : importOutsideInDocument({ data: sourceBytes, targetPath: claim.path }));
     for (const entry of await imported.container.listFiles()) {
       if (/\.md$/i.test(entry.path)) continue;
       const data = await imported.container.readFile(entry.path);

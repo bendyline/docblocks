@@ -36,7 +36,8 @@ Include a clear opening thesis, a compact scorecard, insights rather than repeat
       minWords: 220,
       maxWords: 650,
       maxWordsPerSection: 95,
-      minVisualTemplates: 2,
+      // Layouts may be chosen by autoTemplates; annotation count is not visual quality.
+      minVisualTemplates: 0,
       requiredPhrases: ['18,420', '71%', '$3.8M', '49%', '23%', '31%', 'permissions'],
     },
   },
@@ -61,7 +62,8 @@ Cover: a plain-language definition, an opening scenario, a four-question risk sc
       minWords: 240,
       maxWords: 700,
       maxWordsPerSection: 90,
-      minVisualTemplates: 2,
+      // Layouts may be chosen by autoTemplates; annotation count is not visual quality.
+      minVisualTemplates: 0,
       requiredPhrases: ['accountable', 'confidential', 'escalat', 'four', 'one-week'],
     },
   },

@@ -288,7 +288,7 @@ export async function authoringDiagnostics(
       .filter((layer) => layer.type === 'text')
       .map((layer) => layer.content.text)
       .join('\n');
-    if (!normalizedText(renderedText).includes(normalizedText(body))) {
+    if (!renderedBodyIncludes(renderedText, body)) {
       diagnostics.push({
         code: 'rendered-content-omitted',
         severity: 'error',
@@ -322,6 +322,12 @@ export async function authoringDiagnostics(
     });
   }
   return diagnostics;
+}
+
+/** Rendered list markers are decoration; body extraction intentionally omits them. */
+export function renderedBodyIncludes(renderedText: string, body: string): boolean {
+  const undecorated = renderedText.replace(/(^|\n)[\t ]*(?:[•◦▪]|\d+[.)])[\t ]+/gu, '$1');
+  return normalizedText(undecorated).includes(normalizedText(body));
 }
 
 function normalizedText(value: string): string {

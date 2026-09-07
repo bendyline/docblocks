@@ -6,7 +6,7 @@ const TEMPLATE_PATTERN = /\{\[([A-Za-z0-9_-]+)/g;
 
 export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudgeResult {
   const words = countWords(markdown);
-  const sections = markdownSections(markdown);
+  const sections = markdownSections(markdown, testCase.targetFormat === 'pptx' ? 1 : 6);
   const headings = [...markdown.matchAll(HEADING_PATTERN)];
   const templates = [...markdown.matchAll(TEMPLATE_PATTERN)].map((match) => match[1]);
   const visualTemplates = templates.filter((template) => template !== 'content');
@@ -24,7 +24,7 @@ export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudge
     ),
     rangeCheck(
       'section-count',
-      headings.length,
+      sections.length,
       testCase.expectation.minItems,
       testCase.expectation.maxItems,
       true,
@@ -72,6 +72,7 @@ export function judgeMarkdown(markdown: string, testCase: EvalCase): StaticJudge
   return summarizeChecks(checks, {
     wordCount: words,
     headingCount: headings.length,
+    sectionCount: sections.length,
     templateAnnotationCount: templates.length,
     visualTemplateCount: visualTemplates.length,
     denseSectionCount: denseSections.length,
@@ -82,8 +83,13 @@ export function countWords(value: string): number {
   return value.trim().match(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu)?.length ?? 0;
 }
 
-function markdownSections(markdown: string): readonly { heading: string; body: string }[] {
-  const matches = [...markdown.matchAll(HEADING_PATTERN)];
+function markdownSections(
+  markdown: string,
+  maxDepth = 6,
+): readonly { heading: string; body: string }[] {
+  const matches = [...markdown.matchAll(HEADING_PATTERN)].filter(
+    (match) => match[1].length <= maxDepth,
+  );
   return matches.map((match, index) => ({
     heading: match[2],
     body: markdown.slice((match.index ?? 0) + match[0].length, matches[index + 1]?.index),

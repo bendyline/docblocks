@@ -151,6 +151,7 @@ describe('MCP linked custom-theme and inferred-layout workflows', function () {
       expect(result.artifact.appliedOptions).to.deep.equal([
         { name: 'autoTemplates', value: true },
         { name: 'fidelity', value: target.fidelity },
+        ...(target.format === 'pptx' ? [{ name: 'slideBreak', value: 'h1' }] : []),
       ]);
       expect(result.artifact.engineVersions.map((engine) => engine.name)).to.include(
         '@bendyline/squisq-cli',

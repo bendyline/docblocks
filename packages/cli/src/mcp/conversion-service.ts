@@ -23,6 +23,7 @@ import type { PreparedDocument } from './document-service.js';
 import { MCP_ARCHIVE_LIMITS, throwIfAborted, warningDiagnostic } from './document-service.js';
 import { boundDiagnostics } from './intelligence.js';
 import { convertRenderedDocument } from './rendered-conversion.js';
+import { preparePptxSource } from './pptx-source.js';
 
 export interface ConversionTargetRequest {
   format: string;
@@ -197,6 +198,13 @@ export async function convertPreparedDocument(
     for (let index = 0; index < request.targets.length; index += 1) {
       throwIfAborted(signal);
       const target = request.targets[index]!;
+      const slideBreak = target.options?.slideBreak ?? 'h1';
+      const pptxSource =
+        target.format === 'pptx' &&
+        (slideBreak === 'h1' || slideBreak === 'h2' || slideBreak === 'heading')
+          ? preparePptxSource(prepared.markdownDoc, slideBreak, request.autoTemplates)
+          : undefined;
+      const targetDocument = pptxSource ? { ...prepared, ...pptxSource } : prepared;
       const definition = linkedRegistry.get(target.format);
       if (!definition) throw new Error(`Unknown conversion target "${target.format}"`);
       if (!definition.exportDoc) throw new Error(`Format "${target.format}" is not export-capable`);
@@ -239,7 +247,7 @@ export async function convertPreparedDocument(
       };
       const converted = usesDocumentRasterizer(target.format, fidelity)
         ? await dependencies.convertRenderedDocument(
-            prepared,
+            targetDocument,
             target.format,
             fidelity,
             target.options ?? {},
@@ -257,17 +265,27 @@ export async function convertPreparedDocument(
               ),
           )
         : await (async () => {
-            nativePrepared ??= await dependencies.prepareNativeConversion(
-              {
-                kind: 'markdown',
-                markdown: prepared.markdownDoc,
-                container: prepared.container,
-                baseName: prepared.baseName,
-              },
-              nativePrepareOptions,
-            );
+            const targetPrepared = pptxSource
+              ? await dependencies.prepareNativeConversion(
+                  {
+                    kind: 'doc',
+                    doc: pptxSource.doc,
+                    container: prepared.container,
+                    baseName: prepared.baseName,
+                  },
+                  nativePrepareOptions,
+                )
+              : (nativePrepared ??= await dependencies.prepareNativeConversion(
+                  {
+                    kind: 'markdown',
+                    markdown: prepared.markdownDoc,
+                    container: prepared.container,
+                    baseName: prepared.baseName,
+                  },
+                  nativePrepareOptions,
+                ));
             try {
-              return await nativePrepared.convert(target.format, {
+              return await targetPrepared.convert(target.format, {
                 signal,
                 title: request.title,
                 formatOptions: { [target.format]: formatOptions },

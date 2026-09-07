@@ -11,7 +11,9 @@ import path from 'path';
 
 const packages: [string, string][] = [
   ['core', '@bendyline/squisq'],
+  ['calc', '@bendyline/squisq-calc'],
   ['react', '@bendyline/squisq-react'],
+  ['grid-react', '@bendyline/squisq-grid-react'],
   ['editor-react', '@bendyline/squisq-editor-react'],
   ['formats', '@bendyline/squisq-formats'],
   ['video', '@bendyline/squisq-video'],

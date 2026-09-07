@@ -134,6 +134,9 @@ export default defineConfig({
       'harper.js',
       // Formula sessions dynamically import the optional IronCalc backend.
       '@ironcalc/wasm',
+      // Squisq formats is excluded for linked development, so its nested CJS
+      // XML parser must receive an ESM interop wrapper explicitly.
+      '@bendyline/squisq-formats > @xmldom/xmldom',
     ],
     exclude: [
       '@bendyline/squisq',

@@ -15,6 +15,7 @@ import {
   chooseOutsideInMarkdownPath,
   importOutsideInDocument,
   isOutsideInMarkdownEditingEnabled,
+  isOutsideInDataFormat,
   readOutsideInHtmlOutput,
   readOutsideInMetadata,
   renderOutsideInDocument,
@@ -59,6 +60,11 @@ export interface EditableShellDocument {
 export interface EditableOutsideInDocument extends EditableShellDocument {
   outsideIn: OutsideInLayout;
   outsideInEditingEnabled: true;
+}
+
+/** Data cards should use the viewport-filling editor layout on open. */
+export function defaultOutsideInLayoutMode(outsideIn: OutsideInLayout | null): 'block' | undefined {
+  return outsideIn && isOutsideInDataFormat(outsideIn.format) ? 'block' : undefined;
 }
 
 function withoutLeadingSlash(path: string): string {

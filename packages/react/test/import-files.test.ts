@@ -10,6 +10,8 @@
  */
 import { expect } from 'chai';
 import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
+import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { markdownDocToXlsx } from '@bendyline/squisq-formats/xlsx';
 import { importDroppedFiles, summariseImport } from '../src/DocBlocksShell/import-files.js';
 
 function textFile(name: string, content: string): File {
@@ -209,7 +211,7 @@ describe('importDroppedFiles', () => {
     );
   });
 
-  it('prepares a dropped CSV for outside-in editing', async () => {
+  it('keeps a dropped CSV as an outside-in data sidecar', async () => {
     const provider = makeProvider();
     const result = await importDroppedFiles(
       [new File(['Name,Count\nWidgets,2\n'], 'inventory.csv', { type: 'text/csv' })],
@@ -226,8 +228,68 @@ describe('importDroppedFiles', () => {
     const markdown = await provider.readFile('inventory_files/inventory.md');
     expect(markdown).to.contain('squisq-output: ../inventory.csv');
     expect(markdown).to.contain('squisq-output-format: csv');
-    expect(markdown).to.contain('| Name');
-    expect(markdown).to.contain('| Widgets');
+    expect(markdown).to.contain('{[dataTable src=inventory\\_files/data/inventory.csv]}');
+    expect(markdown).not.to.contain('| Name');
+    expect(await provider.readFile('inventory_files/inventory_files/data/inventory.csv')).to.equal(
+      'Name,Count\nWidgets,2\n',
+    );
+  });
+
+  it('sidecars a CSV beyond the inline parser row limit without parsing it', async () => {
+    const provider = makeProvider();
+    const rows = ['schema,table'];
+    for (let index = 0; index < 10_001; index++) rows.push(`public,table_${index}`);
+    const csv = `${rows.join('\n')}\n`;
+
+    const result = await importDroppedFiles(
+      [new File([csv], 'pg_catalog.csv', { type: 'text/csv' })],
+      provider,
+    );
+
+    expect(result.failed).to.deep.equal([]);
+    expect(result.imported).to.deep.equal([
+      { source: 'pg_catalog.csv', path: 'pg_catalog.csv', renamed: false },
+    ]);
+    const markdown = await provider.readFile('pg_catalog_files/pg-catalog.md');
+    expect(markdown).to.contain('{[dataTable src=pg-catalog\\_files/data/pg\\_catalog.csv]}');
+    expect(markdown).not.to.contain('| schema');
+    expect(
+      await provider.readFile('pg_catalog_files/pg-catalog_files/data/pg_catalog.csv'),
+    ).to.equal(csv);
+  });
+
+  it('keeps a dropped XLSX as outside-in data sidecars instead of inline tables', async () => {
+    const provider = makeProvider();
+    const workbook = await markdownDocToXlsx(
+      parseMarkdown(
+        ['# Products', '', '| SKU | Stock |', '| --- | ---: |', '| A-1 | 12 |', ''].join('\n'),
+      ),
+    );
+
+    const result = await importDroppedFiles(
+      [
+        new File([workbook], 'inventory.xlsx', {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+      ],
+      provider,
+    );
+
+    expect(result.failed).to.deep.equal([]);
+    expect(result.imported).to.deep.equal([
+      { source: 'inventory.xlsx', path: 'inventory.xlsx', renamed: false },
+    ]);
+    const markdown = await provider.readFile('inventory_files/inventory.md');
+    expect(markdown).to.contain('squisq-output: ../inventory.xlsx');
+    expect(markdown).to.contain('squisq-output-format: xlsx');
+    expect(markdown).to.contain('{[dataTable');
+    expect(markdown).to.contain('src=inventory\\_files/data/inventory.xlsx');
+    expect(markdown).not.to.match(/^# Products\s*$/m);
+    expect(markdown).not.to.contain('| SKU');
+    expect(
+      (await provider.readBinary('inventory_files/inventory_files/data/inventory.xlsx'))
+        ?.byteLength,
+    ).to.equal(workbook.byteLength);
   });
 });
 

@@ -283,7 +283,8 @@ The deterministic observations below are authoritative. Do not recount them or c
 
 Deterministic observations:
 - Word count: ${String(deterministic.metrics.wordCount)} (acceptance envelope ${testCase.expectation.minWords}-${testCase.expectation.maxWords})
-- Heading/section count: ${String(deterministic.metrics.headingCount)} (acceptance envelope ${testCase.expectation.minItems}-${testCase.expectation.maxItems})
+- Section count${testCase.targetFormat === 'pptx' ? ' (H1 slide boundaries)' : ''}: ${String(deterministic.metrics.sectionCount)} (acceptance envelope ${testCase.expectation.minItems}-${testCase.expectation.maxItems})
+- All headings, including subordinate headings within a slide: ${String(deterministic.metrics.headingCount)} (diagnostic only; do not compare this count with the slide target)
 - Sections over ${testCase.expectation.maxWordsPerSection} words: ${String(deterministic.metrics.denseSectionCount)}
 - Non-content Squisq template annotations: ${String(deterministic.metrics.visualTemplateCount)} (minimum ${testCase.expectation.minVisualTemplates})
 - Deterministic acceptance: ${deterministic.passed ? 'pass' : 'fail'}

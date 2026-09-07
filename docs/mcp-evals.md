@@ -93,6 +93,14 @@ failure. Within the LLM component, each material unsupported claim subtracts thr
 points and each missing requested element subtracts five points, capped at a
 40-point grounding penalty. This prevents polish from masking unsupported content.
 
+PowerPoint section counts and density use H1 slide boundaries; subordinate
+headings remain part of the same slide. Explicit template annotations are tracked
+but are not a minimum requirement in the canonical briefs: automatic template
+selection is valid, and visual variety belongs in qualitative assessment. This
+corrects the former all-heading count and manual-annotation requirement. Retain
+old reports, but do not treat aggregate deltas across this rubric change as a
+paired measure of CLI improvement.
+
 The LLM judge is a noisy measurement, not ground truth. Pin the model, keep the
 suite and profile fixed, compare paired cases, and rerun material conclusions. The
 judge receives authoritative deterministic word, section, density, and template

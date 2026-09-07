@@ -42,6 +42,7 @@ import {
 } from './preview-service.js';
 import { errorResult, successResult } from './error-result.js';
 import { reportMcpProgress } from './progress.js';
+import { inlinePreviewContent } from './preview-content.js';
 import {
   MCP_OUTPUT_PATTERNS,
   boundNullableWireText,
@@ -136,9 +137,9 @@ const conversionTargetSchema = z.discriminatedUnion('format', [
       ...metadataFields,
       slideBreak: z
         .enum(['h1', 'h2', 'heading'])
-        .optional()
+        .default('h1')
         .describe(
-          'Heading depths that start slides. Headings alone create slide boundaries; do not add --- between them unless a visible horizontal rule is intended.',
+          'Defaults to h1: author one H1 per slide; deeper headings remain body text and no extra cover is inserted. h2 breaks at H1/H2; heading breaks at any depth. Include a title slide as an authored heading; do not add --- between heading-based slides.',
         ),
       defaultFont: z.string().max(256).optional(),
       defaultFontSize: z.number().min(6).max(96).optional(),
@@ -630,6 +631,7 @@ export function registerAgenticTools(server: McpServer, context: AgenticToolCont
             content: [
               { type: 'text' as const, text: JSON.stringify(result) },
               ...result.items.map((item) => artifactLink(item.artifact)),
+              ...(await inlinePreviewContent(result, context.artifacts, operationSignal)),
             ],
             structuredContent: asStructuredContent(successResult(result)),
           };

@@ -6,25 +6,13 @@ describe('site PWA lifecycle state', () => {
     const store = new PwaStateStore();
     store.markInstallFailed();
     expect(store.getSnapshot().offlineReady).to.equal(false);
-    expect(store.getSnapshot().installError).to.contain('could not finish caching');
+    expect(store.getSnapshot().installFailed).to.equal(true);
 
     store.markOfflineReady();
     expect(store.getSnapshot()).to.deep.equal({
       updateAvailable: false,
       offlineReady: true,
-      installError: null,
-    });
-  });
-
-  it('lets the user dismiss the install alert without claiming offline support', () => {
-    const store = new PwaStateStore();
-    store.markInstallFailed();
-    store.dismissInstallError();
-
-    expect(store.getSnapshot()).to.deep.equal({
-      updateAvailable: false,
-      offlineReady: false,
-      installError: null,
+      installFailed: false,
     });
   });
 
@@ -42,7 +30,7 @@ describe('site PWA lifecycle state', () => {
     expect(store.getSnapshot()).to.deep.equal({
       updateAvailable: true,
       offlineReady: true,
-      installError: null,
+      installFailed: false,
     });
     expect(notifications).to.equal(2);
   });

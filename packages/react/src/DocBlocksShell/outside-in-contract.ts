@@ -231,6 +231,66 @@ export async function importOutsideInDocument(
   return { ...imported, layout };
 }
 
+/** True for rendered formats whose companion Markdown references data sidecars. */
+export function isOutsideInDataFormat(format: OutsideInFormatId): format is 'csv' | 'xlsx' {
+  return format === 'csv' || format === 'xlsx';
+}
+
+/**
+ * Import a data document outside-in without expanding its rows into Markdown.
+ *
+ * CSV and XLSX files selected as documents are the data, not prose that happens
+ * to contain large Markdown tables. Keep the byte-exact source in the companion
+ * container and let Squisq's virtualized data cards resolve the small reference
+ * document. The CSV branch is intentionally parse-free, so files beyond the
+ * inline CSV row and cell limits can still be dropped into a workspace. XLSX
+ * still reads workbook structure so each sheet/region gets its own addressable
+ * reference block, but never writes those cell grids into Markdown.
+ */
+export async function importOutsideInDataSidecar(source: {
+  data: ArrayBuffer | Uint8Array;
+  targetPath: string;
+}): Promise<{ layout: OutsideInLayout; markdown: string; container: ContentContainer }> {
+  const layout = resolveOutsideInLayout(source.targetPath);
+  if (!layout || !isOutsideInDataFormat(layout.format)) {
+    throw new Error(`Outside-in data import does not support "${source.targetPath}".`);
+  }
+
+  const data =
+    source.data instanceof ArrayBuffer
+      ? source.data
+      : (source.data.buffer.slice(
+          source.data.byteOffset,
+          source.data.byteOffset + source.data.byteLength,
+        ) as ArrayBuffer);
+  const sourceName =
+    source.targetPath.replace(/\\/g, '/').split('/').pop() ?? `data.${layout.format}`;
+  const container =
+    layout.format === 'csv'
+      ? await import('@bendyline/squisq-formats/csv').then(({ csvToContainer }) =>
+          csvToContainer(data, { sourceName, sidecar: 'always' }),
+        )
+      : await import('@bendyline/squisq-formats/xlsx').then(({ xlsxToContainer }) =>
+          xlsxToContainer(data, {
+            sourceName,
+            sidecar: 'always',
+            sheetHeadings: false,
+          }),
+        );
+  const importedMarkdown = await container.readDocument();
+  if (importedMarkdown === null) {
+    throw new Error(
+      `The ${layout.format.toUpperCase()} importer did not create a Markdown companion.`,
+    );
+  }
+
+  return {
+    layout,
+    markdown: await withOutsideInMetadata(importedMarkdown, layout),
+    container,
+  };
+}
+
 export async function renderOutsideInDocument(
   source: { markdown: string | MarkdownDocument; targetPath: string; container?: ContentContainer },
   options: ConvertOptions & { html?: { playerScriptPath: string; basePath?: string } } = {},
