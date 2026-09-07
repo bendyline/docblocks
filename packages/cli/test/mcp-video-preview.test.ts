@@ -180,6 +180,16 @@ describe('canonical MCP video previews', () => {
     expect(envelope).to.include({ kind: 'success', error: null });
     const preview = parsePreviewResult(envelope?.result);
     if (!preview) throw new Error('Expected an exact canonical preview result');
+    const inline = (response.content as Array<Record<string, unknown>>).find(
+      (entry) => entry.type === 'image',
+    );
+    expect(inline, 'visual QA must receive pixels, not only a resource URI').not.to.equal(
+      undefined,
+    );
+    expect(inline?.mimeType).to.equal(preview.items[0]!.artifact.mimeType);
+    expect(Buffer.from(String(inline?.data), 'base64')).to.deep.equal(
+      await artifacts.read(preview.items[0]!.artifact.uri),
+    );
     const resourceLink = (response.content as Array<Record<string, unknown>>).find(
       (entry) => entry.type === 'resource_link',
     );

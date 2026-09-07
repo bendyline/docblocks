@@ -254,6 +254,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 
 ## Gotchas worth knowing
 
+- **Run GitHub CLI outside the sandbox.** Authenticated/networked `gh` operations do not work inside the Codex filesystem sandbox in this workspace. Invoke `gh` with host execution (requesting sandbox escalation when required), keep the command narrowly scoped, and never print, export, or otherwise expose the authentication token.
 - **The `app://` custom protocol** in the Electron renderer is load-bearing. It gives IndexedDB a stable origin (so workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
 - **VS Code dual build.** `extension.js` runs in the Node-backed host; `extension.web.js` runs in vscode.dev. Don't let Node-only imports (`fs`, `path` with Node semantics, `child_process`) sneak into the web bundle.
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.

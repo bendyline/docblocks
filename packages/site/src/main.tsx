@@ -14,9 +14,8 @@ import './pwa';
 
 import '@bendyline/squisq-react/styles';
 import '@bendyline/docblocks-react/styles';
-// Site-owned chrome that renders outside `.db-shell` and so cannot rely on
-// the shell's `--db-*` tokens. Loaded last to keep the cascade explicit.
-import './pwa-banner.css';
+// Site-owned PWA status content rendered through the shell's status-bar slot.
+import './pwa-status.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { DocBlocksShell } from '@bendyline/docblocks-react';
-import { applyPwaUpdate, dismissPwaInstallError, getPwaState, subscribePwa } from './pwa';
+import { applyPwaUpdate, getPwaState, subscribePwa } from './pwa';
 import { SITE_FFMPEG_WASM_CONFIG } from './ffmpegWasmConfig';
 import { SITE_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { SITE_PROOFING_PROVIDER } from './proofingConfig';
@@ -22,22 +22,19 @@ export function App() {
         updateAvailable={pwa.updateAvailable}
         onApplyUpdate={applyPwaUpdate}
         offlineReady={pwa.offlineReady}
+        statusBarSlotRight={
+          pwa.installFailed ? (
+            <span
+              className="squisq-status-item db-pwa-offline-unavailable"
+              role="status"
+              aria-live="polite"
+              title="Offline mode is currently unavailable. Online editing is unaffected."
+            >
+              Offline unavailable
+            </span>
+          ) : undefined
+        }
       />
-      {/* Rendered outside the shell, so it is styled entirely by
-          src/pwa-banner.css — the shell's `--db-*` tokens do not reach here.
-          See that file's header. */}
-      {pwa.installError && (
-        <div className="db-pwa-install-error" role="alert">
-          <span>{pwa.installError}</span>
-          <button
-            type="button"
-            className="db-pwa-install-error-dismiss"
-            onClick={dismissPwaInstallError}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
     </>
   );
 }

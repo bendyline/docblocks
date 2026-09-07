@@ -101,7 +101,7 @@ test.describe('DocBlocks offline (PWA)', () => {
     await expect(page.locator('.db-shell')).toHaveCount(0);
   });
 
-  test('reports a first-install cache quota failure without breaking the online editor', async ({
+  test('keeps a first-install cache failure unobtrusive without breaking the online editor', async ({
     page,
     context,
   }) => {
@@ -117,13 +117,10 @@ test.describe('DocBlocks offline (PWA)', () => {
     try {
       await page.goto('/');
       await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
-      await expect(page.locator('.db-pwa-install-error')).toContainText(
-        'could not finish caching the app for offline use',
-        { timeout: 45_000 },
-      );
-      await expect(page.locator('.db-pwa-install-error')).toContainText(
-        'The online editor still works',
-      );
+      await expect(page.locator('.db-pwa-offline-unavailable')).toHaveText('Offline unavailable', {
+        timeout: 45_000,
+      });
+      await expect(page.locator('.db-pwa-install-error')).toHaveCount(0);
     } finally {
       await devtools.detach();
     }

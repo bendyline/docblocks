@@ -308,19 +308,19 @@ targets use the linked registry exporter.
 
 Target objects expose format-specific controls:
 
-| Format            | Additional target fields                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `md`, `dbk`       | Fidelity only.                                                                                                      |
-| `docx`            | `title`, `author`, `description`, `defaultFont`, `defaultFontSize` (6-96).                                          |
-| `pdf`             | `title`, `author`, `pageSize` (`letter`/`a4`), `margin` (0-288), `defaultFontSize` (6-96), render `width`/`height`. |
-| `pptx`            | Metadata; `slideBreak` (`h1`/`h2`/`heading`—headings need no `---` separator); font and render dimensions.          |
-| `xlsx`            | `title`, `author`, `sheetNamePrefix` (at most 31 characters).                                                       |
-| `csv`             | `delimiter` (1-4 characters), `tableIndex` (0-10,000).                                                              |
-| `html`, `htmlzip` | `mode` (`slideshow`/`static`), `autoPlay`, `title`.                                                                 |
-| `epub`            | Metadata, `language`, `publisher`.                                                                                  |
-| `mp4`             | `fps` (1-60), quality, orientation, dimensions, caption style, cover pre-roll, animations.                          |
-| `gif`             | `fps` (1-30), orientation, dimensions, captions, pre-roll, animations, loop, palette, dithering, Bayer scale.       |
-| `png`             | Dashboard image: `resolution` preset **or** `width`/`height`, `layout`, `style`, `title` band.                      |
+| Format            | Additional target fields                                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `md`, `dbk`       | Fidelity only.                                                                                                               |
+| `docx`            | `title`, `author`, `description`, `defaultFont`, `defaultFontSize` (6-96).                                                   |
+| `pdf`             | `title`, `author`, `pageSize` (`letter`/`a4`), `margin` (0-288), `defaultFontSize` (6-96), render `width`/`height`.          |
+| `pptx`            | Metadata; `slideBreak` (`h1` default; `h2`/`heading` optional—headings need no `---` separator); font and render dimensions. |
+| `xlsx`            | `title`, `author`, `sheetNamePrefix` (at most 31 characters).                                                                |
+| `csv`             | `delimiter` (1-4 characters), `tableIndex` (0-10,000).                                                                       |
+| `html`, `htmlzip` | `mode` (`slideshow`/`static`), `autoPlay`, `title`.                                                                          |
+| `epub`            | Metadata, `language`, `publisher`.                                                                                           |
+| `mp4`             | `fps` (1-60), quality, orientation, dimensions, caption style, cover pre-roll, animations.                                   |
+| `gif`             | `fps` (1-30), orientation, dimensions, captions, pre-roll, animations, loop, palette, dithering, Bayer scale.                |
+| `png`             | Dashboard image: `resolution` preset **or** `width`/`height`, `layout`, `style`, `title` band.                               |
 
 The format-specific schema is stricter than a generic options map. Unsupported
 fidelity is a machine-actionable error with the accepted alternatives.
@@ -388,6 +388,13 @@ resolution presets are inside that ceiling by construction; only custom `width`/
 `height` can breach it. Naming a preset **and** custom pixels is rejected as
 contradictory rather than silently resolved.
 
+For PPTX, one H1 heading starts each slide by default. Lower-level headings stay
+inside that slide as emphasized body text. `slideBreak: "h2"` uses H1 and H2
+boundaries; `"heading"` uses every heading. An authored title heading is already
+a slide, so conversion does not add an automatic cover. The boundary applies to
+both editable and rendered PPTX exports and does not alter other targets in a
+multi-format conversion.
+
 ## Understanding and visual QA
 
 `inspect_document` returns metadata, statistics, outline, paginated block summaries,
@@ -400,8 +407,11 @@ metadata, timing, and accessibility. Its semantic score and change categories ar
 useful for round-trip regression testing but are not native-application pixel
 comparison.
 
-`preview_document` returns image artifacts, not inline base64. Interpret
-`previewBasis` precisely:
+`preview_document` returns immutable image artifacts and resource links, plus inline
+MCP image content so clients can inspect pixels without resolving resources. Inline
+base64 payloads share a 4 MiB response budget. Omitted images remain available as
+resources; the response names their indexes and suggests a one-item request at
+smaller dimensions. Interpret `previewBasis` precisely:
 
 - `source-render`: Squisq rendered the source document/container;
 - `reconstructed-import`: Squisq rendered the normalized import, not pixels from
@@ -409,7 +419,10 @@ comparison.
 - `native-extracted`: a frame was extracted from the media source. MP4 and GIF
   currently return one bounded first-frame JPEG.
 
-One call returns at most 20 items. Use `startIndex` to paginate.
+One call returns at most 20 items. Use `startIndex` to paginate. For Office and
+PDF inputs these items are reconstructed content sections, not a guarantee of
+native pagination or layout. A single video thumbnail does not verify every scene,
+motion, or loop behavior. Report those limits rather than claiming full visual QA.
 
 Diagnostics are stable records with code, severity, stage, optional format and
 location, occurrence count, remediation, and retryability. A result publishes at
@@ -478,6 +491,14 @@ transform is selected without an explicit user-requested theme, agents omit
 treated as a high-level `none`, `subtle`, or `dynamic` preference rather than a list
 of individual transitions; themes supply motion defaults, while
 `animationsEnabled` honors explicit MP4/GIF motion preferences.
+
+For media scenes with lists or tables, use an explicit content heading such as
+`# Response metrics {[content]}`. Native MP4/GIF conversion can choose a title-only
+layout for an unannotated table even when its source preview contains the table;
+changing `autoTemplates` alone does not resolve that case. Preview the exported
+media as well as the source, and do not infer full content survival from the first
+frame. Short before/after bullets are usually more readable than dense tables at
+video dimensions.
 
 The binary inference boundary is intentionally narrower than `DocumentSource`:
 

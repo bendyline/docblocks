@@ -67,6 +67,21 @@ describe('MCP structured failures', () => {
     expect(parsed?.error.hint).to.include('inline markdown or bundle source');
   });
 
+  it('explains how to recover from invented or expired artifact references', async () => {
+    for (const artifactUri of [
+      'docblocks://artifacts/invented',
+      'docblocks://artifacts/00000000-0000-4000-8000-000000000000',
+    ]) {
+      const result = await callTool(harness.client, 'get_conversion_report', { artifactUri });
+      const parsed = parseMcpErrorResult(result.structuredContent);
+      expect(result.isError).to.equal(true);
+      expect(parsed?.error.code).to.equal('invalid-artifact-reference');
+      expect(parsed?.error.hint).to.include('this MCP session');
+      expect(parsed?.error.hint).to.include('file source');
+      expect(parsed?.error.retryable).to.equal(false);
+    }
+  });
+
   it('sanitizes and bounds untrusted error messages and hints before publication', () => {
     const failure = Object.assign(
       new Error(`linked\0message\u007f${'x'.repeat(MCP_WIRE_LIMITS.messageCharacters + 100)}`),

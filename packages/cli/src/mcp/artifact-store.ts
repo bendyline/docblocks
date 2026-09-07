@@ -369,7 +369,7 @@ export class ArtifactStore {
   private findRecordLocked(uriOrId: string): StoredArtifact {
     const id = artifactId(uriOrId);
     const stored = this.records.get(id);
-    if (!stored) throw new Error('Unknown or expired MCP artifact');
+    if (!stored) throw artifactReferenceError('Unknown or expired MCP artifact');
     return stored;
   }
 
@@ -538,6 +538,14 @@ export class ArtifactStore {
   }
 }
 
+function artifactReferenceError(message: string): Error {
+  return Object.assign(new Error(message), {
+    code: 'invalid-artifact-reference',
+    hint: 'Use the exact artifact.uri returned by a successful convert_document, create_document_bundle, or preview_document call in this MCP session. Do not invent a URI or use a content hash as an id. For an earlier saved file, call list_roots and use a file source with rootId and path; if it was not saved, convert the source again.',
+    retryable: false,
+  });
+}
+
 function artifactId(uriOrId: string): string {
   const artifactIdPattern =
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -548,7 +556,7 @@ function artifactId(uriOrId: string): string {
   try {
     parsed = new URL(uriOrId);
   } catch {
-    throw new Error('Invalid MCP artifact URI');
+    throw artifactReferenceError('Invalid MCP artifact URI');
   }
   const id = parsed.pathname.slice(1);
   if (
@@ -563,7 +571,7 @@ function artifactId(uriOrId: string): string {
     !artifactIdPattern.test(id) ||
     uriOrId !== `docblocks://artifacts/${id}`
   ) {
-    throw new Error('Invalid MCP artifact URI');
+    throw artifactReferenceError('Invalid MCP artifact URI');
   }
   return id;
 }

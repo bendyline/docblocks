@@ -47,7 +47,7 @@ describe('MCP content eval harness', () => {
       },
     };
     const result = judgeMarkdown(
-      '# Thesis {[titleSlide]}\n\nA concise opening with 42% growth.\n\n## Decision\n\nChoose the focused path now.',
+      '# Thesis {[titleSlide]}\n\nA concise opening with 42% growth.\n\n## Evidence\n\n# Decision\n\nChoose the focused path now.',
       testCase,
     );
     expect(result.passed).to.equal(true);
@@ -137,7 +137,7 @@ describe('MCP content eval harness', () => {
     const prompt = judgePrompt(testCase, markdown);
     expect(prompt).to.include('deterministic observations below are authoritative');
     expect(prompt).to.include(`Word count: ${String(deterministic.metrics.wordCount)}`);
-    expect(prompt).to.include('Heading/section count: 1');
+    expect(prompt).to.include('Section count (H1 slide boundaries): 1');
     expect(prompt).to.include(`acceptance envelope ${testCase.expectation.minWords}-`);
   });
 

@@ -23,8 +23,8 @@ const ARCHIVE_LIMITS = {
   maxEntryUncompressedBytes: 100 * 1024 * 1024,
   maxUncompressedBytes: 100 * 1024 * 1024,
 } as const;
-/** Cover slide + the authored slide the fixture image lives on. */
-const PPTX_COVER_SLIDE_IMAGE_COPIES = 2;
+/** One authored H1 slide; the MCP no longer adds an implicit cover. */
+const PPTX_AUTHORED_SLIDE_IMAGE_COPIES = 1;
 
 describe('MCP artifact media round-trips through linked Office formats', function () {
   this.timeout(60_000);
@@ -137,12 +137,12 @@ describe('MCP artifact media round-trips through linked Office formats', functio
     // Squisq's PPTX cover slide (on by default) is built from the document's
     // opening block, so the fixture image lands on both the cover and its
     // authored slide. DOCX has no cover and still round-trips a single copy.
-    await expectExactImportedPng(linkedImport, PPTX_COVER_SLIDE_IMAGE_COPIES);
+    await expectExactImportedPng(linkedImport, PPTX_AUTHORED_SLIDE_IMAGE_COPIES);
     await expectCanonicalImport(
       harness.client,
       pptx.artifact,
       'pptx',
-      PPTX_COVER_SLIDE_IMAGE_COPIES,
+      PPTX_AUTHORED_SLIDE_IMAGE_COPIES,
     );
   });
 });

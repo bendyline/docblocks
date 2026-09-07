@@ -1,0 +1,7 @@
+.db-pwa-offline-unavailable {
+  color: var(--db-warning, #946200);
+}
+
+.db-shell[data-theme='dark'] .db-pwa-offline-unavailable {
+  color: var(--db-warning, #e8bc61);
+}

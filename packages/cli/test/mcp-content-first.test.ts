@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { renderedBodyIncludes } from '../src/mcp/intelligence.js';
 import { callTool, startMcpHarness, type McpHarness } from './mcp-helpers.js';
 
 describe('MCP content-first authoring', () => {
@@ -30,6 +31,35 @@ describe('MCP content-first authoring', () => {
     expect(
       diagnostics?.some((diagnostic) => diagnostic.code === 'rendered-content-omitted'),
     ).to.equal(false);
+  });
+
+  for (const list of [
+    '- Automated status emails\n- Barcode-exception training\n- Weekly Finance export',
+    '1. **Automated status emails.** Address silence.\n2. **Training.** Cover exceptions.',
+    '- First action\n  - Nested detail\n- Final action',
+  ]) {
+    it(`does not report visible list text as omitted: ${list.split('\n')[0]}`, async () => {
+      const result = await callTool(harness.client, 'inspect_document', {
+        source: { kind: 'markdown', name: 'actions.md', markdown: `# Actions\n\n${list}\n` },
+      });
+      expect(result.isError, result.text).to.equal(false);
+      const diagnostics = result.structuredContent?.diagnostics as Array<{ code: string }>;
+      expect(diagnostics.some((item) => item.code === 'rendered-content-omitted')).to.equal(false);
+    });
+  }
+
+  it('still detects a missing or reordered body line and changed numerical facts', () => {
+    const body = 'Revenue rose 14.2%\nRetain the audit trail';
+    expect(renderedBodyIncludes('• Revenue rose 14.2%\n• Retain the audit trail', body)).to.equal(
+      true,
+    );
+    expect(renderedBodyIncludes('• Revenue rose 14.2%', body)).to.equal(false);
+    expect(renderedBodyIncludes('• Retain the audit trail\n• Revenue rose 14.2%', body)).to.equal(
+      false,
+    );
+    expect(renderedBodyIncludes('• Revenue rose 8.9%\n• Retain the audit trail', body)).to.equal(
+      false,
+    );
   });
 
   it('keeps authoring diagnostics available through optional inspection', async () => {
