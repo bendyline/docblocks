@@ -68,6 +68,36 @@ export async function atomicWriteBinary(
   await atomicWrite(absolutePath, bytes);
 }
 
+/** Stage a bounded stream beside its destination; publish only a complete file. */
+export async function atomicWriteStream(
+  absolutePath: string,
+  chunks: AsyncIterable<Uint8Array>,
+  expectedBytes: number,
+): Promise<void> {
+  const temporaryPath = path.join(
+    path.dirname(absolutePath),
+    `.${path.basename(absolutePath)}.${randomUUID()}.tmp`,
+  );
+  const handle = await fs.open(temporaryPath, 'wx');
+  try {
+    let written = 0;
+    for await (const chunk of chunks) {
+      written += chunk.byteLength;
+      if (written > expectedBytes) throw new Error('File transfer exceeded its declared size.');
+      await handle.writeFile(chunk);
+    }
+    if (written !== expectedBytes) throw new Error('File transfer is incomplete.');
+    await handle.sync();
+    await handle.close();
+    await fs.rename(temporaryPath, absolutePath);
+  } finally {
+    await handle.close();
+    await fs.unlink(temporaryPath).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    });
+  }
+}
+
 async function atomicWrite(absolutePath: string, content: string | Uint8Array): Promise<void> {
   const directory = path.dirname(absolutePath);
   await fs.mkdir(directory, { recursive: true });

@@ -35,9 +35,13 @@ import {
   type FsOperation,
   type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
-import { ELECTRON_FILE_SYSTEM_V2_CAPABILITIES, HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
+import {
+  ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_TRANSFER_LIMITS,
+  HOST_WIRE_LIMITS,
+} from '@bendyline/docblocks/host';
 
-import { atomicWriteBinary, withFileMutationLocks } from './file-commit.js';
+import { atomicWriteBinary, atomicWriteStream, withFileMutationLocks } from './file-commit.js';
 import { WorkspaceRootError, getWorkspaceRoots, type WorkspaceRoots } from './workspace-roots.js';
 import {
   acquireWorkspaceWatcher,
@@ -252,13 +256,115 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     });
   }
 
+  /** Capture a stable large file into a main-owned spool with bounded memory. */
+  public readTo(
+    path: WorkspacePath,
+    sink: (chunks: AsyncIterable<Uint8Array>) => Promise<void>,
+  ): Promise<FileSystemFileSnapshot | null> {
+    const canonical = this.canonical(path);
+    return this.execute('read', canonical, null, async () => {
+      const kind = await this.nativeKind(canonical, 'read');
+      if (kind === null) return null;
+      if (kind !== 'file') throw this.error('type-mismatch', 'read', canonical, 'Expected a file.');
+      for (let attempt = 0; attempt < MAX_STABLE_READ_ATTEMPTS; attempt += 1) {
+        const abs = await this.resolveRead(canonical, 'read');
+        const handle = await fs.open(abs, 'r');
+        try {
+          const before = await handle.stat({ bigint: true });
+          if (!before.isFile())
+            throw this.error('type-mismatch', 'read', canonical, 'Expected a file.');
+          if (before.size > BigInt(FILE_SYSTEM_TRANSFER_LIMITS.fileBytes)) {
+            throw this.error(
+              'quota-exceeded',
+              'read',
+              canonical,
+              'File exceeds the 1 GiB desktop file limit.',
+            );
+          }
+          const hash = createHash('sha256');
+          let size = 0;
+          async function* chunks() {
+            const bytes = Buffer.allocUnsafe(FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes);
+            while (size < Number(before.size)) {
+              const { bytesRead } = await handle.read(
+                bytes,
+                0,
+                Math.min(bytes.byteLength, Number(before.size) - size),
+                size,
+              );
+              if (bytesRead === 0) break;
+              size += bytesRead;
+              const chunk = bytes.subarray(0, bytesRead);
+              hash.update(chunk);
+              yield chunk;
+            }
+          }
+          await sink(chunks());
+          const after = await handle.stat({ bigint: true });
+          const pathAfter = await statNodeReadableFile(await this.resolveRead(canonical, 'read'));
+          if (
+            sameFileMetadata(before, after) &&
+            sameFileMetadata(after, pathAfter) &&
+            after.size === BigInt(size)
+          ) {
+            const scanned = scannedFile(canonical, after, null, 'read', hash.digest('hex'));
+            this.remember(scanned.entries);
+            return withoutData(scanned.root) as FileSystemFileSnapshot;
+          }
+        } finally {
+          await handle.close();
+        }
+      }
+      throw this.error('busy', 'read', canonical, 'File kept changing while it was read.');
+    });
+  }
+
   public async writeFile(
     path: WorkspacePath,
     data: ArrayBuffer | Uint8Array,
     options: FileSystemWriteOptions = {},
   ): Promise<FileSystemFileSnapshot> {
     const canonical = this.canonicalNonRoot(path, 'write');
+    if (data.byteLength > FILE_SYSTEM_TRANSFER_LIMITS.fileBytes) {
+      throw this.error(
+        'quota-exceeded',
+        'write',
+        canonical,
+        'File exceeds the 1 GiB desktop file limit.',
+      );
+    }
     const bytes = copyBytes(data);
+    return this.writeUsing(canonical, options, (abs) => atomicWriteBinary(abs, bytes));
+  }
+
+  /** Main-owned spool input, never a renderer-supplied native path. */
+  public async writeStream(
+    path: WorkspacePath,
+    chunks: AsyncIterable<Uint8Array>,
+    byteLength: number,
+    options: FileSystemWriteOptions = {},
+  ): Promise<FileSystemFileSnapshot> {
+    const canonical = this.canonicalNonRoot(path, 'write');
+    if (
+      !Number.isSafeInteger(byteLength) ||
+      byteLength < 0 ||
+      byteLength > FILE_SYSTEM_TRANSFER_LIMITS.fileBytes
+    ) {
+      throw this.error(
+        'quota-exceeded',
+        'write',
+        canonical,
+        'File exceeds the 1 GiB desktop file limit.',
+      );
+    }
+    return this.writeUsing(canonical, options, (abs) => atomicWriteStream(abs, chunks, byteLength));
+  }
+
+  private writeUsing(
+    canonical: WorkspacePath,
+    options: FileSystemWriteOptions,
+    write: (abs: string) => Promise<void>,
+  ): Promise<FileSystemFileSnapshot> {
     return this.mutate('write', canonical, null, async () => {
       const mode = options.mode ?? 'upsert';
       if (mode !== 'upsert' && mode !== 'create' && mode !== 'replace') {
@@ -297,7 +403,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       try {
         await this.createDirectories(missingParents);
         const abs = await this.resolveMutation(canonical, 'write');
-        await atomicWriteBinary(abs, bytes);
+        await write(abs);
         await this.assertMutationTarget(canonical, 'write', abs);
 
         const scanned = await this.scanEntry(canonical, false, new Set(), 'write');

@@ -1,5 +1,9 @@
 import {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  HOST_WIRE_LIMITS,
+  FILE_SYSTEM_TRANSFER_LIMITS as TRANSFER_LIMITS,
+  isBoundedBytePayload,
+  isBoundedString,
   maybeGetDocBlocksHost,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2Result,
@@ -99,16 +103,25 @@ export class ElectronFileSystemProviderV2 implements FileSystemProviderV2 {
     const canonical = parseWorkspacePath(String(path));
     return this.request(
       'read',
-      () => getHostFsV2('read').readFile(this.instanceId, canonical),
-      (value) => {
-        if (!value) return null;
+      async () => {
+        const host = getHostFsV2('read');
+        if (host.beginRead && host.readChunk && host.closeTransfer) {
+          const value = unwrap(await host.stat(this.instanceId, canonical), 'read');
+          const stat = value ? normalizeEntry(value) : null;
+          if (stat?.kind === 'file' && stat.size > TRANSFER_LIMITS.chunkBytes) {
+            return { ok: true, value: await this.readTransferredFile(host, canonical) };
+          }
+        }
+        const value = unwrap(await host.readFile(this.instanceId, canonical), 'read');
+        if (!value) return { ok: true, value: null };
         const entry = normalizeFile(value.entry);
         const data = copyWireBuffer(value.data);
         if (data.byteLength !== entry.size) {
           throw new TypeError('Filesystem transport returned file bytes with the wrong size.');
         }
-        return Object.freeze({ entry, data });
+        return { ok: true, value: Object.freeze({ entry, data }) };
       },
+      (value) => value,
     );
   }
 
@@ -127,12 +140,99 @@ export class ElectronFileSystemProviderV2 implements FileSystemProviderV2 {
     options?: FileSystemWriteOptions,
   ): Promise<FileSystemFileSnapshot> {
     const canonical = parseWorkspacePath(String(path));
+    this.assertOpen('write');
+    // Reject before copying or sending a large recording through the bridge.
+    if (data.byteLength > TRANSFER_LIMITS.fileBytes) {
+      throw new FsError('quota-exceeded', 'This file exceeds the 1 GiB desktop file limit.', {
+        operation: 'write',
+        path: canonical,
+      });
+    }
     const owned = copyBytes(data);
     return this.request(
       'write',
-      () => getHostFsV2('write').writeFile(this.instanceId, canonical, owned, options),
+      async () => {
+        const host = getHostFsV2('write');
+        if (
+          owned.byteLength > TRANSFER_LIMITS.chunkBytes &&
+          host.beginWrite &&
+          host.writeChunk &&
+          host.finishWrite &&
+          host.closeTransfer
+        ) {
+          const id = normalizeTransferId(
+            unwrap(
+              await host.beginWrite(this.instanceId, canonical, owned.byteLength, options),
+              'write',
+            ),
+          );
+          try {
+            for (let offset = 0; offset < owned.byteLength; offset += TRANSFER_LIMITS.chunkBytes) {
+              unwrap(
+                await host.writeChunk(
+                  this.instanceId,
+                  id,
+                  offset,
+                  owned.slice(offset, offset + TRANSFER_LIMITS.chunkBytes),
+                ),
+                'write',
+              );
+            }
+            return await host.finishWrite(this.instanceId, id);
+          } finally {
+            unwrap(await host.closeTransfer(this.instanceId, id), 'write');
+          }
+        }
+        if (owned.byteLength > HOST_WIRE_LIMITS.binaryBytes) {
+          throw new FsError(
+            'not-supported',
+            'This desktop version does not support large file transfers. Update DocBlocks and retry.',
+          );
+        }
+        return host.writeFile(this.instanceId, canonical, owned, options);
+      },
       normalizeFile,
     );
+  }
+
+  private async readTransferredFile(
+    host: DocBlocksHostFsV2API,
+    path: WorkspacePath,
+  ): Promise<FileSystemFileRead | null> {
+    if (!host.beginRead || !host.readChunk || !host.closeTransfer) {
+      throw new FsError('not-supported', 'Large file transfers are unavailable.');
+    }
+    const transfer = unwrap(await host.beginRead(this.instanceId, path), 'read');
+    if (transfer === null) return null;
+    if (
+      !isRecord(transfer) ||
+      Object.keys(transfer).some((key) => key !== 'transferId' && key !== 'entry')
+    ) {
+      throw new TypeError('Filesystem returned an invalid transfer.');
+    }
+    const id = normalizeTransferId(transfer.transferId);
+    try {
+      const entry = normalizeFile(transfer.entry);
+      if (entry.path !== path || entry.size > TRANSFER_LIMITS.fileBytes) {
+        throw new TypeError('Filesystem transfer returned an invalid file.');
+      }
+      const data = new Uint8Array(entry.size);
+      for (let offset = 0; offset < data.byteLength; ) {
+        const chunk = unwrap(await host.readChunk(this.instanceId, id, offset), 'read');
+        if (
+          !isBoundedBytePayload(chunk, TRANSFER_LIMITS.chunkBytes) ||
+          chunk.byteLength === 0 ||
+          offset + chunk.byteLength > data.byteLength
+        ) {
+          throw new TypeError('Filesystem transfer returned an invalid chunk.');
+        }
+        data.set(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk), offset);
+        offset += chunk.byteLength;
+      }
+      return Object.freeze({ entry, data: data.buffer });
+    } finally {
+      unwrap(await host.closeTransfer(this.instanceId, id), 'read');
+    }
   }
 
   public async createDirectory(
@@ -376,6 +476,13 @@ function unwrap<T>(result: HostFileSystemV2Result<T>, operation: FsOperation): T
     throw invalidTransport(operation, 'Filesystem transport returned an invalid error envelope.');
   }
   throw deserializeFsError(result.error);
+}
+
+function normalizeTransferId(value: unknown): string {
+  if (!isBoundedString(value, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    throw new TypeError('Filesystem returned an invalid transfer ID.');
+  }
+  return value;
 }
 
 function normalizeEntry(entry: FileSystemEntrySnapshot): FileSystemEntrySnapshot {

@@ -158,3 +158,4 @@ vite.config.ts.timestamp-*
 reports/
 .DS_Store
 /.release-audit-2.1.2-20260717
+/ship-audit

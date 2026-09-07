@@ -3,11 +3,9 @@ import path from 'node:path';
 import { defineConfig } from 'tsup';
 import treeKill from 'tree-kill';
 import { desktopTsupOptions } from './tsup.config';
+import { createDevBuildPolicy } from './scripts/dev-build-policy';
 
-const RESTART_DEBOUNCE_MS = 50;
-const completedInitialBuilds = new Set<'main' | 'preload'>();
 let activeLauncher: ChildProcess | undefined;
-let restartRequest = 0;
 
 function isAlreadyExitedError(error: Error): boolean {
   const processError = error as Error & { cmd?: string; code?: number | string };
@@ -36,20 +34,12 @@ function stopProcessTree(child: ChildProcess): Promise<void> {
   });
 }
 
-async function restartElectron(): Promise<undefined | (() => Promise<void>)> {
-  const request = ++restartRequest;
-  await new Promise((resolve) => setTimeout(resolve, RESTART_DEBOUNCE_MS));
-  if (request !== restartRequest) return undefined;
-
-  const previousLauncher = activeLauncher;
-  activeLauncher = undefined;
-  if (previousLauncher) await stopProcessTree(previousLauncher);
-
+function launchElectron(): void {
   const launcher = spawn(process.execPath, [path.resolve('scripts/run-electron.cjs')], {
     cwd: process.cwd(),
     env: process.env,
     stdio: 'inherit',
-    windowsHide: false,
+    windowsHide: true,
   });
   activeLauncher = launcher;
   launcher.once('close', () => {
@@ -58,20 +48,30 @@ async function restartElectron(): Promise<undefined | (() => Promise<void>)> {
   launcher.once('error', (error) => {
     process.stderr.write(`Failed to start the Electron launcher: ${error.message}\n`);
   });
+}
 
-  return async () => {
-    if (activeLauncher !== launcher) return;
+const buildCompleted = createDevBuildPolicy(launchElectron, () => {
+  process.stderr.write(
+    'Desktop main/preload rebuilt. The running app is unchanged. Save recordings and documents, then restart npm run dev:desktop to use this build.\n',
+  );
+});
+
+// Terminal shutdown is explicit. Never return this as an onSuccess cleanup:
+// tsup invokes those cleanups before EVERY rebuild, killing unsaved recordings.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  process.once(signal, () => {
+    const launcher = activeLauncher;
     activeLauncher = undefined;
-    await stopProcessTree(launcher);
-  };
+    if (launcher) {
+      void stopProcessTree(launcher).catch((error: unknown) => {
+        process.stderr.write(`Failed to stop the Electron launcher: ${String(error)}\n`);
+      });
+    }
+  });
 }
 
 function onBuildSuccess(target: 'main' | 'preload') {
-  return async (): Promise<undefined | (() => Promise<void>)> => {
-    completedInitialBuilds.add(target);
-    if (completedInitialBuilds.size < 2) return undefined;
-    return restartElectron();
-  };
+  return async (): Promise<void> => buildCompleted(target);
 }
 
 export default defineConfig([

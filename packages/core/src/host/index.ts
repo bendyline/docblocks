@@ -53,6 +53,8 @@ export type {
 
 export {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_TRANSFER_LIMITS,
+  type HostFileSystemReadTransfer,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2OpenRequest,
   type HostFileSystemV2Result,

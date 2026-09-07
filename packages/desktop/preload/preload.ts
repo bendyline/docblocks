@@ -100,6 +100,15 @@ const fsApi: DocBlocksHostFsAPI = {
 };
 
 const fsV2Api: DocBlocksHostFsV2API = {
+  beginRead: (instanceId, p) => ipcRenderer.invoke('fs:v2:beginRead', instanceId, p),
+  readChunk: (instanceId, id, offset) =>
+    ipcRenderer.invoke('fs:v2:readChunk', instanceId, id, offset),
+  beginWrite: (instanceId, p, size, options) =>
+    ipcRenderer.invoke('fs:v2:beginWrite', instanceId, p, size, options),
+  writeChunk: (instanceId, id, offset, data) =>
+    ipcRenderer.invoke('fs:v2:writeChunk', instanceId, id, offset, data),
+  finishWrite: (instanceId, id) => ipcRenderer.invoke('fs:v2:finishWrite', instanceId, id),
+  closeTransfer: (instanceId, id) => ipcRenderer.invoke('fs:v2:closeTransfer', instanceId, id),
   open: (request) => ipcRenderer.invoke('fs:v2:open', request),
   stat: (instanceId, p) => ipcRenderer.invoke('fs:v2:stat', instanceId, p),
   readFile: (instanceId, p) => ipcRenderer.invoke('fs:v2:readFile', instanceId, p),

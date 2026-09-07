@@ -113,7 +113,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
 | dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
-| electron | 43.2.0 | MIT | https://github.com/electron/electron |
+| electron | 43.5.0 | MIT | https://github.com/electron/electron |
 | electron-updater | 6.8.9 | MIT | https://github.com/electron-userland/electron-builder |
 | electron-window-state | 5.0.3 | MIT | https://github.com/mawie81/electron-window-state |
 | entities | 6.0.1 | BSD-2-Clause | https://github.com/fb55/entities |
@@ -7983,7 +7983,7 @@ OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHE
  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: electron@43.2.0
+Components: electron@43.5.0
 Source files: node_modules/electron/LICENSE
 ==============================================================================
 Copyright (c) Electron contributors

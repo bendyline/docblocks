@@ -15,6 +15,21 @@ import type {
   WorkspacePath,
 } from '../filesystem/index.js';
 
+/** File size and per-message size are deliberately separate budgets. */
+export const FILE_SYSTEM_TRANSFER_LIMITS = Object.freeze({
+  fileBytes: 1024 * 1024 * 1024,
+  chunkBytes: 4 * 1024 * 1024,
+  totalBytes: 2 * 1024 * 1024 * 1024,
+  transfers: 4,
+  idleMs: 120_000,
+  lifetimeMs: 15 * 60_000,
+});
+
+export interface HostFileSystemReadTransfer {
+  readonly transferId: string;
+  readonly entry: FileSystemFileSnapshot;
+}
+
 /** Stable capabilities shared by the Electron v2 client and native backend. */
 export const ELECTRON_FILE_SYSTEM_V2_CAPABILITIES: FileSystemProviderCapabilities = Object.freeze({
   writeAtomicity: 'process',
@@ -56,6 +71,33 @@ export type HostFileSystemV2WatchMessage =
 
 /** Wire-level filesystem v2 API exposed by preload. */
 export interface DocBlocksHostFsV2API {
+  /** Optional for compatibility with older preload versions. */
+  beginRead?(
+    instanceId: string,
+    path: WorkspacePath,
+  ): Promise<HostFileSystemV2Result<HostFileSystemReadTransfer | null>>;
+  readChunk?(
+    instanceId: string,
+    transferId: string,
+    offset: number,
+  ): Promise<HostFileSystemV2Result<ArrayBuffer>>;
+  beginWrite?(
+    instanceId: string,
+    path: WorkspacePath,
+    byteLength: number,
+    options?: FileSystemWriteOptions,
+  ): Promise<HostFileSystemV2Result<string>>;
+  writeChunk?(
+    instanceId: string,
+    transferId: string,
+    offset: number,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<HostFileSystemV2Result<null>>;
+  finishWrite?(
+    instanceId: string,
+    transferId: string,
+  ): Promise<HostFileSystemV2Result<FileSystemFileSnapshot>>;
+  closeTransfer?(instanceId: string, transferId: string): Promise<HostFileSystemV2Result<null>>;
   open(
     request: HostFileSystemV2OpenRequest,
   ): Promise<HostFileSystemV2Result<FileSystemProviderCapabilities>>;

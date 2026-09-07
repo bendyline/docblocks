@@ -169,11 +169,16 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'writeFile',
   ]);
   expect(contract.methods.fsV2).toEqual([
+    'beginRead',
+    'beginWrite',
+    'closeTransfer',
     'createDirectory',
     'dispose',
+    'finishWrite',
     'move',
     'onWatchMessage',
     'open',
+    'readChunk',
     'readDirectory',
     'readFile',
     'remove',
@@ -181,6 +186,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'stat',
     'watchSubscribe',
     'watchUnsubscribe',
+    'writeChunk',
     'writeFile',
   ]);
   expect(contract.methods.external).toEqual([

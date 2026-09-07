@@ -10,7 +10,7 @@ This file is the distribution-level entry point for third-party software used by
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 112 locked components |
 | @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 377 locked components |
-| @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 349 locked components |
+| @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 350 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 216 locked components |
 | DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 207 locked components |
 | DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 246 locked components |
@@ -22,7 +22,7 @@ The public npm package notices are explicitly included by each package's `files`
 - The site ships 15 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
 - Site and desktop renderer builds ship @ffmpeg/core@0.12.9 (GPL-2.0-or-later) as `ffmpeg-core.js` and `ffmpeg-core.wasm`. The same directory contains `COPYING.GPL-2.0.txt`, upstream notices, third-party licenses, and exact source-release pointers.
 - Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@0.8.4 as a deferred formula engine, together with the selected upstream MIT license.
-- Desktop distributions embed Electron 43.2.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
+- Desktop distributions embed Electron 43.5.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
 
 ## Major runtime components
 

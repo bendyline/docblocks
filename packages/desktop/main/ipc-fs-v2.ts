@@ -12,7 +12,7 @@ import {
 } from '@bendyline/docblocks/filesystem';
 import {
   HOST_WIRE_LIMITS,
-  isBoundedBytePayload,
+  FILE_SYSTEM_TRANSFER_LIMITS,
   isBoundedString,
   type HostFileSystemV2OpenRequest,
 } from '@bendyline/docblocks/host';
@@ -47,6 +47,18 @@ function parsePath(value: unknown): WorkspacePath {
     throw new Error('Invalid workspace path');
   }
   return parseWorkspacePath(value);
+}
+
+function parseTransferSize(value: unknown): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > FILE_SYSTEM_TRANSFER_LIMITS.fileBytes
+  ) {
+    throw new Error('Invalid filesystem transfer size or offset (maximum 1 GiB).');
+  }
+  return value;
 }
 
 function parseVersion(value: unknown, nullable = false): FileSystemVersion | null | undefined {
@@ -191,7 +203,6 @@ export function registerFsV2Ipc(service = new FileSystemV2IpcService()): void {
     'fs:v2:writeFile',
     [3, 4],
     (event, instanceId: unknown, itemPath: unknown, data: unknown, options?: unknown) => {
-      if (!isBoundedBytePayload(data)) throw new Error('Filesystem payload exceeds the limit');
       return service.writeFile(
         owner(event.sender),
         parseIdentifier(instanceId, 'provider instance'),
@@ -237,6 +248,68 @@ export function registerFsV2Ipc(service = new FileSystemV2IpcService()): void {
   );
   registerTrustedIpcHandler('fs:v2:snapshot', 1, (event, instanceId: unknown) =>
     service.snapshot(owner(event.sender), parseIdentifier(instanceId, 'provider instance')),
+  );
+  registerTrustedIpcHandler('fs:v2:beginRead', 2, (event, instanceId: unknown, itemPath: unknown) =>
+    service.beginRead(
+      owner(event.sender),
+      parseIdentifier(instanceId, 'provider instance'),
+      parsePath(itemPath),
+    ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:readChunk',
+    3,
+    (event, instanceId: unknown, transferId: unknown, offset: unknown) =>
+      service.readChunk(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(transferId, 'transfer'),
+        parseTransferSize(offset),
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:beginWrite',
+    [3, 4],
+    (event, instanceId: unknown, itemPath: unknown, size: unknown, options?: unknown) =>
+      service.beginWrite(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parsePath(itemPath),
+        parseTransferSize(size),
+        parseWriteOptions(options),
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:writeChunk',
+    4,
+    (event, instanceId: unknown, transferId: unknown, offset: unknown, data: unknown) =>
+      service.writeChunk(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(transferId, 'transfer'),
+        parseTransferSize(offset),
+        data,
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:finishWrite',
+    2,
+    (event, instanceId: unknown, transferId: unknown) =>
+      service.finishWrite(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(transferId, 'transfer'),
+      ),
+  );
+  registerTrustedIpcHandler(
+    'fs:v2:closeTransfer',
+    2,
+    (event, instanceId: unknown, transferId: unknown) =>
+      service.closeTransfer(
+        owner(event.sender),
+        parseIdentifier(instanceId, 'provider instance'),
+        parseIdentifier(transferId, 'transfer'),
+      ),
   );
   registerTrustedIpcHandler(
     'fs:v2:watchSubscribe',
