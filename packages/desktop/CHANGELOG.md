@@ -1,3 +1,15 @@
+## docblocks-desktop [2.6.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.6.0...docblocks-desktop@2.6.1) (2026-09-07)
+
+### Bug Fixes
+
+* MCP work ([#24](https://github.com/bendyline/docblocks/issues/24)) ([f1a5f4c](https://github.com/bendyline/docblocks/commit/f1a5f4ca6b59feb4af01b4e3fc03ccbf8ab6c0d8))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.6.1
+* **@bendyline/docblocks-react:** upgraded to 2.6.1
+
 ## docblocks-desktop [2.6.0](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.5.0...docblocks-desktop@2.6.0) (2026-09-06)
 
 ### Features
