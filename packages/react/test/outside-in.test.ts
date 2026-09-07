@@ -4,8 +4,10 @@ import type { DocumentCommitRequest } from '@bendyline/docblocks/document';
 import {
   createNewOutsideInDocument,
   createOutsideInDocumentTarget,
+  defaultOutsideInLayoutMode,
   enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
+  resolveOutsideInLayout,
 } from '../src/DocBlocksShell/outside-in.js';
 
 function request(
@@ -25,6 +27,13 @@ function request(
 
 describe('DocBlocks outside-in editing', function () {
   this.timeout(30_000);
+
+  it('defaults CSV and XLSX data documents to block-at-a-time layout', () => {
+    expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('pg_catalog.csv'))).to.equal('block');
+    expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('inventory.xlsx'))).to.equal('block');
+    expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('report.docx'))).to.equal(undefined);
+    expect(defaultOutsideInLayoutMode(null)).to.equal(undefined);
+  });
 
   it('creates an interactive Web page and keeps regenerating its player output', async () => {
     const provider = new MemoryFileSystemProvider('outside-interactive', 'Interactive');

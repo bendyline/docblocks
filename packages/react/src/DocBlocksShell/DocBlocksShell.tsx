@@ -158,6 +158,7 @@ import { importDroppedFiles, summariseImport } from './import-files.js';
 import {
   createOutsideInContentContainer,
   createOutsideInDocumentTarget,
+  defaultOutsideInLayoutMode,
   enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
   removeOutsideInCompanion,
@@ -1233,6 +1234,12 @@ export function DocBlocksShell({
   const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
   const [selectedOutsideInEditingEnabled, setSelectedOutsideInEditingEnabled] = useState(false);
   const [selectedImage, setSelectedImage] = useState<EditableShellDocument['image']>(undefined);
+  const editorViewPreferences = useMemo(() => {
+    const layoutMode = defaultOutsideInLayoutMode(selectedOutsideIn);
+    return layoutMode && viewPreferences.layoutMode === undefined
+      ? { ...viewPreferences, layoutMode }
+      : viewPreferences;
+  }, [selectedOutsideIn, viewPreferences]);
   const adoptSelectedDocument = useCallback((document: EditableShellDocument | null) => {
     setSelectedFile(document?.displayPath ?? null);
     setSelectedSourceFile(document?.sourcePath ?? null);
@@ -4669,7 +4676,11 @@ export function DocBlocksShell({
                       initialView={initialView}
                       defaultViewportPreset={defaultPreviewViewportPreset}
                       articleId={selectedFile}
-                      fileName={selectedFile}
+                      // Outside-in documents navigate/export as their rendered
+                      // file, but Squisq edits the hidden Markdown companion.
+                      // Passing `report.csv` here classifies the editor as a
+                      // raw data/code surface and suppresses Write + data cards.
+                      fileName={selectedSourceFile ?? selectedFile}
                       imageSrc={selectedImageUrl}
                       imageAlt={basenameOf(selectedFile)}
                       saveCoverImageOutput={saveRenderedImageOutput}
@@ -4696,7 +4707,7 @@ export function DocBlocksShell({
                       documentLinkProvider={documentLinkProvider}
                       workspaceContainer={versionsContainer ?? undefined}
                       allowVersioning={selectedImage === undefined && effectiveVersioning}
-                      viewPreferences={viewPreferences}
+                      viewPreferences={editorViewPreferences}
                       onViewPreferencesChange={handleViewPreferencesChange}
                       versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
                       versioningPrunePolicy={versioningPrunePolicy}

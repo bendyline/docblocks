@@ -5,6 +5,8 @@ import {
   createSharedDocumentArchive,
 } from '../packages/react/src/Export/shared-document.js';
 import { WELCOME_DOCUMENT_CONTENT } from '../packages/react/src/DocBlocksShell/welcome-document.js';
+import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { markdownDocToXlsx } from '@bendyline/squisq-formats/xlsx';
 
 test.describe('SEO bootstrap shell', () => {
   test('resembles the app chrome before React mounts', async ({ page }) => {
@@ -489,6 +491,71 @@ test.describe('File operations', () => {
 
     const treeRow = page.locator('.db-tree-row', { hasText: 'my-folder' });
     await expect(treeRow).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('renders a dropped CSV as an outside-in block grid', async ({ page }) => {
+    await page.locator('.db-file-explorer').evaluate((target) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(
+        new File(['Name,Value\nAlpha,100\nBeta,200\n'], 'pg_catalog.csv', {
+          type: 'text/csv',
+        }),
+      );
+      target.dispatchEvent(
+        new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }),
+      );
+    });
+
+    const row = page.locator('.db-tree-row[data-path="pg_catalog.csv"]');
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await row.click();
+
+    await expect(page.getByTestId('block-card-view')).toBeVisible({ timeout: 20_000 });
+    const card = page.locator('.squisq-data-card');
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(card.locator('.squisq-data-card-name')).toHaveText('pg_catalog.csv');
+    await expect(page.locator('.squisq-grid-status')).toContainText('2 rows');
+    await expect(page.locator('.squisq-grid-body [role="row"]').first()).toContainText('Alpha');
+  });
+
+  test('renders a dropped XLSX as an outside-in block grid', async ({ page }) => {
+    const workbook = await markdownDocToXlsx(
+      parseMarkdown(
+        [
+          '# Inventory',
+          '',
+          '| SKU | Stock |',
+          '| --- | ---: |',
+          '| A-1 | 12 |',
+          '| B-2 | 7 |',
+        ].join('\n'),
+      ),
+    );
+    await page.locator('.db-file-explorer').evaluate(
+      (target, bytes) => {
+        const transfer = new DataTransfer();
+        transfer.items.add(
+          new File([new Uint8Array(bytes)], 'inventory_export.xlsx', {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        );
+        target.dispatchEvent(
+          new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }),
+        );
+      },
+      Array.from(new Uint8Array(workbook)),
+    );
+
+    const workbookRow = page.locator('.db-tree-row[data-path="inventory_export.xlsx"]');
+    await expect(workbookRow).toBeVisible({ timeout: 20_000 });
+    await workbookRow.click();
+    await expect(page.getByTestId('block-card-view')).toBeVisible({ timeout: 20_000 });
+    const card = page.locator('.squisq-data-card');
+    await expect(card.locator('.squisq-data-card-name')).toHaveText('inventory_export.xlsx', {
+      timeout: 20_000,
+    });
+    await expect(page.locator('.squisq-grid-status')).toContainText('2 rows');
+    await expect(page.locator('.squisq-grid-body [role="row"]').first()).toContainText('A-1');
   });
 
   test('can drag a file into a folder and back to the workspace root', async ({ page }) => {

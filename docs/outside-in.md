@@ -32,6 +32,14 @@ squisq-output-format: html
 ---
 ```
 
+CSV and XLSX imports keep the original data file bytes as a sidecar referenced
+by a small companion Markdown document instead of expanding rows into Markdown
+tables. CSV uses a parse-free import path; XLSX reads the workbook structure to
+preserve sheet and region addresses in its reference blocks. This
+keeps large files beyond the inline table limits usable through virtualized
+data cards. Both formats initially open in block-at-a-time mode so the active
+data card fills the editing viewport.
+
 The imported companion initially opens read-only. Choosing **Allow editing via
 markdown** from the rendered file's context menu first copies the byte-exact
 original to `<stem>_files/.original/original.<format>`, using create-only
