@@ -59,6 +59,7 @@ jobs:
             packages/vscode/playwright-report/
             packages/vscode/test-results/
             packages/desktop/playwright-report/
+            packages/desktop/test-results/
           if-no-files-found: ignore
           retention-days: 14
 
