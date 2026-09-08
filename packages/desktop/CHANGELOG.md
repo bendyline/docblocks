@@ -1,3 +1,15 @@
+## docblocks-desktop [2.6.2](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.6.1...docblocks-desktop@2.6.2) (2026-09-08)
+
+### Bug Fixes
+
+* Update electron version, fix bugs ([#25](https://github.com/bendyline/docblocks/issues/25)) ([31305e3](https://github.com/bendyline/docblocks/commit/31305e382612990d73422bafdeee786d71b4a9a6))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.6.2
+* **@bendyline/docblocks-react:** upgraded to 2.6.2
+
 ## docblocks-desktop [2.6.1](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.6.0...docblocks-desktop@2.6.1) (2026-09-07)
 
 ### Bug Fixes
