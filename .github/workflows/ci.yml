@@ -63,7 +63,9 @@ jobs:
           retention-days: 14
 
   desktop-build:
-    name: Desktop Build (${{ matrix.os }})
+    # GitHub leaves expressions in job names unresolved when a failed
+    # dependency skips the job before its matrix is expanded.
+    name: Desktop Build
     needs: build-and-test
     strategy:
       fail-fast: false
@@ -125,7 +127,8 @@ jobs:
           retention-days: 14
 
   desktop-e2e:
-    name: Desktop E2E (${{ matrix.os }})
+    # Keep this static for the same pre-matrix skip behavior described above.
+    name: Desktop E2E
     needs: desktop-build
     strategy:
       fail-fast: false

@@ -27,6 +27,7 @@ describe('Core exports', () => {
       'ELECTRON_FILE_SYSTEM_V2_CAPABILITIES',
       'ElectronFileSystemProvider',
       'ElectronFileSystemProviderV2',
+      'FILE_SYSTEM_TRANSFER_LIMITS',
       'FileSystemContentContainer',
       'FileSystemMoveRecoveryError',
       'FileSystemPartialMoveError',
