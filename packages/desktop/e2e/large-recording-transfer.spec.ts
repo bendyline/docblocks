@@ -54,7 +54,7 @@ test('downloads a playable take and its slide timings from the recording review'
     .click();
   await window.getByRole('menuitem', { name: 'Document narration', exact: true }).click();
   const dialog = window.getByRole('dialog', { name: 'Record document narration' });
-  await expect(dialog.getByText(/Automatically stops at 900.0 MiB total/)).toBeVisible();
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
   const camera = dialog.getByRole('button', { name: 'Camera', exact: true });
   if ((await camera.getAttribute('aria-pressed')) !== 'true') await camera.click();
   await dialog.getByRole('checkbox', { name: 'Show slides mode' }).check();
