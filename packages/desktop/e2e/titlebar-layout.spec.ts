@@ -47,6 +47,7 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
       editorHeaderHeight: editorHeaderRect?.height,
       sidebarHeaderHeight: sidebarHeaderRect?.height,
       viewTabsBottom: viewTabsRect?.bottom,
+      viewTabsRight: viewTabsRect?.right,
       controls,
       exportTop: exportRect?.top,
       exportRight: exportRect?.right,
@@ -57,6 +58,11 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
   expect(Math.abs((geometry.editorHeaderHeight ?? Infinity) - 84)).toBeLessThan(physicalPixel);
   expect(Math.abs((geometry.sidebarHeaderHeight ?? Infinity) - 84)).toBeLessThan(physicalPixel);
   expect(geometry.viewTabsBottom).not.toBeUndefined();
+  // The tab row's surface must run to the window edge; stopping short leaves
+  // the lighter toolbar background showing beside the native close button.
+  expect(Math.abs((geometry.viewTabsRight ?? -Infinity) - geometry.toolbar.right)).toBeLessThan(
+    physicalPixel,
+  );
   expect(geometry.exportTop).toBeGreaterThanOrEqual(
     (geometry.viewTabsBottom ?? Infinity) - physicalPixel,
   );

@@ -49,13 +49,16 @@ async function toolbarControls(page: Page) {
       .filter((child) => child !== viewTabs && visible(child))
       .filter((child) => child.getBoundingClientRect().top < (viewTabsRect?.bottom ?? 0) - 1)
       .map((child) => child.className.toString());
+    const toolbarRect = toolbar.getBoundingClientRect();
     return {
       formatting: [
         ...toolbar.querySelectorAll('.squisq-toolbar-actions .squisq-toolbar-button'),
       ].filter(visible).length,
       clipped,
       sharingTabRow,
-      height: Math.round(toolbar.getBoundingClientRect().height),
+      height: Math.round(toolbarRect.height),
+      // How far the tab row stops short of the toolbar's own right edge.
+      viewTabsRightGap: toolbarRect.right - (viewTabsRect?.right ?? -Infinity),
     };
   });
 }
@@ -76,6 +79,10 @@ test.describe('editor toolbar on a narrow desktop viewport', () => {
     // The regression this guards: the actions lane collapsing to nothing.
     expect(controls.formatting).toBeGreaterThanOrEqual(5);
     expect(controls.clipped).toEqual([]);
+    // The tab row owns its whole row: a gap here shows the toolbar background
+    // as an off-colour strip past the last tab (past the caption buttons in
+    // Electron), which is how it once looked.
+    expect(controls.viewTabsRightGap).toBeLessThan(1);
 
     // Whatever did not fit is still reachable rather than merely clipped.
     // Scoped to the toolbar — the file explorer has a "More actions" button too.

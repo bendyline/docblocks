@@ -7,6 +7,7 @@ import {
 } from '../../scripts/vite-ffmpeg-core.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
+import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Mirror of the same helper in packages/site/vite.config.ts — see there for
@@ -43,6 +44,11 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
   return deps.filter((dep) => !isDeferredFeatureAsset(dep));
 }
 
+// Linking or unlinking Squisq moves where its nested dependencies resolve
+// without changing anything Vite hashes, so the dependency cache is stamped
+// with the link state and cleared when that state changes — see the helper.
+const cacheDir = squisqAwareViteCacheDir(__dirname);
+
 /**
  * Renderer Vite config. Mirrors packages/site/vite.config.ts but with:
  *   - base: './' so asset URLs resolve under the custom app:// protocol
@@ -51,6 +57,7 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
  */
 export default defineConfig({
   root: path.resolve(__dirname, 'renderer'),
+  cacheDir,
   base: './',
   publicDir: path.resolve(__dirname, 'renderer/public'),
   plugins: [

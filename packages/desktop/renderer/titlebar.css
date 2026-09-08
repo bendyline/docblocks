@@ -190,10 +190,11 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
 
 /* Fill the doubled header, and give back the toolbar-wide overlay reservation
    set further up: only the first row meets the caption buttons now, so the
-   full-width tab row below carries that inset instead. */
+   full-width tab row carries that inset instead. The second row keeps the
+   shared wrapped inset, which the tab row above also extends across. */
 .db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar {
   height: 100%;
-  padding-right: 12px;
+  padding-right: var(--db-toolbar-wrapped-inline-end);
 }
 
 .db-desktop-root

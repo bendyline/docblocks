@@ -1670,19 +1670,30 @@ body.db-resizing-sidebar * {
    caption buttons; see packages/desktop/renderer/titlebar.css. */
 .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) {
   --db-toolbar-wrapped-row: 44px;
+  /* Squisq's toolbar keeps this inline-end padding so the second row's last
+     control never touches the pane edge. The tab row is a flex item, so a
+     100% basis would stop at the content box and leave a toolbar-coloured
+     strip beyond the tabs; it has to cover the padding too. */
+  --db-toolbar-wrapped-inline-end: 12px;
 }
 
 .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar {
   min-height: calc(var(--db-toolbar-wrapped-row) * 2);
   flex-wrap: wrap;
   align-content: stretch;
+  padding-right: var(--db-toolbar-wrapped-inline-end);
 }
 
+/* The tab row spans the whole toolbar, padding included, so its surface runs
+   edge to edge and its right-hand divider (which separated it from the
+   formatting controls when they shared a row) has nothing left to divide. */
 .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar-view-tabs {
   box-sizing: border-box;
-  flex: 0 0 100%;
-  width: 100%;
+  flex: 0 0 auto;
+  width: calc(100% + var(--db-toolbar-wrapped-inline-end));
+  margin-right: calc(-1 * var(--db-toolbar-wrapped-inline-end));
   height: var(--db-toolbar-wrapped-row);
+  border-right: 0;
 }
 
 .db-mobile-back {

@@ -10,6 +10,7 @@ import {
 } from '../../scripts/vite-ffmpeg-core.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
+import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
 import { thirdPartyComponentManifestPlugin } from '../../scripts/vite-third-party-manifest.js';
 
 // Linked Squisq packages resolve to their already-compiled workspace `dist`
@@ -167,7 +168,13 @@ const docblocksPwa = (): Plugin[] =>
     },
   });
 
+// Linking or unlinking Squisq moves where its nested dependencies resolve
+// without changing anything Vite hashes, so the dependency cache is stamped
+// with the link state and cleared when that state changes — see the helper.
+const cacheDir = squisqAwareViteCacheDir(__dirname);
+
 export default defineConfig({
+  cacheDir,
   // The root remains the SPA editor, while product and policy routes are
   // real static documents copied from public/. Do not rewrite their 404s to
   // the editor during development or preview.
