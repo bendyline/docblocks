@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-09-07",
+  "dispositions": [
+    {
+      "package": "@tiptap/core",
+      "advisory": "GHSA-CP6Q-959Q-F8RH",
+      "severity": "moderate",
+      "scope": "shipped",
+      "classification": "upstream-blocked",
+      "owner": "DocBlocks maintainers",
+      "expires": "2026-09-21",
+      "reason": "The affected rich-text parser is shipped through Squisq, but exploitability requires rendering attacker-controlled schema content and is constrained by the renderer CSP and existing document sanitization boundaries.",
+      "remediation": "Coordinate the Tiptap 3 migration in Squisq, refresh the DocBlocks lockfile, and remove this disposition once the fixed upstream line is compatible."
+    }
+  ]
+}

@@ -133,15 +133,15 @@ function requireNpmrcValue(
 }
 
 export function validateDependencyToolchain(manifest: RootManifest, npmrcSource: string): void {
-  if (manifest.engines?.npm !== '>=12.0.2') {
-    throw new Error('package.json engines.npm must require >=12.0.2');
+  if (manifest.engines?.npm !== '>=11.19.1') {
+    throw new Error('package.json engines.npm must require >=11.19.1');
   }
-  if (manifest.packageManager !== 'npm@12.0.2') {
-    throw new Error('package.json packageManager must pin npm@12.0.2');
+  if (manifest.packageManager !== 'npm@11.19.1') {
+    throw new Error('package.json packageManager must pin npm@11.19.1');
   }
-  if (manifest.devDependencies?.npm !== '12.0.2') {
+  if (manifest.devDependencies?.npm !== '11.19.1') {
     throw new Error(
-      'package.json devDependencies.npm must pin npm@12.0.2 so nested npm scripts use the governed CLI',
+      'package.json devDependencies.npm must pin npm@11.19.1 so nested npm scripts use the governed CLI',
     );
   }
 

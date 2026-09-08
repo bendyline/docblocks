@@ -47,7 +47,26 @@ out of development while leaving the development workspace persistent across
 restarts. An explicit `--user-data-dir` still overrides the development
 profile for one-off isolated runs.
 
+Main/preload changes rebuild on disk but **do not restart the running app**.
+Save recordings and documents, then restart `npm run dev:desktop` to load those
+changes. The watcher prints a reminder after each rebuild. This keeps unsaved
+recordings in the renderer alive while code is edited.
+
 ## Build & package
+
+Workspace file reads and writes support **1 GiB per file**. The renderer uses
+4 MiB IPC chunks and main stages transfers on disk before committing through
+the normal filesystem provider. Incomplete transfers never replace the target.
+Transfers are scoped to the renderer/provider, expire after two idle minutes
+(15 minutes total), and allow at most four active transfers with 2 GiB of spool
+reservations. Individual legacy IPC messages and complete workspace snapshots
+retain their separate 100 MiB budgets.
+
+The shared recorder stops at **900 MiB total** across recording tracks and
+keeps final encoder chunks intact. This is a soft threshold: delayed encoder
+output can exceed it. The review dialog shows the size and provides media and
+timing backup downloads, including after a failed document save. Capture is
+still held in renderer memory until saved or downloaded; it is not crash-durable.
 
 ```bash
 npm run build          # renderer (Vite) + main/preload (tsup) into dist/

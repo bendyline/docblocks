@@ -9,13 +9,16 @@ import {
   type FsOperation,
   type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
-import type {
-  HostFileSystemV2OpenRequest,
-  HostFileSystemV2Result,
-  HostFileSystemV2WatchMessage,
+import {
+  HOST_WIRE_LIMITS,
+  isBoundedBytePayload,
+  type HostFileSystemV2OpenRequest,
+  type HostFileSystemV2Result,
+  type HostFileSystemV2WatchMessage,
 } from '@bendyline/docblocks/host';
 
 import { NodeWorkspaceFileSystemV2 } from './node-workspace-filesystem-v2.js';
+import { FileSystemTransfers } from './filesystem-transfers.js';
 
 interface ProviderRecord {
   readonly request: HostFileSystemV2OpenRequest;
@@ -36,6 +39,7 @@ export class FileSystemV2IpcService {
   private readonly records = new Map<string, ProviderRecord>();
   private readonly openings = new Map<string, Promise<ProviderRecord>>();
   private readonly closedOwners = new Set<string>();
+  private readonly transfers = new FileSystemTransfers();
 
   public constructor(
     private readonly providerFactory: FileSystemV2ProviderFactory = (request, rootPath) =>
@@ -100,16 +104,75 @@ export class FileSystemV2IpcService {
     );
   }
 
+  public beginRead(ownerId: string, instanceId: string, itemPath: WorkspacePath) {
+    return this.withProvider(ownerId, instanceId, 'read', itemPath, null, (provider) =>
+      this.transfers.beginRead(ownerId, instanceId, itemPath, provider),
+    );
+  }
+
+  public readChunk(ownerId: string, instanceId: string, transferId: string, offset: number) {
+    return this.withProvider(ownerId, instanceId, 'read', null, null, () =>
+      this.transfers.readChunk(ownerId, instanceId, transferId, offset),
+    );
+  }
+
+  public beginWrite(
+    ownerId: string,
+    instanceId: string,
+    itemPath: WorkspacePath,
+    size: number,
+    options?: FileSystemWriteOptions,
+  ) {
+    return this.withProvider(ownerId, instanceId, 'write', itemPath, null, () =>
+      this.transfers.beginWrite(ownerId, instanceId, itemPath, size, options),
+    );
+  }
+
+  public writeChunk(
+    ownerId: string,
+    instanceId: string,
+    transferId: string,
+    offset: number,
+    data: unknown,
+  ) {
+    return this.withProvider(ownerId, instanceId, 'write', null, null, () =>
+      this.transfers.writeChunk(ownerId, instanceId, transferId, offset, data),
+    );
+  }
+
+  public finishWrite(ownerId: string, instanceId: string, transferId: string) {
+    return this.withProvider(ownerId, instanceId, 'write', null, null, (provider) =>
+      this.transfers.finishWrite(ownerId, instanceId, transferId, provider),
+    );
+  }
+
+  public closeTransfer(ownerId: string, instanceId: string, transferId: string) {
+    return this.result('dispose', null, null, async () => {
+      await this.transfers.close(ownerId, instanceId, transferId);
+      return null;
+    });
+  }
+
   public writeFile(
     ownerId: string,
     instanceId: string,
     itemPath: WorkspacePath,
-    data: ArrayBuffer | Uint8Array,
+    data: unknown,
     options?: FileSystemWriteOptions,
   ) {
-    return this.withProvider(ownerId, instanceId, 'write', itemPath, null, (provider) =>
-      provider.writeFile(itemPath, data, options),
-    );
+    return this.withProvider(ownerId, instanceId, 'write', itemPath, null, async (provider) => {
+      if (!isBoundedBytePayload(data)) {
+        const isBytes = data instanceof ArrayBuffer || data instanceof Uint8Array;
+        throw new FsError(
+          isBytes ? 'quota-exceeded' : 'invalid-path',
+          isBytes
+            ? `This transfer exceeds ${HOST_WIRE_LIMITS.binaryBytes / (1024 * 1024)} MiB. Large files must use chunked transfers.`
+            : 'Filesystem writes require an ArrayBuffer or Uint8Array.',
+          { operation: 'write', path: itemPath },
+        );
+      }
+      return provider.writeFile(itemPath, data, options);
+    });
   }
 
   public createDirectory(
@@ -212,6 +275,7 @@ export class FileSystemV2IpcService {
       const record = this.records.get(key);
       if (!record) return null;
       this.records.delete(key);
+      await this.transfers.dispose(ownerId, instanceId);
       await Promise.all([...record.subscriptions.values()].map((item) => item.dispose()));
       record.subscriptions.clear();
       await record.provider.dispose();
@@ -231,6 +295,7 @@ export class FileSystemV2IpcService {
     await Promise.all(
       records.map(async ([key, record]) => {
         this.records.delete(key);
+        await this.transfers.dispose(ownerId, record.request.instanceId);
         await record.provider.dispose();
       }),
     );

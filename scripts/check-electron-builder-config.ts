@@ -434,7 +434,11 @@ function requireResolvedVersion(
   }
 }
 
-// These floors close the audited desktop release findings:
+// These floors close audited desktop release findings that npm audit does not
+// reliably model as shipped application dependencies:
+// - Electron 43.5.0 contains the 43.4.1 and 43.4.2 fixes for
+//   GHSA-gr2m-v5gq-v685, GHSA-9qh4-3jw8-366w,
+//   GHSA-j84w-jfhq-vhvj, and GHSA-qmv3-fv6v-rmhq
 // - GHSA-7g7r-gx96-252g: unsafe AppImage LD_LIBRARY_PATH construction
 // - GHSA-p2f4-r6v6-j797: electron-updater signature validation bypass
 // - GHSA-5p4m-2wfm-xmqj: js-yaml prototype pollution
@@ -443,6 +447,25 @@ function requireResolvedVersion(
 function requireSafeDesktopReleaseDependencies(): void {
   const rootManifest = readPackageManifest(path.join(repoRoot, 'package.json'));
   const desktopManifest = readPackageManifest(desktopManifestPath);
+  const rootElectronPin = requireSafePin(
+    rootManifest,
+    'devDependencies',
+    'electron',
+    '43.5.0',
+    'workspace Electron runtime',
+  );
+  const desktopElectronPin = requireSafePin(
+    desktopManifest,
+    'devDependencies',
+    'electron',
+    '43.5.0',
+    'desktop Electron runtime',
+  );
+  if (desktopElectronPin !== rootElectronPin) {
+    failConfigPolicy(
+      `desktop Electron pin ${desktopElectronPin} must match workspace pin ${rootElectronPin}.`,
+    );
+  }
   const builderPin = requireSafePin(
     desktopManifest,
     'devDependencies',
@@ -463,6 +486,13 @@ function requireSafeDesktopReleaseDependencies(): void {
     'js-yaml',
     '4.3.1',
     'workspace runtime resolution',
+  );
+
+  requireResolvedVersion(
+    require.resolve('electron/package.json'),
+    '43.5.0',
+    'resolved Electron runtime',
+    rootElectronPin,
   );
 
   const builderManifestPath = require.resolve('electron-builder/package.json');
@@ -489,7 +519,7 @@ function requireSafeDesktopReleaseDependencies(): void {
     yamlPin,
   );
 
-  process.stdout.write('desktop release dependencies: audited safe floors OK\n');
+  process.stdout.write('desktop release dependencies: targeted shipped-runtime floors OK\n');
 }
 
 requireSafeDesktopReleaseDependencies();

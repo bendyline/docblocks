@@ -7,9 +7,10 @@ import {
   isSerializedFsError,
   parseWorkspacePath,
 } from '@bendyline/docblocks/filesystem';
-import type {
-  HostFileSystemV2OpenRequest,
-  HostFileSystemV2WatchMessage,
+import {
+  HOST_WIRE_LIMITS,
+  type HostFileSystemV2OpenRequest,
+  type HostFileSystemV2WatchMessage,
 } from '@bendyline/docblocks/host';
 import { FileSystemV2IpcService } from '../main/filesystem-v2-ipc-service.js';
 import { getWorkspaceRoots } from '../main/workspace-roots.js';
@@ -85,5 +86,72 @@ describe('FileSystemV2IpcService transport', () => {
       (await service.writeFile('owner-a', request.instanceId, note, new Uint8Array([2]))).ok,
     ).to.equal(true);
     expect(messages).to.have.length(1);
+  });
+
+  it('serializes oversized writes without changing existing content or granting another owner access', async () => {
+    expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
+    const recordingPath = parseWorkspacePath('/recording.webm');
+    const original = new Uint8Array([1, 2, 3]);
+    expect(
+      (await service.writeFile('owner-a', request.instanceId, recordingPath, original)).ok,
+    ).to.equal(true);
+    const recording = new Uint8Array(HOST_WIRE_LIMITS.binaryBytes + 1);
+
+    for (const payload of [recording, recording.buffer]) {
+      const result = await service.writeFile(
+        'owner-a',
+        request.instanceId,
+        recordingPath,
+        payload,
+        { mode: 'replace' },
+      );
+      if (result.ok) throw new Error('Expected oversized write to fail');
+      expect(isSerializedFsError(result.error)).to.equal(true);
+      expect(result.error).to.include({
+        code: 'quota-exceeded',
+        operation: 'write',
+        path: 'recording.webm',
+        retryable: false,
+      });
+      expect(result.error.message).to.include('100 MiB');
+    }
+    const otherOwner = await service.writeFile(
+      'owner-b',
+      request.instanceId,
+      recordingPath,
+      recording,
+    );
+    if (otherOwner.ok) throw new Error('Expected owner isolation failure');
+    expect(otherOwner.error.code).to.equal('closed');
+    expect(await fs.readFile(path.join(rootPath, 'recording.webm'))).to.deep.equal(
+      Buffer.from(original),
+    );
+  });
+
+  it('rejects malformed bytes and still rejects root writes', async () => {
+    expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
+    for (const payload of [null, { byteLength: 1 }, new Uint16Array([1])]) {
+      const result = await service.writeFile(
+        'owner-a',
+        request.instanceId,
+        parseWorkspacePath('/bad.bin'),
+        payload,
+      );
+      if (result.ok) throw new Error('Expected malformed write to fail');
+      expect(result.error).to.include({
+        code: 'invalid-path',
+        operation: 'write',
+        retryable: false,
+      });
+    }
+    const rootWrite = await service.writeFile(
+      'owner-a',
+      request.instanceId,
+      WORKSPACE_ROOT,
+      new Uint8Array([1]),
+    );
+    if (rootWrite.ok) throw new Error('Expected root write to fail');
+    expect(rootWrite.error.code).to.equal('invalid-path');
+    expect(await fs.readdir(rootPath)).to.deep.equal([]);
   });
 });

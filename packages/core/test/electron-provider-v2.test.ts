@@ -6,6 +6,7 @@ import { parseWorkspacePath } from '../src/filesystem/workspace-path.js';
 import { parseFileSystemVersion, type FileSystemWatchEvent } from '../src/filesystem/v2.js';
 import {
   ELECTRON_FILE_SYSTEM_V2_CAPABILITIES,
+  FILE_SYSTEM_TRANSFER_LIMITS,
   type DocBlocksHostAPI,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2WatchMessage,
@@ -145,6 +146,165 @@ describe('ElectronFileSystemProviderV2', () => {
     expect(failure).to.be.instanceOf(FsError);
     expect((failure as FsError).code).to.equal('permission-denied');
     expect((failure as FsError).path).to.equal('secret.md');
+    await provider.dispose();
+  });
+
+  it("rejects oversized files before opening the bridge and measures only a view's bytes", async () => {
+    let opens = 0;
+    let writes = 0;
+    installHost({
+      open: async () => {
+        opens += 1;
+        return { ok: true, value: ELECTRON_FILE_SYSTEM_V2_CAPABILITIES };
+      },
+      writeFile: async (_instanceId, path, data) => {
+        writes += 1;
+        expect(Array.from(new Uint8Array(data as ArrayBuffer))).to.deep.equal([7, 8]);
+        return {
+          ok: true,
+          value: {
+            kind: 'file',
+            path,
+            name: 'recording.webm',
+            size: 2,
+            version: parseFileSystemVersion('saved'),
+            lastModified: new Date(0).toISOString(),
+          },
+        };
+      },
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+    const recordingPath = parseWorkspacePath('/recording.webm');
+    const recording = new Uint8Array(FILE_SYSTEM_TRANSFER_LIMITS.fileBytes + 1);
+    for (const payload of [recording, recording.buffer]) {
+      const failure = await expectRejected(
+        provider.writeFile(recordingPath, payload),
+        'quota-exceeded',
+      );
+      expect(failure.operation).to.equal('write');
+      expect(failure.path).to.equal('recording.webm');
+      expect(failure.retryable).to.equal(false);
+      expect(failure.message).to.include('1 GiB');
+    }
+    expect(opens).to.equal(0);
+    expect(writes).to.equal(0);
+
+    recording.set([7, 8], 4);
+    expect((await provider.writeFile(recordingPath, recording.subarray(4, 6))).size).to.equal(2);
+    expect(opens).to.equal(1);
+    expect(writes).to.equal(1);
+    await provider.dispose();
+    await expectRejected(provider.writeFile(recordingPath, recording), 'disposed');
+  });
+
+  it('transfers owned bytes in bounded chunks and reassembles a file for reopening', async () => {
+    const size = FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes + 3;
+    const source = new Uint8Array(size).fill(7);
+    const saved = new Uint8Array(size);
+    const file = {
+      kind: 'file' as const,
+      path: parseWorkspacePath('recording.webm'),
+      name: 'recording.webm',
+      size,
+      version: parseFileSystemVersion('recorded'),
+      lastModified: new Date(0).toISOString(),
+    };
+    const events: string[] = [];
+    installHost({
+      beginWrite: async (_instance, path, declared, options) => {
+        expect(path).to.equal(file.path);
+        expect(declared).to.equal(size);
+        expect(options).to.deep.equal({ mode: 'create' });
+        source.fill(99);
+        return { ok: true, value: 'upload' };
+      },
+      writeChunk: async (_instance, id, offset, data) => {
+        expect(id).to.equal('upload');
+        expect(data.byteLength).to.be.at.most(FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes);
+        saved.set(new Uint8Array(data as ArrayBuffer), offset);
+        events.push(`chunk:${offset}`);
+        return { ok: true, value: null };
+      },
+      finishWrite: async () => {
+        events.push('finish');
+        return { ok: true, value: file };
+      },
+      closeTransfer: async (_instance, id) => {
+        events.push(`close:${id}`);
+        return { ok: true, value: null };
+      },
+      stat: async () => ({ ok: true, value: file }),
+      beginRead: async () => ({ ok: true, value: { transferId: 'download', entry: file } }),
+      readChunk: async (_instance, _id, offset) => ({
+        ok: true,
+        value: saved.slice(offset, offset + FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes).buffer,
+      }),
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+    await provider.writeFile(file.path, source, { mode: 'create' });
+    const read = await provider.readFile(file.path);
+    expect(read?.entry).to.deep.equal(file);
+    expect(new Uint8Array(read!.data).every((byte) => byte === 7)).to.equal(true);
+    expect(events).to.deep.equal([
+      'chunk:0',
+      `chunk:${FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes}`,
+      'finish',
+      'close:upload',
+      'close:download',
+    ]);
+    await provider.dispose();
+  });
+
+  it('closes a failed upload and never commits an incomplete recording', async () => {
+    const events: string[] = [];
+    installHost({
+      beginWrite: async () => ({ ok: true, value: 'upload' }),
+      writeChunk: async () => ({
+        ok: false,
+        error: serializeFsError(new FsError('quota-exceeded', 'Disk full.')),
+      }),
+      finishWrite: async () => {
+        throw new Error('Must not commit');
+      },
+      closeTransfer: async () => {
+        events.push('close');
+        return { ok: true, value: null };
+      },
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+    await expectRejected(
+      provider.writeFile(
+        parseWorkspacePath('recording.webm'),
+        new Uint8Array(FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes + 1),
+      ),
+      'quota-exceeded',
+    );
+    expect(events).to.deep.equal(['close']);
+    await provider.dispose();
+  });
+
+  it('rejects a malformed download and releases its transfer', async () => {
+    let closed = false;
+    const file = {
+      kind: 'file' as const,
+      path: parseWorkspacePath('recording.webm'),
+      name: 'recording.webm',
+      size: FILE_SYSTEM_TRANSFER_LIMITS.chunkBytes + 1,
+      version: parseFileSystemVersion('recorded'),
+      lastModified: new Date(0).toISOString(),
+    };
+    installHost({
+      stat: async () => ({ ok: true, value: file }),
+      beginRead: async () => ({ ok: true, value: { transferId: 'download', entry: file } }),
+      readChunk: async () => ({ ok: true, value: new ArrayBuffer(0) }),
+      closeTransfer: async () => {
+        closed = true;
+        return { ok: true, value: null };
+      },
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+    await expectRejected(provider.readFile(file.path), 'io');
+    expect(closed).to.equal(true);
     await provider.dispose();
   });
 

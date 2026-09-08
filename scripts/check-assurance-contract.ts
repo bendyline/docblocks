@@ -242,6 +242,27 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
     throw new Error(`${relativePath}: workflow has no jobs map`);
   }
 
+  const qualityJob = parsed.jobs.quality;
+  if (!isRecord(qualityJob) || !Array.isArray(qualityJob.steps)) {
+    throw new Error(`${relativePath}: quality has no steps`);
+  }
+  const auditEvidenceStep = qualityJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Retain dependency audit evidence',
+  );
+  if (
+    !isRecord(auditEvidenceStep) ||
+    typeof auditEvidenceStep.uses !== 'string' ||
+    !auditEvidenceStep.uses.startsWith('actions/upload-artifact@') ||
+    !isRecord(auditEvidenceStep.with) ||
+    auditEvidenceStep.with.path !== 'reports/dependency-audit/' ||
+    auditEvidenceStep.with['if-no-files-found'] !== 'error' ||
+    auditEvidenceStep.with['retention-days'] !== 90
+  ) {
+    throw new Error(
+      `${relativePath}: quality must retain complete dependency audit evidence for 90 days`,
+    );
+  }
+
   const vscodeJob = parsed.jobs['build-vscode-vsix'];
   if (!isRecord(vscodeJob) || !Array.isArray(vscodeJob.steps)) {
     throw new Error(`${relativePath}: build-vscode-vsix has no steps`);
@@ -421,6 +442,18 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
   if (!isRecord(releaseJob) || !Array.isArray(releaseJob.steps)) {
     throw new Error(`${relativePath}: release has no steps`);
   }
+  const downloadStep = releaseJob.steps.find(
+    (step) => isRecord(step) && step.name === 'Download all artifacts',
+  );
+  if (
+    !isRecord(downloadStep) ||
+    !isRecord(downloadStep.with) ||
+    downloadStep.with.pattern !== '*-artifacts'
+  ) {
+    throw new Error(
+      `${relativePath}: release must keep private audit evidence out of public assets`,
+    );
+  }
   const githubReleaseStep = releaseJob.steps.find(
     (step) => isRecord(step) && step.name === 'Create GitHub Release',
   );
@@ -439,6 +472,7 @@ async function main(): Promise<void> {
   const rootPackage = await readPackage('package.json');
   const expectedGate = [
     'npm run check:dependency-governance',
+    'npm run check:dependency-audit',
     'npm run build',
     'npm run bundle:size',
     'npm run check:site-precache',
@@ -564,8 +598,8 @@ async function main(): Promise<void> {
     path.join(repoRoot, '.github/actions/setup-npm/action.yml'),
     'utf8',
   );
-  if (!npmSetupAction.includes('npm install --global npm@12.0.2')) {
-    throw new Error('governed npm setup action must install exact npm@12.0.2');
+  if (!npmSetupAction.includes('npm install --global npm@11.19.1')) {
+    throw new Error('governed npm setup action must install exact npm@11.19.1');
   }
   await requirePrivateStoreReleaseWorkflow('.github/workflows/store-release.yml');
   await requireDesktopReleasePackaging('.github/workflows/desktop-release.yml');
