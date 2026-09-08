@@ -17,6 +17,26 @@ test('downloads a playable take and its slide timings from the recording review'
     '--use-fake-device-for-media-stream',
     '--use-fake-ui-for-media-stream',
   ]);
+  await window.evaluate(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Canvas capture is unavailable');
+    let frame = 0;
+    const drawFrame = (): void => {
+      context.fillStyle = frame % 2 === 0 ? '#19324d' : '#5a2a27';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      frame += 1;
+    };
+    drawFrame();
+    globalThis.setInterval(drawFrame, 100);
+    const stream = canvas.captureStream(10);
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true,
+      value: async () => stream,
+    });
+  });
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await window.setViewportSize({ width: 1800, height: 1100 });
   await window.locator('.db-tree-row').filter({ hasText: 'narration' }).click();
@@ -42,6 +62,7 @@ test('downloads a playable take and its slide timings from the recording review'
   await dialog.getByRole('button', { name: 'Record', exact: true }).click();
   await expect(dialog.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
   await expect(dialog.getByText(/Recording 0:0[1-9]/)).toBeVisible();
+  await expect(dialog.getByText(/Recording size: (?!0\.0 MiB)/)).toBeVisible({ timeout: 20_000 });
   await dialog.getByRole('button', { name: 'Stop', exact: true }).click();
   const media = dialog.getByRole('link', { name: 'Download recording', exact: true });
   const timing = dialog.getByRole('link', { name: 'Download recording timings', exact: true });
