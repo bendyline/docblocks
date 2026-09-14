@@ -8,7 +8,8 @@
  * Also captures console errors and the screenshot path of a failed run.
  */
 
-import { test, expect, type Page, type FrameLocator } from '@playwright/test';
+import type { FrameLocator, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 import fs from 'node:fs';
 import path from 'node:path';
 

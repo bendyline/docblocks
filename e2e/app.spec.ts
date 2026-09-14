@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 import {
   buildSharedDocumentUrl,
@@ -1012,8 +1012,10 @@ test.describe('Simple diagram theming', () => {
 });
 
 test.describe('Video export dialog theming', () => {
-  test('offers Animated GIF as a built-in ffmpeg-backed export', async ({ page }) => {
+  test('offers MP4 video export but not the removed ffmpeg-backed GIF export', async ({ page }) => {
     await openInitializedSite(page);
+    // Cross-origin isolation is retained as hardening even though nothing
+    // shipped needs SharedArrayBuffer any more.
     expect(
       await page.evaluate(() => ({
         crossOriginIsolated: globalThis.crossOriginIsolated,
@@ -1022,13 +1024,13 @@ test.describe('Video export dialog theming', () => {
     ).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
 
     await page.getByRole('button', { name: 'Export and share' }).click();
-    await page.getByRole('menuitem', { name: 'Export animated gif...' }).click();
 
-    const dialog = page.getByRole('dialog', { name: 'Export Animated GIF' });
-    await expect(dialog).toBeVisible({ timeout: 30_000 });
-    // The lightweight loading dialog is replaced by the lazy video-export
-    // modal. Keep the assertion across that Suspense transition.
-    await expect(dialog.getByLabel('Format')).toHaveValue('gif', { timeout: 30_000 });
+    // Animated GIF was the only feature the GPL-2.0 ffmpeg.wasm core provided.
+    // No surface supplies an `ffmpegWasm` config, so the entry must not render.
+    await expect(page.getByRole('menuitem', { name: 'Export animated gif...' })).toHaveCount(0);
+
+    // MP4 export is unaffected: it runs on WebCodecs plus MIT mp4-muxer.
+    await expect(page.getByRole('menuitem', { name: 'Export video...' })).toBeVisible();
   });
 
   test('uses the active DocBlocks accent palette', async ({ page }) => {

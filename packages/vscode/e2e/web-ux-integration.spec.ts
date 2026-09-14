@@ -1,4 +1,5 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test';
+import type { FrameLocator, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';

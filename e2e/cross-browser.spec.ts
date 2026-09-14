@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 import { readFile } from 'node:fs/promises';
 import { openInitializedSite } from './helpers/site.js';
 

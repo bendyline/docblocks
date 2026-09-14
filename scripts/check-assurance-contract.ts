@@ -236,6 +236,68 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
   }
 }
 
+/**
+ * Every OS in a job's matrix must have a step that actually runs on it.
+ *
+ * A step guarded by `if: runner.os == '…'` is skipped, not failed, on any other
+ * runner — so adding an OS to a matrix without adding its branch produces a leg
+ * that installs, builds, and reports success having tested nothing. The Linux
+ * legs need an `xvfb-run` wrapper the others must not have, which is exactly
+ * why these jobs branch at all.
+ */
+async function requireMatrixOsCoverage(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  const runnerOs: Readonly<Record<string, string>> = {
+    'ubuntu-latest': 'Linux',
+    'macos-latest': 'macOS',
+    'macos-15': 'macOS',
+    'windows-latest': 'Windows',
+  };
+
+  /** Whether a step's `if:` lets it run on one runner OS. */
+  function runsOn(condition: unknown, os: string): boolean {
+    if (condition === undefined) return true;
+    if (typeof condition !== 'string') return false;
+    const equals = /runner\.os\s*==\s*'([^']+)'/u.exec(condition);
+    if (equals) return equals[1] === os;
+    const notEquals = /runner\.os\s*!=\s*'([^']+)'/u.exec(condition);
+    if (notEquals) return notEquals[1] !== os;
+    // An unrecognized expression cannot be reasoned about; treat it as not
+    // providing coverage rather than assuming it does.
+    return false;
+  }
+
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const matrixOs =
+      isRecord(job.strategy) && isRecord(job.strategy.matrix) ? job.strategy.matrix.os : undefined;
+    if (!Array.isArray(matrixOs) || matrixOs.length < 2) continue;
+
+    const testSteps = job.steps.filter(
+      (step) =>
+        isRecord(step) && typeof step.run === 'string' && /\bnpm run test:/mu.test(step.run),
+    );
+    if (testSteps.length === 0) continue;
+
+    for (const label of matrixOs) {
+      const os = runnerOs[String(label)];
+      if (os === undefined) {
+        throw new Error(`${relativePath}: ${jobName} uses an unrecognized runner ${String(label)}`);
+      }
+      const covered = testSteps.some((step) => isRecord(step) && runsOn(step.if, os));
+      if (!covered) {
+        throw new Error(
+          `${relativePath}: ${jobName} includes ${String(label)} in its matrix but no test step runs on ${os}`,
+        );
+      }
+    }
+  }
+}
+
 async function requireDesktopReleasePackaging(relativePath: string): Promise<void> {
   const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
   if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
@@ -401,9 +463,10 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
       );
     }
   }
-  const linuxUploadStep = linuxJob.steps.find(
+  const linuxUploadStepIndex = linuxJob.steps.findIndex(
     (step) => isRecord(step) && step.name === 'Upload Linux artifacts',
   );
+  const linuxUploadStep = linuxJob.steps[linuxUploadStepIndex];
   if (
     !isRecord(linuxUploadStep) ||
     !isRecord(linuxUploadStep.with) ||
@@ -411,6 +474,35 @@ async function requireDesktopReleasePackaging(relativePath: string): Promise<voi
     !linuxUploadStep.with.path.includes('latest-linux-arm64.yml')
   ) {
     throw new Error(`${relativePath}: build-linux must upload the arm64 updater manifest`);
+  }
+
+  // electron-builder generates the AppImage desktop entry, so only the packaged
+  // bytes can prove the Chromium sandbox survived. Inspect them after packaging
+  // and before the assets leave the job.
+  const linuxLauncherStepIndex = linuxJob.steps.findIndex(
+    (step) =>
+      isRecord(step) &&
+      typeof step.run === 'string' &&
+      /\bnpm run check:linux-launchers(?=\s|$)/mu.test(step.run),
+  );
+  if (
+    linuxLauncherStepIndex < 0 ||
+    linuxLauncherStepIndex <= linuxJob.steps.indexOf(linuxPackageStep) ||
+    linuxLauncherStepIndex >= linuxUploadStepIndex
+  ) {
+    throw new Error(
+      `${relativePath}: build-linux must verify packaged launcher sandboxing after packaging and before upload`,
+    );
+  }
+  const linuxLauncherStep = linuxJob.steps[linuxLauncherStepIndex];
+  if (
+    !isRecord(linuxLauncherStep) ||
+    typeof linuxLauncherStep.run !== 'string' ||
+    !linuxLauncherStep.run.includes('squashfs-tools')
+  ) {
+    throw new Error(
+      `${relativePath}: build-linux must install squashfs-tools so the AppImage check cannot silently fall back`,
+    );
   }
 
   const macJob = parsed.jobs['build-macos'];
@@ -515,6 +607,16 @@ async function main(): Promise<void> {
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
   requireScript(vscodePackage, 'typecheck', 'typecheck:desktop-e2e');
   requireScript(vscodePackage, 'test:e2e:desktop-host', 'desktop-e2e/run.ts');
+  requireScript(rootPackage, 'test:e2e:visual', 'run-visual-tests.ts');
+  requireScript(rootPackage, 'test:e2e:visual:update', '--update-snapshots');
+  // Keeping the visual suite OUT of the canonical gate is as load-bearing as
+  // the suites that are in it: baselines are captured on one platform, and a
+  // pixel diff must not block a change that altered nothing visible.
+  if (rootPackage.scripts?.all?.includes('test:e2e:visual')) {
+    throw new Error(
+      'npm run all must not include the visual suite; it is a pre-release gate (.github/workflows/visual.yml)',
+    );
+  }
   requireScript(rootPackage, 'coverage:critical', 'coverage:desktop-critical');
   requireScript(rootPackage, 'coverage:critical', 'coverage:core-critical');
   for (const dependency of ['@bendyline/docblocks', '@bendyline/docblocks-react']) {
@@ -532,6 +634,8 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:x64');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:arm64');
+  requireScript(rootPackage, 'check:linux-launchers', '-w docblocks-desktop');
+  requireScript(desktopPackage, 'check:linux-launchers', 'check-linux-launchers.ts');
   requireScript(desktopPackage, 'package:linux:x64', 'electron-builder --linux AppImage deb --x64');
   requireScript(
     desktopPackage,
@@ -580,6 +684,10 @@ async function main(): Promise<void> {
       'test:e2e:vscode',
       'test:e2e:vscode:desktop',
     ],
+    // The visual suite is a pre-release gate rather than part of `npm run all`,
+    // so nothing else would notice it being dropped from the workflow that runs
+    // it. Pinning both scripts here is what keeps it wired in.
+    '.github/workflows/visual.yml': ['test:e2e:visual', 'test:e2e:visual:update'],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],
     '.github/workflows/store-release.yml': ['all'],
@@ -593,6 +701,7 @@ async function main(): Promise<void> {
     await requirePinnedWorkflowActions(workflow);
     await requireGovernedNpmBeforeInstalls(workflow);
     await requireCanonicalGatePlaywrightBrowsers(workflow);
+    await requireMatrixOsCoverage(workflow);
   }
   const npmSetupAction = await readFile(
     path.join(repoRoot, '.github/actions/setup-npm/action.yml'),

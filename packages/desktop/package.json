@@ -21,6 +21,7 @@
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.preload.json && tsc --noEmit -p tsconfig.renderer.json && tsc --noEmit -p tsconfig.e2e.json",
+    "check:linux-launchers": "tsx scripts/check-linux-launchers.ts",
     "prepare:windows-updater": "tsx scripts/prepare-windows-updater-manifest.ts dist/artifacts/latest.yml",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",

@@ -3,9 +3,13 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { isElectronHost } from '@bendyline/docblocks/host';
+import { getHostEnvironment, type HostSurfaceKind } from '@bendyline/docblocks/host';
 import type { VersioningPreference } from '../preferences/versioning.js';
-import type { AccentColor, ThemePreference } from '../preferences/theme.js';
+import type {
+  AccentColor,
+  InterfaceFontPreference,
+  ThemePreference,
+} from '../preferences/theme.js';
 import {
   DEFAULT_WRITE_CANVAS_PREFERENCES,
   type WriteCanvasPreferences,
@@ -13,6 +17,7 @@ import {
 import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
 import {
   AccentColorSettings,
+  InterfaceFontSettings,
   ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
@@ -32,8 +37,11 @@ export interface AppMenuProps {
   onThemeChange?: (theme: ThemePreference) => void;
   /** Current accent color. */
   accentColor?: AccentColor;
+  /** Chrome typeface: follow the OS, or use the bundled face. */
+  interfaceFont?: InterfaceFontPreference;
   /** Called when the user changes the accent color. */
   onAccentColorChange?: (color: AccentColor) => void;
+  onInterfaceFontChange?: (font: InterfaceFontPreference) => void;
   /** Current typography preferences for the editor's Write canvas. */
   writeCanvasSettings?: WriteCanvasPreferences;
   /** Called when the user changes the Write canvas typography. */
@@ -88,12 +96,20 @@ function formatBytes(bytes: number): string {
   return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
 }
 
+const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> = Object.freeze({
+  electron: 'https://docblocks.com/desktop/',
+  capacitor: 'https://docblocks.com/web/',
+  web: 'https://docblocks.com/web/',
+});
+
 export function AppMenu({
   logoUrl,
   themePreference = 'auto',
   onThemeChange,
   accentColor = 'brown',
   onAccentColorChange,
+  interfaceFont = 'system',
+  onInterfaceFontChange,
   writeCanvasSettings = DEFAULT_WRITE_CANVAS_PREFERENCES,
   onWriteCanvasSettingsChange,
   proofingPreferences = DEFAULT_PROOFING_PREFERENCES,
@@ -112,9 +128,11 @@ export function AppMenu({
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
-  const moreInformationUrl = isElectronHost()
-    ? 'https://docblocks.com/desktop/'
-    : 'https://docblocks.com/web/';
+  // Genuinely an identity question, not a capability one: each surface has its
+  // own product page. Kept as an exhaustive record so a new surface has to
+  // choose a page rather than silently inheriting the web one.
+  const moreInformationUrl =
+    MORE_INFORMATION_URLS[getHostEnvironment()?.surface ?? 'web'] ?? MORE_INFORMATION_URLS.web;
   const containerRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(isOpen, setIsOpen);
@@ -269,6 +287,10 @@ export function AppMenu({
           <AccentColorSettings
             value={accentColor}
             onChange={(color) => onAccentColorChange?.(color)}
+          />
+          <InterfaceFontSettings
+            value={interfaceFont}
+            onChange={(font) => onInterfaceFontChange?.(font)}
           />
           <WriteCanvasSettingsControls
             value={writeCanvasSettings}

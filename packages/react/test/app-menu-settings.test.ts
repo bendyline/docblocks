@@ -152,9 +152,20 @@ describe('AppMenu settings', () => {
 
   it('links Electron users to the Desktop information page', async () => {
     const hostGlobal = globalThis as typeof globalThis & {
-      docBlocksHost?: { fs: Record<string, never> };
+      docBlocksHost?: Record<string, unknown>;
     };
-    hostGlobal.docBlocksHost = { fs: {} };
+    // The surface is read from the declared environment now, not inferred from
+    // the presence of an `fs` bridge.
+    hostGlobal.docBlocksHost = {
+      env: {
+        surface: 'electron',
+        surfaceLabel: 'desktop',
+        platform: 'darwin',
+        appVersion: '0.0.0-test',
+        isDev: true,
+      },
+      fs: {},
+    };
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);

@@ -475,7 +475,10 @@ async function bootstrap(): Promise<void> {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // Squisq's browser GIF encoder uses ffmpeg.wasm/SharedArrayBuffer.
+        // Cross-origin isolation is retained as Spectre-class hardening. It
+        // originally existed for ffmpeg.wasm's SharedArrayBuffer; no shipped
+        // dependency needs SharedArrayBuffer any more, but the renderer loads
+        // only same-origin subresources so `credentialless` costs nothing.
         // These apply to both the packaged app:// renderer and the trusted
         // Vite development origin.
         'Cross-Origin-Opener-Policy': ['same-origin'],

@@ -32,7 +32,22 @@ const NODE_BUILTIN_BARE_IMPORTS = [
 const ELECTRON_IMPORT_RESTRICTION = {
   name: 'electron',
   message:
-    'Renderer code must never import electron. Use getDocBlocksHost() / isElectronHost() from @bendyline/docblocks/host and degrade gracefully off-Electron.',
+    'Renderer code must never import electron. Use getDocBlocksHost() from @bendyline/docblocks/host and degrade gracefully where a capability is absent.',
+};
+
+/**
+ * `isElectronHost()` was a single boolean standing in for a dozen unrelated
+ * decisions — filesystem backend, export destinations, menu commands, window
+ * chrome, storage warnings — and no non-Electron host can answer it honestly
+ * either way. Ask what the host can DO instead. Identity questions that are
+ * genuinely about the product (a documentation URL, say) read
+ * `getHostEnvironment()?.surface` and say so at the call site.
+ */
+const HOST_CAPABILITY_RESTRICTION = {
+  name: '@bendyline/docblocks/host',
+  importNames: ['isElectronHost'],
+  message:
+    'Ask a capability instead: hostSupports(...), hasDocBlocksHost(), or getHostEnvironment().',
 };
 
 function browserContextImportRule(extraPaths = []) {
@@ -41,6 +56,7 @@ function browserContextImportRule(extraPaths = []) {
     {
       paths: [
         ELECTRON_IMPORT_RESTRICTION,
+        HOST_CAPABILITY_RESTRICTION,
         ...NODE_BUILTIN_BARE_IMPORTS.map((name) => ({
           name,
           message:
@@ -113,6 +129,19 @@ export default tseslint.config(
     files: ['packages/desktop/renderer/**/*.{ts,tsx}', 'packages/site/src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': browserContextImportRule(),
+    },
+  },
+
+  // Shared UI is mounted by every surface, so it must never branch on which
+  // shell it is running in. NOTE: renderer surfaces get this same restriction
+  // through browserContextImportRule() rather than a second block here — a
+  // flat-config block REPLACES rule options for overlapping files rather than
+  // merging them, so a separate block would silently drop their electron and
+  // node: import bans.
+  {
+    files: ['packages/react/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [HOST_CAPABILITY_RESTRICTION] }],
     },
   },
 

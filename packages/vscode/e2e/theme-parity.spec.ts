@@ -23,7 +23,8 @@
  * first-paint test means dark never rendered, not that the instrument is dead.
  */
 
-import { test, expect, type Page, type Frame } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 
 declare global {
   interface Window {

@@ -20,6 +20,13 @@
    follows whichever appearance the shell in the page resolved to. */
 :root,
 .db-shell {
+  /* Chrome typeface. `system-ui` first so DocBlocks looks native by default.
+     Settings > Appearance > Interface font swaps this for the bundled face
+     below; the visual-regression suite forces that, because under the system
+     stack the same screenshot renders in a different typeface on every OS. */
+  --db-ui-font:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
   --db-bg: #ffffff;
   --db-bg-subtle: #f3eede;
   --db-bg-hover: #e9e2cb;
@@ -75,6 +82,88 @@
   --db-git-renamed: #1565c0;
   --db-git-deleted: #b22b1b;
   --db-git-conflicted: #b22b1b;
+}
+
+/* ── Adaptive tokens ──────────────────────────────────────────
+   The ONLY place in this stylesheet that branches on form factor. Every
+   adaptive rule below CONSUMES a token; it does not re-test a width.
+
+   There is no PostCSS in this repo, so `@custom-media` is unavailable and CSS
+   cannot read a custom property inside a media condition. TypeScript owns the
+   numbers (packages/react/src/layout/form-factor.ts) and stamps `data-db-*`
+   on <html> and .db-shell; these selectors key off that. Same pattern the
+   theme already uses with `[data-theme]`.
+
+   Bound on :root as well as .db-shell because Squisq portals its menus and
+   dialogs onto <body>, outside the shell subtree. */
+:root,
+.db-shell {
+  /* Hit targets. Raised wholesale on coarse pointers rather than per rule. */
+  --db-target-min: 28px;
+  --db-control-size: 24px;
+  --db-row-min-height: 26px;
+  /* Below 16px iOS Safari zooms the page when an input takes focus. */
+  --db-input-font-size: 13px;
+
+  /* Viewport and safe area. env() resolves to 0px without viewport-fit=cover. */
+  --db-shell-block-size: 100dvh;
+  --db-safe-top: env(safe-area-inset-top, 0px);
+  --db-safe-right: env(safe-area-inset-right, 0px);
+  --db-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --db-safe-left: env(safe-area-inset-left, 0px);
+  /* Written by useKeyboardInset while the on-screen keyboard is up. */
+  --db-keyboard-inset: 0px;
+
+  /* Drawer. --db-drawer-progress is driven directly on the node during a
+     swipe so the gesture costs no React renders. */
+  /* 15vw of scrim always stays tappable to dismiss -- 58px on a 390px phone.
+     At 88vw that strip was only 47px, which is below the 44px target once you
+     account for the shadow. */
+  --db-drawer-width: min(85vw, 400px);
+  --db-drawer-progress: 0;
+  --db-drawer-duration: 220ms;
+}
+
+[data-db-pointer='coarse'] {
+  --db-target-min: 44px;
+  --db-control-size: 40px;
+  --db-row-min-height: 44px;
+  --db-input-font-size: 16px;
+}
+
+[data-db-width='medium'],
+[data-db-width='expanded'],
+[data-db-width='wide'] {
+  --db-drawer-width: min(60vw, 420px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  .db-shell {
+    --db-drawer-duration: 0ms;
+  }
+}
+
+/* Interface font: fixed.
+   `DocBlocks Fixed UI` is the Roboto variable binary each surface already ships
+   for the document theme of that name, redeclared over the full 100-900 range
+   so the chrome's 400/500/600/650/700 weights render exactly rather than
+   snapping to the nearest static face. Bound on the root, not only the shell,
+   because Squisq portals its menus onto <body>. */
+:root[data-db-interface-font='fixed'],
+:root[data-db-interface-font='fixed'] .db-shell {
+  --db-ui-font:
+    'DocBlocks Fixed UI', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  /* Squisq's chrome reads `--squisq-ux-font` with a `system-ui` fallback, the
+     same bridge shape as the `--squisq-*` colour tokens further down. Setting
+     it here carries the fixed face into the editor toolbar, menus and dialogs,
+     which is most of what a shell screenshot actually contains.
+
+     Scoped to fixed mode on purpose: the token is left unset by default so
+     Squisq keeps its own chrome font, and DOCUMENT typography is never touched
+     — a theme's fonts are content the author chose, not chrome. */
+  --squisq-ux-font: var(--db-ui-font);
 }
 
 :root:has(.db-shell[data-theme='dark']),
@@ -176,7 +265,8 @@
   position: relative;
 }
 
-.db-file-explorer--drop-active::after {
+.db-file-explorer--drop-active::after,
+.db-shell-editor-area--drop-active::after {
   content: 'Drop to import';
   position: absolute;
   inset: 0;
@@ -359,8 +449,9 @@
 }
 
 .db-explorer-btn {
-  width: 24px;
-  height: 24px;
+  position: relative;
+  width: var(--db-control-size);
+  height: var(--db-control-size);
   background: none;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -457,6 +548,8 @@
   background: var(--db-bg);
   color: var(--db-text);
   font: inherit;
+  /* Longhand after the shorthand: keeps iOS from zooming on focus. */
+  font-size: var(--db-input-font-size);
 }
 
 .db-transient-move-hint,
@@ -539,7 +632,7 @@
   min-width: 0;
   box-sizing: border-box;
   padding: 3px 6px;
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   background: var(--db-bg);
   color: var(--db-text);
   border: 1px solid var(--db-input-border);
@@ -677,6 +770,10 @@
 .db-tree-row {
   display: flex;
   align-items: center;
+  /* Long-press opens our own context menu; without this iOS shows its text
+     selection callout on top of it. */
+  -webkit-touch-callout: none;
+  min-height: var(--db-row-min-height);
   padding: 6px 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -763,7 +860,7 @@
 .db-tree-rename-input {
   flex: 1;
   padding: 1px 4px;
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   background: var(--db-bg);
   color: var(--db-text);
   border: 1px solid var(--db-input-border);
@@ -781,6 +878,7 @@
 }
 
 .db-tree-more {
+  position: relative;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -807,10 +905,21 @@
   visibility: visible;
 }
 
-@media (hover: none), (pointer: coarse) {
-  .db-tree-more {
-    visibility: visible;
-  }
+/* No hover to reveal on: keep the row's overflow control permanently visible.
+   Driven by `any-hover`, so an iPad with a Magic Keyboard keeps hover reveals
+   while still getting coarse-pointer hit targets. */
+[data-db-hover='none'] .db-tree-more {
+  visibility: visible;
+}
+
+/* Grow the touchable area without growing the glyph. Both operands are tokens,
+   so on a fine pointer the inset resolves to 0 and nothing moves. The same
+   trick the sidebar resizer already uses for its 1px drag handle. */
+.db-tree-more::after,
+.db-explorer-btn::after {
+  content: '';
+  position: absolute;
+  inset: calc((var(--db-control-size) - var(--db-target-min)) / 2);
 }
 
 .db-tree-more:hover {
@@ -1042,6 +1151,8 @@
   background: var(--db-bg);
   color: var(--db-text);
   font: inherit;
+  /* Longhand after the shorthand: keeps iOS from zooming on focus. */
+  font-size: var(--db-input-font-size);
 }
 
 .db-workspace-create-input:focus-visible {
@@ -1265,18 +1376,31 @@
 .db-shell {
   display: flex;
   flex-direction: column;
+  /* Removes the 300ms double-tap-zoom delay without disabling pinch-zoom of
+     the document, which would be an accessibility regression. */
+  touch-action: manipulation;
+  /* Pre-dvh engines keep the old behaviour. This is an @supports block rather
+     than a var() fallback on purpose: a var() that resolves to an unsupported
+     unit becomes invalid-at-computed-value-time (`unset`) instead of falling
+     back to the previous declaration, which would collapse the shell. */
   height: 100vh;
   background: var(--db-bg);
   color: var(--db-text);
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
+  font-family: var(--db-ui-font);
+}
+
+/* Keep a rubber-band at the end of the tree from scrolling the page behind it. */
+.db-shell-sidebar,
+.db-tree {
+  overscroll-behavior: contain;
+}
+
+@supports (height: 100dvh) {
+  .db-shell {
+    /* Tracks the shrinking viewport as mobile browser chrome collapses. Hosts
+       with no dynamic chrome (Electron) override the token to 100%. */
+    height: var(--db-shell-block-size);
+  }
 }
 
 .db-shell-topbar {
@@ -1293,6 +1417,36 @@
   font-size: 14px;
 }
 
+.db-shell-panes {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Vertical scrolling stays with the browser; horizontal is the drawer swipe. */
+[data-db-layout='single-pane'][data-db-pointer='coarse'] .db-shell-panes {
+  touch-action: pan-y;
+}
+
+.db-shell-editor-area {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* Lifts everything bottom-anchored -- including Squisq's status bar -- clear
+     of the home indicator and the on-screen keyboard. iOS does not resize the
+     layout viewport for the keyboard, so without this they sit underneath it.
+     Applied to the pane we own: setting `padding-bottom` on
+     `.squisq-status-bar` REPLACES Squisq's own padding rather than adding to
+     it, which silently shrank the bar by 4px and broke its shared border with
+     the sidebar footer. Both insets are 0 on desktop. */
+  padding-bottom: calc(var(--db-safe-bottom) + var(--db-keyboard-inset));
+  padding-right: var(--db-safe-right);
+}
+
 .db-shell-sidebar {
   width: 260px;
   display: flex;
@@ -1300,6 +1454,61 @@
   overflow: hidden;
   flex-shrink: 0;
   position: relative;
+}
+
+/* ── Sidebar as an overlay drawer ─────────────────────────────
+   Single-pane lifts the sidebar out of the flex row and floats it over the
+   editor. Both panes stay mounted: hiding with `visibility` keeps the layout
+   boxes alive, so getBoundingClientRect still works for scrollIntoView, the
+   editor never relayouts, and opening the drawer costs one compositor
+   transform. `visibility` also removes the pane from the tab order and the
+   a11y tree; `inert` (applied from React) covers pointer hit-testing too.
+
+   Do NOT change this to `display: none` — that unmounts the layout box and
+   reintroduces the reflow this replaced. */
+[data-db-layout='single-pane'] .db-shell-sidebar {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 30;
+  width: var(--db-drawer-width);
+  padding-inline-start: var(--db-safe-left);
+  border-inline-end: 1px solid var(--db-border-strong);
+  box-shadow: 0 0 40px var(--db-shadow);
+  visibility: hidden;
+  transform: translateX(calc((var(--db-drawer-progress) - 1) * 100%));
+  transition:
+    transform var(--db-drawer-duration) ease,
+    visibility 0s linear var(--db-drawer-duration);
+}
+
+[data-db-layout='single-pane'][data-db-drawer='open'] .db-shell-sidebar {
+  --db-drawer-progress: 1;
+  visibility: visible;
+  transition-delay: 0s;
+  /* `transform: none`, not `translateX(0)`. ANY non-none transform makes this
+     element the containing block for `position: fixed` descendants, and the
+     modal overlay (.db-dialog-overlay, `position: fixed; inset: 0`) is rendered
+     inside the sidebar rather than portalled to <body>. With a transform here
+     every dialog opened from the app menu is sized and clipped to the drawer
+     instead of the viewport. Removing it once the drawer is open is visually
+     identical, because progress is 1 and translateX(0) moves nothing. */
+  transform: none;
+}
+
+.db-shell-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: var(--db-drawer-progress);
+  pointer-events: none;
+  transition: opacity var(--db-drawer-duration) ease;
+}
+
+[data-db-drawer='open'] .db-shell-scrim {
+  --db-drawer-progress: 1;
+  pointer-events: auto;
 }
 
 .db-sidebar-collapse-preview {
@@ -1417,7 +1626,9 @@ body.db-resizing-sidebar * {
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--db-border-strong);
-  padding: 4px;
+  /* Clears the iOS status bar under `apple-mobile-web-app-status-bar-style:
+     black-translucent`; resolves to plain 4px everywhere else. */
+  padding: calc(4px + var(--db-safe-top)) 4px 4px;
   gap: 4px;
   flex-shrink: 0;
   min-height: 40px;
@@ -1457,8 +1668,9 @@ body.db-resizing-sidebar * {
   align-items: center;
   gap: 6px;
   /* Match the status bar's pinned line box + 8px vertical padding + 1px border. */
-  height: 25px;
-  padding: 0 12px 0 18px;
+  height: calc(25px + var(--db-safe-bottom));
+  /* Clears the iOS home indicator; 0px on every other surface. */
+  padding: 0 12px var(--db-safe-bottom) 18px;
   border-top: 1px solid var(--db-border-strong);
   flex-shrink: 0;
   font-size: 11px;
@@ -1516,11 +1728,6 @@ body.db-resizing-sidebar * {
 }
 
 /* ── Mobile Layout ──────────────────────────────────────────── */
-
-.db-shell--mobile .db-shell-sidebar {
-  width: 100%;
-  border-right: none;
-}
 
 .db-shell--mobile:has(.db-mobile-first-run) .db-file-explorer {
   flex: 0 0 170px;
@@ -2125,7 +2332,7 @@ body.db-resizing-sidebar * {
   width: 100%;
   padding: 6px 8px;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   background: var(--db-bg-subtle);
   color: var(--db-text);
   border: 1px solid var(--db-input-border);
@@ -2206,11 +2413,7 @@ body.db-resizing-sidebar * {
 .db-font-picker-group {
   padding: 10px 10px 4px;
   color: var(--db-text-muted);
-  font:
-    600 10px/1.2 system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+  font: 600 10px/1.2 var(--db-ui-font);
   letter-spacing: 0.065em;
   text-transform: uppercase;
 }
@@ -2279,11 +2482,7 @@ body.db-resizing-sidebar * {
 .db-font-picker-check {
   flex: 0 0 18px;
   color: var(--db-accent-deep);
-  font:
-    700 14px/1 system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
+  font: 700 14px/1 var(--db-ui-font);
   text-align: center;
 }
 
@@ -2676,7 +2875,7 @@ body.db-resizing-sidebar * {
   display: block;
   width: 100%;
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   background: var(--db-bg-subtle);
   color: var(--db-text);
   border: 1px solid var(--db-border);
@@ -2701,7 +2900,7 @@ body.db-resizing-sidebar * {
   min-width: 0;
   box-sizing: border-box;
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   background: var(--db-bg-subtle);
   color: var(--db-text);
   border: 1px solid var(--db-border);
@@ -2985,15 +3184,13 @@ body.db-resizing-sidebar * {
   color: var(--db-text-muted);
 }
 
-@media (max-width: 560px) {
-  .db-share-qr-heading {
-    display: block;
-  }
+[data-db-width='compact'] .db-share-qr-heading {
+  display: block;
+}
 
-  .db-share-qr-actions {
-    justify-content: flex-start;
-    margin-top: 10px;
-  }
+[data-db-width='compact'] .db-share-qr-actions {
+  justify-content: flex-start;
+  margin-top: 10px;
 }
 
 /* ── Squisq editor chrome separators ─────────────────────────── */
@@ -3556,15 +3753,7 @@ body.db-resizing-sidebar * {
    `var(--db-accent-…)` here drops to the squisq fallback (dark slate
    bg + near-white text) because the vars never resolve. */
 html:has(.db-shell) .squisq-tooltip {
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    sans-serif;
+  font-family: var(--db-ui-font);
   box-shadow: 0 2px 8px rgba(15, 30, 20, 0.35);
   /* Default (light mode + system-light): dark espresso chip, cream
      text — an inverted floating chip against the cream UI. */
@@ -5685,7 +5874,7 @@ button.db-git-file-row:hover {
   border-radius: 5px;
   background: var(--db-bg);
   color: var(--db-text);
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
@@ -5712,7 +5901,7 @@ button.db-git-file-row:hover {
   border-radius: 5px;
   background: var(--db-bg);
   color: var(--db-text);
-  font-size: 13px;
+  font-size: var(--db-input-font-size);
   box-sizing: border-box;
 }
 

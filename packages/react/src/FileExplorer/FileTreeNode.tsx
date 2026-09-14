@@ -22,6 +22,7 @@ import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { MoreIcon } from '../icons.js';
 import { LastModifiedTime } from './LastModifiedTime.js';
+import { useLongPress } from './useLongPress.js';
 
 /** Git decoration for a row — precomputed by FileExplorer so this node stays context-free. */
 export interface FileTreeNodeBadge {
@@ -171,13 +172,27 @@ export function FileTreeNode({
     onSelect(entry.path);
   }, [isDir, entry.path, onToggle, onSelect]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const openContextMenuAt = useCallback((coordinates: { x: number; y: number }) => {
     keyboardMenuRef.current = false;
-    setContextPos({ x: e.clientX, y: e.clientY });
+    setContextPos(coordinates);
     setShowContext(true);
   }, []);
+
+  // Touch has no other route to this menu: Android synthesises `contextmenu`
+  // from its own long press, but iOS Safari shows the selection callout
+  // instead and never fires one for a plain element.
+  const longPress = useLongPress(openContextMenuAt);
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Swallow the synthetic event Android fires after our own long press.
+      if (longPress.shouldIgnoreContextMenu()) return;
+      openContextMenuAt({ x: e.clientX, y: e.clientY });
+    },
+    [longPress, openContextMenuAt],
+  );
 
   const handleMoreClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -426,6 +441,7 @@ export function FileTreeNode({
         style={{ paddingLeft: depth * 12 + 4 + nestedFileInset }}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        {...longPress.handlers}
         draggable={draggable && !renaming}
         onDragStart={(event) => onDragStart?.(event, entry)}
         onDragEnd={onDragEnd}

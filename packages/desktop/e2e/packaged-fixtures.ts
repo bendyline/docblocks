@@ -10,6 +10,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolvePackagedArtifact, type PackagedArtifact } from './packaged-artifact.js';
+import {
+  collectRuntimeErrors,
+  formatRuntimeErrors,
+  SHARED_ALLOWED_RUNTIME_ERRORS,
+  unexpectedRuntimeErrors,
+  type AllowedRuntimeError,
+  type RuntimeError,
+} from '../../../e2e/helpers/console-guard.js';
 
 const DEVTOOLS_ENDPOINT_TIMEOUT_MS = 30_000;
 const CDP_CONNECT_TIMEOUT_MS = 60_000;
@@ -32,6 +40,10 @@ interface PackagedFixtures {
   userDataDir: string;
   workspaceDir: string;
   launchPackagedApp: (extraArgs?: string[]) => Promise<PackagedApplication>;
+  /** This test's allowance list; the launch fixture reads it at teardown. */
+  runtimeErrorAllowances: AllowedRuntimeError[];
+  /** Allow further renderer runtime errors for the current test only. */
+  allowRuntimeErrors: (...allowances: readonly AllowedRuntimeError[]) => void;
 }
 
 function makeTmpDir(prefix: string): string {
@@ -234,8 +246,24 @@ export const test = base.extend<PackagedFixtures>({
     removeTmpDir(directory);
   },
 
-  launchPackagedApp: async ({ userDataDir, workspaceDir }, use, testInfo) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  runtimeErrorAllowances: async ({}, use) => {
+    await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
+  },
+
+  allowRuntimeErrors: async ({ runtimeErrorAllowances }, use) => {
+    await use((...allowances) => {
+      runtimeErrorAllowances.push(...allowances);
+    });
+  },
+
+  launchPackagedApp: async (
+    { userDataDir, workspaceDir, runtimeErrorAllowances },
+    use,
+    testInfo,
+  ) => {
     let running: PackagedApplication | undefined;
+    let readErrors: (() => readonly RuntimeError[]) | undefined;
     await use(async (extraArgs = []) => {
       if (running)
         throw new Error('The packaged fixture supports one active application per test.');
@@ -245,6 +273,7 @@ export const test = base.extend<PackagedFixtures>({
         workspaceDir,
         extraArgs,
       );
+      readErrors = collectRuntimeErrors(running.window);
       return running;
     });
 
@@ -255,6 +284,13 @@ export const test = base.extend<PackagedFixtures>({
       });
     }
     await running?.close();
+
+    // A test that already failed reports its own cause; adding renderer noise
+    // on top buries it. The guard only speaks when nothing else did.
+    if (testInfo.errors.length > 0 || readErrors === undefined) return;
+    const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
+    if (unexpected.length === 0) return;
+    throw new Error(formatRuntimeErrors(unexpected));
   },
 });
 
