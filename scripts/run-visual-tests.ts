@@ -24,6 +24,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BASELINE_PLATFORM } from '../e2e/helpers/visual-platform.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -48,14 +49,7 @@ const SUITES: readonly VisualSuite[] = [
     flag: '--site',
     label: 'site',
     sharedBaselines: true,
-    args: [
-      'playwright',
-      'test',
-      '--project=visual',
-      '--project=visual-phone',
-      '--project=visual-tablet-portrait',
-      '--project=visual-tablet-landscape',
-    ],
+    args: ['playwright', 'test', '--project=visual', '--project=visual-phone'],
   },
   {
     flag: '--vscode',
@@ -82,10 +76,9 @@ function run(suite: VisualSuite, extraArgs: readonly string[]): Promise<number> 
 }
 
 /**
- * Committed baselines are captured on Linux, because the shell chrome resolves
- * `system-ui` to a different typeface per platform. Writing them from another
- * host produces images CI can never match, so that needs saying out loud rather
- * than discovering it from a red pipeline.
+ * Committed baselines belong to one platform. Writing them from another host
+ * produces images CI can never match, so that needs saying out loud rather than
+ * being discovered from a red pipeline.
  */
 function assertBaselineHostIsSupported(
   suites: readonly VisualSuite[],
@@ -93,7 +86,7 @@ function assertBaselineHostIsSupported(
 ): void {
   const updating = extraArgs.some((argument) => argument.startsWith('--update-snapshots'));
   const shared = suites.filter((suite) => suite.sharedBaselines);
-  if (!updating || shared.length === 0 || process.platform === 'linux') return;
+  if (!updating || shared.length === 0 || process.platform === BASELINE_PLATFORM) return;
   if (process.env.DOCBLOCKS_VISUAL_ALLOW_FOREIGN_BASELINES === '1') {
     process.stderr.write(
       `Writing baselines on ${process.platform}: these will not match CI. Do not commit them.\n`,
@@ -103,12 +96,13 @@ function assertBaselineHostIsSupported(
   process.stderr.write(
     [
       `Refusing to write ${shared.map((suite) => suite.label).join(' and ')} baselines on ${process.platform}.`,
-      'Committed baselines are captured on Linux — the shell chrome resolves',
-      'system-ui to a different typeface here, so these images would fail CI.',
+      `Committed baselines are captured on ${BASELINE_PLATFORM}, and CI compares`,
+      'them there. The same font file still rasterises differently per platform,',
+      'so images written here would fail that comparison.',
       '',
-      'Regenerate them with the "Update visual baselines" workflow, download its',
-      'artifact, and commit that. To write throwaway local baselines anyway, set',
-      'DOCBLOCKS_VISUAL_ALLOW_FOREIGN_BASELINES=1.',
+      'Capture them on that platform, or run the "Update visual baselines"',
+      'workflow and commit its artifact. To write throwaway local baselines',
+      'anyway, set DOCBLOCKS_VISUAL_ALLOW_FOREIGN_BASELINES=1.',
     ].join('\n') + '\n',
   );
   process.exit(1);

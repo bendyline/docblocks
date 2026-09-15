@@ -1,4 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+import {
+  DETERMINISTIC_TEXT_ARGS,
+  comparesBaselines,
+  visualProjectsEnabled,
+} from './e2e/helpers/visual-platform.js';
 
 /** Specs that run on the touch-emulating device projects instead of chromium. */
 const ADAPTIVE_SPECS = /adaptive-.*\.spec\.ts/;
@@ -14,18 +19,14 @@ const VISUAL_SHELL_SPECS = /visual\.spec\.ts/;
 const VISUAL_ADAPTIVE_SPECS = /visual-adaptive\.spec\.ts/;
 
 /**
- * The shell chrome resolves `system-ui` to a different typeface on each
- * operating system, so one committed baseline cannot match everywhere. Linux is
- * where CI captures and compares; elsewhere the specs still run — catching
- * crashes, timeouts and broken selectors — but the pixels are not compared.
+ * Pixels are compared only on the platform the baselines were captured on
+ * (see `e2e/helpers/visual-platform.ts`). Elsewhere the specs still run — catching crashes,
+ * timeouts and broken selectors — but the images are not compared.
  *
- * `DOCBLOCKS_VISUAL_COMPARE=1` turns comparison on anyway, for iterating on the
- * suite from a developer machine. It will report differences that are only the
- * platform's font rasterisation, so treat its failures as local noise unless
- * the change is plainly structural.
+ * `DOCBLOCKS_VISUAL_COMPARE=1` forces the comparison anyway, which is how the
+ * workflow measures how far the other platforms sit from the committed set.
  */
-const COMPARES_SHARED_BASELINES =
-  process.platform === 'linux' || process.env.DOCBLOCKS_VISUAL_COMPARE === '1';
+const COMPARES_SHARED_BASELINES = comparesBaselines();
 
 /**
  * Suites with their own config: offline needs a production preview server and
@@ -51,7 +52,7 @@ const DEFAULT_TEST_IGNORE = [
  * `scripts/run-visual-tests.ts` sets this; `check:assurance` fails if the
  * visual suite ever reaches the canonical gate.
  */
-const INCLUDE_VISUAL_PROJECTS = process.env.DOCBLOCKS_VISUAL === '1';
+const INCLUDE_VISUAL_PROJECTS = visualProjectsEnabled();
 
 export default defineConfig({
   testDir: './e2e',
@@ -130,7 +131,11 @@ export default defineConfig({
           // needs its own baseline directory and snapshot policy.
           {
             name: 'visual',
-            use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+            use: {
+              ...devices['Desktop Chrome'],
+              viewport: { width: 1440, height: 900 },
+              launchOptions: { args: [...DETERMINISTIC_TEXT_ARGS] },
+            },
             testMatch: VISUAL_SHELL_SPECS,
             // Replaces DEFAULT_TEST_IGNORE, which excludes this spec.
             testIgnore: ROOT_TEST_IGNORE,
@@ -138,21 +143,10 @@ export default defineConfig({
           },
           {
             name: 'visual-phone',
-            use: { ...devices['iPhone 13'] },
-            testMatch: VISUAL_ADAPTIVE_SPECS,
-            testIgnore: ROOT_TEST_IGNORE,
-            ignoreSnapshots: !COMPARES_SHARED_BASELINES,
-          },
-          {
-            name: 'visual-tablet-portrait',
-            use: { ...devices['iPad Pro 11'] },
-            testMatch: VISUAL_ADAPTIVE_SPECS,
-            testIgnore: ROOT_TEST_IGNORE,
-            ignoreSnapshots: !COMPARES_SHARED_BASELINES,
-          },
-          {
-            name: 'visual-tablet-landscape',
-            use: { ...devices['iPad Pro 11 landscape'] },
+            use: {
+              ...devices['iPhone 13'],
+              launchOptions: { args: [...DETERMINISTIC_TEXT_ARGS] },
+            },
             testMatch: VISUAL_ADAPTIVE_SPECS,
             testIgnore: ROOT_TEST_IGNORE,
             ignoreSnapshots: !COMPARES_SHARED_BASELINES,

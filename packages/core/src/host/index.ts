@@ -14,6 +14,51 @@ export {
 export type { HostCapabilities, HostPlatform, HostSurfaceKind } from './capabilities.js';
 
 export type {
+  AiChatCompletion,
+  AiChatEvent,
+  AiChatHandle,
+  AiChatMessage,
+  AiChatPurpose,
+  AiChatRequest,
+  AiConnectionStep,
+  AiEnsureWorkspaceHandle,
+  AiError,
+  AiErrorCode,
+  AiImageRequest,
+  AiImageResult,
+  AiModelInfo,
+  AiPreferences,
+  AiPreferencesPatch,
+  AiProgress,
+  AiProviderInfo,
+  AiResult,
+  AiReviewMode,
+  AiSearchHit,
+  AiSearchQuery,
+  AiSearchResult,
+  AiSpeechAudio,
+  AiStatus,
+  AiSynthesizeRequest,
+  AiTranscribeRequest,
+  AiTranscript,
+  AiUnavailableReason,
+  DocBlocksHostAiAPI,
+} from './ai.js';
+
+export {
+  AI_WIRE_LIMITS,
+  parseAiChatEvent,
+  parseAiChatRequest,
+  parseAiError,
+  parseAiModelInfo,
+  parseAiModelInfoList,
+  parseAiPreferences,
+  parseAiPreferencesPatch,
+  parseAiProgress,
+  parseAiStatus,
+} from './ai-wire-policy.js';
+
+export type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
   DocBlocksHostExternalAPI,

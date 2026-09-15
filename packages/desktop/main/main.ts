@@ -16,6 +16,7 @@ import {
   screen,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -462,6 +463,10 @@ async function bootstrap(): Promise<void> {
     getOwner: () => mainWindow?.webContents ?? null,
     developmentOrigin: isDev ? DEV_SERVER_URL : undefined,
     platform: process.platform,
+    // macOS only: camera/microphone capture needs a TCC grant that Chromium
+    // will not ask for by itself. `systemPreferences` exposes no-op stubs on
+    // Windows and Linux, and the policy never calls them there.
+    mediaAccess: systemPreferences,
     getPrimaryDisplayId: () => screen.getPrimaryDisplay().id,
     getDisplaySources: () =>
       desktopCapturer.getSources({

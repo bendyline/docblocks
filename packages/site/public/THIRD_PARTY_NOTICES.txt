@@ -3,13 +3,12 @@ Run `npm run generate:notices` from the repository root.
 
 # Third-Party Notices: DocBlocks site distribution
 
-Packages present in the emitted Vite/Rollup module graph, plus the copied ffmpeg.wasm, harper.js, and IronCalc WebAssembly engines and Workbox service-worker components.
+Packages present in the emitted Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and Workbox service-worker components.
 
 Inventory source: package-lock.json and packages/site/dist/THIRD_PARTY_COMPONENTS.json.
-Components: 216.
+Components: 215.
 
 Font license texts are shipped beside the font assets in `fonts/licenses/`.
-The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices in `ffmpeg-core/`.
 The copied IronCalc formula engine ships its selected upstream MIT license in `ironcalc/`.
 This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.
 
@@ -26,7 +25,6 @@ This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.
 | @bendyline/squisq-video | 2.3.7 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-video-react | 2.4.8 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
-| @ffmpeg/core | 0.12.9 | GPL-2.0-or-later | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | @ffmpeg/ffmpeg | 0.12.15 | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | @iconify/utils | 3.1.4 | MIT | https://github.com/iconify/iconify |
 | @ironcalc/wasm | 0.8.4 | MIT/Apache-2.0 | https://github.com/ironcalc/IronCalc |
@@ -5367,7 +5365,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.8, @ffmpeg/core@0.12.9
+Components: @bendyline/squisq-video-react@2.4.8
 Source files: node_modules/@bendyline/squisq-video-react/COPYING.GPL-2.0.txt
 ==============================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -5710,7 +5708,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.8, @ffmpeg/core@0.12.9
+Components: @bendyline/squisq-video-react@2.4.8
 Source files: node_modules/@bendyline/squisq-video-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video-react
@@ -5755,7 +5753,7 @@ global WebCodecs declaration dependencies are not installed for consumers. Its
 exact license text is shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.4.8, @ffmpeg/core@0.12.9, @ffmpeg/ffmpeg@0.12.15
+Components: @bendyline/squisq-video-react@2.4.8, @ffmpeg/ffmpeg@0.12.15
 Source files: node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video-react

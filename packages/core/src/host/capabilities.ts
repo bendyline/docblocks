@@ -58,6 +58,20 @@ export interface HostCapabilities {
   readonly git: boolean;
   readonly updater: boolean;
   readonly systemFfmpeg: boolean;
+  /**
+   * Assisted writing and review: a streamed completion plus a status channel.
+   *
+   * The AI abilities below are separate flags rather than one, because they are
+   * independently absent. A paired-device mobile host could plausibly transcribe
+   * from its own microphone while offering no image generation and no index.
+   */
+  readonly aiAssist: boolean;
+  /** The host can bind a workspace folder to a provider-side index. */
+  readonly aiWorkspaceIndex: boolean;
+  readonly aiSearch: boolean;
+  readonly aiImages: boolean;
+  readonly aiTranscription: boolean;
+  readonly aiSpeechSynthesis: boolean;
   /** Documents live in the web origin (IndexedDB) rather than on the host. */
   readonly browserOriginStorage: boolean;
   /** The host draws the window chrome, so the shell must leave room for it. */
@@ -84,6 +98,12 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   git: false,
   updater: false,
   systemFfmpeg: false,
+  aiAssist: false,
+  aiWorkspaceIndex: false,
+  aiSearch: false,
+  aiImages: false,
+  aiTranscription: false,
+  aiSpeechSynthesis: false,
   // A browser with no host keeps its documents in the origin.
   browserOriginStorage: true,
   ownsWindowChrome: false,
@@ -181,6 +201,14 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     git: hasMethod(host.git, 'status'),
     updater: hasMethod(host.updater, 'checkForUpdates'),
     systemFfmpeg: hasMethod(host.ffmpeg, 'available'),
+    // Both members are required: a bridge that can start a stream but cannot
+    // report status leaves the UI unable to say why nothing is happening.
+    aiAssist: hasMethod(host.ai, 'chat') && hasMethod(host.ai, 'onStatus'),
+    aiWorkspaceIndex: hasMethod(host.ai, 'ensureWorkspace'),
+    aiSearch: hasMethod(host.ai, 'search'),
+    aiImages: hasMethod(host.ai, 'generateImage'),
+    aiTranscription: hasMethod(host.ai, 'transcribe'),
+    aiSpeechSynthesis: hasMethod(host.ai, 'synthesize'),
     // A host that owns workspace roots keeps documents outside the web origin.
     browserOriginStorage: !hasMethod(workspaces, 'register'),
     ownsWindowChrome: environment.surface === 'electron',

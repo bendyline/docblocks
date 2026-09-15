@@ -8,6 +8,7 @@
  */
 
 import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/types.js';
+import type { DocBlocksHostAiAPI } from './ai.js';
 import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
 import type { HostPlatform, HostSurfaceKind } from './capabilities.js';
@@ -336,6 +337,11 @@ export interface DocBlocksHostAPI {
   updater?: DocBlocksHostUpdaterAPI;
   lifecycle?: DocBlocksHostLifecycleAPI;
   menu?: DocBlocksHostMenuAPI;
+  /**
+   * Absent entirely on a host that cannot do AI — an unsupported platform
+   * omits the namespace rather than exposing one whose every call fails.
+   */
+  ai?: DocBlocksHostAiAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

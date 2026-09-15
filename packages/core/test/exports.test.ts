@@ -18,6 +18,7 @@ import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 describe('Core exports', () => {
   it('keeps the intentionally stable root surface explicit', () => {
     expect(Object.keys(coreRoot).sort()).to.deep.equal([
+      'AI_WIRE_LIMITS',
       'DOCUMENT_RECOVERY_JOURNAL_SCHEMA_VERSION',
       'DOCUMENT_RECOVERY_JOURNAL_STORAGE_KEY',
       'DocumentCommitConflictError',
@@ -88,6 +89,15 @@ describe('Core exports', () => {
       'maybeGetDocBlocksHost',
       'moveFileSystemEntry',
       'openNativeFolder',
+      'parseAiChatEvent',
+      'parseAiChatRequest',
+      'parseAiError',
+      'parseAiModelInfo',
+      'parseAiModelInfoList',
+      'parseAiPreferences',
+      'parseAiPreferencesPatch',
+      'parseAiProgress',
+      'parseAiStatus',
       'parseExternalHttpUrl',
       'parseFileSystemVersion',
       'parseHostEnvironment',

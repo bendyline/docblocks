@@ -38,6 +38,21 @@ function electronHost(): Record<string, unknown> {
       pickTarget: () => undefined,
     },
     ffmpeg: { available: () => undefined },
+    ai: {
+      status: () => undefined,
+      onStatus: () => undefined,
+      getPreferences: () => undefined,
+      setPreferences: () => undefined,
+      connect: () => undefined,
+      disconnect: () => undefined,
+      models: () => undefined,
+      chat: () => undefined,
+      ensureWorkspace: () => undefined,
+      search: () => undefined,
+      generateImage: () => undefined,
+      transcribe: () => undefined,
+      synthesize: () => undefined,
+    },
     git: { status: () => undefined },
     updater: { checkForUpdates: () => undefined },
     lifecycle: { onPrepareClose: () => undefined },
@@ -53,6 +68,11 @@ function electronHost(): Record<string, unknown> {
  * can only open a URL, and an `exports` that can only hand bytes to a share
  * sheet. Asserting against it here validates the capability model against its
  * real future consumer before that consumer exists.
+ *
+ * Its AI namespace is deliberately partial: a paired-device host can send a
+ * prompt and can transcribe from the device microphone, but has no workspace
+ * index, no search, no image generation and no speech synthesis. That is the
+ * case the per-ability flags exist for.
  */
 function mobileHost(): Record<string, unknown> {
   return {
@@ -68,6 +88,17 @@ function mobileHost(): Record<string, unknown> {
     shell: { openExternal: () => undefined },
     clipboard: { writeText: () => undefined },
     exports: { save: () => undefined },
+    ai: {
+      status: () => undefined,
+      onStatus: () => undefined,
+      getPreferences: () => undefined,
+      setPreferences: () => undefined,
+      connect: () => undefined,
+      disconnect: () => undefined,
+      models: () => undefined,
+      chat: () => undefined,
+      transcribe: () => undefined,
+    },
     lifecycle: { onPrepareClose: () => undefined },
     onOpenRequest: () => undefined,
   };
@@ -178,5 +209,36 @@ describe('deriveHostCapabilities', () => {
     const capabilities = deriveHostCapabilities(host);
     expect(capabilities.git).to.equal(false);
     expect(capabilities.updater).to.equal(false);
+  });
+
+  it('reports no AI at all when the namespace is absent', () => {
+    // An unsupported platform omits the whole namespace rather than exposing
+    // one whose every call fails, so every AI flag must read false.
+    const host = electronHost();
+    delete host.ai;
+    const capabilities = deriveHostCapabilities(host);
+    expect(capabilities.aiAssist).to.equal(false);
+    expect(capabilities.aiWorkspaceIndex).to.equal(false);
+    expect(capabilities.aiSearch).to.equal(false);
+    expect(capabilities.aiImages).to.equal(false);
+    expect(capabilities.aiTranscription).to.equal(false);
+    expect(capabilities.aiSpeechSynthesis).to.equal(false);
+    // Everything unrelated still works.
+    expect(capabilities.filesystemV2).to.equal(true);
+  });
+
+  it('does not claim assisted writing from a stream with no status channel', () => {
+    // Both members are required: a UI that cannot observe status cannot explain
+    // why a request is doing nothing.
+    const host = electronHost();
+    host.ai = { chat: () => undefined };
+    expect(deriveHostCapabilities(host).aiAssist).to.equal(false);
+  });
+
+  it('treats an empty AI namespace as absent', () => {
+    const host = { ...electronHost(), ai: {} };
+    const capabilities = deriveHostCapabilities(host);
+    expect(capabilities.aiAssist).to.equal(false);
+    expect(capabilities.aiSearch).to.equal(false);
   });
 });

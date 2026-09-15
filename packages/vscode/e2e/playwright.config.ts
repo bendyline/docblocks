@@ -1,6 +1,11 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 import path from 'path';
 import { vscodeWebUrl } from './web-test-settings.js';
+import {
+  DETERMINISTIC_TEXT_ARGS,
+  comparesBaselines,
+  visualProjectsEnabled,
+} from '../../../e2e/helpers/visual-platform.js';
 
 export function createVscodeWebE2EConfig(isCI: boolean): PlaywrightTestConfig {
   return {
@@ -29,18 +34,19 @@ export function createVscodeWebE2EConfig(isCI: boolean): PlaywrightTestConfig {
       // project would land a pixel comparison inside `npm run test:e2e:vscode`
       // and so inside the canonical gate. See the repo-root config for the rest
       // of the reasoning.
-      ...(process.env.DOCBLOCKS_VISUAL === '1'
+      ...(visualProjectsEnabled()
         ? [
             {
               name: 'visual',
-              use: { ...devices['Desktop Chrome'] },
+              use: {
+                ...devices['Desktop Chrome'],
+                launchOptions: { args: [...DETERMINISTIC_TEXT_ARGS] },
+              },
               testMatch: /visual\.spec\.ts/u,
-              // Baselines are captured on Linux; elsewhere the spec still runs,
-              // so a broken selector or a webview that never mounts still
-              // fails, but the pixels are not compared.
-              ignoreSnapshots: !(
-                process.platform === 'linux' || process.env.DOCBLOCKS_VISUAL_COMPARE === '1'
-              ),
+              // Pixels compare only on the platform the baselines were
+              // captured on; elsewhere the spec still runs, so a broken
+              // selector or a webview that never mounts still fails.
+              ignoreSnapshots: !comparesBaselines(),
               // A retried screenshot that passes on the second attempt hides a
               // real diff, so this project never retries even though the suite
               // does.

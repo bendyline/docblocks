@@ -64,30 +64,29 @@ async function selectColorTheme(page: Page, theme: string): Promise<void> {
 }
 
 /**
- * Hide VS Code's side bar so the webview's width is a function of the viewport
+ * Close VS Code's side bar so the webview's width is a function of the viewport
  * alone.
  *
- * The explorer's width is restored from workbench state and varies by a few
- * pixels between runs, which changes the webview's size and so the *dimensions*
- * of every capture inside it — a difference no pixel tolerance can reconcile,
- * because the images are not the same size. Closing it makes the editor area
- * deterministic, and the side bar is VS Code's chrome rather than anything
- * these baselines are about.
+ * The explorer's width is restored from workbench state, which changes the
+ * webview's size and so the *dimensions* of every capture inside it — a
+ * difference no pixel tolerance can reconcile, because the images are not the
+ * same size.
+ *
+ * "Close", not "Toggle", and that distinction is the whole point: the workbench
+ * persists its layout in the test runner's data directory, so a toggle leaves
+ * the side bar open on the run after one that closed it. The captures then
+ * alternate between two widths from one run to the next.
  */
-async function hideSideBar(page: Page): Promise<void> {
+async function closeSideBar(page: Page): Promise<void> {
   await page.keyboard.press('F1');
   const quickInput = page.locator('.quick-input-widget');
   await expect(quickInput).toBeVisible({ timeout: 10_000 });
-  await page.keyboard.type('View: Toggle Primary Side Bar');
-  await expect(quickInput.getByText('Toggle Primary Side Bar').first()).toBeVisible({
+  await page.keyboard.type('View: Close Primary Side Bar');
+  await expect(quickInput.getByText('Close Primary Side Bar').first()).toBeVisible({
     timeout: 10_000,
   });
   await page.keyboard.press('Enter');
-  // Deliberately not asserted: VS Code has changed how a hidden part is
-  // represented across versions, and this is a determinism aid rather than
-  // behaviour under test. `waitForStableRender` below is what actually gates the
-  // capture, and it fails loudly if the layout never settles.
-  await page.waitForTimeout(300);
+  await expect(quickInput).toBeHidden({ timeout: 10_000 });
 }
 
 /** Open the fixture, retrying the click that a theme re-render can swallow. */
@@ -162,7 +161,7 @@ test.describe('DocBlocks webview', () => {
       await expect(shell).toHaveAttribute('data-theme', expected, { timeout: 15_000 });
       await expect(content.locator('.squisq-toolbar')).toBeVisible({ timeout: 20_000 });
 
-      await hideSideBar(page);
+      await closeSideBar(page);
       const frame = await editorFrame(page);
       await frame.evaluate(() => document.fonts.ready.then(() => undefined));
       await waitForStableRender(shell);
@@ -178,7 +177,7 @@ test.describe('DocBlocks webview', () => {
     await expect(content.locator('.db-shell[data-theme]')).toHaveAttribute('data-theme', 'dark', {
       timeout: 15_000,
     });
-    await hideSideBar(page);
+    await closeSideBar(page);
     await content.locator('[role="tab"][data-view="raw"]').click();
 
     // Monaco applies its theme after mounting, so gate on the themed class
