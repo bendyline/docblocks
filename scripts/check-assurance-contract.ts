@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { canonicalGateCommand, canonicalGateScripts } from './canonical-gate.js';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
@@ -581,10 +582,15 @@ async function main(): Promise<void> {
     'npm test',
     'npm run test:e2e:all',
   ];
-  const actualGate = rootPackage.scripts?.all?.split(/\s*&&\s*/u) ?? [];
+  if (rootPackage.scripts?.all !== 'tsx scripts/run-canonical-gate.ts') {
+    throw new Error(
+      'root all script must invoke the canonical gate through scripts/run-canonical-gate.ts',
+    );
+  }
+  const actualGate = canonicalGateScripts.map(canonicalGateCommand);
   if (JSON.stringify(actualGate) !== JSON.stringify(expectedGate)) {
     throw new Error(
-      `root all script drifted\nexpected: ${expectedGate.join(' && ')}\nactual:   ${actualGate.join(' && ')}`,
+      `canonical gate drifted\nexpected: ${expectedGate.join(' && ')}\nactual:   ${actualGate.join(' && ')}`,
     );
   }
   for (const requiredSuite of [
@@ -612,7 +618,7 @@ async function main(): Promise<void> {
   // Keeping the visual suite OUT of the canonical gate is as load-bearing as
   // the suites that are in it: baselines are captured on one platform, and a
   // pixel diff must not block a change that altered nothing visible.
-  if (rootPackage.scripts?.all?.includes('test:e2e:visual')) {
+  if (actualGate.some((command) => command.includes('test:e2e:visual'))) {
     throw new Error(
       'npm run all must not include the visual suite; it is a pre-release gate (.github/workflows/visual.yml)',
     );

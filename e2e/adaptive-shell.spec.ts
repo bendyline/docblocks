@@ -110,7 +110,12 @@ test.describe('adaptive shell on a phone', () => {
   test('gives every shell control a reachable touch target', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await page.goto('/');
-    await expect(page.locator('.db-shell')).toBeVisible();
+    const shell = page.locator('.db-shell');
+    await expect(shell).toBeVisible();
+    // Visibility can win the first WebKit frame before the form-factor effect
+    // stamps the shell. Measuring in that frame reads the fine-pointer token
+    // defaults (28px) rather than the settled coarse-pointer hit areas.
+    await expect(shell).toHaveAttribute('data-db-pointer', 'coarse');
 
     const undersized = await page.evaluate(() => {
       const selectors = ['.db-tree-row', '.db-tree-more', '.db-explorer-btn'];

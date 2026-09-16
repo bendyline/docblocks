@@ -352,6 +352,11 @@ export default defineConfig({
       // undeclared it is found the moment a document opens, and the resulting
       // re-optimization reloads the page out from under the editor.
       'harper.js',
+      // Squisq's Markdown serializer is reached from an excluded package too.
+      // Without an eager pre-bundle, Vite can discover remark-stringify while
+      // a test page is loading and invalidate its mdast-util-to-markdown module
+      // graph, producing transient failed requests after the shell has mounted.
+      'remark-stringify',
       // Formula sessions dynamically import the optional IronCalc backend.
       // Pre-optimize its glue so first use does not invalidate the dev graph.
       '@ironcalc/wasm',
