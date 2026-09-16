@@ -131,14 +131,20 @@ jobs:
     # Keep this static for the same pre-matrix skip behavior described above.
     name: Desktop E2E
     needs: desktop-build
+    # Electron launches serially at workers=1; cap the job so a hung window
+    # cannot hold a runner for the default six hours.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
-      # macOS only: `build-and-test` already runs this exact suite on ubuntu as
-      # part of `npm run all`, and now uploads its reports, so an ubuntu leg
-      # here re-ran it serially (`needs:`) for no added coverage. macOS is a
-      # different Electron host and is the reason this job exists.
+      # Not ubuntu: `build-and-test` already runs this exact suite there as part
+      # of `npm run all`, and uploads its reports, so an ubuntu leg here re-ran
+      # it serially (`needs:`) for no added coverage. macOS and Windows are
+      # different Electron hosts, which is the reason this job exists — native
+      # window chrome, caption-button geometry and process teardown all differ,
+      # and the fixtures already branch on them without CI ever taking those
+      # branches.
       matrix:
-        os: [macos-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -163,12 +169,15 @@ jobs:
       - name: Install Playwright runtime
         run: npx playwright install --with-deps chromium
 
+      # Every OS needs its own step: a leg with no matching `if:` runs nothing
+      # and still reports success, which is how an added matrix entry can look
+      # green while testing nothing at all.
       - name: Run Desktop E2E tests (Linux, xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:e2e:desktop
 
-      - name: Run Desktop E2E tests (macOS)
-        if: runner.os == 'macOS'
+      - name: Run Desktop E2E tests
+        if: runner.os != 'Linux'
         run: npm run test:e2e:desktop
 
       - name: Upload Playwright report
@@ -265,6 +274,57 @@ jobs:
           name: vscode-playwright-diagnostics
           path: |
             packages/vscode/playwright-report/
+            packages/vscode/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  vscode-desktop-host:
+    # The Web suite above runs a browser build of VS Code and is the same on
+    # every OS, so it stays on ubuntu. This one launches a real Electron VS Code
+    # through @vscode/test-electron, where the extension host is the platform's
+    # own — file URIs, path semantics and window lifecycle all differ — so it is
+    # the suite worth paying for a second and third runner.
+    name: VS Code Desktop Host (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: build-and-test
+    # A real VS Code download plus an Electron launch; cap it so a hung host
+    # cannot hold a runner for the job's full default allowance.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # No xvfb wrapper here, unlike the ubuntu leg: these runners have a
+      # display session of their own, and wrapping would fail outright.
+      - name: Run VS Code desktop extension-host E2E tests
+        run: npm run test:e2e:vscode:desktop
+
+      - name: Upload VS Code desktop host diagnostics
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: vscode-desktop-host-diagnostics-${{ matrix.os }}
+          path: |
             packages/vscode/test-results/
           if-no-files-found: ignore
           retention-days: 14

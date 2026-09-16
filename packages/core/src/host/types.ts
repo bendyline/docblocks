@@ -8,8 +8,10 @@
  */
 
 import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/types.js';
+import type { DocBlocksHostAiAPI } from './ai.js';
 import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
+import type { HostPlatform, HostSurfaceKind } from './capabilities.js';
 
 /** Filesystem operations scoped to a main-owned registered workspace id. */
 export interface DocBlocksHostFsAPI {
@@ -260,7 +262,11 @@ export type ExternalBinaryCommitResult =
  * and issue-report URLs.
  */
 export interface HostEnvironment {
-  platform: 'darwin' | 'win32' | 'linux';
+  /** Which shell installed this bridge. Ask a capability, not this, wherever possible. */
+  surface: HostSurfaceKind;
+  /** Short user-facing label for About and issue reports: 'desktop', 'iOS', 'Android'. */
+  surfaceLabel: string;
+  platform: HostPlatform;
   /** Real, user-facing app version. Never a placeholder like '0.0.0'. */
   appVersion: string;
   /** True only in an unpackaged development run. */
@@ -272,7 +278,13 @@ export type HostCloseReason =
   | 'app-quit'
   | 'update-install'
   | 'reload'
-  | 'force-reload';
+  | 'force-reload'
+  /**
+   * The OS is suspending the app. Unlike every reason above this is a deadline,
+   * not a negotiation: iOS and Android will not let the app veto it, so a
+   * `blocked` result cannot raise a dialog and must simply be journalled.
+   */
+  | 'app-background';
 
 export interface HostPrepareCloseRequest {
   requestId: string;
@@ -305,23 +317,36 @@ export interface DocBlocksHostLifecycleAPI {
 /** The full DocBlocks desktop host API. */
 export interface DocBlocksHostAPI {
   env: HostEnvironment;
-  fs: DocBlocksHostFsAPI;
   fsV2: DocBlocksHostFsV2API;
-  external: DocBlocksHostExternalAPI;
   workspaces: DocBlocksHostWorkspacesAPI;
-  shell: DocBlocksHostShellAPI;
-  clipboard: DocBlocksHostClipboardAPI;
-  exports: DocBlocksHostExportAPI;
-  ffmpeg: DocBlocksHostFfmpegAPI;
-  git: DocBlocksHostGitAPI;
-  updater: DocBlocksHostUpdaterAPI;
-  lifecycle: DocBlocksHostLifecycleAPI;
-  menu: DocBlocksHostMenuAPI;
+
+  /**
+   * Everything below is optional because a host may genuinely not provide it —
+   * a mobile shell has no updater, no native menu bar, and no Git. Marking
+   * them optional is what turns "audit every isElectronHost() call site" into a
+   * list the typechecker produces. Never reach for one directly: ask
+   * `hostSupports(...)` first, or read it through a capability-gated branch.
+   */
+  fs?: DocBlocksHostFsAPI;
+  external?: DocBlocksHostExternalAPI;
+  shell?: DocBlocksHostShellAPI;
+  clipboard?: DocBlocksHostClipboardAPI;
+  exports?: DocBlocksHostExportAPI;
+  ffmpeg?: DocBlocksHostFfmpegAPI;
+  git?: DocBlocksHostGitAPI;
+  updater?: DocBlocksHostUpdaterAPI;
+  lifecycle?: DocBlocksHostLifecycleAPI;
+  menu?: DocBlocksHostMenuAPI;
+  /**
+   * Absent entirely on a host that cannot do AI — an unsupported platform
+   * omits the namespace rather than exposing one whose every call fails.
+   */
+  ai?: DocBlocksHostAiAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.
    */
-  onMenuCommand(listener: (cmd: MenuCommand) => void): () => void;
+  onMenuCommand?(listener: (cmd: MenuCommand) => void): () => void;
   /**
    * Subscribe to open-file / open-url requests from the OS.
    * Returns an unsubscribe function.

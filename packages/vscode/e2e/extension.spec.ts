@@ -1,4 +1,5 @@
-import { test, expect, type Page, type FrameLocator, type Locator } from '@playwright/test';
+import type { FrameLocator, Locator, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 
 /**
  * Wait for VS Code for the Web to fully load.

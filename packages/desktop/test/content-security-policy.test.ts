@@ -29,12 +29,13 @@ describe('desktop renderer content security policy', () => {
     }
   });
 
-  it('allows WebAssembly in both branches so ffmpeg.wasm encoding works when packaged', () => {
+  it('allows WebAssembly in both branches so the proofing and formula engines work when packaged', () => {
     // Chromium gates WebAssembly.compile/instantiate on script-src. Without
     // this token the production renderer throws a CompileError on every
-    // WebAssembly call, which disables Squisq's GIF/video encoders in packaged
-    // builds only — development keeps working because 'unsafe-eval' permits
-    // WebAssembly as a side effect, so this regressed silently once before.
+    // WebAssembly call, which disables harper proofing and the IronCalc
+    // formula engine in packaged builds only — development keeps working
+    // because 'unsafe-eval' permits WebAssembly as a side effect, so this
+    // regressed silently once before.
     for (const isDevelopment of [false, true]) {
       const scriptSrc = directives(desktopContentSecurityPolicy(isDevelopment)).get('script-src');
       expect(scriptSrc, `script-src for isDevelopment=${isDevelopment}`).to.include(

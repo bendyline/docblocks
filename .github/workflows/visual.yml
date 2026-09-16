@@ -1,0 +1,189 @@
+##
+# Visual regression
+#
+# Deliberately not part of `npm run all`: baselines are pixel comparisons, and a
+# screenshot diff should not block a pull request that changed nothing visible.
+# This runs nightly and before a release instead, which is the gate the
+# 2026-09-14 test review asked for.
+#
+# Baselines are captured on macOS and compared there, on the same major version
+# and architecture the team reviews them on — so the image a person approves is
+# the image CI checks. The shell chrome is pinned to the bundled face for these
+# runs (Settings > Appearance > Interface font), which removes the metric half
+# of the platform difference; the measurement job below reports how much
+# rasterisation difference is left on Linux and Windows.
+##
+
+name: Visual Regression
+
+on:
+  schedule:
+    # Nightly, after the day's merges have settled.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: 'Recapture baselines and upload them as an artifact to review and commit'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Compare against baselines
+    # Must match BASELINE_PLATFORM in e2e/helpers/visual-platform.ts.
+    runs-on: macos-latest
+    timeout-minutes: 45
+    if: ${{ !inputs.update_baselines }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium webkit
+
+      - name: Run visual regression
+        run: npm run test:e2e:visual
+
+      # The diff and actual images are the whole point of a failed run: without
+      # them a reviewer only knows that some pixels moved.
+      - name: Upload visual diffs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: visual-diffs
+          path: |
+            test-results/
+            packages/vscode/test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  update:
+    name: Update baselines
+    # Must match BASELINE_PLATFORM in e2e/helpers/visual-platform.ts.
+    runs-on: macos-latest
+    timeout-minutes: 45
+    if: ${{ inputs.update_baselines }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium webkit
+
+      - name: Recapture baselines
+        run: npm run test:e2e:visual:update
+
+      # Uploaded rather than committed: a baseline nobody looked at is worse
+      # than no baseline, so a person downloads these, reviews each image, and
+      # commits the ones that represent an intended change.
+      - name: Upload regenerated baselines
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: visual-baselines
+          path: |
+            e2e/__screenshots__/
+            packages/vscode/e2e/__screenshots__/
+          if-no-files-found: error
+          retention-days: 14
+
+  cross-platform-difference:
+    # Measurement, not a gate: it reports how far Linux and Windows renderings
+    # sit from the committed macOS baselines now that the chrome font is pinned.
+    # Fixed fonts remove metric differences — line breaking, text advance — but
+    # not rasterisation, which still differs between CoreText, DirectWrite and
+    # FreeType. That residue is what decides whether one baseline set can serve
+    # every OS, and it is worth measuring rather than assuming either way.
+    name: Cross-platform difference (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    continue-on-error: true
+    if: ${{ !inputs.update_baselines }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      # Split by OS for the same reason every other matrix job here is: the
+      # Linux leg needs an xvfb wrapper the Windows one must not have, and a
+      # step with no matching `if:` would silently measure nothing.
+      - name: Compare against the macOS baselines (Linux, xvfb)
+        if: runner.os == 'Linux'
+        env:
+          # Comparison happens only on the baseline platform by default; force
+          # it on to take the measurement. This job cannot fail the workflow.
+          DOCBLOCKS_VISUAL_COMPARE: '1'
+        run: xvfb-run -a npm run test:e2e:visual -- --site
+
+      - name: Compare against the macOS baselines
+        if: runner.os != 'Linux'
+        env:
+          DOCBLOCKS_VISUAL_COMPARE: '1'
+        run: npm run test:e2e:visual -- --site
+
+      - name: Upload cross-platform diffs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: visual-cross-platform-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14

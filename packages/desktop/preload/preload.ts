@@ -370,6 +370,9 @@ const menuApi: DocBlocksHostMenuAPI = {
 // script and `NODE_ENV` is unset in a packaged app, so doing so reported
 // version 0.0.0 and isDev:true to every user of every packaged build.
 const env: HostEnvironment = {
+  surface: 'electron',
+  // Suffixed onto the version in About and issue reports: "2.6.2 desktop".
+  surfaceLabel: 'desktop',
   platform: process.platform as HostEnvironment['platform'],
   ...parseHostEnvironmentArguments(process.argv),
 };

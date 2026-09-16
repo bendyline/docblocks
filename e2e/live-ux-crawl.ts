@@ -1,16 +1,24 @@
 /**
- * Live-site UX crawl — captures a comprehensive screenshot inventory of the
- * deployed site (https://docblocks.com by default) for visual UX review,
- * along with a health log (console errors, page errors, failed requests,
- * service-worker state, load metrics, deployed version).
+ * UX crawl — captures a comprehensive screenshot inventory of the shell for
+ * visual UX review, along with a health log (console errors, page errors,
+ * failed requests, service-worker state, load metrics, deployed version).
  *
- * This is NOT a Playwright test — it is a standalone driver script:
+ * This is NOT a Playwright test — it is a standalone driver script. Prefer the
+ * wrapper, which builds the site and serves it locally:
  *
- *   npx tsx e2e/live-ux-crawl.ts [outputDir]
- *   LIVE_UX_BASE_URL=http://localhost:5220 npx tsx e2e/live-ux-crawl.ts
+ *   npm run ux:crawl                    # local production preview
+ *   npm run ux:crawl -- reports/my-run  # choose the output directory
+ *
+ * It can also be run directly against an already-serving origin:
+ *
+ *   LIVE_UX_BASE_URL=https://docblocks.com npx tsx e2e/live-ux-crawl.ts
+ *
+ * The default base URL is the local preview the wrapper starts, not the
+ * deployed site: a crawl that silently targets production cannot review a
+ * branch, and reviewing what already shipped is the rarer need.
  *
  * Output: <outputDir>/NN-<name>.png screenshots plus manifest.json and
- * health.json. Default outputDir is reports/ux-live-site-<stamp>/ (reports/
+ * health.json. Default outputDir is reports/ux-crawl-<stamp>/ (reports/
  * is gitignored, so captures stay local).
  *
  * Every step is guarded: a failing capture is recorded in manifest.skipped
@@ -24,9 +32,11 @@ import {
   createSharedDocumentArchive,
 } from '../packages/react/src/Export/shared-document.js';
 
-const BASE_URL = (process.env.LIVE_UX_BASE_URL ?? 'https://docblocks.com').replace(/\/$/, '');
+/** Matches PREVIEW_PORT in scripts/run-ux-crawl.ts, which serves the build. */
+const DEFAULT_BASE_URL = 'http://127.0.0.1:5240';
+const BASE_URL = (process.env.LIVE_UX_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$/, '');
 const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
-const OUT_DIR = process.argv[2] ?? path.join('reports', `ux-live-site-${STAMP}`);
+const OUT_DIR = process.argv[2] ?? path.join('reports', `ux-crawl-${STAMP}`);
 const READY_TIMEOUT = 60_000;
 
 interface ShotEntry {
@@ -150,7 +160,12 @@ async function shoot(
   description: string,
   options: { fullPage?: boolean; settleMs?: number } = {},
 ): Promise<void> {
-  await page.waitForTimeout(options.settleMs ?? 400);
+  // Fonts are the one asset that changes a screenshot after every element is
+  // already visible, so wait on them rather than on a slice. The small settle
+  // that remains covers layout that reflows in response to that swap; callers
+  // that need longer pass settleMs.
+  await page.evaluate(() => document.fonts.ready.then(() => undefined)).catch(() => undefined);
+  await page.waitForTimeout(options.settleMs ?? 150);
   shotCounter += 1;
   const file = `${String(shotCounter).padStart(2, '0')}-${name}.png`;
   await page.screenshot({
@@ -191,7 +206,13 @@ async function waitForAppReady(page: Page): Promise<void> {
 
 async function dismissOpenLayer(page: Page): Promise<void> {
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(250);
+  // Wait for the layer to actually leave rather than for a fixed slice: an
+  // open dialog in the next screenshot is the failure this guards against.
+  await page
+    .locator('[role="dialog"], [role="menu"], .db-tree-context, .db-ws-settings-dropdown')
+    .first()
+    .waitFor({ state: 'hidden', timeout: 5_000 })
+    .catch(() => undefined);
 }
 
 async function newAppContext(
@@ -344,7 +365,10 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
 
   await step('empty new document (dark)', async () => {
     await page.locator('.db-tree-row', { hasText: 'ux-review-notes' }).click();
-    await page.waitForTimeout(800);
+    await page
+      .locator('.squisq-status-item')
+      .first()
+      .waitFor({ state: 'visible', timeout: 20_000 });
     await shoot(page, 'app-editor-empty-doc-dark', 'Freshly created empty document in the editor');
   });
 
@@ -384,7 +408,9 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
 
   await step('source view (dark)', async () => {
     await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).click();
-    await page.waitForTimeout(600);
+    await page
+      .locator('[role="tab"][data-view="raw"]')
+      .waitFor({ state: 'visible', timeout: 20_000 });
     await page.locator('[role="tab"][data-view="raw"]').click();
     await page.locator('[data-testid="raw-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
     await shoot(page, 'editor-source-view-dark', 'Source (raw Markdown) view with Monaco');
@@ -450,7 +476,11 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
     await page.locator('.db-ws-settings-btn').click();
     await page.locator('.db-ws-settings-dropdown').waitFor({ state: 'visible', timeout: 5_000 });
     await page.getByRole('menuitem', { name: 'Rename workspace' }).click();
-    await page.waitForTimeout(400);
+    await page
+      .locator('input:focus, [role="dialog"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .catch(() => undefined);
     await shoot(page, 'workspace-rename-flow-dark', 'Rename workspace flow');
     await dismissOpenLayer(page);
   });
@@ -459,7 +489,11 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
     await page.locator('.db-ws-settings-btn').click();
     await page.locator('.db-ws-settings-dropdown').waitFor({ state: 'visible', timeout: 5_000 });
     await page.getByRole('menuitem', { name: 'Remove workspace' }).click();
-    await page.waitForTimeout(500);
+    await page
+      .locator('[role="dialog"], [role="alertdialog"]')
+      .first()
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .catch(() => undefined);
     await shoot(page, 'workspace-remove-flow-dark', 'Remove workspace flow (confirmation?)');
     await dismissOpenLayer(page);
   });
@@ -469,8 +503,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       window.localStorage.setItem('docblocks:accentColor', 'purple');
     });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
-    await page.waitForTimeout(1_500);
+    await waitForAppReady(page);
     await shoot(page, 'app-accent-purple-dark', 'Shell with the purple accent palette');
   });
 
@@ -560,7 +593,14 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
   await step(`mobile first load (${theme})`, async () => {
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
-    await page.waitForTimeout(2_500);
+    // The mobile first run settles in the file pane; its tour CTA is the signal
+    // that seeding finished, and the explorer toolbar covers restored profiles.
+    await page
+      .getByRole('button', { name: 'Tour the welcome document' })
+      .or(page.locator('.db-explorer-toolbar'))
+      .first()
+      .waitFor({ state: 'visible', timeout: READY_TIMEOUT });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await shoot(page, `mobile-first-run-${theme}`, `Mobile 390px first visit, ${theme} theme`);
   });
 
@@ -574,7 +614,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
     } else {
       await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).tap();
     }
-    await page.waitForTimeout(1_500);
+    await page.locator('.squisq-toolbar').waitFor({ state: 'visible', timeout: 30_000 });
     await shoot(
       page,
       `mobile-doc-opened-${theme}`,
@@ -638,7 +678,10 @@ async function crawlSeoBootstrap(browser: Browser, theme: 'light' | 'dark'): Pro
 
   await step(`seo bootstrap (${theme})`, async () => {
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1_500);
+    // Application scripts are aborted for this phase, so React never mounts:
+    // wait for the static bootstrap markup and its fonts instead of a slice.
+    await page.locator('body').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await shoot(
       page,
       `landing-seo-bootstrap-${theme}`,

@@ -181,13 +181,17 @@ dmg:
   # findFile(files, 'zip', ['pkg', 'dmg']) — so keep the disk image out of
   # latest-mac.yml entirely rather than publishing hashes that stapling breaks.
   writeUpdateInfo: false
-  # Uncomment once a proper dmg background asset is designed.
-  # background: resources/dmg-background.png
+  # The background supplies the branded instruction and direction cue. Keep the
+  # Finder-rendered icons high enough that their labels remain visible when the
+  # user's toolbar, path bar, and status bar are all enabled.
+  background: resources/dmg-background.png
+  iconSize: 80
+  iconTextSize: 12
   contents:
     - x: 130
-      y: 220
+      y: 175
     - x: 410
-      y: 220
+      y: 175
       type: link
       path: /Applications
 
@@ -221,6 +225,17 @@ linux:
   maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
   description: DocBlocks - a Markdown editor, converter, and publisher.
+
+appImage:
+  # electron-builder's AppImage target injects `--no-sandbox` into the embedded
+  # desktop entry whenever no pinned appimagetool toolset is configured, which
+  # would disable the Chromium sandbox for every menu, file-association, and
+  # protocol launch. The bundled AppRun script already probes `unshare -Ur` and
+  # adds the flag only on hosts where user namespaces are genuinely
+  # unavailable, so the launcher must not force it unconditionally.
+  # See scripts/check-electron-builder-config.ts and the packaged desktop entry
+  # assertion in e2e/packaged-artifact.ts.
+  executableArgs: []
 
 deb:
   packageCategory: editors

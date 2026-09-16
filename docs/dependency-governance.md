@@ -30,6 +30,13 @@ is the exact toolchain pin, and the root development dependency ensures nested
 `npm run` commands resolve that same CLI instead of a transitive npm
 executable. `engines.npm` communicates the minimum to npm clients.
 
+The canonical gate starts that pinned CLI through
+`scripts/run-canonical-gate.ts`. Newer npm releases may export configuration
+defaults that npm 11 does not recognize; the runner removes only the obsolete
+`npm_config_global_ignore_file` lifecycle variable before starting the pinned
+CLI. This prevents a warning on every nested command without changing npm 11's
+configuration or dependency-policy behavior.
+
 If `npm audit fix` reports that a patched version is too new, leave the current
 pin in place until the seven-day window expires. Do not use
 `npm audit fix --force` as a cooldown bypass; `--force` can also introduce

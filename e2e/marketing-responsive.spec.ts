@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 
 test.describe('marketing pages on a narrow viewport', () => {
   test.use({ viewport: { width: 390, height: 844 } });

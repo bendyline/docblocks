@@ -93,3 +93,32 @@ export function isSupportedImportFile(file: Pick<File, 'name' | 'type'>): boolea
   if (mimeType.startsWith('text/') || mimeType.startsWith('image/')) return true;
   return !extension && DIRECT_IMPORT_BASENAMES.has(file.name.toLowerCase());
 }
+
+/**
+ * Files the *editor pane* accepts as a document import.
+ *
+ * Narrower than `isSupportedImportFile` on purpose. Squisq already handles
+ * image drops by placing them in the document at the drop point, which is
+ * almost always what someone dragging a PNG onto a page wants. Intercepting
+ * those would replace a good behaviour with a worse one, so images are
+ * deliberately excluded here and left to fall through.
+ */
+export function isEditorDocumentImportFile(file: Pick<File, 'name' | 'type'>): boolean {
+  if (file.type.toLowerCase().startsWith('image/')) return false;
+  const extension = extensionOfFileName(file.name);
+  if (DIRECT_IMPORT_IMAGE_EXTENSIONS.has(extension)) return false;
+  return isSupportedImportFile(file);
+}
+
+/** Image extensions inside DIRECT_IMPORT_EXTENSIONS, which Squisq handles itself. */
+const DIRECT_IMPORT_IMAGE_EXTENSIONS = new Set([
+  '.avif',
+  '.bmp',
+  '.gif',
+  '.ico',
+  '.jpeg',
+  '.jpg',
+  '.png',
+  '.svg',
+  '.webp',
+]);

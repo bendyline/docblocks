@@ -54,9 +54,23 @@ npm run test:e2e:all        # all site, VS Code Web, source desktop, and package
 npm run test:e2e:desktop    # Playwright + Electron launcher
 npm run test:e2e:desktop:packaged # smoke the electron-builder unpacked artifact
 npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
+# Browser E2E suites fail on unexpected console.error / uncaught page errors.
+# Allow one with its reason in e2e/helpers/console-guard.ts, or per test with
+# the `allowRuntimeErrors` fixture. Import `test` from the suite's own helper
+# (e2e/helpers/test.ts, packages/vscode/e2e/test.ts, the desktop fixtures) —
+# importing it from @playwright/test opts the spec out of the guard silently.
+
+# Screenshot inventory for visual/UX review (not a test; writes to reports/)
+npm run ux:crawl            # build the site, serve it locally, crawl and capture
+
+# Visual regression — a PRE-RELEASE gate, deliberately not part of `npm run all`
+npm run test:e2e:visual           # site, VS Code webview, desktop native chrome
+npm run test:e2e:visual -- --site # one surface (also --vscode, --desktop)
+npm run test:e2e:visual:update    # recapture baselines (Linux only; see below)
 
 # Quality gates
 npm run check:dependency-governance # exact install-script allowlist + seven-day dependency cooldown
+npm run check:linux-launchers # packaged AppImage/.deb desktop entries keep the Chromium sandbox
 npm run typecheck           # core, react, CLI, VS Code host + webview, site, and desktop
 npm run lint                # eslint flat config
 npm run format:check        # prettier
@@ -154,6 +168,37 @@ UI code (in `packages/react`, `packages/site`, `packages/desktop/renderer`, and
 `electron` directly. Electron main must re-parse paths and prove physical
 workspace containment; renderer validation is not a security boundary.
 
+### Ask what the host can do, never which host it is
+
+`packages/core/src/host/capabilities.ts` is the seam. `isElectronHost()` was a
+single duck-typed boolean (`globalThis.docBlocksHost?.fs`) standing in for a
+dozen unrelated decisions — filesystem backend, export destinations, menu
+commands, window chrome, storage warnings, git, updater — and no non-Electron
+host can answer it honestly either way. It is deprecated and **lint-banned in
+`packages/react/src/**`and every renderer** via`no-restricted-imports`.
+
+Callers ask `hostSupports('revealInFileManager')`, `hasDocBlocksHost()`, or
+`getHostCapabilities()`. The handful of questions that are genuinely about
+product identity rather than ability — which documentation URL to open — read
+`getHostEnvironment()?.surface` and say so at the call site.
+
+**Capabilities are derived, never declared.** `deriveHostCapabilities()`
+observes which bridge members are actually present, so the two can never drift
+and preload/plugin version skew degrades to "unsupported" rather than a runtime
+`TypeError`. A host whose `env` fails `parseHostEnvironment()` reports _nothing_
+— failing closed beats half-trusting a bridge we cannot identify.
+
+Everything optional on `DocBlocksHostAPI` is optional **in the type**. That is
+deliberate: it turns "audit every call site" into a list the typechecker
+produces, and it is what will make adding a mobile host a mechanical exercise.
+Do not add a non-optional member unless every conceivable host must provide it.
+
+`packages/react/test/host-capabilities-shell.test.ts` and
+`packages/core/test/host-capabilities.test.ts` assert against three fixtures:
+a full Electron-shaped host, a **deliberately reduced mobile-shaped host**, and
+none. The middle fixture validates the model against its real future consumer
+before that consumer exists — keep it in sync with the planned mobile bridge.
+
 ### `DocBlocksHostAPI` is the single seam for Electron capabilities
 
 `packages/core/src/host/types.ts` is the canonical contract for what the desktop shell exposes to the renderer (`fs`, `workspaces`, `shell`, `ffmpeg`, `updater`, `menu`, `open-file`). The contract spans three files that must stay in sync:
@@ -210,6 +255,46 @@ as either exposed or explicitly excluded. New conversion code calls the
 linked `@bendyline/squisq-cli/api` registry; do not add another hard-coded
 conversion switch. `packages/cli/test/documentation.test.ts` keeps the documented
 command, tool, and format catalogs aligned with these runtime contracts.
+
+### Layout is one form-factor system, stamped as `data-db-*`
+
+`packages/react/src/layout/` owns every breakpoint. `form-factor.ts` classifies
+the shell's **measured box** (a `ResizeObserver` on `.db-shell`, not
+`window.matchMedia` — that is what makes Stage Manager, split-screen, and any
+embedded mount correct) into a width class, an input modality, an orientation,
+and a layout mode. `useFormFactorAttributes` stamps the result on
+`document.documentElement` _and_ the shell root, because Squisq portals its
+menus onto `<body>`.
+
+Width and input modality are classified **separately**. Conflating them is why
+an iPad in landscape used to inherit hover-reveal affordances it can never
+trigger. Hover comes from `(any-hover: hover)`, not `(hover: hover)`, so an iPad
+with a Magic Keyboard gets 44px targets _and_ hover reveals.
+
+There is no PostCSS in this repo, so `@custom-media` is unavailable and CSS
+cannot read a custom property inside a media condition. TypeScript therefore
+owns the numbers and `docblocks.css` keys off the attributes. **There are no
+width- or hover-based `@media` rules in that stylesheet** — only
+`prefers-color-scheme`, `prefers-reduced-motion`, and `display-mode`, and
+`packages/react/test/adaptive-styles.test.ts` fails the build if one returns.
+Adaptive values are tokens (`--db-target-min`, `--db-input-font-size`,
+`--db-safe-*`, `--db-drawer-*`) switched by a single `[data-db-pointer='coarse']`
+block.
+
+Two traps the drawer layout has already hit, both guarded by tests:
+
+- **Both panes stay mounted.** The sidebar becomes an absolutely-positioned
+  drawer hidden with `visibility`, never `display: none` and never unmounted.
+  Unmounting tore down Tiptap, Monaco, undo history, scroll position, and tree
+  expansion on every toggle. `inert` keeps the hidden pane out of the tab order.
+- **The open drawer must set `transform: none`.** Any non-`none` transform makes
+  the sidebar the containing block for `position: fixed` descendants, and
+  `.db-dialog-overlay` is rendered inside the sidebar rather than portalled — so
+  a transform sizes and clips every app-menu dialog to the drawer.
+
+Never set `padding-bottom` on `.squisq-status-bar` to apply a safe-area or
+keyboard inset: it replaces Squisq's own padding rather than adding to it. Put
+the inset on `.db-shell-editor-area`, the pane DocBlocks owns.
 
 ### `<DocBlocksShell>` is the canonical editor shell — for site + desktop
 
@@ -272,9 +357,12 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **`@semantic-release/github` must stay out of the `publish` step.** `.releaserc.json` lists it in `plugins` (so it still comments "released" on PRs and opens an issue on failure) but pins `publish`/`addChannel` to `@semantic-release/npm` only. Restoring it to `publish` recreates the bug it fixes: every package release would create an **asset-less GitHub Release**, and because GitHub resolves `/releases/latest` by `created_at`, that release shadows `desktop-v*`. `electron-updater` then fetches `latest*.yml` from a tag that has no assets, 404s, and — since `updaterStatusForError` maps a check-time failure to `not-available` — the app silently claims it is up to date. Package tags are still created by semantic-release core, so CHANGELOG compare links are unaffected.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
+- **Visual regression is a pre-release gate, and its baselines are macOS.** Committed under `__screenshots__/` beside each suite; `npm run all` never runs them, because a pixel diff must not block a change that altered nothing visible — `.github/workflows/visual.yml` runs them nightly and on demand, and `check:assurance` fails if they migrate into the canonical gate. Captures are **element-scoped** (a dialog, a menu, a toolbar) rather than full-page: smaller to commit, and they fail only for the thing they name. The suite pins the chrome to the bundled `DocBlocks Fixed UI` face — the Roboto _variable_ binary already shipped for the document theme of that name — because the default `system-ui` stack resolves to a different typeface per OS, and a Linux baseline would otherwise render in whatever that runner resolves, which is a font essentially no user has. That removes metric differences but not rasterisation, so comparison still defaults to Linux; the workflow's cross-platform job measures what is left. Regenerate through the workflow and review every image before committing — `npm run test:e2e:visual:update` refuses to write baselines on a non-Linux host for that reason. A state that differs between two identical runs gets a settle gate (`waitForStableBox`) or gets dropped, never a `maxDiffPixelRatio`.
+- **The desktop app has no visual baselines yet, and that is a product finding.** Its editor toolbar registers a Print control _after_ first paint, so everything left of it shifts when the control lands; the status bar's word, character and proofing-issue counters settle asynchronously on top of that. Captures of that chrome therefore render bimodally between otherwise identical runs — two stable arrangements about 8,600 pixels apart. Settling on size and content narrows the window without closing it. Fix the registration so the toolbar's control set is final before it paints, then add baselines; a `maxDiffPixelRatio` wide enough to absorb the shift would absorb a real regression in the same strip. Both geometries stay covered numerically by `packages/desktop/e2e/titlebar-layout.spec.ts`.
+- **The interface font is a user preference, not only a test lever.** Settings › Appearance › Interface font; `system` by default, and the bundled face is never fetched while nothing references it. It is published as `data-db-interface-font` on the document root, not the shell, because Squisq portals its menus onto `<body>` — and it carries into Squisq's chrome through `--squisq-ux-font`, the same bridge shape as the `--squisq-*` colour tokens. Document typography is untouched either way: a theme's fonts are content the author chose.
 - **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
-- **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. Electron's renderer does not load them yet (known parity gap). Verify any addition is actually referenced before adding.
+- **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. The desktop renderer (`packages/desktop/renderer/public/fonts/`) and the VS Code webview (`packages/vscode/webview/src/fonts/`, generated by `npm run generate:webview-fonts`) carry the same families — a family missing from one surface renders in a fallback face there and nowhere else, silently, so `npm run check:site-fonts` fails on any disagreement with Squisq's `AVAILABLE_FONT_STACKS`. Verify any addition is actually referenced before adding.
 - **Proofing ships the engine, it never downloads one.** Grammar and spellcheck are Squisq's `proofing` capability backed by harper.js (Apache-2.0, no CDN fallback). `scripts/vite-harper-wasm.ts` publishes **both** binaries — the engine derives `harper_wasm_slim_bg.wasm` from the full one's URL and loads the pair — plus the license, under `harper/` on the site, in `app.asar`, and in the VSIX. Each surface passes a module-scope provider from `@bendyline/docblocks-react/proofing` (a factory would be disposed on every document switch and pay the cold WASM setup again). `script-src` needs `'wasm-unsafe-eval'` or compilation is refused and the status sticks on "Proofing…"; the VS Code webview also needs `connect-src`, because the fetch happens inside a blob worker under `default-src 'none'`. That webview reads the engine URL from a `<meta>` tag the host stamps with `asWebviewUri` — a bundle-relative URL resolves against whichever chunk it landed in. Dismissed findings and the app-wide dictionary are **host-persisted, never written into the document** — a file through git carries neither. Site and desktop keep both in browser-local storage (ignores keyed by workspace + path, like `last-state`); the VS Code webview has no durable storage, so `proofStateBridge.ts` puts the dictionary in `globalState` (a personal vocabulary spans workspaces) and ignores in `workspaceState` (their keys are workspace-relative paths). Neither VS Code message names a document: the panel owns one, so the host derives the key from its own URI. Wiring `onDictionaryWord` is what makes Squisq offer "Add to dictionary" at all (`hasAppDictionary`), and the dictionary must be in hand _before_ the provider is built — seeding words afterwards calls `addWords`, which forces the engine to load. Which squiggles appear is a user preference in Settings — "Show inline spell checking" / "Show inline grammar checking", the latter English-only — carried to Squisq as `proofingSpellingEnabled` / `proofingGrammarEnabled`. They are app-level, so they live outside the per-doc `squisq-proofing` frontmatter stack: `packages/react/src/preferences/proofing.ts` (localStorage) on site and desktop, `docblocks.inlineSpellChecking` / `docblocks.inlineGrammarChecking` in VS Code. Turning **both** off is what turns the feature off — the engine is never fetched — so a host that wants no checking at all can simply leave both unchecked rather than dropping the capability.
 - **Linking Squisq silently invalidates Vite's dependency cache.** Vite trusts `node_modules/.vite/deps` while the root lockfile and config hash are unchanged, and `link:squisq` / `unlink:squisq` / `npm install` change neither — yet they move where nested deps resolve (the registry `@bendyline/squisq-formats` carries its own `@xmldom/xmldom`; the linked one uses `..\squisq\node_modules`), so the next re-optimization fails with ENOENT and the renderer never loads. `scripts/vite-squisq-dep-cache.ts` stamps each surface's cache with the link state (plus the sibling lockfile) and clears it on change. Every Vite config that runs a dev server must keep calling `squisqAwareViteCacheDir` and pinning `cacheDir` to its result.
 

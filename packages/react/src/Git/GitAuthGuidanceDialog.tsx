@@ -65,7 +65,7 @@ export function GitAuthGuidanceDialog({
           <button
             type="button"
             className="db-git-secondary-btn"
-            onClick={() => void maybeGetDocBlocksHost()?.shell.openExternal(LEARN_MORE_URL)}
+            onClick={() => void maybeGetDocBlocksHost()?.shell?.openExternal(LEARN_MORE_URL)}
           >
             Learn more
           </button>

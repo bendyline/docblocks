@@ -8,7 +8,6 @@ Packages present in the emitted renderer Vite/Rollup module graph, plus the copi
 Inventory source: package-lock.json and packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json.
 Components: 246.
 
-The copied @ffmpeg/core WebAssembly distribution ships its GPL text, source pointers, and upstream notices inside the renderer at `ffmpeg-core/`.
 The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.
 Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.
 
@@ -144,7 +143,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | is-hexadecimal | 2.0.1 | MIT | https://github.com/wooorm/is-hexadecimal |
 | is-number | 7.0.0 | MIT | https://github.com/jonschlinkert/is-number |
 | is-plain-obj | 4.1.0 | MIT | https://github.com/sindresorhus/is-plain-obj |
-| js-yaml | 4.3.1 | MIT | https://github.com/nodeca/js-yaml |
+| js-yaml | 4.3.2 | MIT | https://github.com/nodeca/js-yaml |
 | jsonfile | 4.0.0 | MIT | git@github.com:jprichardson/node-jsonfile |
 | jsonfile | 6.2.1 | MIT | git@github.com:jprichardson/node-jsonfile |
 | jszip | 3.10.1 | (MIT OR GPL-3.0-or-later) | https://github.com/Stuk/jszip |
@@ -8712,7 +8711,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: js-yaml@4.3.1
+Components: js-yaml@4.3.2
 Source files: node_modules/js-yaml/LICENSE
 ==============================================================================
 (The MIT License)

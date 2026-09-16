@@ -4,10 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import docblocksPackage from '../core/package.json';
 import { SITE_PRECACHE_GLOB, SITE_PRECACHE_MAX_BYTES } from '../../scripts/site-precache-policy.js';
-import {
-  CROSS_ORIGIN_ISOLATION_HEADERS,
-  ffmpegCorePlugin,
-} from '../../scripts/vite-ffmpeg-core.js';
+import { CROSS_ORIGIN_ISOLATION_HEADERS } from '../../scripts/vite-cross-origin-isolation.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
@@ -95,9 +92,9 @@ function resolveModulePreloadDependencies(_filename: string, deps: string[]): st
   return deps.filter((dep) => !isDeferredFeatureAsset(dep));
 }
 
-// PWA packaging. The whole dist is precached (~89 MB) so every feature —
-// export formats, Monaco language workers, theme fonts, ffmpeg.wasm, and the
-// harper proofing and IronCalc formula engines — works offline even if the user
+// PWA packaging. The whole dist is precached (~58 MB) so every feature —
+// export formats, Monaco language workers, theme fonts, and the harper
+// proofing and IronCalc formula engines — works offline even if the user
 // never touched them while online. That is a deliberate product decision: never let functionality
 // break offline to save bandwidth. Precaching runs during service-worker
 // install, which never blocks the page, so the app stays usable throughout.
@@ -130,6 +127,29 @@ const docblocksPwa = (): Plugin[] =>
       theme_color: '#f3eede',
       background_color: '#ffffff',
       categories: ['productivity'],
+      // A document editor has to rotate; without this an installed app can be
+      // locked to whatever orientation it launched in.
+      orientation: 'any',
+      // Chrome on Android only shows the rich install dialog when a `narrow`
+      // screenshot exists — otherwise it falls back to the mini-infobar.
+      // Regenerate with a temporary Playwright spec that opens the welcome
+      // document at each size and screenshots it; sizes must match the files.
+      screenshots: [
+        {
+          src: 'screenshots/narrow-editor.png',
+          sizes: '720x1280',
+          type: 'image/png',
+          form_factor: 'narrow',
+          label: 'Editing a Markdown document on a phone',
+        },
+        {
+          src: 'screenshots/wide-editor.png',
+          sizes: '1920x1080',
+          type: 'image/png',
+          form_factor: 'wide',
+          label: 'The DocBlocks editor with the file explorer open',
+        },
+      ],
       launch_handler: { client_mode: 'focus-existing' },
       // Installed-app OS integration (Chromium desktop): double-clicking a
       // markdown file or a DocBlocks bundle opens it here (consumed by the
@@ -161,7 +181,8 @@ const docblocksPwa = (): Plugin[] =>
       // Everything in dist. CNAME has no extension so it stays out.
       globPatterns: [SITE_PRECACHE_GLOB],
       // Workbox's default cap is 2 MiB, which would SILENTLY drop the main
-      // bundle, ts.worker (6 MB), and ffmpeg core (31 MB) from the precache.
+      // bundle, ts.worker (6 MB), and each harper binary (~16 MB) from the
+      // precache.
       // The post-build precache gate fails if an eligible file exceeds this
       // cap or is absent from the generated manifest.
       maximumFileSizeToCacheInBytes: SITE_PRECACHE_MAX_BYTES,
@@ -187,7 +208,6 @@ export default defineConfig({
   plugins: [
     stripBrokenSourcemapPragmas(),
     serveStaticDirectoryIndexes(),
-    ffmpegCorePlugin(),
     harperWasmPlugin(),
     ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
@@ -324,14 +344,19 @@ export default defineConfig({
       // Video export is also loaded from excluded linked-Squisq packages.
       // Pre-bundle its browser dependencies so opening the first video dialog
       // does not make Vite discover them and reload away the open dialog.
-      '@ffmpeg/ffmpeg',
-      '@ffmpeg/util',
+      // ffmpeg.wasm is deliberately absent: no surface distributes the
+      // GPL-licensed core, and MP4 export runs on WebCodecs + mp4-muxer.
       'html2canvas',
       // Proofing reaches harper through a dynamic import inside the excluded
       // linked-Squisq editor, so Vite cannot discover it while scanning. Left
       // undeclared it is found the moment a document opens, and the resulting
       // re-optimization reloads the page out from under the editor.
       'harper.js',
+      // Squisq's Markdown serializer is reached from an excluded package too.
+      // Without an eager pre-bundle, Vite can discover remark-stringify while
+      // a test page is loading and invalidate its mdast-util-to-markdown module
+      // graph, producing transient failed requests after the shell has mounted.
+      'remark-stringify',
       // Formula sessions dynamically import the optional IronCalc backend.
       // Pre-optimize its glue so first use does not invalidate the dev graph.
       '@ironcalc/wasm',

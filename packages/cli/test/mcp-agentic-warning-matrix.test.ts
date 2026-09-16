@@ -166,6 +166,19 @@ describe('MCP canonical real rendered-media integration', function () {
     configureWorkspaceFfmpegOverride();
     const missing = await missingRenderedMediaDependencies();
     if (missing.length === 0) return;
+    // A developer without ffmpeg or a Playwright browser still gets a useful
+    // run, but CI must never quietly lose the only coverage of a real rendered
+    // conversion: DOCBLOCKS_REQUIRE_RENDERED_MEDIA turns the skip into a
+    // failure. `npm run all` sets it, so the local gate matches CI.
+    if (process.env.DOCBLOCKS_REQUIRE_RENDERED_MEDIA === '1') {
+      throw new Error(
+        `Canonical real rendered-media tests are required but ${missing.join(' and ')} ` +
+          `${missing.length === 1 ? 'is' : 'are'} missing.\n` +
+          '  ffmpeg             — `npm ci` installs ffmpeg-static, or put ffmpeg on PATH\n' +
+          '  Playwright Chromium — `npm exec -w @bendyline/docblocks-cli -- playwright-core install chromium`\n' +
+          'Set DOCBLOCKS_REQUIRE_RENDERED_MEDIA=0 to allow the skip while working locally.',
+      );
+    }
     console.error(`  (skipping canonical real-media tests - missing ${missing.join(' and ')})`);
     this.skip();
   });

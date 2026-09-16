@@ -13,6 +13,11 @@ interface BundleSurface {
     extensions: readonly string[];
     budgetBytes: number;
   };
+  /**
+   * Path segments that must not appear anywhere under the surface's dist root.
+   * A licensing gate, not a size gate.
+   */
+  forbiddenAssets?: readonly string[];
 }
 
 interface BundleChunkBudget {
@@ -21,12 +26,27 @@ interface BundleChunkBudget {
   budgetBytes: number;
 }
 
+/**
+ * The `@ffmpeg/core` WebAssembly build is GPL-2.0-or-later. No surface
+ * distributes it: Apple's App Store terms cannot be reconciled with GPLv2 section 6,
+ * and MP4 export runs on WebCodecs plus MIT `mp4-muxer` instead. Publishing it
+ * again — by restoring a Vite plugin, or by copying another surface's config —
+ * must fail the build rather than reach a store submission.
+ *
+ * Scoped to `ffmpeg-core` rather than `ffmpeg` on purpose: Squisq still emits
+ * an `ffmpeg.class-worker-*.js` chunk from the MIT-licensed `@ffmpeg/ffmpeg`
+ * wrapper. That wrapper carries no GPL obligation and is never executed while
+ * no host supplies an `ffmpegWasm` config.
+ */
+const FORBIDDEN_ASSETS = Object.freeze(['ffmpeg-core']);
+
 const surfaces: BundleSurface[] = [
   {
     name: 'site',
     htmlPath: 'packages/site/dist/index.html',
     entryDir: 'packages/site/dist/assets',
     assetsDir: 'packages/site/dist/assets',
+    forbiddenAssets: FORBIDDEN_ASSETS,
     // Squisq's renderer graph belongs behind the editor boundary. The shell
     // entry stays small enough to paint workspace chrome immediately.
     entryBudgetBytes: 1_000_000,
@@ -42,6 +62,7 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/desktop/dist/renderer/index.html',
     entryDir: 'packages/desktop/dist/renderer/assets',
     assetsDir: 'packages/desktop/dist/renderer/assets',
+    forbiddenAssets: FORBIDDEN_ASSETS,
     entryBudgetBytes: 1_000_000,
     chunkBudgets: [
       // Squisq 2.3's editor update remains isolated to this deferred chunk;
@@ -55,6 +76,7 @@ const surfaces: BundleSurface[] = [
     htmlPath: 'packages/vscode/dist/webview/index.html',
     entryDir: 'packages/vscode/dist/webview',
     assetsDir: 'packages/vscode/dist/webview/assets',
+    forbiddenAssets: FORBIDDEN_ASSETS,
     // The host handshake must not parse Squisq before it can request the
     // document. Editor, Monaco, and diagram implementations remain deferred.
     entryBudgetBytes: 500_000,
@@ -120,6 +142,24 @@ async function sumFilesWithExtensions(
   return sizes.reduce((total, size) => total + size, 0);
 }
 
+async function findForbiddenAssets(
+  directory: string,
+  forbidden: readonly string[],
+  root: string = directory,
+): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const found = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (forbidden.some((token) => entry.name.includes(token))) {
+        return [path.relative(root, entryPath)];
+      }
+      return entry.isDirectory() ? findForbiddenAssets(entryPath, forbidden, root) : [];
+    }),
+  );
+  return found.flat();
+}
+
 async function assertSurface(surface: BundleSurface): Promise<string[]> {
   const html = await readFile(surface.htmlPath, 'utf8');
   const messages: string[] = [];
@@ -177,6 +217,17 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
     );
   }
   messages.push(`${surface.name}: isolated Monaco worker setup ${workerSetupAsset}`);
+
+  if (surface.forbiddenAssets && surface.forbiddenAssets.length > 0) {
+    const distRoot = path.dirname(surface.htmlPath);
+    const present = await findForbiddenAssets(distRoot, surface.forbiddenAssets);
+    if (present.length > 0) {
+      throw new Error(
+        `${surface.name}: forbidden asset(s) present in ${distRoot}: ${present.join(', ')}`,
+      );
+    }
+    messages.push(`${surface.name}: no forbidden assets (${surface.forbiddenAssets.join(', ')})`);
+  }
 
   if (surface.aggregateBudget) {
     const aggregateSize = await sumFilesWithExtensions(
