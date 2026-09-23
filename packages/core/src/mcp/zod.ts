@@ -754,6 +754,7 @@ export const templateContentProfileSchema = z
     hasDate: z.boolean(),
     hasNumberHighlight: z.boolean(),
     wordCount: nonNegativeSafeIntegerSchema,
+    hasCompoundBody: z.boolean(),
     hasAsciiDiagram: z.boolean(),
     hasTimeline: z.boolean(),
     hasTree: z.boolean(),

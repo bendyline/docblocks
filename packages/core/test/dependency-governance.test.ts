@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import {
+  COOLDOWN_EXCLUSIONS,
   validateDependencyToolchain,
   validateInstallScriptPolicy,
 } from '../../../scripts/check-dependency-governance.js';
@@ -52,28 +53,47 @@ describe('dependency governance', () => {
     ).to.throw('is stale or absent');
   });
 
-  it('pins the npm feature floor and the sole Squisq cooldown exception', () => {
+  it('pins the npm feature floor and the first-party cooldown exceptions', () => {
     const manifest = {
       devDependencies: { npm: '11.19.1' },
       engines: { npm: '>=11.19.1' },
       packageManager: 'npm@11.19.1',
     } as const;
+    const exclusions = COOLDOWN_EXCLUSIONS.map((pattern) => `min-release-age-exclude[]=${pattern}`);
     const npmrc = [
       'workspaces-update=false',
       'save-exact=true',
       'strict-allow-scripts=true',
       'min-release-age=7',
-      'min-release-age-exclude[]=@bendyline/squisq*',
+      ...exclusions,
       '',
     ].join('\n');
 
+    expect(COOLDOWN_EXCLUSIONS).to.deep.equal([
+      '@bendyline/squisq*',
+      '@bendyline/gezel*',
+      '@bendyline/gezk',
+    ]);
     expect(() => validateDependencyToolchain(manifest, npmrc)).not.to.throw();
+
+    // A further family is a policy change, not a config edit: it must fail
+    // until the checker, AGENTS.md and the governance doc move together.
     expect(() =>
       validateDependencyToolchain(
         manifest,
         `${npmrc}min-release-age-exclude[]=@bendyline/docblocks*\n`,
       ),
-    ).to.throw('min-release-age-exclude[] must be @bendyline/squisq*');
+    ).to.throw(
+      'min-release-age-exclude[] must be @bendyline/squisq*, @bendyline/gezel*, @bendyline/gezk',
+    );
+
+    // Dropping gezk looks harmless because the Gezel pattern reads as if it
+    // covers the family, but it does not match gezk, which the client needs.
+    const withoutGezk = npmrc.replace('min-release-age-exclude[]=@bendyline/gezk\n', '');
+    expect(() => validateDependencyToolchain(manifest, withoutGezk)).to.throw(
+      'min-release-age-exclude[] must be',
+    );
+
     expect(() =>
       validateDependencyToolchain({ ...manifest, devDependencies: { npm: '11.18.0' } }, npmrc),
     ).to.throw('devDependencies.npm must pin npm@11.19.1');

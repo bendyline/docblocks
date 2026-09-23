@@ -14,10 +14,24 @@ published `latest` version is not eligible until its cooldown has elapsed. Keep
 dependencies exact-pinned; do not bypass the window by editing a manifest or
 lockfile by hand.
 
-The sole exception is the internally maintained Squisq package family,
-`@bendyline/squisq*`. npm applies that exception only to the matching Squisq
-package itself; Squisq's third-party dependencies still observe the cooldown.
-Do not add another exclusion to `.npmrc`.
+Two first-party package families are exempt, and only these two:
+
+- **Squisq**, `@bendyline/squisq*` — the editor every surface embeds.
+- **Gezel**, `@bendyline/gezel*` plus `@bendyline/gezk` — the local AI runtime
+  behind DocBlocks' AI features, which DocBlocks is also used to prove out.
+  `@bendyline/gezk` is named separately because the Gezel pattern does not
+  match it, and the Gezel client depends on it; without that entry a same-day
+  Gezel release would still be blocked by its format package.
+
+Both are internally maintained and developed alongside DocBlocks, so waiting a
+week for our own release would only delay a fix we wrote. npm applies an
+exclusion only to the matching package itself: every third-party dependency of
+Squisq or Gezel still observes the cooldown.
+
+`scripts/check-dependency-governance.ts` requires exactly this list, in this
+order. Adding a family is a policy decision, not a configuration edit: change
+the checker, this document, and AGENTS.md in the same commit, and state why the
+family is first-party and co-developed. Never exempt a third-party package.
 
 The exclusion feature requires npm 11.17 or newer. The repository pins npm
 11.19.1 for contributor and CI commands. That release contains patched
@@ -54,19 +68,32 @@ dependency inventory is not attached to the GitHub Release.
 
 Every advisory object in the current npm report must have exactly one entry in
 `security/dependency-audit-dispositions.json`. The gate fails when a finding is
-missing a disposition, a disposition is stale or expired, the declared
-severity changes, or the review is more than 30 days old. Dispositions may not
-extend more than 30 days. Critical findings always block, and high or critical
-findings that affect shipped code cannot be accepted by policy. A package-floor
-check remains useful for vulnerabilities that npm does not model, but it is not
-a substitute for this finding-level review.
+missing a disposition or its declared severity changes. Critical findings
+always block, and high or critical findings that affect shipped code cannot be
+dispositioned at all. A package-floor check remains useful for vulnerabilities
+that npm does not model, but it is not a substitute for this finding-level
+review.
 
-The current exception is deliberately narrow: `@tiptap/core` is a moderate
-shipped-code finding whose fixed major line requires a coordinated
-Squisq/Tiptap migration. The advisory notes that standard fixed ProseMirror
-schemas discard unknown attributes; DocBlocks does not accept runtime plugins
-or arbitrary schemas, and renderer CSP further limits active content while the
-migration is completed.
+A disposition is one of two kinds, and only one of them has a calendar:
+
+- **Time-boxed** (`upstream-blocked`, `mitigated`, `not-shipped`): a risk we are
+  still carrying. It expires within 30 days, the document's review date must be
+  no more than 30 days old, and an entry npm stops reporting fails as stale. The
+  expiry is what forces a carried risk to be looked at again.
+- **Patched** (`patched`): a finding that is fixed but still reported, usually
+  because the advisory's affected range does not credit a backport. It has no
+  expiry. Instead `verifiedBy` names a test inside the repository that proves
+  the installed version is fixed; the gate requires that file to exist and to
+  cite the advisory, and `npm run all` runs it. When npm eventually stops
+  reporting the finding, the gate prints a notice that the entry can be deleted
+  rather than failing the build on the day the advisory database changes.
+
+A document of nothing but patched entries has no review clock at all.
+
+The current entry is patched: `@tiptap/core` GHSA-CP6Q-959Q-F8RH. Squisq ships
+Tiptap 2.27.3, which backports the upstream fix, but the advisory lists every
+2.x release as affected. `packages/react/test/tiptap-prototype-safety.test.ts`
+proves the fix against the Tiptap DocBlocks actually installs.
 
 The root exact overrides select `esbuild@0.28.1` only for `tsup` and `tsx`, and
 `serialize-javascript@7.0.5` only for Mocha. They intentionally cross those
@@ -78,10 +105,11 @@ Keep the overrides until every parent raises its own dependency range; removing
 one must make the complete audit gate prove that the vulnerable line did not
 return.
 
-Renewing an exception requires re-reading the advisory, confirming the exact
-dependency path and shipped scope, updating the reason and remediation, and
-setting a new date no more than 30 days out. Remove the disposition as soon as
-the lockfile no longer reports it; stale entries fail the gate.
+Renewing a time-boxed disposition requires re-reading the advisory, confirming
+the exact dependency path and shipped scope, updating the reason and
+remediation, and setting a new date no more than 30 days out. If the finding
+has since been fixed, convert it to `patched` with a verification test instead
+of renewing it.
 
 ## Install-script policy
 
@@ -110,8 +138,9 @@ To review a future change:
    non-registry `prepare` script, including network downloads and native binary
    selection.
 2. Check the exact version's timestamp with `npm view <package> time --json` and
-   wait until seven full days have elapsed. Squisq is the only release-age
-   exception, not an automatic install-script approval.
+   wait until seven full days have elapsed. The Squisq and Gezel release-age
+   exceptions are not install-script approvals: a script in either family is
+   reviewed and pinned like any other.
 3. Add only the exact lockfile version to `package.json#allowScripts`. Exact
    versions of the same package may be joined with `||`.
 4. Run `npm run check:dependency-governance` and then `npm run all`.
