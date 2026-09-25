@@ -589,9 +589,12 @@ function requireSafeDesktopReleaseDependencies(): void {
 
 requireSafeDesktopReleaseDependencies();
 
+// Both `require('x')` and a dynamic `import('x')` load a package at runtime:
+// tsup leaves `import()` in place for external ESM-only packages (the Gezel
+// SDK), and electron-builder still has to ship them.
 function collectRuntimeRequires(source: string): Set<string> {
   const runtimeRequires = new Set<string>();
-  for (const match of source.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
+  for (const match of source.matchAll(/\b(?:require|import)\((['"])([^'"]+)\1\)/gu)) {
     runtimeRequires.add(match[2]);
   }
   return runtimeRequires;
