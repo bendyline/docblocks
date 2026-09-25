@@ -79,6 +79,9 @@ npm run format              # prettier --write
 # Squisq parallel dev — symlinks @bendyline/squisq* from ..\squisq
 npm run link:squisq         # link
 npm run dev:squisq          # link + watch
+# Surfaces load linked Squisq from its dist/, not src/. `npm run app` and
+# `npm run site` rebuild any linked package whose sources are newer first
+# (scripts/build-linked-squisq.ts); edits made while one runs need dev:squisq.
 npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity

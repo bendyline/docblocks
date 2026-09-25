@@ -25,7 +25,7 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-calc@2.11.0, @bendyline/squisq-cli@2.8.8, @bendyline/squisq-editor-react@2.11.8, @bendyline/squisq-formats@2.6.8, @bendyline/squisq-grid-react@2.11.9, @bendyline/squisq-react@2.11.8, @bendyline/squisq-video-react@2.4.12, @bendyline/squisq-video@2.3.11, @bendyline/squisq@2.11.8.
+- Squisq packages: @bendyline/squisq-calc@2.11.0, @bendyline/squisq-cli@2.8.8, @bendyline/squisq-editor-react@2.11.9, @bendyline/squisq-formats@2.6.8, @bendyline/squisq-grid-react@2.11.9, @bendyline/squisq-react@2.11.9, @bendyline/squisq-video-react@2.4.13, @bendyline/squisq-video@2.3.11, @bendyline/squisq@2.11.8.
 - MCP SDK: @modelcontextprotocol/sdk@1.29.0.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.
