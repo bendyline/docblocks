@@ -21,11 +21,11 @@ import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-r
 import type { SharedDocumentMode } from '@bendyline/docblocks/share';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { DisplayMode } from '@bendyline/squisq-react';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
+import type { MediaEditRenderManager } from '@bendyline/squisq-video-react/media-edit';
 import type { ExportOptions } from './export-options.js';
 import {
   DEFAULT_OPTIONS,
@@ -36,7 +36,10 @@ import {
 import type { ExportBlobSaver } from './run-export.js';
 import { browserSaveMode, saveActionLabel } from './browser-save.js';
 import { buildExportFilename } from './export-filename.js';
+import { hostErrorDetail } from './host-error.js';
+import { createImageSaveOutput } from './image-save.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
+import { buildVideoExportDoc } from './video-export-doc.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
@@ -67,6 +70,11 @@ export interface ExportToolbarControlsProps {
   workspaceContainer?: ContentContainer | null;
   /** Active document media provider used to preload audio and video export assets. */
   mediaProvider?: MediaProvider | null;
+  /**
+   * Processed-audio renders for media-edit recipes. Video export waits for
+   * pending renders and mixes the processed audio in place of the original.
+   */
+  mediaEditRenders?: MediaEditRenderManager | null;
   /** Override the default browser download behavior for host-provided save flows. */
   saveBlob?: ExportBlobSaver;
   /** Optional host adapter for displaying, picking, and saving to a native target path. */
@@ -118,15 +126,8 @@ interface ResolvedQuickDestination {
 
 class ExportCancelledError extends Error {}
 
-type ParsedMarkdown = ReturnType<typeof parseMarkdown>;
-
 interface VideoExportModules {
   Modal: ComponentType<VideoExportModalProps>;
-  markdownToDoc: (doc: ParsedMarkdown) => VideoExportModalProps['doc'];
-  resolveAudioMapping: (
-    doc: VideoExportModalProps['doc'],
-    container: ContentContainer,
-  ) => Promise<VideoExportModalProps['doc']>;
   playerScript: string;
 }
 
@@ -157,13 +158,10 @@ let videoExportModulesPromise: Promise<VideoExportModules> | null = null;
 
 function loadVideoExportModules(): Promise<VideoExportModules> {
   videoExportModulesPromise ??= Promise.all([
-    import('@bendyline/squisq/doc'),
     import('@bendyline/squisq-video-react'),
     import('@bendyline/squisq-react/standalone-source'),
-  ]).then(([docModule, videoModule, playerModule]) => ({
+  ]).then(([videoModule, playerModule]) => ({
     Modal: videoModule.VideoExportModal,
-    markdownToDoc: docModule.markdownToDoc,
-    resolveAudioMapping: docModule.resolveAudioMapping,
     playerScript: playerModule.PLAYER_BUNDLE,
   }));
   return videoExportModulesPromise;
@@ -175,10 +173,7 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
  * destination write refused) whose messages are already user-facing.
  */
 function exportErrorMessage(caught: unknown): string {
-  const detail =
-    caught instanceof Error
-      ? caught.message.replace(/^Error invoking remote method '[^']+': Error:\s*/, '').trim()
-      : '';
+  const detail = hostErrorDetail(caught);
   return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
 }
 
@@ -231,6 +226,7 @@ export function ExportToolbarControls({
   mediaContainer,
   workspaceContainer,
   mediaProvider,
+  mediaEditRenders = null,
   saveBlob,
   destinationAdapter,
   trigger = 'menu',
@@ -428,12 +424,12 @@ export function ExportToolbarControls({
       setVideoLoading(true);
 
       try {
-        const modules = videoModules ?? (await loadVideoExportModules());
+        const [modules, exportDoc] = await Promise.all([
+          videoModules ?? loadVideoExportModules(),
+          // The same projection the Video preview plays, so the MP4 matches it.
+          buildVideoExportDoc(markdownSource, { fileName: selectedFile, workspaceContainer }),
+        ]);
         setVideoModules(modules);
-        const parsedDoc = modules.markdownToDoc(parseMarkdown(markdownSource));
-        const exportDoc = workspaceContainer
-          ? await modules.resolveAudioMapping(parsedDoc, workspaceContainer)
-          : parsedDoc;
         setVideoDoc(exportDoc);
       } catch {
         setVideoLoadError('Video export could not be loaded.');
@@ -441,7 +437,7 @@ export function ExportToolbarControls({
         setVideoLoading(false);
       }
     },
-    [markdownSource, videoModules, workspaceContainer],
+    [markdownSource, selectedFile, videoModules, workspaceContainer],
   );
 
   const handleCloseVideoModal = useCallback(() => {
@@ -575,13 +571,9 @@ export function ExportToolbarControls({
     setExportError(null);
   }, []);
 
-  const handleVideoSave = useCallback(
-    async (blob: Blob, filename: string): Promise<boolean> => {
-      if (!destinationAdapter) return false;
-      const target = await destinationAdapter.pickTarget(filename, null);
-      if (!target) return false;
-      return (await destinationAdapter.saveBlob(blob, filename, target)) !== null;
-    },
+  // Finished video takes the same fresh-pick host flow as rendered images.
+  const videoSaveOutput = useMemo(
+    () => (destinationAdapter ? createImageSaveOutput(destinationAdapter) : undefined),
     [destinationAdapter],
   );
 
@@ -813,6 +805,7 @@ export function ExportToolbarControls({
             doc={videoDoc}
             playerScript={videoModules.playerScript}
             {...(mediaProvider ? { mediaProvider } : {})}
+            mediaEditRenders={mediaEditRenders}
             colorScheme={colorScheme}
             uiPalette={videoExportPalette}
             defaultConfig={{
@@ -820,9 +813,9 @@ export function ExportToolbarControls({
               ...(ffmpegWasm ? { ffmpegWasm } : {}),
               outputFormat: videoOutputFormat,
             }}
-            {...(destinationAdapter
+            {...(videoSaveOutput
               ? {
-                  saveOutput: handleVideoSave,
+                  saveOutput: videoSaveOutput,
                   saveActionLabel: (format: 'mp4' | 'gif') => saveActionLabel(format, 'save-as'),
                 }
               : {})}

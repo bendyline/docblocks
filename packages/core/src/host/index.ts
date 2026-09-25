@@ -116,6 +116,7 @@ export {
 } from './filesystem-v2.js';
 
 export {
+  EXPORT_TRANSFER_LIMITS,
   HOST_WIRE_LIMITS,
   MAX_HOST_PINNED_DOCUMENTS,
   isBoundedBytePayload,

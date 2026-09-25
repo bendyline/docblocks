@@ -352,6 +352,10 @@ export default defineConfig({
       // undeclared it is found the moment a document opens, and the resulting
       // re-optimization reloads the page out from under the editor.
       'harper.js',
+      // Media edits reach RNNoise the same way: a dynamic import inside the
+      // excluded video-react media-edit worker. Nested so it resolves both
+      // linked (from Squisq's tree) and installed (hoisted).
+      '@bendyline/squisq-video-react > @shiguredo/rnnoise-wasm',
       // Squisq's Markdown serializer is reached from an excluded package too.
       // Without an eager pre-bundle, Vite can discover remark-stringify while
       // a test page is loading and invalidate its mdast-util-to-markdown module

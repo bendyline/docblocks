@@ -53,6 +53,39 @@ describe('rendered image host save output', () => {
     expect(await saveCancelled(blob, 'cover.png')).to.equal(false);
   });
 
+  it('surfaces a host save failure without Electron IPC internals', async () => {
+    // Squisq's cover, dashboard, and video dialogs print this message verbatim.
+    const actionable = 'There isn\'t enough space to save "talk.mp4".';
+    const saveOutput = createImageSaveOutput({
+      async pickTarget() {
+        return { grantId: 'video-grant', displayPath: 'talk.mp4' };
+      },
+      async saveBlob() {
+        throw new Error(`Error invoking remote method 'exports:finishSave': Error: ${actionable}`);
+      },
+    });
+
+    let failure: unknown;
+    await saveOutput(new Blob(['video']), 'talk.mp4').catch((error) => {
+      failure = error;
+    });
+    expect((failure as Error).message).to.equal(actionable);
+
+    const opaque = createImageSaveOutput({
+      async pickTarget() {
+        throw 'picker crashed';
+      },
+      async saveBlob() {
+        return null;
+      },
+    });
+    let opaqueFailure: unknown;
+    await opaque(new Blob(['video']), 'talk.mp4').catch((error) => {
+      opaqueFailure = error;
+    });
+    expect((opaqueFailure as Error).message).to.equal('Couldn\'t save "talk.mp4".');
+  });
+
   it('routes dashboard image exports through the same host destination flow', async () => {
     const target = { grantId: 'dashboard-grant', displayPath: 'brief-dashboard.png' };
     const blob = new Blob(['dashboard'], { type: 'image/png' });

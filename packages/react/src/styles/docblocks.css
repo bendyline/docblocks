@@ -2519,6 +2519,31 @@ body.db-resizing-sidebar * {
   cursor: default;
 }
 
+/* The quieter of two actions — Disconnect beside a primary Connect. */
+.db-settings-action--secondary {
+  border-color: var(--db-input-border);
+  background: transparent;
+  color: var(--db-text);
+}
+
+.db-settings-action--secondary:hover:not(:disabled) {
+  border-color: var(--db-accent);
+  background: var(--db-bg-subtle);
+}
+
+/* A one-time code the person types into Gezel: easy to read and to select. */
+.db-settings-ai-code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  color: var(--db-text);
+  user-select: all;
+}
+
+.db-settings-ai-error {
+  color: var(--db-danger);
+}
+
 .db-settings-accent {
   position: relative;
   display: flex;

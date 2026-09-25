@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
@@ -226,5 +227,44 @@ test('grants capture only to the trusted renderer and exposes only working prese
     await expect
       .poll(() => packaged.window.evaluate(() => document.fullscreenElement === null))
       .toBe(true);
+  }
+});
+
+test('loads the Gezel SDK from app.asar once AI is switched on', async ({ launchPackagedApp }) => {
+  // An empty Gezel home makes discovery deterministic on any machine. Reaching
+  // `provider-unavailable` rather than `runtime-missing` proves the ESM-only
+  // SDK was packed as a dependency and imports under the production fuses.
+  const gezelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-packaged-gezel-home-'));
+  const previousHome = process.env.GEZEL_HOME;
+  process.env.GEZEL_HOME = gezelHome;
+  try {
+    const packaged = await launchPackagedApp();
+    await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
+    const outcome = await packaged.window.evaluate(async () => {
+      const ai = (
+        globalThis as {
+          docBlocksHost?: {
+            ai?: {
+              setPreferences(patch: { enabled: boolean }): Promise<unknown>;
+              connect(): Promise<{ ok: boolean; error?: { code: string } }>;
+              status(): Promise<unknown>;
+            };
+          };
+        }
+      ).docBlocksHost?.ai;
+      if (!ai) throw new Error('The packaged host exposes no AI namespace');
+      await ai.setPreferences({ enabled: true });
+      const result = await ai.connect();
+      return { ok: result.ok, code: result.error?.code, status: await ai.status() };
+    });
+    expect(outcome).toEqual({
+      ok: false,
+      code: 'provider-unavailable',
+      status: { kind: 'unavailable', reason: 'not-installed' },
+    });
+  } finally {
+    if (previousHome === undefined) delete process.env.GEZEL_HOME;
+    else process.env.GEZEL_HOME = previousHome;
+    fs.rmSync(gezelHome, { recursive: true, force: true });
   }
 });

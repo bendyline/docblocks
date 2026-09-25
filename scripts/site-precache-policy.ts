@@ -12,8 +12,14 @@ export const SITE_PRECACHE_MAX_BYTES = 18 * 1024 * 1024;
  * after. These optional features still have to work on a plane like every
  * other feature; the ceiling tracks their reviewed asset cost rather than
  * acting as general headroom.
+ *
+ * Raised by 10 MiB for media edits (audio cleanup), measured 72.9 MiB: the
+ * RNNoise engine (~4.8 MiB, WASM embedded) ships inside the media-edit worker,
+ * which must be one IIFE-capable bundle for the VS Code webview, and again as
+ * the lazy chunk behind the main-thread fallback used when a worker cannot
+ * start.
  */
-export const SITE_PRECACHE_MAX_TOTAL_BYTES = 66 * 1024 * 1024;
+export const SITE_PRECACHE_MAX_TOTAL_BYTES = 76 * 1024 * 1024;
 
 export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'html',

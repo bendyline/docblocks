@@ -62,6 +62,18 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     match: /Render methods should be a pure function[\s\S]*WysiwygEditor/u,
   },
   {
+    // Upstream: Tiptap's React node-view renderer creates node views with
+    // flushSync. When squisq's WysiwygEditor pushes an external source change
+    // (a timeline edit, a media-edit recipe) into Tiptap from its sync effect,
+    // the audio/video/image node views it recreates flush inside that React
+    // lifecycle and React logs this development-only warning. The render still
+    // completes; the fix (deferring the external setContent) belongs in
+    // ../squisq.
+    reason: 'upstream: Tiptap node views flush during squisq WysiwygEditor external sync',
+    match:
+      /^Warning: flushSync was called from inside a lifecycle method\. React cannot flush when React is already rendering\./u,
+  },
+  {
     // Chromium logs the network failure before any application code can see the
     // response, so an offline test that deliberately severs the network cannot
     // suppress it at the source.

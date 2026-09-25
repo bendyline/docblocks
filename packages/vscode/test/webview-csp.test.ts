@@ -81,6 +81,18 @@ describe('VS Code webview content security policy', () => {
     expect(directives.get('script-src')).to.include("'wasm-unsafe-eval'");
   });
 
+  it('lets the page read its own media (data:/blob: URLs) but nothing remote', () => {
+    // Media edits fetch sources and render manifests the media bridge resolves
+    // to data: URLs; nothing may widen fetches beyond the extension origin.
+    const connectSrc = directives.get('connect-src') ?? [];
+    expect(connectSrc).to.include('data:');
+    expect(connectSrc).to.include('blob:');
+    for (const source of connectSrc) {
+      if (source === CSP_SOURCE || source === 'data:' || source === 'blob:') continue;
+      expect.fail(`connect-src must not carry an extra source: ${source}`);
+    }
+  });
+
   it('does not widen font-src to a remote origin or a wildcard', () => {
     const fontSrc = directives.get('font-src') ?? [];
     expect(fontSrc).to.not.include('*');

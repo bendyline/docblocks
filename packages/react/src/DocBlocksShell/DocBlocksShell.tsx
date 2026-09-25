@@ -18,6 +18,7 @@ import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
+import type { MediaEditRenderManager } from '@bendyline/squisq-video-react/media-edit';
 import {
   DocumentVersionManager,
   type PrunePolicy,
@@ -97,6 +98,7 @@ import {
   type ExportDestinationAdapter,
 } from '../Export/DeferredExportToolbarControls.js';
 import { createBrowserSaveAsAdapter } from '../Export/browser-save.js';
+import { saveBlobToHost } from '../Export/host-export-save.js';
 import { createImageSaveOutput } from '../Export/image-save.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
@@ -1330,8 +1332,8 @@ export function DocBlocksShell({
           resolveTarget: (filename) => resolveTarget(documentId, filename),
           pickTarget: (filename, currentTarget) =>
             pickTarget(documentId, filename, currentTarget?.grantId ?? null),
-          saveBlob: async (blob, filename, target) =>
-            exports.save(documentId, filename, target?.grantId ?? null, await blob.arrayBuffer()),
+          saveBlob: (blob, filename, target) =>
+            saveBlobToHost(exports, documentId, blob, filename, target?.grantId ?? null),
         };
       }
     }
@@ -2381,6 +2383,33 @@ export function DocBlocksShell({
       mp.dispose();
     };
   }, [provider, selectedFile, selectedOutsideIn, mediaEpoch]);
+
+  // Processed-audio renders for media-edit recipes (denoise, de-breath,
+  // loudness), one manager per document media scope. Shared by the editor and
+  // the video export so both see the same renders. Loaded on demand so the
+  // shell bundle never carries the render engine.
+  const [mediaEditRenders, setMediaEditRenders] = useState<MediaEditRenderManager | null>(null);
+  useEffect(() => {
+    setMediaEditRenders(null);
+    if (!mediaProvider) return;
+    let manager: MediaEditRenderManager | null = null;
+    let cancelled = false;
+    void import('@bendyline/squisq-video-react/media-edit').then(
+      ({ createMediaEditRenderManager }) => {
+        if (cancelled) return;
+        manager = createMediaEditRenderManager({ mediaProvider });
+        setMediaEditRenders(manager);
+      },
+      () => {
+        // Media edits are optional: without the engine the editor simply
+        // offers no audio cleanup.
+      },
+    );
+    return () => {
+      cancelled = true;
+      manager?.dispose();
+    };
+  }, [mediaProvider]);
 
   const documentLinkProvider = useDocumentLinkProvider(
     provider,
@@ -4624,6 +4653,7 @@ export function DocBlocksShell({
                 storagePersistent={showBrowserStorageWarning ? browserStoragePersistent : undefined}
                 appVersion={appVersion}
                 appBuildDate={appBuildDate}
+                ai={hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined}
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -4847,6 +4877,7 @@ export function DocBlocksShell({
                     placeholder={editorPlaceholder}
                     outlineWidth={280}
                     mediaProvider={mediaProvider}
+                    mediaEditRenders={mediaEditRenders}
                     calcEngineFactory={calcEngineFactory}
                     proofing={proofing}
                     proofingDefaultEnabled={proofingDefaultEnabled}
@@ -4906,6 +4937,7 @@ export function DocBlocksShell({
                           mediaContainer={mediaContainerRef.current}
                           workspaceContainer={versionsContainer}
                           mediaProvider={mediaProvider}
+                          mediaEditRenders={mediaEditRenders}
                           destinationAdapter={exportDestinationAdapter}
                           colorScheme={resolvedTheme}
                           videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}

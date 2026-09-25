@@ -21,6 +21,7 @@ Key main-process modules:
 - `menu.ts` / `tray.ts` — native menu and tray integration
 - `updater.ts` — auto-update via electron-updater (checks this repo's GitHub Releases)
 - `settings.ts`, `open-requests.ts`, `icloud-detect.ts` — persisted app settings, open-file handling, iCloud Drive detection
+- `ipc-ai.ts` + `ai/` — optional AI through the user's own Gezel (discovery, consent, streamed completions); off until the user opts in under Settings › AI assistance
 
 ## Architecture rules
 

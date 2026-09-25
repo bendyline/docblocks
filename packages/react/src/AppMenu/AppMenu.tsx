@@ -3,7 +3,11 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { getHostEnvironment, type HostSurfaceKind } from '@bendyline/docblocks/host';
+import {
+  getHostEnvironment,
+  type DocBlocksHostAiAPI,
+  type HostSurfaceKind,
+} from '@bendyline/docblocks/host';
 import type { VersioningPreference } from '../preferences/versioning.js';
 import type {
   AccentColor,
@@ -23,6 +27,7 @@ import {
   ThemeSettings,
   WriteCanvasSettingsControls,
 } from '../Settings/Settings.js';
+import { AiSettingsControls } from '../Settings/AiSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
@@ -82,6 +87,11 @@ export interface AppMenuProps {
   appVersion?: string;
   /** ISO build date shown in About. */
   appBuildDate?: string;
+  /**
+   * The host's AI API. When present, Settings offers an AI section; when
+   * omitted — a host without AI — the section is hidden.
+   */
+  ai?: DocBlocksHostAiAPI;
 }
 
 function formatBytes(bytes: number): string {
@@ -123,6 +133,7 @@ export function AppMenu({
   storagePersistent,
   appVersion,
   appBuildDate,
+  ai,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
@@ -300,6 +311,7 @@ export function AppMenu({
             value={proofingPreferences}
             onChange={(settings) => onProofingPreferencesChange?.(settings)}
           />
+          {ai && <AiSettingsControls ai={ai} />}
 
           {getStorageEstimate && (
             <fieldset className="db-settings-fieldset">

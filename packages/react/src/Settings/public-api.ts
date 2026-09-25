@@ -1,3 +1,5 @@
+export { AiSettingsControls } from './AiSettings.js';
+export type { AiSettingsControlsProps } from './AiSettings.js';
 export {
   AccentColorSettings,
   InterfaceFontSettings,

@@ -211,6 +211,56 @@ packages/desktop/preload/preload.ts      ← contextBridge exposure
 
 Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host` and degrades gracefully when running in a non-Electron context (site, vscode webview). **Renderer must never import `electron` or `node:*`.**
 
+### AI is an optional Gezel sidecar behind `host.ai`
+
+`packages/core/src/host/ai.ts` (`DocBlocksHostAiAPI`) names no provider;
+`packages/react` renders it (`AiSettingsControls`, shown when
+`hostSupports('aiAssist')`) and never learns what is behind it. On desktop,
+`main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
+machine — to the renderer, and `main/ai/gezel-connector.ts` is the only code
+that knows Gezel: it discovers the user's own running Gezel and asks for an
+inference-only (`openai`) grant with a typed verification code. Three rules
+are load-bearing and each has a test:
+
+- **Opt-out is silence.** Until the user ticks the Settings box nothing is
+  detected, probed, or contacted.
+- **Only a gesture can prompt.** Startup and re-enabling reconnect with a
+  stored grant or not at all. Because DocBlocks passes
+  `requireVerificationCode` and omits the code handler on a silent attempt, the
+  SDK refuses to register a new grant — `packages/desktop/test/gezel-connector.test.ts`
+  pins that against the real SDK and a fake daemon, so an SDK upgrade that
+  changed the ordering fails there rather than as an unprompted consent dialog.
+- **Every stream ends exactly once** (`done` with partial text on cancel, or
+  one `error`), streams are scoped to the renderer that started them, and a
+  renderer that reloads or closes has its streams cancelled.
+
+The SDK is ESM-only and the main bundle is CJS, so it stays external in tsup
+and is reached by dynamic `import()`; it must be a desktop **dependency** (not a
+devDependency) or electron-builder leaves it out of app.asar. The grant lives in
+a `safeStorage`-encrypted file under userData, never in `settings.json`. A Mac
+App Store build omits `host.ai` entirely — the sandbox cannot read Gezel's
+runtime directory — via the main-stamped `--docblocks-ai` switch.
+
+**When the person's Gezel cannot serve, DocBlocks hosts one.** Absent, not
+running, or unwilling to connect DocBlocks (declined, expired, no reusable
+grant, connected apps off) all fall back to a private daemon under
+`~/.gezel/apps/docblocks/` — the person opted into AI inside DocBlocks, which
+is the consent this rests on. A running Gezel that fails for any other reason
+is reported, not hidden. The hosted daemon runs as a child under a real Node
+(`runAsNode` is fused off, and its native modules need Node's ABI), offers only
+on-device models already in the person's Gezel folder, may download an engine
+with visible progress, and never downloads weights. `main/ai/gezel-host-runtime.ts`
+finds the runtime: packaged builds use `resources/gezel-host/` (not yet
+produced by the build — until it is, packaged AI works only with a running
+Gezel); source builds use `DOCBLOCKS_GEZEL_SERVICE_ENTRY` (the absolute path of
+a local Gezel service build's `gezeld.js`) and `DOCBLOCKS_GEZEL_NODE_PATH`,
+falling back to the Node a Gezel install keeps in its home, then `node` on
+PATH. Engines are optional: a shipped `gezel-host/native-bin/` (development:
+`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`) becomes the daemon's `nativeBinDir`, so a
+first run downloads nothing. It must hold the native release the bundled
+service pins (`@bendyline/gezel-service/native-release`), laid out as
+`<platform>-<backend>/`. Packaged builds ignore all three variables.
+
 ### The CLI has one current command contract
 
 [`docs/cli.md`](docs/cli.md) is the authoritative behavioral guide for all

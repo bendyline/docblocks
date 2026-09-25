@@ -26,6 +26,7 @@ describe('Core exports', () => {
       'DocumentSession',
       'DocumentSessionConflictError',
       'ELECTRON_FILE_SYSTEM_V2_CAPABILITIES',
+      'EXPORT_TRANSFER_LIMITS',
       'ElectronFileSystemProvider',
       'ElectronFileSystemProviderV2',
       'FILE_SYSTEM_TRANSFER_LIMITS',

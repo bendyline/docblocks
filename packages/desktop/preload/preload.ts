@@ -4,8 +4,12 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import { parseOpenRequest } from '@bendyline/docblocks/host';
+import { parseAiChatEvent, parseAiStatus, parseOpenRequest } from '@bendyline/docblocks/host';
 import type {
+  AiChatCompletion,
+  AiError,
+  AiResult,
+  DocBlocksHostAiAPI,
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
   DocBlocksHostFsV2API,
@@ -33,7 +37,10 @@ import type {
 } from '@bendyline/docblocks/host';
 import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem';
 import { BufferedEventChannel } from './buffered-event-channel.js';
-import { parseHostEnvironmentArguments } from '../shared/host-environment.js';
+import {
+  parseAiAvailabilityArgument,
+  parseHostEnvironmentArguments,
+} from '../shared/host-environment.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
 // ready-to-show, before React effects subscribe. Install this preload listener
@@ -177,7 +184,7 @@ const clipboardApi: DocBlocksHostClipboardAPI = {
     ipcRenderer.invoke('clipboard:writeWorkspacePath', workspaceId, workspacePath),
 };
 
-// â”€â”€ exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── exports ─────────────────────────────────────────────────────────
 
 const exportApi: DocBlocksHostExportAPI = {
   resolveTarget: (documentId, filename) =>
@@ -186,6 +193,12 @@ const exportApi: DocBlocksHostExportAPI = {
     ipcRenderer.invoke('exports:pickTarget', documentId, filename, currentGrantId ?? null),
   save: (documentId, filename, grantId, data) =>
     ipcRenderer.invoke('exports:save', documentId, filename, grantId, data),
+  beginSave: (documentId, filename, grantId, size) =>
+    ipcRenderer.invoke('exports:beginSave', documentId, filename, grantId, size),
+  writeChunk: (transferId, offset, data) =>
+    ipcRenderer.invoke('exports:writeChunk', transferId, offset, data),
+  finishSave: (transferId) => ipcRenderer.invoke('exports:finishSave', transferId),
+  closeTransfer: (transferId) => ipcRenderer.invoke('exports:closeTransfer', transferId),
 };
 
 // ── ffmpeg ──────────────────────────────────────────────────────────
@@ -279,6 +292,90 @@ const updaterApi: DocBlocksHostUpdaterAPI = {
     const fn = (_event: Electron.IpcRendererEvent, status: UpdaterStatus) => listener(status);
     ipcRenderer.on('updater:status', fn);
     return () => ipcRenderer.removeListener('updater:status', fn);
+  },
+};
+
+// ── ai ──────────────────────────────────────────────────────────────
+
+function aiFailure(message: string, detail?: unknown): AiError {
+  const text = detail instanceof Error ? detail.message : undefined;
+  return {
+    code: 'unknown',
+    message,
+    ...(text ? { detail: text.replaceAll('\0', '').slice(0, 2_000) } : {}),
+  };
+}
+
+const aiApi: DocBlocksHostAiAPI = {
+  status: () => ipcRenderer.invoke('ai:status'),
+  onStatus(listener) {
+    const fn = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      const status = parseAiStatus(value);
+      if (status) listener(status);
+    };
+    ipcRenderer.on('ai:status', fn);
+    return () => ipcRenderer.removeListener('ai:status', fn);
+  },
+  getPreferences: () => ipcRenderer.invoke('ai:getPreferences'),
+  setPreferences: (patch) => ipcRenderer.invoke('ai:setPreferences', patch),
+  connect: () => ipcRenderer.invoke('ai:connect'),
+  disconnect: () => ipcRenderer.invoke('ai:disconnect'),
+  models: () => ipcRenderer.invoke('ai:models'),
+  chat(request, onEvent) {
+    // Minted here, in the bridge, and scoped to this renderer by main — the
+    // caller never chooses it, so it cannot address anyone else's stream.
+    const requestId = mintId('ai');
+    let finished = false;
+    let settle: (result: AiResult<AiChatCompletion>) => void = () => undefined;
+    const done = new Promise<AiResult<AiChatCompletion>>((resolve) => {
+      settle = resolve;
+    });
+
+    const deliver = (event: Parameters<typeof onEvent>[0]) => {
+      try {
+        onEvent(event);
+      } catch {
+        // A throwing consumer must not strand the stream's bookkeeping.
+      }
+    };
+    const finish = (result: AiResult<AiChatCompletion>) => {
+      if (finished) return;
+      finished = true;
+      ipcRenderer.removeListener('ai:chat:event', listener);
+      settle(result);
+    };
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (finished || typeof payload !== 'object' || payload === null) return;
+      const record = payload as { requestId?: unknown; event?: unknown };
+      if (record.requestId !== requestId) return;
+      const event = parseAiChatEvent(record.event);
+      if (!event) {
+        const error = aiFailure('DocBlocks received a response it could not read.');
+        void ipcRenderer.invoke('ai:chat:cancel', requestId).catch(() => undefined);
+        deliver({ kind: 'error', error });
+        finish({ ok: false, error });
+        return;
+      }
+      deliver(event);
+      if (event.kind === 'done') finish({ ok: true, value: event.completion });
+      else if (event.kind === 'error') finish({ ok: false, error: event.error });
+    };
+
+    // Listen before starting: main may answer synchronously.
+    ipcRenderer.on('ai:chat:event', listener);
+    ipcRenderer.invoke('ai:chat:start', requestId, request).catch((cause: unknown) => {
+      if (finished) return;
+      const error = aiFailure('DocBlocks could not start the AI request.', cause);
+      deliver({ kind: 'error', error });
+      finish({ ok: false, error });
+    });
+
+    return {
+      done,
+      cancel: () => {
+        if (!finished) void ipcRenderer.invoke('ai:chat:cancel', requestId).catch(() => undefined);
+      },
+    };
   },
 };
 
@@ -393,6 +490,9 @@ const host: DocBlocksHostAPI = {
   updater: updaterApi,
   lifecycle: lifecycleApi,
   menu: menuApi,
+  // Omitted, not stubbed, on a build that cannot do AI: capabilities are
+  // derived from which members exist.
+  ...(parseAiAvailabilityArgument(process.argv) ? { ai: aiApi } : {}),
   onMenuCommand,
   onOpenRequest,
 };

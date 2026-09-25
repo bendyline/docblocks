@@ -122,6 +122,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'updater',
           'lifecycle',
           'menu',
+          'ai',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       workspace,
@@ -138,6 +139,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   });
 
   expect(contract.topLevel).toEqual([
+    'ai',
     'clipboard',
     'env',
     'exports',
@@ -207,7 +209,15 @@ test('preload exposes the complete typed host and reaches representative IPC han
   ]);
   expect(contract.methods.shell).toEqual(['openExternal', 'openWorkspaceFolder', 'revealInFolder']);
   expect(contract.methods.clipboard).toEqual(['writeText', 'writeWorkspacePath']);
-  expect(contract.methods.exports).toEqual(['pickTarget', 'resolveTarget', 'save']);
+  expect(contract.methods.exports).toEqual([
+    'beginSave',
+    'closeTransfer',
+    'finishSave',
+    'pickTarget',
+    'resolveTarget',
+    'save',
+    'writeChunk',
+  ]);
   expect(contract.methods.ffmpeg).toEqual(['available', 'version']);
   expect(contract.methods.updater).toEqual([
     'checkForUpdates',
@@ -221,6 +231,18 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'requestWindowClose',
   ]);
   expect(contract.methods.menu).toEqual(['setPinnedDocuments']);
+  // The core AI group only: workspace search, images, and speech are optional
+  // members this host does not implement, so their capabilities stay false.
+  expect(contract.methods.ai).toEqual([
+    'chat',
+    'connect',
+    'disconnect',
+    'getPreferences',
+    'models',
+    'onStatus',
+    'setPreferences',
+    'status',
+  ]);
   expect(contract.methods.git).toEqual([
     'capabilities',
     'checkoutBranch',

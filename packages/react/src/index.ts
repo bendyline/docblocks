@@ -41,6 +41,7 @@ export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index
 // Settings
 export {
   AccentColorSettings,
+  AiSettingsControls,
   DEFAULT_INTERFACE_FONT,
   DEFAULT_PROOFING_PREFERENCES,
   DEFAULT_WRITE_CANVAS_FONT_SCHEME,
@@ -58,6 +59,7 @@ export {
 } from './Settings/public-api.js';
 export type {
   AccentColorSettingsProps,
+  AiSettingsControlsProps,
   InterfaceFontPreference,
   InterfaceFontSettingsProps,
   ProofingPreferences,

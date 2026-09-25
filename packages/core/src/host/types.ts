@@ -111,6 +111,18 @@ export interface DocBlocksHostExportAPI {
     grantId: string | null,
     data: ArrayBuffer | Uint8Array,
   ): Promise<HostExportTargetGrant | null>;
+  /**
+   * Open a chunked upload for an export too large for one `save` message.
+   * Authority is settled before any bytes move: the grant must already exist.
+   * Returns an owner-scoped transfer id.
+   */
+  beginSave?(documentId: string, filename: string, grantId: string, size: number): Promise<string>;
+  /** Append the next in-order chunk of `EXPORT_TRANSFER_LIMITS.chunkBytes` or fewer. */
+  writeChunk?(transferId: string, offset: number, data: ArrayBuffer | Uint8Array): Promise<void>;
+  /** Publish a complete upload to its granted target; null when replacement is declined. */
+  finishSave?(transferId: string): Promise<HostExportTargetGrant | null>;
+  /** Discard an upload. Idempotent, and harmless after `finishSave`. */
+  closeTransfer?(transferId: string): Promise<void>;
 }
 
 /** System ffmpeg detection. */
