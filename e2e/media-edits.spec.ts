@@ -2,7 +2,7 @@ import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
 
 /**
- * Media edits end to end on the site: a recording dropped into a document is
+ * Media edits end to end on the site: a recording uploaded into a document is
  * cleaned up from its node view, the recipe lands in the markdown, the
  * processed audio renders in the background (worker + RNNoise + Opus), and
  * undo takes the recipe back out.
@@ -55,7 +55,8 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await row.click();
 
   // Upload the recording through the Files panel: it is stored in
-  // media-take_files/.
+  // media-take_files/ and inserted at the cursor as a playable <audio>
+  // element (the form a recorder inserts).
   const content = page.locator('.squisq-editor-content [contenteditable="true"]').first();
   await expect(content).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: 'Toggle Files panel' }).click();
@@ -65,22 +66,11 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await expect(page.locator('.squisq-media-bin').getByText('take.wav').first()).toBeVisible({
     timeout: 20_000,
   });
-  await content.click();
-
-  // Add it as a playable <audio> element (the form a recorder inserts).
-  await content.evaluate((target) => {
-    const transfer = new DataTransfer();
-    transfer.setData('text/html', '<audio src="media-take_files/take.wav" controls></audio>');
-    transfer.setData('text/plain', '');
-    target.dispatchEvent(
-      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: transfer }),
-    );
-  });
 
   const editButton = page.getByRole('button', { name: 'Edit audio' });
   await expect(editButton).toBeVisible({ timeout: 30_000 });
   // ProseMirror merges edits less than 500 ms apart into one undo step; a
-  // person cannot open the panel and apply that fast, so keep the paste and
+  // person cannot open the panel and apply that fast, so keep the insert and
   // the recipe edit in separate steps the way real use does.
   await page.waitForTimeout(600);
   await expect(editButton).toBeVisible({ timeout: 30_000 });
