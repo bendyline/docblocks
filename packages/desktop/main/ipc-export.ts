@@ -9,6 +9,7 @@ import type {
   WebContents,
 } from 'electron';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { HOST_WIRE_LIMITS, isBoundedBytePayload, isBoundedString } from '@bendyline/docblocks/host';
 
@@ -17,6 +18,7 @@ import {
   mintExportGrant,
   resolveExportGrant,
   revokeExportOwner,
+  type ResolvedExportTarget,
 } from './export-grants.js';
 import {
   confirmExportReplacement,
@@ -24,6 +26,7 @@ import {
   type ExportReplacementDetails,
 } from './export-overwrite.js';
 import { exportSaveErrorMessage } from './export-save-error.js';
+import { ExportTransfers } from './export-transfers.js';
 import {
   findExportTargetAccess,
   getExportExtension,
@@ -42,13 +45,19 @@ import {
 } from './settings.js';
 
 const boundOwners = new WeakSet<WebContents>();
+const uploads = new ExportTransfers();
 
 function ownerFor(event: IpcMainInvokeEvent): WebContents {
   const owner = assertTrustedIpcSender(event);
   if (!boundOwners.has(owner)) {
     boundOwners.add(owner);
     const ownerId = owner.id;
-    bindOwnerGrantRevocation(owner, () => revokeExportOwner(ownerId));
+    bindOwnerGrantRevocation(owner, () => {
+      revokeExportOwner(ownerId);
+      void uploads.revokeOwner(ownerId).catch((error: unknown) => {
+        process.stderr.write(`Export upload revocation failed: ${String(error)}\n`);
+      });
+    });
   }
   return owner;
 }
@@ -73,6 +82,19 @@ function requireOptionalGrant(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (!isBoundedString(value, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
     throw new Error('Invalid export target grant');
+  }
+  return value;
+}
+
+function requireGrant(value: unknown): string {
+  const grantId = requireOptionalGrant(value);
+  if (!grantId) throw new Error('Invalid export target grant');
+  return grantId;
+}
+
+function requireTransferId(value: unknown): string {
+  if (!isBoundedString(value, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+    throw new Error('Invalid export upload identifier');
   }
   return value;
 }
@@ -203,6 +225,70 @@ async function pickTarget(
   return grant;
 }
 
+/** Re-verify a grant for this document and file type, and reopen sandboxed access. */
+async function resolveGrantedTarget(
+  ownerId: number,
+  documentKey: string,
+  filename: string,
+  grantId: string,
+): Promise<ResolvedExportTarget> {
+  const target = await resolveExportGrant(ownerId, documentKey, grantId);
+  if (getExportExtension(filename) !== getExportExtension(target.absolutePath)) {
+    throw new Error('Export target grant does not match the requested file type');
+  }
+  if (target.bookmark) beginAccess({ path: target.absolutePath, bookmark: target.bookmark });
+  return target;
+}
+
+/** Rethrow expected native write failures (locked, full, read-only) as actionable text. */
+async function withExportSaveErrors<T>(targetPath: string, work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (error: unknown) {
+    const message = exportSaveErrorMessage(error, targetPath);
+    if (message) throw new Error(message);
+    throw error;
+  }
+}
+
+/** Describe an upload's write failures by the file it is headed for, when known. */
+function withUploadErrors<T>(ownerId: number, transferId: string, work: () => Promise<T>) {
+  const targetPath = uploads.targetPath(ownerId, transferId);
+  return targetPath ? withExportSaveErrors(targetPath, work) : work();
+}
+
+/**
+ * Publish to a granted target: honor the picker's one-shot replacement
+ * approval, confirm any other replacement, then `write` under the target lock.
+ */
+async function commitExport(
+  event: IpcMainInvokeEvent,
+  ownerId: number,
+  documentKey: string,
+  filename: string,
+  grantId: string,
+  write: (absolutePath: string) => Promise<void>,
+): Promise<{ grantId: string; displayPath: string } | null> {
+  const target = await resolveGrantedTarget(ownerId, documentKey, filename, grantId);
+  const pickerApprovedIdentity = consumeExportPickerApproval(ownerId, grantId);
+
+  const saved = await withExportSaveErrors(target.absolutePath, () =>
+    withFileMutationLocks([target.absolutePath], async () => {
+      const confirmed = await confirmExportReplacement(
+        target.absolutePath,
+        pickerApprovedIdentity,
+        (details) => showReplacementConfirmation(event, details),
+      );
+      if (!confirmed) return false;
+      await write(target.absolutePath);
+      return true;
+    }),
+  );
+  if (!saved) return null;
+  await rememberTarget(documentKey, target.absolutePath, target.bookmark);
+  return { grantId, displayPath: target.absolutePath };
+}
+
 async function showReplacementConfirmation(
   event: IpcMainInvokeEvent,
   details: ExportReplacementDetails,
@@ -264,35 +350,62 @@ export function registerExportIpc(): void {
         : await pickTarget(event, owner.id, documentKey, filename, null);
       if (!grant) return null;
 
-      const target = await resolveExportGrant(owner.id, documentKey, grant.grantId);
-      const requestedExtension = getExportExtension(filename);
-      const targetExtension = getExportExtension(target.absolutePath);
-      if (requestedExtension !== targetExtension) {
-        throw new Error('Export target grant does not match the requested file type');
-      }
-      const pickerApprovedIdentity = consumeExportPickerApproval(owner.id, grant.grantId);
-
-      if (target.bookmark) beginAccess({ path: target.absolutePath, bookmark: target.bookmark });
-      let saved = false;
-      try {
-        saved = await withFileMutationLocks([target.absolutePath], async () => {
-          const confirmed = await confirmExportReplacement(
-            target.absolutePath,
-            pickerApprovedIdentity,
-            (details) => showReplacementConfirmation(event, details),
-          );
-          if (!confirmed) return false;
-          await atomicWriteBinary(target.absolutePath, dataValue);
-          return true;
-        });
-      } catch (error: unknown) {
-        const message = exportSaveErrorMessage(error, target.absolutePath);
-        if (message) throw new Error(message);
-        throw error;
-      }
-      if (!saved) return null;
-      await rememberTarget(documentKey, target.absolutePath, target.bookmark);
-      return { grantId: grant.grantId, displayPath: target.absolutePath };
+      return commitExport(event, owner.id, documentKey, filename, grant.grantId, (absolutePath) =>
+        atomicWriteBinary(absolutePath, dataValue),
+      );
     },
   );
+
+  // Exports too large for one message (long videos) arrive in bounded chunks.
+  // The grant is required up front so no bytes move before authority exists.
+  ipcMain.handle('exports:beginSave', async (event, ...args: unknown[]): Promise<string> => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 4);
+    const [documentValue, fileValue, grantValue, sizeValue] = args;
+    const documentKey = storageKey(documentValue);
+    const filename = requireFilename(fileValue);
+    const grantId = requireGrant(grantValue);
+    const target = await resolveGrantedTarget(owner.id, documentKey, filename, grantId);
+    return withExportSaveErrors(target.absolutePath, () =>
+      uploads.begin(
+        owner.id,
+        { documentKey, filename, grantId, absolutePath: target.absolutePath },
+        sizeValue,
+      ),
+    );
+  });
+
+  ipcMain.handle('exports:writeChunk', async (event, ...args: unknown[]): Promise<void> => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 3);
+    const [transferValue, offsetValue, dataValue] = args;
+    const transferId = requireTransferId(transferValue);
+    await withUploadErrors(owner.id, transferId, () =>
+      uploads.writeChunk(owner.id, transferId, offsetValue, dataValue),
+    );
+  });
+
+  ipcMain.handle(
+    'exports:finishSave',
+    async (event, ...args: unknown[]): Promise<{ grantId: string; displayPath: string } | null> => {
+      const owner = ownerFor(event);
+      assertIpcArgumentCount(args, 1);
+      const transferId = requireTransferId(args[0]);
+      return withUploadErrors(owner.id, transferId, () =>
+        uploads.finish(owner.id, transferId, (upload) =>
+          // A grant's path never changes and the spool sits beside it, so this
+          // rename is the same atomic same-directory publish as atomicWriteBinary.
+          commitExport(event, owner.id, upload.documentKey, upload.filename, upload.grantId, (to) =>
+            fs.rename(upload.temporaryPath, to),
+          ),
+        ),
+      );
+    },
+  );
+
+  ipcMain.handle('exports:closeTransfer', async (event, ...args: unknown[]): Promise<void> => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 1);
+    await uploads.close(owner.id, requireTransferId(args[0]));
+  });
 }

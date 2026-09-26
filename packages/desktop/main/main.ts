@@ -16,6 +16,7 @@ import {
   screen,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -63,16 +64,22 @@ import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
 } from './content-security-policy.js';
-import { hostEnvironmentArguments } from '../shared/host-environment.js';
+import { aiAvailabilityArguments, hostEnvironmentArguments } from '../shared/host-environment.js';
+import type { AiService } from './ai/ai-service.js';
+import { createAiService, isAiSupportedBuild, registerAiIpc } from './ipc-ai.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
+const AI_DISPOSE_TIMEOUT_MS = 2_000;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 
 // Chromium otherwise auto-detects GNOME Keyring/KWallet and can show an unlock
 // prompt at startup. DocBlocks stores no credentials in its browser session;
-// Git and gh retain ownership of their own credentials outside Electron.
+// Git and gh retain ownership of their own credentials outside Electron. The
+// one credential DocBlocks does keep — an inference-only Gezel grant — goes
+// through safeStorage, which this backend obscures rather than protects; see
+// ai/ai-credentials.ts for why that is acceptable for that token.
 configureLinuxCredentialStorage(process.platform, app.commandLine);
 
 // Development must not share Chromium storage, settings, window state, or the
@@ -90,6 +97,7 @@ if (process.env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION === '1') {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let aiService: AiService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -290,10 +298,13 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
       // neither `npm_package_version` nor `NODE_ENV` — leaving the preload to
       // report 0.0.0 and isDev:true to every user. Main owns the truth, so
       // main stamps it onto the renderer's argv.
-      additionalArguments: hostEnvironmentArguments({
-        appVersion: app.getVersion(),
-        isDev,
-      }),
+      additionalArguments: [
+        ...hostEnvironmentArguments({
+          appVersion: app.getVersion(),
+          isDev,
+        }),
+        ...aiAvailabilityArguments(isAiSupportedBuild()),
+      ],
     },
   });
 
@@ -397,6 +408,18 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
 
   killAllGitChildren();
   releaseAllScopedResources();
+  // Cancel in-flight completions and release the Gezel transport. Bounded: a
+  // provider that has stopped answering must not hold the app open.
+  if (aiService) {
+    let disposeTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      aiService.dispose().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        disposeTimer = setTimeout(resolve, AI_DISPOSE_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(disposeTimer);
+  }
   appExitApproved = true;
   return true;
 }
@@ -462,6 +485,10 @@ async function bootstrap(): Promise<void> {
     getOwner: () => mainWindow?.webContents ?? null,
     developmentOrigin: isDev ? DEV_SERVER_URL : undefined,
     platform: process.platform,
+    // macOS only: camera/microphone capture needs a TCC grant that Chromium
+    // will not ask for by itself. `systemPreferences` exposes no-op stubs on
+    // Windows and Linux, and the policy never calls them there.
+    mediaAccess: systemPreferences,
     getPrimaryDisplayId: () => screen.getPrimaryDisplay().id,
     getDisplaySources: () =>
       desktopCapturer.getSources({
@@ -475,7 +502,10 @@ async function bootstrap(): Promise<void> {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // Squisq's browser GIF encoder uses ffmpeg.wasm/SharedArrayBuffer.
+        // Cross-origin isolation is retained as Spectre-class hardening. It
+        // originally existed for ffmpeg.wasm's SharedArrayBuffer; no shipped
+        // dependency needs SharedArrayBuffer any more, but the renderer loads
+        // only same-origin subresources so `credentialless` costs nothing.
         // These apply to both the packaged app:// renderer and the trusted
         // Vite development origin.
         'Cross-Origin-Opener-Policy': ['same-origin'],
@@ -536,6 +566,13 @@ async function bootstrap(): Promise<void> {
   registerGitIpc();
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
+  if (isAiSupportedBuild()) {
+    aiService = createAiService();
+    registerAiIpc(aiService);
+    // Reads preferences and, only when the user opted in, reconnects silently
+    // with a stored grant. Never prompts and never blocks startup.
+    void aiService.start();
+  }
 
   // Probe before the renderer loads so its Git UI and the native menu use the
   // same process-lifetime capability. On macOS this never executes the Apple

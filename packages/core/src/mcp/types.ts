@@ -529,6 +529,12 @@ export interface TemplateContentProfile {
   readonly hasDate: boolean;
   readonly hasNumberHighlight: boolean;
   readonly wordCount: number;
+  /**
+   * A structural body node (list, table, quote, fence) has top-level siblings.
+   * Specialized templates consume one structure, so Squisq recommends only the
+   * complete-body `content` template for such a block; this flag is why.
+   */
+  readonly hasCompoundBody: boolean;
   readonly hasAsciiDiagram: boolean;
   readonly hasTimeline: boolean;
   readonly hasTree: boolean;

@@ -7,6 +7,10 @@
    uses a 42px overlay while the installed PWA follows the OS-provided 32px. */
 
 :root {
+  /* Electron has no collapsing browser chrome, so dvh would only introduce a
+     dependency on a viewport unit that never changes here. html/body/#root are
+     already height:100% via base.css. */
+  --db-shell-block-size: 100%;
   --db-desktop-titlebar-height: max(42px, env(titlebar-area-height, 32px));
   --db-desktop-editor-header-height: var(--db-desktop-titlebar-height);
 }

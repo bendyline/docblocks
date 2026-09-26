@@ -27,7 +27,17 @@ export const desktopTsupOptions = [
     // the small slice of DocBlocks core used by main so electron-builder only
     // has to copy dependencies that are genuinely loaded at runtime.
     noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
-    external: ['electron', 'electron-updater', 'chokidar', 'electron-window-state'],
+    // The Gezel app SDK ships ESM only (its exports have no `require`
+    // condition), while this bundle is CJS. It must stay external and be
+    // reached with a dynamic `import()`, which esbuild preserves for external
+    // specifiers; bundling it would inline an ESM graph into CJS output.
+    external: [
+      'electron',
+      'electron-updater',
+      'chokidar',
+      'electron-window-state',
+      '@bendyline/gezel-app-sdk',
+    ],
     outExtension: () => ({ js: '.cjs' }),
   },
   // Preload — runs in renderer sandbox with limited Node APIs + DOM.

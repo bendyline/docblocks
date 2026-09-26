@@ -9,24 +9,23 @@ This file is the distribution-level entry point for third-party software used by
 | Distribution                           | Notice shipped with the artifact                                                             | Inventory basis       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 112 locked components |
-| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 377 locked components |
+| @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 378 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 350 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 216 locked components |
-| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 207 locked components |
-| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 246 locked components |
+| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 208 locked components |
+| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 256 locked components |
 
 The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
 
 ## Material non-JavaScript distributions
 
 - The site ships 15 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
-- Site and desktop renderer builds ship @ffmpeg/core@0.12.9 (GPL-2.0-or-later) as `ffmpeg-core.js` and `ffmpeg-core.wasm`. The same directory contains `COPYING.GPL-2.0.txt`, upstream notices, third-party licenses, and exact source-release pointers.
 - Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@0.8.4 as a deferred formula engine, together with the selected upstream MIT license.
 - Desktop distributions embed Electron 43.5.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-calc@2.11.0, @bendyline/squisq-cli@2.8.4, @bendyline/squisq-editor-react@2.11.4, @bendyline/squisq-formats@2.6.4, @bendyline/squisq-grid-react@2.11.5, @bendyline/squisq-react@2.11.4, @bendyline/squisq-video-react@2.4.8, @bendyline/squisq-video@2.3.7, @bendyline/squisq@2.11.4.
+- Squisq packages: @bendyline/squisq-calc@2.11.0, @bendyline/squisq-cli@2.8.8, @bendyline/squisq-editor-react@2.11.9, @bendyline/squisq-formats@2.6.8, @bendyline/squisq-grid-react@2.11.9, @bendyline/squisq-react@2.11.9, @bendyline/squisq-video-react@2.4.13, @bendyline/squisq-video@2.3.11, @bendyline/squisq@2.11.8.
 - MCP SDK: @modelcontextprotocol/sdk@1.29.0.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.
@@ -40,7 +39,7 @@ The following upstream npm archives declare a license identifier but omit a pack
 
 ## Development-only repository inputs
 
-The root workspace pins Mocha 11.3.0 and Vite 6.4.3 for testing and building. It also pins ffmpeg-static 5.2.0 (GPL-3.0-or-later) as a local development/test fallback. These root development dependencies are not included by the generated DocBlocks distribution manifests; shipped browser GIF encoding instead uses the separately noticed @ffmpeg/core WebAssembly distribution.
+The root workspace pins Mocha 11.3.0 and Vite 6.4.3 for testing and building. It also pins ffmpeg-static 5.2.0 (GPL-3.0-or-later) as a local development/test fallback. These root development dependencies are not included by the generated DocBlocks distribution manifests. No shipped surface distributes an ffmpeg build: the GPL-2.0-or-later @ffmpeg/core WebAssembly core was removed from every distribution, and browser video export uses WebCodecs with the MIT-licensed mp4-muxer instead.
 
 ## Regeneration and drift checking
 

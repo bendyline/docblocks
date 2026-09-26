@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +7,16 @@ import { fileURLToPath } from 'node:url';
 type UnknownRecord = Readonly<Record<string, unknown>>;
 type Severity = 'info' | 'low' | 'moderate' | 'high' | 'critical';
 type FindingScope = 'shipped' | 'development-only' | 'toolchain-only';
-type DispositionKind = 'mitigated' | 'not-shipped' | 'upstream-blocked';
+/**
+ * Time-boxed kinds record a risk we are still carrying, so they expire and
+ * must be re-reviewed. `patched` records a finding that is fixed but still
+ * reported — typically because an advisory's affected range does not credit a
+ * backport. A fix does not go stale on a calendar, so a patched disposition has
+ * no expiry: it names the test that proves the fix instead, and that test runs
+ * in every `npm run all`.
+ */
+type TimeBoxedKind = 'mitigated' | 'not-shipped' | 'upstream-blocked';
+type DispositionKind = TimeBoxedKind | 'patched';
 
 export interface AuditFinding {
   readonly advisory: string;
@@ -20,10 +30,8 @@ export interface AuditFinding {
   readonly vulnerableRange: string;
 }
 
-export interface AuditDisposition {
+interface DispositionBase {
   readonly advisory: string;
-  readonly classification: DispositionKind;
-  readonly expires: string;
   readonly owner: string;
   readonly package: string;
   readonly reason: string;
@@ -31,6 +39,19 @@ export interface AuditDisposition {
   readonly scope: FindingScope;
   readonly severity: Severity;
 }
+
+export interface TimeBoxedDisposition extends DispositionBase {
+  readonly classification: TimeBoxedKind;
+  readonly expires: string;
+}
+
+export interface PatchedDisposition extends DispositionBase {
+  readonly classification: 'patched';
+  /** Repo-relative path to the test that proves the installed version is fixed. */
+  readonly verifiedBy: string;
+}
+
+export type AuditDisposition = TimeBoxedDisposition | PatchedDisposition;
 
 export interface DispositionDocument {
   readonly dispositions: readonly AuditDisposition[];
@@ -49,6 +70,8 @@ export interface AuditSummary {
 
 export interface AuditEvaluation {
   readonly failures: readonly string[];
+  /** Informational: nothing to fix now, but worth tidying when convenient. */
+  readonly notices: readonly string[];
   readonly findings: readonly AuditFinding[];
   readonly summary: AuditSummary;
 }
@@ -65,7 +88,9 @@ const classificationValues = new Set<DispositionKind>([
   'mitigated',
   'not-shipped',
   'upstream-blocked',
+  'patched',
 ]);
+const verificationTestPath = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9_./-]+\.test\.ts$/u;
 const isoDate = /^\d{4}-\d{2}-\d{2}$/u;
 const maximumOutputBytes = 16 * 1024 * 1024;
 
@@ -202,6 +227,14 @@ export function parseDispositionDocument(value: unknown): DispositionDocument {
 
   const dispositions = value.dispositions.map((entry, index): AuditDisposition => {
     if (!isRecord(entry)) throw new Error(`dispositions[${index}] must be an object`);
+    const classification = requireString(
+      entry.classification,
+      `dispositions[${index}].classification`,
+    );
+    if (!classificationValues.has(classification as DispositionKind)) {
+      throw new Error(`dispositions[${index}].classification is invalid`);
+    }
+    const patched = classification === 'patched';
     requireExactKeys(
       entry,
       [
@@ -211,38 +244,43 @@ export function parseDispositionDocument(value: unknown): DispositionDocument {
         'scope',
         'classification',
         'owner',
-        'expires',
+        patched ? 'verifiedBy' : 'expires',
         'reason',
         'remediation',
       ],
       `dispositions[${index}]`,
     );
     const scope = requireString(entry.scope, `dispositions[${index}].scope`);
-    const classification = requireString(
-      entry.classification,
-      `dispositions[${index}].classification`,
-    );
     if (!scopeValues.has(scope as FindingScope)) {
       throw new Error(`dispositions[${index}].scope is invalid`);
-    }
-    if (!classificationValues.has(classification as DispositionKind)) {
-      throw new Error(`dispositions[${index}].classification is invalid`);
     }
     const reason = requireString(entry.reason, `dispositions[${index}].reason`);
     const remediation = requireString(entry.remediation, `dispositions[${index}].remediation`);
     if (reason.length < 20 || remediation.length < 20) {
       throw new Error(`dispositions[${index}] reason and remediation must be substantive`);
     }
-    return {
+    const base: DispositionBase = {
       package: requireString(entry.package, `dispositions[${index}].package`),
       advisory: requireString(entry.advisory, `dispositions[${index}].advisory`).toUpperCase(),
       severity: requireSeverity(entry.severity, `dispositions[${index}].severity`),
       scope: scope as FindingScope,
-      classification: classification as DispositionKind,
       owner: requireString(entry.owner, `dispositions[${index}].owner`),
-      expires: requireDate(entry.expires, `dispositions[${index}].expires`),
       reason,
       remediation,
+    };
+    if (patched) {
+      const verifiedBy = requireString(entry.verifiedBy, `dispositions[${index}].verifiedBy`);
+      if (!verificationTestPath.test(verifiedBy)) {
+        throw new Error(
+          `dispositions[${index}].verifiedBy must be a repo-relative *.test.ts path inside the repository`,
+        );
+      }
+      return { ...base, classification: 'patched', verifiedBy };
+    }
+    return {
+      ...base,
+      classification: classification as TimeBoxedKind,
+      expires: requireDate(entry.expires, `dispositions[${index}].expires`),
     };
   });
 
@@ -257,19 +295,32 @@ function dayDifference(left: string, right: string): number {
   return (Date.parse(`${left}T00:00:00Z`) - Date.parse(`${right}T00:00:00Z`)) / 86_400_000;
 }
 
+/**
+ * Read a verification test's source, or null when it does not exist. Injected
+ * so the policy stays testable without touching the filesystem.
+ */
+export type VerificationReader = (repoRelativePath: string) => string | null;
+
 export function evaluateAudit(
   report: unknown,
   dispositionsValue: unknown,
   today = new Date().toISOString().slice(0, 10),
+  readVerification?: VerificationReader,
 ): AuditEvaluation {
   const normalized = normalizeAuditReport(report);
   const document = parseDispositionDocument(dispositionsValue);
   const failures: string[] = [];
+  const notices: string[] = [];
   const dispositions = new Map<string, AuditDisposition>();
 
+  // The review date only matters while we are carrying a risk. A document of
+  // nothing but proven fixes has nothing to re-review on a schedule.
+  const carriesRisk = document.dispositions.some(
+    (disposition) => disposition.classification !== 'patched',
+  );
   if (dayDifference(today, document.reviewedAt) < 0) {
     failures.push(`disposition review date ${document.reviewedAt} is in the future`);
-  } else if (dayDifference(today, document.reviewedAt) > 30) {
+  } else if (carriesRisk && dayDifference(today, document.reviewedAt) > 30) {
     failures.push(`disposition review date ${document.reviewedAt} is more than 30 days old`);
   }
 
@@ -279,6 +330,21 @@ export function evaluateAudit(
       failures.push(`duplicate disposition for ${disposition.package} ${disposition.advisory}`);
     }
     dispositions.set(key, disposition);
+    if (disposition.classification === 'patched') {
+      if (readVerification) {
+        const source = readVerification(disposition.verifiedBy);
+        if (source === null) {
+          failures.push(
+            `patched disposition for ${disposition.package} ${disposition.advisory} names a missing test: ${disposition.verifiedBy}`,
+          );
+        } else if (!source.toUpperCase().includes(disposition.advisory)) {
+          failures.push(
+            `patched disposition for ${disposition.package} ${disposition.advisory} names a test that does not cite the advisory: ${disposition.verifiedBy}`,
+          );
+        }
+      }
+      continue;
+    }
     if (dayDifference(disposition.expires, today) <= 0) {
       failures.push(
         `disposition for ${disposition.package} ${disposition.advisory} expired on ${disposition.expires}`,
@@ -316,12 +382,19 @@ export function evaluateAudit(
 
   for (const disposition of document.dispositions) {
     const key = `${disposition.package}\0${disposition.advisory}`;
-    if (!currentKeys.has(key)) {
+    if (currentKeys.has(key)) continue;
+    if (disposition.classification === 'patched') {
+      // Usually the advisory was corrected to credit the fix. Nothing is
+      // wrong, so this must not fail a build on the day the database changes.
+      notices.push(
+        `npm no longer reports ${disposition.package} ${disposition.advisory}; its patched disposition can be deleted`,
+      );
+    } else {
       failures.push(`stale disposition for ${disposition.package} ${disposition.advisory}`);
     }
   }
 
-  return { ...normalized, failures };
+  return { ...normalized, failures, notices };
 }
 
 interface CommandResult {
@@ -380,7 +453,12 @@ function renderMarkdown(
   );
   const rows = evaluation.findings.map((finding) => {
     const disposition = dispositionByKey.get(`${finding.package}\0${finding.advisory}`);
-    return `| ${markdownCell(finding.package)} | ${finding.severity} | [${finding.advisory}](${finding.url}) | ${disposition?.scope ?? 'MISSING'} | ${disposition?.classification ?? 'MISSING'} | ${disposition?.expires ?? 'MISSING'} | ${markdownCell(disposition?.reason ?? 'No disposition')} |`;
+    const expiry = !disposition
+      ? 'MISSING'
+      : disposition.classification === 'patched'
+        ? `never (verified by \`${disposition.verifiedBy}\`)`
+        : disposition.expires;
+    return `| ${markdownCell(finding.package)} | ${finding.severity} | [${finding.advisory}](${finding.url}) | ${disposition?.scope ?? 'MISSING'} | ${disposition?.classification ?? 'MISSING'} | ${markdownCell(expiry)} | ${markdownCell(disposition?.reason ?? 'No disposition')} |`;
   });
   return [
     '# Dependency audit evidence',
@@ -402,6 +480,9 @@ function renderMarkdown(
       : [
           'PASS: every current finding has a current disposition and no blocking shipped-code finding remains.',
         ]),
+    ...(evaluation.notices.length > 0
+      ? ['', '## Notices', '', ...evaluation.notices.map((notice) => `- ${notice}`)]
+      : []),
     '',
   ].join('\n');
 }
@@ -424,7 +505,10 @@ async function main(): Promise<void> {
   }
   const dispositionsValue = JSON.parse(await readFile(dispositionPath, 'utf8')) as unknown;
   const document = parseDispositionDocument(dispositionsValue);
-  const evaluation = evaluateAudit(auditValue, dispositionsValue);
+  const evaluation = evaluateAudit(auditValue, dispositionsValue, undefined, (relativePath) => {
+    const absolute = path.join(repoRoot, relativePath);
+    return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
+  });
   const generatedAt = new Date().toISOString();
   await writeFile(
     normalizedReportPath,
@@ -438,6 +522,7 @@ async function main(): Promise<void> {
       `dependency audit policy failed:\n- ${evaluation.failures.join('\n- ')}\nEvidence: ${path.relative(repoRoot, markdownReportPath)}`,
     );
   }
+  for (const notice of evaluation.notices) process.stderr.write(`notice: ${notice}\n`);
   process.stdout.write(
     `Dependency audit retained ${evaluation.findings.length} advisory dispositions (${evaluation.summary.total} npm dependency entries) in ${path.relative(repoRoot, reportDirectory)}.\n`,
   );

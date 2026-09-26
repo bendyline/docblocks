@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 import { copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -110,8 +111,8 @@ test.describe('DocBlocks offline (PWA)', () => {
     await devtools.send('Storage.overrideQuotaForOrigin', {
       origin: 'http://localhost:5230',
       // Enough for normal IndexedDB startup, deliberately below the checked
-      // ~89 MiB application precache (including the deferred ffmpeg core and the
-      // harper proofing engine).
+      // ~60 MiB application precache (including the two harper proofing
+      // binaries).
       quotaSize: 4 * 1024 * 1024,
     });
     try {
@@ -213,8 +214,8 @@ test.describe('DocBlocks offline (PWA)', () => {
 
     // Precache completeness: `maximumFileSizeToCacheInBytes` silently drops
     // anything above its cap, so assert the families most at risk — the 6 MB
-    // Monaco ts.worker, the 31 MB ffmpeg core, the two ~15 MB harper proofing
-    // binaries, and theme fonts — actually made it in.
+    // Monaco ts.worker, the two ~15 MB harper proofing binaries, and theme
+    // fonts — actually made it in.
     const precachedUrls = await page.evaluate(async () => {
       const names = await caches.keys();
       const precacheName = names.find((name) => name.includes('precache'));
@@ -226,7 +227,9 @@ test.describe('DocBlocks offline (PWA)', () => {
     expect(precachedUrls.length).toBeGreaterThan(50);
     expect(precachedUrls.some((url) => /ts\.worker/.test(url))).toBeTruthy();
     expect(precachedUrls.some((url) => /fonts\/.+\.woff2/.test(url))).toBeTruthy();
-    expect(precachedUrls.some((url) => /ffmpeg-core\/ffmpeg-core\.wasm/.test(url))).toBeTruthy();
+    // The GPL-2.0 ffmpeg.wasm core is no longer distributed by any surface.
+    // Precaching it again would mean it had returned to the build.
+    expect(precachedUrls.some((url) => /ffmpeg-core/.test(url))).toBeFalsy();
     // Both harper binaries: the engine derives the slim sibling from the full
     // one's URL and loads the pair, so precaching only the full binary leaves
     // proofing reaching the network on a cold offline start.
@@ -238,6 +241,9 @@ test.describe('DocBlocks offline (PWA)', () => {
         new URL(url).pathname.endsWith('/harper/harper_wasm_slim_bg.wasm'),
       ),
     ).toBeTruthy();
+    // Media edits (audio cleanup) render in a worker that carries RNNoise
+    // (~5 MB); without it, cleanup would need the network on a plane.
+    expect(precachedUrls.some((url) => /mediaEdit\.worker/.test(url))).toBeTruthy();
 
     // The one-time legacy-route migration claims a fresh installation. A
     // reload remains useful here to exercise a cold controlled navigation;

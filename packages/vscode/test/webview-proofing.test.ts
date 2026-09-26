@@ -64,7 +64,7 @@ describe('VS Code webview proofing wiring', () => {
     // The WASM is fetched from inside harper's blob worker, which inherits
     // this document's policy. Under `default-src 'none'` that fetch needs an
     // explicit connect-src or it is blocked.
-    expect(html).to.match(/connect-src vscode-webview:\/\/stub;/u);
+    expect(html).to.match(/connect-src vscode-webview:\/\/stub[ ;]/u);
     expect(html).to.match(/worker-src[^;]*blob:/u);
   });
 

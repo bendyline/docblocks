@@ -48,7 +48,7 @@ describe('VS Code webview calculation wiring', () => {
 
   it('allows the webview to fetch and compile the packaged engine', () => {
     expect(html).to.match(/script-src[^;]*'wasm-unsafe-eval'/u);
-    expect(html).to.match(/connect-src vscode-webview:\/\/stub;/u);
+    expect(html).to.match(/connect-src vscode-webview:\/\/stub[ ;]/u);
   });
 
   it('degrades to the in-house tier when the host stamps no location', () => {

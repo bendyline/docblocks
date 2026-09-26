@@ -296,6 +296,71 @@ function requireLinuxPackageMetadata(): void {
 
 requireLinuxPackageMetadata();
 
+/**
+ * Linux launchers must not disable the Chromium sandbox.
+ *
+ * electron-builder's AppImage target writes `Exec=AppRun --no-sandbox %U` into
+ * the embedded desktop entry whenever `appImage.executableArgs` is absent and
+ * no pinned appimagetool toolset is configured. That flag disables Chromium
+ * process sandboxing for every renderer and utility process on the normal
+ * menu / file-association / protocol launch path — `sandbox: true` on the
+ * BrowserWindow removes Node from the renderer but does not restore OS process
+ * isolation. Declaring the option explicitly is what keeps the default off, so
+ * an empty array is required rather than merely a flag-free one.
+ */
+function requireSandboxedLinuxLaunchers(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+
+  const sandboxDisablingArguments = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-gpu-sandbox',
+    '--disable-namespace-sandbox',
+    '--disable-seccomp-filter-sandbox',
+  ];
+
+  function requireSandboxSafeExecutableArgs(section: string, value: unknown): void {
+    if (!Array.isArray(value)) {
+      failConfigPolicy(
+        `electron-builder.yml ${section}.executableArgs must be an explicit list so electron-builder cannot supply its sandbox-disabling default.`,
+      );
+    }
+    for (const argument of value) {
+      if (typeof argument !== 'string') {
+        failConfigPolicy(`electron-builder.yml ${section}.executableArgs must contain strings.`);
+      }
+      if (sandboxDisablingArguments.includes(argument)) {
+        failConfigPolicy(
+          `electron-builder.yml ${section}.executableArgs must not disable the Chromium sandbox (${argument}).`,
+        );
+      }
+    }
+  }
+
+  // AppImage is the target whose default injects the flag, so it must declare
+  // the option. The other Linux launchers only need to stay clean if they
+  // choose to pass arguments at all.
+  const appImage = config.appImage;
+  if (!isRecord(appImage)) {
+    failConfigPolicy(
+      'electron-builder.yml must configure appImage options so the desktop entry does not inherit --no-sandbox.',
+    );
+  }
+  requireSandboxSafeExecutableArgs('appImage', appImage.executableArgs);
+
+  for (const section of ['linux', 'deb', 'snap', 'flatpak'] as const) {
+    const options = config[section];
+    if (!isRecord(options) || options.executableArgs === undefined) continue;
+    requireSandboxSafeExecutableArgs(section, options.executableArgs);
+  }
+
+  process.stdout.write('electron-builder.yml: Linux launchers keep the Chromium sandbox OK\n');
+}
+
+requireSandboxedLinuxLaunchers();
+
 function requireMacPrivacyMetadata(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');
@@ -524,9 +589,12 @@ function requireSafeDesktopReleaseDependencies(): void {
 
 requireSafeDesktopReleaseDependencies();
 
+// Both `require('x')` and a dynamic `import('x')` load a package at runtime:
+// tsup leaves `import()` in place for external ESM-only packages (the Gezel
+// SDK), and electron-builder still has to ship them.
 function collectRuntimeRequires(source: string): Set<string> {
   const runtimeRequires = new Set<string>();
-  for (const match of source.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
+  for (const match of source.matchAll(/\b(?:require|import)\((['"])([^'"]+)\1\)/gu)) {
     runtimeRequires.add(match[2]);
   }
   return runtimeRequires;

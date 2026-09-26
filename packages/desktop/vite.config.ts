@@ -1,10 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {
-  CROSS_ORIGIN_ISOLATION_HEADERS,
-  ffmpegCorePlugin,
-} from '../../scripts/vite-ffmpeg-core.js';
+import { CROSS_ORIGIN_ISOLATION_HEADERS } from '../../scripts/vite-cross-origin-isolation.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
@@ -62,7 +59,6 @@ export default defineConfig({
   publicDir: path.resolve(__dirname, 'renderer/public'),
   plugins: [
     stripBrokenSourcemapPragmas(),
-    ffmpegCorePlugin(),
     harperWasmPlugin(),
     ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),
@@ -192,13 +188,15 @@ export default defineConfig({
       // Video export is also loaded from excluded linked-Squisq packages.
       // Pre-bundle its browser dependencies so opening the first video dialog
       // does not make Vite discover them and reload away the open dialog.
-      '@ffmpeg/ffmpeg',
-      '@ffmpeg/util',
+      // ffmpeg.wasm is deliberately absent: no surface distributes the
+      // GPL-licensed core, and MP4 export runs on WebCodecs + mp4-muxer.
       'html2canvas',
       // See packages/site/vite.config.ts — harper is reached by a dynamic
       // import inside the excluded editor package and must be pre-optimized
       // rather than discovered when the first document opens.
       'harper.js',
+      // Same for RNNoise, reached from the media-edit worker.
+      '@bendyline/squisq-video-react > @shiguredo/rnnoise-wasm',
       // The optional formula backend is reached through a dynamic import.
       // Pre-optimize its glue so first use cannot reload the renderer.
       '@ironcalc/wasm',

@@ -319,7 +319,7 @@ export function useGit(
           .map(encodeURIComponent)
           .join('/')}`;
       }
-      void host.shell.openExternal(url);
+      void host.shell?.openExternal(url);
     },
     [remoteWeb, host],
   );

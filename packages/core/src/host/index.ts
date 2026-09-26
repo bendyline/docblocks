@@ -4,6 +4,60 @@
  * contextBridge; `isElectronHost()` gates desktop-only UI branches.
  */
 
+export {
+  HOST_PLATFORMS,
+  HOST_SURFACE_KINDS,
+  NO_HOST_CAPABILITIES,
+  deriveHostCapabilities,
+  parseHostEnvironment,
+} from './capabilities.js';
+export type { HostCapabilities, HostPlatform, HostSurfaceKind } from './capabilities.js';
+
+export type {
+  AiChatCompletion,
+  AiChatEvent,
+  AiChatHandle,
+  AiChatMessage,
+  AiChatPurpose,
+  AiChatRequest,
+  AiConnectionStep,
+  AiEnsureWorkspaceHandle,
+  AiError,
+  AiErrorCode,
+  AiImageRequest,
+  AiImageResult,
+  AiModelInfo,
+  AiPreferences,
+  AiPreferencesPatch,
+  AiProgress,
+  AiProviderInfo,
+  AiResult,
+  AiReviewMode,
+  AiSearchHit,
+  AiSearchQuery,
+  AiSearchResult,
+  AiSpeechAudio,
+  AiStatus,
+  AiSynthesizeRequest,
+  AiTranscribeRequest,
+  AiTranscript,
+  AiUnavailableReason,
+  DocBlocksHostAiAPI,
+} from './ai.js';
+
+export {
+  AI_WIRE_LIMITS,
+  parseAiChatEvent,
+  parseAiChatRequest,
+  parseAiError,
+  parseAiModelInfo,
+  parseAiModelInfoList,
+  parseAiPreferences,
+  parseAiPreferencesPatch,
+  parseAiProgress,
+  parseAiStatus,
+} from './ai-wire-policy.js';
+
 export type {
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
@@ -62,6 +116,7 @@ export {
 } from './filesystem-v2.js';
 
 export {
+  EXPORT_TRANSFER_LIMITS,
   HOST_WIRE_LIMITS,
   MAX_HOST_PINNED_DOCUMENTS,
   isBoundedBytePayload,
@@ -72,18 +127,51 @@ export {
   parsePinnedMenuDocuments,
 } from './wire-policy.js';
 
-import type { DocBlocksHostAPI } from './types.js';
+import type { DocBlocksHostAPI, HostEnvironment } from './types.js';
+import {
+  NO_HOST_CAPABILITIES,
+  deriveHostCapabilities,
+  parseHostEnvironment,
+  type HostCapabilities,
+} from './capabilities.js';
 
-/** True when running inside the Electron desktop shell. */
+function rawHost(): unknown {
+  if (typeof globalThis === 'undefined') return null;
+  return (globalThis as { docBlocksHost?: unknown }).docBlocksHost ?? null;
+}
+
+/** True when any privileged host bridge is installed. */
+export function hasDocBlocksHost(): boolean {
+  return deriveHostCapabilities(rawHost()) !== NO_HOST_CAPABILITIES;
+}
+
+/**
+ * What the installed host can do. All-false when there is no host, so callers
+ * never need a null check before asking.
+ */
+export function getHostCapabilities(): HostCapabilities {
+  return deriveHostCapabilities(rawHost());
+}
+
+/** Ask one capability question. The replacement for `isElectronHost()`. */
+export function hostSupports(capability: keyof HostCapabilities): boolean {
+  return getHostCapabilities()[capability];
+}
+
+/** The parsed host environment, or null when there is no trustworthy host. */
+export function getHostEnvironment(): HostEnvironment | null {
+  const host = rawHost();
+  if (typeof host !== 'object' || host === null) return null;
+  return parseHostEnvironment((host as { env?: unknown }).env);
+}
+
+/**
+ * @deprecated Ask a capability with `hostSupports(...)` instead. This conflated
+ * a dozen unrelated decisions into one boolean that no non-Electron host can
+ * answer honestly. Retained only until the last caller is migrated.
+ */
 export function isElectronHost(): boolean {
-  if (typeof globalThis === 'undefined') return false;
-  const host = (globalThis as { docBlocksHost?: unknown }).docBlocksHost;
-  return (
-    typeof host === 'object' &&
-    host !== null &&
-    typeof (host as { fs?: unknown }).fs === 'object' &&
-    (host as { fs?: unknown }).fs !== null
-  );
+  return getHostEnvironment()?.surface === 'electron';
 }
 
 /** Return the host API, or throw if not running under Electron. */

@@ -323,6 +323,11 @@ Input uses the same linked Squisq reader as `convert`, so import-capable Office,
 PDF, spreadsheet, HTML, Markdown, JSON Doc, DBK/ZIP, and folder sources are valid.
 The linked default dimensions are 1920x1080 landscape and 1080x1920 portrait.
 
+Media-edit recipes carry through: cuts, gain, and fades on audio and video clips
+shape the mix, and a clip with an audio-cleanup recipe (`fx`) uses its processed
+render from the document's `.mediaEdits/` folder when one exists (the editor makes
+it). Without a render, the clip exports its original audio.
+
 Name the destination positionally or with `-o`, never both: supplying both is refused
 with exit status 1 rather than silently discarding one of two conflicting instructions.
 

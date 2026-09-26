@@ -141,7 +141,7 @@ npm run package:vscode
 
 # Run a surface
 npm run dev            # site, preferring http://localhost:5220 and falling forward when busy
-npm run app            # Build shared packages, then launch Electron + Vite on port 5221
+npm run app            # Rebuild stale linked Squisq + shared packages, then launch Electron + Vite on port 5221
 npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5
 
@@ -153,9 +153,9 @@ npm run test:mcp:linked
 ```
 
 Dependency installs enforce a seven-day release cooldown and an exact
-install-script allowlist. The internally maintained `@bendyline/squisq*`
-packages are the only cooldown exception; see
-[Dependency governance](docs/dependency-governance.md).
+install-script allowlist. The internally maintained Squisq (`@bendyline/squisq*`)
+and Gezel (`@bendyline/gezel*`, `@bendyline/gezk`) packages are the only
+cooldown exceptions; see [Dependency governance](docs/dependency-governance.md).
 
 ### Testing
 

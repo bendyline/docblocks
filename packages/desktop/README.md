@@ -21,13 +21,14 @@ Key main-process modules:
 - `menu.ts` / `tray.ts` — native menu and tray integration
 - `updater.ts` — auto-update via electron-updater (checks this repo's GitHub Releases)
 - `settings.ts`, `open-requests.ts`, `icloud-detect.ts` — persisted app settings, open-file handling, iCloud Drive detection
+- `ipc-ai.ts` + `ai/` — optional AI through the user's own Gezel (discovery, consent, streamed completions); off until the user opts in under Settings › AI assistance
 
 ## Architecture rules
 
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.
 - **The renderer never imports `electron` or `node:*`.** It's a browser context; everything native goes through the host API.
 - **The `app://` custom protocol is load-bearing.** It gives IndexedDB a stable origin (workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
-- **Animated GIF uses the packaged browser core.** The renderer build copies the architecture-neutral pinned ffmpeg.wasm core and its GPL notices under `dist/renderer/ffmpeg-core/`; main adds COOP/COEP to trusted renderer responses so `SharedArrayBuffer` is available. The desktop runtime does not bundle a host-native FFmpeg executable. The VS Code extension deliberately does not ship these assets.
+- **No FFmpeg is distributed.** The renderer once packaged the pinned ffmpeg.wasm core under `dist/renderer/ffmpeg-core/`; that build is GPL-2.0-or-later and could not be reconciled with the Mac App Store's terms, so it was removed from every surface. Video export runs on WebCodecs plus the MIT-licensed `mp4-muxer`; Animated GIF is no longer offered in the editor and remains a CLI/MCP capability backed by a system FFmpeg binary. `ipc-ffmpeg.ts` still _detects_ a host-native FFmpeg but the desktop runtime never bundles one. Main still adds COOP/COEP to trusted renderer responses, now purely as hardening.
 
 ## Development
 

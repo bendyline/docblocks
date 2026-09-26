@@ -170,6 +170,26 @@ describe('bounded filesystem transfers', () => {
     value(await service.closeTransfer(owner, instance, download.transferId));
   });
 
+  it('reserves only the bytes a read actually spools', async () => {
+    // Two open reads used to book 2 GiB between them, so any third large read
+    // failed with 'busy' no matter how small the files were.
+    const small = new Uint8Array(LIMITS.chunkBytes + 1);
+    value(await service.writeFile(owner, instance, file, small));
+    const downloads = [];
+    for (let i = 0; i < LIMITS.transfers; i += 1) {
+      const download = value(await service.beginRead(owner, instance, file));
+      if (!download) throw new Error('Missing file');
+      expect(download.entry.size).to.equal(small.byteLength);
+      downloads.push(download.transferId);
+    }
+    // The count limit, not the byte budget, is what now bounds concurrency.
+    failure(await service.beginRead(owner, instance, file), 'busy');
+    for (const id of downloads) value(await service.closeTransfer(owner, instance, id));
+    const reopened = value(await service.beginRead(owner, instance, file));
+    if (!reopened) throw new Error('Missing file');
+    value(await service.closeTransfer(owner, instance, reopened.transferId));
+  });
+
   it('expires abandoned uploads and joins creation during disposal', async () => {
     const transfers = new FileSystemTransfers(20);
     const id = await transfers.beginWrite(owner, instance, file, 1);

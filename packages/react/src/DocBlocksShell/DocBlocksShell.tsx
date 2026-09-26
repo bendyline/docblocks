@@ -18,6 +18,7 @@ import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
+import type { MediaEditRenderManager } from '@bendyline/squisq-video-react/media-edit';
 import {
   DocumentVersionManager,
   type PrunePolicy,
@@ -49,7 +50,13 @@ import {
   type DocumentSessionEditScope,
 } from '@bendyline/docblocks/document';
 import { createMediaProviderFromContainer, type ContentContainer } from '@bendyline/squisq/storage';
-import { isElectronHost, getDocBlocksHost } from '@bendyline/docblocks/host';
+import {
+  getDocBlocksHost,
+  getHostEnvironment,
+  hasDocBlocksHost,
+  hostSupports,
+  maybeGetDocBlocksHost,
+} from '@bendyline/docblocks/host';
 import type { ElectronWorkspaceInfo, OpenRequest } from '@bendyline/docblocks/host';
 import {
   parseSharedDocumentHash,
@@ -91,6 +98,7 @@ import {
   type ExportDestinationAdapter,
 } from '../Export/DeferredExportToolbarControls.js';
 import { createBrowserSaveAsAdapter } from '../Export/browser-save.js';
+import { saveBlobToHost } from '../Export/host-export-save.js';
 import { createImageSaveOutput } from '../Export/image-save.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
@@ -136,7 +144,10 @@ import {
   loadThemePreference,
   saveAccentColor,
   saveThemePreference,
+  loadInterfaceFont,
+  saveInterfaceFont,
   type AccentColor,
+  type InterfaceFontPreference,
   type ThemePreference,
 } from '../preferences/theme.js';
 import {
@@ -180,7 +191,9 @@ import {
   loadFileExplorerSortMode,
   loadSidebarWidth,
   loadViewPreferences,
+  loadSidebarPreference,
   markWelcomeGatewayDismissed,
+  saveSidebarPreference,
   saveSidebarWidth,
   saveFileExplorerSortMode,
   saveViewPreferences,
@@ -188,6 +201,15 @@ import {
   SIDEBAR_WIDTH_MAX,
   SIDEBAR_WIDTH_MIN,
 } from './shell-preferences.js';
+import { resolveLayoutMode, type DbSidebarPreference } from '../layout/form-factor.js';
+import { useFormFactor } from '../layout/useFormFactor.js';
+import { useInert } from '../layout/useInert.js';
+import { useKeyboardInset } from '../layout/useKeyboardInset.js';
+import { useFormFactorAttributes } from '../layout/useFormFactorAttributes.js';
+import { useInterfaceFontAttribute } from '../layout/useInterfaceFontAttribute.js';
+import { useEdgeSwipe } from './useEdgeSwipe.js';
+import { useEditorFileDrop } from './useEditorFileDrop.js';
+import { useShellShortcuts, type ShellShortcutHandlers } from './useShellShortcuts.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
@@ -682,20 +704,6 @@ async function createElectronProviderFromWorkspace(
   return createElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
 }
 
-function useIsMobile(breakpoint = 768): boolean {
-  const [isMobile, setIsMobile] = useState(
-    () =>
-      typeof window !== 'undefined' && window.matchMedia(`(max-width: ${breakpoint}px)`).matches,
-  );
-  useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, [breakpoint]);
-  return isMobile;
-}
-
 // Below these pane widths the view tabs take a row of their own and every
 // remaining control drops below them. Electron needs the extra headroom
 // because its caption buttons eat into the editor header; a browser tab has
@@ -784,6 +792,7 @@ export function DocBlocksShell({
   const osTheme = useOsTheme();
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [accentColor, setAccentColor] = useState<AccentColor>(loadAccentColor);
+  const [interfaceFont, setInterfaceFont] = useState<InterfaceFontPreference>(loadInterfaceFont);
   const [writeCanvasSettings, setWriteCanvasSettings] = useState<WriteCanvasPreferences>(
     loadWriteCanvasPreferences,
   );
@@ -816,7 +825,7 @@ export function DocBlocksShell({
   // metas are overwritten on purpose: an explicit user theme choice must
   // beat the OS media query. Electron paints its own titlebar.
   useEffect(() => {
-    if (isElectronHost() || typeof document === 'undefined') return;
+    if (hostSupports('ownsWindowChrome') || typeof document === 'undefined') return;
     const metas = document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]');
     metas.forEach((meta) => {
       meta.content = DB_CHROME_COLORS[resolvedTheme];
@@ -845,42 +854,57 @@ export function DocBlocksShell({
     setViewPreferences(prefs);
     saveViewPreferences(prefs);
   }, []);
-  const isMobile = useIsMobile();
+  const shellRef = useRef<HTMLDivElement>(null);
+  const formFactor = useFormFactor(shellRef);
+  const [sidebarPreference, setSidebarPreference] =
+    useState<DbSidebarPreference>(loadSidebarPreference);
+  const layoutMode = resolveLayoutMode(formFactor, sidebarPreference);
+  // One pane at a time: the sidebar becomes an overlay drawer over the editor.
+  const singlePane = layoutMode === 'single-pane';
+  const updateSidebarPreference = useCallback((preference: DbSidebarPreference) => {
+    setSidebarPreference(preference);
+    saveSidebarPreference(preference);
+  }, []);
   const defaultPreviewViewportPreset = useResponsivePreviewViewportPreset();
   // Keep a true first visit in the compact file pane so the product can
   // explain itself before opening a document. Once the one-time welcome has
   // been acknowledged, returning mobile users go straight back to the editor.
   const [mobileShowEditor, setMobileShowEditor] = useState(
-    () => isMobile && isWelcomeGatewayDismissed(),
+    () => singlePane && isWelcomeGatewayDismissed(),
   );
   useEffect(() => {
-    if (isMobile) void loadEditorShell();
-  }, [isMobile]);
+    if (singlePane) void loadEditorShell();
+  }, [singlePane]);
+  // Publish the form factor to CSS. Stamped on <html> too, because Squisq
+  // portals its menus outside the shell.
+  useFormFactorAttributes(shellRef, formFactor, layoutMode, !mobileShowEditor);
+  useInterfaceFontAttribute(interfaceFont);
+  // Only touch devices raise an on-screen keyboard that overlaps the layout.
+  useKeyboardInset(formFactor.pointer === 'coarse');
+  // Exactly one pane is reachable while the drawer layout is active.
+  const drawerOpen = singlePane && !mobileShowEditor;
   // Sidebar width -- persisted across sessions, dragged via the resizer
   // between sidebar and editor area. We track the "live" width during a
   // drag in a ref so each mousemove doesn't trigger a state update; only
   // setState on commit so React doesn't churn through every pixel.
   const [sidebarWidth, setSidebarWidth] = useState<number>(loadSidebarWidth);
-  // When the user drags the resizer below SIDEBAR_COLLAPSE_THRESHOLD,
-  // we switch the layout into single-pane "compact" mode -- same UX as
-  // the mobile narrow-viewport flow, where only the sidebar OR the
-  // editor is visible at a time and a back-arrow in the toolbar pops
-  // between them. A "Restore split view" button in either pane's header
-  // exits compact mode; on real mobile that button is suppressed
-  // because there's not enough viewport for side-by-side. Not
-  // persisted across reloads. */
-  const [compactLayout, setCompactLayout] = useState(false);
-  const effectiveCompact = isMobile || compactLayout;
+  // Dragging the resizer below SIDEBAR_COLLAPSE_THRESHOLD sets the sidebar
+  // preference to 'collapsed', which resolveLayoutMode turns into single-pane.
+  // A "Restore split view" button exits it, and is only offered where the
+  // viewport can actually hold both panes (splitPaneAllowed).
+  const canRestoreSplitView = sidebarPreference === 'collapsed' && formFactor.splitPaneAllowed;
   const editorAreaRef = useRef<HTMLElement>(null);
   const [desktopToolbarWrapped, setDesktopToolbarWrapped] = useState(false);
   useEffect(() => {
     const editorArea = editorAreaRef.current;
-    if (!editorArea || effectiveCompact) {
+    if (!editorArea || singlePane) {
       setDesktopToolbarWrapped(false);
       return;
     }
 
-    const wrapWidth = isElectronHost() ? DESKTOP_TOOLBAR_WRAP_WIDTH : WEB_TOOLBAR_WRAP_WIDTH;
+    const wrapWidth = hostSupports('ownsWindowChrome')
+      ? DESKTOP_TOOLBAR_WRAP_WIDTH
+      : WEB_TOOLBAR_WRAP_WIDTH;
     const updateWrappedState = () => {
       setDesktopToolbarWrapped(editorArea.getBoundingClientRect().width <= wrapWidth);
     };
@@ -894,10 +918,12 @@ export function DocBlocksShell({
     const observer = new ResizeObserver(updateWrappedState);
     observer.observe(editorArea);
     return () => observer.disconnect();
-  }, [effectiveCompact]);
-  const showBrowserStorageWarning = !isElectronHost();
-  const appVersion = isElectronHost()
-    ? `${getDocBlocksHost().env.appVersion} desktop`
+  }, [singlePane]);
+  // Warn about eviction only where documents actually live in the web origin.
+  const showBrowserStorageWarning = hostSupports('browserOriginStorage');
+  const hostEnvironment = getHostEnvironment();
+  const appVersion = hostEnvironment
+    ? `${hostEnvironment.appVersion} ${hostEnvironment.surfaceLabel}`
     : (issueReportVersion ?? 'web');
   const issueReportUrl = buildIssueReportUrl({
     reportedAt: new Date(),
@@ -956,7 +982,22 @@ export function DocBlocksShell({
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
+  const panesRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  // Contain focus in whichever pane the user can actually see.
+  useInert(sidebarRef, singlePane && !drawerOpen);
+  useInert(editorAreaRef, drawerOpen);
+
+  const openDrawer = useCallback(() => setMobileShowEditor(false), []);
+  const closeDrawer = useCallback(() => setMobileShowEditor(true), []);
+  useEdgeSwipe({
+    surfaceRef: panesRef,
+    drawerRef: sidebarRef,
+    enabled: singlePane,
+    open: drawerOpen,
+    onOpen: openDrawer,
+    onClose: closeDrawer,
+  });
   const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const handleResizerPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1001,10 +1042,10 @@ export function DocBlocksShell({
           sidebarRef.current.classList.remove('db-shell-sidebar--collapse-preview');
         }
         if (lastRaw < SIDEBAR_COLLAPSE_THRESHOLD) {
-          // Released below threshold -- switch to compact (single-pane)
-          // layout focused on the document pane. Keep the persisted
-          // sidebarWidth so exiting compact mode restores it.
-          setCompactLayout(true);
+          // Released below threshold -- collapse to single-pane, focused on
+          // the document. The persisted sidebarWidth is left alone so pinning
+          // the sidebar again restores the width the user had chosen.
+          updateSidebarPreference('collapsed');
           setMobileShowEditor(true);
         } else {
           const finalWidth = sidebarRef.current?.getBoundingClientRect().width;
@@ -1022,7 +1063,7 @@ export function DocBlocksShell({
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
     },
-    [sidebarWidth],
+    [sidebarWidth, updateSidebarPreference],
   );
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
   const [workspaceStartupError, setWorkspaceStartupError] = useState<string | null>(null);
@@ -1069,10 +1110,11 @@ export function DocBlocksShell({
     savePinnedDocuments(pinnedDocuments);
   }, [pinnedDocuments]);
   // Mirror the pinned list into the desktop tray so each document gets a
-  // one-click shortcut. No-op on non-Electron surfaces.
+  // one-click shortcut. Hosts without a native menu simply do not offer this.
   useEffect(() => {
-    if (!isElectronHost()) return;
-    getDocBlocksHost().menu.setPinnedDocuments(
+    const menu = maybeGetDocBlocksHost()?.menu;
+    if (!hostSupports('pinnedDocumentMirror') || !menu) return;
+    menu.setPinnedDocuments(
       pinnedDocuments.map((document) => ({
         workspaceId: document.workspaceId,
         workspaceName: document.workspaceName,
@@ -1170,7 +1212,7 @@ export function DocBlocksShell({
       return;
     }
     let cancelled = false;
-    const electron = isElectronHost();
+    const electron = hostSupports('nativeWorkspaces');
     void listWorkspaces()
       .then((workspaces) => {
         if (cancelled) return;
@@ -1277,16 +1319,23 @@ export function DocBlocksShell({
   useDocumentTitle(selectedFile, homeDocumentTitle, homeDocumentPath);
   const exportDestinationAdapter = useMemo<ExportDestinationAdapter | undefined>(() => {
     if (!selectedFile) return undefined;
-    if (isElectronHost() && activeWorkspaceId) {
-      const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
-      const host = getDocBlocksHost().exports;
-      return {
-        resolveTarget: (filename) => host.resolveTarget(documentId, filename),
-        pickTarget: (filename, currentTarget) =>
-          host.pickTarget(documentId, filename, currentTarget?.grantId ?? null),
-        saveBlob: async (blob, filename, target) =>
-          host.save(documentId, filename, target?.grantId ?? null, await blob.arrayBuffer()),
-      };
+    const exports = maybeGetDocBlocksHost()?.exports;
+    // `exportRememberedTargets` rather than `exportDestinations`: this adapter
+    // re-resolves a remembered destination, which a host offering only a plain
+    // `save` (a share sheet, say) cannot do.
+    if (hostSupports('exportRememberedTargets') && exports?.resolveTarget && exports.pickTarget) {
+      if (activeWorkspaceId) {
+        const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
+        const resolveTarget = exports.resolveTarget.bind(exports);
+        const pickTarget = exports.pickTarget.bind(exports);
+        return {
+          resolveTarget: (filename) => resolveTarget(documentId, filename),
+          pickTarget: (filename, currentTarget) =>
+            pickTarget(documentId, filename, currentTarget?.grantId ?? null),
+          saveBlob: (blob, filename, target) =>
+            saveBlobToHost(exports, documentId, blob, filename, target?.grantId ?? null),
+        };
+      }
     }
     return createBrowserSaveAsAdapter();
   }, [activeWorkspaceId, selectedFile]);
@@ -1294,7 +1343,7 @@ export function DocBlocksShell({
   // adapter serves both of Squisq's rendered-image save hooks.
   const saveRenderedImageOutput = useMemo(
     () =>
-      isElectronHost() && exportDestinationAdapter
+      hostSupports('exportDestinations') && exportDestinationAdapter
         ? createImageSaveOutput(exportDestinationAdapter)
         : undefined,
     [exportDestinationAdapter],
@@ -1357,8 +1406,11 @@ export function DocBlocksShell({
       const baseTarget = createFileSystemDocumentTarget(fsProvider, filePath);
 
       const originKind = transient?.descriptor.origin?.kind;
-      const needsElectronHost = originKind === 'loose-file' || originKind === 'dbk';
-      if (!transient?.descriptor.origin || (needsElectronHost && !isElectronHost())) {
+      const needsExternalResources = originKind === 'loose-file' || originKind === 'dbk';
+      if (
+        !transient?.descriptor.origin ||
+        (needsExternalResources && !hostSupports('externalResources'))
+      ) {
         return {
           key: baseTarget.key,
           async commit(request) {
@@ -1468,6 +1520,9 @@ export function DocBlocksShell({
         key: baseTarget.key,
         async commit(request) {
           const host = getDocBlocksHost();
+          // This target only exists for an OS-delivered file, which requires
+          // the external-resource bridge in the first place.
+          if (!host.external) throw new Error('The host does not expose external resources.');
           if (origin.kind === 'loose-file') {
             const result = await host.external.commitText(
               origin.resourceId,
@@ -1858,7 +1913,7 @@ export function DocBlocksShell({
     const isCurrent = () => !cancelled && requestId === navigationRequestRef.current;
 
     void (async () => {
-      const electron = isElectronHost();
+      const electron = hostSupports('workspaceAuthority');
       let workspaceIdRemap: Readonly<Record<string, string>> = {};
       if (electron) {
         // Main-process persisted roots are authoritative after an upgrade or
@@ -2159,7 +2214,7 @@ export function DocBlocksShell({
   // menu offer "Install DocBlocks…" on our terms. `appinstalled` fires for
   // any install path (menu item or the browser's own omnibox affordance).
   useEffect(() => {
-    if (isElectronHost() || typeof window === 'undefined') return;
+    if (hasDocBlocksHost() || typeof window === 'undefined') return;
     const onBeforeInstallPrompt = (e: BeforeInstallPromptEvent) => {
       e.preventDefault();
       setInstallPromptEvent(e);
@@ -2221,31 +2276,22 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const sKey = e.key === 's' || e.key === 'S';
-      const accel = e.ctrlKey || e.metaKey;
-      if (!sKey || !accel || e.altKey) return;
-      e.preventDefault();
-      e.stopPropagation();
-      void (async () => {
-        try {
-          await documentSession.flush('manual');
-          showToast('success', 'Saved. You’re all set.');
-        } catch (error: unknown) {
-          showToast(
-            'error',
-            isQuotaExceededError(error)
-              ? 'Could not save -- browser storage is full. Free up space or back up your work.'
-              : error instanceof Error
-                ? error.message
-                : 'Could not save this document.',
-          );
-        }
-      })();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
+  const saveActiveDocument = useCallback(() => {
+    void (async () => {
+      try {
+        await documentSession.flush('manual');
+        showToast('success', 'Saved. You’re all set.');
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          isQuotaExceededError(error)
+            ? 'Could not save -- browser storage is full. Free up space or back up your work.'
+            : error instanceof Error
+              ? error.message
+              : 'Could not save this document.',
+        );
+      }
+    })();
   }, [documentSession, showToast]);
   useEffect(() => {
     return () => {
@@ -2337,6 +2383,33 @@ export function DocBlocksShell({
       mp.dispose();
     };
   }, [provider, selectedFile, selectedOutsideIn, mediaEpoch]);
+
+  // Processed-audio renders for media-edit recipes (denoise, de-breath,
+  // loudness), one manager per document media scope. Shared by the editor and
+  // the video export so both see the same renders. Loaded on demand so the
+  // shell bundle never carries the render engine.
+  const [mediaEditRenders, setMediaEditRenders] = useState<MediaEditRenderManager | null>(null);
+  useEffect(() => {
+    setMediaEditRenders(null);
+    if (!mediaProvider) return;
+    let manager: MediaEditRenderManager | null = null;
+    let cancelled = false;
+    void import('@bendyline/squisq-video-react/media-edit').then(
+      ({ createMediaEditRenderManager }) => {
+        if (cancelled) return;
+        manager = createMediaEditRenderManager({ mediaProvider });
+        setMediaEditRenders(manager);
+      },
+      () => {
+        // Media edits are optional: without the engine the editor simply
+        // offers no audio cleanup.
+      },
+    );
+    return () => {
+      cancelled = true;
+      manager?.dispose();
+    };
+  }, [mediaProvider]);
 
   const documentLinkProvider = useDocumentLinkProvider(
     provider,
@@ -2535,8 +2608,8 @@ export function DocBlocksShell({
   // Browser unload remains best-effort, which is why continuous autosave is
   // still the primary durability mechanism.
   useEffect(() => {
-    if (!isElectronHost()) return;
-    const lifecycle = getDocBlocksHost().lifecycle;
+    const lifecycle = maybeGetDocBlocksHost()?.lifecycle;
+    if (!hostSupports('guardedClose') || !lifecycle) return;
     const stopPrepare = lifecycle.onPrepareClose(async (request) => {
       preparedCloseRequestRef.current = request.requestId;
       try {
@@ -2687,7 +2760,7 @@ export function DocBlocksShell({
           if (transient) {
             nextProvider = transient.provider;
           } else if (workspace.type === 'electron-native') {
-            nextProvider = isElectronHost()
+            nextProvider = hostSupports('nativeWorkspaces')
               ? await createElectronProviderFromWorkspace(workspace)
               : null;
             ownsNextProvider = nextProvider !== null;
@@ -2768,7 +2841,7 @@ export function DocBlocksShell({
         closeWelcomeGateway();
         pushHash(workspace.id, document.path);
         saveLastState({ workspaceId: workspace.id, filePath: document.path, view: 'wysiwyg' });
-        if (effectiveCompact) setMobileShowEditor(true);
+        if (singlePane) setMobileShowEditor(true);
         void touchWorkspace(workspace.id).catch(() => undefined);
       } catch (error: unknown) {
         showToast(
@@ -2792,7 +2865,7 @@ export function DocBlocksShell({
       confirmMissingPinnedDocument,
       createDocumentTarget,
       documentSession,
-      effectiveCompact,
+      singlePane,
       provider,
       pushHash,
       setPinnedAvailability,
@@ -2880,14 +2953,15 @@ export function DocBlocksShell({
           filePath: selectedFile,
           view: 'wysiwyg',
         });
-        if (effectiveCompact) setMobileShowEditor(true);
+        if (singlePane) setMobileShowEditor(true);
         void touchWorkspace(destination.id).catch(() => undefined);
         if (sourceTargetKey) pendingDbkConflictsRef.current.delete(sourceTargetKey);
 
         const origin = transient.descriptor.origin;
-        if (isElectronHost() && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+        const externalApi = maybeGetDocBlocksHost()?.external;
+        if (externalApi && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
           try {
-            await getDocBlocksHost().external.revoke(origin.resourceId);
+            await externalApi.revoke(origin.resourceId);
           } catch {
             // Navigation and renderer teardown also revoke external grants.
           }
@@ -2917,7 +2991,7 @@ export function DocBlocksShell({
       createDocumentTarget,
       documentSession,
       documentSnapshot.targetKey,
-      effectiveCompact,
+      singlePane,
       provider,
       pushHash,
       selectedFile,
@@ -2928,7 +3002,7 @@ export function DocBlocksShell({
   const handleOpenFolder = useCallback(async () => {
     const requestId = ++navigationRequestRef.current;
     try {
-      if (isElectronHost()) {
+      if (hostSupports('workspaceFolderPicker')) {
         const info = await getDocBlocksHost().workspaces.pickFolder();
         if (!info) return; // user cancelled
         if (requestId !== navigationRequestRef.current) return;
@@ -3115,7 +3189,7 @@ export function DocBlocksShell({
     setExplorerKey((key) => key + 1);
     closeWelcomeGateway();
     if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
-    if (effectiveCompact) setMobileShowEditor(true);
+    if (singlePane) setMobileShowEditor(true);
   }, [
     provider,
     adoptSelectedDocument,
@@ -3124,12 +3198,61 @@ export function DocBlocksShell({
     closeWelcomeGateway,
     activeWorkspaceId,
     pushHash,
-    effectiveCompact,
+    singlePane,
   ]);
 
   // Manifest shortcut "New document" launches `/?action=new` (installed
   // PWA jump list). Handled once the first workspace/provider is ready,
   // then stripped from the URL so a reload doesn't re-trigger it.
+
+  // One capture listener for every shell shortcut; see keyboard-shortcuts.ts
+  // for what is bound and which keys Squisq owns.
+  const shortcutHandlers: ShellShortcutHandlers = useMemo(
+    () => ({
+      save: saveActiveDocument,
+      'new-document': () => void handleNewFile(),
+      'new-folder': () => void handleNewFolder(),
+      'toggle-sidebar': () => {
+        if (singlePane) {
+          setMobileShowEditor((showingEditor) => !showingEditor);
+          return;
+        }
+        // Split view: collapse to the drawer, and back again.
+        updateSidebarPreference(sidebarPreference === 'collapsed' ? 'pinned' : 'collapsed');
+      },
+      'focus-files': () => {
+        // Reveal the tree first — focusing a hidden pane would do nothing.
+        if (singlePane) setMobileShowEditor(false);
+        window.requestAnimationFrame(() => {
+          const tree = document.querySelector<HTMLElement>('.db-tree');
+          // The tree uses a roving tabindex, so prefer the row it considers
+          // focused; falling back to the first row would move the user's place.
+          const target =
+            tree?.querySelector<HTMLElement>('.db-tree-row[tabindex="0"]') ??
+            tree?.querySelector<HTMLElement>('.db-tree-row');
+          target?.focus();
+        });
+      },
+      // Registered ONLY while the drawer is open. useShellShortcuts claims an
+      // event as soon as a handler exists for it, so an always-present
+      // Escape handler would swallow Escape from every menu and dialog in the
+      // app even when there was no drawer to close.
+      ...(singlePane && !mobileShowEditor
+        ? { 'close-overlay': () => setMobileShowEditor(true) }
+        : {}),
+    }),
+    [
+      saveActiveDocument,
+      handleNewFile,
+      handleNewFolder,
+      singlePane,
+      mobileShowEditor,
+      sidebarPreference,
+      updateSidebarPreference,
+    ],
+  );
+  useShellShortcuts(shortcutHandlers, layoutMode);
+
   const actionNewHandledRef = useRef(false);
   useEffect(() => {
     if (!provider || actionNewHandledRef.current) return;
@@ -3148,29 +3271,33 @@ export function DocBlocksShell({
   }, [provider, handleNewFile]);
 
   const handleRevealWorkspace = useCallback(async () => {
-    if (!isElectronHost() || !activeWorkspaceId) return;
+    const shell = maybeGetDocBlocksHost()?.shell;
+    if (!hostSupports('revealInFileManager') || !shell?.revealInFolder || !activeWorkspaceId) {
+      return;
+    }
     const ws = await getWorkspace(activeWorkspaceId);
     if (ws?.type === 'electron-native' && ws.rootPath) {
-      await getDocBlocksHost().shell.revealInFolder(ws.id);
+      await shell.revealInFolder(ws.id);
     }
   }, [activeWorkspaceId]);
 
   const handleOpenWorkspaceFolder = useCallback(() => {
-    if (!isElectronHost() || !nativeWorkspaceId) return;
-    void getDocBlocksHost()
-      .shell.openWorkspaceFolder(nativeWorkspaceId)
-      .catch((error: unknown) => {
-        showToast(
-          'error',
-          error instanceof Error ? error.message : 'Could not open this workspace folder.',
-        );
-      });
+    const shell = maybeGetDocBlocksHost()?.shell;
+    if (!hostSupports('openWorkspaceFolder') || !shell?.openWorkspaceFolder || !nativeWorkspaceId) {
+      return;
+    }
+    void shell.openWorkspaceFolder(nativeWorkspaceId).catch((error: unknown) => {
+      showToast(
+        'error',
+        error instanceof Error ? error.message : 'Could not open this workspace folder.',
+      );
+    });
   }, [nativeWorkspaceId, showToast]);
 
-  // Subscribe to native menu commands (Electron host).
+  // Subscribe to native menu commands. Hosts without a menu bar never emit any.
   useEffect(() => {
-    if (!isElectronHost()) return;
-    const host = getDocBlocksHost();
+    const host = maybeGetDocBlocksHost();
+    if (!hostSupports('menuCommands') || !host?.onMenuCommand) return;
     return host.onMenuCommand((cmd) => {
       switch (cmd) {
         case 'file:new':
@@ -3215,16 +3342,17 @@ export function DocBlocksShell({
           if (gitRef.current.repo) void gitRef.current.createPullRequest();
           break;
         case 'help:viewOnGitHub':
-          host.shell.openExternal('https://github.com/bendyline/docblocks');
+          void host.shell?.openExternal('https://github.com/bendyline/docblocks');
           break;
         case 'help:checkForUpdates':
-          host.updater.checkForUpdates().catch(() => {
+          host.updater?.checkForUpdates().catch(() => {
             // errors surface via updater.onStatus
           });
           break;
         case 'help:about':
           void (async () => {
-            const version = await host.updater.getVersion();
+            const version =
+              (await host.updater?.getVersion()) ?? getHostEnvironment()?.appVersion ?? 'unknown';
             // Deliberately a dialog, not a toast: the user asked to see this
             // and a version string they cannot read twice is useless.
             await acknowledge({ title: 'About DocBlocks', message: `DocBlocks ${version}` });
@@ -3288,14 +3416,14 @@ export function DocBlocksShell({
         closeWelcomeGateway();
         pushHash(activeWorkspaceId, path);
         saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
-        if (effectiveCompact) setMobileShowEditor(true);
+        if (singlePane) setMobileShowEditor(true);
       }
     },
     [
       provider,
       activeWorkspaceId,
       pushHash,
-      effectiveCompact,
+      singlePane,
       closeWelcomeGateway,
       adoptSelectedDocument,
       createDocumentTarget,
@@ -3340,7 +3468,7 @@ export function DocBlocksShell({
       closeWelcomeGateway();
       pushHash(activeWorkspaceId, path);
       saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
-      if (effectiveCompact) setMobileShowEditor(true);
+      if (singlePane) setMobileShowEditor(true);
       showToast(
         'success',
         `Markdown editing enabled. The original is backed up at ${editable.outsideIn.backupPath}.`,
@@ -3352,7 +3480,7 @@ export function DocBlocksShell({
       closeWelcomeGateway,
       createDocumentTarget,
       documentSession,
-      effectiveCompact,
+      singlePane,
       provider,
       pushHash,
       showToast,
@@ -3381,9 +3509,13 @@ export function DocBlocksShell({
 
   const actionsForEntry = useCallback(
     (entry: FileSystemEntry) => {
-      const nativeActions = isElectronHost()
-        ? createNativeFileActions(entry, nativeWorkspaceId, getDocBlocksHost())
-        : [];
+      // No capability gate here: createNativeFileActions inspects the bridge
+      // and emits only the actions this host can actually perform.
+      const nativeActions = createNativeFileActions(
+        entry,
+        nativeWorkspaceId,
+        maybeGetDocBlocksHost(),
+      );
       return [...nativeActions, ...outsideInActionsForEntry(entry)];
     },
     [nativeWorkspaceId, outsideInActionsForEntry],
@@ -3402,15 +3534,14 @@ export function DocBlocksShell({
       if (target.kind === 'fragment') return false;
 
       if (target.kind === 'external') {
-        if (isElectronHost()) {
-          void getDocBlocksHost()
-            .shell.openExternal(target.url)
-            .catch((error: unknown) => {
-              showToast(
-                'error',
-                error instanceof Error ? error.message : 'Could not open the external link.',
-              );
-            });
+        const shell = maybeGetDocBlocksHost()?.shell;
+        if (hostSupports('externalNavigation') && shell?.openExternal) {
+          void shell.openExternal(target.url).catch((error: unknown) => {
+            showToast(
+              'error',
+              error instanceof Error ? error.message : 'Could not open the external link.',
+            );
+          });
         } else if (typeof window !== 'undefined') {
           try {
             window.open(target.url, '_blank', 'noopener,noreferrer');
@@ -3630,7 +3761,7 @@ export function DocBlocksShell({
 
       let pinnedProvider: FileSystemProvider | null = null;
       if (workspace.type === 'electron-native') {
-        pinnedProvider = isElectronHost()
+        pinnedProvider = hostSupports('nativeWorkspaces')
           ? await createElectronProviderFromWorkspace(workspace)
           : null;
       } else if (workspace.type === 'native') {
@@ -3840,6 +3971,33 @@ export function DocBlocksShell({
     [provider, showToast],
   );
 
+  /**
+   * Documents dropped onto the editor pane. Same import pipeline as the
+   * explorer, with one addition: a single successful import opens straight
+   * away, because someone who drags one file onto the page means "open this".
+   */
+  const handleImportFilesToEditor = useCallback(
+    async (files: File[]) => {
+      if (!provider) return;
+      const result = await importDroppedFiles(files, provider);
+      setExplorerKey((k) => k + 1);
+      const summary = summariseImport(result);
+      if (summary) showToast(summary.kind, summary.message);
+      const imported = result.imported;
+      if (imported.length === 1 && result.failed.length === 0) {
+        const only = imported[0];
+        if (only) void handleSelect(only.path, 'file');
+      }
+    },
+    [provider, showToast, handleSelect],
+  );
+
+  const editorDropActive = useEditorFileDrop(
+    editorAreaRef,
+    provider !== null,
+    (files) => void handleImportFilesToEditor(files),
+  );
+
   const handleEditorChange = useCallback(
     (source: string) => {
       if (!editorSessionScope) return;
@@ -3883,8 +4041,10 @@ export function DocBlocksShell({
     ) => {
       const isCurrent = () => navigationRequestId === navigationRequestRef.current;
       const host = getDocBlocksHost();
-      const revokeAbandonedResource = () =>
-        host.external.revoke(req.resourceId).catch(() => undefined);
+      // An external-file OpenRequest can only have come from this bridge.
+      const external = host.external;
+      if (!external) throw new Error('The host does not expose external resources.');
+      const revokeAbandonedResource = () => external.revoke(req.resourceId).catch(() => undefined);
       if (!isCurrent()) {
         await revokeAbandonedResource();
         return;
@@ -3909,7 +4069,7 @@ export function DocBlocksShell({
 
       try {
         if (req.kind === 'external-file') {
-          const content = await host.external.readText(req.resourceId);
+          const content = await external.readText(req.resourceId);
           if (content === null) {
             throw new Error('The external file is no longer available.');
           }
@@ -3918,7 +4078,7 @@ export function DocBlocksShell({
           mem.seedText(primaryFile, content);
           origin = { kind: 'loose-file', resourceId: req.resourceId };
         } else {
-          const bytes = await host.external.readBinary(req.resourceId);
+          const bytes = await external.readBinary(req.resourceId);
           if (!bytes) {
             throw new Error('The external bundle is no longer available.');
           }
@@ -3960,8 +4120,8 @@ export function DocBlocksShell({
 
   // Subscribe to OS open-file / deep-link requests.
   useEffect(() => {
-    if (!isElectronHost()) return;
-    const host = getDocBlocksHost();
+    const host = maybeGetDocBlocksHost();
+    if (!hostSupports('openRequests') || !host) return;
     return host.onOpenRequest((req) => {
       // Claim the navigation when the OS request arrives, before any external
       // file read or bundle decoding. A slower older request can no longer
@@ -4054,7 +4214,7 @@ export function DocBlocksShell({
   // launchQueue buffers launch params until a consumer is set, so a
   // post-mount effect is early enough to catch the launching file.
   useEffect(() => {
-    if (isElectronHost() || typeof window === 'undefined') return;
+    if (hostSupports('openRequests') || typeof window === 'undefined') return;
     const launchQueue = window.launchQueue;
     if (!launchQueue) return;
     launchQueue.setConsumer((params) => {
@@ -4116,7 +4276,7 @@ export function DocBlocksShell({
         import('@bendyline/squisq-formats/container'),
       ]);
 
-      const electron = isElectronHost();
+      const electron = hostSupports('nativeWorkspaces');
       const all = await listWorkspaces();
       const candidates = all.filter((w) =>
         electron
@@ -4303,9 +4463,10 @@ export function DocBlocksShell({
       }
     } else if (ws?.type === 'transient') {
       const origin = ws.origin;
-      if (isElectronHost() && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+      const externalApi = maybeGetDocBlocksHost()?.external;
+      if (externalApi && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
         try {
-          await getDocBlocksHost().external.revoke(origin.resourceId);
+          await externalApi.revoke(origin.resourceId);
         } catch {
           // Navigation/destruction also revokes the capability; removal is best effort.
         }
@@ -4328,7 +4489,7 @@ export function DocBlocksShell({
     }
     if (requestId !== navigationRequestRef.current) return;
 
-    const electron = isElectronHost();
+    const electron = hostSupports('nativeWorkspaces');
     // Switch to most recent remaining workspace or create default
     const remaining = (await listWorkspaces()).filter((w) =>
       electron ? w.type === 'electron-native' : w.type !== 'electron-native',
@@ -4373,9 +4534,17 @@ export function DocBlocksShell({
 
   return (
     <div
-      className={`db-shell${effectiveCompact ? ' db-shell--mobile' : ''}${desktopToolbarWrapped ? ' db-shell--desktop-toolbar-wrapped' : ''}`}
+      ref={shellRef}
+      // `db-shell--mobile` is a derived compatibility alias for
+      // [data-db-layout='single-pane']: ~20 CSS selectors and the desktop
+      // titlebar stylesheet still key off it. One expression emits both, so
+      // they cannot drift. New rules use the attribute.
+      className={`db-shell${singlePane ? ' db-shell--mobile' : ''}${desktopToolbarWrapped ? ' db-shell--desktop-toolbar-wrapped' : ''}`}
       data-theme={resolvedTheme}
       data-accent={accentColor}
+      // `system` is the default and stamps nothing, so the chrome keeps its
+      // native `system-ui` stack unless a reader opts into the fixed face.
+      data-interface-font={interfaceFont === 'fixed' ? 'fixed' : undefined}
       data-document-status={documentSnapshot.status}
     >
       <GitContext.Provider value={git}>
@@ -4439,197 +4608,201 @@ export function DocBlocksShell({
             onClose={() => setWorkspaceSettingsOpen(false)}
           />
         )}
-        {/* Main area */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Left sidebar -- hidden in compact layout when the editor is
-            showing (compact = real mobile narrow viewport OR the user
-            dragged the resizer below SIDEBAR_COLLAPSE_THRESHOLD). */}
-          {(!effectiveCompact || !mobileShowEditor) && (
-            <aside
-              ref={sidebarRef}
-              className="db-shell-sidebar"
-              aria-label="Workspace and files"
-              style={effectiveCompact ? undefined : { width: `${sidebarWidth}px` }}
-            >
-              <div className="db-shell-sidebar-header">
-                <AppMenu
-                  logoUrl={logoUrl}
-                  themePreference={themePreference}
-                  onThemeChange={handleThemeChange}
-                  accentColor={accentColor}
-                  onAccentColorChange={handleAccentColorChange}
-                  writeCanvasSettings={writeCanvasSettings}
-                  onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
-                  proofingPreferences={proofingPreferences}
-                  onProofingPreferencesChange={handleProofingPreferencesChange}
-                  versioningPreference={versioningPreference}
-                  onVersioningPreferenceChange={handleVersioningPreferenceChange}
-                  onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
-                  onKeepBrowserData={
-                    showBrowserStorageWarning && !browserStoragePersistent
-                      ? handleKeepBrowserData
-                      : undefined
-                  }
-                  onInstallApp={installPromptEvent ? handleInstallApp : undefined}
-                  getStorageEstimate={
-                    showBrowserStorageWarning ? getBrowserStorageEstimate : undefined
-                  }
-                  storagePersistent={
-                    showBrowserStorageWarning ? browserStoragePersistent : undefined
-                  }
-                  appVersion={appVersion}
-                  appBuildDate={appBuildDate}
-                />
-                <WorkspacePicker
-                  activeWorkspaceId={activeWorkspaceId}
-                  refreshKey={descriptorRefreshKey}
-                  onSelect={handleWorkspaceSelect}
-                  onOpenFolder={handleOpenFolder}
-                  onCloneRepository={
-                    git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
-                  }
-                />
-                <WorkspaceSettingsButton
-                  onSettings={handleOpenWorkspaceSettings}
-                  onRename={handleRenameWorkspace}
-                  onDownload={handleDownloadWorkspace}
-                  onRemove={handleRemoveWorkspace}
-                />
-                {compactLayout && !isMobile && (
-                  <button
-                    className="db-restore-split"
-                    onClick={() => setCompactLayout(false)}
-                    aria-label="Restore split view"
-                    title="Restore split view"
-                  >
-                    <SplitViewIcon />
-                  </button>
-                )}
-                <span className={'db-window-drag-grip'} aria-hidden={true} />
-              </div>
-              {git.available && (
-                <Suspense fallback={null}>
-                  <GitUI
-                    onOpenFile={(path) => void handleSelect(path, 'file')}
-                    onWorkspaceCloned={handleWorkspaceCloned}
-                  />
-                </Suspense>
-              )}
-              <FileExplorer
-                key={explorerKey}
-                provider={provider}
-                metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
+        {/* Main area. Both panes always render; in single-pane the sidebar
+          becomes an absolutely-positioned drawer over the editor. */}
+        <div className="db-shell-panes" ref={panesRef}>
+          {/* Hidden with `visibility`, never unmounted: unmounting tore down
+            the file tree's expansion state on every toggle, and unmounting the
+            editor pane below tore down Tiptap, Monaco, undo history and scroll
+            position with it. `inert` keeps the hidden pane out of the tab order
+            and the accessibility tree. */}
+          <aside
+            ref={sidebarRef}
+            className="db-shell-sidebar"
+            aria-label="Workspace and files"
+            style={singlePane ? undefined : { width: `${sidebarWidth}px` }}
+          >
+            <div className="db-shell-sidebar-header">
+              <AppMenu
+                logoUrl={logoUrl}
+                themePreference={themePreference}
+                onThemeChange={handleThemeChange}
+                accentColor={accentColor}
+                interfaceFont={interfaceFont}
+                onInterfaceFontChange={(font) => {
+                  setInterfaceFont(font);
+                  saveInterfaceFont(font);
+                }}
+                onAccentColorChange={handleAccentColorChange}
+                writeCanvasSettings={writeCanvasSettings}
+                onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
+                proofingPreferences={proofingPreferences}
+                onProofingPreferencesChange={handleProofingPreferencesChange}
+                versioningPreference={versioningPreference}
+                onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                onKeepBrowserData={
+                  showBrowserStorageWarning && !browserStoragePersistent
+                    ? handleKeepBrowserData
+                    : undefined
+                }
+                onInstallApp={installPromptEvent ? handleInstallApp : undefined}
+                getStorageEstimate={
+                  showBrowserStorageWarning ? getBrowserStorageEstimate : undefined
+                }
+                storagePersistent={showBrowserStorageWarning ? browserStoragePersistent : undefined}
+                appVersion={appVersion}
+                appBuildDate={appBuildDate}
+                ai={hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined}
+              />
+              <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
-                activeFilePath={selectedFile}
-                sortMode={fileExplorerSortMode}
-                onSortModeChange={handleFileExplorerSortModeChange}
-                pinnedDocuments={pinnedDocumentItems}
-                pinnedPaths={activeWorkspacePinnedPaths}
-                onPinnedDocumentSelect={(document) => void handlePinnedDocumentSelect(document)}
-                onPinnedDocumentUnpin={unpinDocument}
-                onPinnedDocumentRename={handlePinnedDocumentRename}
-                onPinnedDocumentDelete={handlePinnedDocumentDelete}
-                onTogglePin={handleTogglePin}
-                onSelect={handleSelect}
-                onOpenWorkspaceFolder={
-                  isElectronHost() && nativeWorkspaceId ? handleOpenWorkspaceFolder : undefined
-                }
-                actionsForEntry={actionsForEntry}
-                onTreeMutation={handleTreeMutation}
-                onTreeChange={handleTreeChange}
-                onImportFiles={handleImportFiles}
-                confirmDelete={confirmDeleteEntry}
-                moveDestinations={
-                  activeWorkspaceDescriptor?.type === 'transient'
-                    ? transientMoveDestinations
-                    : undefined
-                }
-                onMoveToWorkspace={
-                  activeWorkspaceDescriptor?.type === 'transient'
-                    ? handleMoveTransientWorkspace
-                    : undefined
+                refreshKey={descriptorRefreshKey}
+                onSelect={handleWorkspaceSelect}
+                onOpenFolder={handleOpenFolder}
+                onCloneRepository={
+                  git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
                 }
               />
-              {isMobile && showWelcomeGateway && (
-                <section
-                  className="db-mobile-first-run"
-                  aria-labelledby="db-mobile-first-run-title"
+              <WorkspaceSettingsButton
+                onSettings={handleOpenWorkspaceSettings}
+                onRename={handleRenameWorkspace}
+                onDownload={handleDownloadWorkspace}
+                onRemove={handleRemoveWorkspace}
+              />
+              {canRestoreSplitView && (
+                <button
+                  className="db-restore-split"
+                  onClick={() => updateSidebarPreference('pinned')}
+                  aria-label="Restore split view"
+                  title="Restore split view"
                 >
-                  <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
-                  <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
-                  <p>
-                    Write visually, keep plain Markdown underneath, and export the same document in
-                    useful formats. Your browser workspace stays on this device.
-                  </p>
-                  <div className="db-mobile-first-run-actions">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        closeWelcomeGateway();
-                        setMobileShowEditor(true);
-                      }}
-                    >
-                      Tour the welcome document
-                    </button>
-                    <button
-                      type="button"
-                      className="db-mobile-first-run-secondary"
-                      onClick={() => void handleNewFile()}
-                    >
-                      Create a document
-                    </button>
-                  </div>
-                </section>
+                  <SplitViewIcon />
+                </button>
               )}
-              {git.available && git.pendingGrant && (
-                <Suspense fallback={null}>
-                  <GitGrantNotice />
-                </Suspense>
+              <span className={'db-window-drag-grip'} aria-hidden={true} />
+            </div>
+            {git.available && (
+              <Suspense fallback={null}>
+                <GitUI
+                  onOpenFile={(path) => void handleSelect(path, 'file')}
+                  onWorkspaceCloned={handleWorkspaceCloned}
+                />
+              </Suspense>
+            )}
+            <FileExplorer
+              key={explorerKey}
+              provider={provider}
+              metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
+              activeWorkspaceId={activeWorkspaceId}
+              activeFilePath={selectedFile}
+              sortMode={fileExplorerSortMode}
+              onSortModeChange={handleFileExplorerSortModeChange}
+              pinnedDocuments={pinnedDocumentItems}
+              pinnedPaths={activeWorkspacePinnedPaths}
+              onPinnedDocumentSelect={(document) => void handlePinnedDocumentSelect(document)}
+              onPinnedDocumentUnpin={unpinDocument}
+              onPinnedDocumentRename={handlePinnedDocumentRename}
+              onPinnedDocumentDelete={handlePinnedDocumentDelete}
+              onTogglePin={handleTogglePin}
+              onSelect={handleSelect}
+              onOpenWorkspaceFolder={
+                hostSupports('openWorkspaceFolder') && nativeWorkspaceId
+                  ? handleOpenWorkspaceFolder
+                  : undefined
+              }
+              actionsForEntry={actionsForEntry}
+              onTreeMutation={handleTreeMutation}
+              onTreeChange={handleTreeChange}
+              onImportFiles={handleImportFiles}
+              confirmDelete={confirmDeleteEntry}
+              moveDestinations={
+                activeWorkspaceDescriptor?.type === 'transient'
+                  ? transientMoveDestinations
+                  : undefined
+              }
+              onMoveToWorkspace={
+                activeWorkspaceDescriptor?.type === 'transient'
+                  ? handleMoveTransientWorkspace
+                  : undefined
+              }
+            />
+            {singlePane && showWelcomeGateway && (
+              <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
+                <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
+                <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
+                <p>
+                  Write visually, keep plain Markdown underneath, and export the same document in
+                  useful formats. Your browser workspace stays on this device.
+                </p>
+                <div className="db-mobile-first-run-actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeWelcomeGateway();
+                      setMobileShowEditor(true);
+                    }}
+                  >
+                    Tour the welcome document
+                  </button>
+                  <button
+                    type="button"
+                    className="db-mobile-first-run-secondary"
+                    onClick={() => void handleNewFile()}
+                  >
+                    Create a document
+                  </button>
+                </div>
+              </section>
+            )}
+            {git.available && git.pendingGrant && (
+              <Suspense fallback={null}>
+                <GitGrantNotice />
+              </Suspense>
+            )}
+            <div className="db-shell-sidebar-footer">
+              <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
+                Docs
+              </a>
+              <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                &bull;
+              </span>
+              <a href="https://docblocks.com/terms/" target="_blank" rel="noopener noreferrer">
+                Terms
+              </a>
+              <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                &bull;
+              </span>
+              <a href={issueReportUrl} target="_blank" rel="noopener noreferrer">
+                Report issue
+              </a>
+              {showBrowserStorageWarning && (
+                <>
+                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                    &bull;
+                  </span>
+                  <button
+                    type="button"
+                    className="db-shell-sidebar-footer-action"
+                    onClick={() => void handleDownloadAllWorkspaces()}
+                    title="Browser documents can be removed automatically. Download all workspaces now."
+                  >
+                    Back up browser docs
+                  </button>
+                </>
               )}
-              <div className="db-shell-sidebar-footer">
-                <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
-                  Docs
-                </a>
-                <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                  &bull;
-                </span>
-                <a href="https://docblocks.com/terms/" target="_blank" rel="noopener noreferrer">
-                  Terms
-                </a>
-                <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                  &bull;
-                </span>
-                <a href={issueReportUrl} target="_blank" rel="noopener noreferrer">
-                  Report issue
-                </a>
-                {showBrowserStorageWarning && (
-                  <>
-                    <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                      &bull;
-                    </span>
-                    <button
-                      type="button"
-                      className="db-shell-sidebar-footer-action"
-                      onClick={() => void handleDownloadAllWorkspaces()}
-                      title="Browser documents can be removed automatically. Download all workspaces now."
-                    >
-                      Back up browser docs
-                    </button>
-                  </>
-                )}
-              </div>
-              <div className="db-sidebar-collapse-preview" aria-hidden="true">
-                <span className="db-sidebar-collapse-preview-icon">
-                  <CollapseSidebarGlyph />
-                </span>
-                <span className="db-sidebar-collapse-preview-label">Release to hide files</span>
-              </div>
-            </aside>
-          )}
+            </div>
+            <div className="db-sidebar-collapse-preview" aria-hidden="true">
+              <span className="db-sidebar-collapse-preview-icon">
+                <CollapseSidebarGlyph />
+              </span>
+              <span className="db-sidebar-collapse-preview-label">Release to hide files</span>
+            </div>
+          </aside>
 
-          {/* Resize handle between sidebar and editor -- hidden whenever
-            the layout is compact (no sidebar to resize). */}
-          {!effectiveCompact && (
+          {/* Resize handle between sidebar and editor -- there is nothing to
+            resize while the sidebar is a drawer. */}
+          {!singlePane && (
             <div
               className="db-shell-sidebar-resizer"
               role="separator"
@@ -4639,240 +4812,252 @@ export function DocBlocksShell({
             />
           )}
 
-          {/* Editor area -- hidden in compact layout when the sidebar is showing. */}
-          {(!effectiveCompact || mobileShowEditor) && (
-            <main
-              ref={editorAreaRef}
-              aria-label="Document editor"
-              className={
-                updateAvailable && onApplyUpdate && updateStatusBarVisible
-                  ? 'db-shell-editor-area db-shell-editor-area--has-update'
-                  : 'db-shell-editor-area'
-              }
-              style={{
-                flex: 1,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-              }}
-            >
-              {selectedFile && mediaProvider ? (
-                <>
-                  <Suspense
-                    fallback={
-                      <div className="db-shell-empty" role="status">
-                        Loading your document&hellip;
-                      </div>
-                    }
-                  >
-                    <EditorShell
-                      key={`${selectedFile}-${editorKey}`}
-                      initialMarkdown={editorContent}
-                      readOnly={
-                        selectedImage !== undefined ||
-                        (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                      }
-                      initialView={initialView}
-                      defaultViewportPreset={defaultPreviewViewportPreset}
-                      articleId={selectedFile}
-                      // Outside-in documents navigate/export as their rendered
-                      // file, but Squisq edits the hidden Markdown companion.
-                      // Passing `report.csv` here classifies the editor as a
-                      // raw data/code surface and suppresses Write + data cards.
-                      fileName={selectedSourceFile ?? selectedFile}
-                      imageSrc={selectedImageUrl}
-                      imageAlt={basenameOf(selectedFile)}
-                      saveCoverImageOutput={saveRenderedImageOutput}
-                      saveDashboardImageOutput={saveRenderedImageOutput}
-                      onChange={handleEditorChange}
-                      onLinkClick={handleEditorLinkClick}
-                      colorScheme={resolvedTheme}
-                      writeCanvasSettings={editorWriteCanvasSettings}
-                      height="100%"
-                      placeholder={editorPlaceholder}
-                      outlineWidth={280}
-                      mediaProvider={mediaProvider}
-                      calcEngineFactory={calcEngineFactory}
-                      proofing={proofing}
-                      proofingDefaultEnabled={proofingDefaultEnabled}
-                      proofingSpellingEnabled={proofingPreferences.spelling}
-                      proofingGrammarEnabled={proofingPreferences.grammar}
-                      proofingIgnoreStore={effectiveProofingIgnoreStore}
-                      showCodeCopyButton={showCodeCopyButton}
-                      onCopyCode={onCopyCode}
-                      allowRecording={allowRecording}
-                      allowPresentationWindow={allowPresentationWindow}
-                      allowPresentationFullscreen={allowPresentationFullscreen}
-                      documentLinkProvider={documentLinkProvider}
-                      workspaceContainer={versionsContainer ?? undefined}
-                      allowVersioning={selectedImage === undefined && effectiveVersioning}
-                      viewPreferences={editorViewPreferences}
-                      onViewPreferencesChange={handleViewPreferencesChange}
-                      versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
-                      versioningPrunePolicy={versioningPrunePolicy}
-                      versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                      onSaveVersion={onSaveVersion}
-                      statusBarSlotRight={statusBarSlotRight}
-                      toolbarSlotLeft={
-                        effectiveCompact ? (
-                          <button
-                            className="db-mobile-back"
-                            onClick={() => setMobileShowEditor(false)}
-                            aria-label="Show file list"
-                          >
-                            <span className="db-mobile-files-icon">
-                              <FolderGlyph />
-                            </span>
-                          </button>
-                        ) : undefined
-                      }
-                      toolbarSlotRight={
-                        <>
-                          {/* Restore split view -- only relevant when compact
-                          layout was manually triggered on a wide viewport.
-                          On real mobile, side-by-side doesn't fit so the
-                          button is suppressed. */}
-                          {compactLayout && !isMobile && (
-                            <button
-                              className="db-restore-split"
-                              onClick={() => setCompactLayout(false)}
-                              aria-label="Restore split view"
-                              title="Restore split view"
-                            >
-                              <SplitViewIcon />
-                            </button>
-                          )}
-                          {git.repo && (
-                            <Suspense fallback={null}>
-                              <GitToolbarControl selectedFile={selectedFile} />
-                            </Suspense>
-                          )}
-                          <ExportToolbarControls
-                            selectedFile={selectedFile}
-                            mediaContainer={mediaContainerRef.current}
-                            workspaceContainer={versionsContainer}
-                            mediaProvider={mediaProvider}
-                            destinationAdapter={exportDestinationAdapter}
-                            colorScheme={resolvedTheme}
-                            videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
-                            ffmpegWasm={ffmpegWasm}
-                            initialSharedMode={initialSharedMode}
-                          />
-                        </>
-                      }
-                    />
-                  </Suspense>
-                  {showWelcomeGateway && !isMobile && (
-                    <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
-                      <span className="db-welcome-gateway-text">
-                        You&rsquo;re watching this welcome doc in <strong>Slideshow</strong>{' '}
-                        view&mdash; it&rsquo;s a regular markdown file, and so is everything
-                        you&rsquo;ll write.
-                      </span>
-                      <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
-                        Start writing
-                      </button>
-                      <button
-                        className="db-welcome-gateway-dismiss"
-                        onClick={closeWelcomeGateway}
-                        aria-label="Dismiss welcome tip"
-                        title="Dismiss"
-                      >
-                        &times;
-                      </button>
+          {singlePane && (
+            <div
+              className="db-shell-scrim"
+              aria-hidden={true}
+              onPointerDown={() => setMobileShowEditor(true)}
+            />
+          )}
+
+          {/* Editor area. Always mounted; the drawer overlays it. */}
+          <main
+            ref={editorAreaRef}
+            aria-label="Document editor"
+            className={[
+              'db-shell-editor-area',
+              updateAvailable && onApplyUpdate && updateStatusBarVisible
+                ? 'db-shell-editor-area--has-update'
+                : '',
+              editorDropActive ? 'db-shell-editor-area--drop-active' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
+            {selectedFile && mediaProvider ? (
+              <>
+                <Suspense
+                  fallback={
+                    <div className="db-shell-empty" role="status">
+                      Loading your document&hellip;
                     </div>
-                  )}
-                </>
-              ) : selectedFolder ? (
-                <div className="db-folder-view">
-                  {effectiveCompact && (
-                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                      <span className="db-mobile-files-icon">
-                        <FolderGlyph />
-                      </span>
-                      Back to files
+                  }
+                >
+                  <EditorShell
+                    key={`${selectedFile}-${editorKey}`}
+                    initialMarkdown={editorContent}
+                    readOnly={
+                      selectedImage !== undefined ||
+                      (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                    }
+                    initialView={initialView}
+                    // At compact width the centred page column and its page
+                    // padding waste most of a 390px screen. Squisq already
+                    // exposes both switches; below 720px it is also auto-hiding
+                    // its outline and inline preview, so these agree with the
+                    // density it has already chosen for itself.
+                    fullWidth={formFactor.widthClass === 'compact'}
+                    thinMargins={formFactor.widthClass === 'compact'}
+                    defaultViewportPreset={defaultPreviewViewportPreset}
+                    articleId={selectedFile}
+                    // Outside-in documents navigate/export as their rendered
+                    // file, but Squisq edits the hidden Markdown companion.
+                    // Passing `report.csv` here classifies the editor as a
+                    // raw data/code surface and suppresses Write + data cards.
+                    fileName={selectedSourceFile ?? selectedFile}
+                    imageSrc={selectedImageUrl}
+                    imageAlt={basenameOf(selectedFile)}
+                    saveCoverImageOutput={saveRenderedImageOutput}
+                    saveDashboardImageOutput={saveRenderedImageOutput}
+                    onChange={handleEditorChange}
+                    onLinkClick={handleEditorLinkClick}
+                    colorScheme={resolvedTheme}
+                    writeCanvasSettings={editorWriteCanvasSettings}
+                    height="100%"
+                    placeholder={editorPlaceholder}
+                    outlineWidth={280}
+                    mediaProvider={mediaProvider}
+                    mediaEditRenders={mediaEditRenders}
+                    calcEngineFactory={calcEngineFactory}
+                    proofing={proofing}
+                    proofingDefaultEnabled={proofingDefaultEnabled}
+                    proofingSpellingEnabled={proofingPreferences.spelling}
+                    proofingGrammarEnabled={proofingPreferences.grammar}
+                    proofingIgnoreStore={effectiveProofingIgnoreStore}
+                    showCodeCopyButton={showCodeCopyButton}
+                    onCopyCode={onCopyCode}
+                    allowRecording={allowRecording}
+                    allowPresentationWindow={allowPresentationWindow}
+                    allowPresentationFullscreen={allowPresentationFullscreen}
+                    documentLinkProvider={documentLinkProvider}
+                    workspaceContainer={versionsContainer ?? undefined}
+                    allowVersioning={selectedImage === undefined && effectiveVersioning}
+                    viewPreferences={editorViewPreferences}
+                    onViewPreferencesChange={handleViewPreferencesChange}
+                    versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
+                    versioningPrunePolicy={versioningPrunePolicy}
+                    versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                    onSaveVersion={onSaveVersion}
+                    statusBarSlotRight={statusBarSlotRight}
+                    toolbarSlotLeft={
+                      singlePane ? (
+                        <button
+                          className="db-mobile-back"
+                          onClick={() => setMobileShowEditor(false)}
+                          aria-label="Show file list"
+                        >
+                          <span className="db-mobile-files-icon">
+                            <FolderGlyph />
+                          </span>
+                        </button>
+                      ) : undefined
+                    }
+                    toolbarSlotRight={
+                      <>
+                        {/* Restore split view -- offered only where the
+                          viewport can actually hold both panes. Pinning is
+                          persisted, so an iPad user sets it once. */}
+                        {canRestoreSplitView && (
+                          <button
+                            className="db-restore-split"
+                            onClick={() => updateSidebarPreference('pinned')}
+                            aria-label="Restore split view"
+                            title="Restore split view"
+                          >
+                            <SplitViewIcon />
+                          </button>
+                        )}
+                        {git.repo && (
+                          <Suspense fallback={null}>
+                            <GitToolbarControl selectedFile={selectedFile} />
+                          </Suspense>
+                        )}
+                        <ExportToolbarControls
+                          selectedFile={selectedFile}
+                          mediaContainer={mediaContainerRef.current}
+                          workspaceContainer={versionsContainer}
+                          mediaProvider={mediaProvider}
+                          mediaEditRenders={mediaEditRenders}
+                          destinationAdapter={exportDestinationAdapter}
+                          colorScheme={resolvedTheme}
+                          videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
+                          ffmpegWasm={ffmpegWasm}
+                          initialSharedMode={initialSharedMode}
+                        />
+                      </>
+                    }
+                  />
+                </Suspense>
+                {showWelcomeGateway && !singlePane && (
+                  <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
+                    <span className="db-welcome-gateway-text">
+                      You&rsquo;re watching this welcome doc in <strong>Slideshow</strong>{' '}
+                      view&mdash; it&rsquo;s a regular markdown file, and so is everything
+                      you&rsquo;ll write.
+                    </span>
+                    <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
+                      Start writing
                     </button>
-                  )}
-                  <div className="db-folder-view-header">
-                    <span className="db-folder-view-icon">
+                    <button
+                      className="db-welcome-gateway-dismiss"
+                      onClick={closeWelcomeGateway}
+                      aria-label="Dismiss welcome tip"
+                      title="Dismiss"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : selectedFolder ? (
+              <div className="db-folder-view">
+                {singlePane && (
+                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                    <span className="db-mobile-files-icon">
                       <FolderGlyph />
                     </span>
-                    <span className="db-folder-view-path">{selectedFolder}</span>
-                  </div>
-                  {visibleFolderEntries.length === 0 ? (
-                    <p className="db-folder-view-empty">This folder is empty.</p>
-                  ) : (
-                    <ul className="db-folder-view-list">
-                      {visibleFolderEntries.map((entry) => (
-                        <li
-                          key={entry.path}
-                          className="db-folder-view-item"
-                          onClick={() => handleSelect(entry.path, entry.kind)}
-                        >
-                          <span className="db-folder-view-item-icon">
-                            {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
-                          </span>
-                          {entry.name}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                    Back to files
+                  </button>
+                )}
+                <div className="db-folder-view-header">
+                  <span className="db-folder-view-icon">
+                    <FolderGlyph />
+                  </span>
+                  <span className="db-folder-view-path">{selectedFolder}</span>
                 </div>
-              ) : (
-                <div className="db-shell-empty db-shell-empty--workspace">
-                  {effectiveCompact && (
-                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                      <span className="db-mobile-files-icon">
-                        <FolderGlyph />
-                      </span>
-                      Back to files
-                    </button>
-                  )}
-                  <div className="db-workspace-empty-content">
-                    <span className="db-workspace-empty-icon" aria-hidden="true">
-                      <FileGlyph />
+                {visibleFolderEntries.length === 0 ? (
+                  <p className="db-folder-view-empty">This folder is empty.</p>
+                ) : (
+                  <ul className="db-folder-view-list">
+                    {visibleFolderEntries.map((entry) => (
+                      <li
+                        key={entry.path}
+                        className="db-folder-view-item"
+                        onClick={() => handleSelect(entry.path, entry.kind)}
+                      >
+                        <span className="db-folder-view-item-icon">
+                          {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
+                        </span>
+                        {entry.name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <div className="db-shell-empty db-shell-empty--workspace">
+                {singlePane && (
+                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                    <span className="db-mobile-files-icon">
+                      <FolderGlyph />
                     </span>
-                    <h1>{activeWorkspaceDescriptor?.name ?? 'Workspace'}</h1>
-                    <p>Choose a Markdown document from the sidebar, or create a new one.</p>
-                    <div className="db-workspace-empty-actions">
-                      <button type="button" onClick={() => void handleNewFile()}>
-                        New document
-                      </button>
+                    Back to files
+                  </button>
+                )}
+                <div className="db-workspace-empty-content">
+                  <span className="db-workspace-empty-icon" aria-hidden="true">
+                    <FileGlyph />
+                  </span>
+                  <h1>{activeWorkspaceDescriptor?.name ?? 'Workspace'}</h1>
+                  <p>Choose a Markdown document from the sidebar, or create a new one.</p>
+                  <div className="db-workspace-empty-actions">
+                    <button type="button" onClick={() => void handleNewFile()}>
+                      New document
+                    </button>
+                    <button
+                      type="button"
+                      className="db-workspace-empty-secondary"
+                      onClick={() => void handleNewFolder()}
+                    >
+                      New folder
+                    </button>
+                    {/* Either the host can pick a folder, or the browser can. */}
+                    {(hostSupports('workspaceFolderPicker') ||
+                      typeof (globalThis as { showDirectoryPicker?: unknown })
+                        .showDirectoryPicker === 'function') && (
                       <button
                         type="button"
                         className="db-workspace-empty-secondary"
-                        onClick={() => void handleNewFolder()}
+                        onClick={() => void handleOpenFolder()}
                       >
-                        New folder
+                        Open a folder
                       </button>
-                      {(isElectronHost() ||
-                        typeof (globalThis as { showDirectoryPicker?: unknown })
-                          .showDirectoryPicker === 'function') && (
-                        <button
-                          type="button"
-                          className="db-workspace-empty-secondary"
-                          onClick={() => void handleOpenFolder()}
-                        >
-                          Open a folder
-                        </button>
-                      )}
-                    </div>
-                    <p className="db-workspace-empty-hint">
-                      Browser workspaces stay on this device. Use the sidebar backup action to keep
-                      a portable copy.
-                    </p>
+                    )}
                   </div>
+                  <p className="db-workspace-empty-hint">
+                    Browser workspaces stay on this device. Use the sidebar backup action to keep a
+                    portable copy.
+                  </p>
                 </div>
-              )}
-              <UpdateAvailableNotice
-                available={updateAvailable}
-                onApplyUpdate={onApplyUpdate}
-                blocked={documentSnapshot.conflict !== null || storageFull}
-                statusBarVisible={updateStatusBarVisible}
-              />
-            </main>
-          )}
+              </div>
+            )}
+            <UpdateAvailableNotice
+              available={updateAvailable}
+              onApplyUpdate={onApplyUpdate}
+              blocked={documentSnapshot.conflict !== null || storageFull}
+              statusBarVisible={updateStatusBarVisible}
+            />
+          </main>
         </div>
       </GitContext.Provider>
     </div>

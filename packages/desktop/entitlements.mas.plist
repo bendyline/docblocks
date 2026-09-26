@@ -12,6 +12,12 @@
     - files.bookmarks.app-scope persist that access across launches via
                                 security-scoped bookmarks (see ipc-workspaces)
     - network.client            outbound network for any fetch the app makes
+    - device.camera             the recorder's camera capture
+    - device.audio-input        the recorder's microphone capture
+
+  Without the two device.* keys the sandbox does not refuse capture outright —
+  getUserMedia still resolves — it just delivers black frames and silence, so
+  the recorder looks broken with no error to show.
 
   Do NOT copy the allow-jit / allow-unsigned-executable-memory keys from the
   Developer ID entitlements here — those are hardened-runtime concepts and are
@@ -30,6 +36,13 @@
   <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
   <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- Document narration and video recording. The NSCameraUsageDescription /
+       NSMicrophoneUsageDescription strings that accompany these live in the
+       `mas` build's inherited extendInfo — keep the two in step. -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
   <true/>
 </dict>
 </plist>

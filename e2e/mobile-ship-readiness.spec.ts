@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 
 test.describe('mobile web-editor ship readiness', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -11,7 +11,11 @@ test.describe('mobile web-editor ship readiness', () => {
     await expect(page.locator('.db-shell')).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Welcome to DocBlocks' })).toBeVisible();
-    await expect(page.getByRole('main', { name: 'Document editor' })).toHaveCount(0);
+    // The editor pane is always mounted now -- unmounting it tore down Tiptap,
+    // Monaco, undo history and scroll position on every drawer toggle. While
+    // the file pane is showing it is held out of reach with `inert`, which is a
+    // stronger guarantee than absence: it also leaves the accessibility tree.
+    await expect(page.locator('main.db-shell-editor-area')).toHaveAttribute('inert', '');
 
     await page.getByRole('button', { name: 'Tour the welcome document' }).click();
     await expect(page.getByRole('main', { name: 'Document editor' })).toBeVisible();
@@ -44,7 +48,12 @@ test.describe('mobile web-editor ship readiness', () => {
     );
     expect(clippedControls).toEqual([]);
 
-    const moreActions = page.getByRole('button', { name: 'More actions' });
+    // Scoped to the toolbar: the file tree's own row-level "More actions"
+    // button is always in the DOM now that the drawer stays mounted, so the
+    // unscoped role query is ambiguous.
+    const moreActions = page
+      .locator('.squisq-toolbar')
+      .getByRole('button', { name: 'More actions' });
     await moreActions.click();
     await expect(page.getByRole('button', { name: 'Bold (Ctrl+B)' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Insert...' })).toBeVisible();

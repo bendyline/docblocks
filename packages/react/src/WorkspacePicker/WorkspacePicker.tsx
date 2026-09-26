@@ -6,7 +6,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
-import { isElectronHost } from '@bendyline/docblocks/host';
+import { hostSupports } from '@bendyline/docblocks/host';
 import { FolderIcon, NewFolderIcon } from '../icons.js';
 
 function isNativeFileSystemSupported(): boolean {
@@ -90,7 +90,8 @@ export function WorkspacePicker({
     };
   }, [closeDropdown, isOpen]);
 
-  const electron = isElectronHost();
+  // Host-owned roots are only openable where the host owns roots.
+  const electron = hostSupports('nativeWorkspaces');
 
   const refresh = useCallback(async () => {
     const list = await listWorkspaces();

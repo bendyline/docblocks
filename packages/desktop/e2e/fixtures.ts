@@ -16,6 +16,14 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import {
+  collectRuntimeErrors,
+  formatRuntimeErrors,
+  SHARED_ALLOWED_RUNTIME_ERRORS,
+  unexpectedRuntimeErrors,
+  type AllowedRuntimeError,
+  type RuntimeError,
+} from '../../../e2e/helpers/console-guard.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -36,6 +44,10 @@ export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
   launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
+  /** This test's allowance list; the launch fixture reads it at teardown. */
+  runtimeErrorAllowances: AllowedRuntimeError[];
+  /** Allow further renderer runtime errors for the current test only. */
+  allowRuntimeErrors: (...allowances: readonly AllowedRuntimeError[]) => void;
 }
 
 export interface LaunchedDocBlocksApplication {
@@ -271,9 +283,23 @@ export const test = base.extend<DocBlocksFixtures>({
     removeTmpDir(directory);
   },
 
-  launchApp: async ({ userDataDir, workspaceDir }, use, testInfo) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  runtimeErrorAllowances: async ({}, use) => {
+    await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
+  },
+
+  allowRuntimeErrors: async ({ runtimeErrorAllowances }, use) => {
+    await use((...allowances) => {
+      runtimeErrorAllowances.push(...allowances);
+    });
+  },
+
+  launchApp: async ({ userDataDir, workspaceDir, runtimeErrorAllowances }, use, testInfo) => {
     const appRoot = path.resolve(__dirname, '..');
     let running: RunningApplication | undefined;
+    // Every window this test launches contributes to one error budget, so a
+    // relaunch cannot drop what the previous renderer reported.
+    const errorReaders: Array<() => readonly RuntimeError[]> = [];
 
     await use(async (extraArgs: string[] = []) => {
       if (running && running.process.exitCode === null && running.process.signalCode === null) {
@@ -281,6 +307,7 @@ export const test = base.extend<DocBlocksFixtures>({
       }
       running = await launchSourceApplication(appRoot, userDataDir, workspaceDir, extraArgs);
       const current = running;
+      errorReaders.push(collectRuntimeErrors(current.window));
       return {
         window: current.window,
         close: async () => {
@@ -297,6 +324,16 @@ export const test = base.extend<DocBlocksFixtures>({
       });
     }
     await running?.close();
+
+    // A test that already failed reports its own cause; adding renderer noise
+    // on top buries it. The guard only speaks when nothing else did.
+    if (testInfo.errors.length > 0) return;
+    const unexpected = unexpectedRuntimeErrors(
+      errorReaders.flatMap((read) => [...read()]),
+      runtimeErrorAllowances,
+    );
+    if (unexpected.length === 0) return;
+    throw new Error(formatRuntimeErrors(unexpected));
   },
 });
 

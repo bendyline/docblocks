@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-07",
+  "reviewedAt": "2026-09-23",
   "dispositions": [
     {
       "package": "@tiptap/core",
       "advisory": "GHSA-CP6Q-959Q-F8RH",
       "severity": "moderate",
       "scope": "shipped",
-      "classification": "upstream-blocked",
+      "classification": "patched",
       "owner": "DocBlocks maintainers",
-      "expires": "2026-09-21",
-      "reason": "The affected rich-text parser is shipped through Squisq, but exploitability requires rendering attacker-controlled schema content and is constrained by the renderer CSP and existing document sanitization boundaries.",
-      "remediation": "Coordinate the Tiptap 3 migration in Squisq, refresh the DocBlocks lockfile, and remove this disposition once the fixed upstream line is compatible."
+      "verifiedBy": "packages/react/test/tiptap-prototype-safety.test.ts",
+      "reason": "Fixed, but still reported. Squisq pins every @tiptap package to 2.27.3, which backports the upstream fix: its only source change is the same __proto__ guard in mergeAttributes that 3.30.4 ships. npm still flags it because the advisory's affected range (<3.30.4) does not credit the 2.x backport.",
+      "remediation": "Nothing to renew. The verification test fails the build if an unpatched @tiptap/core is ever installed. When the advisory is corrected and npm stops reporting it, the audit gate notes that this entry can be deleted."
     }
   ]
 }
