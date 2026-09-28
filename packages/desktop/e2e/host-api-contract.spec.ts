@@ -234,12 +234,15 @@ test('preload exposes the complete typed host and reaches representative IPC han
   // The core AI group only: workspace search, images, and speech are optional
   // members this host does not implement, so their capabilities stay false.
   expect(contract.methods.ai).toEqual([
+    'availableModels',
     'chat',
     'connect',
     'disconnect',
     'getPreferences',
+    'installModel',
     'models',
     'onStatus',
+    'providerInstalled',
     'setPreferences',
     'status',
   ]);

@@ -230,23 +230,24 @@ test('grants capture only to the trusted renderer and exposes only working prese
   }
 });
 
-test('loads the Gezel SDK from app.asar once AI is switched on', async ({ launchPackagedApp }) => {
-  // An empty Gezel home makes discovery deterministic on any machine. Reaching
-  // `provider-unavailable` rather than `runtime-missing` proves the ESM-only
-  // SDK was packed as a dependency and imports under the production fuses.
+test('starts the in-process Gezel service from app.asar once AI is switched on', async ({
+  launchPackagedApp,
+}) => {
+  // An empty Gezel home makes the standalone app deterministically absent.
+  // Reaching hosted ready proves both ESM runtime packages load under the
+  // production fuses and the service can listen from the packaged app.
   const gezelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-packaged-gezel-home-'));
   const previousHome = process.env.GEZEL_HOME;
   process.env.GEZEL_HOME = gezelHome;
   try {
     const packaged = await launchPackagedApp();
     await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
-    const outcome = await packaged.window.evaluate(async () => {
+    await packaged.window.evaluate(async () => {
       const ai = (
         globalThis as {
           docBlocksHost?: {
             ai?: {
               setPreferences(patch: { enabled: boolean }): Promise<unknown>;
-              connect(): Promise<{ ok: boolean; error?: { code: string } }>;
               status(): Promise<unknown>;
             };
           };
@@ -254,14 +255,18 @@ test('loads the Gezel SDK from app.asar once AI is switched on', async ({ launch
       ).docBlocksHost?.ai;
       if (!ai) throw new Error('The packaged host exposes no AI namespace');
       await ai.setPreferences({ enabled: true });
-      const result = await ai.connect();
-      return { ok: result.ok, code: result.error?.code, status: await ai.status() };
     });
-    expect(outcome).toEqual({
-      ok: false,
-      code: 'provider-unavailable',
-      status: { kind: 'unavailable', reason: 'not-installed' },
-    });
+    await expect
+      .poll(
+        () =>
+          packaged.window.evaluate(async () => {
+            const ai = (globalThis as { docBlocksHost?: { ai?: { status(): Promise<unknown> } } })
+              .docBlocksHost?.ai;
+            return ai?.status();
+          }),
+        { timeout: 30_000 },
+      )
+      .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
   } finally {
     if (previousHome === undefined) delete process.env.GEZEL_HOME;
     else process.env.GEZEL_HOME = previousHome;

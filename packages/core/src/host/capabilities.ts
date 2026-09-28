@@ -66,6 +66,8 @@ export interface HostCapabilities {
    * from its own microphone while offering no image generation and no index.
    */
   readonly aiAssist: boolean;
+  /** The host can list and download provider-catalog models. */
+  readonly aiModelManagement: boolean;
   /** The host can bind a workspace folder to a provider-side index. */
   readonly aiWorkspaceIndex: boolean;
   readonly aiSearch: boolean;
@@ -99,6 +101,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   updater: false,
   systemFfmpeg: false,
   aiAssist: false,
+  aiModelManagement: false,
   aiWorkspaceIndex: false,
   aiSearch: false,
   aiImages: false,
@@ -201,9 +204,14 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     git: hasMethod(host.git, 'status'),
     updater: hasMethod(host.updater, 'checkForUpdates'),
     systemFfmpeg: hasMethod(host.ffmpeg, 'available'),
-    // Both members are required: a bridge that can start a stream but cannot
-    // report status leaves the UI unable to say why nothing is happening.
-    aiAssist: hasMethod(host.ai, 'chat') && hasMethod(host.ai, 'onStatus'),
+    // All three members are required: the UI needs provider presence to decide
+    // whether connection controls are relevant, and a stream without status
+    // leaves it unable to say why nothing is happening.
+    aiAssist:
+      hasMethod(host.ai, 'providerInstalled') &&
+      hasMethod(host.ai, 'chat') &&
+      hasMethod(host.ai, 'onStatus'),
+    aiModelManagement: hasMethod(host.ai, 'availableModels') && hasMethod(host.ai, 'installModel'),
     aiWorkspaceIndex: hasMethod(host.ai, 'ensureWorkspace'),
     aiSearch: hasMethod(host.ai, 'search'),
     aiImages: hasMethod(host.ai, 'generateImage'),

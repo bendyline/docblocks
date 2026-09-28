@@ -12,15 +12,19 @@
 import path from 'node:path';
 import { BrowserWindow, app, safeStorage } from 'electron';
 import type { WebContents } from 'electron';
-import { parseAiChatRequest, parseAiPreferencesPatch } from '@bendyline/docblocks/host';
-import type { AiChatEvent } from '@bendyline/docblocks/host';
+import {
+  HOST_WIRE_LIMITS,
+  isBoundedString,
+  parseAiChatRequest,
+  parseAiPreferencesPatch,
+} from '@bendyline/docblocks/host';
+import type { AiChatEvent, AiModelInstallEvent } from '@bendyline/docblocks/host';
 
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { EncryptedFileCredentialStore } from './ai/ai-credentials.js';
 import { createSettingsAiPreferenceStore } from './ai/ai-preferences.js';
 import { AiService } from './ai/ai-service.js';
 import { GezelConnector } from './ai/gezel-connector.js';
-import { defaultHostRuntimeEnvironment, resolveGezelHostRuntime } from './ai/gezel-host-runtime.js';
 import { readSettings, updateSettings } from './settings.js';
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
@@ -39,11 +43,16 @@ export function createAiService(): AiService {
     path.join(app.getPath('userData'), 'ai', 'gezel-credential.bin'),
     safeStorage,
   );
-  const hostEnvironment = defaultHostRuntimeEnvironment(app.isPackaged, process.resourcesPath);
   return new AiService({
     connector: new GezelConnector({
       credentials,
-      hostRuntime: () => resolveGezelHostRuntime(hostEnvironment),
+      // Capture the person's Gezel home before the SDK temporarily points
+      // GEZEL_HOME at DocBlocks' private hosted service. Detection and the
+      // optional Connect action must continue to mean the standalone app.
+      home: process.env.GEZEL_HOME?.trim() || path.join(app.getPath('home'), '.gezel'),
+      // Enabling AI is sufficient consent to run a private Gezel for
+      // DocBlocks. Connecting the person's standalone Gezel remains optional.
+      hostInProcess: true,
     }),
     preferences: createSettingsAiPreferenceStore({ read: readSettings, update: updateSettings }),
   });
@@ -62,7 +71,8 @@ function parseRequestId(value: unknown): string {
 
 export function registerAiIpc(service: AiService): void {
   /** Live request ids per renderer, so cleanup can find them. */
-  const owners = new Map<number, Set<string>>();
+  const chatOwners = new Map<number, Set<string>>();
+  const installOwners = new Map<number, Set<string>>();
   const watched = new WeakSet<WebContents>();
 
   service.onStatus((status) => {
@@ -72,10 +82,14 @@ export function registerAiIpc(service: AiService): void {
   });
 
   const release = (ownerId: number) => {
-    const ids = owners.get(ownerId);
-    if (!ids) return;
-    owners.delete(ownerId);
-    for (const requestId of ids) service.cancelChat(streamKey(ownerId, requestId));
+    const chatIds = chatOwners.get(ownerId);
+    chatOwners.delete(ownerId);
+    for (const requestId of chatIds ?? []) service.cancelChat(streamKey(ownerId, requestId));
+    const installIds = installOwners.get(ownerId);
+    installOwners.delete(ownerId);
+    for (const requestId of installIds ?? []) {
+      service.cancelModelInstall(streamKey(ownerId, requestId));
+    }
   };
 
   const watch = (sender: WebContents) => {
@@ -88,6 +102,7 @@ export function registerAiIpc(service: AiService): void {
     sender.on('did-navigate', () => release(ownerId));
   };
 
+  registerTrustedIpcHandler('ai:providerInstalled', 0, () => service.providerInstalled());
   registerTrustedIpcHandler('ai:status', 0, () => service.getStatus());
   registerTrustedIpcHandler('ai:getPreferences', 0, () => service.getPreferences());
 
@@ -100,6 +115,7 @@ export function registerAiIpc(service: AiService): void {
   registerTrustedIpcHandler('ai:connect', 0, () => service.connect());
   registerTrustedIpcHandler('ai:disconnect', 0, () => service.disconnect());
   registerTrustedIpcHandler('ai:models', 0, () => service.listModels());
+  registerTrustedIpcHandler('ai:availableModels', 0, () => service.listAvailableModels());
 
   registerTrustedIpcHandler(
     'ai:chat:start',
@@ -112,16 +128,16 @@ export function registerAiIpc(service: AiService): void {
       const sender = event.sender;
       const ownerId = sender.id;
       watch(sender);
-      let ids = owners.get(ownerId);
+      let ids = chatOwners.get(ownerId);
       if (!ids) {
         ids = new Set();
-        owners.set(ownerId, ids);
+        chatOwners.set(ownerId, ids);
       }
       if (ids.has(requestId)) throw new Error('Duplicate AI request id');
       ids.add(requestId);
 
       service.startChat(streamKey(ownerId, requestId), request, (chatEvent: AiChatEvent) => {
-        if (chatEvent.kind !== 'delta') owners.get(ownerId)?.delete(requestId);
+        if (chatEvent.kind !== 'delta') chatOwners.get(ownerId)?.delete(requestId);
         if (!sender.isDestroyed()) sender.send('ai:chat:event', { requestId, event: chatEvent });
       });
     },
@@ -130,6 +146,47 @@ export function registerAiIpc(service: AiService): void {
   registerTrustedIpcHandler('ai:chat:cancel', 1, (event, requestIdValue: unknown): void => {
     const requestId = parseRequestId(requestIdValue);
     const ownerId = event.sender.id;
-    if (owners.get(ownerId)?.has(requestId)) service.cancelChat(streamKey(ownerId, requestId));
+    if (chatOwners.get(ownerId)?.has(requestId)) {
+      service.cancelChat(streamKey(ownerId, requestId));
+    }
+  });
+
+  registerTrustedIpcHandler(
+    'ai:modelInstall:start',
+    2,
+    (event, requestIdValue: unknown, modelIdValue: unknown): void => {
+      const requestId = parseRequestId(requestIdValue);
+      if (!isBoundedString(modelIdValue, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+        throw new Error('Invalid AI model id');
+      }
+      const sender = event.sender;
+      const ownerId = sender.id;
+      watch(sender);
+      let ids = installOwners.get(ownerId);
+      if (!ids) {
+        ids = new Set();
+        installOwners.set(ownerId, ids);
+      }
+      if (ids.has(requestId)) throw new Error('Duplicate AI model install id');
+      ids.add(requestId);
+      service.startModelInstall(
+        streamKey(ownerId, requestId),
+        modelIdValue,
+        (installEvent: AiModelInstallEvent) => {
+          if (installEvent.kind !== 'progress') installOwners.get(ownerId)?.delete(requestId);
+          if (!sender.isDestroyed()) {
+            sender.send('ai:modelInstall:event', { requestId, event: installEvent });
+          }
+        },
+      );
+    },
+  );
+
+  registerTrustedIpcHandler('ai:modelInstall:cancel', 1, (event, requestIdValue: unknown): void => {
+    const requestId = parseRequestId(requestIdValue);
+    const ownerId = event.sender.id;
+    if (installOwners.get(ownerId)?.has(requestId)) {
+      service.cancelModelInstall(streamKey(ownerId, requestId));
+    }
   });
 }

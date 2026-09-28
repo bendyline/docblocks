@@ -57,8 +57,10 @@ export interface AiError {
  * Why AI is not on offer.
  *
  * `opt-out` is first-class rather than an absence, because "the user has not
- * switched this on" must never be reported as a broken provider — and while it
- * holds, the host performs no detection at all.
+ * switched this on" must never be reported as a broken provider. A host may
+ * still check whether its companion provider is installed so the settings UI
+ * can explain the connection only when it is relevant; it must not connect or
+ * start a hosted provider while this state holds.
  */
 export type AiUnavailableReason =
   | 'opt-out'
@@ -96,6 +98,16 @@ export interface AiModelInfo {
   /** Token budget, when the provider reports one. Drives prompt budgeting. */
   readonly contextWindow: number | null;
   readonly isDefault: boolean;
+}
+
+/** A provider-catalog model that can be added to this device. */
+export interface AiModelDownloadInfo {
+  readonly id: string;
+  readonly label: string;
+  readonly contextWindow: number | null;
+  /** Expected weight download size, when the provider reports one. */
+  readonly downloadBytes: number | null;
+  readonly state: 'download-required' | 'downloading';
 }
 
 export type AiStatus =
@@ -169,6 +181,22 @@ export interface AiChatHandle {
   cancel(): void;
 }
 
+/**
+ * One explicitly requested model install.
+ *
+ * Cancelling stops this caller's progress stream. A provider-owned background
+ * download may still finish and appear in the next model refresh.
+ */
+export interface AiModelInstallHandle {
+  readonly done: Promise<AiResult<AiModelInfo>>;
+  cancel(): void;
+}
+
+export type AiModelInstallEvent =
+  | { readonly kind: 'progress'; readonly progress: AiProgress }
+  | { readonly kind: 'done'; readonly model: AiModelInfo }
+  | { readonly kind: 'error'; readonly error: AiError };
+
 export interface AiEnsureWorkspaceHandle {
   readonly done: Promise<AiResult<{ readonly indexed: boolean }>>;
   cancel(): void;
@@ -240,6 +268,8 @@ export interface AiSpeechAudio {
  * namespace rather than exposing one that always fails.
  */
 export interface DocBlocksHostAiAPI {
+  /** Whether the host's user-installed companion provider is present. */
+  providerInstalled(): Promise<boolean>;
   status(): Promise<AiStatus>;
   onStatus(listener: (status: AiStatus) => void): () => void;
   getPreferences(): Promise<AiPreferences>;
@@ -251,6 +281,10 @@ export interface DocBlocksHostAiAPI {
   connect(): Promise<AiResult<AiStatus>>;
   disconnect(): Promise<AiResult<null>>;
   models(): Promise<AiResult<readonly AiModelInfo[]>>;
+  /** Catalog models this host can download. Optional for older providers. */
+  availableModels?(): Promise<AiResult<readonly AiModelDownloadInfo[]>>;
+  /** Start a model download from an explicit user gesture. */
+  installModel?(modelId: string, onProgress?: (progress: AiProgress) => void): AiModelInstallHandle;
   /**
    * Start a streamed completion.
    *

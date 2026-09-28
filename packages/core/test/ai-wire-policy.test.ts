@@ -4,7 +4,9 @@ import {
   parseAiChatEvent,
   parseAiChatRequest,
   parseAiError,
+  parseAiModelDownloadInfoList,
   parseAiModelInfoList,
+  parseAiModelInstallEvent,
   parseAiPreferences,
   parseAiPreferencesPatch,
   parseAiProgress,
@@ -274,6 +276,47 @@ describe('parseAiModelInfoList', () => {
     const many = Array.from({ length: AI_WIRE_LIMITS.modelEntries + 1 }, () => model);
     expect(parseAiModelInfoList(many)).to.equal(null);
     expect(parseAiModelInfoList('models')).to.equal(null);
+  });
+});
+
+describe('AI model download wire values', () => {
+  const model = {
+    id: 'llama-cpp:qwen',
+    label: 'Qwen',
+    contextWindow: 32_768,
+    downloadBytes: 4_000_000_000,
+    state: 'download-required',
+  };
+
+  it('accepts a bounded catalog list and install events', () => {
+    expect(parseAiModelDownloadInfoList([model])).to.deep.equal([model]);
+    expect(
+      parseAiModelInstallEvent({
+        kind: 'progress',
+        progress: { phase: 'weights', message: 'Downloading', percent: 42 },
+      }),
+    ).to.not.equal(null);
+    expect(
+      parseAiModelInstallEvent({
+        kind: 'done',
+        model: { id: 'm', label: 'M', local: true, contextWindow: null, isDefault: true },
+      }),
+    ).to.not.equal(null);
+  });
+
+  it('rejects unknown states, unsafe sizes, and extra event keys', () => {
+    expect(parseAiModelDownloadInfoList([{ ...model, state: 'ready' }])).to.equal(null);
+    expect(
+      parseAiModelDownloadInfoList([{ ...model, downloadBytes: Number.MAX_SAFE_INTEGER + 1 }]),
+    ).to.equal(null);
+    expect(parseAiModelDownloadInfoList([{ ...model, downloadBytes: 0 }])).to.equal(null);
+    expect(
+      parseAiModelInstallEvent({
+        kind: 'progress',
+        progress: { phase: 'weights', message: 'Downloading', percent: 42 },
+        extra: true,
+      }),
+    ).to.equal(null);
   });
 });
 

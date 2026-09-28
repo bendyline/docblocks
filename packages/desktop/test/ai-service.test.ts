@@ -3,6 +3,7 @@ import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatRequest,
+  AiModelInstallEvent,
   AiPreferences,
   AiStatus,
 } from '@bendyline/docblocks/host';
@@ -100,6 +101,7 @@ class FakeConnection implements AiProviderConnection {
   mode: AiProviderConnection['mode'] = 'installed';
   version?: string | null;
   prepare?: AiProviderConnection['prepare'];
+  installModel?: AiProviderConnection['installModel'];
   entries: ProviderModelEntry[] = MODEL_ENTRIES;
   closed = 0;
   revoked = 0;
@@ -138,6 +140,7 @@ class FakeConnector implements AiConnector {
   verificationCode = 'K7Q2XD';
   approvalGate: Promise<void> | null = null;
   approvalError: unknown = null;
+  hostWhenSilent = false;
   connection = new FakeConnection();
 
   async detect(): Promise<AiDetection> {
@@ -150,7 +153,11 @@ class FakeConnector implements AiConnector {
     this.connectCalls.push(options);
     if (!options.interactive) {
       // The real SDK refuses to register without a code handler.
-      if (!this.hasCredential) throw sdkError('verification_code_handler_required');
+      if (!this.hasCredential) {
+        if (!this.hostWhenSilent) throw sdkError('verification_code_handler_required');
+        this.connection.mode = 'hosted';
+        return this.connection;
+      }
       return this.connection;
     }
     options.onVerificationCode?.(this.verificationCode);
@@ -232,6 +239,15 @@ describe('desktop AI service: connection', () => {
     expect(await service.getStatus()).to.deep.equal({ kind: 'unavailable', reason: 'opt-out' });
     expect(connector.detectCalls).to.equal(0);
     expect(connector.connectCalls).to.have.length(0);
+  });
+
+  it('detects an installed provider for Settings without connecting while opted out', async () => {
+    const { service, connector } = createService(DEFAULT_AI_PREFERENCES);
+    await service.start();
+    expect(await service.providerInstalled()).to.equal(true);
+    expect(connector.detectCalls).to.equal(1);
+    expect(connector.connectCalls).to.have.length(0);
+    expect(await service.getStatus()).to.deep.equal({ kind: 'unavailable', reason: 'opt-out' });
   });
 
   it('reconnects silently at startup with a stored grant', async () => {
@@ -422,20 +438,29 @@ describe('desktop AI service: connection', () => {
     expect(status.model?.id).to.equal('gezel:writer');
   });
 
-  it('disconnect revokes the grant; without a connection it forgets the stored one', async () => {
+  it('disconnects the standalone app and falls back to hosted AI', async () => {
     const { service, connector } = await readyService();
+    connector.detection = { ...connector.detection, canHost: true };
+    connector.hostWhenSilent = true;
+    // The real installed connection deletes its stored credential from
+    // `revoke()`; mirror that outcome before the fallback attempt.
+    connector.hasCredential = false;
     const result = await service.disconnect();
     expect(result).to.deep.equal({ ok: true, value: null });
     expect(connector.connection.revoked).to.equal(1);
     expect(connector.connection.closed).to.equal(1);
-    expect(await service.getStatus()).to.deep.equal({
-      kind: 'unavailable',
-      reason: 'disconnected',
-    });
+    await settle();
+    const status = await service.getStatus();
+    expect(status.kind).to.equal('ready');
+    if (status.kind === 'ready') expect(status.provider.mode).to.equal('hosted');
 
     const idle = createService(ENABLED);
+    idle.connector.detection = { ...idle.connector.detection, canHost: true };
+    idle.connector.hostWhenSilent = true;
     await idle.service.disconnect();
     expect(idle.connector.forgetCalls).to.equal(1);
+    await settle();
+    expect((await idle.service.getStatus()).kind).to.equal('ready');
   });
 });
 
@@ -580,8 +605,11 @@ describe('desktop AI service: chat', () => {
     else expect.fail('expected an error event');
   });
 
-  it('reflects a provider that vanishes mid-stream in the status', async () => {
+  it('falls back to hosted AI when the standalone provider vanishes mid-stream', async () => {
     const { service, connector } = await readyService();
+    connector.detection = { ...connector.detection, canHost: true };
+    connector.hostWhenSilent = true;
+    connector.hasCredential = false;
     const { events, emit } = recorder();
     service.startChat('1:a', WRITE_REQUEST, emit);
     await settle();
@@ -590,10 +618,9 @@ describe('desktop AI service: chat', () => {
     const [terminal] = terminalEvents(events);
     if (terminal.kind === 'error') expect(terminal.error.code).to.equal('provider-unavailable');
     else expect.fail('expected an error event');
-    expect(await service.getStatus()).to.deep.equal({
-      kind: 'unavailable',
-      reason: 'not-running',
-    });
+    const status = await service.getStatus();
+    expect(status.kind).to.equal('ready');
+    if (status.kind === 'ready') expect(status.provider.mode).to.equal('hosted');
     expect(connector.connection.closed).to.equal(1);
   });
 
@@ -684,6 +711,85 @@ describe('desktop AI service: hosting', () => {
       expect(status.retryable).to.equal(true);
     }
     expect(connector.connection.closed).to.equal(1);
+  });
+
+  it('becomes ready without a model when Settings can install one', async () => {
+    const { service, connector } = hostingService([]);
+    connector.connection.installModel = async () => undefined;
+    await service.start();
+    await settle();
+    expect(await service.getStatus()).to.deep.equal({
+      kind: 'ready',
+      provider: { name: 'Gezel', version: '1.1.2', mode: 'hosted' },
+      model: null,
+      activeRequests: 0,
+    });
+  });
+
+  it('lists downloadable models and publishes install progress and completion', async () => {
+    const offer: ProviderModelEntry = {
+      id: 'llama-cpp:small-writer',
+      owned_by: 'llama-cpp',
+      name: 'Small Writer',
+      context_window: 32_768,
+      availability: 'download-required',
+      locality: 'on-device',
+      download_bytes: 2 * 1024 ** 3,
+    };
+    const created = hostingService([offer]);
+    const installGate = deferred();
+    created.connector.connection.installModel = async (modelId, _signal, onProgress) => {
+      expect(modelId).to.equal(offer.id);
+      onProgress({ phase: 'weights', message: 'Downloading Small Writer…', percent: 35 });
+      await installGate.promise;
+      created.connector.connection.entries = [
+        {
+          ...offer,
+          availability: 'available',
+        },
+      ];
+    };
+    await created.service.start();
+    await settle();
+
+    expect(await created.service.listAvailableModels()).to.deep.equal({
+      ok: true,
+      value: [
+        {
+          id: offer.id,
+          label: 'Small Writer',
+          contextWindow: 32_768,
+          downloadBytes: 2 * 1024 ** 3,
+          state: 'download-required',
+        },
+      ],
+    });
+
+    const events: AiModelInstallEvent[] = [];
+    created.service.startModelInstall('renderer:install-1', offer.id, (event) => {
+      events.push(event);
+    });
+    await settle();
+    expect(events).to.deep.equal([
+      {
+        kind: 'progress',
+        progress: { phase: 'weights', message: 'Downloading Small Writer…', percent: 35 },
+      },
+    ]);
+
+    installGate.resolve();
+    await settle();
+    expect(events.at(-1)).to.deep.equal({
+      kind: 'done',
+      model: {
+        id: offer.id,
+        label: 'Small Writer',
+        local: true,
+        contextWindow: 32_768,
+        isDefault: true,
+      },
+    });
+    expect(await created.service.listAvailableModels()).to.deep.equal({ ok: true, value: [] });
   });
 
   it('leaves no daemon running when preparation fails', async () => {

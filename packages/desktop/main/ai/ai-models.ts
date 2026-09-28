@@ -9,7 +9,7 @@
  */
 
 import { AI_WIRE_LIMITS, HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
-import type { AiModelInfo } from '@bendyline/docblocks/host';
+import type { AiModelDownloadInfo, AiModelInfo } from '@bendyline/docblocks/host';
 
 /** The fields DocBlocks reads from one provider listing entry. */
 export interface ProviderModelEntry {
@@ -19,6 +19,10 @@ export interface ProviderModelEntry {
   readonly name?: string;
   readonly role?: string;
   readonly is_fallback?: boolean;
+  readonly availability?: 'available' | 'unavailable' | 'download-required' | 'downloading';
+  readonly unavailable_reason?: string;
+  readonly locality?: 'on-device';
+  readonly download_bytes?: number;
 }
 
 /**
@@ -48,6 +52,8 @@ function labelFor(entry: ProviderModelEntry): string {
     const role = entry.role?.trim();
     return role && role.toLowerCase() !== name.toLowerCase() ? `${name} (${role})` : name;
   }
+  const name = entry.name?.trim();
+  if (name) return name;
   const provider = providerOf(entry);
   const model = provider ? entry.id.slice(provider.length + 1) : entry.id;
   return provider && model ? `${model} · ${provider}` : entry.id;
@@ -73,6 +79,10 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
   const accepted: Array<{ entry: ProviderModelEntry; label: string }> = [];
   for (const entry of entries) {
     if (accepted.length >= AI_WIRE_LIMITS.modelEntries) break;
+    if (entry.availability === 'download-required' || entry.availability === 'downloading') {
+      continue;
+    }
+    if (entry.availability === 'unavailable') continue;
     if (!isBoundedString(entry.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) continue;
     if (seen.has(entry.id)) continue;
     const label = boundLabel(labelFor(entry));
@@ -93,6 +103,35 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
       isDefault: index === defaultIndex,
     };
   });
+}
+
+/** Keep the bounded, explicitly downloadable part of a provider listing. */
+export function toAiModelDownloadList(
+  entries: readonly ProviderModelEntry[],
+): AiModelDownloadInfo[] {
+  const seen = new Set<string>();
+  const models: AiModelDownloadInfo[] = [];
+  for (const entry of entries) {
+    if (models.length >= AI_WIRE_LIMITS.modelEntries) break;
+    if (entry.availability !== 'download-required' && entry.availability !== 'downloading') {
+      continue;
+    }
+    if (!isBoundedString(entry.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) continue;
+    if (seen.has(entry.id)) continue;
+    const label = boundLabel(labelFor(entry));
+    if (!label) continue;
+    const bytes = entry.download_bytes;
+    seen.add(entry.id);
+    models.push({
+      id: entry.id,
+      label,
+      contextWindow: contextWindowOf(entry),
+      downloadBytes:
+        typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null,
+      state: entry.availability,
+    });
+  }
+  return models;
 }
 
 /** The user's preferred model when the provider still offers it, else the default. */

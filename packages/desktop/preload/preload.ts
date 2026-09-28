@@ -4,10 +4,19 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import { parseAiChatEvent, parseAiStatus, parseOpenRequest } from '@bendyline/docblocks/host';
+import {
+  parseAiChatEvent,
+  parseAiError,
+  parseAiModelDownloadInfoList,
+  parseAiModelInstallEvent,
+  parseAiStatus,
+  parseOpenRequest,
+} from '@bendyline/docblocks/host';
 import type {
   AiChatCompletion,
   AiError,
+  AiModelDownloadInfo,
+  AiModelInfo,
   AiResult,
   DocBlocksHostAiAPI,
   DocBlocksHostAPI,
@@ -306,7 +315,30 @@ function aiFailure(message: string, detail?: unknown): AiError {
   };
 }
 
+function parseAvailableModelsResult(value: unknown): AiResult<readonly AiModelDownloadInfo[]> {
+  if (typeof value !== 'object' || value === null) {
+    return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+  }
+  const record = value as { ok?: unknown; value?: unknown; error?: unknown };
+  if (record.ok === true) {
+    const models = parseAiModelDownloadInfoList(record.value);
+    return models
+      ? { ok: true, value: models }
+      : { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+  }
+  if (record.ok === false && typeof record.error === 'object' && record.error !== null) {
+    const error = parseAiError(record.error);
+    if (error) return { ok: false, error };
+  }
+  return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+}
+
 const aiApi: DocBlocksHostAiAPI = {
+  async providerInstalled() {
+    const installed: unknown = await ipcRenderer.invoke('ai:providerInstalled');
+    if (typeof installed !== 'boolean') throw new Error('Invalid AI provider presence');
+    return installed;
+  },
   status: () => ipcRenderer.invoke('ai:status'),
   onStatus(listener) {
     const fn = (_event: Electron.IpcRendererEvent, value: unknown) => {
@@ -321,6 +353,53 @@ const aiApi: DocBlocksHostAiAPI = {
   connect: () => ipcRenderer.invoke('ai:connect'),
   disconnect: () => ipcRenderer.invoke('ai:disconnect'),
   models: () => ipcRenderer.invoke('ai:models'),
+  async availableModels() {
+    return parseAvailableModelsResult(await ipcRenderer.invoke('ai:availableModels'));
+  },
+  installModel(modelId, onProgress) {
+    const requestId = mintId('ai-model');
+    let finished = false;
+    let settle: (result: AiResult<AiModelInfo>) => void = () => undefined;
+    const done = new Promise<AiResult<AiModelInfo>>((resolve) => {
+      settle = resolve;
+    });
+    const finish = (result: AiResult<AiModelInfo>) => {
+      if (finished) return;
+      finished = true;
+      ipcRenderer.removeListener('ai:modelInstall:event', listener);
+      settle(result);
+    };
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (finished || typeof payload !== 'object' || payload === null) return;
+      const record = payload as { requestId?: unknown; event?: unknown };
+      if (record.requestId !== requestId) return;
+      const event = parseAiModelInstallEvent(record.event);
+      if (!event) {
+        const error = aiFailure('DocBlocks received model progress it could not read.');
+        void ipcRenderer.invoke('ai:modelInstall:cancel', requestId).catch(() => undefined);
+        finish({ ok: false, error });
+        return;
+      }
+      if (event.kind === 'progress') onProgress?.(event.progress);
+      else if (event.kind === 'done') finish({ ok: true, value: event.model });
+      else finish({ ok: false, error: event.error });
+    };
+    ipcRenderer.on('ai:modelInstall:event', listener);
+    ipcRenderer.invoke('ai:modelInstall:start', requestId, modelId).catch((cause: unknown) => {
+      finish({
+        ok: false,
+        error: aiFailure('DocBlocks could not start the model download.', cause),
+      });
+    });
+    return {
+      done,
+      cancel: () => {
+        if (!finished) {
+          void ipcRenderer.invoke('ai:modelInstall:cancel', requestId).catch(() => undefined);
+        }
+      },
+    };
+  },
   chat(request, onEvent) {
     // Minted here, in the bridge, and scoped to this renderer by main — the
     // caller never chooses it, so it cannot address anyone else's stream.

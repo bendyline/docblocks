@@ -225,10 +225,13 @@ that knows Gezel: it discovers the user's own running Gezel and asks for an
 inference-only (`openai`) grant with a typed verification code. Three rules
 are load-bearing and each has a test:
 
-- **Opt-out is silence.** Until the user ticks the Settings box nothing is
-  detected, probed, or contacted.
-- **Only a gesture can prompt.** Startup and re-enabling reconnect with a
-  stored grant or not at all. Because DocBlocks passes
+- **Opt-out starts nothing.** Settings may use the SDK to detect whether the
+  person's Gezel is installed; that presence check decides whether the Gezel
+  explanation and connection controls are shown. Until the user ticks the box,
+  DocBlocks does not connect to Gezel, request a grant, or start its hosted
+  fallback.
+- **Only a gesture can prompt.** Startup and re-enabling first reuse a stored
+  grant, then fall back to DocBlocks' private host. Because DocBlocks passes
   `requireVerificationCode` and omits the code handler on a silent attempt, the
   SDK refuses to register a new grant — `packages/desktop/test/gezel-connector.test.ts`
   pins that against the real SDK and a fake daemon, so an SDK upgrade that
@@ -246,23 +249,19 @@ runtime directory — via the main-stamped `--docblocks-ai` switch.
 
 **When the person's Gezel cannot serve, DocBlocks hosts one.** Absent, not
 running, or unwilling to connect DocBlocks (declined, expired, no reusable
-grant, connected apps off) all fall back to a private daemon under
+grant, connected apps off) all fall back to a private service under
 `~/.gezel/apps/docblocks/` — the person opted into AI inside DocBlocks, which
-is the consent this rests on. A running Gezel that fails for any other reason
-is reported, not hidden. The hosted daemon runs as a child under a real Node
-(`runAsNode` is fused off, and its native modules need Node's ABI), offers only
-on-device models already in the person's Gezel folder, may download an engine
-with visible progress, and never downloads weights. `main/ai/gezel-host-runtime.ts`
-finds the runtime: packaged builds use `resources/gezel-host/` (not yet
-produced by the build — until it is, packaged AI works only with a running
-Gezel); source builds use `DOCBLOCKS_GEZEL_SERVICE_ENTRY` (the absolute path of
-a local Gezel service build's `gezeld.js`) and `DOCBLOCKS_GEZEL_NODE_PATH`,
-falling back to the Node a Gezel install keeps in its home, then `node` on
-PATH. Engines are optional: a shipped `gezel-host/native-bin/` (development:
-`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`) becomes the daemon's `nativeBinDir`, so a
-first run downloads nothing. It must hold the native release the bundled
-service pins (`@bendyline/gezel-service/native-release`), laid out as
-`<platform>-<backend>/`. Packaged builds ignore all three variables.
+is the consent this rests on. `@bendyline/gezel-service` is a pinned desktop
+runtime dependency and the SDK starts it in the Electron main process; a
+separate Gezel connection is an optional provider switch, never a prerequisite
+for the editor actions. It uses Gezel's `mode: 'in-process', inferenceOnly:
+true` profile and the service's direct Fetch transport: no child Node, loopback
+client connection, machine-service discovery, cloud-provider enumeration, or
+standalone background systems. A running standalone Gezel that fails for any
+other reason is reported, not hidden. The hosted service offers only on-device
+models and may download an engine with visible progress. It never downloads
+weights implicitly; the Settings **Add model** gesture may request a catalog
+model and shows progress while Gezel installs it.
 
 ### The CLI has one current command contract
 

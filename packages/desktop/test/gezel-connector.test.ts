@@ -87,6 +87,29 @@ class FakeDaemon {
         ],
       });
     }
+    if (method === 'POST' && url.pathname === '/v1/models/ensure') {
+      return json(202, {
+        status: 'downloading',
+        model_id: 'llama-cpp:small-writer',
+        job_id: 'install-1',
+      });
+    }
+    if (method === 'GET' && url.pathname === '/v1/models/ensure/install-1/events') {
+      return sse([
+        {
+          type: 'progress',
+          jobId: 'install-1',
+          modelId: 'llama-cpp:small-writer',
+          bytesWritten: 25,
+          totalBytes: 100,
+        },
+        {
+          type: 'done',
+          jobId: 'install-1',
+          modelId: 'llama-cpp:small-writer',
+        },
+      ]);
+    }
     if (method === 'POST' && url.pathname === '/v1/chat/completions') {
       const chunk = (content: string | undefined, finish: string | null, usage?: unknown) => ({
         id: 'c1',
@@ -233,6 +256,29 @@ describe('Gezel connector against the app SDK', () => {
     });
   });
 
+  it('downloads a model only when the caller explicitly requests it', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    const progress: unknown[] = [];
+    await connection.installModel?.(
+      'llama-cpp:small-writer',
+      new AbortController().signal,
+      (event) => progress.push(event),
+    );
+    expect(daemon.paths()).to.include.members([
+      'POST /v1/models/ensure',
+      'GET /v1/models/ensure/install-1/events',
+    ]);
+    expect(progress).to.deep.equal([
+      { phase: 'weights', message: 'Downloading llama-cpp:small-writer…', percent: null },
+      { phase: 'weights', message: 'Downloading llama-cpp:small-writer…', percent: 25 },
+      { phase: 'ready', message: 'Model is ready.', percent: 100 },
+    ]);
+  });
+
   it('revoke withdraws the grant and forgets it locally', async () => {
     const daemon = new FakeDaemon();
     daemon.validToken = 'kept-token';
@@ -278,6 +324,7 @@ describe('Gezel connector hosting ladder', () => {
     options: {
       models?: Array<{ id: string; owned_by?: string }>;
       ensureModel?: (opts: {
+        allowWeightDownload?: boolean;
         onEvent?: (event: Record<string, unknown>) => void;
         signal?: AbortSignal;
       }) => Promise<unknown>;
@@ -299,6 +346,7 @@ describe('Gezel connector hosting ladder', () => {
   function ladder(options: {
     connectLocal: () => Promise<unknown>;
     runtime?: typeof RUNTIME | null;
+    hostInProcess?: boolean;
     hosted?: ReturnType<typeof fakeHostedGezel>;
     connectOrHost?: (input: HostCall) => Promise<unknown>;
   }) {
@@ -318,7 +366,9 @@ describe('Gezel connector hosting ladder', () => {
             return options.connectOrHost ? options.connectOrHost(input) : hosted.gezel;
           },
         }) as never,
+      loadService: async () => ({ startService: async () => undefined }) as never,
       hostRuntime: async () => (options.runtime === undefined ? RUNTIME : options.runtime),
+      hostInProcess: options.hostInProcess,
     });
     return { connector, hostCalls, hosted };
   }
@@ -339,6 +389,24 @@ describe('Gezel connector hosting ladder', () => {
       // Shipped engines: a first run downloads nothing.
       nativeBinDir: RUNTIME.nativeBinDir,
     });
+  });
+
+  it('hosts in-process without requiring an external service entry', async () => {
+    const { connector, hostCalls } = ladder({
+      connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+      runtime: null,
+      hostInProcess: true,
+    });
+    expect((await connector.detect()).canHost).to.equal(true);
+    const connection = await connector.connect({ interactive: false });
+    expect(connection.mode).to.equal('hosted');
+    expect(hostCalls).to.have.length(1);
+    expect(hostCalls[0].host).to.deep.include({
+      mode: 'in-process',
+      inferenceOnly: true,
+    });
+    expect(hostCalls[0].host).not.to.have.property('nodePath');
+    expect(hostCalls[0].host).to.have.property('serviceModule');
   });
 
   it('hosts when the running Gezel will not connect DocBlocks', async () => {
@@ -407,25 +475,20 @@ describe('Gezel connector hosting ladder', () => {
   });
 
   it('prepares an engine but never downloads model weights', async () => {
+    let allowWeightDownload: boolean | undefined;
     const hosted = fakeHostedGezel({
-      ensureModel: ({ onEvent, signal }) =>
-        new Promise((_resolve, reject) => {
-          signal?.addEventListener('abort', () =>
-            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
-          );
-          onEvent?.({
-            phase: 'engine',
-            engine: 'llama-server',
-            message: 'downloading',
-            percent: 50,
-          });
-          onEvent?.({
-            phase: 'weights',
-            message: 'downloading',
-            bytesWritten: 1024,
-            totalBytes: 9e9,
-          });
-        }),
+      ensureModel: async (options) => {
+        allowWeightDownload = options.allowWeightDownload;
+        options.onEvent?.({
+          phase: 'engine',
+          engine: 'llama-server',
+          message: 'downloading',
+          percent: 50,
+        });
+        throw Object.assign(new Error('weights require a gesture'), {
+          code: 'model_download_required',
+        });
+      },
     });
     const { connector } = ladder({
       connectLocal: () => Promise.reject(refusal('daemon_not_running')),
@@ -438,7 +501,38 @@ describe('Gezel connector hosting ladder', () => {
         Promise.reject(new Error('hosted connections prepare models')),
     );
     expect(toAiError(error).code).to.equal('model-unavailable');
+    expect(allowWeightDownload).to.equal(false);
     expect(progress).to.deep.equal([{ phase: 'engine', message: 'downloading', percent: 50 }]);
+  });
+
+  it('downloads hosted model weights after an explicit install request', async () => {
+    const hosted = fakeHostedGezel({
+      ensureModel: async ({ onEvent }) => {
+        onEvent?.({
+          phase: 'weights',
+          message: 'downloading weights',
+          bytesWritten: 50,
+          totalBytes: 100,
+        });
+        onEvent?.({ phase: 'ready', message: 'ready' });
+        return { source: 'downloaded' };
+      },
+    });
+    const { connector } = ladder({
+      connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+      hosted,
+    });
+    const connection = await connector.connect({ interactive: false });
+    const progress: unknown[] = [];
+    await connection.installModel?.(
+      'llama-cpp:qwen3.8-27b-q4',
+      new AbortController().signal,
+      (event) => progress.push(event),
+    );
+    expect(progress).to.deep.equal([
+      { phase: 'weights', message: 'downloading weights', percent: 50 },
+      { phase: 'ready', message: 'Model is ready.', percent: 100 },
+    ]);
   });
 
   it('reports a daemon that will not start as a missing runtime, with the reason', async () => {

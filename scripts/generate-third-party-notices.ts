@@ -306,7 +306,9 @@ function componentFromLockKey(lockKey: string): Component | null {
   if (!lockEntry.version) throw new Error(`${canonicalKey} has no locked version.`);
   const manifest = readManifest(canonicalKey);
   const license =
-    lockEntry.license ?? manifestLicense(manifest) ?? (name === 'khroma' ? 'MIT' : null);
+    lockEntry.license ??
+    manifestLicense(manifest) ??
+    (name === 'khroma' || name === 'valid-url' ? 'MIT' : null);
   if (!license) throw new Error(`${name}@${lockEntry.version} has no declared license.`);
   return {
     name,

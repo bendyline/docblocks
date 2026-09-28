@@ -1,9 +1,9 @@
 /**
  * AI through the whole desktop stack: Settings UI → preload → IPC → main →
- * the Gezel app SDK loaded by dynamic import → runtime discovery.
+ * the Gezel app SDK loaded by dynamic import → in-process service host.
  *
- * `GEZEL_HOME` points at an empty directory, so discovery deterministically
- * finds no Gezel whatever is installed on the machine running the suite.
+ * `GEZEL_HOME` points at an empty directory, so the standalone app is absent
+ * and the private host is isolated from the developer's models and settings.
  */
 
 import fs from 'node:fs';
@@ -18,12 +18,20 @@ async function readAi(window: Page) {
     const ai = (
       globalThis as {
         docBlocksHost?: {
-          ai?: { status(): Promise<unknown>; getPreferences(): Promise<unknown> };
+          ai?: {
+            providerInstalled(): Promise<boolean>;
+            status(): Promise<unknown>;
+            getPreferences(): Promise<unknown>;
+          };
         };
       }
     ).docBlocksHost?.ai;
     if (!ai) throw new Error('The desktop host exposes no AI namespace');
-    return { status: await ai.status(), preferences: await ai.getPreferences() };
+    return {
+      providerInstalled: await ai.providerInstalled(),
+      status: await ai.status(),
+      preferences: await ai.getPreferences(),
+    };
   });
 }
 
@@ -35,41 +43,37 @@ async function openAiSettings(window: Page) {
   return dialog.getByRole('group', { name: 'AI assistance' });
 }
 
-test('AI is off until opted in, then reports a missing Gezel and remembers the choice', async ({
-  launchApp,
-}) => {
+test('AI self-hosts without an installed Gezel, and the choice persists', async ({ launchApp }) => {
   const gezelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-e2e-gezel-home-'));
   const previousHome = process.env.GEZEL_HOME;
-  // A developer pointing DocBlocks at a Gezel service checkout would let this
-  // source build host one, and "not installed" would never be reported.
-  const previousServiceEntry = process.env.DOCBLOCKS_GEZEL_SERVICE_ENTRY;
   process.env.GEZEL_HOME = gezelHome;
-  delete process.env.DOCBLOCKS_GEZEL_SERVICE_ENTRY;
   try {
     const first = await launchApp();
     await first.window.waitForSelector('.db-shell', { timeout: 30_000 });
     expect(await readAi(first.window)).toEqual({
+      providerInstalled: false,
       status: { kind: 'unavailable', reason: 'opt-out' },
       preferences: { enabled: false, model: null, reviewMode: 'explicit' },
     });
 
     const section = await openAiSettings(first.window);
-    const optIn = section.getByRole('checkbox', { name: 'Use Gezel for AI features' });
+    const optIn = section.getByRole('checkbox', { name: 'Use AI features' });
     await expect(optIn).not.toBeChecked();
+    await expect(section).toContainText('DocBlocks runs a private Gezel service inside this app');
     await optIn.check();
-    await expect(section.getByRole('status')).toHaveText(
-      'Gezel is not installed on this computer. Install Gezel, then choose Connect.',
-    );
-    await expect(section.getByRole('button', { name: 'Connect' })).toBeEnabled();
-    await expect(section.getByRole('alert')).toHaveCount(0);
+    await expect
+      .poll(async () => (await readAi(first.window)).status, { timeout: 30_000 })
+      .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
+    await expect(section.getByRole('status')).toContainText('inside DocBlocks');
+    await expect(section.getByRole('button', { name: 'Connect Gezel app' })).toHaveCount(0);
     await first.close();
 
-    // The opt-in persists; relaunching looks for Gezel again, silently.
+    // The opt-in persists; relaunching starts the private service silently.
     const second = await launchApp();
     await second.window.waitForSelector('.db-shell', { timeout: 30_000 });
     await expect
       .poll(async () => (await readAi(second.window)).status, { timeout: 15_000 })
-      .toEqual({ kind: 'unavailable', reason: 'not-installed' });
+      .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
     expect((await readAi(second.window)).preferences).toEqual({
       enabled: true,
       model: null,
@@ -78,9 +82,6 @@ test('AI is off until opted in, then reports a missing Gezel and remembers the c
   } finally {
     if (previousHome === undefined) delete process.env.GEZEL_HOME;
     else process.env.GEZEL_HOME = previousHome;
-    if (previousServiceEntry !== undefined) {
-      process.env.DOCBLOCKS_GEZEL_SERVICE_ENTRY = previousServiceEntry;
-    }
     fs.rmSync(gezelHome, { recursive: true, force: true });
   }
 });

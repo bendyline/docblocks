@@ -3,15 +3,18 @@
  *
  * It talks only to `DocBlocksHostAiAPI` — which provider sits behind it is the
  * host's business — and shows the one thing a person needs at each step: why
- * AI is not available, the code to type while approval is pending, or which
- * model is in use once connected.
+ * AI is not available, the code to type while an optional standalone-provider
+ * connection is pending, or which model is in use.
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
   AiError,
+  AiModelDownloadInfo,
   AiModelInfo,
+  AiModelInstallHandle,
   AiPreferences,
+  AiProgress,
   AiStatus,
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
@@ -29,11 +32,11 @@ function statusSentence(status: AiStatus): string {
         case 'platform-unsupported':
           return 'AI features are not available in this build of DocBlocks.';
         case 'not-installed':
-          return 'Gezel is not installed on this computer. Install Gezel, then choose Connect.';
+          return 'DocBlocks could not start its built-in AI service.';
         case 'not-running':
-          return 'Gezel is not running. Start Gezel, then choose Connect.';
+          return 'DocBlocks is restarting its built-in AI service…';
         case 'disconnected':
-          return 'Not connected to Gezel.';
+          return 'DocBlocks is starting its built-in AI service…';
       }
       break;
     case 'connecting':
@@ -54,6 +57,9 @@ function statusSentence(status: AiStatus): string {
     case 'ready': {
       const version = status.provider.version ? ` ${status.provider.version}` : '';
       if (status.provider.mode === 'hosted') {
+        if (!status.model) {
+          return `Running ${status.provider.name}${version} inside DocBlocks. Add an on-device model to start using AI.`;
+        }
         return `Running ${status.provider.name}${version} inside DocBlocks, with the models already on this device.`;
       }
       return `Connected to ${status.provider.name}${version}.`;
@@ -68,23 +74,47 @@ function modelLabel(model: AiModelInfo): string {
   return model.local ? `${model.label} (on this device)` : model.label;
 }
 
+function formatDownloadSize(bytes: number | null): string | null {
+  if (bytes === null) return null;
+  const gibibytes = bytes / 1024 ** 3;
+  if (gibibytes >= 0.95) return `${gibibytes.toFixed(gibibytes >= 10 ? 0 : 1)} GB`;
+  return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+}
+
 export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [preferences, setPreferences] = useState<AiPreferences | null>(null);
+  const [providerInstalled, setProviderInstalled] = useState(false);
   const [models, setModels] = useState<readonly AiModelInfo[]>([]);
-  /** A connect or disconnect is in flight. */
+  const [availableModels, setAvailableModels] = useState<readonly AiModelDownloadInfo[]>([]);
+  const [showModelDownloads, setShowModelDownloads] = useState(false);
+  const [downloadModelId, setDownloadModelId] = useState('');
+  const [downloadProgress, setDownloadProgress] = useState<AiProgress | null>(null);
+  const [loadingAvailableModels, setLoadingAvailableModels] = useState(false);
+  const [installingModel, setInstallingModel] = useState(false);
+  /** An optional provider switch is in flight. */
   const [busy, setBusy] = useState(false);
   /** A preference write is in flight. */
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<AiError | null>(null);
   const mounted = useRef(true);
+  const installHandle = useRef<AiModelInstallHandle | null>(null);
   const modelSelectId = useId();
 
   useEffect(() => {
     mounted.current = true;
+    setProviderInstalled(false);
     const unsubscribe = ai.onStatus((next) => {
       if (mounted.current) setStatus(next);
     });
+    void ai.providerInstalled().then(
+      (installed) => {
+        if (mounted.current) setProviderInstalled(installed);
+      },
+      () => {
+        if (mounted.current) setProviderInstalled(false);
+      },
+    );
     void Promise.all([ai.status(), ai.getPreferences()]).then(([initialStatus, initial]) => {
       if (!mounted.current) return;
       setStatus((current) => current ?? initialStatus);
@@ -92,24 +122,48 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
     });
     return () => {
       mounted.current = false;
+      installHandle.current?.cancel();
       unsubscribe();
     };
   }, [ai]);
 
   const ready = status?.kind === 'ready';
+  const refreshModels = useCallback(async () => {
+    const result = await ai.models();
+    if (mounted.current && result.ok) setModels(result.value);
+    return result;
+  }, [ai]);
+
+  const refreshAvailableModels = useCallback(async () => {
+    if (!ai.availableModels) return;
+    setLoadingAvailableModels(true);
+    try {
+      const result = await ai.availableModels();
+      if (!mounted.current) return;
+      if (result.ok) {
+        setAvailableModels(result.value);
+        setDownloadModelId((current) =>
+          result.value.some((model) => model.id === current)
+            ? current
+            : (result.value[0]?.id ?? ''),
+        );
+      } else {
+        setFailure(result.error);
+      }
+    } finally {
+      if (mounted.current) setLoadingAvailableModels(false);
+    }
+  }, [ai]);
+
   useEffect(() => {
     if (!ready) {
       setModels([]);
+      setAvailableModels([]);
+      setShowModelDownloads(false);
       return;
     }
-    let current = true;
-    void ai.models().then((result) => {
-      if (current && result.ok) setModels(result.value);
-    });
-    return () => {
-      current = false;
-    };
-  }, [ai, ready]);
+    void refreshModels();
+  }, [ready, refreshModels]);
 
   const connect = useCallback(async () => {
     setBusy(true);
@@ -125,7 +179,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
     }
   }, [ai]);
 
-  const disconnect = useCallback(async () => {
+  const switchToBuiltIn = useCallback(async () => {
     setBusy(true);
     setFailure(null);
     try {
@@ -137,22 +191,36 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
 
   const setEnabled = useCallback(
     async (enabled: boolean) => {
+      const previous = preferences;
       setFailure(null);
       setSaving(true);
+      // Keep the controlled checkbox in sync with the person's gesture while
+      // the persisted preference crosses the host bridge.
+      if (previous) setPreferences({ ...previous, enabled });
       let next: AiPreferences;
       try {
         next = await ai.setPreferences({ enabled });
+      } catch {
+        if (mounted.current && previous) setPreferences(previous);
+        return;
       } finally {
         if (mounted.current) setSaving(false);
       }
       if (!mounted.current) return;
       setPreferences(next);
-      // Ticking the box is the gesture: connect straight away rather than
-      // making the person find a second button.
-      if (enabled) await connect();
     },
-    [ai, connect],
+    [ai, preferences],
   );
+
+  const retryBuiltIn = useCallback(async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await ai.setPreferences({ enabled: true });
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  }, [ai]);
 
   const setModel = useCallback(
     async (model: string | null) => {
@@ -162,12 +230,43 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
     [ai],
   );
 
+  const addModel = useCallback(async () => {
+    if (!downloadModelId || !ai.installModel) return;
+    setFailure(null);
+    setDownloadProgress({ phase: 'starting', message: 'Starting download…', percent: null });
+    setInstallingModel(true);
+    const handle = ai.installModel(downloadModelId, (progress) => {
+      if (mounted.current) setDownloadProgress(progress);
+    });
+    installHandle.current = handle;
+    try {
+      const result = await handle.done;
+      if (!mounted.current) return;
+      if (!result.ok) {
+        if (result.error.code !== 'cancelled') setFailure(result.error);
+        return;
+      }
+      const nextPreferences = await ai.setPreferences({ model: result.value.id });
+      if (!mounted.current) return;
+      setPreferences(nextPreferences);
+      await Promise.all([refreshModels(), refreshAvailableModels()]);
+    } finally {
+      if (installHandle.current === handle) installHandle.current = null;
+      if (mounted.current) {
+        setInstallingModel(false);
+        setDownloadProgress(null);
+      }
+    }
+  }, [ai, downloadModelId, refreshAvailableModels, refreshModels]);
+
   if (!preferences || !status) return null;
 
   const enabled = preferences.enabled;
   const connecting = status.kind === 'connecting';
   const code = status.kind === 'connecting' ? status.verificationCode : null;
   const defaultModel = models.find((model) => model.isDefault) ?? null;
+  const modelManagement = Boolean(ai.availableModels && ai.installModel);
+  const selectedDownload = availableModels.find((model) => model.id === downloadModelId) ?? null;
   // The status line already carries an error status's message; repeat a
   // failed attempt's message only when it adds something.
   const failureMessage =
@@ -180,11 +279,6 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   return (
     <fieldset className="db-settings-fieldset">
       <legend className="db-settings-legend">AI assistance</legend>
-      <p className="db-settings-hint">
-        DocBlocks uses Gezel for AI features: your Gezel app when it is running, or else a copy
-        DocBlocks runs itself with the models already in your Gezel folder. Text is sent only when
-        you use a feature; the model you choose decides whether it stays on this device.
-      </p>
       <label className="db-settings-checkbox">
         <input
           type="checkbox"
@@ -194,8 +288,14 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
           disabled={saving}
           onChange={(event) => void setEnabled(event.currentTarget.checked)}
         />
-        Use Gezel for AI features
+        Use AI features
       </label>
+      <p className="db-settings-hint">
+        DocBlocks runs a private Gezel service inside this app when AI is on.
+        {providerInstalled
+          ? ' Connecting your Gezel app is optional and lets DocBlocks use that app instead.'
+          : ''}
+      </p>
 
       {enabled && (
         <>
@@ -214,51 +314,151 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
             </p>
           )}
 
-          {ready && models.length > 0 && (
-            <label className="db-settings-select" htmlFor={modelSelectId}>
-              <span className="db-settings-select-header">Model</span>
-              <select
-                id={modelSelectId}
-                className="db-settings-select-input"
-                value={preferences.model ?? ''}
-                onChange={(event) => void setModel(event.currentTarget.value || null)}
-              >
-                <option value="">
-                  {defaultModel
-                    ? `Gezel's default: ${modelLabel(defaultModel)}`
-                    : "Gezel's default"}
-                </option>
-                {preferences.model && !models.some((model) => model.id === preferences.model) && (
-                  <option value={preferences.model}>{preferences.model} (not available)</option>
-                )}
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {modelLabel(model)}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {ready && (
+            <>
+              <label className="db-settings-select" htmlFor={modelSelectId}>
+                <span className="db-settings-select-header">Model</span>
+                <select
+                  id={modelSelectId}
+                  className="db-settings-select-input"
+                  value={models.length === 0 ? '' : (preferences.model ?? '')}
+                  disabled={models.length === 0 || installingModel}
+                  onChange={(event) => void setModel(event.currentTarget.value || null)}
+                >
+                  {models.length === 0 ? (
+                    <option value="">No models installed</option>
+                  ) : (
+                    <option value="">
+                      {defaultModel
+                        ? `Gezel's default: ${modelLabel(defaultModel)}`
+                        : "Gezel's default"}
+                    </option>
+                  )}
+                  {preferences.model && !models.some((model) => model.id === preferences.model) && (
+                    <option value={preferences.model}>{preferences.model} (not available)</option>
+                  )}
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {modelLabel(model)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {modelManagement && (
+                <div className="db-settings-ai-models">
+                  <button
+                    type="button"
+                    className="db-settings-action db-settings-action--secondary"
+                    disabled={installingModel}
+                    onClick={() => {
+                      const next = !showModelDownloads;
+                      setShowModelDownloads(next);
+                      if (next) void refreshAvailableModels();
+                    }}
+                  >
+                    {showModelDownloads ? 'Hide model downloads' : 'Add model…'}
+                  </button>
+
+                  {showModelDownloads && (
+                    <div className="db-settings-ai-model-downloads">
+                      {loadingAvailableModels ? (
+                        <p className="db-settings-hint" role="status">
+                          Looking for models…
+                        </p>
+                      ) : availableModels.length === 0 ? (
+                        <p className="db-settings-hint">
+                          No downloadable models are listed. Update Gezel or add a model in Gezel.
+                        </p>
+                      ) : (
+                        <>
+                          <label className="db-settings-select">
+                            <span className="db-settings-select-header">Model to download</span>
+                            <select
+                              className="db-settings-select-input"
+                              value={downloadModelId}
+                              disabled={installingModel}
+                              onChange={(event) => setDownloadModelId(event.currentTarget.value)}
+                            >
+                              {availableModels.map((model) => {
+                                const size = formatDownloadSize(model.downloadBytes);
+                                return (
+                                  <option key={model.id} value={model.id}>
+                                    {model.label}
+                                    {size ? ` — ${size}` : ''}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                          </label>
+                          {selectedDownload && (
+                            <p className="db-settings-hint">
+                              Downloads and runs on this device
+                              {formatDownloadSize(selectedDownload.downloadBytes)
+                                ? ` · ${formatDownloadSize(selectedDownload.downloadBytes)}`
+                                : ''}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            className="db-settings-action"
+                            disabled={!downloadModelId || installingModel}
+                            onClick={() => void addModel()}
+                          >
+                            {installingModel ? 'Downloading…' : 'Download model'}
+                          </button>
+                        </>
+                      )}
+                      {installingModel && downloadProgress && (
+                        <div className="db-settings-ai-download-progress" role="status">
+                          <progress
+                            max={100}
+                            value={downloadProgress.percent ?? undefined}
+                            aria-label="Model download progress"
+                          />
+                          <span>
+                            {downloadProgress.message}
+                            {downloadProgress.percent === null
+                              ? ''
+                              : ` (${Math.round(downloadProgress.percent)}%)`}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
-          {ready ? (
+          {ready && status.provider.mode === 'installed' ? (
             <button
               type="button"
               className="db-settings-action db-settings-action--secondary"
               disabled={busy}
-              onClick={() => void disconnect()}
+              onClick={() => void switchToBuiltIn()}
             >
-              Disconnect
+              Use built-in AI
             </button>
-          ) : status.kind === 'error' && !status.retryable ? null : (
+          ) : ready && status.provider.mode === 'hosted' && providerInstalled ? (
+            <button
+              type="button"
+              className="db-settings-action"
+              disabled={busy}
+              onClick={() => void connect()}
+            >
+              Connect Gezel app…
+            </button>
+          ) : status.kind === 'error' && status.retryable ? (
             <button
               type="button"
               className="db-settings-action"
               disabled={busy || connecting}
-              onClick={() => void connect()}
+              onClick={() => void retryBuiltIn()}
             >
-              {status.kind === 'error' ? 'Try again' : 'Connect'}
+              Try built-in AI again
             </button>
-          )}
+          ) : null}
         </>
       )}
     </fieldset>

@@ -64,6 +64,7 @@ const PROVIDER_CODES: ReadonlyMap<string, AiErrorCode> = new Map([
   ['verification_not_supported', 'unsupported'],
   ['tools_not_supported_for_provider', 'unsupported'],
   ['model_not_found', 'model-unavailable'],
+  ['model_download_required', 'model-unavailable'],
   ['gezel_not_found', 'model-unavailable'],
   ['rate_limited', 'rate-limited'],
   ['cancelled', 'cancelled'],

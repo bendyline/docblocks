@@ -201,7 +201,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | hono | 4.13.5 | MIT | https://github.com/honojs/hono |
 | http-errors | 2.0.1 | MIT | https://github.com/jshttp/http-errors |
 | iconv-lite | 0.6.3 | MIT | https://github.com/ashtuchkin/iconv-lite |
-| iconv-lite | 0.7.2 | MIT | https://github.com/pillarjs/iconv-lite |
+| iconv-lite | 0.7.3 | MIT | https://github.com/pillarjs/iconv-lite |
 | immediate | 3.0.6 | MIT | https://github.com/calvinmetcalf/immediate |
 | import-meta-resolve | 4.2.0 | MIT | https://github.com/wooorm/import-meta-resolve |
 | inherits | 2.0.4 | ISC | https://github.com/isaacs/inherits |
@@ -11918,7 +11918,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: iconv-lite@0.6.3, iconv-lite@0.7.2
+Components: iconv-lite@0.6.3, iconv-lite@0.7.3
 Source files: node_modules/d3-dsv/node_modules/iconv-lite/LICENSE, node_modules/iconv-lite/LICENSE
 ==============================================================================
 Copyright (c) 2011 Alexander Shtuchkin

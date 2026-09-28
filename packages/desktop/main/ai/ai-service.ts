@@ -9,11 +9,13 @@
  *
  * Three rules shape it:
  *
- * - **Opt-out is silence.** While `enabled` is false nothing is detected,
- *   probed, or contacted.
- * - **Only a gesture can prompt.** `start()` and re-enabling reconnect
- *   silently with a stored credential or not at all; the consent handshake
- *   runs only from `connect()`, which the renderer calls from a click.
+ * - **Opt-out starts nothing.** Settings may detect whether the person's Gezel
+ *   is installed so connection UI appears only when relevant. While `enabled`
+ *   is false no provider is connected, contacted for inference, or hosted.
+ * - **Only a gesture can prompt.** `start()` and re-enabling first reuse a
+ *   stored credential, then fall back to DocBlocks' private hosted Gezel. The
+ *   consent handshake for the person's standalone Gezel runs only from
+ *   `connect()`, which the renderer calls from a click.
  * - **Every chat ends exactly once.** A stream terminates with one `done` or
  *   one `error` event, whether it finished, hit a budget, was cancelled, or
  *   lost its provider.
@@ -26,7 +28,9 @@ import type {
   AiChatRequest,
   AiConnectionStep,
   AiError,
+  AiModelDownloadInfo,
   AiModelInfo,
+  AiModelInstallEvent,
   AiPreferences,
   AiPreferencesPatch,
   AiProgress,
@@ -37,7 +41,12 @@ import type {
 } from '@bendyline/docblocks/host';
 
 import { AiHostError, aiError, toAiError } from './ai-errors.js';
-import { selectModel, toAiModelList, type ProviderModelEntry } from './ai-models.js';
+import {
+  selectModel,
+  toAiModelDownloadList,
+  toAiModelList,
+  type ProviderModelEntry,
+} from './ai-models.js';
 
 export const DEFAULT_AI_PREFERENCES: AiPreferences = Object.freeze({
   enabled: false,
@@ -92,6 +101,12 @@ export interface AiProviderConnection {
    * itself.
    */
   prepare?(modelId: string, onProgress: (progress: AiProgress) => void): Promise<void>;
+  /** Download model weights after an explicit user gesture. */
+  installModel?(
+    modelId: string,
+    signal: AbortSignal,
+    onProgress: (progress: AiProgress) => void,
+  ): Promise<void>;
   streamChat(
     request: ProviderChatRequest,
     signal: AbortSignal,
@@ -127,6 +142,7 @@ export interface AiServiceOptions {
 }
 
 export type AiChatEmitter = (event: AiChatEvent) => void;
+export type AiModelInstallEmitter = (event: AiModelInstallEvent) => void;
 
 type ChatEnding = 'caller' | 'timeout' | 'teardown' | 'length';
 
@@ -213,10 +229,12 @@ export class AiService {
   private providerVersion: string | null = null;
   private models: readonly AiModelInfo[] = [];
   private attempt: ConnectionAttempt | null = null;
+  private detection: Promise<AiDetection> | null = null;
   private lastAttemptAt = Number.NEGATIVE_INFINITY;
   /** Bumped whenever the connection is torn down; stale async work checks it. */
   private epoch = 0;
   private readonly chats = new Map<string, ActiveChat>();
+  private readonly modelInstalls = new Map<string, AbortController>();
   private disposed = false;
 
   constructor(options: AiServiceOptions) {
@@ -243,7 +261,9 @@ export class AiService {
     await this.loadPreferences();
     const absent =
       this.status.kind === 'unavailable' &&
-      (this.status.reason === 'not-running' || this.status.reason === 'not-installed');
+      (this.status.reason === 'not-running' ||
+        this.status.reason === 'not-installed' ||
+        this.status.reason === 'disconnected');
     if (
       this.preferences.enabled &&
       absent &&
@@ -265,6 +285,11 @@ export class AiService {
     return this.preferences;
   }
 
+  /** Detect only the person's installation; hosted capability is intentionally irrelevant here. */
+  async providerInstalled(): Promise<boolean> {
+    return (await this.detectProvider()).installed;
+  }
+
   async setPreferences(patch: AiPreferencesPatch): Promise<AiPreferences> {
     await this.loadPreferences();
     const previous = this.preferences;
@@ -277,6 +302,16 @@ export class AiService {
       this.setStatus(unavailable('opt-out'));
     } else if (!previous.enabled && next.enabled) {
       if (!this.attempt) void this.beginAttempt(false);
+    } else if (
+      next.enabled &&
+      !this.connection &&
+      !this.attempt &&
+      (this.status.kind === 'error' || this.status.kind === 'unavailable')
+    ) {
+      // Writing the already-enabled preference is the retry affordance used by
+      // Settings. It must remain silent: connecting the standalone Gezel is a
+      // separate, optional gesture.
+      void this.beginAttempt(false);
     } else if (this.status.kind === 'ready') {
       this.publishReady();
     }
@@ -289,22 +324,36 @@ export class AiService {
     if (!this.preferences.enabled) {
       return fail(aiError('provider-unavailable', 'Turn on AI features in Settings first.'));
     }
-    if (this.connection && this.status.kind === 'ready') return ok(this.status);
+    if (this.connection && this.status.kind === 'ready') {
+      if (this.connection.mode !== 'hosted') return ok(this.status);
+      // The built-in provider is already useful. An explicit Connect click is
+      // a request to replace it with the person's standalone Gezel.
+      await this.teardown(false);
+    }
     // A silent attempt may already be running. Let it finish: if it reconnected
     // with a stored credential there is nothing left to ask the user.
     while (this.attempt) {
       const current = this.attempt;
       const result = await current.promise;
-      if (current.interactive || result.ok) return result;
+      if (current.interactive) return result;
+      if (result.ok && this.connection?.mode !== 'hosted') return result;
+      if (result.ok) await this.teardown(false);
     }
     return this.beginAttempt(true);
   }
 
-  /** Revoke the grant, forget the credential, and drop the connection. */
+  /** Disconnect the standalone Gezel and fall back to DocBlocks' private host. */
   async disconnect(): Promise<AiResult<null>> {
     await this.loadPreferences();
+    if (this.connection?.mode === 'hosted') return ok(null);
+    const previousAttempt = this.attempt?.promise;
     await this.teardown(true);
-    this.setStatus(unavailable(this.preferences.enabled ? 'disconnected' : 'opt-out'));
+    if (previousAttempt) await previousAttempt.catch(() => undefined);
+    if (this.preferences.enabled && !this.disposed) {
+      void this.beginAttempt(false);
+    } else {
+      this.setStatus(unavailable('opt-out'));
+    }
     return ok(null);
   }
 
@@ -323,6 +372,100 @@ export class AiService {
       this.handleProviderFailure(connection, failure);
       return fail(failure);
     }
+  }
+
+  async listAvailableModels(): Promise<AiResult<readonly AiModelDownloadInfo[]>> {
+    const connection = this.connection;
+    if (!connection) return fail(this.notConnectedError());
+    if (!connection.installModel) {
+      return fail(aiError('unsupported', 'This AI provider cannot download models.'));
+    }
+    try {
+      return ok(toAiModelDownloadList(await connection.listModels()));
+    } catch (error) {
+      const failure = toAiError(error);
+      this.handleProviderFailure(connection, failure);
+      return fail(failure);
+    }
+  }
+
+  /** Start one user-requested install, scoped by the IPC layer to its renderer. */
+  startModelInstall(streamKey: string, modelId: string, emit: AiModelInstallEmitter): void {
+    const connection = this.connection;
+    if (!connection || this.status.kind !== 'ready') {
+      emit({ kind: 'error', error: this.notConnectedError() });
+      return;
+    }
+    if (!connection.installModel) {
+      emit({
+        kind: 'error',
+        error: aiError('unsupported', 'This AI provider cannot download models.'),
+      });
+      return;
+    }
+    if (!isBoundedString(modelId, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
+      emit({ kind: 'error', error: aiError('model-unavailable', 'That model id is invalid.') });
+      return;
+    }
+    if (this.modelInstalls.has(streamKey)) {
+      emit({
+        kind: 'error',
+        error: aiError('unknown', 'That model download is already running.'),
+      });
+      return;
+    }
+    if (this.modelInstalls.size >= 2) {
+      emit({
+        kind: 'error',
+        error: aiError('budget-exceeded', 'Two model downloads are already running.'),
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    let ended = false;
+    const emitEvent = (event: AiModelInstallEvent) => {
+      if (ended) return;
+      if (event.kind !== 'progress') ended = true;
+      emit(event);
+    };
+    this.modelInstalls.set(streamKey, controller);
+    void connection
+      .installModel(modelId, controller.signal, (progress) => {
+        if (!controller.signal.aborted) {
+          emitEvent({ kind: 'progress', progress: boundedProgress(progress) });
+        }
+      })
+      .then(async () => {
+        if (controller.signal.aborted)
+          throw new AiHostError('cancelled', 'The download was cancelled.');
+        const entries = await connection.listModels();
+        const models = toAiModelList(entries);
+        const model = models.find((candidate) => candidate.id === modelId);
+        if (!model) {
+          throw new AiHostError(
+            'model-download-failed',
+            'The download finished, but the model is not available yet.',
+          );
+        }
+        if (this.connection === connection) {
+          this.models = models;
+          this.publishReady();
+        }
+        emitEvent({ kind: 'done', model });
+      })
+      .catch((error: unknown) => {
+        const failure = controller.signal.aborted ? aiError('cancelled') : toAiError(error);
+        emitEvent({ kind: 'error', error: failure });
+        this.handleProviderFailure(connection, failure);
+      })
+      .finally(() => {
+        this.modelInstalls.delete(streamKey);
+      });
+  }
+
+  cancelModelInstall(streamKey: string): void {
+    this.modelInstalls.get(streamKey)?.abort();
   }
 
   /**
@@ -350,7 +493,7 @@ export class AiService {
         kind: 'error',
         error: aiError(
           'model-unavailable',
-          'Gezel has no models available. Add one in Gezel, then try again.',
+          'Gezel has no models available. Add one in Settings, then try again.',
         ),
       });
       return;
@@ -413,6 +556,18 @@ export class AiService {
     return promise;
   }
 
+  /** Share concurrent SDK discovery between Settings and a connection attempt. */
+  private detectProvider(): Promise<AiDetection> {
+    if (this.detection) return this.detection;
+    const pending = this.connector.detect();
+    this.detection = pending;
+    const clear = () => {
+      if (this.detection === pending) this.detection = null;
+    };
+    void pending.then(clear, clear);
+    return pending;
+  }
+
   private async attemptConnection(
     interactive: boolean,
     epoch: number,
@@ -422,7 +577,7 @@ export class AiService {
 
     let detection: AiDetection;
     try {
-      detection = await this.connector.detect();
+      detection = await this.detectProvider();
     } catch (error) {
       return this.failAttempt(error, epoch);
     }
@@ -476,9 +631,9 @@ export class AiService {
       return fail(aiError('cancelled'));
     }
 
-    // A hosted provider runs only models already on this device; with none it
-    // has nothing to offer, and saying so beats a ready state that fails later.
-    if (connection.mode === 'hosted' && models.length === 0) {
+    // A hosted provider with no model is useful only when it can install one
+    // after an explicit user gesture in Settings.
+    if (connection.mode === 'hosted' && models.length === 0 && !connection.installModel) {
       await connection.close().catch(() => undefined);
       return this.failAttempt(
         new AiHostError(
@@ -552,6 +707,7 @@ export class AiService {
       chat.ending ??= 'teardown';
       chat.controller.abort();
     }
+    for (const install of this.modelInstalls.values()) install.abort();
     const connection = this.connection;
     this.connection = null;
     this.models = [];
@@ -571,14 +727,17 @@ export class AiService {
     this.models = [];
     this.epoch += 1;
     void connection.close().catch(() => undefined);
-    this.setStatus(
-      unavailable(failure.code === 'provider-unavailable' ? 'not-running' : 'disconnected'),
-    );
+    this.setStatus(unavailable('disconnected'));
+    // Losing the standalone app is not losing AI: reconnect silently, which
+    // lets the connector reuse a grant or start the private host.
+    if (this.preferences.enabled && !this.disposed && !this.attempt) {
+      void this.beginAttempt(false);
+    }
   }
 
   private notConnectedError(): AiError {
     return this.preferences.enabled
-      ? aiError('provider-unavailable', 'Connect DocBlocks to Gezel in Settings first.')
+      ? aiError('provider-unavailable', 'AI is still getting ready. Try again in a moment.')
       : aiError('provider-unavailable', 'Turn on AI features in Settings first.');
   }
 

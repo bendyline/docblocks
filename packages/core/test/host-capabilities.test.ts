@@ -39,6 +39,7 @@ function electronHost(): Record<string, unknown> {
     },
     ffmpeg: { available: () => undefined },
     ai: {
+      providerInstalled: () => undefined,
       status: () => undefined,
       onStatus: () => undefined,
       getPreferences: () => undefined,
@@ -46,6 +47,8 @@ function electronHost(): Record<string, unknown> {
       connect: () => undefined,
       disconnect: () => undefined,
       models: () => undefined,
+      availableModels: () => undefined,
+      installModel: () => undefined,
       chat: () => undefined,
       ensureWorkspace: () => undefined,
       search: () => undefined,
@@ -89,6 +92,7 @@ function mobileHost(): Record<string, unknown> {
     clipboard: { writeText: () => undefined },
     exports: { save: () => undefined },
     ai: {
+      providerInstalled: () => undefined,
       status: () => undefined,
       onStatus: () => undefined,
       getPreferences: () => undefined,
@@ -218,6 +222,7 @@ describe('deriveHostCapabilities', () => {
     delete host.ai;
     const capabilities = deriveHostCapabilities(host);
     expect(capabilities.aiAssist).to.equal(false);
+    expect(capabilities.aiModelManagement).to.equal(false);
     expect(capabilities.aiWorkspaceIndex).to.equal(false);
     expect(capabilities.aiSearch).to.equal(false);
     expect(capabilities.aiImages).to.equal(false);
@@ -227,9 +232,8 @@ describe('deriveHostCapabilities', () => {
     expect(capabilities.filesystemV2).to.equal(true);
   });
 
-  it('does not claim assisted writing from a stream with no status channel', () => {
-    // Both members are required: a UI that cannot observe status cannot explain
-    // why a request is doing nothing.
+  it('does not claim assisted writing from an incomplete core bridge', () => {
+    // Presence and status are both required to render the connection UI safely.
     const host = electronHost();
     host.ai = { chat: () => undefined };
     expect(deriveHostCapabilities(host).aiAssist).to.equal(false);

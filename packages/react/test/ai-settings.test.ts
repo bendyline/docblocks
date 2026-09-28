@@ -3,7 +3,9 @@ import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
+  AiModelDownloadInfo,
   AiModelInfo,
+  AiProgress,
   AiPreferences,
   AiResult,
   AiStatus,
@@ -36,12 +38,13 @@ const READY: AiStatus = {
   activeRequests: 0,
 };
 
-function fakeAi(status: AiStatus, preferences: AiPreferences) {
+function fakeAi(status: AiStatus, preferences: AiPreferences, providerInstalled = true) {
   const listeners = new Set<(next: AiStatus) => void>();
   const calls: string[] = [];
   let current = preferences;
   let resolveConnect: (result: AiResult<AiStatus>) => void = () => undefined;
   const api: DocBlocksHostAiAPI = {
+    providerInstalled: async () => providerInstalled,
     status: async () => status,
     onStatus(listener) {
       listeners.add(listener);
@@ -80,6 +83,14 @@ function fakeAi(status: AiStatus, preferences: AiPreferences) {
   };
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 async function flush(): Promise<void> {
   await act(async () => {
     for (let index = 0; index < 5; index += 1) await Promise.resolve();
@@ -108,13 +119,17 @@ function buttonLabels(container: HTMLElement): string[] {
 }
 
 describe('AiSettingsControls', () => {
-  it('offers only the opt-in while AI is off', async () => {
-    const fake = fakeAi({ kind: 'unavailable', reason: 'opt-out' }, OPTED_OUT);
+  it('explains that the built-in host does not require the Gezel app', async () => {
+    const fake = fakeAi({ kind: 'unavailable', reason: 'opt-out' }, OPTED_OUT, false);
     const { container, cleanup } = await render(fake.api);
     try {
       const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
       expect(box?.checked).to.equal(false);
-      expect(container.textContent).to.contain('Use Gezel for AI features');
+      expect(container.textContent).to.contain('Use AI features');
+      expect(container.textContent).to.contain(
+        'DocBlocks runs a private Gezel service inside this app',
+      );
+      expect(container.textContent).not.to.contain('Connecting your Gezel app is optional');
       expect(buttonLabels(container)).to.deep.equal([]);
       expect(container.querySelector('select')).to.equal(null);
     } finally {
@@ -122,60 +137,88 @@ describe('AiSettingsControls', () => {
     }
   });
 
-  it('opting in connects at once and shows the code to type in Gezel', async () => {
+  it('opting in starts built-in AI without connecting the Gezel app', async () => {
     const fake = fakeAi({ kind: 'unavailable', reason: 'opt-out' }, OPTED_OUT);
     const { container, cleanup } = await render(fake.api);
     try {
       const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      expect(box?.closest('label')?.nextElementSibling?.textContent).to.contain(
+        'Connecting your Gezel app is optional',
+      );
       await act(async () => {
         box?.click();
       });
       await flush();
-      expect(fake.calls).to.deep.equal(['set {"enabled":true}', 'connect']);
+      expect(fake.calls).to.deep.equal(['set {"enabled":true}']);
 
       await act(async () => {
         fake.emit({
           kind: 'connecting',
-          step: 'awaiting-approval',
-          verificationCode: 'K7Q2XD',
+          step: 'detecting',
+          verificationCode: null,
           progress: null,
         });
       });
-      expect(container.textContent).to.contain('Waiting for approval in Gezel');
-      expect(container.querySelector('.db-settings-ai-code')?.textContent).to.equal('K7Q2XD');
-      // Approval can take minutes; switching AI off must stay possible.
+      expect(container.textContent).to.contain('Looking for Gezel');
+      expect(container.querySelector('.db-settings-ai-code')).to.equal(null);
       expect(
         container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled,
       ).to.equal(false);
 
       await act(async () => {
-        fake.emit(READY);
-        fake.finishConnect({ ok: true, value: READY });
+        fake.emit({
+          ...READY,
+          provider: { name: 'Gezel', version: '1.1.2', mode: 'hosted' },
+        });
       });
       await flush();
-      expect(container.textContent).to.contain('Connected to Gezel 1.1.2.');
-      expect(container.querySelector('.db-settings-ai-code')).to.equal(null);
+      expect(container.textContent).to.contain('Running Gezel 1.1.2 inside DocBlocks');
     } finally {
       await cleanup();
     }
   });
 
-  it('explains a stopped provider and offers to connect', async () => {
+  it('shows hosted AI controls even when the standalone Gezel app is absent', async () => {
+    const hosted: AiStatus = {
+      ...READY,
+      provider: { name: 'Gezel', version: '1.1.2', mode: 'hosted' },
+    };
+    const fake = fakeAi(hosted, OPTED_IN, false);
+    const { container, cleanup } = await render(fake.api);
+    try {
+      expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).to.equal(
+        true,
+      );
+      expect(container.textContent).to.contain('Running Gezel 1.1.2 inside DocBlocks');
+      expect(buttonLabels(container)).to.deep.equal([]);
+      expect(container.querySelector('select')).not.to.equal(null);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('treats a stopped provider as a built-in restart, not a connection requirement', async () => {
     const fake = fakeAi({ kind: 'unavailable', reason: 'not-running' }, OPTED_IN);
     const { container, cleanup } = await render(fake.api);
     try {
-      expect(container.textContent).to.contain('Gezel is not running.');
-      expect(buttonLabels(container)).to.deep.equal(['Connect']);
+      expect(container.textContent).to.contain('DocBlocks is restarting its built-in AI service');
+      expect(buttonLabels(container)).to.deep.equal([]);
     } finally {
       await cleanup();
     }
   });
 
   it('shows a failed attempt, but not a cancelled one', async () => {
-    const fake = fakeAi({ kind: 'unavailable', reason: 'disconnected' }, OPTED_IN);
+    const hosted: AiStatus = {
+      ...READY,
+      provider: { name: 'Gezel', version: '1.1.2', mode: 'hosted' },
+    };
+    const fake = fakeAi(hosted, OPTED_IN);
     const { container, cleanup } = await render(fake.api);
     try {
-      const connect = container.querySelector('button');
+      const connect = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Connect Gezel app…',
+      );
       await act(async () => {
         connect?.click();
       });
@@ -255,7 +298,7 @@ describe('AiSettingsControls', () => {
     }
   });
 
-  it('once connected, picks a model and can disconnect', async () => {
+  it('once connected, picks a model and can switch back to built-in AI', async () => {
     const fake = fakeAi(READY, OPTED_IN);
     const { container, cleanup } = await render(fake.api);
     try {
@@ -275,11 +318,75 @@ describe('AiSettingsControls', () => {
 
       await act(async () => {
         Array.from(container.querySelectorAll('button'))
-          .find((button) => button.textContent === 'Disconnect')
+          .find((button) => button.textContent === 'Use built-in AI')
           ?.click();
       });
       await flush();
       expect(fake.calls).to.include('disconnect');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('downloads a model with progress, selects it, and adds it to the model picker', async () => {
+    const downloadable: AiModelDownloadInfo = {
+      id: 'llama-cpp:small-writer',
+      label: 'Small Writer',
+      contextWindow: 32_768,
+      downloadBytes: 2 * 1024 ** 3,
+      state: 'download-required',
+    };
+    const installed: AiModelInfo = {
+      id: downloadable.id,
+      label: downloadable.label,
+      local: true,
+      contextWindow: downloadable.contextWindow,
+      isDefault: false,
+    };
+    const done = deferred<AiResult<AiModelInfo>>();
+    let progressListener: ((progress: AiProgress) => void) | null = null;
+    let installedModels: readonly AiModelInfo[] = [];
+    const fake = fakeAi({ ...READY, model: null }, OPTED_IN, false);
+    fake.api.models = async () => ({ ok: true, value: installedModels });
+    fake.api.availableModels = async () => ({ ok: true, value: [downloadable] });
+    fake.api.installModel = (_modelId, onProgress) => {
+      progressListener = onProgress;
+      return { done: done.promise, cancel: () => undefined };
+    };
+
+    const { container, cleanup } = await render(fake.api);
+    try {
+      expect(container.textContent).to.contain('No models installed');
+      await act(async () => {
+        Array.from(container.querySelectorAll('button'))
+          .find((button) => button.textContent === 'Add model…')
+          ?.click();
+      });
+      await flush();
+      expect(container.textContent).to.contain('Small Writer — 2.0 GB');
+
+      await act(async () => {
+        Array.from(container.querySelectorAll('button'))
+          .find((button) => button.textContent === 'Download model')
+          ?.click();
+        progressListener?.({
+          phase: 'weights',
+          message: 'Downloading Small Writer…',
+          percent: 42,
+        });
+      });
+      expect(container.querySelector('progress')?.value).to.equal(42);
+      expect(container.textContent).to.contain('Downloading Small Writer… (42%)');
+
+      installedModels = [installed];
+      await act(async () => done.resolve({ ok: true, value: installed }));
+      await flush();
+      expect(fake.calls).to.include('set {"model":"llama-cpp:small-writer"}');
+      const modelSelect = container.querySelectorAll<HTMLSelectElement>('select')[0];
+      expect(Array.from(modelSelect?.options ?? []).map((option) => option.textContent)).to.include(
+        'Small Writer (on this device)',
+      );
+      expect(modelSelect?.value).to.equal('llama-cpp:small-writer');
     } finally {
       await cleanup();
     }

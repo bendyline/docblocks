@@ -1,7 +1,11 @@
 import { expect } from 'chai';
-import { AI_WIRE_LIMITS, parseAiModelInfoList } from '@bendyline/docblocks/host';
+import {
+  AI_WIRE_LIMITS,
+  parseAiModelDownloadInfoList,
+  parseAiModelInfoList,
+} from '@bendyline/docblocks/host';
 
-import { selectModel, toAiModelList } from '../main/ai/ai-models.js';
+import { selectModel, toAiModelDownloadList, toAiModelList } from '../main/ai/ai-models.js';
 import { aiError, AiHostError, toAiError } from '../main/ai/ai-errors.js';
 
 describe('desktop AI model listing', () => {
@@ -83,6 +87,32 @@ describe('desktop AI model listing', () => {
     expect(selectModel(models, 'llama-cpp:gone')?.id).to.equal('gezel:writer');
     expect(selectModel(models, null)?.id).to.equal('gezel:writer');
     expect(selectModel([], 'llama-cpp:a')).to.equal(null);
+  });
+
+  it('separates installed models from downloadable catalog entries', () => {
+    const entries = [
+      { id: 'llama-cpp:installed', owned_by: 'llama-cpp', availability: 'available' as const },
+      {
+        id: 'llama-cpp:qwen',
+        name: 'Qwen Local',
+        owned_by: 'llama-cpp',
+        availability: 'download-required' as const,
+        context_window: 32_768,
+        download_bytes: 4_000_000_000,
+      },
+    ];
+    expect(toAiModelList(entries).map((model) => model.id)).to.deep.equal(['llama-cpp:installed']);
+    const downloadable = toAiModelDownloadList(entries);
+    expect(downloadable).to.deep.equal([
+      {
+        id: 'llama-cpp:qwen',
+        label: 'Qwen Local',
+        contextWindow: 32_768,
+        downloadBytes: 4_000_000_000,
+        state: 'download-required',
+      },
+    ]);
+    expect(parseAiModelDownloadInfoList(downloadable)).to.deep.equal(downloadable);
   });
 });
 

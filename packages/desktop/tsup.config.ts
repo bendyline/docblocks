@@ -37,6 +37,7 @@ export const desktopTsupOptions = [
       'chokidar',
       'electron-window-state',
       '@bendyline/gezel-app-sdk',
+      '@bendyline/gezel-service',
     ],
     outExtension: () => ({ js: '.cjs' }),
   },

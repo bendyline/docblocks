@@ -7,7 +7,9 @@ import type {
   AiConnectionStep,
   AiError,
   AiErrorCode,
+  AiModelDownloadInfo,
   AiModelInfo,
+  AiModelInstallEvent,
   AiPreferences,
   AiPreferencesPatch,
   AiProgress,
@@ -36,6 +38,7 @@ export const AI_WIRE_LIMITS = Object.freeze({
   progressPhaseCharacters: 64,
   modelEntries: 200,
   contextWindowCeiling: 8_000_000,
+  downloadBytesCeiling: Number.MAX_SAFE_INTEGER,
 });
 
 const CHAT_ROLES: ReadonlySet<string> = new Set(['system', 'user', 'assistant']);
@@ -75,6 +78,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set([
   'cancelled',
   'unknown',
 ]);
+const MODEL_DOWNLOAD_STATES: ReadonlySet<string> = new Set(['download-required', 'downloading']);
 
 type AiChatCompletionUsage = {
   readonly promptTokens: number;
@@ -175,6 +179,67 @@ export function parseAiModelInfoList(value: unknown): AiModelInfo[] | null {
     models.push(model);
   }
   return models;
+}
+
+export function parseAiModelDownloadInfo(value: unknown): AiModelDownloadInfo | null {
+  if (!isRecord(value)) return null;
+  if (!hasExactKeys(value, ['id', 'label', 'contextWindow', 'downloadBytes', 'state'])) {
+    return null;
+  }
+  if (!isBoundedString(value.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
+  if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
+  if (
+    value.contextWindow !== null &&
+    !isNonNegativeInteger(value.contextWindow, AI_WIRE_LIMITS.contextWindowCeiling)
+  ) {
+    return null;
+  }
+  if (
+    value.downloadBytes !== null &&
+    (!isNonNegativeInteger(value.downloadBytes, AI_WIRE_LIMITS.downloadBytesCeiling) ||
+      value.downloadBytes === 0)
+  ) {
+    return null;
+  }
+  if (typeof value.state !== 'string' || !MODEL_DOWNLOAD_STATES.has(value.state)) return null;
+  return {
+    id: value.id,
+    label: value.label,
+    contextWindow: value.contextWindow as number | null,
+    downloadBytes: value.downloadBytes as number | null,
+    state: value.state as AiModelDownloadInfo['state'],
+  };
+}
+
+export function parseAiModelDownloadInfoList(value: unknown): AiModelDownloadInfo[] | null {
+  if (!Array.isArray(value) || value.length > AI_WIRE_LIMITS.modelEntries) return null;
+  const models: AiModelDownloadInfo[] = [];
+  for (const entry of value) {
+    const model = parseAiModelDownloadInfo(entry);
+    if (!model) return null;
+    models.push(model);
+  }
+  return models;
+}
+
+export function parseAiModelInstallEvent(value: unknown): AiModelInstallEvent | null {
+  if (!isRecord(value)) return null;
+  if (value.kind === 'progress') {
+    if (!hasExactKeys(value, ['kind', 'progress'])) return null;
+    const progress = parseAiProgress(value.progress);
+    return progress ? { kind: 'progress', progress } : null;
+  }
+  if (value.kind === 'done') {
+    if (!hasExactKeys(value, ['kind', 'model'])) return null;
+    const model = parseAiModelInfo(value.model);
+    return model ? { kind: 'done', model } : null;
+  }
+  if (value.kind === 'error') {
+    if (!hasExactKeys(value, ['kind', 'error'])) return null;
+    const error = parseAiError(value.error);
+    return error ? { kind: 'error', error } : null;
+  }
+  return null;
 }
 
 function parseAiChatMessage(value: unknown): AiChatMessage | null {

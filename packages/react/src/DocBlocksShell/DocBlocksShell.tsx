@@ -132,6 +132,16 @@ const GitGrantNotice = lazy(() =>
 const GitToolbarControl = lazy(() =>
   import('../Git/GitToolbarControl.js').then((m) => ({ default: m.GitToolbarControl })),
 );
+const AiToolbarControl = lazy(() =>
+  import('../Ai/AiEditorAssistant.js').then((module) => ({
+    default: module.AiToolbarControl,
+  })),
+);
+const AiReviewPanel = lazy(() =>
+  import('../Ai/AiEditorAssistant.js').then((module) => ({
+    default: module.AiReviewPanel,
+  })),
+);
 import {
   loadVersioningPreference,
   resolveVersioningEnabled,
@@ -813,6 +823,7 @@ export function DocBlocksShell({
   // Settings choice > the host's `theme` prop > the OS. See resolve-theme.ts
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
+  const ai = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
     setThemePreference(pref);
@@ -1387,6 +1398,7 @@ export function DocBlocksShell({
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
   // First-run gateway over the welcome document's Play view.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
+  const [aiReviewOpen, setAiReviewOpen] = useState(false);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
   const preparedCloseRequestRef = useRef<string | null>(null);
@@ -4653,7 +4665,7 @@ export function DocBlocksShell({
                 storagePersistent={showBrowserStorageWarning ? browserStoragePersistent : undefined}
                 appVersion={appVersion}
                 appBuildDate={appBuildDate}
-                ai={hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined}
+                ai={ai}
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -4899,6 +4911,16 @@ export function DocBlocksShell({
                     versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
                     onSaveVersion={onSaveVersion}
                     statusBarSlotRight={statusBarSlotRight}
+                    sidePanelSlot={
+                      ai &&
+                      aiReviewOpen &&
+                      selectedImage === undefined &&
+                      (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
+                        <Suspense fallback={null}>
+                          <AiReviewPanel ai={ai} onClose={() => setAiReviewOpen(false)} />
+                        </Suspense>
+                      ) : undefined
+                    }
                     toolbarSlotLeft={
                       singlePane ? (
                         <button
@@ -4914,6 +4936,19 @@ export function DocBlocksShell({
                     }
                     toolbarSlotRight={
                       <>
+                        {ai && (
+                          <Suspense fallback={null}>
+                            <AiToolbarControl
+                              ai={ai}
+                              readOnly={
+                                selectedImage !== undefined ||
+                                (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                              }
+                              reviewOpen={aiReviewOpen}
+                              onOpenReview={() => setAiReviewOpen(true)}
+                            />
+                          </Suspense>
+                        )}
                         {/* Restore split view -- offered only where the
                           viewport can actually hold both panes. Pinning is
                           persisted, so an iPad user sets it once. */}
