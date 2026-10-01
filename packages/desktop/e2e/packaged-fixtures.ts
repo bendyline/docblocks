@@ -67,6 +67,9 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   env.NODE_ENV = 'production';
   env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
+  // A hosted Gezel otherwise stores a device key in the login keychain, and
+  // every run's throwaway home leaves another one behind.
+  env.GEZEL_SECRETS_BACKEND = 'file';
   return env;
 }
 
