@@ -14,24 +14,23 @@ published `latest` version is not eligible until its cooldown has elapsed. Keep
 dependencies exact-pinned; do not bypass the window by editing a manifest or
 lockfile by hand.
 
-Two first-party package families are exempt, and only these two:
+Our own packages are exempt: everything under the `@bendyline` scope
+(`@bendyline/*`). That covers Squisq, the editor every surface embeds; Gezel,
+the local AI runtime behind DocBlocks' AI features, which DocBlocks is also used
+to prove out; and the first-party packages those two publish alongside
+themselves, such as `@bendyline/gezk` and `@bendyline/gilde`. Naming families
+one at a time kept blocking same-day releases on a sibling package the patterns
+missed, so the scope is exempt as a whole.
 
-- **Squisq**, `@bendyline/squisq*` — the editor every surface embeds.
-- **Gezel**, `@bendyline/gezel*` plus `@bendyline/gezk` — the local AI runtime
-  behind DocBlocks' AI features, which DocBlocks is also used to prove out.
-  `@bendyline/gezk` is named separately because the Gezel pattern does not
-  match it, and the Gezel client depends on it; without that entry a same-day
-  Gezel release would still be blocked by its format package.
+All of them are internally maintained and developed alongside DocBlocks, so
+waiting a week for our own release would only delay a fix we wrote. npm applies
+an exclusion only to the matching package itself: every third-party dependency
+of a `@bendyline` package still observes the cooldown.
 
-Both are internally maintained and developed alongside DocBlocks, so waiting a
-week for our own release would only delay a fix we wrote. npm applies an
-exclusion only to the matching package itself: every third-party dependency of
-Squisq or Gezel still observes the cooldown.
-
-`scripts/check-dependency-governance.ts` requires exactly this list, in this
-order. Adding a family is a policy decision, not a configuration edit: change
-the checker, this document, and AGENTS.md in the same commit, and state why the
-family is first-party and co-developed. Never exempt a third-party package.
+`scripts/check-dependency-governance.ts` requires exactly this exemption.
+Changing it is a policy decision, not a configuration edit: change the checker,
+this document, and AGENTS.md in the same commit. Never exempt a third-party
+package.
 
 The exclusion feature requires npm 11.17 or newer. The repository pins npm
 11.19.1 for contributor and CI commands. That release contains patched

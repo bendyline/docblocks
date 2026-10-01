@@ -153,9 +153,9 @@ npm run test:mcp:linked
 ```
 
 Dependency installs enforce a seven-day release cooldown and an exact
-install-script allowlist. The internally maintained Squisq (`@bendyline/squisq*`)
-and Gezel (`@bendyline/gezel*`, `@bendyline/gezk`) packages are the only
-cooldown exceptions; see [Dependency governance](docs/dependency-governance.md).
+install-script allowlist. Our own internally maintained `@bendyline/*` packages
+(Squisq, Gezel, and their siblings) are the only cooldown exception; see
+[Dependency governance](docs/dependency-governance.md).
 
 ### Testing
 

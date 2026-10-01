@@ -69,28 +69,19 @@ describe('dependency governance', () => {
       '',
     ].join('\n');
 
-    expect(COOLDOWN_EXCLUSIONS).to.deep.equal([
-      '@bendyline/squisq*',
-      '@bendyline/gezel*',
-      '@bendyline/gezk',
-    ]);
+    expect(COOLDOWN_EXCLUSIONS).to.deep.equal(['@bendyline/*']);
     expect(() => validateDependencyToolchain(manifest, npmrc)).not.to.throw();
 
-    // A further family is a policy change, not a config edit: it must fail
-    // until the checker, AGENTS.md and the governance doc move together.
+    // Exempting a third-party package is a policy change, not a config edit:
+    // it must fail until the checker, AGENTS.md and the governance doc move
+    // together.
     expect(() =>
-      validateDependencyToolchain(
-        manifest,
-        `${npmrc}min-release-age-exclude[]=@bendyline/docblocks*\n`,
-      ),
-    ).to.throw(
-      'min-release-age-exclude[] must be @bendyline/squisq*, @bendyline/gezel*, @bendyline/gezk',
-    );
+      validateDependencyToolchain(manifest, `${npmrc}min-release-age-exclude[]=undici\n`),
+    ).to.throw('min-release-age-exclude[] must be @bendyline/*');
 
-    // Dropping gezk looks harmless because the Gezel pattern reads as if it
-    // covers the family, but it does not match gezk, which the client needs.
-    const withoutGezk = npmrc.replace('min-release-age-exclude[]=@bendyline/gezk\n', '');
-    expect(() => validateDependencyToolchain(manifest, withoutGezk)).to.throw(
+    // Dropping the exemption is equally a policy change.
+    const withoutExemption = npmrc.replace('min-release-age-exclude[]=@bendyline/*\n', '');
+    expect(() => validateDependencyToolchain(manifest, withoutExemption)).to.throw(
       'min-release-age-exclude[] must be',
     );
 

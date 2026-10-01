@@ -49,13 +49,6 @@ import type { GezelHostRuntime } from './gezel-host-runtime.js';
 
 type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
 type GezelHostSdkModule = typeof import('@bendyline/gezel-app-sdk/host');
-type InferenceOnlyHostOptions = HostOptions & { readonly inferenceOnly: true };
-type EnsureModelOptions = Parameters<Gezel['ensureModel']>[0];
-type InferenceOnlyGezel = Omit<Gezel, 'ensureModel'> & {
-  ensureModel(
-    options: EnsureModelOptions & { readonly allowWeightDownload?: boolean },
-  ): ReturnType<Gezel['ensureModel']>;
-};
 
 /** What Gezel lists under Settings → Connected Apps. */
 export const GEZEL_APP_ID = 'docblocks';
@@ -286,13 +279,9 @@ class HostedGezelConnection implements AiProviderConnection {
   readonly mode = 'hosted' as const;
 
   constructor(
-    gezel: Gezel,
+    private readonly gezel: Gezel,
     readonly version: string | null,
-  ) {
-    this.gezel = gezel as InferenceOnlyGezel;
-  }
-
-  private readonly gezel: InferenceOnlyGezel;
+  ) {}
 
   async listModels(): Promise<readonly ProviderModelEntry[]> {
     const listing = await this.gezel.openai.models();
@@ -482,7 +471,7 @@ export class GezelConnector implements AiConnector {
     const hostSdk = await this.hostModule();
     try {
       const serviceModule = this.hostInProcess ? await this.serviceModule() : null;
-      const inProcessHost: InferenceOnlyHostOptions | null = this.hostInProcess
+      const inProcessHost: HostOptions | null = this.hostInProcess
         ? {
             mode: 'in-process',
             inferenceOnly: true,

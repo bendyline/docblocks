@@ -133,27 +133,21 @@ function requireNpmrcValue(
 }
 
 /**
- * The package families exempt from the seven-day release cooldown, in the
- * exact order `.npmrc` must list them.
+ * The packages exempt from the seven-day release cooldown, exactly as `.npmrc`
+ * must list them.
  *
- * Each is first-party and co-developed with DocBlocks: Squisq is the editor,
- * and Gezel is the local AI runtime DocBlocks is used to prove out. Waiting a
- * week for our own release would only delay a fix we wrote. The exemption
- * covers the named packages alone; their third-party dependencies still cool
- * down.
+ * Everything under the `@bendyline` scope is first-party and co-developed with
+ * DocBlocks: Squisq is the editor, Gezel is the local AI runtime DocBlocks is
+ * used to prove out, and the rest are packages those two publish alongside
+ * themselves. Waiting a week for our own release would only delay a fix we
+ * wrote. The exemption covers our packages alone; their third-party
+ * dependencies still cool down.
  *
- * `@bendyline/gezk` is listed by name because the Gezel pattern does not match
- * it, and the Gezel client depends on it: without the entry, a same-day Gezel
- * release would still be blocked by its format package.
- *
- * The list is exact on purpose. Adding a family is a policy change that must
- * land together with `docs/dependency-governance.md` and AGENTS.md.
+ * The list is exact on purpose. Exempting anything outside the scope is a
+ * policy change that must land together with `docs/dependency-governance.md`
+ * and AGENTS.md.
  */
-export const COOLDOWN_EXCLUSIONS: readonly string[] = Object.freeze([
-  '@bendyline/squisq*',
-  '@bendyline/gezel*',
-  '@bendyline/gezk',
-]);
+export const COOLDOWN_EXCLUSIONS: readonly string[] = Object.freeze(['@bendyline/*']);
 
 export function validateDependencyToolchain(manifest: RootManifest, npmrcSource: string): void {
   if (manifest.engines?.npm !== '>=11.19.1') {
