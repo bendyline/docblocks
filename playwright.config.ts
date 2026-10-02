@@ -163,6 +163,8 @@ export default defineConfig({
       : 'npm run build && npm run dev -w docblocks-site -- --strictPort',
     url: 'http://localhost:5220',
     reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
+    // Locally the command builds every package first, which alone takes close
+    // to three minutes; CI only starts the dev server.
+    timeout: process.env.CI ? 180_000 : 360_000,
   },
 });
