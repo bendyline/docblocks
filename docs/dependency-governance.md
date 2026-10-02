@@ -89,15 +89,26 @@ A disposition is one of two kinds, and only one of them has a calendar:
 
 A document of nothing but patched entries has no review clock at all.
 
-The current entry is patched: `@tiptap/core` GHSA-CP6Q-959Q-F8RH. Squisq ships
+One current entry is patched: `@tiptap/core` GHSA-CP6Q-959Q-F8RH. Squisq ships
 Tiptap 2.27.3, which backports the upstream fix, but the advisory lists every
 2.x release as affected. `packages/react/test/tiptap-prototype-safety.test.ts`
 proves the fix against the Tiptap DocBlocks actually installs.
 
+The rest are `upstream-blocked` and `toolchain-only`: the `brace-expansion`,
+`ip-address`, and `undici` advisories published September 28–30, 2026 that
+remain only inside the pinned npm 11.19.1's own bundled dependencies. Every
+application copy of those packages was moved to a fixed release. npm runs on
+developer and CI machines and ships in no DocBlocks artifact, and no npm release
+yet bundles the fixes (11.20.0 and 11.21.0 still carry the same versions). Each
+entry is retired by moving the npm pin to the first release that does.
+
 The root exact overrides select `esbuild@0.28.1` only for `tsup` and `tsx`, and
 `serialize-javascript@7.0.5` only for Mocha. They intentionally cross those
 parents' declared ranges to select patched versions already exercised by the
-parallel Squisq checkout. Vite keeps its separate `esbuild@0.25` line, which is
+parallel Squisq checkout. Two more stay inside their parents' ranges and exist
+only because `npm update` would not re-resolve those nodes: `brace-expansion@1.1.21`
+for `minimatch@3.1.5`, and `serialize-javascript@7.1.2` for
+`@rollup/plugin-terser`. Vite keeps its separate `esbuild@0.25` line, which is
 outside the affected range and is required for Vite 6's legacy-browser
 transforms. DocBlocks' full build and test gates cover all of these consumers.
 Keep the overrides until every parent raises its own dependency range; removing

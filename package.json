@@ -20,6 +20,12 @@
     "keytar@7.9.0": true
   },
   "overrides": {
+    "@rollup/plugin-terser": {
+      "serialize-javascript": "7.1.2"
+    },
+    "minimatch@3.1.5": {
+      "brace-expansion": "1.1.21"
+    },
     "mocha": {
       "serialize-javascript": "7.0.5"
     },

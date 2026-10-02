@@ -106,7 +106,7 @@ This notice and `THIRD_PARTY_COMPONENTS.json` are included in the PWA precache.
 | decode-named-character-reference | 1.3.0 | MIT | https://github.com/wooorm/decode-named-character-reference |
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
 | dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs |
-| dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | entities | 6.0.1 | BSD-2-Clause | https://github.com/fb55/entities |
 | es-toolkit | 1.50.0 | MIT | https://github.com/toss/es-toolkit |
 | escape-string-regexp | 5.0.0 | MIT | https://github.com/sindresorhus/escape-string-regexp |
@@ -7454,7 +7454,7 @@ THE SOFTWARE.
 ```
 
 ==============================================================================
-Components: dompurify@3.4.13
+Components: dompurify@3.4.16
 Source files: node_modules/dompurify/LICENSE
 ==============================================================================
 
@@ -7661,7 +7661,7 @@ Source files: node_modules/dompurify/LICENSE
    limitations under the License.
 
 ==============================================================================
-Components: dompurify@3.4.13
+Components: dompurify@3.4.16
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
 Mozilla Public License Version 2.0

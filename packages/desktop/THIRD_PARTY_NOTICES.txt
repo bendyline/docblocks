@@ -251,7 +251,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | dom-serializer | 2.0.0 | MIT | https://github.com/cheeriojs/dom-serializer |
 | domelementtype | 2.3.0 | BSD-2-Clause | https://github.com/fb55/domelementtype |
 | domhandler | 5.0.3 | BSD-2-Clause | https://github.com/fb55/domhandler |
-| dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | domutils | 3.2.2 | BSD-2-Clause | https://github.com/fb55/domutils |
 | dunder-proto | 1.0.1 | MIT | https://github.com/es-shims/dunder-proto |
 | ee-first | 1.1.1 | MIT | https://github.com/jonathanong/ee-first |
@@ -282,7 +282,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | fast-deep-equal | 3.1.3 | MIT | https://github.com/epoberezkin/fast-deep-equal |
 | fast-glob | 3.3.3 | MIT | https://github.com/mrmlnc/fast-glob |
 | fast-sha256 | 1.3.0 | Unlicense | https://github.com/dchest/fast-sha256-js |
-| fast-uri | 3.1.6 | BSD-3-Clause | https://github.com/fastify/fast-uri |
+| fast-uri | 3.1.8 | BSD-3-Clause | https://github.com/fastify/fast-uri |
 | fastq | 1.20.1 | ISC | https://github.com/mcollina/fastq |
 | fault | 2.0.1 | MIT | https://github.com/wooorm/fault |
 | fill-range | 7.1.1 | MIT | https://github.com/jonschlinkert/fill-range |
@@ -325,7 +325,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | immediate | 3.0.6 | MIT | https://github.com/calvinmetcalf/immediate |
 | inherits | 2.0.4 | ISC | https://github.com/isaacs/inherits |
 | internmap | 2.0.3 | ISC | https://github.com/mbostock/internmap |
-| ip-address | 10.7.0 | MIT | https://github.com/beaugunderson/ip-address |
+| ip-address | 10.7.2 | MIT | https://github.com/beaugunderson/ip-address |
 | ipaddr.js | 1.9.1 | MIT | https://github.com/whitequark/ipaddr.js |
 | is-alphabetical | 2.0.1 | MIT | https://github.com/wooorm/is-alphabetical |
 | is-alphanumerical | 2.0.1 | MIT | https://github.com/wooorm/is-alphanumerical |
@@ -12652,7 +12652,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: dompurify@3.4.13, ejs@6.0.1
+Components: dompurify@3.4.16, ejs@6.0.1
 Source files: node_modules/@prismatic-io/spectral/node_modules/ejs/LICENSE, node_modules/dompurify/LICENSE
 ==============================================================================
 
@@ -23862,7 +23862,7 @@ THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRE
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ==============================================================================
-Components: dompurify@3.4.13
+Components: dompurify@3.4.16
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
 Mozilla Public License Version 2.0
@@ -24785,7 +24785,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org>
 
 ==============================================================================
-Components: fast-uri@3.1.6
+Components: fast-uri@3.1.8
 Source files: node_modules/fast-uri/LICENSE
 ==============================================================================
 Copyright (c) 2011-2021, Gary Court until https://github.com/garycourt/uri-js/commit/a1acf730b4bba3f1097c9f52e7d9d3aba8cdcaae
@@ -25975,7 +25975,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ==============================================================================
-Components: ip-address@10.7.0
+Components: ip-address@10.7.2
 Source files: node_modules/ip-address/LICENSE
 ==============================================================================
 Copyright (C) 2011 by Beau Gunderson

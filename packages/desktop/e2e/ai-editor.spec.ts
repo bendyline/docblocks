@@ -90,7 +90,11 @@ async function pairWithGezel(window: Page, fake: FakeGezel): Promise<void> {
   await window.getByRole('menuitem', { name: 'Settings' }).click();
   const settings = window.getByRole('dialog', { name: 'Settings' });
   const section = settings.getByRole('group', { name: 'AI assistance' });
-  await section.getByRole('checkbox', { name: 'Use AI features' }).check();
+  // The section renders once main answers its status and preference queries,
+  // which a cold first launch on a busy machine can take a while to do.
+  const optIn = section.getByRole('checkbox', { name: 'Use AI features' });
+  await expect(optIn).toBeVisible({ timeout: 60_000 });
+  await optIn.check();
   const connect = section.getByRole('button', { name: 'Connect Gezel app…' });
   await expect(connect).toBeVisible({ timeout: 60_000 });
   // Nothing registers with the installed Gezel until the person asks.
