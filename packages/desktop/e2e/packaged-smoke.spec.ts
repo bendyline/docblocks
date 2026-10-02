@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
@@ -236,40 +235,31 @@ test('starts the in-process Gezel service from app.asar once AI is switched on',
   // An empty Gezel home makes the standalone app deterministically absent.
   // Reaching hosted ready proves both ESM runtime packages load under the
   // production fuses and the service can listen from the packaged app.
-  const gezelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-packaged-gezel-home-'));
-  const previousHome = process.env.GEZEL_HOME;
-  process.env.GEZEL_HOME = gezelHome;
-  try {
-    const packaged = await launchPackagedApp();
-    await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
-    await packaged.window.evaluate(async () => {
-      const ai = (
-        globalThis as {
-          docBlocksHost?: {
-            ai?: {
-              setPreferences(patch: { enabled: boolean }): Promise<unknown>;
-              status(): Promise<unknown>;
-            };
+  const packaged = await launchPackagedApp();
+  await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await packaged.window.evaluate(async () => {
+    const ai = (
+      globalThis as {
+        docBlocksHost?: {
+          ai?: {
+            setPreferences(patch: { enabled: boolean }): Promise<unknown>;
+            status(): Promise<unknown>;
           };
-        }
-      ).docBlocksHost?.ai;
-      if (!ai) throw new Error('The packaged host exposes no AI namespace');
-      await ai.setPreferences({ enabled: true });
-    });
-    await expect
-      .poll(
-        () =>
-          packaged.window.evaluate(async () => {
-            const ai = (globalThis as { docBlocksHost?: { ai?: { status(): Promise<unknown> } } })
-              .docBlocksHost?.ai;
-            return ai?.status();
-          }),
-        { timeout: 30_000 },
-      )
-      .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
-  } finally {
-    if (previousHome === undefined) delete process.env.GEZEL_HOME;
-    else process.env.GEZEL_HOME = previousHome;
-    fs.rmSync(gezelHome, { recursive: true, force: true });
-  }
+        };
+      }
+    ).docBlocksHost?.ai;
+    if (!ai) throw new Error('The packaged host exposes no AI namespace');
+    await ai.setPreferences({ enabled: true });
+  });
+  await expect
+    .poll(
+      () =>
+        packaged.window.evaluate(async () => {
+          const ai = (globalThis as { docBlocksHost?: { ai?: { status(): Promise<unknown> } } })
+            .docBlocksHost?.ai;
+          return ai?.status();
+        }),
+      { timeout: 30_000 },
+    )
+    .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
 });

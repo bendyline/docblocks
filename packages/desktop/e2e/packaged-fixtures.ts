@@ -39,6 +39,7 @@ export interface PackagedApplication {
 interface PackagedFixtures {
   userDataDir: string;
   workspaceDir: string;
+  gezelHome: string;
   launchPackagedApp: (extraArgs?: string[]) => Promise<PackagedApplication>;
   /** This test's allowance list; the launch fixture reads it at teardown. */
   runtimeErrorAllowances: AllowedRuntimeError[];
@@ -59,7 +60,7 @@ function removeTmpDir(directory: string): void {
   }
 }
 
-function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
+function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
@@ -67,6 +68,7 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   env.NODE_ENV = 'production';
   env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
+  env.GEZEL_HOME = gezelHome;
   // A hosted Gezel otherwise stores a device key in the login keychain, and
   // every run's throwaway home leaves another one behind.
   env.GEZEL_SECRETS_BACKEND = 'file';
@@ -159,6 +161,7 @@ async function launchPackagedApplication(
   artifact: PackagedArtifact,
   userDataDir: string,
   workspaceDir: string,
+  gezelHome: string,
   extraArgs: string[],
 ): Promise<PackagedApplication> {
   const args = [
@@ -175,7 +178,7 @@ async function launchPackagedApplication(
 
   const child = spawn(artifact.executablePath, args, {
     cwd: path.dirname(artifact.executablePath),
-    env: cleanEnv(workspaceDir),
+    env: cleanEnv(workspaceDir, gezelHome),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -250,6 +253,20 @@ export const test = base.extend<PackagedFixtures>({
   },
 
   // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  gezelHome: async ({}, use) => {
+    const directory = makeTmpDir('docblocks-packaged-gezel-home-');
+    await use(directory);
+    // launchPackagedApp depends on this fixture, so the process has exited
+    // before removal. Retry briefly for Windows to release its file locks.
+    await fs.promises.rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  },
+
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
   runtimeErrorAllowances: async ({}, use) => {
     await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
   },
@@ -261,7 +278,7 @@ export const test = base.extend<PackagedFixtures>({
   },
 
   launchPackagedApp: async (
-    { userDataDir, workspaceDir, runtimeErrorAllowances },
+    { userDataDir, workspaceDir, gezelHome, runtimeErrorAllowances },
     use,
     testInfo,
   ) => {
@@ -274,6 +291,7 @@ export const test = base.extend<PackagedFixtures>({
         resolvePackagedArtifact(),
         userDataDir,
         workspaceDir,
+        gezelHome,
         extraArgs,
       );
       readErrors = collectRuntimeErrors(running.window);
