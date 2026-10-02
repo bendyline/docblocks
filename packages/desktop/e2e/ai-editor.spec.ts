@@ -12,7 +12,6 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 
@@ -117,15 +116,13 @@ async function pairWithGezel(window: Page, fake: FakeGezel): Promise<void> {
 async function withConnectedEditor(
   launchApp: () => Promise<{ window: Page }>,
   workspaceDir: string,
+  gezelHome: string,
   options: Omit<FakeGezelOptions, 'home'>,
   run: (context: { window: Page; editor: Locator; file: string; fake: FakeGezel }) => Promise<void>,
 ): Promise<void> {
-  const gezelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-e2e-fake-gezel-'));
-  const previousHome = process.env.GEZEL_HOME;
   let fake: FakeGezel | null = null;
   try {
     fake = await startFakeGezel({ home: gezelHome, ...options });
-    process.env.GEZEL_HOME = gezelHome;
     const file = path.join(workspaceDir, 'ai-review.md');
     fs.writeFileSync(file, DOCUMENT, 'utf8');
 
@@ -138,10 +135,7 @@ async function withConnectedEditor(
     await expect(editor).toContainText('DocBlocks stood out', { timeout: 30_000 });
     await run({ window, editor, file, fake });
   } finally {
-    if (previousHome === undefined) delete process.env.GEZEL_HOME;
-    else process.env.GEZEL_HOME = previousHome;
     await fake?.close();
-    fs.rmSync(gezelHome, { recursive: true, force: true });
   }
 }
 
@@ -156,11 +150,13 @@ async function caretAtNewParagraph(window: Page, editor: Locator): Promise<void>
 test('AI drafts, rewrites and reviews through a connected Gezel, one undo each', async ({
   launchApp,
   workspaceDir,
+  gezelHome,
 }) => {
   test.setTimeout(upstream ? 900_000 : 180_000);
   await withConnectedEditor(
     launchApp,
     workspaceDir,
+    gezelHome,
     upstream ? { upstream } : {},
     async ({ window, editor, file, fake }) => {
       await caretAtNewParagraph(window, editor);
@@ -226,11 +222,13 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
 test('Stop ends a streaming draft at the provider and inserts nothing', async ({
   launchApp,
   workspaceDir,
+  gezelHome,
 }) => {
   test.setTimeout(180_000);
   await withConnectedEditor(
     launchApp,
     workspaceDir,
+    gezelHome,
     { chunkDelayMs: 1_500 },
     async ({ window, editor, file, fake }) => {
       await caretAtNewParagraph(window, editor);

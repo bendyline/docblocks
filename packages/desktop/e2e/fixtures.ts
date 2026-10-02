@@ -43,6 +43,7 @@ const closingApplications = new WeakMap<ChildProcess, Promise<void>>();
 export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
+  gezelHome: string;
   launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
   /** This test's allowance list; the launch fixture reads it at teardown. */
   runtimeErrorAllowances: AllowedRuntimeError[];
@@ -75,7 +76,7 @@ function removeTmpDir(directory: string): void {
   }
 }
 
-function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
+function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
@@ -83,6 +84,7 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   env.NODE_ENV = 'production';
   env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
+  env.GEZEL_HOME = gezelHome;
   // A hosted Gezel otherwise stores a device key in the login keychain, and
   // every run's throwaway home leaves another one behind.
   env.GEZEL_SECRETS_BACKEND = 'file';
@@ -200,6 +202,7 @@ async function launchSourceApplication(
   appRoot: string,
   userDataDir: string,
   workspaceDir: string,
+  gezelHome: string,
   extraArgs: string[],
 ): Promise<RunningApplication> {
   const args = [
@@ -218,7 +221,7 @@ async function launchSourceApplication(
 
   const child = spawn(electronPath, args, {
     cwd: appRoot,
-    env: cleanEnv(workspaceDir),
+    env: cleanEnv(workspaceDir, gezelHome),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -287,6 +290,20 @@ export const test = base.extend<DocBlocksFixtures>({
   },
 
   // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  gezelHome: async ({}, use) => {
+    const directory = makeTmpDir('docblocks-e2e-gezel-home-');
+    await use(directory);
+    // launchApp depends on this fixture, so every launched process is closed
+    // before removal, including a relaunched app that hosts Gezel again.
+    await fs.promises.rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  },
+
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
   runtimeErrorAllowances: async ({}, use) => {
     await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
   },
@@ -297,7 +314,11 @@ export const test = base.extend<DocBlocksFixtures>({
     });
   },
 
-  launchApp: async ({ userDataDir, workspaceDir, runtimeErrorAllowances }, use, testInfo) => {
+  launchApp: async (
+    { userDataDir, workspaceDir, gezelHome, runtimeErrorAllowances },
+    use,
+    testInfo,
+  ) => {
     const appRoot = path.resolve(__dirname, '..');
     let running: RunningApplication | undefined;
     // Every window this test launches contributes to one error budget, so a
@@ -308,7 +329,13 @@ export const test = base.extend<DocBlocksFixtures>({
       if (running && running.process.exitCode === null && running.process.signalCode === null) {
         throw new Error('The source fixture supports one active application at a time.');
       }
-      running = await launchSourceApplication(appRoot, userDataDir, workspaceDir, extraArgs);
+      running = await launchSourceApplication(
+        appRoot,
+        userDataDir,
+        workspaceDir,
+        gezelHome,
+        extraArgs,
+      );
       const current = running;
       errorReaders.push(collectRuntimeErrors(current.window));
       return {
