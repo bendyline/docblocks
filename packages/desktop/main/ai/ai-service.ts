@@ -225,6 +225,7 @@ export class AiService {
   private readonly listeners = new Set<(status: AiStatus) => void>();
   private preferences: AiPreferences = DEFAULT_AI_PREFERENCES;
   private preferencesLoaded: Promise<void> | null = null;
+  private preferenceUpdates: Promise<void> = Promise.resolve();
   private connection: AiProviderConnection | null = null;
   private providerVersion: string | null = null;
   private models: readonly AiModelInfo[] = [];
@@ -290,12 +291,24 @@ export class AiService {
     return (await this.detectProvider()).installed;
   }
 
-  async setPreferences(patch: AiPreferencesPatch): Promise<AiPreferences> {
+  setPreferences(patch: AiPreferencesPatch): Promise<AiPreferences> {
+    const captured = { ...patch };
+    const update = this.preferenceUpdates.then(() => this.applyPreferences(captured));
+    this.preferenceUpdates = update.then(
+      () => undefined,
+      () => undefined,
+    );
+    return update;
+  }
+
+  private async applyPreferences(patch: AiPreferencesPatch): Promise<AiPreferences> {
     await this.loadPreferences();
+    if (this.disposed) throw new Error('The AI service has been disposed.');
     const previous = this.preferences;
     const next: AiPreferences = { ...previous, ...patch };
     await this.store.write(next);
     this.preferences = next;
+    if (this.disposed) return next;
 
     if (previous.enabled && !next.enabled) {
       await this.teardown(false);

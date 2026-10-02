@@ -6,6 +6,14 @@ import {
   FileSystemPartialMoveError,
 } from './move-error.js';
 import { parseWorkspacePath } from './workspace-path.js';
+import { rewriteCompanionReferences } from './companion-references.js';
+import { DocumentSession } from '../document/document-session.js';
+import { createFileSystemDocumentTarget } from '../document/filesystem-target.js';
+
+export interface FileSystemEntryMoveOptions {
+  /** An active session performs its own rewrite after retargeting. */
+  rewriteMarkdown?: boolean;
+}
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
@@ -33,7 +41,7 @@ export function documentCompanionPath(documentPath: string): string {
 }
 
 function hasDocumentCompanion(path: string): boolean {
-  return /\.(?:md|html?|docx|pdf|pptx|xlsx)$/i.test(basename(path));
+  return /\.(?:md|html?|docx|pdf|pptx|xlsx|csv)$/i.test(basename(path));
 }
 
 /**
@@ -46,6 +54,7 @@ export async function moveFileSystemEntry(
   oldPath: string,
   newPath: string,
   kind: 'file' | 'directory',
+  options: FileSystemEntryMoveOptions = {},
 ): Promise<void> {
   const providerV2 = getFileSystemProviderV2(provider);
   const exists = (candidate: string): Promise<boolean> =>
@@ -85,6 +94,21 @@ export async function moveFileSystemEntry(
       ) {
         throw new Error(`The companion folder "${basename(newCompanion)}" already exists there.`);
       }
+    }
+  }
+
+  let markdown: { previous: string; next: string } | undefined;
+  if (oldCompanion && options.rewriteMarkdown !== false && /\.md$/i.test(oldPath)) {
+    const source = providerV2
+      ? await providerV2
+          .readFile(parseWorkspacePath(oldPath))
+          .then((read) =>
+            read ? new TextDecoder('utf-8', { fatal: true }).decode(read.data) : null,
+          )
+      : await provider.readFile(oldPath);
+    if (source !== null) {
+      const next = await rewriteCompanionReferences(source, oldPath, newPath);
+      if (source !== next) markdown = { previous: source, next };
     }
   }
 
@@ -139,5 +163,25 @@ export async function moveFileSystemEntry(
       );
     }
     throw error;
+  }
+  if (markdown) {
+    const session = new DocumentSession({ autoSaveEnabled: false });
+    try {
+      const state = await session.transitionTo(
+        createFileSystemDocumentTarget(provider, newPath),
+        markdown.previous,
+      );
+      session.edit(markdown.next, { targetKey: state.targetKey!, generation: state.generation });
+      await session.flush('transition');
+    } catch (error: unknown) {
+      throw new FileSystemMoveRecoveryError(
+        oldPath,
+        newPath,
+        await describeEntryMove(provider, oldPath, newPath),
+        error,
+      );
+    } finally {
+      await session.cancel();
+    }
   }
 }

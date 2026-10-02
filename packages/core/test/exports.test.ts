@@ -116,6 +116,7 @@ describe('Core exports', () => {
       'removeWorkspace',
       'replaceMemoryWorkspaceFromDbk',
       'restoreNativeFolder',
+      'rewriteCompanionReferences',
       'saveWorkspace',
       'serializeFsError',
       'storeDirectoryHandle',

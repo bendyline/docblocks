@@ -13,7 +13,7 @@ import type {
   DocumentSessionTransition,
 } from './types.js';
 import { isFileSystemMoveStateError } from '../filesystem/move-error.js';
-import type { DocumentRecoveryJournal } from './recovery-journal.js';
+import type { DocumentRecoveryJournal, DocumentRecoveryRecord } from './recovery-journal.js';
 
 type SessionListener = () => void;
 
@@ -63,6 +63,7 @@ export class DocumentSession {
   private readonly autoSaveDelayMs: number;
   private readonly autoSaveRetryDelaysMs: readonly number[];
   private readonly recoveryJournal: DocumentRecoveryJournal | null;
+  private recoveredRecord: DocumentRecoveryRecord | null = null;
   private readonly listeners = new Set<SessionListener>();
   private autoSaveEnabled: boolean;
 
@@ -93,7 +94,7 @@ export class DocumentSession {
     this.autoSaveRetryDelaysMs = normalizeRetryDelays(
       options.autoSaveRetryDelaysMs ?? DEFAULT_AUTO_SAVE_RETRY_DELAYS_MS,
     );
-    this.recoveryJournal = options.recoveryJournal ?? null;
+    this.recoveryJournal = options.recoveryJournal?.forOwner(crypto.randomUUID()) ?? null;
     this.snapshot = this.createSnapshot();
   }
 
@@ -706,6 +707,7 @@ export class DocumentSession {
         generation,
         persistedRevision: this.persistedRevision,
       });
+      this.acknowledgeRecoveredRecord();
       this.emit();
     }
   }
@@ -727,18 +729,17 @@ export class DocumentSession {
    * baseline becomes an explicit conflict and is never auto-overwritten.
    */
   private restoreRecoverySnapshot(): 'none' | 'dirty' | 'conflict' {
+    this.recoveredRecord = null;
     if (!this.target || !this.recoveryJournal) return 'none';
     const recovered = this.recoveryJournal.lookup(this.target.key);
     if (!recovered) return 'none';
 
     if (recovered.content === this.content) {
-      this.recoveryJournal.acknowledge({
-        targetKey: recovered.targetKey,
-        generation: recovered.generation,
-        persistedRevision: recovered.revision,
-      });
+      this.recoveryJournal.acknowledgeRecord(recovered);
       return 'none';
     }
+
+    this.recoveredRecord = recovered;
 
     const externalContent = this.content;
     this.generation = Math.max(this.generation, recovered.generation) + 1;
@@ -780,6 +781,12 @@ export class DocumentSession {
   private discardRecoverySnapshot(): void {
     if (!this.target) return;
     this.recoveryJournal?.discard(this.target.key);
+    this.acknowledgeRecoveredRecord();
+  }
+
+  private acknowledgeRecoveredRecord(): void {
+    if (this.recoveredRecord) this.recoveryJournal?.acknowledgeRecord(this.recoveredRecord);
+    this.recoveredRecord = null;
   }
 
   private detach(): void {

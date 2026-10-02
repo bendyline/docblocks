@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { BigIntStats } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -41,7 +41,12 @@ import {
   HOST_WIRE_LIMITS,
 } from '@bendyline/docblocks/host';
 
-import { atomicWriteBinary, atomicWriteStream, withFileMutationLocks } from './file-commit.js';
+import {
+  atomicWriteBinary,
+  atomicWriteStream,
+  publishFileExclusive,
+  withFileMutationLocks,
+} from './file-commit.js';
 import { WorkspaceRootError, getWorkspaceRoots, type WorkspaceRoots } from './workspace-roots.js';
 import {
   acquireWorkspaceWatcher,
@@ -130,7 +135,9 @@ const MAX_STABLE_READ_ATTEMPTS = 3;
  * additional streaming read for metadata-only observations, but prevent a
  * same-size external edit with restored timestamps from bypassing optimistic
  * concurrency. Payload bytes returned by readFile/snapshot remain coupled to
- * one stable descriptor observation.
+ * one stable descriptor observation. Directory versions track native metadata
+ * and descendant changes observed by this provider; shallow browsing does not
+ * hash an entire collapsed subtree.
  */
 export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   public readonly id: string;
@@ -144,6 +151,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private readonly subscriptions = new Set<FileSystemWatchSubscription>();
   private readonly inFlight = new Set<Promise<unknown>>();
   private readonly knownEntries = new Map<WorkspacePath, FileSystemEntrySnapshot>();
+  private readonly observedVersions = new Map<WorkspacePath, string>();
+  private readonly directoryEpochs = new Map<WorkspacePath, number>();
   private readonly echoBatches: EchoBatch[] = [];
   private readonly acquireWatcher: (rootPath: string) => WorkspaceWatcherHandle;
   private readonly openReadableFile: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
@@ -334,7 +343,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       );
     }
     const bytes = copyBytes(data);
-    return this.writeUsing(canonical, options, (abs) => atomicWriteBinary(abs, bytes));
+    return this.writeUsing(canonical, options, (abs, exclusive) =>
+      atomicWriteBinary(abs, bytes, exclusive),
+    );
   }
 
   /** Main-owned spool input, never a renderer-supplied native path. */
@@ -357,13 +368,15 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         'File exceeds the 1 GiB desktop file limit.',
       );
     }
-    return this.writeUsing(canonical, options, (abs) => atomicWriteStream(abs, chunks, byteLength));
+    return this.writeUsing(canonical, options, (abs, exclusive) =>
+      atomicWriteStream(abs, chunks, byteLength, exclusive),
+    );
   }
 
   private writeUsing(
     canonical: WorkspacePath,
     options: FileSystemWriteOptions,
-    write: (abs: string) => Promise<void>,
+    write: (abs: string, exclusive: boolean) => Promise<void>,
   ): Promise<FileSystemFileSnapshot> {
     return this.mutate('write', canonical, null, async () => {
       const mode = options.mode ?? 'upsert';
@@ -403,7 +416,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       try {
         await this.createDirectories(missingParents);
         const abs = await this.resolveMutation(canonical, 'write');
-        await write(abs);
+        await write(abs, mode === 'create' || options.expectedVersion === null);
         await this.assertMutationTarget(canonical, 'write', abs);
 
         const scanned = await this.scanEntry(canonical, false, new Set(), 'write');
@@ -495,7 +508,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         if ((options.missing ?? 'error') === 'ignore') {
           return Object.freeze({
             removed: false,
-            version: await this.currentTreeVersion('remove'),
+            version: parseFileSystemVersion(`observation:${randomUUID()}`),
           });
         }
         throw this.error('not-found', 'remove', canonical, 'Entry does not exist.');
@@ -517,6 +530,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       ]);
       try {
         const abs = await this.resolveMutation(canonical, 'remove');
+        // Reserve the acknowledgement before deletion. Its opaque tree token
+        // denotes this mutation without a fallible scan of unrelated paths.
+        const version = parseFileSystemVersion(`mutation:${randomUUID()}`);
         if (existing.root.kind === 'file') {
           await fs.unlink(abs);
         } else if (options.recursive) {
@@ -525,7 +541,6 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           await fs.rmdir(abs);
         }
         this.forget(canonical, existing.root.kind === 'directory');
-        const version = await this.currentTreeVersion('remove');
         this.settleEchoBatch(echo);
         this.emit({
           type: 'removed',
@@ -600,7 +615,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         try {
           const sourceAbs = await this.resolveMutation(sourcePath, 'move');
           const destinationAbs = await this.resolveMutation(destinationPath, 'move');
-          await fs.rename(sourceAbs, destinationAbs);
+          await this.moveExclusive(sourcePath, destinationPath, source, sourceAbs, destinationAbs);
           await this.assertMutationTarget(destinationPath, 'move', destinationAbs);
         } catch (error: unknown) {
           await this.rollbackDirectories(missingParents);
@@ -667,6 +682,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       await Promise.allSettled([...this.inFlight]);
       await Promise.all([...this.subscriptions].map((subscription) => subscription.dispose()));
       await this.closeWatchSession();
+      this.knownEntries.clear();
+      this.observedVersions.clear();
+      this.directoryEpochs.clear();
     })();
     return this.disposePromise;
   }
@@ -692,7 +710,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     this.assertOpen(operation);
     const promise = (async () => {
       try {
-        return await work();
+        return await (operation === 'stat' || operation === 'read' || operation === 'list'
+          ? withFileMutationLocks([this.rootAbs], work)
+          : work());
       } catch (error: unknown) {
         throw this.translateError(error, operation, itemPath, destinationPath);
       }
@@ -956,9 +976,11 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     const abs = await this.resolveRead(itemPath, operation);
     const stat = await fs.stat(abs, { bigint: true });
     if (stat.isFile()) {
-      return includeData
+      const file = await (includeData
         ? this.readStableFile(itemPath, operation, budget)
-        : this.statStableFile(itemPath, operation);
+        : this.statStableFile(itemPath, operation));
+      this.observeVersion(itemPath, file.root.version);
+      return file;
     }
     if (!stat.isDirectory()) {
       throw this.error('not-supported', operation, itemPath, 'Unsupported filesystem entry type.');
@@ -970,8 +992,13 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     }
     const nextAncestors = new Set(ancestors);
     nextAncestors.add(real);
-    const children = (await fs.readdir(abs, { withFileTypes: true })).sort((left, right) =>
-      compareText(left.name, right.name),
+    this.observeVersion(itemPath, stableMetadataIdentity(stat));
+    const recursive =
+      includeData || operation === 'watch' || operation === 'move' || operation === 'remove';
+    // Browsing and stat observe the directory itself. Only explicit tree
+    // operations descend into collapsed children and consume a traversal budget.
+    const children = (recursive ? await fs.readdir(abs, { withFileTypes: true }) : []).sort(
+      (left, right) => compareText(left.name, right.name),
     );
     const childScans: ScannedEntry[] = [];
     for (const child of children) {
@@ -985,11 +1012,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         ),
       );
     }
-    const version = versionForDirectory(
-      itemPath,
-      stat,
-      childScans.map((child) => child.root),
-    );
+    const version = versionForDirectory(itemPath, stat, this.directoryEpochs.get(itemPath) ?? 0);
     const root: FileSystemDirectorySnapshot = Object.freeze({
       kind: 'directory',
       path: itemPath,
@@ -1019,8 +1042,103 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     });
   }
 
-  private async currentTreeVersion(operation: FsOperation): Promise<FileSystemVersion> {
-    return (await this.scanEntry(WORKSPACE_ROOT, false, new Set(), operation)).root.version;
+  /** Reserve every destination exclusively; retain the source until publication is complete. */
+  private async moveExclusive(
+    sourcePath: WorkspacePath,
+    destinationPath: WorkspacePath,
+    source: ScannedEntry,
+    sourceAbs: string,
+    destinationAbs: string,
+  ): Promise<void> {
+    if (source.root.kind === 'file') {
+      const original = await fs.lstat(sourceAbs, { bigint: true });
+      await publishFileExclusive(sourceAbs, destinationAbs);
+      const currentSource = await this.resolveMutation(sourcePath, 'move');
+      if (!sameNodeIdentity(original, await fs.lstat(currentSource, { bigint: true }))) {
+        throw this.error('conflict', 'move', sourcePath, 'The source changed during the move.');
+      }
+      await fs.unlink(sourceAbs);
+      return;
+    }
+    // A portable exclusive directory move is a bounded copy/unlink transaction.
+    // Following a directory alias while unlinking descendants would mutate the
+    // aliased tree, so require actual entries for this operation.
+    const originals = new Map<WorkspacePath, BigIntStats>();
+    for (const entry of source.entries) {
+      await this.resolveRead(entry.path, 'move');
+      const stat = await fs.lstat(path.join(this.rootAbs, entry.path), { bigint: true });
+      if (stat.isSymbolicLink())
+        throw this.error(
+          'not-supported',
+          'move',
+          entry.path,
+          'Moving a directory containing symbolic links is not supported.',
+        );
+      originals.set(entry.path, stat);
+    }
+    const created: Array<{ path: WorkspacePath; stat: BigIntStats }> = [];
+    const publishedEntries = new Map<WorkspacePath, BigIntStats>();
+    let removingSource = false;
+    const destinationFor = (entry: WorkspacePath) =>
+      parseWorkspacePath(destinationPath + entry.slice(sourcePath.length));
+    try {
+      for (const entry of source.entries) {
+        const destination = destinationFor(entry.path);
+        const absolute =
+          entry.path === sourcePath
+            ? destinationAbs
+            : await this.resolveMutation(destination, 'move');
+        if (entry.kind === 'directory') await fs.mkdir(absolute);
+        else await publishFileExclusive(await this.resolveRead(entry.path, 'move'), absolute);
+        const stat = await fs.lstat(absolute, { bigint: true });
+        created.push({ path: destination, stat });
+        publishedEntries.set(destination, stat);
+      }
+      const current = await this.scanEntry(sourcePath, false, new Set(), 'move');
+      if (treeContentVersion(current.entries) !== treeContentVersion(source.entries)) {
+        throw this.error('conflict', 'move', sourcePath, 'The source changed during the move.');
+      }
+      for (const entry of [...source.entries].reverse()) {
+        const absolute = await this.resolveMutation(entry.path, 'move');
+        const stat = await fs.lstat(absolute, { bigint: true });
+        if (!sameNodeIdentity(stat, originals.get(entry.path)!)) {
+          throw this.error(
+            'conflict',
+            'move',
+            entry.path,
+            'The source changed physical identity during the move.',
+          );
+        }
+        const destination = await this.resolveRead(destinationFor(entry.path), 'move');
+        const published = publishedEntries.get(destinationFor(entry.path))!;
+        if (!sameNodeIdentity(await fs.lstat(destination, { bigint: true }), published)) {
+          throw this.error(
+            'conflict',
+            'move',
+            entry.path,
+            'The destination changed during the move.',
+          );
+        }
+        removingSource = true;
+        if (entry.kind === 'file') await fs.unlink(absolute);
+        else await fs.rmdir(absolute);
+      }
+    } catch (error: unknown) {
+      // Once source removal begins, preserve all published data for recovery.
+      if (!removingSource) {
+        for (const entry of [...created].reverse()) {
+          try {
+            const absolute = await this.resolveMutation(entry.path, 'move');
+            if (!sameNodeIdentity(await fs.lstat(absolute, { bigint: true }), entry.stat)) continue;
+            if (entry.stat.isDirectory()) await fs.rmdir(absolute);
+            else await fs.unlink(absolute);
+          } catch {
+            /* Keep partial state intact when exclusive cleanup cannot be proved. */
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   private async planParents(
@@ -1094,6 +1212,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   }
 
   private emit(event: PendingWatchEvent): void {
+    this.invalidateAncestors(event.path);
+    if (event.destinationPath) this.invalidateAncestors(event.destinationPath);
     const complete: FileSystemWatchEvent = Object.freeze({
       ...event,
       sequence: ++this.eventSequence,
@@ -1389,14 +1509,40 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   }
 
   private remember(entries: readonly FileSystemSnapshotEntry[]): void {
-    for (const entry of entries) this.knownEntries.set(entry.path, withoutData(entry));
+    for (const entry of entries) {
+      if (entry.kind === 'file') this.observeVersion(entry.path, entry.version);
+      this.knownEntries.set(entry.path, withoutData(entry));
+    }
+  }
+
+  private observeVersion(itemPath: WorkspacePath, version: string): void {
+    const previous = this.observedVersions.get(itemPath);
+    if (previous !== undefined && previous !== version) this.invalidateAncestors(itemPath);
+    this.observedVersions.set(itemPath, version);
+  }
+
+  private invalidateAncestors(itemPath: WorkspacePath): void {
+    if (!itemPath) return;
+    for (const parent of parentChain(itemPath)) {
+      this.directoryEpochs.set(parent, (this.directoryEpochs.get(parent) ?? 0) + 1);
+    }
   }
 
   private forget(itemPath: WorkspacePath, recursive: boolean): void {
+    this.invalidateAncestors(itemPath);
     this.knownEntries.delete(itemPath);
+    this.observedVersions.delete(itemPath);
+    this.directoryEpochs.delete(itemPath);
     if (!recursive) return;
     for (const candidate of [...this.knownEntries.keys()]) {
-      if (workspacePathContains(itemPath, candidate, false)) this.knownEntries.delete(candidate);
+      if (workspacePathContains(itemPath, candidate, false)) {
+        this.knownEntries.delete(candidate);
+      }
+    }
+    for (const cache of [this.observedVersions, this.directoryEpochs]) {
+      for (const candidate of cache.keys()) {
+        if (workspacePathContains(itemPath, candidate, false)) cache.delete(candidate);
+      }
     }
   }
 }
@@ -1431,22 +1577,35 @@ function versionForFile(itemPath: WorkspacePath, contentDigest: string): FileSys
 function versionForDirectory(
   itemPath: WorkspacePath,
   stat: BigIntStats,
-  children: readonly FileSystemSnapshotEntry[],
+  observationEpoch: number,
 ): FileSystemVersion {
   const hash = createHash('sha256');
-  hash.update('directory-metadata-v1\0');
+  hash.update('directory-observation-v2\0');
   hash.update(itemPath);
   hash.update('\0');
   hash.update(stableMetadataIdentity(stat));
-  for (const child of children) {
-    hash.update('\0');
-    hash.update(child.kind);
-    hash.update('\0');
-    hash.update(child.path);
-    hash.update('\0');
-    hash.update(child.version);
+  hash.update(`\0${observationEpoch}`);
+  return parseFileSystemVersion(`sha256:${hash.digest('hex')}`);
+}
+
+function treeContentVersion(entries: readonly FileSystemSnapshotEntry[]): FileSystemVersion {
+  const hash = createHash('sha256');
+  for (const entry of [...entries].sort((left, right) => compareText(left.path, right.path))) {
+    hash.update(
+      JSON.stringify([
+        entry.kind,
+        entry.path,
+        entry.kind === 'file' ? entry.version : entry.lastModified,
+      ]),
+    );
   }
   return parseFileSystemVersion(`sha256:${hash.digest('hex')}`);
+}
+
+function sameNodeIdentity(left: BigIntStats, right: BigIntStats): boolean {
+  return (
+    left.dev === right.dev && left.ino === right.ino && left.isDirectory() === right.isDirectory()
+  );
 }
 
 function scannedFile(

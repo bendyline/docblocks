@@ -29,6 +29,7 @@ import type {
   ElectronFileSystemProvider,
   FileSystemProvider,
   FileSystemEntry,
+  FileSystemEntryMoveOptions,
   MemoryFileSystemProvider,
 } from '@bendyline/docblocks/filesystem';
 import {
@@ -39,6 +40,7 @@ import {
   getFileSystemProviderV2,
   isQuotaExceededError,
   moveFileSystemEntry,
+  rewriteCompanionReferences,
   parseWorkspacePath,
   workspacePathContains,
 } from '@bendyline/docblocks/filesystem';
@@ -184,6 +186,7 @@ import {
   loadEditableShellDocument,
   removeOutsideInCompanion,
   resolveOutsideInLayout,
+  relocateOutsideInLayout,
   withOutsideInMetadata,
   type EditableShellDocument,
   type EditableOutsideInDocument,
@@ -3632,24 +3635,24 @@ export function DocBlocksShell({
       if (change.type === 'move') {
         const nextFile = relocateProviderPath(selectedFile, change.oldPath, change.newPath);
         if (nextFile !== selectedFile) {
-          const nextSource = relocateProviderPath(
+          let nextSource = relocateProviderPath(
             selectedSourceFile ?? selectedFile,
             change.oldPath,
             change.newPath,
           );
           let nextOutsideIn: OutsideInLayout | null = null;
           if (selectedOutsideIn) {
-            const resolved = resolveOutsideInLayout(nextFile);
-            if (!resolved)
-              throw new Error('The outside-in target must keep a supported extension.');
-            nextOutsideIn = { ...resolved, markdownPath: nextSource };
+            nextOutsideIn = relocateOutsideInLayout(selectedOutsideIn, nextFile);
+            nextSource = nextOutsideIn.markdownPath;
           }
           const snapshot = await documentSession.retarget(
             createDocumentTarget(provider, activeWorkspaceId, nextSource, nextOutsideIn),
-            mutateDocument,
+            () => mutateDocument({ rewriteMarkdown: false }),
           );
-          if (nextOutsideIn) {
-            const linkedContent = await withOutsideInMetadata(snapshot.content, nextOutsideIn);
+          if (nextOutsideIn || change.kind === 'file') {
+            const linkedContent = nextOutsideIn
+              ? await withOutsideInMetadata(snapshot.content, nextOutsideIn)
+              : await rewriteCompanionReferences(snapshot.content, change.oldPath, change.newPath);
             if (linkedContent !== snapshot.content && snapshot.targetKey) {
               documentSession.edit(linkedContent, {
                 targetKey: snapshot.targetKey,
@@ -3862,7 +3865,8 @@ export function DocBlocksShell({
           newPath,
           kind: 'file',
         };
-        const mutate = () => moveFileSystemEntry(access.provider, document.path, newPath, 'file');
+        const mutate = (options?: FileSystemEntryMoveOptions) =>
+          moveFileSystemEntry(access.provider, document.path, newPath, 'file', options);
         if (access.provider === provider && access.workspace.id === activeWorkspaceId) {
           await handleTreeMutation(change, mutate);
           await handleTreeChange(change);

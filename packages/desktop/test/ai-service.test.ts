@@ -232,6 +232,36 @@ const WRITE_REQUEST: AiChatRequest = {
 describe('desktop AI service: connection', () => {
   afterEach(disposeLiveServices);
 
+  it('merges concurrent patches in order and continues after a failed write', async () => {
+    const gate = deferred();
+    let stored = { ...DEFAULT_AI_PREFERENCES };
+    let writes = 0;
+    const { service } = createService(stored, {
+      preferences: {
+        read: async () => stored,
+        write: async (next) => {
+          writes++;
+          if (writes === 1) await gate.promise;
+          if (writes === 3) throw new Error('injected write failure');
+          stored = { ...next };
+        },
+      },
+    });
+    const model = service.setPreferences({ model: 'writer' });
+    const review = service.setPreferences({ reviewMode: 'off' });
+    await settle();
+    expect(writes).to.equal(1);
+    gate.resolve();
+    await Promise.all([model, review]);
+    expect(stored).to.deep.include({ model: 'writer', reviewMode: 'off' });
+    const failed = service.setPreferences({ model: 'discarded' }).catch((error: unknown) => error);
+    const next = service.setPreferences({ reviewMode: 'implicit' });
+    expect(await failed).to.be.instanceOf(Error);
+    await next;
+    expect(await service.getPreferences()).to.deep.equal(stored);
+    expect(stored).to.deep.include({ model: 'writer', reviewMode: 'implicit' });
+  });
+
   it('does nothing at all while the user has not opted in', async () => {
     const { service, connector } = createService(DEFAULT_AI_PREFERENCES);
     await service.start();

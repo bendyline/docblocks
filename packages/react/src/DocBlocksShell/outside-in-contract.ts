@@ -125,6 +125,22 @@ export function resolveOutsideInLayout(path: string): OutsideInLayout | null {
   };
 }
 
+/** Move the companion root while preserving the authored Markdown slug. */
+export function relocateOutsideInLayout(
+  layout: OutsideInLayout,
+  targetPath: string,
+): OutsideInLayout {
+  const next = resolveOutsideInLayout(targetPath);
+  if (!next || next.format !== layout.format)
+    throw new Error('Keep the outside-in document format when moving it.');
+  const root = `${normalizePath(layout.companionDirectory).replace(/\/$/, '')}/`;
+  const source = normalizePath(layout.markdownPath);
+  if (!source.startsWith(root))
+    throw new Error('The Markdown source is outside its companion directory.');
+  const markdownPath = join(next.companionDirectory, source.slice(root.length));
+  return { ...next, markdownPath, markdownFilename: layout.markdownFilename };
+}
+
 export function chooseOutsideInMarkdownPath(
   layout: OutsideInLayout,
   paths: readonly string[],

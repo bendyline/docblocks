@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
-import type { DocumentCommitRequest } from '@bendyline/docblocks/document';
+import { MemoryFileSystemProvider, moveFileSystemEntry } from '@bendyline/docblocks/filesystem';
+import { DocumentSession, type DocumentCommitRequest } from '@bendyline/docblocks/document';
 import {
   createNewOutsideInDocument,
   createOutsideInDocumentTarget,
@@ -8,6 +8,8 @@ import {
   enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
   resolveOutsideInLayout,
+  relocateOutsideInLayout,
+  withOutsideInMetadata,
 } from '../src/DocBlocksShell/outside-in.js';
 
 function request(
@@ -28,11 +30,116 @@ function request(
 describe('DocBlocks outside-in editing', function () {
   this.timeout(30_000);
 
+  it('retargets the moved companion and continues saving after a basename rename', async () => {
+    const provider = new MemoryFileSystemProvider('rename-open', 'Rename');
+    const created = await createNewOutsideInDocument(provider, 'old.html', 'static');
+    const session = new DocumentSession({ autoSaveEnabled: false });
+    await session.transitionTo(
+      createOutsideInDocumentTarget(provider, created.outsideIn),
+      created.content,
+    );
+    const layout = relocateOutsideInLayout(created.outsideIn, 'archive/new.html');
+    expect(layout.markdownPath).to.equal('archive/new_files/old.md');
+    await session.retarget(createOutsideInDocumentTarget(provider, layout), () =>
+      moveFileSystemEntry(provider, 'old.html', 'archive/new.html', 'file'),
+    );
+    const state = session.getSnapshot();
+    const content = await withOutsideInMetadata(
+      state.content.replace('# old', '# Renamed'),
+      layout,
+    );
+    session.edit(content, { targetKey: state.targetKey!, generation: state.generation });
+    await session.flush();
+    expect(session.getSnapshot().status).to.equal('saved');
+    expect(await provider.readFile('archive/new.html')).to.contain('Renamed');
+    expect((await loadEditableShellDocument(provider, 'archive/new.html'))?.content).to.equal(
+      content,
+    );
+    await session.cancel();
+    await provider.v2.dispose();
+  });
+
+  for (const resume of ['reopen', 'edit again'] as const) {
+    it(`finishes a partial save when the user chooses to ${resume}`, async () => {
+      const provider = new MemoryFileSystemProvider(`partial-${resume}`, 'Partial');
+      const created = await createNewOutsideInDocument(provider, 'report.html', 'static');
+      const session = new DocumentSession({ autoSaveEnabled: false });
+      await session.transitionTo(
+        createOutsideInDocumentTarget(provider, created.outsideIn),
+        created.content,
+      );
+      const edit = (content: string) => {
+        const state = session.getSnapshot();
+        session.edit(content, { targetKey: state.targetKey!, generation: state.generation });
+      };
+      const versionB = created.content.replace('# report', '# Version B');
+      edit(versionB);
+      const write = provider.v2.writeFile.bind(provider.v2);
+      provider.v2.writeFile = async (path, bytes, options) => {
+        if (path === 'report.html') throw new Error('injected render failure');
+        return write(path, bytes, options);
+      };
+      expect(await session.flush().catch((error: unknown) => error)).to.be.instanceOf(Error);
+      expect(await provider.readFile(created.sourcePath)).to.equal(versionB);
+      expect(await provider.readFile('report.html')).not.to.contain('Version B');
+      expect(
+        await loadEditableShellDocument(provider, 'report.html').catch((error: unknown) => error),
+      ).to.be.instanceOf(Error);
+      provider.v2.writeFile = write;
+      if (resume === 'reopen') {
+        const reopened = await loadEditableShellDocument(provider, 'report.html');
+        expect(reopened?.content).to.equal(versionB);
+        expect(await provider.readFile('report.html')).to.contain('Version B');
+      } else {
+        edit(versionB.replace('Version B', 'Version C'));
+        await session.flush();
+        expect(session.getSnapshot().status).to.equal('saved');
+        expect(await provider.readFile('report.html')).to.contain('Version C');
+      }
+      expect(await provider.exists('report_files/.docblocks-pending-render')).to.equal(false);
+      await session.cancel();
+      await provider.v2.dispose();
+    });
+  }
+
   it('defaults CSV and XLSX data documents to block-at-a-time layout', () => {
     expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('pg_catalog.csv'))).to.equal('block');
     expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('inventory.xlsx'))).to.equal('block');
     expect(defaultOutsideInLayoutMode(resolveOutsideInLayout('report.docx'))).to.equal(undefined);
     expect(defaultOutsideInLayoutMode(null)).to.equal(undefined);
+  });
+
+  it('detects an external source edit after a partial rendered-output failure', async () => {
+    const provider = new MemoryFileSystemProvider('partial-external', 'Partial external');
+    const created = await createNewOutsideInDocument(provider, 'report.html', 'static');
+    const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+    const write = provider.v2.writeFile.bind(provider.v2);
+    const local = created.content.replace('# report', '# Local');
+    provider.v2.writeFile = async (path, bytes, options) => {
+      if (path === 'report.html') throw new Error('injected render failure');
+      return write(path, bytes, options);
+    };
+    expect(
+      await target
+        .commit(request(target.key, local, created.content))
+        .catch((error: unknown) => error),
+    ).to.be.instanceOf(Error);
+    provider.v2.writeFile = write;
+    const external = created.content.replace('# report', '# External');
+    await provider.writeFile(created.sourcePath, external);
+    const retry = await target
+      .commit(request(target.key, `${local}\n\nNext edit`, created.content))
+      .catch((error: unknown) => error);
+    expect(retry).to.be.instanceOf(Error);
+    expect(await provider.readFile(created.sourcePath)).to.equal(external);
+    const reopened = await loadEditableShellDocument(provider, 'report.html');
+    expect(reopened?.content).to.equal(external);
+    expect(await provider.readFile('report.html')).to.contain('External');
+    // After accepting that external baseline, the same target remains usable.
+    const accepted = external.replace('# External', '# Accepted');
+    await target.commit(request(target.key, accepted, external));
+    expect(await provider.readFile('report.html')).to.contain('Accepted');
+    await provider.v2.dispose();
   });
 
   it('creates an interactive Web page and keeps regenerating its player output', async () => {

@@ -15,9 +15,14 @@ export interface DocumentRecoveryStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
+  /** Browser Storage enumeration permits discovery of separately owned journals. */
+  readonly length?: number;
+  key?(index: number): string | null;
 }
 
 export interface DocumentRecoveryRecord {
+  /** Storage owner of a recovered record; absent for legacy journals. */
+  ownerId?: string;
   /** Stable commit-target key, including the workspace/provider scope. */
   targetKey: string;
   /** DocumentSession generation that produced this snapshot. */
@@ -67,6 +72,8 @@ export type DocumentRecoveryWriteResult =
 
 export interface DocumentRecoveryJournalOptions {
   storageKey?: string;
+  /** Unique live-session identity. Each owner/revision has a separate storage item. */
+  ownerId?: string;
   /** Maximum number of document records retained. Defaults to 20. */
   maxEntries?: number;
   /** Conservative UTF-16 estimate for the whole serialized journal. */
@@ -103,6 +110,8 @@ const DEFAULT_MAX_RECORD_BYTES = 1_000_000;
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const MAX_TARGET_KEY_LENGTH = 4096;
+const MAX_STORAGE_KEYS = 10_000;
+const knownStorageKeys = new WeakMap<DocumentRecoveryStorage, Set<string>>();
 
 /**
  * Best-effort, synchronous recovery storage.
@@ -115,6 +124,9 @@ const MAX_TARGET_KEY_LENGTH = 4096;
 export class DocumentRecoveryJournal {
   private readonly storage: DocumentRecoveryStorage | null;
   private readonly storageKey: string;
+  private readonly baseStorageKey: string;
+  private readonly options: DocumentRecoveryJournalOptions;
+  private loadedKeys: string[] = [];
   private readonly maxEntries: number;
   private readonly maxStorageBytes: number;
   private readonly maxRecordBytes: number;
@@ -127,7 +139,19 @@ export class DocumentRecoveryJournal {
     options: DocumentRecoveryJournalOptions = {},
   ) {
     this.storage = storage;
-    this.storageKey = options.storageKey?.trim() || DOCUMENT_RECOVERY_JOURNAL_STORAGE_KEY;
+    this.baseStorageKey = options.storageKey?.trim() || DOCUMENT_RECOVERY_JOURNAL_STORAGE_KEY;
+    if (options.ownerId !== undefined && !/^[a-zA-Z0-9-]{1,100}$/.test(options.ownerId)) {
+      throw new TypeError('Invalid recovery journal owner.');
+    }
+    this.options = { ...options, storageKey: this.baseStorageKey };
+    this.storageKey = options.ownerId
+      ? `${this.baseStorageKey}:owner:${options.ownerId}`
+      : this.baseStorageKey;
+    if (storage) {
+      const keys = knownStorageKeys.get(storage) ?? new Set<string>();
+      if (!options.ownerId) keys.add(this.storageKey);
+      knownStorageKeys.set(storage, keys);
+    }
     this.maxEntries = positiveInteger(options.maxEntries, DEFAULT_MAX_ENTRIES);
     this.maxStorageBytes = positiveInteger(options.maxStorageBytes, DEFAULT_MAX_STORAGE_BYTES);
     this.maxRecordBytes = Math.min(
@@ -137,6 +161,31 @@ export class DocumentRecoveryJournal {
     this.maxAgeMs = nonNegativeFinite(options.maxAgeMs, DEFAULT_MAX_AGE_MS);
     this.maxFutureSkewMs = nonNegativeFinite(options.maxFutureSkewMs, DEFAULT_MAX_FUTURE_SKEW_MS);
     this.now = options.now ?? Date.now;
+  }
+
+  /** Isolate writes and acknowledgements from every other live session. */
+  public forOwner(ownerId: string): DocumentRecoveryJournal {
+    return new DocumentRecoveryJournal(this.storage, { ...this.options, ownerId });
+  }
+
+  /** Consume only the exact recovered snapshot, never a newer draft from its owner. */
+  public acknowledgeRecord(record: DocumentRecoveryRecord): boolean {
+    const owner = new DocumentRecoveryJournal(this.storage, {
+      ...this.options,
+      ownerId: record.ownerId,
+    });
+    const records = owner.load(this.now()).records;
+    const current = records.find((candidate) => candidate.targetKey === record.targetKey);
+    if (
+      !current ||
+      current.generation !== record.generation ||
+      current.revision !== record.revision ||
+      current.content !== record.content ||
+      current.persistedContent !== record.persistedContent
+    ) {
+      return false;
+    }
+    return owner.persistExact(records.filter((candidate) => candidate !== current));
   }
 
   /**
@@ -160,6 +209,17 @@ export class DocumentRecoveryJournal {
     }
 
     const loaded = this.load(timestamp);
+    if (
+      this.options.ownerId &&
+      loaded.records.some(
+        (record) =>
+          record.targetKey !== input.targetKey &&
+          record.generation === input.generation &&
+          record.revision === input.revision,
+      )
+    ) {
+      return { status: 'rejected', reason: 'invalid-record', evicted: 0 };
+    }
     const existing = loaded.records.find((record) => record.targetKey === input.targetKey);
     if (existing) {
       const ordering = compareGenerationRevision(input, existing);
@@ -203,13 +263,33 @@ export class DocumentRecoveryJournal {
         evicted: persisted.evicted,
       };
     }
-    return { status: 'stored', evicted: persisted.evicted };
+    return { status: 'stored', evicted: persisted.evicted + this.pruneOwners(input.targetKey) };
+  }
+
+  private pruneOwners(protectedTarget: string): number {
+    if (!this.options.ownerId) return 0;
+    const records = this.loadAll().sort(compareNewestFirst);
+    let bytes = estimatedBytes(JSON.stringify(records));
+    let evicted = 0;
+    for (
+      let index = records.length - 1;
+      index >= 0 && (records.length > this.maxEntries || bytes > this.maxStorageBytes);
+      index--
+    ) {
+      const record = records[index];
+      if (record.ownerId === this.options.ownerId && record.targetKey === protectedTarget) continue;
+      if (!this.acknowledgeRecord(record)) continue;
+      bytes -= estimatedBytes(JSON.stringify(record));
+      records.splice(index, 1);
+      evicted++;
+    }
+    return evicted;
   }
 
   /** Return the recoverable snapshot for one target, if present and valid. */
   public lookup(targetKey: string, generation?: number): DocumentRecoveryRecord | null {
     if (!isValidTargetKey(targetKey) || !isOptionalGeneration(generation)) return null;
-    const record = this.load(this.now()).records.find(
+    const record = this.list(targetKey).find(
       (candidate) =>
         candidate.targetKey === targetKey &&
         (generation === undefined || candidate.generation === generation),
@@ -220,10 +300,45 @@ export class DocumentRecoveryJournal {
   /** List valid records, newest first. Optionally restrict to one target. */
   public list(targetKey?: string): DocumentRecoveryRecord[] {
     if (targetKey !== undefined && !isValidTargetKey(targetKey)) return [];
-    return this.load(this.now())
-      .records.filter((record) => targetKey === undefined || record.targetKey === targetKey)
+    return this.loadAll()
+      .filter((record) => targetKey === undefined || record.targetKey === targetKey)
       .sort(compareNewestFirst)
       .map(cloneRecord);
+  }
+
+  private loadAll(): DocumentRecoveryRecord[] {
+    if (!this.storage) return [];
+    const prefix = `${this.baseStorageKey}:owner:`;
+    const keys = this.storageKeys();
+    const owners = new Set<string | undefined>([undefined, this.options.ownerId]);
+    for (const key of keys) {
+      if (!key.startsWith(prefix)) continue;
+      const ownerId = key.slice(prefix.length).split(':')[0];
+      if (/^[a-zA-Z0-9-]{1,100}$/.test(ownerId)) owners.add(ownerId);
+    }
+    const records: DocumentRecoveryRecord[] = [];
+    for (const ownerId of owners) {
+      const journal = new DocumentRecoveryJournal(this.storage, { ...this.options, ownerId });
+      for (const record of journal.load(this.now()).records) {
+        records.push({ ...record, ...(ownerId ? { ownerId } : {}) });
+      }
+    }
+    return records;
+  }
+
+  private storageKeys(): string[] {
+    if (!this.storage) return [];
+    const keys = new Set([this.baseStorageKey, ...(knownStorageKeys.get(this.storage) ?? [])]);
+    try {
+      const count = Math.min(this.storage.length ?? 0, MAX_STORAGE_KEYS);
+      for (let index = 0; index < count; index++) {
+        const key = this.storage.key?.(index);
+        if (key?.startsWith(`${this.baseStorageKey}:owner:`)) keys.add(key);
+      }
+    } catch {
+      /* A denied enumeration still permits this session's own recovery. */
+    }
+    return [...keys].slice(0, MAX_STORAGE_KEYS);
   }
 
   /**
@@ -265,8 +380,33 @@ export class DocumentRecoveryJournal {
     if (!this.storage) return { records: [], needsRepair: false };
 
     let raw: string | null;
+    let readNeedsRepair = false;
     try {
-      raw = this.storage.getItem(this.storageKey);
+      if (this.options.ownerId) {
+        this.loadedKeys = this.storageKeys().filter((key) => key.startsWith(`${this.storageKey}:`));
+        const records: unknown[] = [];
+        for (const key of this.loadedKeys) {
+          const item = this.storage.getItem(key);
+          if (item === null || estimatedBytes(item) > this.maxRecordBytes) {
+            readNeedsRepair = true;
+            continue;
+          }
+          try {
+            const record: unknown = JSON.parse(item);
+            if (
+              isObject(record) &&
+              key === `${this.storageKey}:${record.generation}:${record.revision}`
+            )
+              records.push(record);
+            else readNeedsRepair = true;
+          } catch {
+            readNeedsRepair = true;
+          }
+        }
+        raw = JSON.stringify({ schemaVersion: DOCUMENT_RECOVERY_JOURNAL_SCHEMA_VERSION, records });
+      } else {
+        raw = this.storage.getItem(this.storageKey);
+      }
     } catch {
       return { records: [], needsRepair: false };
     }
@@ -285,7 +425,7 @@ export class DocumentRecoveryJournal {
     }
 
     const byTarget = new Map<string, DocumentRecoveryRecord>();
-    let needsRepair = estimatedBytes(raw) > this.maxStorageBytes;
+    let needsRepair = readNeedsRepair || estimatedBytes(raw) > this.maxStorageBytes;
     for (const candidate of parsed.records) {
       if (!isValidStoredRecord(candidate, timestamp, this.maxAgeMs, this.maxFutureSkewMs)) {
         needsRepair = true;
@@ -350,7 +490,8 @@ export class DocumentRecoveryJournal {
 
     for (;;) {
       try {
-        this.storage.setItem(this.storageKey, serialized);
+        if (this.options.ownerId) this.persistOwned(next, protectedTarget);
+        else this.storage.setItem(this.storageKey, serialized);
         return { stored: true, evicted };
       } catch {
         if (!evictOldest(next, protectedTarget)) {
@@ -364,6 +505,14 @@ export class DocumentRecoveryJournal {
 
   private persistExact(records: DocumentRecoveryRecord[]): boolean {
     if (!this.storage) return false;
+    if (this.options.ownerId) {
+      try {
+        this.persistOwned(records);
+        return true;
+      } catch {
+        return false;
+      }
+    }
     if (records.length === 0) {
       try {
         this.storage.removeItem(this.storageKey);
@@ -377,6 +526,31 @@ export class DocumentRecoveryJournal {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Each owner/revision is immutable and has its own key. A recovering window
+   * may remove that exact key without racing a live owner's newer write.
+   * Only explicit writes create records; cleanup never recreates a saved draft.
+   */
+  private persistOwned(records: DocumentRecoveryRecord[], writtenTarget?: string): void {
+    if (!this.storage) return;
+    const keyFor = (record: DocumentRecoveryRecord) =>
+      `${this.storageKey}:${record.generation}:${record.revision}`;
+    if (writtenTarget !== undefined) {
+      const record = records.find((entry) => entry.targetKey === writtenTarget);
+      if (record) {
+        const key = keyFor(record);
+        this.storage.setItem(key, JSON.stringify(record));
+        knownStorageKeys.get(this.storage)?.add(key);
+      }
+    }
+    const retained = new Set(records.map(keyFor));
+    for (const key of this.loadedKeys) {
+      if (retained.has(key)) continue;
+      this.storage.removeItem(key);
+      knownStorageKeys.get(this.storage)?.delete(key);
     }
   }
 
@@ -427,7 +601,9 @@ function nonNegativeFinite(value: number | undefined, fallback: number): number 
 function isEnvelope(value: unknown): value is DocumentRecoveryEnvelope {
   if (!isObject(value)) return false;
   return (
-    value.schemaVersion === DOCUMENT_RECOVERY_JOURNAL_SCHEMA_VERSION && Array.isArray(value.records)
+    Object.keys(value).every((key) => key === 'schemaVersion' || key === 'records') &&
+    value.schemaVersion === DOCUMENT_RECOVERY_JOURNAL_SCHEMA_VERSION &&
+    Array.isArray(value.records)
   );
 }
 
@@ -438,7 +614,17 @@ function isValidStoredRecord(
   maxFutureSkewMs: number,
 ): value is DocumentRecoveryRecord {
   if (!isObject(value)) return false;
+  const fields = [
+    'targetKey',
+    'generation',
+    'revision',
+    'content',
+    'persistedContent',
+    'createdAt',
+    'updatedAt',
+  ];
   if (
+    Object.keys(value).some((key) => !fields.includes(key)) ||
     !isValidTargetKey(value.targetKey) ||
     !isNonNegativeSafeInteger(value.generation) ||
     !isNonNegativeSafeInteger(value.revision) ||

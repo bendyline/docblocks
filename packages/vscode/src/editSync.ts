@@ -8,10 +8,7 @@ import {
   type DocumentSessionEditScope,
   type DocumentSessionSnapshot,
 } from '@bendyline/docblocks/document';
-import {
-  hasSubstantiveTextChange,
-  type DocumentConflictDetailsMessage,
-} from '@bendyline/docblocks/vscode';
+import type { DocumentConflictDetailsMessage } from '@bendyline/docblocks/vscode';
 import { toError } from './toError.js';
 
 /** Save after twenty seconds without another accepted editor snapshot. */
@@ -139,7 +136,6 @@ export class VscodeDocumentSync {
   private documentVersion: number;
   private acknowledgedClientRevision = 0;
   private clientScope: DocumentSessionEditScope | null = null;
-  private hasSubstantiveLocalEdit = false;
   private localEditedAt: number | null = null;
   private lastExternalSnapshot: ObservedHostDocumentSnapshot | null = null;
 
@@ -221,25 +217,8 @@ export class VscodeDocumentSync {
       const scope = this.clientScope;
       if (!scope) throw new Error('The VS Code document session has not finished opening.');
       const previousContent = this.session.getSnapshot().content;
-      if (
-        !this.hasSubstantiveLocalEdit &&
-        !hasSubstantiveTextChange(previousContent, edit.content)
-      ) {
-        // Treat a first whitespace-only complete snapshot as an acknowledged
-        // no-op. This host-side guard is independent of the untrusted webview,
-        // so hydration or serializer churn cannot dirty the VS Code document.
-        this.acknowledgedClientRevision = edit.clientRevision;
-        this.emit();
-        return {
-          accepted: true,
-          clientRevision: edit.clientRevision,
-          sessionRevision: this.session.getSnapshot().revision,
-          message: null,
-        };
-      }
       const sessionRevision = this.session.edit(edit.content, scope);
       if (edit.content !== previousContent) {
-        this.hasSubstantiveLocalEdit = true;
         this.localEditedAt = this.now();
       }
       // Every edit is a complete snapshot. The webview ingress may coalesce
@@ -392,7 +371,6 @@ export class VscodeDocumentSync {
     this.sessionId = this.createSessionId();
     this.baseDocumentVersion = baseDocumentVersion;
     this.acknowledgedClientRevision = 0;
-    this.hasSubstantiveLocalEdit = false;
     this.localEditedAt = null;
     this.captureClientScope();
     this.emit();

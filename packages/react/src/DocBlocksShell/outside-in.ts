@@ -28,7 +28,11 @@ import {
 } from './outside-in-contract.js';
 
 export type { OutsideInLayout } from './outside-in-contract.js';
-export { resolveOutsideInLayout, withOutsideInMetadata } from './outside-in-contract.js';
+export {
+  resolveOutsideInLayout,
+  relocateOutsideInLayout,
+  withOutsideInMetadata,
+} from './outside-in-contract.js';
 
 const OUTSIDE_IN_EXTENSION = /\.(?:html?|docx|pdf|pptx|xlsx|csv)$/i;
 const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
@@ -43,6 +47,8 @@ const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
 };
 const SQUISQ_RUNTIME_DIRECTORY = '_squisq';
 const SQUISQ_RUNTIME_FILENAME = 'squisq-player.js';
+const PENDING_RENDER_FILENAME = '.docblocks-pending-render';
+const PENDING_RENDER_CONTENT = 'docblocks-outside-in-pending-render-v1\n';
 
 export interface EditableShellDocument {
   /** User-facing file selected in the explorer. */
@@ -84,6 +90,36 @@ function dirname(path: string): string {
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child;
+}
+
+async function clearPendingRender(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+): Promise<void> {
+  const marker = join(layout.companionDirectory, PENDING_RENDER_FILENAME);
+  const v2 = getFileSystemProviderV2(provider);
+  if (v2) await v2.remove(parseWorkspacePath(marker), { missing: 'ignore' });
+  else if (await provider.exists(marker)) await provider.delete(marker);
+}
+
+async function finishPendingRender(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  content: string,
+): Promise<void> {
+  const marker = await readText(provider, join(layout.companionDirectory, PENDING_RENDER_FILENAME));
+  if (marker === null) return;
+  if (marker !== PENDING_RENDER_CONTENT)
+    throw new Error('The pending document render record is corrupt.');
+  if (!(await isOutsideInMarkdownEditingEnabled(content))) {
+    throw new Error('The document has an unfinished save, but Markdown regeneration is disabled.');
+  }
+  // Finish the derived output before a new session can acknowledge the source.
+  // A failure keeps the marker for the next open or retry.
+  const rendered = await prepareOutsideInRender(provider, layout, content);
+  if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
+  await writeBytes(provider, layout.targetPath, rendered.bytes);
+  await clearPendingRender(provider, layout);
 }
 
 function relativePath(fromDirectory: string, targetPath: string): string {
@@ -240,6 +276,7 @@ export async function loadEditableShellDocument(
     }
     const linkedContent = await withOutsideInMetadata(content, layout);
     if (linkedContent !== content) await writeProviderText(provider, chosen, linkedContent);
+    await finishPendingRender(provider, { ...layout, markdownPath: chosen }, linkedContent);
     return {
       displayPath: selectedPath,
       sourcePath: chosen,
@@ -453,6 +490,7 @@ export function createOutsideInDocumentTarget(
   onCommitted?: () => void,
 ): DocumentCommitTarget {
   const sourceTarget = createFileSystemDocumentTarget(provider, layout.markdownPath);
+  let partialSource: { baseline: string | null; content: string } | undefined;
   return {
     key: `${provider.id}:outside-in:${parseWorkspacePath(layout.targetPath)}`,
     async commit(request) {
@@ -462,10 +500,26 @@ export function createOutsideInDocumentTarget(
         );
       }
       const rendered = await prepareOutsideInRender(provider, layout, request.content);
-
-      await sourceTarget.commit({ ...request, targetKey: sourceTarget.key });
+      await writeProviderText(
+        provider,
+        join(layout.companionDirectory, PENDING_RENDER_FILENAME),
+        PENDING_RENDER_CONTENT,
+      );
+      await sourceTarget.commit({
+        ...request,
+        targetKey: sourceTarget.key,
+        persistedContent:
+          partialSource?.baseline === request.persistedContent
+            ? partialSource.content
+            : request.persistedContent,
+      });
+      // Keep our source acknowledgement even if a later derived write fails.
+      // The source target still checks the real bytes for external changes.
+      partialSource = { baseline: request.persistedContent, content: request.content };
       if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
       await writeBytes(provider, layout.targetPath, rendered.bytes);
+      await clearPendingRender(provider, layout);
+      partialSource = undefined;
       onCommitted?.();
       return {};
     },
