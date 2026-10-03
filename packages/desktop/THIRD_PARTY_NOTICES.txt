@@ -6,7 +6,7 @@ Run `npm run generate:notices` from the repository root.
 Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines, Electron itself, and the production dependencies copied beside the bundled main process.
 
 Inventory source: package-lock.json and packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json.
-Components: 582.
+Components: 574.
 
 The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.
 Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.
@@ -165,7 +165,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | ajv | 8.20.0 | MIT | https://github.com/ajv-validator/ajv |
 | ajv-formats | 3.0.1 | MIT | https://github.com/ajv-validator/ajv-formats |
 | ansi-styles | 4.3.0 | MIT | https://github.com/chalk/ansi-styles |
-| anymatch | 3.1.3 | ISC | https://github.com/micromatch/anymatch |
 | argparse | 2.0.1 | Python-2.0 | https://github.com/nodeca/argparse |
 | asn1js | 3.0.10 | BSD-3-Clause | https://github.com/PeculiarVentures/ASN1.js |
 | asynckit | 0.4.0 | MIT | https://github.com/alexindigo/asynckit |
@@ -176,9 +175,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | bail | 2.0.2 | MIT | https://github.com/wooorm/bail |
 | base64-js | 1.5.1 | MIT | https://github.com/beatgammit/base64-js |
 | before-after-hook | 4.0.0 | Apache-2.0 | github:gr2m/before-after-hook |
-| binary-extensions | 2.3.0 | MIT | https://github.com/sindresorhus/binary-extensions |
 | body-parser | 2.3.0 | MIT | https://github.com/expressjs/body-parser |
-| braces | 3.0.3 | MIT | https://github.com/micromatch/braces |
 | buffer | 6.0.3 | MIT | https://github.com/feross/buffer |
 | buffer-crc32 | 1.0.0 | MIT | https://github.com/brianloveswords/buffer-crc32 |
 | builder-util-runtime | 9.7.0 | MIT | https://github.com/electron-userland/electron-builder |
@@ -192,7 +189,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | character-entities-html4 | 2.1.0 | MIT | https://github.com/wooorm/character-entities-html4 |
 | character-entities-legacy | 3.0.0 | MIT | https://github.com/wooorm/character-entities-legacy |
 | character-reference-invalid | 2.0.1 | MIT | https://github.com/wooorm/character-reference-invalid |
-| chokidar | 3.6.0 | MIT | https://github.com/paulmillr/chokidar |
+| chokidar | 4.0.3 | MIT | https://github.com/paulmillr/chokidar |
 | chownr | 3.0.0 | BlueOak-1.0.0 | https://github.com/isaacs/chownr |
 | ci-info | 4.4.0 | MIT | github:watson/ci-info |
 | color-convert | 2.0.1 | MIT | https://github.com/Qix-/color-convert |
@@ -280,7 +277,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | extend | 3.0.2 | MIT | https://github.com/justmoon/node-extend |
 | fast-content-type-parse | 3.0.0 | MIT | https://github.com/fastify/fast-content-type-parse |
 | fast-deep-equal | 3.1.3 | MIT | https://github.com/epoberezkin/fast-deep-equal |
-| fast-glob | 3.3.3 | MIT | https://github.com/mrmlnc/fast-glob |
 | fast-sha256 | 1.3.0 | Unlicense | https://github.com/dchest/fast-sha256-js |
 | fast-uri | 3.1.8 | BSD-3-Clause | https://github.com/fastify/fast-uri |
 | fastq | 1.20.1 | ISC | https://github.com/mcollina/fastq |
@@ -294,7 +290,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | fresh | 2.0.0 | MIT | https://github.com/jshttp/fresh |
 | fs-extra | 10.1.0 | MIT | https://github.com/jprichardson/node-fs-extra |
 | fs-extra | 11.4.0 | MIT | https://github.com/jprichardson/node-fs-extra |
-| fsevents | 2.3.2 | MIT | https://www.npmjs.com/package/fsevents |
 | function-bind | 1.1.2 | MIT | https://github.com/Raynos/function-bind |
 | genson-js | 0.0.8 | Apache-2.0 | git+ssh://git@github.com/aspecto-io/genson-js |
 | get-intrinsic | 1.3.0 | MIT | https://github.com/ljharb/get-intrinsic |
@@ -329,7 +324,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | ipaddr.js | 1.9.1 | MIT | https://github.com/whitequark/ipaddr.js |
 | is-alphabetical | 2.0.1 | MIT | https://github.com/wooorm/is-alphabetical |
 | is-alphanumerical | 2.0.1 | MIT | https://github.com/wooorm/is-alphanumerical |
-| is-binary-path | 2.1.0 | MIT | https://github.com/sindresorhus/is-binary-path |
 | is-decimal | 2.0.1 | MIT | https://github.com/wooorm/is-decimal |
 | is-extglob | 2.1.1 | MIT | https://github.com/jonschlinkert/is-extglob |
 | is-glob | 4.0.3 | MIT | https://github.com/micromatch/is-glob |
@@ -427,7 +421,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | micromark-util-subtokenize | 2.1.0 | MIT | https://github.com/micromark/micromark/tree/main/packages/micromark-util-subtokenize |
 | micromark-util-symbol | 2.0.1 | MIT | https://github.com/micromark/micromark/tree/main/packages/micromark-util-symbol |
 | micromark-util-types | 2.0.2 | MIT | https://github.com/micromark/micromark/tree/main/packages/micromark-util-types |
-| micromatch | 4.0.8 | MIT | https://github.com/micromatch/micromatch |
 | mime-db | 1.52.0 | MIT | https://github.com/jshttp/mime-db |
 | mime-db | 1.54.0 | MIT | https://github.com/jshttp/mime-db |
 | mime-types | 2.1.35 | MIT | https://github.com/jshttp/mime-types |
@@ -443,7 +436,6 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | ngeohash | 0.6.3 | MIT | https://github.com/sunng87/node-geohash |
 | nodemailer | 10.0.10 | MIT-0 | https://github.com/nodemailer/nodemailer |
 | nodemailer | 10.0.12 | MIT-0 | https://github.com/nodemailer/nodemailer |
-| normalize-path | 3.0.0 | MIT | https://github.com/jonschlinkert/normalize-path |
 | object-assign | 4.1.1 | MIT | https://github.com/sindresorhus/object-assign |
 | object-inspect | 1.13.4 | MIT | https://github.com/inspect-js/object-inspect |
 | object-sizeof | 2.6.5 | MIT | https://github.com/miktam/sizeof |
@@ -503,7 +495,7 @@ Electron's own license and Chromium third-party notices are copied as `licenses/
 | react | 18.3.1 | MIT | https://github.com/facebook/react |
 | react-dom | 18.3.1 | MIT | https://github.com/facebook/react |
 | readable-stream | 2.3.8 | MIT | https://github.com/nodejs/readable-stream |
-| readdirp | 3.6.0 | MIT | https://github.com/paulmillr/readdirp |
+| readdirp | 4.1.2 | MIT | https://github.com/paulmillr/readdirp |
 | real-require | 0.2.0 | MIT | https://github.com/pinojs/real-require |
 | real-require | 1.0.0 | MIT | https://github.com/pinojs/real-require |
 | reflect-metadata | 0.2.2 | Apache-2.0 | https://github.com/rbuckton/reflect-metadata |
@@ -12286,8 +12278,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @nodelib/fs.scandir@2.1.5, @nodelib/fs.stat@2.0.5, @nodelib/fs.walk@1.2.8, fast-glob@3.3.3
-Source files: node_modules/@nodelib/fs.scandir/LICENSE, node_modules/@nodelib/fs.stat/LICENSE, node_modules/@nodelib/fs.walk/LICENSE, node_modules/fast-glob/LICENSE
+Components: @nodelib/fs.scandir@2.1.5, @nodelib/fs.stat@2.0.5, @nodelib/fs.walk@1.2.8
+Source files: node_modules/@nodelib/fs.scandir/LICENSE, node_modules/@nodelib/fs.stat/LICENSE, node_modules/@nodelib/fs.walk/LICENSE
 ==============================================================================
 The MIT License (MIT)
 
@@ -21923,52 +21915,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: anymatch@3.1.3
-Source files: node_modules/anymatch/LICENSE
-==============================================================================
-The ISC License
-
-Copyright (c) 2019 Elan Shanker, Paul Miller (https://paulmillr.com)
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR
-IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-==============================================================================
-Components: normalize-path@3.0.0
-Source files: node_modules/anymatch/node_modules/normalize-path/LICENSE
-==============================================================================
-The MIT License (MIT)
-
-Copyright (c) 2014-2018, Jon Schlinkert.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-==============================================================================
 Components: argparse@2.0.1
 Source files: node_modules/argparse/LICENSE
 ==============================================================================
@@ -22630,21 +22576,6 @@ Source files: node_modules/before-after-hook/LICENSE
    limitations under the License.
 
 ==============================================================================
-Components: binary-extensions@2.3.0
-Source files: node_modules/binary-extensions/license
-==============================================================================
-MIT License
-
-Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
-Copyright (c) Paul Miller (https://paulmillr.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
 Components: body-parser@2.3.0, type-is@2.1.0
 Source files: node_modules/body-parser/LICENSE, node_modules/type-is/LICENSE
 ==============================================================================
@@ -22671,32 +22602,6 @@ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
-Components: braces@3.0.3, fill-range@7.1.1, is-number@7.0.0, micromatch@4.0.8
-Source files: node_modules/braces/LICENSE, node_modules/fill-range/LICENSE, node_modules/is-number/LICENSE, node_modules/micromatch/LICENSE
-==============================================================================
-The MIT License (MIT)
-
-Copyright (c) 2014-present, Jon Schlinkert.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 ==============================================================================
 Components: builder-util-runtime@9.7.0, electron-updater@6.8.9
@@ -22811,6 +22716,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+==============================================================================
+Components: chokidar@4.0.3
+Source files: node_modules/chokidar/LICENSE
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) 2012 Paul Miller (https://paulmillr.com), Elan Shanker
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ==============================================================================
 Components: ci-info@4.4.0
@@ -24838,6 +24769,32 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ==============================================================================
+Components: fill-range@7.1.1, is-number@7.0.0
+Source files: node_modules/fill-range/LICENSE, node_modules/is-number/LICENSE
+==============================================================================
+The MIT License (MIT)
+
+Copyright (c) 2014-present, Jon Schlinkert.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
 Components: finalhandler@2.1.1
 Source files: node_modules/finalhandler/LICENSE
 ==============================================================================
@@ -26021,20 +25978,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
-==============================================================================
-Components: is-binary-path@2.1.0
-Source files: node_modules/is-binary-path/license
-==============================================================================
-MIT License
-
-Copyright (c) 2019 Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com), Paul Miller (https://paulmillr.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: is-extglob@2.1.1
@@ -29515,6 +29458,32 @@ IN THE SOFTWARE.
 """
 
 ==============================================================================
+Components: readdirp@4.1.2
+Source files: node_modules/readdirp/LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2012-2019 Thorsten Lorenz, Paul Miller (https://paulmillr.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
 Components: real-require@0.2.0, real-require@1.0.0
 Source files: node_modules/real-require/LICENSE.md, node_modules/thread-stream/node_modules/real-require/LICENSE.md
 ==============================================================================
@@ -30953,85 +30922,6 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-==============================================================================
-Components: chokidar@3.6.0
-Source files: packages/desktop/node_modules/chokidar/LICENSE
-==============================================================================
-The MIT License (MIT)
-
-Copyright (c) 2012-2019 Paul Miller (https://paulmillr.com), Elan Shanker
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-
-==============================================================================
-Components: readdirp@3.6.0
-Source files: packages/desktop/node_modules/readdirp/LICENSE
-==============================================================================
-MIT License
-
-Copyright (c) 2012-2019 Thorsten Lorenz, Paul Miller (https://paulmillr.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-==============================================================================
-Components: fsevents@2.3.2
-Source files: scripts/licenses/fsevents/LICENSE-MIT.txt
-==============================================================================
-MIT License
------------
-
-Copyright (C) 2010-2020 by Philipp Dunkel, Ben Noordhuis, Elan Shankar, Paul Miller
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 ==============================================================================
 Components: @ironcalc/wasm@0.8.4

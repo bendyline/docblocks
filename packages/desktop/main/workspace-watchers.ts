@@ -11,7 +11,7 @@
 
 import fss from 'node:fs';
 import path from 'node:path';
-import chokidar from 'chokidar';
+import chokidar, { type FSWatcher } from 'chokidar';
 
 export interface WorkspaceWatcherEvent {
   readonly type: 'created' | 'modified' | 'removed';
@@ -32,7 +32,7 @@ export interface WorkspaceWatcherHandle {
 }
 
 interface WatcherState {
-  watcher: chokidar.FSWatcher;
+  watcher: FSWatcher;
   listeners: Set<(relPath: string) => void>;
   eventListeners: Set<(event: WorkspaceWatcherEvent) => void | Promise<void>>;
   errorListeners: Set<(error: unknown) => void>;

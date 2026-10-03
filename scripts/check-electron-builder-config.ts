@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import yaml from 'js-yaml';
+import { desktopDependencyExclusions } from './desktop-runtime-policy.js';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -433,6 +434,12 @@ if (
   process.exit(1);
 }
 
+if (desktopDependencyExclusions.some((pattern) => !configuredFiles.includes(pattern))) {
+  failConfigPolicy(
+    "electron-builder.yml must exclude Gezel's unused vulnerable glob dependencies.",
+  );
+}
+
 interface DesktopManifest {
   readonly devDependencies?: Readonly<Record<string, string>>;
   readonly dependencies?: Readonly<Record<string, string>>;
@@ -512,6 +519,19 @@ function requireResolvedVersion(
 function requireSafeDesktopReleaseDependencies(): void {
   const rootManifest = readPackageManifest(path.join(repoRoot, 'package.json'));
   const desktopManifest = readPackageManifest(desktopManifestPath);
+  const chokidarPin = requireSafePin(
+    desktopManifest,
+    'dependencies',
+    'chokidar',
+    '4.0.3',
+    'desktop literal-path watcher (GHSA-VFJ7-8CJW-P6XM)',
+  );
+  requireResolvedVersion(
+    path.join(path.dirname(createRequire(desktopManifestPath).resolve('chokidar')), 'package.json'),
+    '4.0.3',
+    'resolved desktop watcher',
+    chokidarPin,
+  );
   const rootElectronPin = requireSafePin(
     rootManifest,
     'devDependencies',

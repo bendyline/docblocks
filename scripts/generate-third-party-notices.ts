@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format as formatWithPrettier } from 'prettier';
+import { excludedDesktopDependencies } from './desktop-runtime-policy.js';
 import {
   normalizeNoticeText,
   noticeTextMatches,
@@ -68,6 +69,7 @@ interface LicenseMaterialCollection {
 interface Surface {
   readonly artifactManifest?: string;
   readonly description: string;
+  readonly excludedDependencyNames?: ReadonlySet<string>;
   readonly id: string;
   readonly optionalDependencyNames?: ReadonlySet<string> | 'all';
   readonly output: string;
@@ -154,6 +156,7 @@ const surfaces: readonly Surface[] = [
       'Packages present in the emitted renderer Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines, Electron itself, and the production dependencies copied beside the bundled main process.',
     artifactManifest: 'packages/desktop/dist/renderer/THIRD_PARTY_COMPONENTS.json',
     workspace: 'packages/desktop',
+    excludedDependencyNames: excludedDesktopDependencies,
     optionalDependencyNames: new Set(['fsevents']),
     supplementalPackages: ['@ironcalc/wasm', 'electron', 'harper.js'],
     output: 'packages/desktop/THIRD_PARTY_NOTICES.txt',
@@ -343,7 +346,10 @@ async function componentsForSurface(surface: Surface): Promise<readonly Componen
 
   if (surface.workspace) {
     for (const lockKey of dependencyClosure(surface.workspace, surface.optionalDependencyNames)) {
-      add(componentFromLockKey(lockKey));
+      const component = componentFromLockKey(lockKey);
+      // electron-builder filters package files after collecting dependencies;
+      // their children are still copied and still need their license notices.
+      if (!component || !surface.excludedDependencyNames?.has(component.name)) add(component);
     }
   }
   if (surface.artifactManifest) {

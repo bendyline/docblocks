@@ -20,6 +20,11 @@ files:
   - '!dist/**/*.map'
   - '!node_modules/**/*.map'
   - '!node_modules/**/*.flow'
+  # DocBlocks hosts Gezel's inference-only profile, which has no file-search
+  # tools. Exclude its unused glob implementation (GHSA-VFJ7-8CJW-P6XM).
+  # Chokidar 4 watches literal paths and does not need these packages either.
+  - '!node_modules/{braces,fast-glob,micromatch}/**/*'
+  - '!node_modules/**/node_modules/{braces,fast-glob,micromatch}/**/*'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.

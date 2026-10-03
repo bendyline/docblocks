@@ -94,13 +94,32 @@ Tiptap 2.27.3, which backports the upstream fix, but the advisory lists every
 2.x release as affected. `packages/react/test/tiptap-prototype-safety.test.ts`
 proves the fix against the Tiptap DocBlocks actually installs.
 
-The rest are `upstream-blocked` and `toolchain-only`: the `brace-expansion`,
+Most remaining entries are `upstream-blocked` and `toolchain-only`: the `brace-expansion`,
 `ip-address`, and `undici` advisories published September 28–30, 2026 that
 remain only inside the pinned npm 11.19.1's own bundled dependencies. Every
 application copy of those packages was moved to a fixed release. npm runs on
 developer and CI machines and ships in no DocBlocks artifact, and no npm release
 yet bundles the fixes (11.20.0 and 11.21.0 still carry the same versions). Each
 entry is retired by moving the npm pin to the first release that does.
+
+Two advisories reviewed on October 2, 2026 have no patched release:
+
+- `braces` GHSA-VFJ7-8CJW-P6XM remains in build/release tooling, with a
+  `not-shipped`, `development-only` disposition. Desktop uses Chokidar 4.0.3
+  to watch literal paths without glob parsing. Gezel's unused full-service file
+  search dependencies (`fast-glob`, `micromatch`, `braces`) are excluded from
+  `app.asar`; DocBlocks hosts its inference-only profile. The desktop config
+  gate enforces these exclusions and the watcher version, distribution notices
+  omit the excluded packages, and packaged smoke tests check both
+  their physical absence and hosted AI startup.
+- `http-cache-semantics` GHSA-CH52-4W7C-C8XP is `upstream-blocked` and
+  `toolchain-only`. Its two paths are electron-builder → app-builder-lib →
+  @electron/get → got → cacheable-request, and npm 11.19.1 → make-fetch-happen.
+  Neither ships in a DocBlocks artifact.
+
+Both dispositions expire on November 1, 2026. Their advisories are linked in
+the audit evidence, and neither exception permits a high-severity dependency
+to return to a shipped artifact.
 
 The root exact overrides select `esbuild@0.28.1` only for `tsup` and `tsx`, and
 `serialize-javascript@7.0.5` only for Mocha. They intentionally cross those

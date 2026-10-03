@@ -47,6 +47,28 @@
       "remediation": "Move the pinned npm (package.json devDependencies, engines and packageManager, checked by check:dependency-governance) to the first release that bundles brace-expansion 5.0.12 or later, then delete this entry."
     },
     {
+      "package": "braces",
+      "advisory": "GHSA-VFJ7-8CJW-P6XM",
+      "severity": "high",
+      "scope": "development-only",
+      "classification": "not-shipped",
+      "owner": "DocBlocks maintainers",
+      "expires": "2026-11-01",
+      "reason": "braces@3.0.3 has no patched release. Build and release tools still use it through micromatch. Desktop now uses Chokidar 4.0.3, which has no glob dependencies, and electron-builder excludes braces, micromatch and fast-glob from Gezel's unused full-service file-search implementation. DocBlocks hosts only Gezel's inference-only profile. The packaged smoke suite verifies the excluded packages are absent from app.asar and that hosted AI still starts.",
+      "remediation": "Move the remaining tooling consumers to a fixed braces release once one exists and passes the seven-day cooldown, or replace their glob implementation. Retain the desktop exclusions until the complete audit and packaged AI smoke prove that restoring these packages is safe."
+    },
+    {
+      "package": "http-cache-semantics",
+      "advisory": "GHSA-CH52-4W7C-C8XP",
+      "severity": "high",
+      "scope": "toolchain-only",
+      "classification": "upstream-blocked",
+      "owner": "DocBlocks maintainers",
+      "expires": "2026-11-01",
+      "reason": "http-cache-semantics@4.2.0 has no patched release. The exact dependency paths are electron-builder -> app-builder-lib -> @electron/get -> got -> cacheable-request, and the pinned npm 11.19.1 -> make-fetch-happen. Both run only on developer and CI machines; neither HTTP cache implementation is included in any DocBlocks distribution.",
+      "remediation": "Update the electron-builder dependency closure and pinned npm to releases containing a fixed http-cache-semantics once a patch exists and the seven-day cooldown has elapsed, then remove this entry."
+    },
+    {
       "package": "ip-address",
       "advisory": "GHSA-2VR4-CQ9G-PVRC",
       "severity": "moderate",

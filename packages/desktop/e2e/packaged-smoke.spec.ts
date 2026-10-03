@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { listPackage } from '@electron/asar';
+import { excludedDesktopDependencies } from '../../../scripts/desktop-runtime-policy.js';
 import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
 
@@ -21,6 +23,14 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   const packaged = await launchPackagedApp();
   expect(fs.statSync(packaged.artifact.appAsarPath).isFile()).toBe(true);
   expect(path.basename(packaged.artifact.appAsarPath)).toBe('app.asar');
+  // GHSA-VFJ7-8CJW-P6XM: verify the artifact, rather than just its configuration.
+  const shippedPaths = listPackage(packaged.artifact.appAsarPath, { isPack: false });
+  for (const name of excludedDesktopDependencies) {
+    expect(
+      shippedPaths.some((entry) => entry.replace(/\\/gu, '/').includes(`/node_modules/${name}/`)),
+      name,
+    ).toBe(false);
+  }
   for (const legalResource of [
     'THIRD_PARTY_NOTICES.txt',
     'licenses/ELECTRON_LICENSE.txt',
