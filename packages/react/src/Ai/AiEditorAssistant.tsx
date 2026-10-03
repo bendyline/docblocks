@@ -492,6 +492,10 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     () => () => {
       requestRef.current += 1;
       handleRef.current?.cancel();
+      handleRef.current = null;
+      // StrictMode replays mount effects in development. The cancelled pass
+      // must allow that next setup to start a live review.
+      startedRef.current = false;
     },
     [],
   );
