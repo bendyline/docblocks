@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'sha256-e/MiimIXR2HiWlMvhaRup+TwHj5dAt41yrZzQn2cxNw='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://api.github.com; media-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+      content="default-src 'none'; script-src 'sha256-mJH6qUKByOhlhJkV/Fus2SLmuMjoQMIpNnqN0u1mm8g='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://api.github.com; media-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
     />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -230,7 +230,6 @@
         };
 
         const OS_NAMES = { mac: 'macOS', win: 'Windows', linux: 'Linux' };
-        const MAC_ARCH_LABEL = { arm64: 'Apple silicon', x64: 'Intel' };
 
         const ICONS = {
           mac: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.66c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.75 2.28-1.6 2.78-.41 6.89 1.15 9.14.76 1.1 1.67 2.34 2.86 2.29 1.15-.05 1.58-.74 2.97-.74 1.38 0 1.77.74 2.98.72 1.23-.02 2.01-1.12 2.76-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.65zM14.09 5.8c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.11 1.78-.97 2.83 1.02.08 2.07-.52 2.71-1.29z"/></svg>',
@@ -242,10 +241,7 @@
         const CATALOG = [
           {
             os: 'mac',
-            downloads: [
-              { arch: 'arm64', ext: 'dmg', label: 'Apple silicon (.dmg)' },
-              { arch: 'x64', ext: 'dmg', label: 'Intel (.dmg)' },
-            ],
+            downloads: [{ arch: 'arm64', ext: 'dmg', label: 'Apple silicon (.dmg)' }],
           },
           {
             os: 'win',
@@ -350,11 +346,9 @@
 
         function pickPrimary(os, arch, assets) {
           if (os === 'mac') {
-            const wanted = arch === 'x64' ? 'x64' : 'arm64';
-            const asset =
-              matchAsset(assets, 'dmg', wanted) ||
-              matchAsset(assets, 'dmg', wanted === 'arm64' ? 'x64' : 'arm64');
-            return asset ? { os, asset, archLabel: MAC_ARCH_LABEL[wanted] } : null;
+            if (arch === 'x64') return null;
+            const asset = matchAsset(assets, 'dmg', 'arm64');
+            return asset ? { os, asset, archLabel: 'Apple silicon' } : null;
           }
           if (os === 'win') {
             if (arch === 'arm64' || arch === 'x64') {

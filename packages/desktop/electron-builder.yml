@@ -20,12 +20,23 @@ files:
   - '!dist/**/*.map'
   - '!node_modules/**/*.map'
   - '!node_modules/**/*.flow'
+  # DocBlocks hosts Gezel's inference-only profile, which has no file-search
+  # tools. Exclude its unused glob implementation (GHSA-VFJ7-8CJW-P6XM).
+  # Chokidar 4 watches literal paths and does not need these packages either.
+  - '!node_modules/{braces,fast-glob,micromatch}/**/*'
+  - '!node_modules/**/node_modules/{braces,fast-glob,micromatch}/**/*'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.
 extraResources:
   - from: THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  - from: dist/gezel-native/${os}-${arch}
+    to: gezel-native
+
+# Stage the target architecture from the installed Gezel service's release
+# pins before copying resources. No executable download happens in the app.
+beforePack: scripts/stage-gezel-native.cjs
 
 # Electron's own license and Chromium notice are supplied by the exact Electron
 # archive that electron-builder extracts for this platform and architecture.
@@ -127,11 +138,9 @@ mac:
     # at the zip — omitting it silently breaks macOS auto-update.
     - target: dmg
       arch:
-        - x64
         - arm64
     - target: zip
       arch:
-        - x64
         - arm64
   icon: resources/icon.icns
   category: public.app-category.productivity
@@ -142,6 +151,10 @@ mac:
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
+  # Native-release hashes include their existing Developer ID signatures.
+  # Preserve those bytes; the outer app signature still seals the resources.
+  signIgnore:
+    - /Contents/Resources/gezel-native/
   extendInfo:
     NSCameraUsageDescription: DocBlocks accesses the camera only when you choose to record video for a document.
     NSMicrophoneUsageDescription: DocBlocks accesses the microphone only when you choose to record audio or video for a document.
@@ -181,13 +194,17 @@ dmg:
   # findFile(files, 'zip', ['pkg', 'dmg']) — so keep the disk image out of
   # latest-mac.yml entirely rather than publishing hashes that stapling breaks.
   writeUpdateInfo: false
-  # Uncomment once a proper dmg background asset is designed.
-  # background: resources/dmg-background.png
+  # The background supplies the branded instruction and direction cue. Keep the
+  # Finder-rendered icons high enough that their labels remain visible when the
+  # user's toolbar, path bar, and status bar are all enabled.
+  background: resources/dmg-background.png
+  iconSize: 80
+  iconTextSize: 12
   contents:
     - x: 130
-      y: 220
+      y: 175
     - x: 410
-      y: 220
+      y: 175
       type: link
       path: /Applications
 
@@ -221,6 +238,17 @@ linux:
   maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
   description: DocBlocks - a Markdown editor, converter, and publisher.
+
+appImage:
+  # electron-builder's AppImage target injects `--no-sandbox` into the embedded
+  # desktop entry whenever no pinned appimagetool toolset is configured, which
+  # would disable the Chromium sandbox for every menu, file-association, and
+  # protocol launch. The bundled AppRun script already probes `unshare -Ur` and
+  # adds the flag only on hosts where user namespaces are genuinely
+  # unavailable, so the launcher must not force it unconditionally.
+  # See scripts/check-electron-builder-config.ts and the packaged desktop entry
+  # assertion in e2e/packaged-artifact.ts.
+  executableArgs: []
 
 deb:
   packageCategory: editors

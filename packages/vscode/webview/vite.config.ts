@@ -132,6 +132,8 @@ export default defineConfig({
       // import inside the excluded editor package and must be pre-optimized
       // rather than discovered when the first document opens.
       'harper.js',
+      // Same for RNNoise, reached from the media-edit worker.
+      '@bendyline/squisq-video-react > @shiguredo/rnnoise-wasm',
       // Formula sessions dynamically import the optional IronCalc backend.
       '@ironcalc/wasm',
       // Squisq formats is excluded for linked development, so its nested CJS

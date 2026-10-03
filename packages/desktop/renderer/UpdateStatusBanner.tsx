@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import type { UpdaterStatus } from '@bendyline/docblocks/host';
-import { getDocBlocksHost, isElectronHost } from '@bendyline/docblocks/host';
+import { maybeGetDocBlocksHost } from '@bendyline/docblocks/host';
 
 /** Subscribe once at the desktop root so progress survives editor remounts. */
 export function useUpdaterStatus(): UpdaterStatus {
   const [status, setStatus] = useState<UpdaterStatus>({ kind: 'not-available' });
 
   useEffect(() => {
-    if (!isElectronHost()) return;
-    return getDocBlocksHost().updater.onStatus(setStatus);
+    // The updater is optional on the host contract; a surface whose store
+    // delivers updates (MAS, Microsoft Store) omits it entirely.
+    const updater = maybeGetDocBlocksHost()?.updater;
+    if (!updater) return;
+    return updater.onStatus(setStatus);
   }, []);
 
   return status;
@@ -28,7 +31,7 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
     setInstalling(true);
     setInstallError(null);
     try {
-      const result = await getDocBlocksHost().updater.quitAndInstall();
+      const result = await maybeGetDocBlocksHost()?.updater?.quitAndInstall();
       if (result === 'installing') return;
       setInstalling(false);
       setInstallError(
@@ -88,7 +91,7 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
               type="button"
               className="db-desktop-update-link"
               onClick={() =>
-                status.releaseUrl && getDocBlocksHost().shell.openExternal(status.releaseUrl)
+                status.releaseUrl && maybeGetDocBlocksHost()?.shell?.openExternal(status.releaseUrl)
               }
             >
               What's new

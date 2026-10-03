@@ -1,4 +1,5 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test';
+import type { FrameLocator, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
@@ -384,9 +385,7 @@ test.describe('VS Code web and UX integration', () => {
     await expect(statusBarDirty).toHaveCount(0);
   });
 
-  test('keeps a first whitespace-only edit from authoring a normalized snapshot', async ({
-    page,
-  }) => {
+  test('accepts an intentional line break as the first document edit', async ({ page }) => {
     await writeFixture(
       [
         '# Connectors',
@@ -407,12 +406,9 @@ test.describe('VS Code web and UX integration', () => {
     await paragraph.click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(1_000);
-
-    await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
-    ).toHaveCount(0);
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('accepts a first substantive edit made with a formatting control', async ({ page }) => {

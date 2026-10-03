@@ -1,0 +1,601 @@
+/**
+ * The Gezel implementation of the `AiConnector` seam.
+ *
+ * Gezel is an optional companion, reached two ways:
+ *
+ * 1. **The person's own Gezel.** DocBlocks discovers it through its per-user
+ *    runtime files and asks for an inference-only (`openai`) grant.
+ * 2. **A Gezel DocBlocks hosts itself** — a private service under
+ *    `~/.gezel/apps/docblocks/`, normally started in the Electron main process
+ *    through the SDK's in-process host. It borrows the models already
+ *    installed in the person's Gezel folder, read-only.
+ *
+ * The second is used whenever the first cannot serve: Gezel is not installed
+ * or not running, or it will not connect DocBlocks. The person opted into AI
+ * inside DocBlocks, which is the consent this fallback rests on; a Gezel that
+ * is alive but failing is still reported rather than papered over.
+ *
+ * The SDK ships ESM only and this main bundle is CJS, so it is reached through
+ * a dynamic `import()` that tsup leaves in place for the external specifier.
+ * Loading it lazily keeps it out until Settings asks whether Gezel is installed
+ * or the user turns AI on.
+ */
+
+import type {
+  ChatCompletionChunk,
+  ChatStream,
+  GezelApp,
+  LocalAuthorizedConnection,
+} from '@bendyline/gezel-app-sdk';
+import type {
+  EnsureModelEngine,
+  Gezel,
+  HostOptions,
+  HostServiceModule,
+} from '@bendyline/gezel-app-sdk/host';
+import type { AiErrorCode, AiProgress } from '@bendyline/docblocks/host';
+
+import { AiHostError, toAiError } from './ai-errors.js';
+import type {
+  AiConnectOptions,
+  AiConnector,
+  AiDetection,
+  AiProviderConnection,
+  ProviderChatChunk,
+  ProviderChatRequest,
+} from './ai-service.js';
+import type { ProviderModelEntry } from './ai-models.js';
+import type { GezelHostRuntime } from './gezel-host-runtime.js';
+import type { GezelNativeHost } from './gezel-native-host.js';
+import { clearGezelEngineOverrides } from './gezel-native-host.js';
+
+type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
+type GezelHostSdkModule = typeof import('@bendyline/gezel-app-sdk/host');
+type GezelServiceModule = HostServiceModule &
+  Pick<typeof import('@bendyline/gezel-service'), 'reuseVerifiedElectronNativeBinaries'>;
+
+/** What Gezel lists under Settings → Connected Apps. */
+export const GEZEL_APP_ID = 'docblocks';
+export const GEZEL_APP_NAME = 'DocBlocks';
+/**
+ * Inference only. DocBlocks supplies its own documents and prompts, so it has
+ * no use for Gezel's projects, sessions, or tools, and asks for none of them.
+ */
+export const GEZEL_SCOPES: readonly string[] = ['openai'];
+
+/**
+ * Long enough for someone to switch to Gezel, read the request, and type the
+ * code; short enough that an abandoned request does not linger all afternoon.
+ */
+const APPROVAL_TIMEOUT_SEC = 300;
+
+/** A cold first start of a hosted daemon does more than a warm restart. */
+const HOST_START_TIMEOUT_MS = 120_000;
+
+/**
+ * Why the person's own Gezel did not serve, in the terms that make hosting the
+ * right answer: absent, or unwilling to connect DocBlocks. Anything else — an
+ * unknown failure from a Gezel that is running — is surfaced as it is.
+ */
+const HOST_FALLBACK_CODES: ReadonlySet<AiErrorCode> = new Set([
+  'provider-unavailable',
+  'approval-denied',
+  'approval-timeout',
+  'approval-expired',
+  'approval-required',
+  'already-connected',
+  'inference-disabled',
+]);
+
+/**
+ * On-device engines Gezel installs and runs itself. A hosted daemon offers
+ * only these: its private home also lists a seeded crew of personas and any
+ * cloud CLIs on PATH, and neither is what "a model in my Gezel folder" means.
+ */
+const HOSTED_ENGINES: ReadonlySet<EnsureModelEngine> = new Set(['llama-cpp', 'mlx', 'ds4']);
+
+export interface AiCredentialStore {
+  load(): Promise<string | null>;
+  save(token: string): Promise<void>;
+  delete(): Promise<void>;
+}
+
+export interface GezelConnectorOptions {
+  readonly credentials: AiCredentialStore;
+  readonly loadSdk?: () => Promise<GezelSdkModule>;
+  readonly loadHostSdk?: () => Promise<GezelHostSdkModule>;
+  readonly loadService?: () => Promise<GezelServiceModule>;
+  /**
+   * An explicit daemon address and transport instead of runtime discovery.
+   * Tests use it to run the real SDK against a fake daemon.
+   */
+  readonly endpoint?: { readonly baseUrl: string; readonly fetch: typeof fetch };
+  /** Alternate Gezel home for discovery, and the one a hosted daemon borrows models from. */
+  readonly home?: string;
+  /** A Gezel this app can run itself, or null when this build cannot host. */
+  readonly hostRuntime?: () => Promise<GezelHostRuntime | null>;
+  /** Host through the SDK's in-process service integration. */
+  readonly hostInProcess?: boolean;
+  /** Verified bundled engines and the distribution's executable-download policy. */
+  readonly hostNative?: GezelNativeHost;
+  /** Where a hosted daemon keeps its state; the SDK's `apps/docblocks` home by default. */
+  readonly hostHome?: string;
+}
+
+function loadGezelSdk(): Promise<GezelSdkModule> {
+  return import('@bendyline/gezel-app-sdk');
+}
+
+function loadGezelHostSdk(): Promise<GezelHostSdkModule> {
+  return import('@bendyline/gezel-app-sdk/host');
+}
+
+function loadGezelService(): Promise<GezelServiceModule> {
+  return import('@bendyline/gezel-service');
+}
+
+function nonNegativeInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function downloadPercent(completed: number | undefined, total: number | undefined): number | null {
+  if (
+    completed === undefined ||
+    total === undefined ||
+    !Number.isFinite(completed) ||
+    !Number.isFinite(total) ||
+    total <= 0
+  ) {
+    return null;
+  }
+  return Math.min(100, Math.max(0, (completed / total) * 100));
+}
+
+function toProviderChunk(chunk: ChatCompletionChunk): ProviderChatChunk {
+  const choice = chunk.choices[0];
+  const reason: string | null = choice?.finish_reason ?? null;
+  const promptTokens = nonNegativeInteger(chunk.usage?.prompt_tokens);
+  const completionTokens = nonNegativeInteger(chunk.usage?.completion_tokens);
+  return {
+    text: typeof choice?.delta?.content === 'string' ? choice.delta.content : '',
+    finishReason: reason === 'length' ? 'length' : reason === null ? null : 'stop',
+    model: typeof chunk.model === 'string' && chunk.model ? chunk.model : null,
+    usage:
+      promptTokens !== null && completionTokens !== null
+        ? { promptTokens, completionTokens }
+        : null,
+  };
+}
+
+async function* adaptStream(stream: ChatStream): AsyncGenerator<ProviderChatChunk> {
+  for await (const chunk of stream) yield toProviderChunk(chunk);
+}
+
+async function streamFrom(
+  app: GezelApp,
+  request: ProviderChatRequest,
+  signal: AbortSignal,
+): Promise<AsyncIterable<ProviderChatChunk>> {
+  const stream = await app.chat(
+    {
+      model: request.model,
+      messages: request.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      stream: true,
+      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+    },
+    { signal },
+  );
+  return adaptStream(stream);
+}
+
+/** `llama-cpp:qwen3.8-27b-q4` → the engine and the catalog id it names. */
+function hostedModelParts(id: string): { engine: EnsureModelEngine; catalogId: string } | null {
+  const separator = id.indexOf(':');
+  if (separator <= 0) return null;
+  const engine = id.slice(0, separator) as EnsureModelEngine;
+  const catalogId = id.slice(separator + 1);
+  return HOSTED_ENGINES.has(engine) && catalogId ? { engine, catalogId } : null;
+}
+
+/** A connection to the person's own Gezel. */
+class InstalledGezelConnection implements AiProviderConnection {
+  readonly mode: AiProviderConnection['mode'];
+
+  constructor(
+    private readonly app: GezelApp,
+    authorization: LocalAuthorizedConnection,
+    private readonly credentials: AiCredentialStore,
+  ) {
+    // This path never asks the SDK to spawn a daemon, so the connection is to
+    // a Gezel the person installed; 'spawned' is mapped for completeness.
+    this.mode = authorization.daemon.mode === 'spawned' ? 'hosted' : 'installed';
+  }
+
+  async listModels(): Promise<readonly ProviderModelEntry[]> {
+    const listing = await this.app.models();
+    return listing.data;
+  }
+
+  async installModel(
+    modelId: string,
+    signal: AbortSignal,
+    onProgress: (progress: AiProgress) => void,
+  ): Promise<void> {
+    const result = await this.app.ensureModel({ model: modelId }, { signal });
+    if (result.status === 'ready' || !result.job_id) {
+      onProgress({ phase: 'ready', message: 'Model is ready.', percent: 100 });
+      return;
+    }
+    onProgress({ phase: 'weights', message: `Downloading ${modelId}…`, percent: null });
+    for await (const event of this.app.streamEnsureEvents(result.job_id, { signal })) {
+      if (event.type === 'progress') {
+        onProgress({
+          phase: 'weights',
+          message: `Downloading ${modelId}…`,
+          percent: downloadPercent(event.bytesWritten, event.totalBytes),
+        });
+      } else if (event.type === 'verifying') {
+        onProgress({ phase: 'verifying', message: 'Verifying the model…', percent: null });
+      } else if (event.type === 'extracting-metadata') {
+        onProgress({ phase: 'metadata', message: 'Reading model metadata…', percent: null });
+      } else if (event.type === 'retrying') {
+        onProgress({
+          phase: 'retrying',
+          message: `Retrying the download (${event.attempt}/${event.maxAttempts})…`,
+          percent: null,
+        });
+      } else if (event.type === 'error') {
+        throw new AiHostError(
+          'model-download-failed',
+          'Gezel could not download the model.',
+          event.error,
+        );
+      } else if (event.type === 'done') {
+        onProgress({ phase: 'ready', message: 'Model is ready.', percent: 100 });
+      }
+    }
+  }
+
+  streamChat(
+    request: ProviderChatRequest,
+    signal: AbortSignal,
+  ): Promise<AsyncIterable<ProviderChatChunk>> {
+    return streamFrom(this.app, request, signal);
+  }
+
+  async revoke(): Promise<void> {
+    try {
+      await this.app.revokeMyToken(GEZEL_APP_ID);
+    } finally {
+      await this.credentials.delete();
+    }
+  }
+
+  close(): Promise<void> {
+    return this.app.close();
+  }
+}
+
+/** A private daemon DocBlocks started, or one a sibling DocBlocks started. */
+class HostedGezelConnection implements AiProviderConnection {
+  readonly mode = 'hosted' as const;
+
+  constructor(
+    private readonly gezel: Gezel,
+    readonly version: string | null,
+  ) {}
+
+  async listModels(): Promise<readonly ProviderModelEntry[]> {
+    const listing = await this.gezel.openai.models();
+    return listing.data.filter((entry) => hostedModelParts(entry.id) !== null);
+  }
+
+  /**
+   * Provision the engine for a model the person already has. `ensureModel`
+   * would also download missing weights; that is never what DocBlocks asked
+   * for, so the first sign of a weights download ends the attempt.
+   */
+  async prepare(modelId: string, onProgress: (progress: AiProgress) => void): Promise<void> {
+    const parts = hostedModelParts(modelId);
+    if (!parts) return;
+    try {
+      await this.gezel.ensureModel({
+        model: parts.catalogId,
+        engine: parts.engine,
+        allowWeightDownload: false,
+        onEvent: (event) => {
+          if (event.phase === 'engine') {
+            onProgress({ phase: 'engine', message: event.message, percent: event.percent ?? null });
+          }
+        },
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: unknown }).code === 'model_download_required'
+      ) {
+        throw new AiHostError(
+          'model-unavailable',
+          `${parts.catalogId} is not installed. Use Add model in Settings to download it.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async installModel(
+    modelId: string,
+    signal: AbortSignal,
+    onProgress: (progress: AiProgress) => void,
+  ): Promise<void> {
+    const parts = hostedModelParts(modelId);
+    if (!parts) {
+      throw new AiHostError('model-unavailable', 'That model cannot run in DocBlocks.');
+    }
+    await this.gezel.ensureModel({
+      model: parts.catalogId,
+      engine: parts.engine,
+      signal,
+      onEvent: (event) => {
+        if (event.phase === 'ready') {
+          onProgress({ phase: 'ready', message: 'Model is ready.', percent: 100 });
+          return;
+        }
+        const completed =
+          event.phase === 'bundle'
+            ? event.bytesCompleted
+            : event.phase === 'weights'
+              ? event.bytesWritten
+              : undefined;
+        const total =
+          event.phase === 'bundle'
+            ? event.bytesTotal
+            : event.phase === 'weights'
+              ? event.totalBytes
+              : undefined;
+        onProgress({
+          phase: event.phase,
+          message: event.message,
+          percent:
+            ('percent' in event ? (event.percent ?? null) : null) ??
+            downloadPercent(completed, total),
+        });
+      },
+    });
+  }
+
+  streamChat(
+    request: ProviderChatRequest,
+    signal: AbortSignal,
+  ): Promise<AsyncIterable<ProviderChatChunk>> {
+    return streamFrom(this.gezel.openai, request, signal);
+  }
+
+  /** A private daemon holds no grant to withdraw. */
+  async revoke(): Promise<void> {}
+
+  /** Stops a daemon this app started; only releases one a sibling started. */
+  close(): Promise<void> {
+    return this.gezel.close();
+  }
+}
+
+export class GezelConnector implements AiConnector {
+  readonly providerName = 'Gezel';
+  private readonly credentials: AiCredentialStore;
+  private readonly loadSdk: () => Promise<GezelSdkModule>;
+  private readonly loadHostSdk: () => Promise<GezelHostSdkModule>;
+  private readonly loadService: () => Promise<GezelServiceModule>;
+  private readonly endpoint: GezelConnectorOptions['endpoint'];
+  private readonly home: string | undefined;
+  private readonly hostRuntime: () => Promise<GezelHostRuntime | null>;
+  private readonly hostInProcess: boolean;
+  private readonly hostHome: string | undefined;
+  private sdk: Promise<GezelSdkModule> | null = null;
+  private hostSdk: Promise<GezelHostSdkModule> | null = null;
+  private service: Promise<GezelServiceModule> | null = null;
+  private readonly hostNative: GezelNativeHost | undefined;
+
+  constructor(options: GezelConnectorOptions) {
+    this.credentials = options.credentials;
+    this.loadSdk = options.loadSdk ?? loadGezelSdk;
+    this.loadHostSdk = options.loadHostSdk ?? loadGezelHostSdk;
+    this.loadService = options.loadService ?? loadGezelService;
+    this.endpoint = options.endpoint;
+    this.home = options.home;
+    this.hostRuntime = options.hostRuntime ?? (() => Promise.resolve(null));
+    this.hostInProcess = (options.hostInProcess ?? false) && options.hostNative?.canHost !== false;
+    this.hostNative = options.hostNative;
+    this.hostHome = options.hostHome;
+  }
+
+  async detect(): Promise<AiDetection> {
+    const canHost = this.hostInProcess || (await this.hostRuntime().catch(() => null)) !== null;
+    // An explicit endpoint is a configured daemon: it is either answering the
+    // connection that follows or it is not, and that attempt says which.
+    if (this.endpoint) return { installed: true, running: true, version: null, canHost };
+    const sdk = await this.module();
+    const result = await sdk.detectGezel(this.home ? { home: this.home } : undefined);
+    return {
+      installed: result.installed,
+      running: result.running,
+      version: result.version ?? null,
+      canHost,
+    };
+  }
+
+  async connect(options: AiConnectOptions): Promise<AiProviderConnection> {
+    const runtime = await this.hostRuntime().catch(() => null);
+    try {
+      return await this.connectInstalled(options);
+    } catch (error) {
+      if ((!this.hostInProcess && !runtime) || !HOST_FALLBACK_CODES.has(toAiError(error).code)) {
+        throw error;
+      }
+    }
+    return this.connectHosted(runtime);
+  }
+
+  forget(): Promise<void> {
+    return this.credentials.delete();
+  }
+
+  private async connectInstalled(options: AiConnectOptions): Promise<AiProviderConnection> {
+    const sdk = await this.module();
+    const credentials = this.credentials;
+    const { app, authorization } = await sdk.connectLocal({
+      appId: GEZEL_APP_ID,
+      appName: GEZEL_APP_NAME,
+      scopes: [...GEZEL_SCOPES],
+      // DocBlocks is a first-party client: ask for the typed code even though
+      // an inference-only grant would accept a click. It is also what makes a
+      // silent reconnect safe — without a code handler the SDK refuses to
+      // register a new grant, so a stale token can never raise a prompt.
+      requireVerificationCode: true,
+      approvalTimeoutSec: APPROVAL_TIMEOUT_SEC,
+      tokenStorage: {
+        load: () => credentials.load(),
+        save: (_appId, token) => credentials.save(token),
+        delete: () => credentials.delete(),
+      },
+      ...(options.interactive && options.onVerificationCode
+        ? { onVerificationCode: options.onVerificationCode }
+        : {}),
+      ...(this.endpoint
+        ? { baseUrl: this.endpoint.baseUrl, fetch: this.endpoint.fetch }
+        : this.home
+          ? { daemon: { home: this.home } }
+          : {}),
+    });
+    return new InstalledGezelConnection(app, authorization, credentials);
+  }
+
+  private async connectHosted(runtime: GezelHostRuntime | null): Promise<AiProviderConnection> {
+    const hostSdk = await this.hostModule();
+    try {
+      const serviceModule = this.hostInProcess ? await this.serviceModule() : null;
+      const nativeBinDir = this.hostNative?.nativeBinDir ?? runtime?.nativeBinDir;
+      if (nativeBinDir) {
+        const verifier = serviceModule ?? (await this.serviceModule());
+        // Gezel's verifier also stamps this variable. Let the SDK own its
+        // lifetime instead, so verification failure/close cannot leak a path.
+        const previous = process.env.GEZEL_NATIVE_BIN_DIR;
+        try {
+          const verified = await verifier.reuseVerifiedElectronNativeBinaries({
+            candidates: [nativeBinDir],
+            allowStandaloneMacPayload:
+              this.hostNative?.allowStandaloneMacPayload ?? runtime?.source === 'development',
+          });
+          if (!verified.reused) {
+            throw new Error(`Bundled Gezel engines failed verification: ${verified.reason}`);
+          }
+        } finally {
+          if (previous === undefined) delete process.env.GEZEL_NATIVE_BIN_DIR;
+          else process.env.GEZEL_NATIVE_BIN_DIR = previous;
+        }
+      }
+      const hostedService: HostServiceModule | null = serviceModule
+        ? {
+            ...serviceModule,
+            startService: async (input) => {
+              const restore =
+                this.hostNative?.distributionProfile === 'store'
+                  ? clearGezelEngineOverrides()
+                  : () => undefined;
+              try {
+                const running = await serviceModule.startService(input);
+                return {
+                  ...running,
+                  stop: async () => {
+                    try {
+                      await running.stop();
+                    } finally {
+                      restore();
+                    }
+                  },
+                };
+              } catch (error) {
+                restore();
+                throw error;
+              }
+            },
+          }
+        : null;
+      const inProcessHost: HostOptions | null = this.hostInProcess
+        ? {
+            mode: 'in-process',
+            inferenceOnly: true,
+            serviceModule: hostedService ?? undefined,
+            ...(nativeBinDir ? { nativeBinDir } : {}),
+            ...(this.hostNative
+              ? { distributionProfile: this.hostNative.distributionProfile }
+              : {}),
+            ...(this.hostHome ? { home: this.hostHome } : {}),
+            ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
+          }
+        : null;
+      const gezel = await hostSdk.connectOrHost({
+        appId: GEZEL_APP_ID,
+        appName: GEZEL_APP_NAME,
+        scopes: [...GEZEL_SCOPES],
+        // The person's own Gezel was just tried; this call only hosts.
+        adoptUserDaemon: false,
+        host: inProcessHost
+          ? inProcessHost
+          : {
+              mode: 'child',
+              nodePath: runtime?.nodePath,
+              daemonEntry: runtime?.daemonEntry,
+              // Engines shipped with DocBlocks; without them the daemon
+              // downloads the one it pins on first use.
+              ...(nativeBinDir || runtime?.nativeBinDir
+                ? { nativeBinDir: nativeBinDir ?? runtime?.nativeBinDir }
+                : {}),
+              ...(this.hostNative
+                ? { distributionProfile: this.hostNative.distributionProfile }
+                : {}),
+              startTimeoutMs: HOST_START_TIMEOUT_MS,
+              ...(this.hostHome ? { home: this.hostHome } : {}),
+              ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
+            },
+      });
+      return new HostedGezelConnection(gezel, runtime?.version ?? null);
+    } catch (error) {
+      throw new AiHostError(
+        'runtime-missing',
+        'DocBlocks could not start its built-in Gezel.',
+        error instanceof Error ? error.message : undefined,
+      );
+    }
+  }
+
+  private module(): Promise<GezelSdkModule> {
+    // Retry after a failed load rather than caching the rejection forever.
+    this.sdk ??= this.loadSdk().catch((error: unknown) => {
+      this.sdk = null;
+      throw error;
+    });
+    return this.sdk;
+  }
+
+  private hostModule(): Promise<GezelHostSdkModule> {
+    this.hostSdk ??= this.loadHostSdk().catch((error: unknown) => {
+      this.hostSdk = null;
+      throw error;
+    });
+    return this.hostSdk;
+  }
+
+  private serviceModule(): Promise<GezelServiceModule> {
+    this.service ??= this.loadService().catch((error: unknown) => {
+      this.service = null;
+      throw error;
+    });
+    return this.service;
+  }
+}

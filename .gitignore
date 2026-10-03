@@ -156,6 +156,14 @@ vite.config.ts.timestamp-*
 
 # Skill output (architecture / quality / a11y / ux reviews) — kept local by default
 reports/
+
+# Gezel project state. Opening this repository as a Gezel project writes its
+# content index (a SQLite database that can run to hundreds of megabytes),
+# imported craftbooks, and import provenance here. None of it is DocBlocks
+# source, and Prettier reads this file, so ignoring it also keeps the folder
+# out of the format gate.
+.gezel/
 .DS_Store
 /.release-audit-2.1.2-20260717
 /ship-audit
+/release-candidate-audit

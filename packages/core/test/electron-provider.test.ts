@@ -22,6 +22,15 @@ function installMockHost(fsImpl: Partial<DocBlocksHostAPI['fs']>): { calls: unkn
     },
   });
   (globalThis as unknown as { docBlocksHost: Partial<DocBlocksHostAPI> }).docBlocksHost = {
+    // A host is only recognised once it declares a parseable environment: the
+    // bridge identifies itself rather than being inferred from duck-typing.
+    env: {
+      surface: 'electron',
+      surfaceLabel: 'desktop',
+      platform: 'darwin',
+      appVersion: '0.0.0-test',
+      isDev: true,
+    },
     fs: fs as DocBlocksHostAPI['fs'],
   };
   return { calls };
@@ -105,6 +114,6 @@ describe('ElectronFileSystemProvider', () => {
       err = e;
     }
     expect(err).to.be.an('error');
-    expect((err as Error).message).to.include('docBlocksHost');
+    expect((err as Error).message).to.include('legacy fs bridge');
   });
 });

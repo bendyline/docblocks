@@ -1,8 +1,10 @@
 import { expect } from 'chai';
 import type {
   DisplayMediaRequestHandlerHandlerRequest,
+  MediaAccessPermissionRequest,
   PermissionCheckHandlerHandlerDetails,
   PermissionRequest,
+  Session,
   WebContents,
   WebFrameMain,
 } from 'electron';
@@ -11,10 +13,14 @@ import {
   allowsDisplayMediaRequest,
   allowsPermissionCheck,
   allowsPermissionRequest,
+  configureDesktopPermissionPolicy,
   displayMediaHandlerOptions,
   grantedDisplayStreams,
+  grantsMacMediaAccess,
+  requiredMacMediaTypes,
   selectDisplayCaptureSource,
 } from '../main/permission-policy.js';
+import type { MacMediaAccess, MacMediaType } from '../main/permission-policy.js';
 
 const TRUSTED_URL = 'app://docblocks/index.html';
 const TRUSTED_ORIGIN = 'app://docblocks';
@@ -60,6 +66,22 @@ function fakeRenderer(initialUrl = TRUSTED_URL, initialOrigin = TRUSTED_ORIGIN):
 }
 
 function permissionRequest(overrides: Partial<PermissionRequest> = {}): PermissionRequest {
+  return {
+    isMainFrame: true,
+    requestingUrl: TRUSTED_URL,
+    ...overrides,
+  };
+}
+
+type PermissionRequestHandler = Exclude<
+  Parameters<Session['setPermissionRequestHandler']>[0],
+  null
+>;
+type PolicySession = Parameters<typeof configureDesktopPermissionPolicy>[0]['session'];
+
+function mediaRequest(
+  overrides: Partial<MediaAccessPermissionRequest> = {},
+): MediaAccessPermissionRequest {
   return {
     isMainFrame: true,
     requestingUrl: TRUSTED_URL,
@@ -218,6 +240,144 @@ describe('desktop permission policy', () => {
         }),
       ),
     ).to.equal(false);
+  });
+
+  it('maps a macOS media request to the TCC types it needs, and nothing elsewhere', () => {
+    const media = (mediaTypes?: Array<'video' | 'audio'>) =>
+      mediaRequest(mediaTypes ? { mediaTypes } : {});
+
+    expect(requiredMacMediaTypes('darwin', 'media', media(['video']))).to.deep.equal(['camera']);
+    expect(requiredMacMediaTypes('darwin', 'media', media(['audio']))).to.deep.equal([
+      'microphone',
+    ]);
+    expect(requiredMacMediaTypes('darwin', 'media', media(['video', 'audio']))).to.deep.equal([
+      'camera',
+      'microphone',
+    ]);
+    // Chromium omits mediaTypes on some paths; assume the widest ask.
+    expect(requiredMacMediaTypes('darwin', 'media', media())).to.deep.equal([
+      'camera',
+      'microphone',
+    ]);
+    expect(requiredMacMediaTypes('darwin', 'display-capture', media(['video']))).to.deep.equal([]);
+    expect(requiredMacMediaTypes('win32', 'media', media(['video']))).to.deep.equal([]);
+    expect(requiredMacMediaTypes('linux', 'media', media(['video']))).to.deep.equal([]);
+  });
+
+  it('prompts only for undecided macOS media types and fails closed otherwise', async () => {
+    const asked: MacMediaType[] = [];
+    const access = (
+      statuses: Partial<Record<MacMediaType, ReturnType<MacMediaAccess['getMediaAccessStatus']>>>,
+      answer: boolean,
+    ): MacMediaAccess =>
+      ({
+        getMediaAccessStatus: (type: MacMediaType) => statuses[type] ?? 'not-determined',
+        askForMediaAccess: async (type: MacMediaType) => {
+          asked.push(type);
+          return answer;
+        },
+      }) as unknown as MacMediaAccess;
+
+    // Already granted: no prompt, still allowed.
+    expect(
+      await grantsMacMediaAccess(['microphone'], access({ microphone: 'granted' }, false)),
+    ).to.equal(true);
+    expect(asked).to.deep.equal([]);
+
+    // Undecided: prompt, and honor the answer.
+    expect(await grantsMacMediaAccess(['camera'], access({}, true))).to.equal(true);
+    expect(asked).to.deep.equal(['camera']);
+
+    asked.length = 0;
+    expect(
+      await grantsMacMediaAccess(
+        ['camera', 'microphone'],
+        access({ microphone: 'granted' }, false),
+      ),
+    ).to.equal(false);
+    expect(asked).to.deep.equal(['camera']);
+
+    // Denied/restricted resolve false without a prompt, which is what turns a
+    // frameless black preview into a NotAllowedError the renderer can report.
+    asked.length = 0;
+    expect(await grantsMacMediaAccess(['camera'], access({ camera: 'denied' }, false))).to.equal(
+      false,
+    );
+
+    expect(await grantsMacMediaAccess([], undefined)).to.equal(true);
+    expect(await grantsMacMediaAccess(['camera'], undefined)).to.equal(false);
+  });
+
+  it('gates the registered macOS media handler on a TCC grant and revalidates after it', async () => {
+    const owner = fakeRenderer();
+    // Undecided is the state that makes Chromium hand back a live track with
+    // no frames, so it is the one the handler has to turn into a real prompt.
+    const status: ReturnType<MacMediaAccess['getMediaAccessStatus']> = 'not-determined';
+    let answer = true;
+    let beforeAnswer: (() => void) | null = null;
+    const asked: MacMediaType[] = [];
+
+    let handler: PermissionRequestHandler | null = null;
+    const policy = (platform: NodeJS.Platform): PermissionRequestHandler => {
+      configureDesktopPermissionPolicy({
+        session: {
+          setPermissionRequestHandler: (fn: PermissionRequestHandler | null) => {
+            handler = fn;
+          },
+          setPermissionCheckHandler: () => {},
+          setDisplayMediaRequestHandler: () => {},
+        } as unknown as PolicySession,
+        getOwner: () => owner.contents,
+        getDisplaySources: async () => [],
+        getPrimaryDisplayId: () => 1,
+        platform,
+        mediaAccess: {
+          getMediaAccessStatus: () => status,
+          askForMediaAccess: async (type: MacMediaType) => {
+            asked.push(type);
+            beforeAnswer?.();
+            return answer;
+          },
+        } as unknown as MacMediaAccess,
+      });
+      if (!handler) throw new Error('policy did not register a permission request handler');
+      return handler;
+    };
+
+    const ask = (fn: PermissionRequestHandler, mediaTypes: Array<'video' | 'audio'> = ['video']) =>
+      new Promise<boolean>((resolve) => {
+        fn(owner.contents, 'media', resolve, mediaRequest({ mediaTypes }));
+      });
+
+    const darwin = policy('darwin');
+    expect(await ask(darwin)).to.equal(true);
+    expect(asked).to.deep.equal(['camera']);
+
+    answer = false;
+    expect(await ask(darwin)).to.equal(false);
+
+    // A grant that lands after the owner is gone must not be honored.
+    answer = true;
+    beforeAnswer = () => owner.destroy();
+    expect(await ask(darwin)).to.equal(false);
+    beforeAnswer = null;
+
+    // Elsewhere the handler stays synchronous and untouched by TCC.
+    const fresh = fakeRenderer();
+    asked.length = 0;
+    const win = policy('win32');
+    await new Promise<void>((resolve) => {
+      win(
+        fresh.contents,
+        'media',
+        (granted) => {
+          expect(granted).to.equal(false); // getOwner() still points at the destroyed renderer
+          resolve();
+        },
+        mediaRequest({ mediaTypes: ['video'] }),
+      );
+    });
+    expect(asked).to.deep.equal([]);
   });
 
   it('selects the primary display deterministically and configures the native picker by OS', () => {

@@ -11,7 +11,12 @@ import {
   type ReactNode,
 } from 'react';
 import { Dialog } from '../components/Dialog.js';
-import { ACCENT_COLORS, type AccentColor, type ThemePreference } from '../preferences/theme.js';
+import {
+  ACCENT_COLORS,
+  type AccentColor,
+  type InterfaceFontPreference,
+  type ThemePreference,
+} from '../preferences/theme.js';
 import type { ProofingPreferences } from '../preferences/proofing.js';
 import {
   WRITE_CANVAS_FONT_SCHEMES,
@@ -25,7 +30,11 @@ import {
   type WriteCanvasPreferences,
 } from '../preferences/write-canvas.js';
 
-export type { AccentColor, ThemePreference } from '../preferences/theme.js';
+export type {
+  AccentColor,
+  InterfaceFontPreference,
+  ThemePreference,
+} from '../preferences/theme.js';
 export type { ProofingPreferences } from '../preferences/proofing.js';
 
 const ACCENT_LABELS: Record<AccentColor, string> = {
@@ -92,6 +101,56 @@ export function ThemeSettings({ value, onChange, name = 'theme' }: ThemeSettings
             onChange={() => onChange('dark')}
           />
           Dark
+        </label>
+      </div>
+    </fieldset>
+  );
+}
+
+export interface InterfaceFontSettingsProps {
+  value: InterfaceFontPreference;
+  onChange: (font: InterfaceFontPreference) => void;
+  name?: string;
+}
+
+/**
+ * Choose the typeface for the app's own chrome, not for documents.
+ *
+ * The default follows the operating system, which is what almost everyone
+ * should keep. The bundled option exists for two reasons worth stating in the
+ * UI: identical typography across machines, and a rendering that is the same
+ * everywhere — which is what lets the visual-regression suite compare one set
+ * of baselines across operating systems at all.
+ */
+export function InterfaceFontSettings({
+  value,
+  onChange,
+  name = 'interface-font',
+}: InterfaceFontSettingsProps) {
+  return (
+    <fieldset className="db-settings-fieldset">
+      <legend className="db-settings-legend">Interface font</legend>
+      <p className="db-settings-hint">Applies to menus and panels, never to your documents.</p>
+      <div className="db-settings-radio-row">
+        <label className="db-settings-radio db-settings-radio--inline">
+          <input
+            type="radio"
+            name={name}
+            value="system"
+            checked={value !== 'fixed'}
+            onChange={() => onChange('system')}
+          />
+          System default
+        </label>
+        <label className="db-settings-radio db-settings-radio--inline">
+          <input
+            type="radio"
+            name={name}
+            value="fixed"
+            checked={value === 'fixed'}
+            onChange={() => onChange('fixed')}
+          />
+          Bundled
         </label>
       </div>
     </fieldset>

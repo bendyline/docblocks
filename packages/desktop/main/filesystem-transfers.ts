@@ -62,16 +62,24 @@ export class FileSystemTransfers {
     itemPath: WorkspacePath,
     provider: NodeWorkspaceFileSystemV2,
   ) {
-    // Reserve the maximum before opening: an external writer can grow the
-    // source between a pathname stat and the descriptor read.
-    const transfer = await this.create(owner, instance, 'read', itemPath, LIMITS.fileBytes);
+    // A read cannot declare its size up front: an external writer can grow the
+    // source between a pathname stat and the descriptor read. So reserve
+    // nothing here and grow with the spool instead — reserving the 1 GiB
+    // ceiling per read let two small files exhaust the whole byte budget.
+    const transfer = await this.create(owner, instance, 'read', itemPath, 0);
     try {
       const entry = await this.use(transfer, () =>
         provider.readTo(itemPath, async (chunks) => {
           await transfer.handle.truncate(0);
+          // readTo restarts this sink when the source changed mid-read. Release
+          // the abandoned attempt so a retry cannot double-count its bytes.
+          this.reserveTo(transfer, 0);
           let offset = 0;
           for await (const chunk of chunks) {
             this.assertActive(transfer);
+            // Admit each chunk before it lands, so the budget always reflects
+            // bytes actually spooled even if the source grew mid-read.
+            this.reserveTo(transfer, offset + chunk.byteLength);
             await this.writeAt(transfer.handle, chunk, offset);
             offset += chunk.byteLength;
           }
@@ -124,7 +132,7 @@ export class FileSystemTransfers {
           bytes.byteLength - read,
           offset + read,
         );
-        if (bytesRead === 0) throw new FsError('corrupt', 'Recording transfer ended unexpectedly.');
+        if (bytesRead === 0) throw new FsError('corrupt', 'File transfer ended unexpectedly.');
         read += bytesRead;
       }
       transfer.offset += read;
@@ -142,7 +150,7 @@ export class FileSystemTransfers {
     try {
       return await this.use(transfer, async () => {
         if (transfer.offset !== transfer.size)
-          throw new FsError('corrupt', 'Recording upload is incomplete.');
+          throw new FsError('corrupt', 'File upload is incomplete.');
         const assertActive = () => this.assertActive(transfer);
         async function* chunks() {
           const bytes = new Uint8Array(LIMITS.chunkBytes);
@@ -155,7 +163,7 @@ export class FileSystemTransfers {
               Math.min(bytes.byteLength, transfer.size - offset),
               offset,
             );
-            if (!bytesRead) throw new FsError('corrupt', 'Recording upload ended unexpectedly.');
+            if (!bytesRead) throw new FsError('corrupt', 'File upload ended unexpectedly.');
             offset += bytesRead;
             yield bytes.subarray(0, bytesRead);
           }
@@ -180,12 +188,17 @@ export class FileSystemTransfers {
     transfer.closing = (async () => {
       await transfer.pending?.catch(() => undefined);
       await transfer.handle.close();
-      await fs.unlink(transfer.file);
-      await fs.rmdir(transfer.directory);
-      // Retain the reservation if cleanup fails, so abandoned bytes cannot
-      // accumulate beyond the spool budget while more uploads are accepted.
-      this.transfers.delete(id);
-      this.reserved -= transfer.reserved;
+      try {
+        await fs.unlink(transfer.file);
+        await fs.rmdir(transfer.directory);
+        // Retain the reservation if cleanup fails, so abandoned bytes cannot
+        // accumulate beyond the spool budget while more uploads are accepted.
+        this.reserved -= transfer.reserved;
+      } finally {
+        // The slot is free either way — the handle is closed and the spool
+        // revoked — so a failed unlink must not also cost a transfer slot.
+        this.transfers.delete(id);
+      }
     })();
     return transfer.closing;
   }
@@ -199,6 +212,19 @@ export class FileSystemTransfers {
         .filter((t) => t.owner === owner && t.instance === instance)
         .map((t) => this.close(owner, instance, t.id)),
     );
+  }
+
+  /** Move a spool's reservation to `next` bytes, refusing growth past the budget. */
+  private reserveTo(transfer: Transfer, next: number): void {
+    const delta = next - transfer.reserved;
+    if (delta > 0 && this.reserved + delta > LIMITS.totalBytes) {
+      throw new FsError(
+        'busy',
+        'The file transfer budget is full. Try again once the current transfers finish.',
+      );
+    }
+    this.reserved += delta;
+    transfer.reserved = next;
   }
 
   private validateSize(size: number): void {
@@ -238,14 +264,16 @@ export class FileSystemTransfers {
     this.validateSize(size);
     const instanceKey = `${owner}\0${instance}`;
     if (this.revokedInstances.has(instanceKey))
-      throw new FsError('closed', 'Recording transfer owner is closed.');
-    if (
-      this.transfers.size + this.creating >= LIMITS.transfers ||
-      this.reserved + size > LIMITS.totalBytes
-    )
+      throw new FsError('closed', 'File transfer owner is closed.');
+    if (this.transfers.size + this.creating >= LIMITS.transfers)
       throw new FsError(
         'busy',
-        'Too many recording transfers. Try again after the current transfer finishes.',
+        'Too many file transfers are open. Try again once one of them finishes.',
+      );
+    if (this.reserved + size > LIMITS.totalBytes)
+      throw new FsError(
+        'busy',
+        'The file transfer budget is full. Try again once the current transfers finish.',
       );
     this.reserved += size;
     this.creating += 1;
@@ -256,7 +284,7 @@ export class FileSystemTransfers {
       const file = path.join(directory, 'payload');
       handle = await fs.open(file, 'wx+', 0o600);
       if (this.revokedInstances.has(instanceKey))
-        throw new FsError('closed', 'Recording transfer owner is closed.');
+        throw new FsError('closed', 'File transfer owner is closed.');
       const transfer: Transfer = {
         id: randomUUID(),
         owner,
@@ -302,19 +330,19 @@ export class FileSystemTransfers {
       transfer.instance !== instance ||
       transfer.kind !== kind
     )
-      throw new FsError('closed', 'Recording transfer is unavailable.');
+      throw new FsError('closed', 'File transfer is unavailable.');
     this.assertActive(transfer);
     return transfer;
   }
 
   private assertActive(transfer: Transfer): void {
     if (transfer.revoked || Date.now() >= transfer.deadline)
-      throw new FsError('closed', 'Recording transfer expired or was cancelled.');
+      throw new FsError('closed', 'File transfer expired or was cancelled.');
   }
 
   private validateOffset(transfer: Transfer, offset: number): void {
     if (!Number.isSafeInteger(offset) || offset !== transfer.offset || offset > transfer.size)
-      throw new FsError('invalid-path', 'Recording chunks must be transferred in order.');
+      throw new FsError('invalid-path', 'File chunks must be transferred in order.');
   }
 
   private async writeAt(handle: FileHandle, bytes: Uint8Array, offset: number): Promise<void> {
@@ -326,7 +354,7 @@ export class FileSystemTransfers {
         bytes.byteLength - written,
         offset + written,
       );
-      if (!bytesWritten) throw new FsError('io', 'Recording transfer could not write its data.');
+      if (!bytesWritten) throw new FsError('io', 'File transfer could not write its data.');
       written += bytesWritten;
     }
   }
@@ -334,7 +362,7 @@ export class FileSystemTransfers {
   private use<T>(transfer: Transfer, work: () => Promise<T>): Promise<T> {
     this.assertActive(transfer);
     if (transfer.pending)
-      throw new FsError('busy', 'A recording transfer request is already in progress.');
+      throw new FsError('busy', 'A file transfer request is already in progress.');
     if (transfer.timer) clearTimeout(transfer.timer);
     // The absolute deadline still applies to a stalled request.
     const pending = Promise.resolve().then(work);

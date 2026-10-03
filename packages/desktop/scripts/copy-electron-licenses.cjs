@@ -6,6 +6,10 @@
  * download exists under node_modules/electron/dist. electron-builder always
  * extracts the exact Electron archive it is packaging, so its afterExtract
  * staging tree is the authoritative source for these files.
+ *
+ * On macOS, electron-builder 26.16 and later move the two files from beside
+ * the app bundle into its `Contents/Resources` before this hook runs, so the
+ * resources directory is searched too.
  */
 
 const { copyFile, mkdir, readdir, stat } = require('node:fs/promises');
@@ -22,16 +26,18 @@ const LEGAL_FILES = [
   },
 ];
 
-async function findExtractedFile(appOutDir, candidates) {
-  for (const candidate of candidates) {
-    const source = path.join(appOutDir, candidate);
-    try {
-      if ((await stat(source)).isFile()) {
-        return source;
-      }
-    } catch (error) {
-      if (error?.code !== 'ENOENT') {
-        throw error;
+async function findExtractedFile(directories, candidates) {
+  for (const directory of directories) {
+    for (const candidate of candidates) {
+      const source = path.join(directory, candidate);
+      try {
+        if ((await stat(source)).isFile()) {
+          return source;
+        }
+      } catch (error) {
+        if (error?.code !== 'ENOENT') {
+          throw error;
+        }
       }
     }
   }
@@ -60,12 +66,13 @@ async function findResourcesDirectory(context) {
 }
 
 exports.default = async function copyElectronLicenses(context) {
-  const destinationDirectory = path.join(await findResourcesDirectory(context), 'licenses');
+  const resourcesDirectory = await findResourcesDirectory(context);
+  const destinationDirectory = path.join(resourcesDirectory, 'licenses');
   await mkdir(destinationDirectory, { recursive: true });
 
   await Promise.all(
     LEGAL_FILES.map(async ({ sources, destination }) => {
-      const source = await findExtractedFile(context.appOutDir, sources);
+      const source = await findExtractedFile([context.appOutDir, resourcesDirectory], sources);
       await copyFile(source, path.join(destinationDirectory, destination));
     }),
   );

@@ -17,10 +17,11 @@ export { isElectronHost } from '../host/index.js';
 
 function getHostFs(): DocBlocksHostFsAPI {
   const host = maybeGetDocBlocksHost();
-  if (!host) {
-    throw new Error(
-      'ElectronFileSystemProvider: docBlocksHost is not available — not running under Electron?',
-    );
+  // `fs` is the deprecated v1 facade and is optional on the contract: a mobile
+  // host implements `fsV2` only. This provider is Electron-specific, so its
+  // absence is a real misconfiguration rather than a branch to degrade through.
+  if (!host?.fs) {
+    throw new Error('ElectronFileSystemProvider: the host does not expose the legacy fs bridge.');
   }
   return host.fs;
 }

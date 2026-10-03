@@ -166,6 +166,10 @@ async function runHtmlExport(
   // silently skipping the recursion.
   if (options.includeLinkedDocs && mediaContainer && selectedFile) {
     const entryPath = basenameForBundle(selectedFile);
+    const readDocument = (path: string) =>
+      path === entryPath
+        ? Promise.resolve(markdown)
+        : readDocumentFromContainer(mediaContainer, path);
     if (options.htmlStyle === 'rendered') {
       const [{ markdownDocsToHtmlBundle }, { PLAYER_BUNDLE }] = await Promise.all([
         import('@bendyline/squisq-formats/html'),
@@ -173,7 +177,7 @@ async function runHtmlExport(
       ]);
       const blob = await markdownDocsToHtmlBundle({
         entryPath,
-        readDocument: (path) => readDocumentFromContainer(mediaContainer, path),
+        readDocument,
         readBinary: (path) => mediaContainer.readFile(path),
         playerScript: PLAYER_BUNDLE,
         title: baseName,
@@ -188,7 +192,7 @@ async function runHtmlExport(
     const { markdownDocsToPlainHtmlBundle } = await import('@bendyline/squisq-formats/html');
     const blob = await markdownDocsToPlainHtmlBundle({
       entryPath,
-      readDocument: (path) => readDocumentFromContainer(mediaContainer, path),
+      readDocument,
       readBinary: (path) => mediaContainer.readFile(path),
       title: baseName,
       themeId,

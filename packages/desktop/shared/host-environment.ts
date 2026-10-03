@@ -56,6 +56,22 @@ function switchValue(argv: readonly string[], prefix: string): string | undefine
   return undefined;
 }
 
+const AI_AVAILABLE_SWITCH = '--docblocks-ai=';
+
+/**
+ * Main-side: whether this build offers AI at all. Kept apart from
+ * `HostEnvironmentValues` because those are spread into `HostEnvironment`,
+ * whose shape is exact; this decides whether the preload exposes `ai`.
+ */
+export function aiAvailabilityArguments(available: boolean): string[] {
+  return [`${AI_AVAILABLE_SWITCH}${available ? '1' : '0'}`];
+}
+
+/** Preload-side. Fail safe: only an explicit '1' exposes the AI namespace. */
+export function parseAiAvailabilityArgument(argv: readonly string[]): boolean {
+  return switchValue(argv, AI_AVAILABLE_SWITCH) === '1';
+}
+
 /** Preload-side: decode the main-owned values out of `process.argv`. */
 export function parseHostEnvironmentArguments(argv: readonly string[]): HostEnvironmentValues {
   const appVersion = switchValue(argv, APP_VERSION_SWITCH);

@@ -141,7 +141,7 @@ export class ElectronFileSystemProviderV2 implements FileSystemProviderV2 {
   ): Promise<FileSystemFileSnapshot> {
     const canonical = parseWorkspacePath(String(path));
     this.assertOpen('write');
-    // Reject before copying or sending a large recording through the bridge.
+    // Reject before copying or sending a large file through the bridge.
     if (data.byteLength > TRANSFER_LIMITS.fileBytes) {
       throw new FsError('quota-exceeded', 'This file exceeds the 1 GiB desktop file limit.', {
         operation: 'write',

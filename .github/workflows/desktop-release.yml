@@ -449,6 +449,17 @@ jobs:
           require_artifact 'packages/desktop/dist/artifacts/latest-linux.yml'
           require_artifact 'packages/desktop/dist/artifacts/latest-linux-arm64.yml'
 
+      # electron-builder writes the AppImage desktop entry at package time, so
+      # only the built bytes can prove the Chromium sandbox survived. The 2.6.2
+      # candidate shipped `Exec=AppRun --no-sandbox %U` from the target default
+      # and no gate saw it. unsquashfs reads the arm64 image on an x64 runner,
+      # which running the AppImage itself cannot do.
+      - name: Verify Linux launchers keep the Chromium sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes squashfs-tools
+          npm run check:linux-launchers
+
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

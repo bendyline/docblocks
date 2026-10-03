@@ -1,15 +1,24 @@
 import type { ViewPreferences } from '@bendyline/squisq-editor-react';
 import type { FileExplorerSortMode } from '../FileExplorer/entry-sort.js';
+import type { DbSidebarPreference } from '../layout/form-factor.js';
+import {
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+} from '../layout/form-factor.js';
+
+export {
+  SIDEBAR_COLLAPSE_THRESHOLD,
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
+} from '../layout/form-factor.js';
 
 const WELCOME_GATEWAY_KEY = 'docblocks:welcomeGatewayDismissed';
 const SIDEBAR_WIDTH_KEY = 'docblocks:sidebarWidth';
 const VIEW_PREFERENCES_KEY = 'docblocks:viewPreferences';
 const FILE_EXPLORER_SORT_MODE_KEY = 'docblocks:fileExplorerSortMode';
-
-export const SIDEBAR_WIDTH_DEFAULT = 320;
-export const SIDEBAR_WIDTH_MIN = 320;
-export const SIDEBAR_WIDTH_MAX = 600;
-export const SIDEBAR_COLLAPSE_THRESHOLD = SIDEBAR_WIDTH_MIN;
+const SIDEBAR_PREFERENCE_KEY = 'docblocks:sidebarMode';
 
 const DEFAULT_VIEW_PREFERENCES: ViewPreferences = Object.freeze({
   outline: false,
@@ -48,6 +57,34 @@ export function loadSidebarWidth(): number {
 export function saveSidebarWidth(px: number): void {
   try {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, String(Math.round(px)));
+  } catch {
+    // Layout persistence is best-effort.
+  }
+}
+
+/**
+ * Load the sidebar preference.
+ *
+ * `collapsed` deliberately degrades to `auto` on load: a reload must never
+ * strand someone in a hidden sidebar they cannot find their way back from.
+ * `pinned` does persist, because that is the setting an iPad user makes once
+ * and expects to keep.
+ */
+export function loadSidebarPreference(): DbSidebarPreference {
+  try {
+    return localStorage.getItem(SIDEBAR_PREFERENCE_KEY) === 'pinned' ? 'pinned' : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
+export function saveSidebarPreference(preference: DbSidebarPreference): void {
+  try {
+    if (preference === 'pinned') {
+      localStorage.setItem(SIDEBAR_PREFERENCE_KEY, 'pinned');
+    } else {
+      localStorage.removeItem(SIDEBAR_PREFERENCE_KEY);
+    }
   } catch {
     // Layout persistence is best-effort.
   }

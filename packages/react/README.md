@@ -60,20 +60,13 @@ function App() {
 The canonical DocBlocks experience in one component — file explorer, workspace picker, app menu, the Squisq editor with its Editor / Markdown / Play views, and the export pipeline.
 
 ```tsx
-<DocBlocksShell
-  theme="auto"
-  logoUrl="/logo.png"
-  ffmpegWasm={{
-    coreURL: '/ffmpeg-core/ffmpeg-core.js',
-    wasmURL: '/ffmpeg-core/ffmpeg-core.wasm',
-  }}
-/>
+<DocBlocksShell theme="auto" logoUrl="/logo.png" />
 ```
 
 - `theme` — `'light' | 'dark' | 'auto'` (auto follows `prefers-color-scheme`)
 - `logoUrl` — brand mark for the app menu button
 - `calcEngineFactory` — optional lazy calculation backend; use the calculation entry point above to enable IronCalc formulas
-- `ffmpegWasm` — optional same-origin ffmpeg core URLs; supplying them enables the built-in Animated GIF flow on cross-origin-isolated hosts
+- `ffmpegWasm` — optional same-origin ffmpeg core URLs; supplying them enables the built-in Animated GIF flow on cross-origin-isolated hosts. **No first-party surface supplies this.** The `@ffmpeg/core` WebAssembly build is GPL-2.0-or-later, which cannot be reconciled with Apple's App Store terms, so it was removed from every DocBlocks distribution. The prop remains for hosts that bring their own encoder
 - `showCodeCopyButton` — shows Copy controls on ordinary fenced code blocks (default: `true`; Mermaid fences remain diagrams)
 - `onCopyCode` — optional clipboard adapter for native hosts; browser hosts fall back to `navigator.clipboard.writeText`
 
@@ -113,7 +106,7 @@ and an optional initial Use mode. Opening the URL creates a session-only
 workspace; generated links warn after 4,096 characters and are capped at
 32,768 characters.
 
-The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, EPUB, HTML, Markdown), visual theme, and page size. Hosts that supply `ffmpegWasm` also expose Animated GIF with timing, orientation, captions, looping, and color controls.
+The export flow: quick re-export of the last configuration plus the full dialog — format (PDF, Word, PowerPoint, EPUB, HTML, Markdown), visual theme, and page size. Video export is available wherever WebCodecs is, and uses the MIT-licensed `mp4-muxer`. A host that supplies `ffmpegWasm` additionally exposes Animated GIF with timing, orientation, captions, looping, and color controls; no first-party surface does. Animated GIF remains available from the CLI and MCP, which use a system FFmpeg binary rather than a distributed one.
 
 Rendered HTML and HTML ZIP exports include Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams.
 

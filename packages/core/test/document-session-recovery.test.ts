@@ -11,6 +11,13 @@ import { MemoryFileSystemProvider } from '../src/filesystem/index.js';
 class MemoryRecoveryStorage implements DocumentRecoveryStorage {
   private readonly values = new Map<string, string>();
 
+  public get length(): number {
+    return this.values.size;
+  }
+  public key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+
   public getItem(key: string): string | null {
     return this.values.get(key) ?? null;
   }
@@ -31,6 +38,43 @@ function scope(session: DocumentSession): { targetKey: string; generation: numbe
 }
 
 describe('DocumentSession crash recovery integration', () => {
+  it('preserves independent drafts when two windows reuse generation and revision numbers', async () => {
+    const storage = new MemoryRecoveryStorage();
+    const journal = new DocumentRecoveryJournal(storage);
+    const first = new DocumentSession({ recoveryJournal: journal, autoSaveEnabled: false });
+    const second = new DocumentSession({
+      recoveryJournal: new DocumentRecoveryJournal(storage),
+      autoSaveEnabled: false,
+    });
+    const target = { key: 'shared:document', commit: async () => ({}) };
+    await first.transitionTo(target, 'baseline');
+    await second.transitionTo(target, 'baseline');
+    first.edit('first draft', scope(first));
+    second.edit('second draft', scope(second));
+    expect(journal.list(target.key).map((record) => record.content)).to.have.members([
+      'first draft',
+      'second draft',
+    ]);
+    await first.flush();
+    expect(journal.list(target.key).map((record) => record.content)).to.deep.equal([
+      'second draft',
+    ]);
+    const restarted = new DocumentSession({
+      recoveryJournal: new DocumentRecoveryJournal(storage),
+      autoSaveEnabled: false,
+    });
+    expect((await restarted.transitionTo(target, 'baseline')).content).to.equal('second draft');
+    // The original window advances while its older draft is being recovered.
+    second.edit('newer second draft', scope(second));
+    await restarted.flush();
+    expect(journal.list(target.key).map((record) => record.content)).to.deep.equal([
+      'newer second draft',
+    ]);
+    await first.cancel();
+    await restarted.cancel();
+    expect(journal.lookup(target.key)?.content).to.equal('newer second draft');
+    await second.cancel();
+  });
   it('restores a draft only when the durable baseline still matches', async () => {
     const journal = new DocumentRecoveryJournal(new MemoryRecoveryStorage(), {
       now: () => 1_000,

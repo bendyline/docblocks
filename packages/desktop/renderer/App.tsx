@@ -1,7 +1,6 @@
 import { DocBlocksShell } from '@bendyline/docblocks-react';
 import { getDocBlocksHost } from '@bendyline/docblocks/host';
 import { UpdateStatusItem, useUpdaterStatus } from './UpdateStatusBanner';
-import { DESKTOP_FFMPEG_WASM_CONFIG } from './ffmpegWasmConfig';
 import { DESKTOP_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { DESKTOP_PROOFING_PROVIDER } from './proofingConfig';
 import logoUrl from './docblocks.webp';
@@ -18,11 +17,10 @@ export function App() {
       <DocBlocksShell
         theme="auto"
         logoUrl={logoUrl}
-        ffmpegWasm={DESKTOP_FFMPEG_WASM_CONFIG}
         calcEngineFactory={DESKTOP_CALC_ENGINE_FACTORY}
         proofing={DESKTOP_PROOFING_PROVIDER}
         statusBarSlotRight={<UpdateStatusItem status={updaterStatus} />}
-        onCopyCode={(code) => getDocBlocksHost().clipboard.writeText(code)}
+        onCopyCode={(code) => getDocBlocksHost().clipboard?.writeText(code)}
         allowPresentationWindow={false}
       />
     </div>

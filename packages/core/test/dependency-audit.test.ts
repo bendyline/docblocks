@@ -121,3 +121,116 @@ describe('dependency audit policy', () => {
     );
   });
 });
+
+describe('patched dispositions', () => {
+  const noFindings = {
+    auditReportVersion: 2,
+    vulnerabilities: {},
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+    },
+  };
+  const moderateReport = {
+    ...auditReport,
+    vulnerabilities: {
+      vulnerable: {
+        ...auditReport.vulnerabilities.vulnerable,
+        severity: 'moderate',
+        via: [{ ...auditReport.vulnerabilities.vulnerable.via[0], severity: 'moderate' }],
+      },
+    },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 1, high: 0, critical: 0, total: 1 },
+    },
+  } as const;
+
+  function patched(overrides: Readonly<Record<string, unknown>> = {}): unknown {
+    return {
+      schemaVersion: 1,
+      reviewedAt: '2026-09-07',
+      dispositions: [
+        {
+          package: 'vulnerable',
+          advisory: 'GHSA-AAAA-BBBB-CCCC',
+          severity: 'moderate',
+          scope: 'shipped',
+          classification: 'patched',
+          owner: 'Test maintainers',
+          verifiedBy: 'packages/example/test/fix.test.ts',
+          reason: 'The installed release backports the fix; the advisory range does not credit it.',
+          remediation: 'Nothing to renew; the named test fails if an unpatched release returns.',
+          ...overrides,
+        },
+      ],
+    };
+  }
+  const proof = (path: string): string | null =>
+    path === 'packages/example/test/fix.test.ts' ? '// proves GHSA-AAAA-BBBB-CCCC' : null;
+
+  it('never expires, and needs no periodic re-review', () => {
+    // A year after the last review: a fix does not go stale on a calendar.
+    expect(evaluateAudit(moderateReport, patched(), '2027-09-07', proof).failures).to.deep.equal(
+      [],
+    );
+  });
+
+  it('refuses an expiry, and requires a verification test instead', () => {
+    expect(() => parseDispositionDocument(patched({ expires: '2026-10-01' }))).to.throw(
+      'must have exactly these fields',
+    );
+    const { verifiedBy: _omitted, ...rest } = (
+      patched() as { dispositions: [Record<string, unknown>] }
+    ).dispositions[0];
+    expect(() =>
+      parseDispositionDocument({
+        schemaVersion: 1,
+        reviewedAt: '2026-09-07',
+        dispositions: [rest],
+      }),
+    ).to.throw('must have exactly these fields');
+  });
+
+  it('only accepts a test file inside the repository', () => {
+    for (const verifiedBy of ['../elsewhere/fix.test.ts', '/abs/fix.test.ts', 'packages/fix.ts']) {
+      expect(() => parseDispositionDocument(patched({ verifiedBy })), verifiedBy).to.throw(
+        'verifiedBy must be a repo-relative',
+      );
+    }
+  });
+
+  it('fails when the named test is missing or does not cite the advisory', () => {
+    expect(
+      evaluateAudit(moderateReport, patched(), '2026-09-07', () => null).failures.join('\n'),
+    ).to.include('names a missing test');
+    expect(
+      evaluateAudit(moderateReport, patched(), '2026-09-07', () => '// unrelated').failures.join(
+        '\n',
+      ),
+    ).to.include('does not cite the advisory');
+  });
+
+  it('still cannot wave through a high-severity shipped finding', () => {
+    expect(
+      evaluateAudit(auditReport, patched({ severity: 'high' }), '2026-09-07', proof).failures.join(
+        '\n',
+      ),
+    ).to.include('cannot be dispositioned');
+  });
+
+  it('turns into a notice, not a failure, once npm stops reporting it', () => {
+    // The advisory being corrected must not break a build on the day it happens.
+    const evaluation = evaluateAudit(noFindings, patched(), '2026-09-07', proof);
+    expect(evaluation.failures).to.deep.equal([]);
+    expect(evaluation.notices.join('\n')).to.include('can be deleted');
+  });
+
+  it('keeps the review clock for risks still being carried', () => {
+    const mixed = patched();
+    (mixed as { dispositions: unknown[] }).dispositions.push(
+      (disposition() as { dispositions: unknown[] }).dispositions[0],
+    );
+    expect(evaluateAudit(auditReport, mixed, '2026-11-01', proof).failures.join('\n')).to.include(
+      'more than 30 days old',
+    );
+  });
+});

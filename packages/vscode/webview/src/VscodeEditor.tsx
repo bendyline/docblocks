@@ -257,7 +257,7 @@ export function VscodeEditor() {
 
   // EditorShell can emit a normalized WYSIWYG snapshot while it hydrates or
   // responds to navigation. Only content-changing browser input may arm the
-  // first edit; the client additionally rejects a whitespace-only delta.
+  // first edit, including input that changes only semantic whitespace.
   const armEditorEdits = useCallback(
     (substantive: boolean) => {
       if (editorScope) documentClientRef.current.armEdits(editorScope, substantive);

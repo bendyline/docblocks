@@ -72,6 +72,50 @@ function storedRecord(overrides: Partial<DocumentRecoveryRecord> = {}): Document
 }
 
 describe('DocumentRecoveryJournal', () => {
+  it('rejects reuse of an owned revision for a different target', () => {
+    const journal = new DocumentRecoveryJournal(new FakeStorage(), { now: () => 1_000 }).forOwner(
+      'one',
+    );
+    writeDraft(journal, 'first', 1, 1, 'first draft');
+    expect(writeDraft(journal, 'second', 1, 1, 'second draft')).to.deep.equal({
+      status: 'rejected',
+      reason: 'invalid-record',
+      evicted: 0,
+    });
+    expect(journal.lookup('first')?.content).to.equal('first draft');
+  });
+
+  it('never erases a newer owner revision when recovery acknowledgement races its write', () => {
+    const storage = new FakeStorage();
+    const journal = new DocumentRecoveryJournal(storage, { now: () => 1_000 });
+    const owner = journal.forOwner('window-one');
+    writeDraft(owner, 'doc', 1, 1, 'old draft');
+    const recovered = journal.lookup('doc')!;
+    const remove = storage.removeItem.bind(storage);
+    let injected = false;
+    storage.removeItem = (key) => {
+      if (!injected && key.endsWith(':1:1')) {
+        injected = true;
+        writeDraft(owner, 'doc', 1, 2, 'new draft');
+      }
+      remove(key);
+    };
+    expect(journal.acknowledgeRecord(recovered)).to.equal(true);
+    expect(journal.lookup('doc')?.content).to.equal('new draft');
+  });
+
+  it('enforces the total record limit across independently owned journals', () => {
+    const clock = mutableClock();
+    const journal = new DocumentRecoveryJournal(new FakeStorage(), {
+      now: clock.now,
+      maxEntries: 2,
+    });
+    for (const owner of ['one', 'two', 'three']) {
+      writeDraft(journal.forOwner(owner), 'shared', 1, 1, owner);
+      clock.advance(1);
+    }
+    expect(journal.list().map((record) => record.content)).to.deep.equal(['three', 'two']);
+  });
   it('synchronously stores and retrieves a scoped draft with its persisted baseline', () => {
     const storage = new FakeStorage();
     const clock = mutableClock();

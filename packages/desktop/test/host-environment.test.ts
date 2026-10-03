@@ -1,7 +1,9 @@
 import { expect } from 'chai';
 
 import {
+  aiAvailabilityArguments,
   hostEnvironmentArguments,
+  parseAiAvailabilityArgument,
   parseHostEnvironmentArguments,
 } from '../shared/host-environment.js';
 import { isDevelopmentRuntime } from '../main/development-runtime.js';
@@ -96,5 +98,28 @@ describe('Host environment argv transport', () => {
     const sourceRun = { appVersion: '1.0.2', isDev: isDevelopmentRuntime(false, undefined) };
     expect(sourceRun.isDev).to.equal(true);
     expect(parseHostEnvironmentArguments(hostEnvironmentArguments(sourceRun)).isDev).to.equal(true);
+  });
+
+  it('exposes AI only when main explicitly says this build offers it', () => {
+    expect(parseAiAvailabilityArgument(aiAvailabilityArguments(true))).to.equal(true);
+    expect(parseAiAvailabilityArgument(aiAvailabilityArguments(false))).to.equal(false);
+    // Absent or malformed fails safe: no namespace rather than a broken one.
+    expect(parseAiAvailabilityArgument([])).to.equal(false);
+    expect(parseAiAvailabilityArgument(['--docblocks-ai=yes'])).to.equal(false);
+    // Main's switch is appended last, so it wins over an inherited look-alike.
+    expect(
+      parseAiAvailabilityArgument(['--docblocks-ai=1', ...aiAvailabilityArguments(false)]),
+    ).to.equal(false);
+  });
+
+  it('keeps the AI switch out of the exact HostEnvironment values', () => {
+    const argv = [
+      ...hostEnvironmentArguments({ appVersion: '1.0.2', isDev: false }),
+      ...aiAvailabilityArguments(true),
+    ];
+    expect(parseHostEnvironmentArguments(argv)).to.deep.equal({
+      appVersion: '1.0.2',
+      isDev: false,
+    });
   });
 });

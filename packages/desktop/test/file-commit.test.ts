@@ -7,10 +7,34 @@ import {
   atomicWriteText,
   commitBinaryFile,
   commitTextFile,
+  publishFileExclusive,
   sha256,
 } from '../main/file-commit.js';
 
 describe('desktop conditional file commits', () => {
+  it('publishes exclusively when the volume does not support hard links', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-exclusive-copy-'));
+    const source = path.join(root, 'source');
+    const destination = path.join(root, 'destination');
+    const unsupportedLink: typeof fs.link = async () => {
+      throw Object.assign(new Error('Hard links are unsupported'), { code: 'ENOTSUP' });
+    };
+    try {
+      await fs.writeFile(source, 'local');
+      await publishFileExclusive(source, destination, unsupportedLink);
+      expect(await fs.readFile(destination, 'utf8')).to.equal('local');
+      await fs.writeFile(destination, 'external');
+      const failure = await publishFileExclusive(source, destination, unsupportedLink).catch(
+        (error: unknown) => error,
+      );
+      expect((failure as NodeJS.ErrnoException).code).to.equal('EEXIST');
+      expect(await fs.readFile(destination, 'utf8')).to.equal('external');
+      expect(await fs.readFile(source, 'utf8')).to.equal('local');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('allows only one text commit to replace the same baseline', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-commit-'));
     const file = path.join(root, 'notes.md');

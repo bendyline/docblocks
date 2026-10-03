@@ -32,8 +32,11 @@ function withCrossOriginIsolationHeaders(response: Response): Response {
 }
 
 // GitHub Pages cannot emit COOP/COEP itself. Once this PWA controls a page,
-// every cached response carries the isolation headers required by
-// SharedArrayBuffer and ffmpeg.wasm.
+// every cached response carries them. These originally enabled
+// SharedArrayBuffer for ffmpeg.wasm; that core is no longer distributed and
+// nothing shipped needs SharedArrayBuffer, but the headers are retained as
+// Spectre-class hardening. The site loads only same-origin subresources under
+// a `default-src 'none'` CSP, so `credentialless` has nothing to block.
 addPlugins([
   {
     handlerWillRespond: async ({ response }) => withCrossOriginIsolationHeaders(response),

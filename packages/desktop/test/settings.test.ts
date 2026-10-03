@@ -51,11 +51,28 @@ describe('desktop settings boundary', () => {
     });
   });
 
+  it('round-trips the AI opt-in and its preferences', () => {
+    // Absent means never opted in — if these stop persisting, AI silently
+    // switches off (or the review mode resets) on the next launch.
+    expect(
+      parseSettings({
+        workspaces: [],
+        ai: { enabled: true, model: 'model-1', reviewMode: 'explicit' },
+      }),
+    ).to.deep.equal({
+      workspaces: [],
+      ai: { enabled: true, model: 'model-1', reviewMode: 'explicit' },
+    });
+  });
+
   for (const [label, value] of [
     ['unknown root field', { workspaces: [], surprise: true }],
     ['unknown git field', { workspaces: [], git: { allowEverything: true } }],
     ['non-boolean git default', { workspaces: [], git: { allowExpandedByDefault: 'yes' } }],
     ['relative allowed repository', { workspaces: [], git: { allowedRepositories: ['relative'] } }],
+    ['credential in AI settings', { workspaces: [], ai: { enabled: true, token: 'secret' } }],
+    ['non-boolean AI opt-in', { workspaces: [], ai: { enabled: 'yes' } }],
+    ['unknown AI review mode', { workspaces: [], ai: { enabled: true, reviewMode: 'always' } }],
     ['missing workspaces', {}],
     [
       'relative workspace root',

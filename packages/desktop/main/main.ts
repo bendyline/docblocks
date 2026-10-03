@@ -16,6 +16,7 @@ import {
   screen,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
@@ -48,6 +49,7 @@ import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
+import { MainWindowSlot } from './main-window.js';
 import { registerTray, resolveIconPath } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
@@ -63,16 +65,22 @@ import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
 } from './content-security-policy.js';
-import { hostEnvironmentArguments } from '../shared/host-environment.js';
+import { aiAvailabilityArguments, hostEnvironmentArguments } from '../shared/host-environment.js';
+import type { AiService } from './ai/ai-service.js';
+import { createAiService, isAiSupportedBuild, registerAiIpc } from './ipc-ai.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
+const AI_DISPOSE_TIMEOUT_MS = 2_000;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 
 // Chromium otherwise auto-detects GNOME Keyring/KWallet and can show an unlock
 // prompt at startup. DocBlocks stores no credentials in its browser session;
-// Git and gh retain ownership of their own credentials outside Electron.
+// Git and gh retain ownership of their own credentials outside Electron. The
+// one credential DocBlocks does keep — an inference-only Gezel grant — goes
+// through safeStorage, which this backend obscures rather than protects; see
+// ai/ai-credentials.ts for why that is acceptable for that token.
 configureLinuxCredentialStorage(process.platform, app.commandLine);
 
 // Development must not share Chromium storage, settings, window state, or the
@@ -89,7 +97,16 @@ if (process.env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION === '1') {
   app.disableHardwareAcceleration();
 }
 
-let mainWindow: BrowserWindow | null = null;
+// An async listener's rejection is unhandled, so a failed reopen would leave
+// the user clicking the dock icon of a live, windowless app. Unlike startup
+// this is not fatal — the process is otherwise healthy — so report and stay up.
+const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unknown) => {
+  dialog.showErrorBox(
+    'DocBlocks could not open a window',
+    error instanceof Error ? (error.stack ?? error.message) : String(error),
+  );
+});
+let aiService: AiService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -115,35 +132,42 @@ if (!gotLock) {
 }
 
 app.on('second-instance', (_event, argv) => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-    handleOpenFileArg(mainWindow, argv);
+  const win = mainWindow.current();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    handleOpenFileArg(win, argv);
   } else {
     // A second launch can arrive after the primary acquired its lock but
-    // before createWindow assigned mainWindow. Preserve the complete argv so
-    // launch-file authority is not lost in that narrow startup interval.
+    // before createWindow assigned mainWindow, or — on macOS — after the user
+    // closed the last window and the app stayed running. Preserve the complete
+    // argv so launch-file authority is not lost, and bring a window back for it.
     pendingOpenRequests.enqueueArgv(argv);
+    mainWindow.ensure();
   }
 });
 
 // macOS deep-link / open-with delivery.
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (mainWindow) {
-    handleOpenFileArg(mainWindow, [filePath]);
+  const win = mainWindow.current();
+  if (win) {
+    handleOpenFileArg(win, [filePath]);
   } else {
     // Queue until the window is ready.
     pendingOpenRequests.enqueueFile(filePath);
+    mainWindow.ensure();
   }
 });
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  if (mainWindow) {
-    handleOpenUrl(mainWindow, url);
+  const win = mainWindow.current();
+  if (win) {
+    handleOpenUrl(win, url);
   } else {
     pendingOpenRequests.enqueueUrl(url);
+    mainWindow.ensure();
   }
 });
 
@@ -290,10 +314,13 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
       // neither `npm_package_version` nor `NODE_ENV` — leaving the preload to
       // report 0.0.0 and isDev:true to every user. Main owns the truth, so
       // main stamps it onto the renderer's argv.
-      additionalArguments: hostEnvironmentArguments({
-        appVersion: app.getVersion(),
-        isDev,
-      }),
+      additionalArguments: [
+        ...hostEnvironmentArguments({
+          appVersion: app.getVersion(),
+          isDev,
+        }),
+        ...aiAvailabilityArguments(isAiSupportedBuild()),
+      ],
     },
   });
 
@@ -309,9 +336,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     });
   }
 
-  win.on('closed', () => {
-    if (mainWindow === win) mainWindow = null;
-  });
+  win.on('closed', () => mainWindow.release(win));
 
   // A popup never inherits renderer authority. Only canonical HTTP(S) URLs may
   // leave the app, and they always open in the user's default browser.
@@ -397,6 +422,18 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
 
   killAllGitChildren();
   releaseAllScopedResources();
+  // Cancel in-flight completions and release the Gezel transport. Bounded: a
+  // provider that has stopped answering must not hold the app open.
+  if (aiService) {
+    let disposeTimer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      aiService.dispose().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        disposeTimer = setTimeout(resolve, AI_DISPOSE_TIMEOUT_MS);
+      }),
+    ]);
+    clearTimeout(disposeTimer);
+  }
   appExitApproved = true;
   return true;
 }
@@ -459,9 +496,13 @@ function reportFatalStartupFailure(error: unknown): void {
 async function bootstrap(): Promise<void> {
   configureDesktopPermissionPolicy({
     session: session.defaultSession,
-    getOwner: () => mainWindow?.webContents ?? null,
+    getOwner: () => mainWindow.current()?.webContents ?? null,
     developmentOrigin: isDev ? DEV_SERVER_URL : undefined,
     platform: process.platform,
+    // macOS only: camera/microphone capture needs a TCC grant that Chromium
+    // will not ask for by itself. `systemPreferences` exposes no-op stubs on
+    // Windows and Linux, and the policy never calls them there.
+    mediaAccess: systemPreferences,
     getPrimaryDisplayId: () => screen.getPrimaryDisplay().id,
     getDisplaySources: () =>
       desktopCapturer.getSources({
@@ -475,7 +516,10 @@ async function bootstrap(): Promise<void> {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        // Squisq's browser GIF encoder uses ffmpeg.wasm/SharedArrayBuffer.
+        // Cross-origin isolation is retained as Spectre-class hardening. It
+        // originally existed for ffmpeg.wasm's SharedArrayBuffer; no shipped
+        // dependency needs SharedArrayBuffer any more, but the renderer loads
+        // only same-origin subresources so `credentialless` costs nothing.
         // These apply to both the packaged app:// renderer and the trusted
         // Vite development origin.
         'Cross-Origin-Opener-Policy': ['same-origin'],
@@ -536,6 +580,13 @@ async function bootstrap(): Promise<void> {
   registerGitIpc();
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
+  if (isAiSupportedBuild()) {
+    aiService = createAiService();
+    registerAiIpc(aiService);
+    // Reads preferences and, only when the user opted in, reconnects silently
+    // with a stored grant. Never prompts and never blocks startup.
+    void aiService.start();
+  }
 
   // Probe before the renderer loads so its Git UI and the native menu use the
   // same process-lifetime capability. On macOS this never executes the Apple
@@ -547,18 +598,19 @@ async function bootstrap(): Promise<void> {
   // OS open-file/deep-link requests still supersede it through the normal
   // launch-request generation path.
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
-  mainWindow = await createWindow(developmentWorkspace?.id);
+  const win = await createWindow(developmentWorkspace?.id);
+  mainWindow.set(win);
   // `ready-to-show` can precede the `createWindow()` continuation. Close the
-  // narrow interval where an OS event still observed `mainWindow === null`
-  // after the first drain and therefore queued one late request.
-  drainPendingOpenRequests(mainWindow);
+  // narrow interval where an OS event still observed no main window after the
+  // first drain and therefore queued one late request.
+  drainPendingOpenRequests(win);
 
-  buildMenu(mainWindow, gitAvailable);
-  mainWindow.setMenuBarVisibility(false);
+  buildMenu(() => mainWindow.current(), gitAvailable);
+  win.setMenuBarVisibility(false);
 
-  registerTray(() => mainWindow);
+  registerTray(() => mainWindow.current());
 
-  if (settingsRecovery) reportSettingsRecovery(mainWindow, settingsRecovery);
+  if (settingsRecovery) reportSettingsRecovery(win, settingsRecovery);
 
   // Store builds (Mac App Store / Microsoft Store) must not self-update — the
   // store delivers updates. Only run the GitHub updater for direct-download builds.
@@ -606,25 +658,14 @@ app.on('window-all-closed', () => {
 async function reopenWindow(): Promise<void> {
   const gitAvailable = (await detectGit()) !== null;
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
-  mainWindow = await createWindow(developmentWorkspace?.id);
-  drainPendingOpenRequests(mainWindow);
-  buildMenu(mainWindow, gitAvailable);
-  mainWindow.setMenuBarVisibility(false);
+  const win = await createWindow(developmentWorkspace?.id);
+  mainWindow.set(win);
+  drainPendingOpenRequests(win);
+  buildMenu(() => mainWindow.current(), gitAvailable);
+  win.setMenuBarVisibility(false);
 }
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length !== 0) return;
-  // Same failure mode as the ready path: an async listener's rejection is
-  // unhandled, so a failure to reopen would leave the user clicking the dock
-  // icon of a live, windowless app. Unlike startup this is not fatal — the
-  // process is otherwise healthy — so report and stay up.
-  void reopenWindow().catch((error: unknown) => {
-    dialog.showErrorBox(
-      'DocBlocks could not open a window',
-      error instanceof Error ? (error.stack ?? error.message) : String(error),
-    );
-  });
-});
+app.on('activate', () => mainWindow.ensure());
 
 // Silence unused import warning for fileURLToPath — kept for future use.
 void fileURLToPath;

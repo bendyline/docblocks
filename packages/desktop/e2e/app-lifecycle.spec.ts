@@ -25,10 +25,15 @@ test('boots and renders the shell', async ({ launchApp }) => {
   await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
 });
 
-test('cross-origin isolates the renderer and offers Animated GIF export', async ({ launchApp }) => {
+test('cross-origin isolates the renderer and offers MP4 but not GIF export', async ({
+  launchApp,
+}) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
 
+  // Cross-origin isolation is retained as Spectre-class hardening. It once
+  // existed for ffmpeg.wasm's SharedArrayBuffer; nothing shipped needs that
+  // now, but the renderer loads only same-origin subresources so it is free.
   const runtime = await window.evaluate(() => ({
     crossOriginIsolated: globalThis.crossOriginIsolated,
     sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
@@ -36,10 +41,13 @@ test('cross-origin isolates the renderer and offers Animated GIF export', async 
   expect(runtime).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
 
   await window.getByRole('button', { name: 'Export and share' }).click();
-  await window.getByRole('menuitem', { name: 'Export animated gif...' }).click();
-  const dialog = window.getByRole('dialog', { name: 'Export Animated GIF' });
-  await expect(dialog).toBeVisible({ timeout: 30_000 });
-  await expect(dialog.getByLabel('Format')).toHaveValue('gif');
+
+  // The GPL-2.0 ffmpeg.wasm core is no longer packaged in the renderer, so no
+  // host supplies an `ffmpegWasm` config and the GIF entry must not render.
+  await expect(window.getByRole('menuitem', { name: 'Export animated gif...' })).toHaveCount(0);
+
+  // MP4 export is unaffected: WebCodecs plus MIT mp4-muxer.
+  await expect(window.getByRole('menuitem', { name: 'Export video...' })).toBeVisible();
 });
 
 test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {

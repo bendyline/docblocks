@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 
 test('loads locally generated Blob media under the site CSP', async ({ page }) => {
   await page.goto('/');

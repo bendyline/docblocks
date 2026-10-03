@@ -1,4 +1,5 @@
-import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 import AxeBuilder from '@axe-core/playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';

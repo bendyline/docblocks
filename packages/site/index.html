@@ -36,7 +36,21 @@
 
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) resolve to real
+         values on notched devices. interactive-widget=resizes-content makes
+         Chrome Android resize the layout viewport for the on-screen keyboard so
+         100dvh stays correct. Deliberately no user-scalable=no or maximum-scale:
+         e2e/a11y.spec.ts runs axe at wcag21aa, whose meta-viewport rule would
+         fail that — correctly. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="DocBlocks" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
     <!-- Pre-boot chrome color for the splash/titlebar; DocBlocksShell keeps
          these in sync with the resolved theme after mount. -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3eede" />

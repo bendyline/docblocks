@@ -2,7 +2,6 @@ import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
-import { hasSubstantiveTextChange } from '@bendyline/docblocks/vscode';
 
 type SetContentMessage = Extract<ExtensionToWebviewMessage, { type: 'setContent' }>;
 type EditMessage = Extract<WebviewToExtensionMessage, { type: 'edit' }>;
@@ -18,7 +17,7 @@ interface ClientSession extends WebviewDocumentScope {
   observedEditorContent: string;
   clientRevision: number;
   editIntent: 'substantive' | 'whitespace' | null;
-  hasSubstantiveEdit: boolean;
+  hasAuthoredEdit: boolean;
 }
 
 /**
@@ -42,7 +41,7 @@ export class WebviewDocumentClient {
       observedEditorContent: message.content,
       clientRevision: message.acknowledgedClientRevision,
       editIntent: null,
-      hasSubstantiveEdit: false,
+      hasAuthoredEdit: false,
     };
     return Object.freeze({ sessionId: message.sessionId, generation: this.generation });
   }
@@ -50,14 +49,13 @@ export class WebviewDocumentClient {
   public createEdit(scope: WebviewDocumentScope, content: string): EditMessage | null {
     const session = this.session;
     if (!session || !sameScope(session, scope)) return null;
-    if (!session.hasSubstantiveEdit) {
+    if (!session.hasAuthoredEdit) {
       const intent = session.editIntent;
       const priorEditorContent = session.observedEditorContent;
       session.editIntent = null;
       session.observedEditorContent = content;
-      if (intent === null || intent === 'whitespace') return null;
-      if (!hasSubstantiveTextChange(priorEditorContent, content)) return null;
-      session.hasSubstantiveEdit = true;
+      if (intent === null || priorEditorContent === content) return null;
+      session.hasAuthoredEdit = true;
     }
     session.clientRevision += 1;
     return {
@@ -73,8 +71,8 @@ export class WebviewDocumentClient {
    * Record a content-changing user gesture before accepting its change
    * callback. EditorShell may normalize its WYSIWYG snapshot during hydration
    * or navigation; interaction alone must not relabel that snapshot as an
-   * authored edit. The first accepted snapshot must also differ from the last
-   * observed editor snapshot by more than whitespace.
+   * authored edit. Whitespace is authored content too: indentation, paragraph
+   * breaks and spaces can change the meaning of Markdown.
    */
   public armEdits(scope: WebviewDocumentScope, substantive = true): boolean {
     const session = this.session;
@@ -86,7 +84,7 @@ export class WebviewDocumentClient {
   /** Cancel a transient toolbar intent that produced no document change. */
   public disarmEdits(scope: WebviewDocumentScope): boolean {
     const session = this.session;
-    if (!session || !sameScope(session, scope) || session.hasSubstantiveEdit) return false;
+    if (!session || !sameScope(session, scope) || session.hasAuthoredEdit) return false;
     session.editIntent = null;
     return true;
   }
