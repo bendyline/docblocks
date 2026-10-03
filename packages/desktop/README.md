@@ -23,6 +23,31 @@ Key main-process modules:
 - `settings.ts`, `open-requests.ts`, `icloud-detect.ts` — persisted app settings, open-file handling, iCloud Drive detection
 - `ipc-ai.ts` + `ai/` — optional AI through an in-process private Gezel service, with the user's standalone Gezel as an optional provider switch; off until the user opts in under Settings › AI assistance
 
+Desktop packaging downloads the signed native archives from Gezel's releases
+into `resources/gezel-native/`. The `beforePack` hook imports the release and
+SHA-256 archive pins from the exact installed
+`@bendyline/gezel-service/native-release`, selects all published backends for the
+target architecture, verifies downloads before extraction, and preserves the
+release's license files and existing code signatures. Verified archives are
+cached locally under `dist/gezel-native-cache/`; a corrupt cache fails packaging
+and must be removed before retrying. Updating Gezel requires no separate native
+version edit.
+
+After AI opt-in, the hosted service checks the complete native file set, SHA-256
+hashes, symlinks, and platform signatures against its own source-bundled pins,
+then passes the verified directory to the SDK's `host.nativeBinDir`. Every
+packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
+fail visibly instead of triggering executable downloads. Model weights remain
+data downloads initiated by **Add model**. Development may use an absolute
+`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`; it receives the same native file verification
+without requiring a notarized enclosing app. With no development override, Gezel
+may provision engines as before.
+
+macOS distributions support Apple Silicon only. Mac App Store builds continue to
+omit AI and carry no native engines; enabling sandboxed AI there requires a
+separate integration. Other supported desktop targets include their native
+payload, including Microsoft Store builds.
+
 ## Architecture rules
 
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.
@@ -84,8 +109,9 @@ validation otherwise rejects Electron Framework before the app can start.
 Installers and release builds continue to use the hardened runtime and the
 normal signing and notarization configuration.
 
-Direct-download releases include x64 and arm64 builds for macOS, Windows, and
-Linux. Linux ships both AppImage and Debian packages for each architecture.
+Direct-download releases include Apple Silicon builds for macOS and x64 and
+arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
+for each architecture.
 
 ## Testing
 

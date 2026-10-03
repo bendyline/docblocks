@@ -25,6 +25,7 @@ import { EncryptedFileCredentialStore } from './ai/ai-credentials.js';
 import { createSettingsAiPreferenceStore } from './ai/ai-preferences.js';
 import { AiService } from './ai/ai-service.js';
 import { GezelConnector } from './ai/gezel-connector.js';
+import { resolveGezelNativeHost } from './ai/gezel-native-host.js';
 import { readSettings, updateSettings } from './settings.js';
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
@@ -53,6 +54,7 @@ export function createAiService(): AiService {
       // Enabling AI is sufficient consent to run a private Gezel for
       // DocBlocks. Connecting the person's standalone Gezel remains optional.
       hostInProcess: true,
+      hostNative: resolveGezelNativeHost(app.isPackaged, process.resourcesPath),
     }),
     preferences: createSettingsAiPreferenceStore({ read: readSettings, update: updateSettings }),
   });

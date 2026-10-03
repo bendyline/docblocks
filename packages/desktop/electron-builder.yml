@@ -31,6 +31,12 @@ files:
 extraResources:
   - from: THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  - from: dist/gezel-native/${os}-${arch}
+    to: gezel-native
+
+# Stage the target architecture from the installed Gezel service's release
+# pins before copying resources. No executable download happens in the app.
+beforePack: scripts/stage-gezel-native.cjs
 
 # Electron's own license and Chromium notice are supplied by the exact Electron
 # archive that electron-builder extracts for this platform and architecture.
@@ -132,11 +138,9 @@ mac:
     # at the zip — omitting it silently breaks macOS auto-update.
     - target: dmg
       arch:
-        - x64
         - arm64
     - target: zip
       arch:
-        - x64
         - arm64
   icon: resources/icon.icns
   category: public.app-category.productivity
@@ -147,6 +151,10 @@ mac:
   gatekeeperAssess: false
   entitlements: entitlements.mac.plist
   entitlementsInherit: entitlements.mac.plist
+  # Native-release hashes include their existing Developer ID signatures.
+  # Preserve those bytes; the outer app signature still seals the resources.
+  signIgnore:
+    - /Contents/Resources/gezel-native/
   extendInfo:
     NSCameraUsageDescription: DocBlocks accesses the camera only when you choose to record video for a document.
     NSMicrophoneUsageDescription: DocBlocks accesses the microphone only when you choose to record audio or video for a document.

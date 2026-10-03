@@ -259,7 +259,15 @@ true` profile and the service's direct Fetch transport: no child Node, loopback
 client connection, machine-service discovery, cloud-provider enumeration, or
 standalone background systems. A running standalone Gezel that fails for any
 other reason is reported, not hidden. The hosted service offers only on-device
-models and may download an engine with visible progress. It never downloads
+models. Packaged builds stage the installed service's pinned native release in
+`resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
+signatures after opt-in, and pass it as `host.nativeBinDir`. They use
+`distributionProfile: 'store'` so no runtime executable download can repair a
+missing or invalid payload. Preserve the native release's existing signatures
+when packaging: re-signing changes the pinned bytes. Development may use an
+absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an engine with visible
+progress. macOS distributions support Apple Silicon only; Mac App Store builds
+still omit AI. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
 

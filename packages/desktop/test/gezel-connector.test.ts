@@ -347,6 +347,9 @@ describe('Gezel connector hosting ladder', () => {
     connectLocal: () => Promise<unknown>;
     runtime?: typeof RUNTIME | null;
     hostInProcess?: boolean;
+    hostNative?: import('../main/ai/gezel-native-host.js').GezelNativeHost;
+    verifyNative?: (input: Record<string, unknown>) => Promise<unknown>;
+    startService?: (input: Record<string, unknown>) => Promise<unknown>;
     hosted?: ReturnType<typeof fakeHostedGezel>;
     connectOrHost?: (input: HostCall) => Promise<unknown>;
   }) {
@@ -366,9 +369,15 @@ describe('Gezel connector hosting ladder', () => {
             return options.connectOrHost ? options.connectOrHost(input) : hosted.gezel;
           },
         }) as never,
-      loadService: async () => ({ startService: async () => undefined }) as never,
+      loadService: async () =>
+        ({
+          startService: options.startService ?? (async () => undefined),
+          reuseVerifiedElectronNativeBinaries:
+            options.verifyNative ?? (async () => ({ reused: true })),
+        }) as never,
       hostRuntime: async () => (options.runtime === undefined ? RUNTIME : options.runtime),
       hostInProcess: options.hostInProcess,
+      hostNative: options.hostNative,
     });
     return { connector, hostCalls, hosted };
   }
@@ -407,6 +416,116 @@ describe('Gezel connector hosting ladder', () => {
     });
     expect(hostCalls[0].host).not.to.have.property('nodePath');
     expect(hostCalls[0].host).to.have.property('serviceModule');
+  });
+
+  const BUNDLED_NATIVE = {
+    nativeBinDir: RUNTIME.nativeBinDir,
+    distributionProfile: 'store' as const,
+    allowStandaloneMacPayload: false,
+    canHost: true,
+  };
+
+  it('verifies bundled engines before passing their directory and store policy to the in-process SDK', async () => {
+    const verification: Record<string, unknown>[] = [];
+    const previous = process.env.GEZEL_NATIVE_BIN_DIR;
+    const { connector, hostCalls } = ladder({
+      connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+      runtime: null,
+      hostInProcess: true,
+      hostNative: BUNDLED_NATIVE,
+      verifyNative: async (input) => {
+        verification.push(input);
+        process.env.GEZEL_NATIVE_BIN_DIR = RUNTIME.nativeBinDir;
+        return { reused: true };
+      },
+    });
+    await connector.connect({ interactive: false });
+    expect(verification).to.deep.equal([
+      {
+        candidates: [RUNTIME.nativeBinDir],
+        allowStandaloneMacPayload: false,
+      },
+    ]);
+    expect(hostCalls[0].host).to.deep.include({
+      mode: 'in-process',
+      nativeBinDir: RUNTIME.nativeBinDir,
+      distributionProfile: 'store',
+    });
+    expect(process.env.GEZEL_NATIVE_BIN_DIR).to.equal(previous);
+  });
+
+  it('rejects invalid bundled engines without starting the SDK or falling back to downloads', async () => {
+    const previous = process.env.GEZEL_NATIVE_BIN_DIR;
+    const { connector, hostCalls } = ladder({
+      connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+      runtime: null,
+      hostInProcess: true,
+      hostNative: BUNDLED_NATIVE,
+      verifyNative: async () => {
+        process.env.GEZEL_NATIVE_BIN_DIR = 'rejected';
+        return { reused: false, reason: 'sha256 mismatch' };
+      },
+    });
+    const error = toAiError(await rejection(connector.connect({ interactive: false })));
+    expect(error.code).to.equal('runtime-missing');
+    expect(error.detail).to.contain('sha256 mismatch');
+    expect(hostCalls).to.have.length(0);
+    expect(process.env.GEZEL_NATIVE_BIN_DIR).to.equal(previous);
+  });
+
+  it('never verifies or hosts bundled engines when the standalone Gezel connects', async () => {
+    const hosted = fakeHostedGezel();
+    let verified = false;
+    const { connector, hostCalls } = ladder({
+      connectLocal: async () => ({
+        app: hosted.gezel,
+        authorization: { daemon: { mode: 'adopted' } },
+      }),
+      hostInProcess: true,
+      hostNative: BUNDLED_NATIVE,
+      verifyNative: async () => {
+        verified = true;
+        return { reused: true };
+      },
+    });
+    const connection = await connector.connect({ interactive: false });
+    expect(connection.mode).to.equal('installed');
+    expect(verified).to.equal(false);
+    expect(hostCalls).to.have.length(0);
+  });
+
+  it('removes ambient executable overrides for the lifetime of a packaged service', async () => {
+    const previous = process.env.GEZEL_LLAMA_SERVER_BIN;
+    process.env.GEZEL_LLAMA_SERVER_BIN = '/unverified/llama-server';
+    try {
+      const { connector } = ladder({
+        connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+        runtime: null,
+        hostInProcess: true,
+        hostNative: BUNDLED_NATIVE,
+        startService: async () => {
+          expect(process.env.GEZEL_LLAMA_SERVER_BIN).to.equal(undefined);
+          process.env.GEZEL_LLAMA_SERVER_BIN = '/verified/llama-server';
+          return { stop: async () => undefined };
+        },
+        connectOrHost: async (input) => {
+          const service = input.host?.serviceModule as {
+            startService: (
+              input: Record<string, unknown>,
+            ) => Promise<{ stop: () => Promise<void> }>;
+          };
+          const running = await service.startService({});
+          return { ...fakeHostedGezel().gezel, close: running.stop };
+        },
+      });
+      const connection = await connector.connect({ interactive: false });
+      expect(process.env.GEZEL_LLAMA_SERVER_BIN).to.equal('/verified/llama-server');
+      await connection.close();
+      expect(process.env.GEZEL_LLAMA_SERVER_BIN).to.equal('/unverified/llama-server');
+    } finally {
+      if (previous === undefined) delete process.env.GEZEL_LLAMA_SERVER_BIN;
+      else process.env.GEZEL_LLAMA_SERVER_BIN = previous;
+    }
   });
 
   it('hosts when the running Gezel will not connect DocBlocks', async () => {

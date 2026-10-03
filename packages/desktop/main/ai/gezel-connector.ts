@@ -46,9 +46,13 @@ import type {
 } from './ai-service.js';
 import type { ProviderModelEntry } from './ai-models.js';
 import type { GezelHostRuntime } from './gezel-host-runtime.js';
+import type { GezelNativeHost } from './gezel-native-host.js';
+import { clearGezelEngineOverrides } from './gezel-native-host.js';
 
 type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
 type GezelHostSdkModule = typeof import('@bendyline/gezel-app-sdk/host');
+type GezelServiceModule = HostServiceModule &
+  Pick<typeof import('@bendyline/gezel-service'), 'reuseVerifiedElectronNativeBinaries'>;
 
 /** What Gezel lists under Settings → Connected Apps. */
 export const GEZEL_APP_ID = 'docblocks';
@@ -100,7 +104,7 @@ export interface GezelConnectorOptions {
   readonly credentials: AiCredentialStore;
   readonly loadSdk?: () => Promise<GezelSdkModule>;
   readonly loadHostSdk?: () => Promise<GezelHostSdkModule>;
-  readonly loadService?: () => Promise<HostServiceModule>;
+  readonly loadService?: () => Promise<GezelServiceModule>;
   /**
    * An explicit daemon address and transport instead of runtime discovery.
    * Tests use it to run the real SDK against a fake daemon.
@@ -112,6 +116,8 @@ export interface GezelConnectorOptions {
   readonly hostRuntime?: () => Promise<GezelHostRuntime | null>;
   /** Host through the SDK's in-process service integration. */
   readonly hostInProcess?: boolean;
+  /** Verified bundled engines and the distribution's executable-download policy. */
+  readonly hostNative?: GezelNativeHost;
   /** Where a hosted daemon keeps its state; the SDK's `apps/docblocks` home by default. */
   readonly hostHome?: string;
 }
@@ -124,7 +130,7 @@ function loadGezelHostSdk(): Promise<GezelHostSdkModule> {
   return import('@bendyline/gezel-app-sdk/host');
 }
 
-function loadGezelService(): Promise<HostServiceModule> {
+function loadGezelService(): Promise<GezelServiceModule> {
   return import('@bendyline/gezel-service');
 }
 
@@ -384,7 +390,7 @@ export class GezelConnector implements AiConnector {
   private readonly credentials: AiCredentialStore;
   private readonly loadSdk: () => Promise<GezelSdkModule>;
   private readonly loadHostSdk: () => Promise<GezelHostSdkModule>;
-  private readonly loadService: () => Promise<HostServiceModule>;
+  private readonly loadService: () => Promise<GezelServiceModule>;
   private readonly endpoint: GezelConnectorOptions['endpoint'];
   private readonly home: string | undefined;
   private readonly hostRuntime: () => Promise<GezelHostRuntime | null>;
@@ -392,7 +398,8 @@ export class GezelConnector implements AiConnector {
   private readonly hostHome: string | undefined;
   private sdk: Promise<GezelSdkModule> | null = null;
   private hostSdk: Promise<GezelHostSdkModule> | null = null;
-  private service: Promise<HostServiceModule> | null = null;
+  private service: Promise<GezelServiceModule> | null = null;
+  private readonly hostNative: GezelNativeHost | undefined;
 
   constructor(options: GezelConnectorOptions) {
     this.credentials = options.credentials;
@@ -402,7 +409,8 @@ export class GezelConnector implements AiConnector {
     this.endpoint = options.endpoint;
     this.home = options.home;
     this.hostRuntime = options.hostRuntime ?? (() => Promise.resolve(null));
-    this.hostInProcess = options.hostInProcess ?? false;
+    this.hostInProcess = (options.hostInProcess ?? false) && options.hostNative?.canHost !== false;
+    this.hostNative = options.hostNative;
     this.hostHome = options.hostHome;
   }
 
@@ -471,11 +479,62 @@ export class GezelConnector implements AiConnector {
     const hostSdk = await this.hostModule();
     try {
       const serviceModule = this.hostInProcess ? await this.serviceModule() : null;
+      const nativeBinDir = this.hostNative?.nativeBinDir ?? runtime?.nativeBinDir;
+      if (nativeBinDir) {
+        const verifier = serviceModule ?? (await this.serviceModule());
+        // Gezel's verifier also stamps this variable. Let the SDK own its
+        // lifetime instead, so verification failure/close cannot leak a path.
+        const previous = process.env.GEZEL_NATIVE_BIN_DIR;
+        try {
+          const verified = await verifier.reuseVerifiedElectronNativeBinaries({
+            candidates: [nativeBinDir],
+            allowStandaloneMacPayload:
+              this.hostNative?.allowStandaloneMacPayload ?? runtime?.source === 'development',
+          });
+          if (!verified.reused) {
+            throw new Error(`Bundled Gezel engines failed verification: ${verified.reason}`);
+          }
+        } finally {
+          if (previous === undefined) delete process.env.GEZEL_NATIVE_BIN_DIR;
+          else process.env.GEZEL_NATIVE_BIN_DIR = previous;
+        }
+      }
+      const hostedService: HostServiceModule | null = serviceModule
+        ? {
+            ...serviceModule,
+            startService: async (input) => {
+              const restore =
+                this.hostNative?.distributionProfile === 'store'
+                  ? clearGezelEngineOverrides()
+                  : () => undefined;
+              try {
+                const running = await serviceModule.startService(input);
+                return {
+                  ...running,
+                  stop: async () => {
+                    try {
+                      await running.stop();
+                    } finally {
+                      restore();
+                    }
+                  },
+                };
+              } catch (error) {
+                restore();
+                throw error;
+              }
+            },
+          }
+        : null;
       const inProcessHost: HostOptions | null = this.hostInProcess
         ? {
             mode: 'in-process',
             inferenceOnly: true,
-            serviceModule: serviceModule ?? undefined,
+            serviceModule: hostedService ?? undefined,
+            ...(nativeBinDir ? { nativeBinDir } : {}),
+            ...(this.hostNative
+              ? { distributionProfile: this.hostNative.distributionProfile }
+              : {}),
             ...(this.hostHome ? { home: this.hostHome } : {}),
             ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
           }
@@ -494,7 +553,12 @@ export class GezelConnector implements AiConnector {
               daemonEntry: runtime?.daemonEntry,
               // Engines shipped with DocBlocks; without them the daemon
               // downloads the one it pins on first use.
-              ...(runtime?.nativeBinDir ? { nativeBinDir: runtime.nativeBinDir } : {}),
+              ...(nativeBinDir || runtime?.nativeBinDir
+                ? { nativeBinDir: nativeBinDir ?? runtime?.nativeBinDir }
+                : {}),
+              ...(this.hostNative
+                ? { distributionProfile: this.hostNative.distributionProfile }
+                : {}),
               startTimeoutMs: HOST_START_TIMEOUT_MS,
               ...(this.hostHome ? { home: this.hostHome } : {}),
               ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
@@ -527,7 +591,7 @@ export class GezelConnector implements AiConnector {
     return this.hostSdk;
   }
 
-  private serviceModule(): Promise<HostServiceModule> {
+  private serviceModule(): Promise<GezelServiceModule> {
     this.service ??= this.loadService().catch((error: unknown) => {
       this.service = null;
       throw error;

@@ -104,6 +104,37 @@ function requireLegalResources(): void {
 
 requireLegalResources();
 
+function requireBundledGezelEngines(): void {
+  if (!isRecord(config) || config.beforePack !== 'scripts/stage-gezel-native.cjs') {
+    failConfigPolicy("Desktop packaging must stage the Gezel service's pinned native engines.");
+  }
+  if (
+    !Array.isArray(config.extraResources) ||
+    !config.extraResources.some(
+      (entry) =>
+        isRecord(entry) &&
+        entry.from === 'dist/gezel-native/${os}-${arch}' &&
+        entry.to === 'gezel-native',
+    )
+  ) {
+    failConfigPolicy(
+      'Desktop packaging must copy Gezel engines outside app.asar for the target architecture.',
+    );
+  }
+  if (
+    !isRecord(config.mac) ||
+    !Array.isArray(config.mac.signIgnore) ||
+    !config.mac.signIgnore.includes('/Contents/Resources/gezel-native/')
+  ) {
+    failConfigPolicy('Desktop signing must preserve the pinned Gezel native release signatures.');
+  }
+  process.stdout.write(
+    'electron-builder.yml: bundled Gezel engines and signature preservation OK\n',
+  );
+}
+
+requireBundledGezelEngines();
+
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
   targetName: string,
@@ -412,10 +443,16 @@ for (const [platformName, targetName] of [
   ['linux', 'AppImage'],
   ['linux', 'deb'],
 ] as const) {
-  requireTargetArchitectures(platformName, targetName, ['x64', 'arm64']);
+  requireTargetArchitectures(
+    platformName,
+    targetName,
+    platformName === 'mac' ? ['arm64'] : ['x64', 'arm64'],
+  );
 }
 
-process.stdout.write('electron-builder.yml: x64 + arm64 release matrix OK\n');
+process.stdout.write(
+  'electron-builder.yml: Apple Silicon macOS; x64 + arm64 Windows/Linux release matrix OK\n',
+);
 
 const configuredFiles =
   typeof config === 'object' && config !== null && 'files' in config ? config.files : null;
