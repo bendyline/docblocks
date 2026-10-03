@@ -49,6 +49,7 @@ import { getWorkspaceRoots, isPathInside } from './workspace-roots.js';
 import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
+import { MainWindowSlot } from './main-window.js';
 import { registerTray, resolveIconPath } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
@@ -96,7 +97,15 @@ if (process.env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION === '1') {
   app.disableHardwareAcceleration();
 }
 
-let mainWindow: BrowserWindow | null = null;
+// An async listener's rejection is unhandled, so a failed reopen would leave
+// the user clicking the dock icon of a live, windowless app. Unlike startup
+// this is not fatal — the process is otherwise healthy — so report and stay up.
+const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unknown) => {
+  dialog.showErrorBox(
+    'DocBlocks could not open a window',
+    error instanceof Error ? (error.stack ?? error.message) : String(error),
+  );
+});
 let aiService: AiService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
@@ -123,35 +132,42 @@ if (!gotLock) {
 }
 
 app.on('second-instance', (_event, argv) => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-    handleOpenFileArg(mainWindow, argv);
+  const win = mainWindow.current();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    handleOpenFileArg(win, argv);
   } else {
     // A second launch can arrive after the primary acquired its lock but
-    // before createWindow assigned mainWindow. Preserve the complete argv so
-    // launch-file authority is not lost in that narrow startup interval.
+    // before createWindow assigned mainWindow, or — on macOS — after the user
+    // closed the last window and the app stayed running. Preserve the complete
+    // argv so launch-file authority is not lost, and bring a window back for it.
     pendingOpenRequests.enqueueArgv(argv);
+    mainWindow.ensure();
   }
 });
 
 // macOS deep-link / open-with delivery.
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
-  if (mainWindow) {
-    handleOpenFileArg(mainWindow, [filePath]);
+  const win = mainWindow.current();
+  if (win) {
+    handleOpenFileArg(win, [filePath]);
   } else {
     // Queue until the window is ready.
     pendingOpenRequests.enqueueFile(filePath);
+    mainWindow.ensure();
   }
 });
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  if (mainWindow) {
-    handleOpenUrl(mainWindow, url);
+  const win = mainWindow.current();
+  if (win) {
+    handleOpenUrl(win, url);
   } else {
     pendingOpenRequests.enqueueUrl(url);
+    mainWindow.ensure();
   }
 });
 
@@ -320,9 +336,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     });
   }
 
-  win.on('closed', () => {
-    if (mainWindow === win) mainWindow = null;
-  });
+  win.on('closed', () => mainWindow.release(win));
 
   // A popup never inherits renderer authority. Only canonical HTTP(S) URLs may
   // leave the app, and they always open in the user's default browser.
@@ -482,7 +496,7 @@ function reportFatalStartupFailure(error: unknown): void {
 async function bootstrap(): Promise<void> {
   configureDesktopPermissionPolicy({
     session: session.defaultSession,
-    getOwner: () => mainWindow?.webContents ?? null,
+    getOwner: () => mainWindow.current()?.webContents ?? null,
     developmentOrigin: isDev ? DEV_SERVER_URL : undefined,
     platform: process.platform,
     // macOS only: camera/microphone capture needs a TCC grant that Chromium
@@ -584,18 +598,19 @@ async function bootstrap(): Promise<void> {
   // OS open-file/deep-link requests still supersede it through the normal
   // launch-request generation path.
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
-  mainWindow = await createWindow(developmentWorkspace?.id);
+  const win = await createWindow(developmentWorkspace?.id);
+  mainWindow.set(win);
   // `ready-to-show` can precede the `createWindow()` continuation. Close the
-  // narrow interval where an OS event still observed `mainWindow === null`
-  // after the first drain and therefore queued one late request.
-  drainPendingOpenRequests(mainWindow);
+  // narrow interval where an OS event still observed no main window after the
+  // first drain and therefore queued one late request.
+  drainPendingOpenRequests(win);
 
-  buildMenu(mainWindow, gitAvailable);
-  mainWindow.setMenuBarVisibility(false);
+  buildMenu(() => mainWindow.current(), gitAvailable);
+  win.setMenuBarVisibility(false);
 
-  registerTray(() => mainWindow);
+  registerTray(() => mainWindow.current());
 
-  if (settingsRecovery) reportSettingsRecovery(mainWindow, settingsRecovery);
+  if (settingsRecovery) reportSettingsRecovery(win, settingsRecovery);
 
   // Store builds (Mac App Store / Microsoft Store) must not self-update — the
   // store delivers updates. Only run the GitHub updater for direct-download builds.
@@ -643,25 +658,14 @@ app.on('window-all-closed', () => {
 async function reopenWindow(): Promise<void> {
   const gitAvailable = (await detectGit()) !== null;
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
-  mainWindow = await createWindow(developmentWorkspace?.id);
-  drainPendingOpenRequests(mainWindow);
-  buildMenu(mainWindow, gitAvailable);
-  mainWindow.setMenuBarVisibility(false);
+  const win = await createWindow(developmentWorkspace?.id);
+  mainWindow.set(win);
+  drainPendingOpenRequests(win);
+  buildMenu(() => mainWindow.current(), gitAvailable);
+  win.setMenuBarVisibility(false);
 }
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length !== 0) return;
-  // Same failure mode as the ready path: an async listener's rejection is
-  // unhandled, so a failure to reopen would leave the user clicking the dock
-  // icon of a live, windowless app. Unlike startup this is not fatal — the
-  // process is otherwise healthy — so report and stay up.
-  void reopenWindow().catch((error: unknown) => {
-    dialog.showErrorBox(
-      'DocBlocks could not open a window',
-      error instanceof Error ? (error.stack ?? error.message) : String(error),
-    );
-  });
-});
+app.on('activate', () => mainWindow.ensure());
 
 // Silence unused import warning for fileURLToPath — kept for future use.
 void fileURLToPath;

@@ -10,11 +10,19 @@ import type { MenuCommand } from '@bendyline/docblocks/host';
 import { isStoreBuild } from './updater.js';
 import { reloadWindowWithPreparation } from './window-lifecycle.js';
 
-function send(win: BrowserWindow, cmd: MenuCommand): void {
-  win.webContents.send('menu:command', cmd);
-}
-
-export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
+/**
+ * @param getWindow Resolves the live main window at click time. On macOS the
+ *   application menu outlives every window, so a window captured when the menu
+ *   was built may be destroyed by the time an item is chosen.
+ */
+export function buildMenu(getWindow: () => BrowserWindow | null, gitAvailable: boolean): void {
+  const send = (cmd: MenuCommand): void => {
+    getWindow()?.webContents.send('menu:command', cmd);
+  };
+  const reload = (ignoreCache?: boolean): void => {
+    const win = getWindow();
+    if (win) void reloadWindowWithPreparation(win, ignoreCache);
+  };
   const isMac = process.platform === 'darwin';
   // Store-distributed builds update through the store, so the manual
   // "Check for Updates" affordance would be misleading — omit it.
@@ -32,7 +40,7 @@ export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
                     { type: 'separator' },
                     {
                       label: 'Check for Updates...',
-                      click: () => send(win, 'help:checkForUpdates'),
+                      click: () => send('help:checkForUpdates'),
                     },
                   ] as MenuItemConstructorOptions[])
                 : []),
@@ -54,16 +62,16 @@ export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
         {
           label: 'New Document',
           accelerator: 'CmdOrCtrl+N',
-          click: () => send(win, 'file:new'),
+          click: () => send('file:new'),
         },
         {
           label: 'Open Folder...',
           accelerator: 'CmdOrCtrl+O',
-          click: () => send(win, 'file:openFolder'),
+          click: () => send('file:openFolder'),
         },
         {
           label: isMac ? 'Reveal Workspace in Finder' : 'Show Workspace in Explorer',
-          click: () => send(win, 'file:revealWorkspace'),
+          click: () => send('file:revealWorkspace'),
         },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' },
@@ -90,22 +98,22 @@ export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
           {
             label: 'Git',
             submenu: [
-              { label: 'Commit...', click: () => send(win, 'git:commit') },
-              { label: 'Push', click: () => send(win, 'git:push') },
-              { label: 'Pull', click: () => send(win, 'git:pull') },
-              { label: 'Fetch', click: () => send(win, 'git:fetch') },
+              { label: 'Commit...', click: () => send('git:commit') },
+              { label: 'Push', click: () => send('git:push') },
+              { label: 'Pull', click: () => send('git:pull') },
+              { label: 'Fetch', click: () => send('git:fetch') },
               { type: 'separator' },
-              { label: 'New Branch...', click: () => send(win, 'git:newBranch') },
-              { label: 'Switch Branch...', click: () => send(win, 'git:switchBranch') },
+              { label: 'New Branch...', click: () => send('git:newBranch') },
+              { label: 'Switch Branch...', click: () => send('git:switchBranch') },
               { type: 'separator' },
-              { label: 'Commit History', click: () => send(win, 'git:history') },
+              { label: 'Commit History', click: () => send('git:history') },
               { type: 'separator' },
-              { label: 'Clone Repository...', click: () => send(win, 'git:clone') },
+              { label: 'Clone Repository...', click: () => send('git:clone') },
               { type: 'separator' },
-              { label: 'Open on Remote', click: () => send(win, 'git:openOnRemote') },
+              { label: 'Open on Remote', click: () => send('git:openOnRemote') },
               {
                 label: 'Create Pull Request',
-                click: () => send(win, 'git:createPullRequest'),
+                click: () => send('git:createPullRequest'),
               },
             ],
           },
@@ -116,12 +124,12 @@ export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
         {
           label: 'Reload',
           accelerator: 'CmdOrCtrl+R',
-          click: () => void reloadWindowWithPreparation(win),
+          click: () => reload(),
         },
         {
           label: 'Force Reload',
           accelerator: 'CmdOrCtrl+Shift+R',
-          click: () => void reloadWindowWithPreparation(win, true),
+          click: () => reload(true),
         },
         { role: 'toggleDevTools' },
         { type: 'separator' },
@@ -136,13 +144,13 @@ export function buildMenu(win: BrowserWindow, gitAvailable: boolean): void {
     {
       role: 'help',
       submenu: [
-        { label: 'About DocBlocks', click: () => send(win, 'help:about') },
-        { label: 'View on GitHub', click: () => send(win, 'help:viewOnGitHub') },
+        { label: 'About DocBlocks', click: () => send('help:about') },
+        { label: 'View on GitHub', click: () => send('help:viewOnGitHub') },
         ...(!isMac && showUpdateCheck
           ? [
               {
                 label: 'Check for Updates...',
-                click: () => send(win, 'help:checkForUpdates'),
+                click: () => send('help:checkForUpdates'),
               } as MenuItemConstructorOptions,
             ]
           : []),
