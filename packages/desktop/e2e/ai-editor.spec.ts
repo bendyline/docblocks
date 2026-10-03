@@ -60,7 +60,8 @@ function readDocument(file: string): string {
 /** Undo from the editor itself, after ProseMirror's 500 ms grouping window. */
 async function undo(window: Page, editor: Locator): Promise<void> {
   await window.waitForTimeout(600);
-  await editor.locator('h1').first().click();
+  // A heading's center can hit its Block properties badge and open a popover.
+  await editor.focus();
   await window.keyboard.press('ControlOrMeta+Z');
 }
 
