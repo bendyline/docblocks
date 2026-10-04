@@ -1,10 +1,12 @@
 import { expect } from 'chai';
+import { EventEmitter } from 'node:events';
 import type {
   DisplayMediaRequestHandlerHandlerRequest,
   MediaAccessPermissionRequest,
   PermissionCheckHandlerHandlerDetails,
   PermissionRequest,
   Session,
+  Streams,
   WebContents,
   WebFrameMain,
 } from 'electron';
@@ -18,7 +20,6 @@ import {
   grantedDisplayStreams,
   grantsMacMediaAccess,
   requiredMacMediaTypes,
-  selectDisplayCaptureSource,
 } from '../main/permission-policy.js';
 import type { MacMediaAccess, MacMediaType } from '../main/permission-policy.js';
 
@@ -46,11 +47,11 @@ function fakeRenderer(initialUrl = TRUSTED_URL, initialOrigin = TRUSTED_ORIGIN):
       return origin;
     },
   } as unknown as WebFrameMain;
-  const contents = {
+  const contents = Object.assign(new EventEmitter(), {
     isDestroyed: () => destroyed,
     getURL: () => url,
     mainFrame: frame,
-  } as unknown as WebContents;
+  }) as unknown as WebContents;
 
   return {
     contents,
@@ -115,6 +116,77 @@ function displayRequest(
 }
 
 describe('desktop permission policy', () => {
+  it('requires a source choice and revalidates it before granting display capture', async () => {
+    const sources = [
+      { id: 'screen:1:0', name: 'Screen 1', display_id: '1' },
+      { id: 'window:2:0', name: 'Editor', display_id: '' },
+    ];
+    for (const outcome of ['window', 'cancel', 'unknown', 'error', 'navigate', 'replaced']) {
+      const owner = fakeRenderer();
+      let current = owner.contents;
+      let handler!: Exclude<Parameters<Session['setDisplayMediaRequestHandler']>[0], null>;
+      let choices = 0;
+      configureDesktopPermissionPolicy({
+        session: {
+          setPermissionRequestHandler: () => {},
+          setPermissionCheckHandler: () => {},
+          setDisplayMediaRequestHandler: (fn) => {
+            handler = fn!;
+          },
+        },
+        getOwner: () => current,
+        getDisplaySources: async () => sources,
+        chooseDisplaySource: async () => {
+          choices++;
+          if (outcome === 'cancel') return null;
+          if (outcome === 'error') throw new Error('Picker unavailable');
+          if (outcome === 'unknown') return { ...sources[1]! };
+          if (outcome === 'navigate') owner.contents.emit('did-start-navigation');
+          if (outcome === 'replaced') current = fakeRenderer().contents;
+          return sources[1]!;
+        },
+        platform: 'win32',
+      });
+      const result = await new Promise<Streams>((resolve) =>
+        handler(displayRequest(owner.frame), resolve),
+      );
+      expect(choices).to.equal(1);
+      expect(result).to.deep.equal(
+        outcome === 'window' ? { video: { id: 'window:2:0', name: 'Editor' } } : {},
+      );
+      expect(owner.contents.listenerCount('did-start-navigation')).to.equal(0);
+    }
+  });
+
+  it('denies concurrent capture requests while the picker is open', async () => {
+    const owner = fakeRenderer();
+    let handler!: Exclude<Parameters<Session['setDisplayMediaRequestHandler']>[0], null>;
+    let choose!: (source: null) => void;
+    configureDesktopPermissionPolicy({
+      session: {
+        setPermissionRequestHandler: () => {},
+        setPermissionCheckHandler: () => {},
+        setDisplayMediaRequestHandler: (fn) => {
+          handler = fn!;
+        },
+      },
+      getOwner: () => owner.contents,
+      getDisplaySources: async () => [{ id: 'screen:1:0', name: 'Screen', display_id: '1' }],
+      chooseDisplaySource: () =>
+        new Promise((resolve) => {
+          choose = resolve;
+        }),
+      platform: 'win32',
+    });
+    const first = new Promise<Streams>((resolve) => handler(displayRequest(owner.frame), resolve));
+    await Promise.resolve();
+    expect(
+      await new Promise<Streams>((resolve) => handler(displayRequest(owner.frame), resolve)),
+    ).to.deep.equal({});
+    choose(null);
+    expect(await first).to.deep.equal({});
+  });
+
   it('allows only the intended permissions from the trusted owner main frame', () => {
     const owner = fakeRenderer();
     const details = permissionRequest();
@@ -329,7 +401,7 @@ describe('desktop permission policy', () => {
         } as unknown as PolicySession,
         getOwner: () => owner.contents,
         getDisplaySources: async () => [],
-        getPrimaryDisplayId: () => 1,
+        chooseDisplaySource: async () => null,
         platform,
         mediaAccess: {
           getMediaAccessStatus: () => status,
@@ -380,15 +452,7 @@ describe('desktop permission policy', () => {
     expect(asked).to.deep.equal([]);
   });
 
-  it('selects the primary display deterministically and configures the native picker by OS', () => {
-    const sources = [
-      { id: 'screen:1:0', name: 'Screen 1', display_id: '111' },
-      { id: 'screen:2:0', name: 'Screen 2', display_id: '222' },
-    ];
-
-    expect(selectDisplayCaptureSource(sources, 222)).to.equal(sources[1]);
-    expect(selectDisplayCaptureSource(sources, 999)).to.equal(sources[0]);
-    expect(selectDisplayCaptureSource([], 222)).to.equal(null);
+  it('configures the native system picker by OS', () => {
     expect(displayMediaHandlerOptions('darwin')).to.deep.equal({ useSystemPicker: true });
     expect(displayMediaHandlerOptions('win32')).to.deep.equal({ useSystemPicker: false });
     expect(displayMediaHandlerOptions('linux')).to.deep.equal({ useSystemPicker: false });

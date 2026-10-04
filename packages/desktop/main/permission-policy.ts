@@ -53,7 +53,10 @@ export interface DesktopPermissionPolicyOptions {
   >;
   getOwner: () => WebContents | null;
   getDisplaySources: () => Promise<readonly DisplayCaptureSource[]>;
-  getPrimaryDisplayId: () => number;
+  chooseDisplaySource: (
+    owner: WebContents,
+    sources: readonly DisplayCaptureSource[],
+  ) => Promise<DisplayCaptureSource | null>;
   platform: NodeJS.Platform;
   developmentOrigin?: string;
   /**
@@ -234,15 +237,6 @@ export async function grantsMacMediaAccess(
   return true;
 }
 
-export function selectDisplayCaptureSource(
-  sources: readonly DisplayCaptureSource[],
-  primaryDisplayId: number,
-): DisplayCaptureSource | null {
-  if (sources.length === 0) return null;
-  const primaryId = String(primaryDisplayId);
-  return sources.find((source) => source.display_id === primaryId) ?? sources[0] ?? null;
-}
-
 export function displayMediaHandlerOptions(platform: NodeJS.Platform): {
   useSystemPicker: boolean;
 } {
@@ -269,7 +263,7 @@ export function configureDesktopPermissionPolicy(options: DesktopPermissionPolic
     session,
     getOwner,
     getDisplaySources,
-    getPrimaryDisplayId,
+    chooseDisplaySource,
     platform,
     developmentOrigin,
     mediaAccess,
@@ -310,23 +304,43 @@ export function configureDesktopPermissionPolicy(options: DesktopPermissionPolic
     ),
   );
 
+  let choosingDisplay = false;
   session.setDisplayMediaRequestHandler((request, callback) => {
-    if (!allowsDisplayMediaRequest(getOwner(), request, developmentOrigin)) {
+    const owner = getOwner();
+    const allowed = () =>
+      getOwner() === owner && allowsDisplayMediaRequest(owner, request, developmentOrigin);
+    if (choosingDisplay || !owner || !allowed()) {
       callback({});
       return;
     }
 
+    choosingDisplay = true;
+    let completed = false;
+    const finish = (streams: Streams = {}) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      owner.removeListener('did-start-navigation', cancel);
+      owner.removeListener('destroyed', cancel);
+      choosingDisplay = false;
+      callback(streams);
+    };
+    const cancel = () => finish();
+    const timeout = setTimeout(cancel, 120_000);
+    owner.once('did-start-navigation', cancel);
+    owner.once('destroyed', cancel);
     void getDisplaySources()
-      .then((sources) => {
-        // Source enumeration can show an OS picker and outlive the original
-        // document. Revalidate ownership before granting the selected stream.
-        if (!allowsDisplayMediaRequest(getOwner(), request, developmentOrigin)) {
-          callback({});
-          return;
-        }
-        const source = selectDisplayCaptureSource(sources, getPrimaryDisplayId());
-        callback(source ? grantedDisplayStreams(source, request.audioRequested, platform) : {});
+      .then(async (sources) => {
+        if (completed || !allowed() || sources.length === 0) return {};
+        const source = await chooseDisplaySource(owner, sources);
+        // Neither an unrecognized selection nor a picker that outlived its
+        // owning renderer can authorize capture. Cancellation never falls back
+        // to the primary monitor.
+        return !completed && source && sources.includes(source) && allowed()
+          ? grantedDisplayStreams(source, request.audioRequested, platform)
+          : {};
       })
-      .catch(() => callback({}));
+      .catch(() => ({}))
+      .then(finish);
   }, displayMediaHandlerOptions(platform));
 }

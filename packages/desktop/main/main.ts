@@ -11,6 +11,7 @@ import {
   BrowserWindow,
   desktopCapturer,
   dialog,
+  Menu,
   net,
   protocol,
   screen,
@@ -60,6 +61,7 @@ import {
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
+import { pickDisplayCaptureSource } from './display-capture-picker.js';
 import { attachEditorContextMenu } from './context-menu.js';
 import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
@@ -503,10 +505,15 @@ async function bootstrap(): Promise<void> {
     // will not ask for by itself. `systemPreferences` exposes no-op stubs on
     // Windows and Linux, and the policy never calls them there.
     mediaAccess: systemPreferences,
-    getPrimaryDisplayId: () => screen.getPrimaryDisplay().id,
+    chooseDisplaySource: (owner, sources) => {
+      const window = BrowserWindow.fromWebContents(owner);
+      return window
+        ? pickDisplayCaptureSource(window, sources, (items) => Menu.buildFromTemplate(items))
+        : Promise.resolve(null);
+    },
     getDisplaySources: () =>
       desktopCapturer.getSources({
-        types: ['screen'],
+        types: ['screen', 'window'],
         thumbnailSize: { width: 0, height: 0 },
       }),
   });

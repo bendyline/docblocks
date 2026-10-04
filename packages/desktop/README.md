@@ -78,6 +78,14 @@ Save recordings and documents, then restart `npm run dev:desktop` to load those
 changes. The watcher prints a reminder after each rebuild. This keeps unsaved
 recordings in the renderer alive while code is edited.
 
+Screen recording asks which screen or application window to share before
+previewing. On supported macOS versions Electron uses the system picker;
+elsewhere a native menu lists **Screens** and **Application windows**.
+Dismissal cancels capture; it never selects the primary monitor automatically.
+The recording dialog's **What to record** controls offer a whole surface or a
+coordinate region, measured in captured pixels from that surface's top-left.
+Region capture crops the preview and saved video, with audio unchanged.
+
 ## Build & package
 
 Workspace file reads and writes support **1 GiB per file**. The renderer uses
