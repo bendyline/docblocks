@@ -71,6 +71,9 @@ export type HostFileSystemV2WatchMessage =
 
 /** Wire-level filesystem v2 API exposed by preload. */
 export interface DocBlocksHostFsV2API {
+  /** Validated during native bootstrap; available before a provider is mounted. */
+  capabilitiesFor?(workspaceId: string): FileSystemProviderCapabilities;
+  readonly transferLimits?: { readonly fileBytes: number; readonly chunkBytes: number };
   /** Optional for compatibility with older preload versions. */
   beginRead?(
     instanceId: string,

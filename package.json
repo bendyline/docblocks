@@ -37,12 +37,15 @@
     },
     "tsx": {
       "esbuild": "0.28.1"
+    },
+    "xcode": {
+      "uuid": "11.1.1"
     }
   },
   "scripts": {
     "all": "tsx scripts/run-canonical-gate.ts",
     "prebuild": "tsx scripts/check-squisq-links.ts",
-    "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop && npm run build:site",
+    "build": "npm run build:core && npm run build:react && npm run build:cli && npm run build:vscode && npm run build:desktop && npm run build:site && npm run build -w docblocks-mobile",
     "build:core": "npm run build -w @bendyline/docblocks",
     "build:react": "npm run build -w @bendyline/docblocks-react",
     "build:cli": "npm run build -w @bendyline/docblocks-cli",
@@ -100,7 +103,7 @@
     "site": "tsx scripts/build-linked-squisq.ts && npm run build:core && npm run build:react && npm run dev -w docblocks-site",
     "dev": "npm run dev -w docblocks-site",
     "pretypecheck": "npm run build:core && npm run build:react && npm run build:cli",
-    "typecheck": "npm run typecheck -w @bendyline/docblocks && npm run typecheck -w @bendyline/docblocks-react && npm run typecheck -w @bendyline/docblocks-cli && npm run typecheck -w docblocks-vscode && npm run typecheck -w docblocks-site && npm run typecheck -w docblocks-desktop",
+    "typecheck": "npm run typecheck -w @bendyline/docblocks && npm run typecheck -w @bendyline/docblocks-react && npm run typecheck -w @bendyline/docblocks-cli && npm run typecheck -w docblocks-vscode && npm run typecheck -w docblocks-site && npm run typecheck -w docblocks-desktop && npm run typecheck -w docblocks-mobile",
     "clean": "rimraf packages/*/dist",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
@@ -110,10 +113,28 @@
     "dev:squisq": "tsx scripts/watch-squisq.ts",
     "unlink:squisq": "npm unlink --no-save @bendyline/squisq @bendyline/squisq-react @bendyline/squisq-editor-react @bendyline/squisq-formats @bendyline/squisq-video @bendyline/squisq-video-react && npm install",
     "release": "multi-semantic-release",
-    "check:release-toolchain": "tsx scripts/check-release-toolchain.ts"
+    "check:release-toolchain": "tsx scripts/check-release-toolchain.ts",
+    "mobile:build": "npm run build:core && npm run build:react && npm run build -w docblocks-mobile",
+    "mobile:dev": "npm run dev -w docblocks-mobile",
+    "mobile:check": "node packages/mobile/scripts/check.mjs",
+    "mobile:sync:ios": "npm run mobile:build && npm run sync:ios -w docblocks-mobile",
+    "mobile:sync:android": "npm run mobile:build && npm run sync:android -w docblocks-mobile",
+    "ios": "npm run mobile:sync:ios && npm run open:ios -w docblocks-mobile",
+    "android": "npm run mobile:sync:android && npm run open:android -w docblocks-mobile",
+    "mobile:test:ios": "node packages/mobile/scripts/native-tests.mjs ios",
+    "mobile:test:android": "node packages/mobile/scripts/native-tests.mjs android",
+    "mobile:test:available": "node packages/mobile/scripts/native-tests.mjs available",
+    "mobile:package": "node packages/mobile/scripts/package-native.mjs",
+    "mobile:test:android:device": "node packages/mobile/scripts/android-device-tests.mjs",
+    "mobile:test:android:editor": "node packages/mobile/scripts/android-editor-smoke.mjs",
+    "mobile:test:android:ai": "node packages/mobile/scripts/android-ai-smoke.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
+    "@bendyline/squisq": "2.11.12",
+    "@bendyline/squisq-cli": "2.8.13",
+    "@bendyline/squisq-formats": "2.6.12",
+    "@bendyline/squisq-video": "2.3.16",
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
     "@eslint/js": "9.39.4",

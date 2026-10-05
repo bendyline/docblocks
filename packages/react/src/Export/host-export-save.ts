@@ -45,7 +45,7 @@ export async function saveBlobToHost(
   // remembered target asks for one first — the same picker `save` would show.
   let uploadGrantId = grantId;
   if (!uploadGrantId) {
-    const picked = await exports.pickTarget(documentId, filename, null);
+    const picked = await exports.pickTarget?.(documentId, filename, null);
     if (!picked?.grantId) return null;
     uploadGrantId = picked.grantId;
   }

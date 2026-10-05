@@ -98,6 +98,10 @@ export interface AiModelInfo {
   /** Token budget, when the provider reports one. Drives prompt budgeting. */
   readonly contextWindow: number | null;
   readonly isDefault: boolean;
+  /** Omitted by hosts whose listing contains only ready models. */
+  readonly availability?: 'available' | 'unavailable' | 'download-required' | 'downloading';
+  /** Native readiness explanation, suitable for the model picker. */
+  readonly unavailableReason?: string;
 }
 
 /** A provider-catalog model that can be added to this device. */

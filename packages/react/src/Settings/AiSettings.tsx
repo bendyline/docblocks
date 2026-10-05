@@ -74,6 +74,21 @@ function modelLabel(model: AiModelInfo): string {
   return model.local ? `${model.label} (on this device)` : model.label;
 }
 
+function modelReady(model: AiModelInfo): boolean {
+  return model.availability === undefined || model.availability === 'available';
+}
+
+function readinessLabel(model: AiModelInfo): string {
+  switch (model.availability) {
+    case 'download-required':
+      return 'download required';
+    case 'downloading':
+      return 'downloading';
+    default:
+      return 'not available';
+  }
+}
+
 function formatDownloadSize(bytes: number | null): string | null {
   if (bytes === null) return null;
   const gibibytes = bytes / 1024 ** 3;
@@ -265,6 +280,8 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const connecting = status.kind === 'connecting';
   const code = status.kind === 'connecting' ? status.verificationCode : null;
   const defaultModel = models.find((model) => model.isDefault) ?? null;
+  const hasReadyModels = models.some(modelReady);
+  const unavailableModels = models.filter((model) => !modelReady(model));
   const modelManagement = Boolean(ai.availableModels && ai.installModel);
   const selectedDownload = availableModels.find((model) => model.id === downloadModelId) ?? null;
   // The status line already carries an error status's message; repeat a
@@ -291,7 +308,8 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
         Use AI features
       </label>
       <p className="db-settings-hint">
-        DocBlocks runs a private Gezel service inside this app when AI is on.
+        DocBlocks runs AI inside this app when AI is on. Model downloads start only when you choose
+        to add one.
         {providerInstalled
           ? ' Connecting your Gezel app is optional and lets DocBlocks use that app instead.'
           : ''}
@@ -321,12 +339,14 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                 <select
                   id={modelSelectId}
                   className="db-settings-select-input"
-                  value={models.length === 0 ? '' : (preferences.model ?? '')}
-                  disabled={models.length === 0 || installingModel}
+                  value={preferences.model ?? ''}
+                  disabled={!hasReadyModels || installingModel}
                   onChange={(event) => void setModel(event.currentTarget.value || null)}
                 >
-                  {models.length === 0 ? (
-                    <option value="">No models installed</option>
+                  {!hasReadyModels ? (
+                    <option value="">
+                      {models.length ? 'No models ready' : 'No models installed'}
+                    </option>
                   ) : (
                     <option value="">
                       {defaultModel
@@ -335,15 +355,25 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                     </option>
                   )}
                   {preferences.model && !models.some((model) => model.id === preferences.model) && (
-                    <option value={preferences.model}>{preferences.model} (not available)</option>
+                    <option value={preferences.model} disabled>
+                      {preferences.model} (not available)
+                    </option>
                   )}
                   {models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {modelLabel(model)}
+                    <option key={model.id} value={model.id} disabled={!modelReady(model)}>
+                      {modelReady(model)
+                        ? modelLabel(model)
+                        : `${model.label} (${readinessLabel(model)})`}
                     </option>
                   ))}
                 </select>
               </label>
+              {unavailableModels.map((model) => (
+                <p className="db-settings-hint" key={model.id}>
+                  {model.label}:{' '}
+                  {model.unavailableReason ?? 'This model is not available right now.'}
+                </p>
+              ))}
 
               {modelManagement && (
                 <div className="db-settings-ai-models">
@@ -368,7 +398,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                         </p>
                       ) : availableModels.length === 0 ? (
                         <p className="db-settings-hint">
-                          No downloadable models are listed. Update Gezel or add a model in Gezel.
+                          No downloadable models are available for this device.
                         </p>
                       ) : (
                         <>
@@ -416,6 +446,13 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                             value={downloadProgress.percent ?? undefined}
                             aria-label="Model download progress"
                           />
+                          <button
+                            type="button"
+                            className="db-settings-action db-settings-action--secondary"
+                            onClick={() => installHandle.current?.cancel()}
+                          >
+                            Cancel download
+                          </button>
                           <span>
                             {downloadProgress.message}
                             {downloadProgress.percent === null

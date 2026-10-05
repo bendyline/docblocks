@@ -3,6 +3,16 @@ import path from 'node:path';
 import { clearGezelEngineOverrides, resolveGezelNativeHost } from '../main/ai/gezel-native-host.js';
 
 describe('bundled Gezel host policy', () => {
+  it('marks MAS engines for sandbox-aware signature verification', () => {
+    expect(resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64', true)).to.deep.include(
+      {
+        macAppStore: true,
+        distributionProfile: 'store',
+        nativeBinDir: '/resources/gezel-native',
+        canHost: true,
+      },
+    );
+  });
   it('pins packaged binaries to app resources and prohibits executable downloads', () => {
     const resources = path.resolve('/opt/docblocks/resources');
     expect(
@@ -50,6 +60,7 @@ describe('bundled Gezel host policy', () => {
     const env = {
       GEZEL_NATIVE_ENGINE_VERSION: 'untrusted',
       GEZEL_LLAMA_SERVER_BIN: 'untrusted',
+      GGML_BACKEND_PATH: '/untrusted/plugin.so',
       GEZEL_HOME: '/state',
     } as NodeJS.ProcessEnv;
     const restore = clearGezelEngineOverrides(env);
@@ -59,6 +70,7 @@ describe('bundled Gezel host policy', () => {
     expect(env).to.deep.equal({
       GEZEL_NATIVE_ENGINE_VERSION: 'untrusted',
       GEZEL_LLAMA_SERVER_BIN: 'untrusted',
+      GGML_BACKEND_PATH: '/untrusted/plugin.so',
       GEZEL_HOME: '/state',
     });
   });

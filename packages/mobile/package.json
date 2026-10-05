@@ -1,0 +1,44 @@
+{
+  "name": "docblocks-mobile",
+  "version": "2.6.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "sync:ios": "cap sync ios && node scripts/normalize-ios.mjs",
+    "sync:android": "cap sync android",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@bendyline/docblocks": "*",
+    "@bendyline/docblocks-react": "*",
+    "@bendyline/gezel": "1.2.2",
+    "@bendyline/gezel-app-sdk": "1.1.2",
+    "@bendyline/gezel-capacitor": "file:vendor/bendyline-gezel-capacitor-0.1.0.tgz",
+    "@bendyline/squisq": "2.11.12",
+    "@bendyline/squisq-editor-react": "2.11.15",
+    "@bendyline/squisq-formats": "2.6.12",
+    "@bendyline/squisq-react": "2.11.14",
+    "@bendyline/squisq-video": "2.3.16",
+    "@bendyline/squisq-video-react": "2.4.18",
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
+    "@ironcalc/wasm": "0.8.4",
+    "harper.js": "2.7.0",
+    "monaco-editor": "0.50.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "typescript": "5.9.3",
+    "vite": "6.4.3"
+  }
+}

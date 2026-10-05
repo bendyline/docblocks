@@ -59,7 +59,7 @@ export interface DocBlocksHostWorkspacesAPI {
    * Open the native folder picker. Returns null if the user cancels.
    * The selected folder is registered in the main process whitelist.
    */
-  pickFolder(): Promise<ElectronWorkspaceInfo | null>;
+  pickFolder?(): Promise<ElectronWorkspaceInfo | null>;
   /**
    * Re-register a previously picker-approved workspace by main-owned id.
    * Called on app startup before any filesystem operation.
@@ -72,9 +72,9 @@ export interface DocBlocksHostWorkspacesAPI {
 /** Shell operations — reveal in Finder/Explorer, open external URLs. */
 export interface DocBlocksHostShellAPI {
   /** Reveal a registered workspace root or one root-relative entry. */
-  revealInFolder(workspaceId: string, workspacePath?: string): Promise<void>;
+  revealInFolder?(workspaceId: string, workspacePath?: string): Promise<void>;
   /** Open a registered workspace root in Finder or the platform file manager. */
-  openWorkspaceFolder(workspaceId: string): Promise<void>;
+  openWorkspaceFolder?(workspaceId: string): Promise<void>;
   /** Open a URL in the default browser. */
   openExternal(url: string): Promise<void>;
 }
@@ -84,7 +84,7 @@ export interface DocBlocksHostClipboardAPI {
   /** Replace the system clipboard's plain-text contents. */
   writeText(text: string): Promise<void>;
   /** Resolve a registered workspace entry in main and copy its absolute path. */
-  writeWorkspacePath(workspaceId: string, workspacePath: string): Promise<void>;
+  writeWorkspacePath?(workspaceId: string, workspacePath: string): Promise<void>;
 }
 
 /** Exact, main-owned export authority. The display path is never authority. */
@@ -96,10 +96,15 @@ export interface HostExportTargetGrant {
 
 /** Native export target selection and binary file writing. */
 export interface DocBlocksHostExportAPI {
+  /** A share-sheet outcome is never a durable export target. Android can only report presentation. */
+  share?(
+    filename: string,
+    data: ArrayBuffer | Uint8Array,
+  ): Promise<'shared' | 'presented' | 'cancelled'>;
   /** Resolve an exact remembered grant or a display-only host suggestion. */
-  resolveTarget(documentId: string, filename: string): Promise<HostExportTargetGrant>;
+  resolveTarget?(documentId: string, filename: string): Promise<HostExportTargetGrant>;
   /** Open the native Save dialog and remember the selected target. */
-  pickTarget(
+  pickTarget?(
     documentId: string,
     filename: string,
     currentGrantId?: string | null,
@@ -319,11 +324,15 @@ export type HostPrepareCloseResult =
  */
 export interface DocBlocksHostLifecycleAPI {
   /** Request the main-owned guarded close path for this renderer window. */
-  requestWindowClose(): void;
+  requestWindowClose?(): void;
   onPrepareClose(
     listener: (request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>,
   ): () => void;
-  onCancelClose(listener: (requestId: string) => void): () => void;
+  onCancelClose?(listener: (requestId: string) => void): () => void;
+  /** Observe current durable content after a native app returns to the foreground. */
+  onResume?(listener: () => void): () => void;
+  /** Return true when a dialog, drawer, or document navigation consumed Android Back. */
+  onBack?(listener: () => boolean): () => void;
 }
 
 /** The full DocBlocks desktop host API. */

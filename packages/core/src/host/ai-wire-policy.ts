@@ -150,11 +150,34 @@ export function parseAiProgress(value: unknown): AiProgress | null {
 
 export function parseAiModelInfo(value: unknown): AiModelInfo | null {
   if (!isRecord(value)) return null;
-  if (!hasExactKeys(value, ['id', 'label', 'local', 'contextWindow', 'isDefault'])) return null;
+  if (
+    !hasKeysWithin(
+      value,
+      ['id', 'label', 'local', 'contextWindow', 'isDefault'],
+      ['availability', 'unavailableReason'],
+    )
+  )
+    return null;
   if (!isBoundedString(value.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
   if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
   if (typeof value.local !== 'boolean') return null;
   if (typeof value.isDefault !== 'boolean') return null;
+  if (
+    value.availability !== undefined &&
+    !['available', 'unavailable', 'download-required', 'downloading'].includes(
+      value.availability as string,
+    )
+  )
+    return null;
+  if (
+    value.unavailableReason !== undefined &&
+    (!isBoundedString(value.unavailableReason, HOST_WIRE_LIMITS.messageCharacters, 1) ||
+      value.availability === undefined ||
+      value.availability === 'available')
+  )
+    return null;
+  if (value.isDefault && value.availability !== undefined && value.availability !== 'available')
+    return null;
   if (
     value.contextWindow !== null &&
     !isNonNegativeInteger(value.contextWindow, AI_WIRE_LIMITS.contextWindowCeiling)
@@ -167,6 +190,16 @@ export function parseAiModelInfo(value: unknown): AiModelInfo | null {
     local: value.local,
     contextWindow: value.contextWindow as number | null,
     isDefault: value.isDefault,
+    ...(value.availability === undefined
+      ? {}
+      : {
+          availability: value.availability as AiModelInfo['availability'],
+        }),
+    ...(value.unavailableReason === undefined
+      ? {}
+      : {
+          unavailableReason: value.unavailableReason as string,
+        }),
   };
 }
 

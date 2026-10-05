@@ -43,10 +43,29 @@ data downloads initiated by **Add model**. Development may use an absolute
 without requiring a notarized enclosing app. With no development override, Gezel
 may provision engines as before.
 
-macOS distributions support Apple Silicon only. Mac App Store builds continue to
-omit AI and carry no native engines; enabling sandboxed AI there requires a
-separate integration. Other supported desktop targets include their native
-payload, including Microsoft Store builds.
+macOS distributions support Apple Silicon only. Mac App Store builds include
+AI through a private service inside `userData/ai/gezel`, with standalone Gezel
+discovery and external model borrowing disabled. AI remains off until opt-in.
+The first MAS implementation offers Apple Intelligence through the bundled
+Foundation Models helper and downloaded GGUF weights through llama.cpp/Metal.
+Apple readiness failures remain visible in Settings. ML Kit GenAI is an Android
+provider, not a macOS API. MLX is withheld in packaged builds until a frozen
+Python runtime is bundled; bundling UV alone does not supply that runtime.
+
+MAS packaging first verifies the upstream native pins, moves executables into
+`Contents/Helpers` and Metal libraries into `Contents/Frameworks`, and preserves
+their logical resource paths with sealed symlinks. It signs executables with
+sandbox inheritance and libraries with the app identity and no entitlements.
+The enclosing app seals a manifest of the resulting bytes. Local builds verify
+those hashes exactly. App Store delivery changes code signatures; only an
+authenticated Apple store signing certificate and complete app resource seal
+permit changed hashes. Runtime also verifies native locations, symlinks,
+signatures and executable inheritance. Direct macOS builds preserve the upstream
+Developer ID signatures.
+
+The current service pin (`1.2.1`, native `0.1.46`) lacks `gezel-apple-fm`, so MAS
+packaging deliberately fails until the new native release and service package
+are published and pinned. See [the native release handoff](../../docs/desktop-ai-native-release.md).
 
 ## Architecture rules
 

@@ -42,6 +42,18 @@ const FORBIDDEN_ASSETS = Object.freeze(['ffmpeg-core']);
 
 const surfaces: BundleSurface[] = [
   {
+    name: 'mobile',
+    htmlPath: 'packages/mobile/dist/index.html',
+    entryDir: 'packages/mobile/dist/assets',
+    assetsDir: 'packages/mobile/dist/assets',
+    forbiddenAssets: FORBIDDEN_ASSETS,
+    entryBudgetBytes: 1_000_000,
+    chunkBudgets: [
+      { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
+      { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
+    ],
+  },
+  {
     name: 'site',
     htmlPath: 'packages/site/dist/index.html',
     entryDir: 'packages/site/dist/assets',

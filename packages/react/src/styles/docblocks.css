@@ -1436,6 +1436,10 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  /* The editor has its own top chrome beside (or behind) the sidebar.
+     Reserve the cutout once on this pane so every document and empty view
+     clears it, including toolbars that wrap onto multiple rows. */
+  padding-top: var(--db-safe-top);
   /* Lifts everything bottom-anchored -- including Squisq's status bar -- clear
      of the home indicator and the on-screen keyboard. iOS does not resize the
      layout viewport for the keyboard, so without this they sit underneath it.
@@ -1445,6 +1449,11 @@
      the sidebar footer. Both insets are 0 on desktop. */
   padding-bottom: calc(var(--db-safe-bottom) + var(--db-keyboard-inset));
   padding-right: var(--db-safe-right);
+}
+
+[data-db-layout='single-pane'] .db-shell-editor-area {
+  /* With the drawer closed, the editor also owns the viewport's left edge. */
+  padding-left: var(--db-safe-left);
 }
 
 .db-shell-sidebar {
@@ -1471,6 +1480,7 @@
   inset-block: 0;
   inset-inline-start: 0;
   z-index: 30;
+  background: var(--db-bg);
   width: var(--db-drawer-width);
   padding-inline-start: var(--db-safe-left);
   border-inline-end: 1px solid var(--db-border-strong);

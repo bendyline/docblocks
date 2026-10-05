@@ -272,6 +272,25 @@ describe('parseAiModelInfoList', () => {
     expect(parseAiModelInfoList([model, { ...model, local: 'yes' }])).to.equal(null);
   });
 
+  it('round-trips model readiness while rejecting invalid states and unavailable defaults', () => {
+    for (const availability of ['unavailable', 'download-required', 'downloading']) {
+      const entry = { ...model, isDefault: false, availability, unavailableReason: 'Not ready.' };
+      expect(parseAiModelInfoList([entry])).to.deep.equal([entry]);
+      expect(parseAiModelInfoList([{ ...entry, isDefault: true }])).to.equal(null);
+    }
+    expect(parseAiModelInfoList([{ ...model, availability: 'available' }])).to.not.equal(null);
+    for (const patch of [
+      { availability: 'unknown' },
+      { availability: null },
+      { unavailableReason: 'Not ready.' },
+      { availability: 'available', unavailableReason: 'Not ready.' },
+      { availability: 'unavailable', isDefault: false, unavailableReason: 4 },
+      { availability: 'unavailable', isDefault: false, unavailableReason: 'x'.repeat(100_000) },
+      { extra: true },
+    ])
+      expect(parseAiModelInfoList([{ ...model, ...patch }])).to.equal(null);
+  });
+
   it('rejects a list past the cap and a non-array', () => {
     const many = Array.from({ length: AI_WIRE_LIMITS.modelEntries + 1 }, () => model);
     expect(parseAiModelInfoList(many)).to.equal(null);

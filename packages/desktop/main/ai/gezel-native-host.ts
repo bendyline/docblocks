@@ -6,6 +6,8 @@ export interface GezelNativeHost {
   readonly distributionProfile: 'standard' | 'store';
   readonly allowStandaloneMacPayload: boolean;
   readonly canHost: boolean;
+  /** MAS payloads are re-signed and authenticated by the enclosing store app. */
+  readonly macAppStore?: boolean;
 }
 
 export function resolveGezelNativeHost(
@@ -14,6 +16,7 @@ export function resolveGezelNativeHost(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
+  macAppStore = false,
 ): GezelNativeHost {
   if (isPackaged) {
     return {
@@ -24,6 +27,7 @@ export function resolveGezelNativeHost(
       allowStandaloneMacPayload: false,
       // The pinned native release has no Intel Mac engine archives.
       canHost: platform !== 'darwin' || arch === 'arm64',
+      ...(macAppStore ? { macAppStore: true } : {}),
     };
   }
   const configured = env.DOCBLOCKS_GEZEL_NATIVE_BIN_DIR?.trim();
@@ -48,6 +52,7 @@ const ENGINE_OVERRIDES = [
   'GEZEL_APPLE_FM_BIN',
   'GEZEL_UV_BIN',
   'GEZEL_DUCKDB_BIN',
+  'GGML_BACKEND_PATH',
 ];
 
 /** Keep ambient developer overrides from bypassing a packaged payload's pins. */

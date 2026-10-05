@@ -74,6 +74,10 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      'packages/mobile/ios/App/App/public/**',
+      'packages/mobile/android/app/src/main/assets/public/**',
+      'packages/mobile/android/**/build/**',
+      'packages/mobile/android/capacitor-cordova-android-plugins/**',
       '**/node_modules/**',
       '**/*.config.ts',
       '**/*.config.js',
@@ -126,7 +130,11 @@ export default tseslint.config(
 
   // Renderer = site + desktop renderer. Browser context; no electron, no node:*.
   {
-    files: ['packages/desktop/renderer/**/*.{ts,tsx}', 'packages/site/src/**/*.{ts,tsx}'],
+    files: [
+      'packages/desktop/renderer/**/*.{ts,tsx}',
+      'packages/site/src/**/*.{ts,tsx}',
+      'packages/mobile/src/**/*.{ts,tsx}',
+    ],
     rules: {
       'no-restricted-imports': browserContextImportRule(),
     },

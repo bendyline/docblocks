@@ -167,3 +167,6 @@ reports/
 /.release-audit-2.1.2-20260717
 /ship-audit
 /release-candidate-audit
+
+# Verified first-party mobile SDK preview, pinned by the npm lockfile.
+!packages/mobile/vendor/*.tgz

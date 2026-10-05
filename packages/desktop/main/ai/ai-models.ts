@@ -31,7 +31,13 @@ export interface ProviderModelEntry {
  * true: a gezel's backing model is not visible through this listing, and a
  * gezel is therefore never claimed as local.
  */
-const ON_DEVICE_PROVIDERS: ReadonlySet<string> = new Set(['llama-cpp', 'mlx', 'ollama', 'ds4']);
+const ON_DEVICE_PROVIDERS: ReadonlySet<string> = new Set([
+  'llama-cpp',
+  'mlx',
+  'ollama',
+  'ds4',
+  'apple-foundation-models',
+]);
 
 function boundLabel(label: string): string {
   const clean = label.replaceAll('\0', '').trim();
@@ -82,7 +88,8 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
     if (entry.availability === 'download-required' || entry.availability === 'downloading') {
       continue;
     }
-    if (entry.availability === 'unavailable') continue;
+    if (entry.availability === 'unavailable' && entry.owned_by !== 'apple-foundation-models')
+      continue;
     if (!isBoundedString(entry.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) continue;
     if (seen.has(entry.id)) continue;
     const label = boundLabel(labelFor(entry));
@@ -92,7 +99,8 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
   }
 
   const fallbackIndex = accepted.findIndex(({ entry }) => entry.is_fallback === true);
-  const defaultIndex = fallbackIndex >= 0 ? fallbackIndex : 0;
+  const firstReady = accepted.findIndex(({ entry }) => entry.availability !== 'unavailable');
+  const defaultIndex = fallbackIndex >= 0 ? fallbackIndex : firstReady;
   return accepted.map(({ entry, label }, index) => {
     const provider = providerOf(entry);
     return {
@@ -101,6 +109,14 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
       local: provider !== null && ON_DEVICE_PROVIDERS.has(provider),
       contextWindow: contextWindowOf(entry),
       isDefault: index === defaultIndex,
+      ...(entry.owned_by === 'apple-foundation-models'
+        ? {
+            availability: entry.availability ?? 'unavailable',
+            ...(entry.unavailable_reason
+              ? { unavailableReason: boundLabel(entry.unavailable_reason) }
+              : {}),
+          }
+        : {}),
     };
   });
 }
@@ -139,9 +155,15 @@ export function selectModel(
   models: readonly AiModelInfo[],
   preferred: string | null,
 ): AiModelInfo | null {
+  const ready = models.filter(
+    (model) =>
+      model.availability !== 'unavailable' &&
+      model.availability !== 'download-required' &&
+      model.availability !== 'downloading',
+  );
   if (preferred) {
-    const match = models.find((model) => model.id === preferred);
+    const match = ready.find((model) => model.id === preferred);
     if (match) return match;
   }
-  return models.find((model) => model.isDefault) ?? models[0] ?? null;
+  return ready.find((model) => model.isDefault) ?? ready[0] ?? null;
 }

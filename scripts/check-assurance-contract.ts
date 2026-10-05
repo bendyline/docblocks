@@ -570,6 +570,7 @@ async function main(): Promise<void> {
     'npm run bundle:size',
     'npm run check:site-precache',
     'npm run check:site-fonts',
+    'npm run mobile:check',
     'npm run check:desktop-config',
     'npm run check:vscode-package',
     'npm run check:notices',
@@ -580,6 +581,7 @@ async function main(): Promise<void> {
     'npm run check:packages',
     'npm run coverage:critical',
     'npm test',
+    'npm run mobile:test:available',
     'npm run test:e2e:all',
   ];
   if (rootPackage.scripts?.all !== 'tsx scripts/run-canonical-gate.ts') {
@@ -693,6 +695,14 @@ async function main(): Promise<void> {
     // The visual suite is a pre-release gate rather than part of `npm run all`,
     // so nothing else would notice it being dropped from the workflow that runs
     // it. Pinning both scripts here is what keeps it wired in.
+    '.github/workflows/mobile-native.yml': [
+      'mobile:test:ios',
+      'mobile:test:android',
+      'mobile:test:android:device',
+      'mobile:test:android:editor',
+      'mobile:test:android:ai',
+      'mobile:package',
+    ],
     '.github/workflows/visual.yml': ['test:e2e:visual', 'test:e2e:visual:update'],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],

@@ -37,6 +37,7 @@ extraResources:
 # Stage the target architecture from the installed Gezel service's release
 # pins before copying resources. No executable download happens in the app.
 beforePack: scripts/stage-gezel-native.cjs
+afterPack: scripts/prepare-mas-gezel.cjs
 
 # Electron's own license and Chromium notice are supplied by the exact Electron
 # archive that electron-builder extracts for this platform and architecture.
@@ -177,6 +178,12 @@ mas:
   provisioningProfile: embedded.provisionprofile
   # The sandbox replaces the hardened runtime for MAS.
   hardenedRuntime: false
+  # The afterPack hook signs these with the child inherit entitlements and
+  # records their resulting hashes before the enclosing app seals resources.
+  signIgnore:
+    - /Contents/Resources/gezel-native/
+    - /Contents/Helpers/(gezel-apple-fm|gezel-llama-server|uv)$
+    - /Contents/(Frameworks|Helpers)/[^/]+\.(dylib|so)$
 
 dmg:
   # electron-builder defaults `sign` to false, so the .dmg shipped unsigned even

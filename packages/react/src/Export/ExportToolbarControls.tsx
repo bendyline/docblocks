@@ -102,6 +102,7 @@ export interface ExportDestinationTarget {
 }
 
 export interface ExportDestinationAdapter {
+  shareBlob?: (blob: Blob, filename: string) => Promise<'shared' | 'presented' | 'cancelled'>;
   resolveTarget: (filename: string) => Promise<ExportDestinationTarget>;
   pickTarget: (
     filename: string,
@@ -240,6 +241,7 @@ export function ExportToolbarControls({
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [fileShare, setFileShare] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoOutputFormat, setVideoOutputFormat] = useState<'mp4' | 'gif'>('mp4');
@@ -385,6 +387,7 @@ export function ExportToolbarControls({
   );
 
   const handleOpenDialog = useCallback(() => {
+    setFileShare(false);
     setMenuOpen(false);
     setExportError(null);
     setDialogOpen(true);
@@ -485,7 +488,7 @@ export function ExportToolbarControls({
       setExportError(null);
       try {
         let exportTarget = destinationTarget;
-        if (destinationAdapter?.pickBeforeSave) {
+        if (!fileShare && destinationAdapter?.pickBeforeSave) {
           const filename = buildExportFilename(selectedFile, opts);
           exportTarget = await destinationAdapter.pickTarget(filename, destinationTarget);
           if (!exportTarget) return;
@@ -497,9 +500,14 @@ export function ExportToolbarControls({
           selectedFile,
           opts,
           mediaContainer,
-          destinationAdapter
-            ? (blob, filename) => saveToDestination(blob, filename, exportTarget)
-            : saveBlob,
+          fileShare && destinationAdapter?.shareBlob
+            ? async (blob, filename) => {
+                const outcome = await destinationAdapter.shareBlob!(blob, filename);
+                if (outcome === 'cancelled') throw new ExportCancelledError();
+              }
+            : destinationAdapter
+              ? (blob, filename) => saveToDestination(blob, filename, exportTarget)
+              : saveBlob,
         );
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
@@ -511,6 +519,7 @@ export function ExportToolbarControls({
       }
     },
     [
+      fileShare,
       markdownSource,
       selectedFile,
       mediaContainer,
@@ -671,6 +680,22 @@ export function ExportToolbarControls({
               >
                 Export document...
               </button>
+              {destinationAdapter?.shareBlob && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  className="db-toolbar-menu-item"
+                  onClick={() => {
+                    setFileShare(true);
+                    setMenuOpen(false);
+                    setExportError(null);
+                    setDialogOpen(true);
+                  }}
+                >
+                  Share file...
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
@@ -733,6 +758,7 @@ export function ExportToolbarControls({
                 (options.includeLinkedDocs || options.htmlBundle === 'zip')
                   ? 'ZIP'
                   : FORMAT_EXTENSIONS[options.format].slice(1);
+              if (fileShare) return `Share ${extension.toUpperCase()}`;
               if (destinationAdapter && !destinationAdapter.pickBeforeSave) {
                 return `Save ${extension.toUpperCase()}`;
               }

@@ -48,11 +48,16 @@ import type { ProviderModelEntry } from './ai-models.js';
 import type { GezelHostRuntime } from './gezel-host-runtime.js';
 import type { GezelNativeHost } from './gezel-native-host.js';
 import { clearGezelEngineOverrides } from './gezel-native-host.js';
+import { verifyMasNativePayload } from './gezel-mas-native.js';
+import { APPLE_MODEL_ID, appleModelEntry } from './gezel-apple-model.js';
 
 type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
 type GezelHostSdkModule = typeof import('@bendyline/gezel-app-sdk/host');
 type GezelServiceModule = HostServiceModule &
-  Pick<typeof import('@bendyline/gezel-service'), 'reuseVerifiedElectronNativeBinaries'>;
+  Pick<typeof import('@bendyline/gezel-service'), 'reuseVerifiedElectronNativeBinaries'> & {
+    /** New SDKs repeat verification through this optional service hook. */
+    verifyNativeBinaries?: typeof import('@bendyline/gezel-service').reuseVerifiedElectronNativeBinaries;
+  };
 
 /** What Gezel lists under Settings → Connected Apps. */
 export const GEZEL_APP_ID = 'docblocks';
@@ -120,6 +125,9 @@ export interface GezelConnectorOptions {
   readonly hostNative?: GezelNativeHost;
   /** Where a hosted daemon keeps its state; the SDK's `apps/docblocks` home by default. */
   readonly hostHome?: string;
+  /** False inside MAS: discovery and borrowing external models are unavailable. */
+  readonly standalone?: boolean;
+  readonly appleModel?: () => Promise<ProviderModelEntry>;
 }
 
 function loadGezelSdk(): Promise<GezelSdkModule> {
@@ -283,15 +291,55 @@ class InstalledGezelConnection implements AiProviderConnection {
 /** A private daemon DocBlocks started, or one a sibling DocBlocks started. */
 class HostedGezelConnection implements AiProviderConnection {
   readonly mode = 'hosted' as const;
+  private readonly probeLifetime = new AbortController();
+  private appleProbe: Promise<ProviderModelEntry> | null = null;
 
   constructor(
     private readonly gezel: Gezel,
     readonly version: string | null,
+    private readonly nativeAppleModel?: (signal: AbortSignal) => Promise<ProviderModelEntry>,
+    private readonly store = false,
+    private readonly macAppStore = false,
   ) {}
+
+  private probeApple(): Promise<ProviderModelEntry> | undefined {
+    if (!this.nativeAppleModel) return undefined;
+    this.probeLifetime.signal.throwIfAborted();
+    this.appleProbe ??= this.nativeAppleModel(this.probeLifetime.signal).finally(() => {
+      this.appleProbe = null;
+    });
+    return this.appleProbe;
+  }
+
+  private requireSupportedEngine(modelId: string): void {
+    if (this.macAppStore && hostedModelParts(modelId)?.engine === 'ds4') {
+      throw new AiHostError(
+        'model-unavailable',
+        'This build supports Apple Intelligence and llama.cpp models.',
+      );
+    }
+    if (this.store && hostedModelParts(modelId)?.engine === 'mlx') {
+      throw new AiHostError(
+        'model-unavailable',
+        'MLX needs a bundled Python runtime for this build. Choose Apple Intelligence or a llama.cpp model.',
+      );
+    }
+  }
 
   async listModels(): Promise<readonly ProviderModelEntry[]> {
     const listing = await this.gezel.openai.models();
-    return listing.data.filter((entry) => hostedModelParts(entry.id) !== null);
+    const entries = listing.data.filter((entry) => {
+      const parts = hostedModelParts(entry.id);
+      return (
+        parts !== null &&
+        (!this.store || parts.engine === 'llama-cpp' || parts.engine === 'ds4') &&
+        (!this.macAppStore || parts.engine === 'llama-cpp')
+      );
+    });
+    // The released service routes Apple inference, but its /v1/models does
+    // not yet enumerate the system provider. Probe the verified helper.
+    const apple = await this.probeApple();
+    return apple ? [apple, ...entries] : entries;
   }
 
   /**
@@ -300,6 +348,7 @@ class HostedGezelConnection implements AiProviderConnection {
    * for, so the first sign of a weights download ends the attempt.
    */
   async prepare(modelId: string, onProgress: (progress: AiProgress) => void): Promise<void> {
+    this.requireSupportedEngine(modelId);
     const parts = hostedModelParts(modelId);
     if (!parts) return;
     try {
@@ -333,6 +382,7 @@ class HostedGezelConnection implements AiProviderConnection {
     signal: AbortSignal,
     onProgress: (progress: AiProgress) => void,
   ): Promise<void> {
+    this.requireSupportedEngine(modelId);
     const parts = hostedModelParts(modelId);
     if (!parts) {
       throw new AiHostError('model-unavailable', 'That model cannot run in DocBlocks.');
@@ -369,10 +419,21 @@ class HostedGezelConnection implements AiProviderConnection {
     });
   }
 
-  streamChat(
+  async streamChat(
     request: ProviderChatRequest,
     signal: AbortSignal,
   ): Promise<AsyncIterable<ProviderChatChunk>> {
+    signal.throwIfAborted();
+    if (request.model === APPLE_MODEL_ID) {
+      const model = await this.probeApple();
+      if (model?.availability !== 'available')
+        throw new AiHostError(
+          'model-unavailable',
+          model?.unavailable_reason ?? 'Apple Intelligence is unavailable.',
+        );
+    }
+    this.requireSupportedEngine(request.model);
+    signal.throwIfAborted();
     return streamFrom(this.gezel.openai, request, signal);
   }
 
@@ -381,6 +442,7 @@ class HostedGezelConnection implements AiProviderConnection {
 
   /** Stops a daemon this app started; only releases one a sibling started. */
   close(): Promise<void> {
+    this.probeLifetime.abort();
     return this.gezel.close();
   }
 }
@@ -400,6 +462,8 @@ export class GezelConnector implements AiConnector {
   private hostSdk: Promise<GezelHostSdkModule> | null = null;
   private service: Promise<GezelServiceModule> | null = null;
   private readonly hostNative: GezelNativeHost | undefined;
+  private readonly standalone: boolean;
+  private readonly appleModel: GezelConnectorOptions['appleModel'];
 
   constructor(options: GezelConnectorOptions) {
     this.credentials = options.credentials;
@@ -412,10 +476,13 @@ export class GezelConnector implements AiConnector {
     this.hostInProcess = (options.hostInProcess ?? false) && options.hostNative?.canHost !== false;
     this.hostNative = options.hostNative;
     this.hostHome = options.hostHome;
+    this.standalone = options.standalone ?? true;
+    this.appleModel = options.appleModel;
   }
 
   async detect(): Promise<AiDetection> {
     const canHost = this.hostInProcess || (await this.hostRuntime().catch(() => null)) !== null;
+    if (!this.standalone) return { installed: false, running: false, version: null, canHost };
     // An explicit endpoint is a configured daemon: it is either answering the
     // connection that follows or it is not, and that attempt says which.
     if (this.endpoint) return { installed: true, running: true, version: null, canHost };
@@ -431,6 +498,7 @@ export class GezelConnector implements AiConnector {
 
   async connect(options: AiConnectOptions): Promise<AiProviderConnection> {
     const runtime = await this.hostRuntime().catch(() => null);
+    if (!this.standalone) return this.connectHosted(runtime);
     try {
       return await this.connectInstalled(options);
     } catch (error) {
@@ -475,38 +543,79 @@ export class GezelConnector implements AiConnector {
     return new InstalledGezelConnection(app, authorization, credentials);
   }
 
+  private async verifyNativePayload(
+    nativeBinDir: string,
+    verifier: GezelServiceModule,
+    allowStandaloneMacPayload: boolean,
+  ): ReturnType<GezelServiceModule['reuseVerifiedElectronNativeBinaries']> {
+    // Gezel's source verifier stamps this variable; the SDK owns its lifetime.
+    const previous = process.env.GEZEL_NATIVE_BIN_DIR;
+    try {
+      if (this.hostNative?.macAppStore) {
+        await verifyMasNativePayload(nativeBinDir);
+        return { reused: true, reason: 'Verified MAS native app seal.', nativeBinDir };
+      }
+      return await verifier.reuseVerifiedElectronNativeBinaries({
+        candidates: [nativeBinDir],
+        allowStandaloneMacPayload,
+      });
+    } finally {
+      if (previous === undefined) delete process.env.GEZEL_NATIVE_BIN_DIR;
+      else process.env.GEZEL_NATIVE_BIN_DIR = previous;
+    }
+  }
+
   private async connectHosted(runtime: GezelHostRuntime | null): Promise<AiProviderConnection> {
     const hostSdk = await this.hostModule();
     try {
       const serviceModule = this.hostInProcess ? await this.serviceModule() : null;
       const nativeBinDir = this.hostNative?.nativeBinDir ?? runtime?.nativeBinDir;
+      const allowStandaloneMacPayload =
+        this.hostNative?.allowStandaloneMacPayload ?? runtime?.source === 'development';
       if (nativeBinDir) {
         const verifier = serviceModule ?? (await this.serviceModule());
-        // Gezel's verifier also stamps this variable. Let the SDK own its
-        // lifetime instead, so verification failure/close cannot leak a path.
-        const previous = process.env.GEZEL_NATIVE_BIN_DIR;
-        try {
-          const verified = await verifier.reuseVerifiedElectronNativeBinaries({
-            candidates: [nativeBinDir],
-            allowStandaloneMacPayload:
-              this.hostNative?.allowStandaloneMacPayload ?? runtime?.source === 'development',
-          });
-          if (!verified.reused) {
-            throw new Error(`Bundled Gezel engines failed verification: ${verified.reason}`);
-          }
-        } finally {
-          if (previous === undefined) delete process.env.GEZEL_NATIVE_BIN_DIR;
-          else process.env.GEZEL_NATIVE_BIN_DIR = previous;
+        const verified = await this.verifyNativePayload(
+          nativeBinDir,
+          verifier,
+          allowStandaloneMacPayload,
+        );
+        if (!verified.reused) {
+          throw new Error(`Bundled Gezel engines failed verification: ${verified.reason}`);
         }
       }
-      const hostedService: HostServiceModule | null = serviceModule
+      const hostedService: GezelServiceModule | null = serviceModule
         ? {
             ...serviceModule,
+            verifyNativeBinaries: async (input) => {
+              if (
+                !nativeBinDir ||
+                input.candidates?.length !== 1 ||
+                input.candidates[0] !== nativeBinDir
+              )
+                return {
+                  reused: false,
+                  reason: 'Only the configured bundled native payload may be verified.',
+                };
+              return this.verifyNativePayload(
+                nativeBinDir,
+                serviceModule,
+                allowStandaloneMacPayload,
+              );
+            },
             startService: async (input) => {
               const restore =
                 this.hostNative?.distributionProfile === 'store'
                   ? clearGezelEngineOverrides()
                   : () => undefined;
+              const borrowed = process.env.GEZEL_READONLY_MODEL_HOMES;
+              if (!this.standalone) delete process.env.GEZEL_READONLY_MODEL_HOMES;
+              const restoreEnvironment = () => {
+                restore();
+                if (!this.standalone) {
+                  if (borrowed === undefined) delete process.env.GEZEL_READONLY_MODEL_HOMES;
+                  else process.env.GEZEL_READONLY_MODEL_HOMES = borrowed;
+                }
+              };
               try {
                 const running = await serviceModule.startService(input);
                 return {
@@ -515,12 +624,12 @@ export class GezelConnector implements AiConnector {
                     try {
                       await running.stop();
                     } finally {
-                      restore();
+                      restoreEnvironment();
                     }
                   },
                 };
               } catch (error) {
-                restore();
+                restoreEnvironment();
                 throw error;
               }
             },
@@ -536,7 +645,11 @@ export class GezelConnector implements AiConnector {
               ? { distributionProfile: this.hostNative.distributionProfile }
               : {}),
             ...(this.hostHome ? { home: this.hostHome } : {}),
-            ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
+            ...(!this.standalone
+              ? { readOnlyModelHomes: [] }
+              : this.home
+                ? { readOnlyModelHomes: [this.home] }
+                : {}),
           }
         : null;
       const gezel = await hostSdk.connectOrHost({
@@ -564,7 +677,19 @@ export class GezelConnector implements AiConnector {
               ...(this.home ? { readOnlyModelHomes: [this.home] } : {}),
             },
       });
-      return new HostedGezelConnection(gezel, runtime?.version ?? null);
+      const appleNativeBinDir = this.hostNative?.nativeBinDir;
+      const apple =
+        this.appleModel ??
+        (process.platform === 'darwin' && process.arch === 'arm64' && appleNativeBinDir
+          ? (signal: AbortSignal) => appleModelEntry(appleNativeBinDir, signal)
+          : undefined);
+      return new HostedGezelConnection(
+        gezel,
+        runtime?.version ?? null,
+        apple,
+        this.hostNative?.distributionProfile === 'store',
+        this.hostNative?.macAppStore === true,
+      );
     } catch (error) {
       throw new AiHostError(
         'runtime-missing',

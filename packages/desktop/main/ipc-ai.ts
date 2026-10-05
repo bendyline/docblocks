@@ -30,16 +30,8 @@ import { readSettings, updateSettings } from './settings.js';
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
-/**
- * Whether this build offers AI at all. The Mac App Store sandbox cannot read
- * Gezel's per-user runtime directory, so discovery could never succeed there;
- * such a build omits the namespace instead of exposing one that always fails.
- */
-export function isAiSupportedBuild(): boolean {
-  return process.mas !== true;
-}
-
 export function createAiService(): AiService {
+  const macAppStore = process.mas === true;
   const credentials = new EncryptedFileCredentialStore(
     path.join(app.getPath('userData'), 'ai', 'gezel-credential.bin'),
     safeStorage,
@@ -50,11 +42,20 @@ export function createAiService(): AiService {
       // Capture the person's Gezel home before the SDK temporarily points
       // GEZEL_HOME at DocBlocks' private hosted service. Detection and the
       // optional Connect action must continue to mean the standalone app.
-      home: process.env.GEZEL_HOME?.trim() || path.join(app.getPath('home'), '.gezel'),
+      ...(macAppStore
+        ? { hostHome: path.join(app.getPath('userData'), 'ai', 'gezel'), standalone: false }
+        : { home: process.env.GEZEL_HOME?.trim() || path.join(app.getPath('home'), '.gezel') }),
       // Enabling AI is sufficient consent to run a private Gezel for
       // DocBlocks. Connecting the person's standalone Gezel remains optional.
       hostInProcess: true,
-      hostNative: resolveGezelNativeHost(app.isPackaged, process.resourcesPath),
+      hostNative: resolveGezelNativeHost(
+        app.isPackaged,
+        process.resourcesPath,
+        process.env,
+        process.platform,
+        process.arch,
+        macAppStore,
+      ),
     }),
     preferences: createSettingsAiPreferenceStore({ read: readSettings, update: updateSettings }),
   });

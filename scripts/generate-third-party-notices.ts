@@ -90,6 +90,7 @@ const FIRST_PARTY_PACKAGES = new Set([
   'docblocks',
   'docblocks-desktop',
   'docblocks-site',
+  'docblocks-mobile',
   'docblocks-vscode',
   '@bendyline/docblocks',
   '@bendyline/docblocks-cli',
@@ -97,6 +98,21 @@ const FIRST_PARTY_PACKAGES = new Set([
 ]);
 
 const surfaces: readonly Surface[] = [
+  {
+    id: 'mobile',
+    title: 'DocBlocks Capacitor distribution',
+    description:
+      'Packages in the mobile renderer output graph, its copied WASM engines, and the Capacitor native runtime. Android framework dependencies have their native notice alongside this notice.',
+    artifactManifest: 'packages/mobile/dist/THIRD_PARTY_COMPONENTS.json',
+    supplementalPackages: [
+      '@capacitor/core',
+      '@capacitor/ios',
+      '@capacitor/android',
+      '@ironcalc/wasm',
+      'harper.js',
+    ],
+    output: 'packages/mobile/THIRD_PARTY_NOTICES.txt',
+  },
   {
     id: 'npm-core',
     title: '@bendyline/docblocks npm package',
@@ -452,6 +468,10 @@ function tableEscape(value: string): string {
 }
 
 function surfaceAssetNotes(surface: Surface): readonly string[] {
+  if (surface.id === 'mobile')
+    return [
+      'Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.',
+    ];
   if (surface.id === 'site') {
     return [
       'Font license texts are shipped beside the font assets in `fonts/licenses/`.',

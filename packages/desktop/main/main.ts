@@ -69,7 +69,7 @@ import {
 } from './content-security-policy.js';
 import { aiAvailabilityArguments, hostEnvironmentArguments } from '../shared/host-environment.js';
 import type { AiService } from './ai/ai-service.js';
-import { createAiService, isAiSupportedBuild, registerAiIpc } from './ipc-ai.js';
+import { createAiService, registerAiIpc } from './ipc-ai.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
@@ -321,7 +321,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
           appVersion: app.getVersion(),
           isDev,
         }),
-        ...aiAvailabilityArguments(isAiSupportedBuild()),
+        ...aiAvailabilityArguments(true),
       ],
     },
   });
@@ -587,13 +587,10 @@ async function bootstrap(): Promise<void> {
   registerGitIpc();
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
-  if (isAiSupportedBuild()) {
-    aiService = createAiService();
-    registerAiIpc(aiService);
-    // Reads preferences and, only when the user opted in, reconnects silently
-    // with a stored grant. Never prompts and never blocks startup.
-    void aiService.start();
-  }
+  aiService = createAiService();
+  registerAiIpc(aiService);
+  // Reads preferences and starts AI only after opt-in, without prompting.
+  void aiService.start();
 
   // Probe before the renderer loads so its Git UI and the native menu use the
   // same process-lifetime capability. On macOS this never executes the Apple

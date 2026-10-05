@@ -6,3 +6,13 @@ playwright-report
 playwright-report-offline
 playwright-report-cross-browser
 CHANGELOG.md
+
+packages/mobile/android/app/build
+packages/mobile/android/capacitor-cordova-android-plugins
+packages/mobile/android/app/src/main/assets
+packages/mobile/android/app/src/main/res/xml/config.xml
+packages/mobile/ios/App/App/public
+packages/mobile/ios/App/App/capacitor.config.json
+packages/mobile/ios/App/App/config.xml
+packages/mobile/ios/capacitor-cordova-ios-plugins
+packages/mobile/native/ios/.build

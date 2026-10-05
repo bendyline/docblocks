@@ -11,7 +11,7 @@ const {
   stageNative,
   selectArchives,
   checkEntry,
-  default: beforePack,
+  stageForTarget,
 } = require('../scripts/stage-gezel-native.cjs');
 
 describe('Gezel native packaging', () => {
@@ -23,7 +23,7 @@ describe('Gezel native packaging', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function fixture(platform: 'linux' | 'win32' = 'linux') {
+  async function fixture(platform: 'linux' | 'win32' | 'darwin' = 'linux') {
     const cache = path.join(root, 'cache');
     const source = path.join(root, 'source');
     const destination = path.join(root, 'resources', 'gezel-native');
@@ -31,7 +31,9 @@ describe('Gezel native packaging', () => {
     await mkdir(source, { recursive: true });
     await writeFile(path.join(source, 'gezel-llama-server'), 'pinned engine', { mode: 0o755 });
     await writeFile(path.join(source, 'LICENSE.txt'), 'engine license');
-    const name = `gezel-native-0.1.46-${platform}-x64-cpu.${platform === 'win32' ? 'zip' : 'tar.gz'}`;
+    const arch = platform === 'darwin' ? 'arm64' : 'x64';
+    const backend = platform === 'darwin' ? '' : '-cpu';
+    const name = `gezel-native-0.1.46-${platform}-${arch}${backend}.${platform === 'win32' ? 'zip' : 'tar.gz'}`;
     const archive = path.join(cache, name);
     if (platform === 'win32') {
       const Zip = serviceRequire('adm-zip');
@@ -50,7 +52,7 @@ describe('Gezel native packaging', () => {
     };
     return {
       platform,
-      arch: 'x64',
+      arch,
       cache,
       source,
       destination,
@@ -159,6 +161,7 @@ describe('Gezel native packaging', () => {
   });
 
   it("uses electron-builder's actual context and OS macro when staging a MAS package", async () => {
+    const input = await fixture('darwin');
     await writeFile(
       path.join(root, 'package.json'),
       JSON.stringify({
@@ -167,16 +170,31 @@ describe('Gezel native packaging', () => {
         },
       }),
     );
-    await beforePack({
-      packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
-      electronPlatformName: 'mas',
-      arch: 3,
-    });
+    const cache = path.join(root, 'dist', 'gezel-native-cache');
+    await mkdir(cache, { recursive: true });
+    await writeFile(path.join(cache, input.name), input.bytes);
+    await stageForTarget(
+      {
+        packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
+        electronPlatformName: 'mas',
+        arch: 3,
+      },
+      { pins: input.pins, fetchImpl: input.fetchImpl },
+    );
     const metadata = JSON.parse(
       await readFile(path.join(root, 'dist', 'gezel-native', 'mac-arm64', 'release.json'), 'utf8'),
     );
     expect(metadata.arch).to.equal('arm64');
-    expect(metadata.archives).to.deep.equal([]);
+    expect(metadata.platform).to.equal('darwin');
+    expect(metadata.archives).to.deep.equal([
+      { name: input.name, sha256: input.pins.NATIVE_ENGINE_ARCHIVE_SHA256[input.name] },
+    ]);
+    expect(
+      await readFile(
+        path.join(root, 'dist', 'gezel-native', 'mac-arm64', 'darwin-arm64', 'gezel-llama-server'),
+        'utf8',
+      ),
+    ).to.equal('pinned engine');
   });
 
   it('fails unsupported targets unless the build explicitly disables hosted AI', async () => {

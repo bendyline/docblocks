@@ -244,24 +244,22 @@ async function stageNative({
   return archives;
 }
 
-exports.default = async function beforePack(context) {
+async function stageForTarget(context, overrides = {}) {
   const appDir = context.packager.info.appDir;
   const platform = context.electronPlatformName === 'mas' ? 'darwin' : context.electronPlatformName;
   const arch = require('builder-util').Arch[context.arch];
-  const pins = await import('@bendyline/gezel-service/native-release');
+  const pins = overrides.pins ?? (await import('@bendyline/gezel-service/native-release'));
   const serviceRequire = createRequire(require.resolve('@bendyline/gezel-service/package.json'));
   const manifest = JSON.parse(await readFile(path.join(appDir, 'package.json'), 'utf8'));
   const installed = serviceRequire('./package.json');
   if (manifest.dependencies['@bendyline/gezel-service'] !== installed.version) {
     throw new Error("The installed Gezel service must match DocBlocks' exact dependency pin.");
   }
-  const isMas = context.electronPlatformName === 'mas';
   await stageNative({
-    pins: isMas ? { ...pins, NATIVE_ENGINE_ARCHIVE_SHA256: {} } : pins,
+    pins,
     platform,
     arch,
     serviceRequire,
-    allowUnavailable: isMas,
     destination: path.join(
       appDir,
       'dist',
@@ -269,8 +267,12 @@ exports.default = async function beforePack(context) {
       `${context.packager.platform.buildConfigurationKey}-${arch}`,
     ),
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
+    ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
-};
+}
+
+exports.default = (context) => stageForTarget(context);
+exports.stageForTarget = stageForTarget;
 
 exports.selectArchives = selectArchives;
 exports.stageNative = stageNative;

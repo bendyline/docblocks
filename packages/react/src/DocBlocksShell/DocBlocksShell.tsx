@@ -1,3 +1,6 @@
+import { dismissTopmostDialog } from '../components/dialog-stack.js';
+import type { HostFileSystemProvider } from '@bendyline/docblocks/filesystem/host';
+import { prepareHostLifecycle } from './host-lifecycle.js';
 /**
  * DocBlocksShell -- top-level layout component.
  *
@@ -26,7 +29,6 @@ import {
 } from '@bendyline/squisq/versions';
 import type {
   DbkWorkspaceSnapshot,
-  ElectronFileSystemProvider,
   FileSystemProvider,
   FileSystemEntry,
   FileSystemEntryMoveOptions,
@@ -270,9 +272,8 @@ let memoryFileSystemModule: Promise<
 let nativeFileSystemModule: Promise<
   typeof import('@bendyline/docblocks/filesystem/native')
 > | null = null;
-let electronFileSystemModule: Promise<
-  typeof import('@bendyline/docblocks/filesystem/electron')
-> | null = null;
+let hostFileSystemModule: Promise<typeof import('@bendyline/docblocks/filesystem/host')> | null =
+  null;
 
 function loadIndexedDbFileSystem() {
   indexedDbFileSystemModule ??= import('@bendyline/docblocks/filesystem/indexeddb').catch(
@@ -304,14 +305,14 @@ function loadNativeFileSystem() {
   return nativeFileSystemModule;
 }
 
-function loadElectronFileSystem() {
-  electronFileSystemModule ??= import('@bendyline/docblocks/filesystem/electron').catch(
+function loadHostFileSystem() {
+  hostFileSystemModule ??= import('@bendyline/docblocks/filesystem/host').catch(
     (error: unknown) => {
-      electronFileSystemModule = null;
+      hostFileSystemModule = null;
       throw error;
     },
   );
-  return electronFileSystemModule;
+  return hostFileSystemModule;
 }
 
 async function createIndexedDbFileSystemProvider(id: string, label: string) {
@@ -319,13 +320,13 @@ async function createIndexedDbFileSystemProvider(id: string, label: string) {
   return new IndexedDBFileSystemProvider(id, label);
 }
 
-async function createElectronFileSystemProvider(
+async function createHostFileSystemProvider(
   id: string,
   label: string,
   rootPath: string,
-): Promise<ElectronFileSystemProvider> {
-  const { ElectronFileSystemProvider } = await loadElectronFileSystem();
-  return new ElectronFileSystemProvider(id, label, rootPath);
+): Promise<HostFileSystemProvider> {
+  const { HostFileSystemProvider } = await loadHostFileSystem();
+  return new HostFileSystemProvider(id, label, rootPath);
 }
 
 async function createMemoryFileSystemProvider(
@@ -705,16 +706,16 @@ type PinnedDocumentProviderAccess =
       owned: boolean;
     };
 
-async function createElectronProviderFromWorkspace(
+async function createHostProviderFromWorkspace(
   ws: WorkspaceDescriptor,
-): Promise<ElectronFileSystemProvider | null> {
+): Promise<HostFileSystemProvider | null> {
   if (!ws.rootPath) return null;
   try {
     await getDocBlocksHost().workspaces.register(ws.id);
   } catch {
     return null;
   }
-  return createElectronFileSystemProvider(ws.id, ws.name, ws.rootPath);
+  return createHostFileSystemProvider(ws.id, ws.name, ws.rootPath);
 }
 
 // Below these pane widths the view tabs take a row of their own and every
@@ -1234,9 +1235,7 @@ export function DocBlocksShell({
           workspaces.filter(
             (workspace) =>
               workspace.type !== 'transient' &&
-              (electron
-                ? workspace.type === 'electron-native'
-                : workspace.type !== 'electron-native'),
+              (electron ? workspace.type === 'host-native' : workspace.type !== 'host-native'),
           ),
         );
       })
@@ -1253,7 +1252,7 @@ export function DocBlocksShell({
     provider &&
     activeWorkspaceDescriptor?.id === activeWorkspaceId &&
     provider.id === activeWorkspaceId &&
-    activeWorkspaceDescriptor.type === 'electron-native'
+    activeWorkspaceDescriptor.type === 'host-native'
       ? activeWorkspaceDescriptor.id
       : null;
   const git = useGit(provider, nativeWorkspaceId, resolvedTheme);
@@ -1350,6 +1349,21 @@ export function DocBlocksShell({
             saveBlobToHost(exports, documentId, blob, filename, target?.grantId ?? null),
         };
       }
+    }
+    if (hostSupports('exportDestinations') && exports && activeWorkspaceId) {
+      const documentId = JSON.stringify([activeWorkspaceId, selectedFile]);
+      return {
+        showDestination: false,
+        resolveTarget: async (filename) => ({ grantId: null, displayPath: filename }),
+        pickTarget: async (filename) => ({ grantId: null, displayPath: filename }),
+        saveBlob: (blob, filename) => saveBlobToHost(exports, documentId, blob, filename, null),
+        ...(exports.share
+          ? {
+              shareBlob: async (blob: Blob, filename: string) =>
+                exports.share!(filename, await blob.arrayBuffer()),
+            }
+          : {}),
+      };
     }
     return createBrowserSaveAsAdapter();
   }, [activeWorkspaceId, selectedFile]);
@@ -1676,8 +1690,8 @@ export function DocBlocksShell({
         const workspaces = await listWorkspaces();
         ws = workspaces.find((w) => w.id === wsId);
         if (!ws) return null;
-        if (ws.type === 'electron-native') {
-          fsProvider = await createElectronProviderFromWorkspace(ws);
+        if (ws.type === 'host-native') {
+          fsProvider = await createHostProviderFromWorkspace(ws);
           if (!fsProvider) return null;
         } else if (ws.type === 'native') {
           const restored = await (await loadNativeFileSystem()).restoreNativeFolder(ws.id);
@@ -2037,15 +2051,15 @@ export function DocBlocksShell({
       // On desktop, hide web-only workspaces (indexeddb/native) -- only
       // folder-based workspaces are valid.
       const candidates = electron
-        ? workspaces.filter((w) => w.type === 'electron-native')
-        : workspaces.filter((w) => w.type !== 'electron-native');
+        ? workspaces.filter((w) => w.type === 'host-native')
+        : workspaces.filter((w) => w.type !== 'host-native');
       // Pick the most recently opened workspace
       const sorted = [...candidates].sort((a, b) =>
         (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
       );
       for (const ws of sorted) {
-        if (ws.type === 'electron-native') {
-          const p = await createElectronProviderFromWorkspace(ws);
+        if (ws.type === 'host-native') {
+          const p = await createHostProviderFromWorkspace(ws);
           if (!p) continue;
           if (!isCurrent()) {
             await getFileSystemProviderV2(p)?.dispose();
@@ -2098,13 +2112,13 @@ export function DocBlocksShell({
           const descriptor: WorkspaceDescriptor = {
             id: info.id,
             name: info.name,
-            type: 'electron-native',
+            type: 'host-native',
             rootPath: info.rootPath,
             lastOpened: new Date().toISOString(),
           };
           await saveWorkspace(descriptor);
           if (!isCurrent()) return;
-          const p = await createElectronFileSystemProvider(info.id, info.name, info.rootPath);
+          const p = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
           if (!isCurrent()) {
             await getFileSystemProviderV2(p)?.dispose();
             return;
@@ -2456,7 +2470,8 @@ export function DocBlocksShell({
   useEffect(() => {
     if (!provider) return;
     const providerV2 = getFileSystemProviderV2(provider);
-    if (!providerV2?.capabilities.watch) return;
+    const lifecycle = maybeGetDocBlocksHost()?.lifecycle;
+    if (!providerV2 || (!providerV2.capabilities.watch && !lifecycle?.onResume)) return;
     const watchedFile = selectedSourceFile ?? selectedFile;
     if (!watchedFile || !documentSnapshot.targetKey || selectedImage) return;
     const targetKey = documentSnapshot.targetKey;
@@ -2488,38 +2503,50 @@ export function DocBlocksShell({
             // remount key and content both derive from that snapshot.
           }
         } while (rerun && !disposed);
-      } catch {
-        // The next watcher event will retry a file that was changing too
-        // quickly to obtain a stable content/metadata pair.
+      } catch (error: unknown) {
+        if (!disposed)
+          showToast(
+            'error',
+            error instanceof Error
+              ? 'Could not check the current file: ' + error.message
+              : 'Could not check the current file.',
+          );
       } finally {
         reading = false;
         if (rerun && !disposed) void drainWatcherReads();
       }
     };
 
-    const subscription = providerV2.watch(
-      (event) => {
-        if (event.type === 'overflow') {
-          void drainWatcherReads();
-          return;
-        }
-        const changedCurrent = sameProviderPath(event.path, watchedFile);
-        const changedDestination =
-          event.destinationPath !== null && sameProviderPath(event.destinationPath, watchedFile);
-        if (changedCurrent || changedDestination) void drainWatcherReads();
-      },
-      {
-        onError: () => {
-          // Re-read the active file on watcher failure. The session decides
-          // whether the result is a clean update or an external conflict.
-          void drainWatcherReads();
-        },
-      },
-    );
-    void subscription.ready.catch(() => undefined);
+    const subscription = providerV2.capabilities.watch
+      ? providerV2.watch(
+          (event) => {
+            if (event.type === 'overflow') {
+              void drainWatcherReads();
+              return;
+            }
+            const changedCurrent = sameProviderPath(event.path, watchedFile);
+            const changedDestination =
+              event.destinationPath !== null &&
+              sameProviderPath(event.destinationPath, watchedFile);
+            if (changedCurrent || changedDestination) void drainWatcherReads();
+          },
+          {
+            onError: () => {
+              // Re-read the active file on watcher failure. The session decides
+              // whether the result is a clean update or an external conflict.
+              void drainWatcherReads();
+            },
+          },
+        )
+      : null;
+    const stopResume = lifecycle?.onResume?.(() => {
+      void drainWatcherReads();
+    });
+    void subscription?.ready.catch(() => undefined);
     return () => {
       disposed = true;
-      void subscription.dispose();
+      stopResume?.();
+      void subscription?.dispose();
     };
   }, [
     provider,
@@ -2528,6 +2555,7 @@ export function DocBlocksShell({
     selectedImage,
     documentSession,
     documentSnapshot.targetKey,
+    showToast,
   ]);
 
   const transitionAwayFromDocument = useCallback(
@@ -2628,8 +2656,7 @@ export function DocBlocksShell({
     const stopPrepare = lifecycle.onPrepareClose(async (request) => {
       preparedCloseRequestRef.current = request.requestId;
       try {
-        const snapshot = await documentSession.prepareClose();
-        return { status: 'ready' as const, persistedRevision: snapshot.persistedRevision };
+        return await prepareHostLifecycle(documentSession, request);
       } catch (error: unknown) {
         preparedCloseRequestRef.current = null;
         return {
@@ -2642,14 +2669,14 @@ export function DocBlocksShell({
         };
       }
     });
-    const stopCancel = lifecycle.onCancelClose((requestId) => {
+    const stopCancel = lifecycle.onCancelClose?.((requestId) => {
       if (preparedCloseRequestRef.current !== requestId) return;
       preparedCloseRequestRef.current = null;
       documentSession.cancelClose();
     });
     return () => {
       stopPrepare();
-      stopCancel();
+      stopCancel?.();
     };
   }, [documentSession]);
 
@@ -2662,8 +2689,8 @@ export function DocBlocksShell({
       const transient = getTransientWorkspace(ws.id);
       if (transient) {
         nextProvider = transient.provider;
-      } else if (ws.type === 'electron-native') {
-        nextProvider = await createElectronProviderFromWorkspace(ws);
+      } else if (ws.type === 'host-native') {
+        nextProvider = await createHostProviderFromWorkspace(ws);
         if (!nextProvider) return;
       } else if (ws.type === 'native') {
         const restored = await (await loadNativeFileSystem()).restoreNativeFolder(ws.id);
@@ -2774,9 +2801,9 @@ export function DocBlocksShell({
           const transient = getTransientWorkspace(workspace.id);
           if (transient) {
             nextProvider = transient.provider;
-          } else if (workspace.type === 'electron-native') {
+          } else if (workspace.type === 'host-native') {
             nextProvider = hostSupports('nativeWorkspaces')
-              ? await createElectronProviderFromWorkspace(workspace)
+              ? await createHostProviderFromWorkspace(workspace)
               : null;
             ownsNextProvider = nextProvider !== null;
           } else if (workspace.type === 'native') {
@@ -2910,8 +2937,8 @@ export function DocBlocksShell({
       const sourceTargetKey = documentSnapshot.targetKey;
 
       try {
-        if (destination.type === 'electron-native') {
-          destinationProvider = await createElectronProviderFromWorkspace(destination);
+        if (destination.type === 'host-native') {
+          destinationProvider = await createHostProviderFromWorkspace(destination);
         } else if (destination.type === 'native') {
           destinationProvider = await (
             await loadNativeFileSystem()
@@ -3018,19 +3045,19 @@ export function DocBlocksShell({
     const requestId = ++navigationRequestRef.current;
     try {
       if (hostSupports('workspaceFolderPicker')) {
-        const info = await getDocBlocksHost().workspaces.pickFolder();
+        const info = await getDocBlocksHost().workspaces.pickFolder?.();
         if (!info) return; // user cancelled
         if (requestId !== navigationRequestRef.current) return;
         const descriptor: WorkspaceDescriptor = {
           id: info.id,
           name: info.name,
-          type: 'electron-native',
+          type: 'host-native',
           rootPath: info.rootPath,
           lastOpened: new Date().toISOString(),
         };
         await saveWorkspace(descriptor);
         if (requestId !== navigationRequestRef.current) return;
-        const provider = await createElectronFileSystemProvider(info.id, info.name, info.rootPath);
+        const provider = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
         if (!(await transitionAwayFromDocument(requestId))) return;
         setProvider(provider);
         setActiveWorkspaceId(descriptor.id);
@@ -3072,17 +3099,13 @@ export function DocBlocksShell({
         const descriptor: WorkspaceDescriptor = {
           id: info.id,
           name: info.name,
-          type: 'electron-native',
+          type: 'host-native',
           rootPath: info.rootPath,
           lastOpened: new Date().toISOString(),
         };
         await saveWorkspace(descriptor);
         if (requestId !== navigationRequestRef.current) return;
-        const cloneProvider = await createElectronFileSystemProvider(
-          info.id,
-          info.name,
-          info.rootPath,
-        );
+        const cloneProvider = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
         if (!(await transitionAwayFromDocument(requestId))) return;
         setProvider(cloneProvider);
         setActiveWorkspaceId(descriptor.id);
@@ -3144,12 +3167,14 @@ export function DocBlocksShell({
       return;
     }
     adoptRegularDocument(path);
+    setMobileShowEditor(true);
     setInitialView('wysiwyg');
     setInitialSharedMode(null);
     setExplorerKey((k) => k + 1);
     closeWelcomeGateway();
     if (activeWorkspaceId) {
       pushHash(activeWorkspaceId, '/' + filename);
+      saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
     }
   }, [
     provider,
@@ -3267,6 +3292,29 @@ export function DocBlocksShell({
     ],
   );
   useShellShortcuts(shortcutHandlers, layoutMode);
+  useEffect(
+    () =>
+      maybeGetDocBlocksHost()?.lifecycle?.onBack?.(() => {
+        if (dismissTopmostDialog()) return true;
+        const escape = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        });
+        (document.activeElement ?? document.body).dispatchEvent(escape);
+        if (escape.defaultPrevented) return true;
+        if (singlePane && !mobileShowEditor) {
+          setMobileShowEditor(true);
+          return true;
+        }
+        if (window.history.length > 1) {
+          window.history.back();
+          return true;
+        }
+        return false;
+      }),
+    [singlePane, mobileShowEditor],
+  );
 
   const actionNewHandledRef = useRef(false);
   useEffect(() => {
@@ -3291,7 +3339,7 @@ export function DocBlocksShell({
       return;
     }
     const ws = await getWorkspace(activeWorkspaceId);
-    if (ws?.type === 'electron-native' && ws.rootPath) {
+    if (ws?.type === 'host-native' && ws.rootPath) {
       await shell.revealInFolder(ws.id);
     }
   }, [activeWorkspaceId]);
@@ -3775,9 +3823,9 @@ export function DocBlocksShell({
       }
 
       let pinnedProvider: FileSystemProvider | null = null;
-      if (workspace.type === 'electron-native') {
+      if (workspace.type === 'host-native') {
         pinnedProvider = hostSupports('nativeWorkspaces')
-          ? await createElectronProviderFromWorkspace(workspace)
+          ? await createHostProviderFromWorkspace(workspace)
           : null;
       } else if (workspace.type === 'native') {
         pinnedProvider = await (await loadNativeFileSystem()).restoreNativeFolder(workspace.id);
@@ -4295,9 +4343,7 @@ export function DocBlocksShell({
       const electron = hostSupports('nativeWorkspaces');
       const all = await listWorkspaces();
       const candidates = all.filter((w) =>
-        electron
-          ? w.type === 'electron-native' || w.type === 'transient'
-          : w.type !== 'electron-native',
+        electron ? w.type === 'host-native' || w.type === 'transient' : w.type !== 'host-native',
       );
       if (candidates.length === 0) {
         showToast('error', 'No workspaces to download.');
@@ -4315,8 +4361,8 @@ export function DocBlocksShell({
           const transient = getTransientWorkspace(ws.id);
           if (transient) {
             p = transient.provider;
-          } else if (ws.type === 'electron-native') {
-            p = await createElectronProviderFromWorkspace(ws);
+          } else if (ws.type === 'host-native') {
+            p = await createHostProviderFromWorkspace(ws);
             ownsProvider = p !== null;
           } else if (ws.type === 'native') {
             // Restore without prompting -- only succeeds when the browser
@@ -4471,7 +4517,7 @@ export function DocBlocksShell({
     const requestId = ++navigationRequestRef.current;
     if (!(await transitionAwayFromDocument(requestId))) return;
 
-    if (ws?.type === 'electron-native') {
+    if (ws?.type === 'host-native') {
       try {
         await getDocBlocksHost().workspaces.unregister(activeWorkspaceId);
       } catch {
@@ -4508,7 +4554,7 @@ export function DocBlocksShell({
     const electron = hostSupports('nativeWorkspaces');
     // Switch to most recent remaining workspace or create default
     const remaining = (await listWorkspaces()).filter((w) =>
-      electron ? w.type === 'electron-native' : w.type !== 'electron-native',
+      electron ? w.type === 'host-native' : w.type !== 'host-native',
     );
     if (remaining.length > 0) {
       const next = remaining[0];
@@ -4518,12 +4564,12 @@ export function DocBlocksShell({
       const descriptor: WorkspaceDescriptor = {
         id: info.id,
         name: info.name,
-        type: 'electron-native',
+        type: 'host-native',
         rootPath: info.rootPath,
         lastOpened: new Date().toISOString(),
       };
       await saveWorkspace(descriptor);
-      const p = await createElectronFileSystemProvider(info.id, info.name, info.rootPath);
+      const p = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
       setProvider(p);
       setActiveWorkspaceId(info.id);
       adoptSelectedDocument(null);
@@ -4749,7 +4795,7 @@ export function DocBlocksShell({
                 <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
                 <p>
                   Write visually, keep plain Markdown underneath, and export the same document in
-                  useful formats. Your browser workspace stays on this device.
+                  useful formats. Keep your documents in the workspace you choose.
                 </p>
                 <div className="db-mobile-first-run-actions">
                   <button
@@ -5084,8 +5130,7 @@ export function DocBlocksShell({
                     )}
                   </div>
                   <p className="db-workspace-empty-hint">
-                    Browser workspaces stay on this device. Use the sidebar backup action to keep a
-                    portable copy.
+                    Use the sidebar backup action to keep a portable copy of this workspace.
                   </p>
                 </div>
               </div>

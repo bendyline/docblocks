@@ -168,6 +168,44 @@ test.describe('adaptive shell on a phone', () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test('keeps editor and drawer controls clear of phone cutouts', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+    // Browser device emulation has no physical cutout. Supply the insets that
+    // WKWebView receives on a phone, then measure the actual rendered chrome.
+    for (const insets of [
+      { width: 390, height: 844, top: 59, left: 0, right: 0, bottom: 34 },
+      { width: 844, height: 390, top: 0, left: 59, right: 0, bottom: 21 },
+    ]) {
+      await page.setViewportSize({ width: insets.width, height: insets.height });
+      await page.locator('.db-shell').evaluate((shell, safe) => {
+        for (const edge of ['top', 'left', 'right', 'bottom'] as const)
+          (shell as HTMLElement).style.setProperty(`--db-safe-${edge}`, `${safe[edge]}px`);
+      }, insets);
+      const toolbar = page.locator('.squisq-toolbar');
+      await expect
+        .poll(async () => Math.round((await toolbar.boundingBox())?.y ?? -1))
+        .toBe(insets.top);
+      const toolbarBox = await toolbar.boundingBox();
+      const statusBox = await page.locator('.squisq-status-bar').boundingBox();
+      if (!toolbarBox || !statusBox) throw new Error('Editor chrome is not laid out');
+      expect(toolbarBox.x).toBeGreaterThanOrEqual(insets.left);
+      expect(toolbarBox.x + toolbarBox.width).toBeLessThanOrEqual(insets.width - insets.right + 1);
+      expect(statusBox.y + statusBox.height).toBeLessThanOrEqual(insets.height - insets.bottom + 1);
+
+      await page.getByRole('button', { name: 'Show file list' }).click();
+      const sidebarButton = page.locator('.db-shell-sidebar-header button').first();
+      await expect(sidebarButton).toBeVisible();
+      await expect
+        .poll(async () => Math.round((await sidebarButton.boundingBox())?.y ?? -1))
+        .toBeGreaterThanOrEqual(insets.top);
+      await page
+        .locator('.db-shell-scrim')
+        .click({ position: { x: insets.width - 10, y: insets.height / 2 } });
+      await expect(page.locator('.db-shell')).toHaveAttribute('data-db-drawer', 'closed');
+    }
+  });
 });
 
 test.describe('adaptive shell on a tablet', () => {

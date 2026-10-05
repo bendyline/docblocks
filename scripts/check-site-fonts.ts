@@ -67,6 +67,11 @@ process.stdout.write(`${fontFiles.length} unique site fonts are referenced and p
  */
 const SURFACE_STYLESHEETS: readonly { surface: string; source: string; fontDir: string }[] = [
   {
+    surface: 'mobile',
+    source: 'packages/mobile/dist/fonts/fonts.css',
+    fontDir: 'packages/mobile/dist/fonts',
+  },
+  {
     surface: 'site',
     source: 'packages/site/public/fonts/fonts.css',
     fontDir: 'packages/site/public/fonts',

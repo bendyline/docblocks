@@ -4,11 +4,12 @@ Guidance for Codex (and any other AI coding agent) working in this repo. Read th
 
 ## What DocBlocks is
 
-A markdown document editor and management platform that ships from one npm-workspaces monorepo to **four delivery surfaces**:
+A markdown document editor and management platform that ships from one npm-workspaces monorepo to **five delivery surfaces**:
 
 - **Site** (`packages/site`) — a Vite/React demo of the shell, deployed to GitHub Pages
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
+- **Mobile** (`packages/mobile`) — Capacitor for iOS and Android, mounting the shared shell
 - **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
@@ -23,6 +24,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
+| `packages/mobile`  | `docblocks-mobile`           | Capacitor shell, native workspace storage, Files/SAF folders, import, export, and sharing.                                                                                                                                                                                                                          |
 
 ## Build, test, dev commands
 
@@ -244,8 +246,9 @@ The SDK is ESM-only and the main bundle is CJS, so it stays external in tsup
 and is reached by dynamic `import()`; it must be a desktop **dependency** (not a
 devDependency) or electron-builder leaves it out of app.asar. The grant lives in
 a `safeStorage`-encrypted file under userData, never in `settings.json`. A Mac
-App Store build omits `host.ai` entirely — the sandbox cannot read Gezel's
-runtime directory — via the main-stamped `--docblocks-ai` switch.
+App Store build exposes the same `host.ai` seam but uses a private service in
+`userData/ai/gezel`; it never discovers standalone Gezel or borrows external
+model homes. The main-stamped `--docblocks-ai` switch enables that bridge.
 
 **When the person's Gezel cannot serve, DocBlocks hosts one.** Absent, not
 running, or unwilling to connect DocBlocks (declined, expired, no reusable
@@ -264,10 +267,20 @@ models. Packaged builds stage the installed service's pinned native release in
 signatures after opt-in, and pass it as `host.nativeBinDir`. They use
 `distributionProfile: 'store'` so no runtime executable download can repair a
 missing or invalid payload. Preserve the native release's existing signatures
-when packaging: re-signing changes the pinned bytes. Development may use an
-absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an engine with visible
-progress. macOS distributions support Apple Silicon only; Mac App Store builds
-still omit AI. Gezel never downloads
+in direct distributions. MAS verifies those original pins before moving code
+into `Contents/Helpers` and `Contents/Frameworks`, preserving logical resource
+paths with sealed symlinks. It re-signs executables with child sandbox inheritance
+and libraries without entitlements, then seals transformed hashes in the app.
+Runtime authenticates the app's signature/resource seal before trusting those
+hashes. Only authenticated Apple store delivery signatures allow changed hashes;
+local builds must match exactly. Native locations, signatures and inheritance
+remain verified in both cases.
+Development may use an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an
+engine with visible progress. macOS distributions support Apple Silicon only.
+MAS requires the new native release's Apple Foundation Models helper, UV and
+llama.cpp/Metal; the old native 0.1.46 pin cannot package it. Apple Intelligence
+readiness is visible, and unavailable system models cannot be selected. Store
+profiles withhold MLX until a frozen Python runtime ships. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
 
@@ -396,6 +409,29 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
 - **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; our own `@bendyline/*` packages (Squisq, Gezel, and their first-party siblings) are the only exception, and changing it is a policy change that must update the checker and `docs/dependency-governance.md` together. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
+
+## Mobile host
+
+`packages/mobile/src/host.ts` installs the native bridge before loading the shared shell.
+Storage implements the byte-authoritative v2 contract through the generic host provider;
+`filesystem/electron` remains a compatibility wrapper. Persisted `electron-native`
+workspaces migrate to `host-native`. Bookmarks and Android tree URIs stay native.
+Picked folders without a current grant stay listed and fail visibly when opened.
+
+Use `npm run mobile:build`, `npm run mobile:check`, and `npm run mobile:test:available`.
+Native contract tests use real Swift and Java storage. Android device conformance runs
+against a test-only DocumentsProvider in the isolated `.tests` app; it requires an
+explicit device ID. See `packages/mobile/README.md` for build, package, and device commands.
+No test may clear the personal app's documents. Mobile provider atomicity is process-scoped,
+with best-effort durability and no watcher; resume re-observes the active document.
+
+Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
+App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,
+opt-in off by default, model downloads gesture-only, selected models explicit,
+and every stream terminal exactly once. The private SDK tarball and native/source
+hashes live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
+Never patch installed SDK files. Device AI tests use synthetic weights only in the
+isolated Android `.tests` app and require an explicit arm64 device ID.
 
 ## Gotchas worth knowing
 

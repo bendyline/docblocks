@@ -128,6 +128,25 @@ function requireBundledGezelEngines(): void {
   ) {
     failConfigPolicy('Desktop signing must preserve the pinned Gezel native release signatures.');
   }
+  if (
+    config.afterPack !== 'scripts/prepare-mas-gezel.cjs' ||
+    !isRecord(config.mas) ||
+    !Array.isArray(config.mas.signIgnore) ||
+    !config.mas.signIgnore.includes('/Contents/Resources/gezel-native/') ||
+    !config.mas.signIgnore.includes('/Contents/Helpers/(gezel-apple-fm|gezel-llama-server|uv)$') ||
+    !config.mas.signIgnore.includes('/Contents/(Frameworks|Helpers)/[^/]+\\.(dylib|so)$')
+  ) {
+    failConfigPolicy(
+      'MAS signing must authenticate, sandbox-sign and pin native engines before sealing the app.',
+    );
+  }
+  const entitlements = readFileSync(
+    path.join(repoRoot, 'packages/desktop/entitlements.mas.plist'),
+    'utf8',
+  );
+  if (!/<key>com\.apple\.security\.network\.server<\/key>\s*<true\s*\/>/u.test(entitlements)) {
+    failConfigPolicy('MAS must permit bundled inference engines to listen on loopback.');
+  }
   process.stdout.write(
     'electron-builder.yml: bundled Gezel engines and signature preservation OK\n',
   );

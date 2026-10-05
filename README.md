@@ -1,5 +1,7 @@
 # DocBlocks
 
+**Mobile development:** [Capacitor iOS and Android app](packages/mobile/README.md), including native storage, device tests, and release packaging.
+
 **A markdown document editor where one file can become anything — a Word doc, a PDF, a slide deck, an e-book, or a video — and the file stays yours.**
 
 [Open DocBlocks in your browser](https://docblocks.com/) — no account required.

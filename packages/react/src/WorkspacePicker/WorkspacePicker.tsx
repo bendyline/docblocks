@@ -99,8 +99,8 @@ export function WorkspacePicker({
     // session-only documents so loose files and DBKs have a visible current
     // workspace and can be revisited until they are moved or closed.
     const filtered = electron
-      ? list.filter((w) => w.type === 'electron-native' || w.type === 'transient')
-      : list.filter((w) => w.type !== 'electron-native');
+      ? list.filter((w) => w.type === 'host-native' || w.type === 'transient')
+      : list.filter((w) => w.type !== 'host-native');
     setWorkspaces(filtered);
   }, [electron]);
 
@@ -211,7 +211,7 @@ export function WorkspacePicker({
               <span className="db-workspace-details">
                 <span className="db-workspace-heading">
                   <span>{ws.name}</span>
-                  {(ws.type === 'native' || ws.type === 'electron-native') && (
+                  {(ws.type === 'native' || ws.type === 'host-native') && (
                     <span className="db-workspace-type">(folder)</span>
                   )}
                 </span>

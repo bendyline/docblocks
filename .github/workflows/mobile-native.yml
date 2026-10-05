@@ -1,0 +1,92 @@
+name: Mobile native
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - uses: ./.github/actions/setup-npm
+      - run: npm ci
+      - run: npm run mobile:test:ios
+      - run: npm run mobile:package -- ios 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mobile-ios
+          path: |
+            reports/mobile-native/
+            reports/mobile-release/**/manifest.json
+            reports/mobile-release/**/*.xcarchive
+          if-no-files-found: ignore
+          retention-days: 14
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - uses: ./.github/actions/setup-npm
+      - run: npm ci
+      - name: Select installed JDK and Android toolchain
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - run: npm run mobile:sync:android
+      - run: npm run mobile:test:android
+      - name: Build isolated test APKs
+        working-directory: packages/mobile/android
+        run: ./gradlew --no-daemon -PdocblocksTestApp :app:assembleDebug :app:assembleDebugAndroidTest
+      # Gezel ships arm64 native libraries. Hosted Linux x86 emulators cannot
+      # qualify them; run device/editor/AI suites on an explicit arm64 device.
+      - run: npm run mobile:package -- android 1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ !cancelled() }}
+        with:
+          name: mobile-android
+          path: |
+            reports/mobile-native/
+            reports/mobile-release/**/*.json
+            reports/mobile-release/**/*.apk
+            reports/mobile-release/**/*.aab
+          if-no-files-found: ignore
+          retention-days: 14
+
+  android-device:
+    # A maintainer-dispatched qualification uses a dedicated arm64 device runner.
+    # Its configured serial is explicit; the scripts target only the .tests app.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: android-arm64
+    timeout-minutes: 35
+    env:
+      DOCBLOCKS_ANDROID_TEST_DEVICE: ${{ vars.DOCBLOCKS_ANDROID_TEST_DEVICE }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: test -n "$DOCBLOCKS_ANDROID_TEST_DEVICE"
+      - uses: ./.github/actions/setup-npm
+      - run: npm ci
+      - run: npm run mobile:sync:android
+      - name: Build isolated test APKs
+        working-directory: packages/mobile/android
+        run: ./gradlew --no-daemon -PdocblocksTestApp :app:assembleDebug :app:assembleDebugAndroidTest
+      - run: npm run mobile:test:android:device -- "$DOCBLOCKS_ANDROID_TEST_DEVICE"
+      - run: npm run mobile:test:android:editor -- "$DOCBLOCKS_ANDROID_TEST_DEVICE"
+      - run: npm run mobile:test:android:ai -- "$DOCBLOCKS_ANDROID_TEST_DEVICE"

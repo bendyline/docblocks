@@ -184,7 +184,7 @@ describe('ElectronFileSystemProviderV2', () => {
       expect(failure.operation).to.equal('write');
       expect(failure.path).to.equal('recording.webm');
       expect(failure.retryable).to.equal(false);
-      expect(failure.message).to.include('1 GiB');
+      expect(failure.message).to.include('file size limit');
     }
     expect(opens).to.equal(0);
     expect(writes).to.equal(0);

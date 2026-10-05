@@ -35,7 +35,13 @@ test('saves an export above the old 100 MiB IPC limit in chunks', async ({
     async ({ documentId, size, chunkBytes }) => {
       const host = (globalThis as unknown as { docBlocksHost: DocBlocksHostAPI }).docBlocksHost;
       const api = host.exports;
-      if (!api?.beginSave || !api.writeChunk || !api.finishSave || !api.closeTransfer) {
+      if (
+        !api?.beginSave ||
+        !api.writeChunk ||
+        !api.finishSave ||
+        !api.closeTransfer ||
+        !api.resolveTarget
+      ) {
         throw new Error('Missing chunked export API');
       }
       const granted = await api.resolveTarget(documentId, 'talk.mp4');

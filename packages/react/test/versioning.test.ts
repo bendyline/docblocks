@@ -7,7 +7,7 @@
  *      and per-workspace override, gated by workspace type.
  *
  * The defaults matter: `browser-only` means IndexedDB workspaces version,
- * native/electron-native folders don't. Regressing that pollutes user
+ * native/host-native folders don't. Regressing that pollutes user
  * folders with `.versions/` directories — exactly the kind of silent
  * change we want a test to catch.
  */
@@ -42,9 +42,9 @@ describe('versioning preference', () => {
   });
 
   describe('isLocalWorkspaceType', () => {
-    it('treats native + electron-native folders as local', () => {
+    it('treats native + host-native folders as local', () => {
       expect(isLocalWorkspaceType('native')).to.equal(true);
-      expect(isLocalWorkspaceType('electron-native')).to.equal(true);
+      expect(isLocalWorkspaceType('host-native')).to.equal(true);
     });
 
     it('treats IndexedDB workspaces as non-local', () => {
@@ -100,11 +100,9 @@ describe('versioning preference', () => {
       expect(resolveVersioningEnabled(workspace('indexeddb'), 'browser-only')).to.equal(true);
     });
 
-    it('browser-only disables versioning for native/electron-native folders', () => {
+    it('browser-only disables versioning for native/host-native folders', () => {
       expect(resolveVersioningEnabled(workspace('native'), 'browser-only')).to.equal(false);
-      expect(resolveVersioningEnabled(workspace('electron-native'), 'browser-only')).to.equal(
-        false,
-      );
+      expect(resolveVersioningEnabled(workspace('host-native'), 'browser-only')).to.equal(false);
     });
   });
 });

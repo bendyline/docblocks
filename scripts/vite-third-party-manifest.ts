@@ -16,6 +16,7 @@ const FIRST_PARTY_PACKAGES = new Set([
   'docblocks',
   'docblocks-desktop',
   'docblocks-site',
+  'docblocks-mobile',
   'docblocks-vscode',
   '@bendyline/docblocks',
   '@bendyline/docblocks-cli',

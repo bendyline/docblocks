@@ -352,6 +352,9 @@ describe('Gezel connector hosting ladder', () => {
     startService?: (input: Record<string, unknown>) => Promise<unknown>;
     hosted?: ReturnType<typeof fakeHostedGezel>;
     connectOrHost?: (input: HostCall) => Promise<unknown>;
+    standalone?: boolean;
+    hostHome?: string;
+    appleModel?: () => Promise<import('../main/ai/ai-models.js').ProviderModelEntry>;
   }) {
     const hostCalls: HostCall[] = [];
     const hosted = options.hosted ?? fakeHostedGezel();
@@ -378,6 +381,9 @@ describe('Gezel connector hosting ladder', () => {
       hostRuntime: async () => (options.runtime === undefined ? RUNTIME : options.runtime),
       hostInProcess: options.hostInProcess,
       hostNative: options.hostNative,
+      standalone: options.standalone,
+      hostHome: options.hostHome,
+      appleModel: options.appleModel,
     });
     return { connector, hostCalls, hosted };
   }
@@ -425,6 +431,141 @@ describe('Gezel connector hosting ladder', () => {
     canHost: true,
   };
 
+  it('hosts sandbox AI without standalone discovery, grants or borrowed model homes', async () => {
+    const previous = process.env.GEZEL_READONLY_MODEL_HOMES;
+    process.env.GEZEL_READONLY_MODEL_HOMES = '/outside/sandbox';
+    try {
+      const { connector, hostCalls } = ladder({
+        standalone: false,
+        hostHome: '/container/ai/gezel',
+        runtime: null,
+        hostInProcess: true,
+        hostNative: BUNDLED_NATIVE,
+        connectLocal: async () => {
+          throw new Error('must not connect standalone');
+        },
+        startService: async () => {
+          expect(process.env.GEZEL_READONLY_MODEL_HOMES).to.equal(undefined);
+          return { stop: async () => undefined };
+        },
+        connectOrHost: async (input) => {
+          const service = input.host?.serviceModule as {
+            startService: (
+              input: Record<string, unknown>,
+            ) => Promise<{ stop: () => Promise<void> }>;
+          };
+          const running = await service.startService({});
+          return { ...fakeHostedGezel().gezel, close: running.stop };
+        },
+      });
+      expect(await connector.detect()).to.deep.equal({
+        installed: false,
+        running: false,
+        version: null,
+        canHost: true,
+      });
+      const connection = await connector.connect({ interactive: false });
+      expect(hostCalls[0].host).to.deep.include({
+        mode: 'in-process',
+        home: '/container/ai/gezel',
+        readOnlyModelHomes: [],
+        inferenceOnly: true,
+      });
+      expect(process.env.GEZEL_READONLY_MODEL_HOMES).to.equal(undefined);
+      await connection.close();
+      expect(process.env.GEZEL_READONLY_MODEL_HOMES).to.equal('/outside/sandbox');
+    } finally {
+      if (previous === undefined) delete process.env.GEZEL_READONLY_MODEL_HOMES;
+      else process.env.GEZEL_READONLY_MODEL_HOMES = previous;
+    }
+  });
+
+  it('offers Apple system AI and blocks Python provisioning in store hosts', async () => {
+    let installs = 0;
+    const hosted = fakeHostedGezel({
+      models: [{ id: 'llama-cpp:writer' }, { id: 'mlx:writer' }],
+      ensureModel: async () => {
+        installs++;
+      },
+    });
+    const apple = {
+      id: 'apple-foundation-models:apple-foundation-models',
+      owned_by: 'apple-foundation-models',
+      availability: 'available' as const,
+    };
+    const { connector } = ladder({
+      standalone: false,
+      hostInProcess: true,
+      hostNative: BUNDLED_NATIVE,
+      hosted,
+      connectLocal: async () => {
+        throw new Error('must not connect standalone');
+      },
+      appleModel: async () => apple,
+    });
+    const connection = await connector.connect({ interactive: false });
+    expect((await connection.listModels()).map((entry) => entry.id)).to.deep.equal([
+      apple.id,
+      'llama-cpp:writer',
+    ]);
+    await connection.prepare?.(apple.id, () => undefined);
+    expect(installs).to.equal(0);
+    expect(
+      toAiError(await rejection(connection.prepare!('mlx:writer', () => undefined))).code,
+    ).to.equal('model-unavailable');
+    expect(
+      toAiError(
+        await rejection(
+          connection.installModel!('mlx:writer', new AbortController().signal, () => undefined),
+        ),
+      ).code,
+    ).to.equal('model-unavailable');
+    expect(installs).to.equal(0);
+    await connection.close();
+  });
+
+  it('routes Apple inference through Gezel and refuses an unavailable system model', async () => {
+    const hosted = fakeHostedGezel();
+    let ready = true;
+    const requests: Record<string, unknown>[] = [];
+    Object.assign(hosted.gezel.openai, {
+      chat: async (request: Record<string, unknown>) => {
+        requests.push(request);
+        return (async function* () {
+          yield { choices: [{ delta: { content: 'Apple reply' }, finish_reason: 'stop' }] };
+        })();
+      },
+    });
+    const id = 'apple-foundation-models:apple-foundation-models';
+    const { connector } = ladder({
+      standalone: false,
+      hostInProcess: true,
+      hosted,
+      connectLocal: async () => {
+        throw new Error('must not connect standalone');
+      },
+      appleModel: async () => ({
+        id,
+        owned_by: 'apple-foundation-models',
+        availability: ready ? 'available' : 'unavailable',
+        unavailable_reason: 'Enable Apple Intelligence.',
+      }),
+    });
+    const connection = await connector.connect({ interactive: false });
+    const request = { model: id, messages: [{ role: 'user' as const, content: 'Hi' }] };
+    const stream = await connection.streamChat(request, new AbortController().signal);
+    const chunks: ProviderChatChunk[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    expect(chunks[0].text).to.equal('Apple reply');
+    expect(requests[0].model).to.equal(id);
+    ready = false;
+    expect(
+      toAiError(await rejection(connection.streamChat(request, new AbortController().signal))).code,
+    ).to.equal('model-unavailable');
+    expect(requests).to.have.length(1);
+    await connection.close();
+  });
+
   it('verifies bundled engines before passing their directory and store policy to the in-process SDK', async () => {
     const verification: Record<string, unknown>[] = [];
     const previous = process.env.GEZEL_NATIVE_BIN_DIR;
@@ -471,6 +612,34 @@ describe('Gezel connector hosting ladder', () => {
     expect(error.detail).to.contain('sha256 mismatch');
     expect(hostCalls).to.have.length(0);
     expect(process.env.GEZEL_NATIVE_BIN_DIR).to.equal(previous);
+  });
+
+  it('hands newer SDK verification back to the same pinned payload policy', async () => {
+    const verification: Record<string, unknown>[] = [];
+    const { connector, hostCalls } = ladder({
+      connectLocal: () => Promise.reject(refusal('daemon_not_running')),
+      runtime: null,
+      hostInProcess: true,
+      hostNative: BUNDLED_NATIVE,
+      verifyNative: async (input) => {
+        verification.push(input);
+        return { reused: true, reason: 'verified' };
+      },
+    });
+    const connection = await connector.connect({ interactive: false });
+    const service = hostCalls[0].host?.serviceModule as {
+      verifyNativeBinaries(input: { candidates: string[] }): Promise<{ reused: boolean }>;
+    };
+    expect(
+      (await service.verifyNativeBinaries({ candidates: [RUNTIME.nativeBinDir] })).reused,
+    ).to.equal(true);
+    expect(verification).to.have.length(2);
+    expect(verification[1]).to.deep.equal(verification[0]);
+    expect(
+      (await service.verifyNativeBinaries({ candidates: ['/outside/payload'] })).reused,
+    ).to.equal(false);
+    expect(verification).to.have.length(2);
+    await connection.close();
   });
 
   it('never verifies or hosts bundled engines when the standalone Gezel connects', async () => {

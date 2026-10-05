@@ -52,7 +52,7 @@ test('AI self-hosts without an installed Gezel, and the choice persists', async 
   const section = await openAiSettings(first.window);
   const optIn = section.getByRole('checkbox', { name: 'Use AI features' });
   await expect(optIn).not.toBeChecked();
-  await expect(section).toContainText('DocBlocks runs a private Gezel service inside this app');
+  await expect(section).toContainText('DocBlocks runs AI inside this app');
   await optIn.check();
   await expect
     .poll(async () => (await readAi(first.window)).status, { timeout: 30_000 })

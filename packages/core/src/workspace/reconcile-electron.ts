@@ -28,13 +28,18 @@ export function reconcileElectronWorkspaceDescriptors(
   platform: HostEnvironment['platform'],
   now: string,
 ): ElectronWorkspaceReconciliation {
-  const electron = local.filter((workspace) => workspace.type === 'electron-native');
+  const electron = local.filter((workspace) => workspace.type === 'host-native');
   const matchedLocalIds = new Set<string>();
   const idRemap: Record<string, string> = {};
   const upsert = hostWorkspaces.map((hostWorkspace): WorkspaceDescriptor => {
     const root = comparableRoot(hostWorkspace.rootPath, platform);
     const candidates = electron.filter(
-      (workspace) => workspace.rootPath && comparableRoot(workspace.rootPath, platform) === root,
+      (workspace) =>
+        workspace.id === hostWorkspace.id ||
+        (platform !== 'ios' &&
+          platform !== 'android' &&
+          workspace.rootPath &&
+          comparableRoot(workspace.rootPath, platform) === root),
     );
     const matching = candidates.sort((left, right) =>
       right.lastOpened.localeCompare(left.lastOpened),
@@ -46,7 +51,7 @@ export function reconcileElectronWorkspaceDescriptors(
     return {
       id: hostWorkspace.id,
       name: matching?.name ?? hostWorkspace.name,
-      type: 'electron-native',
+      type: 'host-native',
       rootPath: hostWorkspace.rootPath,
       lastOpened: matching?.lastOpened ?? now,
       ...(matching?.versioningOverride ? { versioningOverride: matching.versioningOverride } : {}),

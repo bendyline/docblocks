@@ -126,9 +126,7 @@ describe('AiSettingsControls', () => {
       const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
       expect(box?.checked).to.equal(false);
       expect(container.textContent).to.contain('Use AI features');
-      expect(container.textContent).to.contain(
-        'DocBlocks runs a private Gezel service inside this app',
-      );
+      expect(container.textContent).to.contain('DocBlocks runs AI inside this app');
       expect(container.textContent).not.to.contain('Connecting your Gezel app is optional');
       expect(buttonLabels(container)).to.deep.equal([]);
       expect(container.querySelector('select')).to.equal(null);
@@ -387,6 +385,78 @@ describe('AiSettingsControls', () => {
         'Small Writer (on this device)',
       );
       expect(modelSelect?.value).to.equal('llama-cpp:small-writer');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('shows system model names and readiness reasons without allowing an unavailable choice', async () => {
+    const apple: AiModelInfo = {
+      id: 'system:apple',
+      label: 'Apple Foundation Models',
+      local: true,
+      contextWindow: 4096,
+      isDefault: false,
+      availability: 'unavailable',
+      unavailableReason: 'This device does not support Apple Intelligence.',
+    };
+    const nano: AiModelInfo = {
+      ...apple,
+      id: 'system:nano',
+      label: 'Gemini Nano (Android ML Kit)',
+      availability: 'download-required',
+      unavailableReason: 'Choose Add model… to prepare this model.',
+    };
+    const fake = fakeAi(READY, { ...OPTED_IN, model: apple.id }, false);
+    fake.api.models = async () => ({ ok: true, value: [...MODELS, apple, nano] });
+    const { container, cleanup } = await render(fake.api);
+    try {
+      const select = container.querySelector<HTMLSelectElement>('select')!;
+      expect(select.value).to.equal(apple.id);
+      expect(
+        select.querySelector<HTMLOptionElement>('option[value="system:apple"]')?.disabled,
+      ).to.equal(true);
+      expect(
+        select.querySelector<HTMLOptionElement>('option[value="system:nano"]')?.disabled,
+      ).to.equal(true);
+      expect(container.textContent).to.contain(
+        'Apple Foundation Models: This device does not support Apple Intelligence.',
+      );
+      expect(container.textContent).to.contain('Gemini Nano (Android ML Kit) (download required)');
+      expect(fake.calls).to.deep.equal([]);
+      await act(async () => {
+        select.value = MODELS[0].id;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flush();
+      expect(fake.calls).to.deep.equal(['set {"model":"gezel:writer"}']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('lists a ready system model even with no downloaded weights', async () => {
+    const system: AiModelInfo = {
+      id: 'system:apple',
+      label: 'Apple Foundation Models',
+      local: true,
+      contextWindow: 4096,
+      isDefault: true,
+      availability: 'available',
+    };
+    const fake = fakeAi(
+      { ...READY, model: system, provider: { ...READY.provider, mode: 'hosted' } },
+      OPTED_IN,
+      false,
+    );
+    fake.api.models = async () => ({ ok: true, value: [system] });
+    const { container, cleanup } = await render(fake.api);
+    try {
+      const select = container.querySelector<HTMLSelectElement>('select')!;
+      expect(select.disabled).to.equal(false);
+      expect(select.options[1].disabled).to.equal(false);
+      expect(select.options[1].textContent).to.equal('Apple Foundation Models (on this device)');
+      expect(buttonLabels(container)).to.deep.equal([]);
     } finally {
       await cleanup();
     }

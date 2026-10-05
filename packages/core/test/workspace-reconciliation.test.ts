@@ -8,7 +8,7 @@ function electronWorkspace(
   rootPath: string,
   lastOpened = '2025-01-01T00:00:00.000Z',
 ): WorkspaceDescriptor {
-  return { id, name: `Local ${id}`, type: 'electron-native', rootPath, lastOpened };
+  return { id, name: `Local ${id}`, type: 'host-native', rootPath, lastOpened };
 }
 
 describe('Electron workspace descriptor reconciliation', () => {

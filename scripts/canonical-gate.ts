@@ -11,6 +11,7 @@ export const canonicalGateScripts = [
   'bundle:size',
   'check:site-precache',
   'check:site-fonts',
+  'mobile:check',
   'check:desktop-config',
   'check:vscode-package',
   'check:notices',
@@ -21,6 +22,7 @@ export const canonicalGateScripts = [
   'check:packages',
   'coverage:critical',
   'test',
+  'mobile:test:available',
   'test:e2e:all',
 ] as const;
 

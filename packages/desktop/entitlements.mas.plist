@@ -37,6 +37,9 @@
   <true/>
   <key>com.apple.security.network.client</key>
   <true/>
+  <!-- Bundled inference engines listen on loopback for the in-process client. -->
+  <key>com.apple.security.network.server</key>
+  <true/>
   <!-- Document narration and video recording. The NSCameraUsageDescription /
        NSMicrophoneUsageDescription strings that accompany these live in the
        `mas` build's inherited extendInfo — keep the two in step. -->
