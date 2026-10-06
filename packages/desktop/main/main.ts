@@ -527,6 +527,12 @@ async function bootstrap(): Promise<void> {
     // Windows and Linux, and the policy never calls them there.
     mediaAccess: systemPreferences,
     chooseDisplaySource: (owner, sources) => {
+      // Automation cannot operate the native picker menu, which a headless
+      // session dismisses at once. Choose a screen, as the policy did before
+      // the picker existed, so the packaged smoke still proves the grant.
+      if (isAutomation) {
+        return Promise.resolve(sources.find((source) => source.id.startsWith('screen:')) ?? null);
+      }
       const window = BrowserWindow.fromWebContents(owner);
       return window
         ? pickDisplayCaptureSource(window, sources, (items) => Menu.buildFromTemplate(items))
