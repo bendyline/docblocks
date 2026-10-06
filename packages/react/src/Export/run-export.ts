@@ -10,6 +10,11 @@ import type {
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type {
+  DiagramRasterizer,
+  ExportDiagramKind,
+  RasterizedDiagrams,
+} from '@bendyline/squisq-formats/diagrams';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
 export { buildExportFilename } from './export-filename.js';
@@ -19,6 +24,36 @@ export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | 
 /** Host-provided converters that must be loaded before an export begins. */
 export interface ExportConverterOverrides {
   docToPptx?: (typeof import('@bendyline/squisq-formats/pptx'))['docToPptx'];
+  /**
+   * Draws diagrams as pictures. Defaults to Squisq's browser renderer; tests
+   * pass a stand-in because drawing needs a real canvas.
+   */
+  diagramRenderer?: DiagramRasterizer;
+}
+
+/**
+ * Pictures of the document's diagrams — Mermaid, timelines, ASCII diagrams,
+ * file trees, drawings and layouts — which Word, EPUB, PDF and PowerPoint
+ * cannot draw themselves, so without these they export as source text. A
+ * diagram that cannot be drawn stays as source; the export never fails on it.
+ */
+async function pictureDiagrams(
+  doc: MarkdownDocument,
+  overrides: ExportConverterOverrides,
+  kinds?: readonly ExportDiagramKind[],
+): Promise<RasterizedDiagrams> {
+  try {
+    const [{ rasterizeDiagrams }, render] = await Promise.all([
+      import('@bendyline/squisq-formats/diagrams'),
+      overrides.diagramRenderer ??
+        import('@bendyline/squisq-react/diagram-pictures').then(
+          (module): DiagramRasterizer => module.createDiagramPictureRenderer(),
+        ),
+    ]);
+    return await rasterizeDiagrams(doc, render, { kinds, urlPrefix: 'docblocks-diagram' });
+  } catch {
+    return { markdownDoc: doc, images: new Map(), mermaid: new Map() };
+  }
 }
 
 const MIME_TYPES: Record<ExportFormat, string> = {
@@ -84,17 +119,27 @@ export async function runExport(
 
   if (options.format === 'docx') {
     const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
-    const images = mediaContainer ? await resolveImages(doc, mediaContainer) : undefined;
-    const buf = await markdownDocToDocx(doc, { themeId, images });
+    const pictured = await pictureDiagrams(doc, converterOverrides);
+    const images = new Map([
+      ...(mediaContainer ? await resolveImages(doc, mediaContainer) : []),
+      ...pictured.images,
+    ]);
+    const buf = await markdownDocToDocx(pictured.markdownDoc, { themeId, images });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename, saveBlob);
     return;
   }
 
   if (options.format === 'pdf') {
     const { markdownDocToPdf } = await import('@bendyline/squisq-formats/pdf');
-    const buf = await markdownDocToPdf(doc, {
+    const pictured = await pictureDiagrams(doc, converterOverrides);
+    const images = new Map([
+      ...(mediaContainer ? await resolveImages(doc, mediaContainer) : []),
+      ...pictured.images,
+    ]);
+    const buf = await markdownDocToPdf(pictured.markdownDoc, {
       themeId,
       pageSize: options.pageSize,
+      images,
     });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;
@@ -102,8 +147,14 @@ export async function runExport(
 
   if (options.format === 'epub') {
     const { markdownDocToEpub } = await import('@bendyline/squisq-formats/epub');
-    const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
-    const buf = await markdownDocToEpub(doc, { themeId, images });
+    const pictured = await pictureDiagrams(doc, converterOverrides);
+    const images = new Map([
+      ...(mediaContainer ? await resolveImageData(doc, mediaContainer) : []),
+      ...[...pictured.images].map(
+        ([url, picture]) => [url, picture.data.slice().buffer as ArrayBuffer] as const,
+      ),
+    ]);
+    const buf = await markdownDocToEpub(pictured.markdownDoc, { themeId, images });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.epub }), filename, saveBlob);
     return;
   }
@@ -129,10 +180,30 @@ export async function runExport(
       enrichedDoc.themeId = themeId;
     }
     const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
-    const buf = await docToPptx(enrichedDoc, { themeId, images });
+    // Drawings, timelines and ASCII diagrams become native slide shapes;
+    // only Mermaid needs a picture.
+    const { mermaid } = await pictureDiagrams(doc, converterOverrides, ['mermaid']);
+    const buf = await docToPptx(enrichedDoc, { themeId, images, diagramImages: mermaid });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename, saveBlob);
     return;
   }
+}
+
+/** A Mermaid fence anywhere in a markdown source. */
+const MERMAID_FENCE = /^ {0,3}(?:```|~~~)[ \t]*mermaid\b/imu;
+
+/**
+ * The player script for a rendered HTML export. Squisq's light player leaves
+ * Mermaid out, so a document with a Mermaid diagram gets the full player;
+ * everything else keeps the smaller one.
+ */
+async function playerScriptFor(markdown: string): Promise<string> {
+  if (MERMAID_FENCE.test(markdown)) {
+    const { PLAYER_BUNDLE_FULL } = await import('@bendyline/squisq-react/standalone-source/full');
+    return PLAYER_BUNDLE_FULL;
+  }
+  const { PLAYER_BUNDLE } = await import('@bendyline/squisq-react/standalone-source');
+  return PLAYER_BUNDLE;
 }
 
 /** Run the HTML export branch — handles all four htmlStyle × htmlBundle combinations. */
@@ -171,15 +242,17 @@ async function runHtmlExport(
         ? Promise.resolve(markdown)
         : readDocumentFromContainer(mediaContainer, path);
     if (options.htmlStyle === 'rendered') {
-      const [{ markdownDocsToHtmlBundle }, { PLAYER_BUNDLE }] = await Promise.all([
+      // Linked pages are read lazily by the bundler, so the entry page decides
+      // the player; one shared player script serves every page in the bundle.
+      const [{ markdownDocsToHtmlBundle }, playerScript] = await Promise.all([
         import('@bendyline/squisq-formats/html'),
-        import('@bendyline/squisq-react/standalone-source'),
+        playerScriptFor(markdown),
       ]);
       const blob = await markdownDocsToHtmlBundle({
         entryPath,
         readDocument,
         readBinary: (path) => mediaContainer.readFile(path),
-        playerScript: PLAYER_BUNDLE,
+        playerScript,
         title: baseName,
         themeId,
         mode: 'static',
@@ -203,11 +276,11 @@ async function runHtmlExport(
   }
 
   if (options.htmlStyle === 'rendered') {
-    const [{ markdownToDoc }, { docToHtml, docToHtmlZip, collectImagePaths }, { PLAYER_BUNDLE }] =
+    const [{ markdownToDoc }, { docToHtml, docToHtmlZip, collectImagePaths }, playerScript] =
       await Promise.all([
         import('@bendyline/squisq/doc'),
         import('@bendyline/squisq-formats/html'),
-        import('@bendyline/squisq-react/standalone-source'),
+        playerScriptFor(markdown),
       ]);
     const mdDoc = parseMarkdown(markdown);
     const baseDoc = markdownToDoc(mdDoc);
@@ -219,7 +292,7 @@ async function runHtmlExport(
 
     if (options.htmlBundle === 'zip') {
       const blob = await docToHtmlZip(baseDoc, {
-        playerScript: PLAYER_BUNDLE,
+        playerScript,
         images,
         mode: 'static',
         title: baseName,
@@ -230,7 +303,7 @@ async function runHtmlExport(
     }
 
     const html = docToHtml(baseDoc, {
-      playerScript: PLAYER_BUNDLE,
+      playerScript,
       images,
       mode: 'static',
       title: baseName,

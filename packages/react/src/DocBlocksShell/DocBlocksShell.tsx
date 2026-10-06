@@ -1,4 +1,5 @@
 import { dismissTopmostDialog } from '../components/dialog-stack.js';
+import type { AiPanel } from '../Ai/AiEditorAssistant.js';
 import type { HostFileSystemProvider } from '@bendyline/docblocks/filesystem/host';
 import { prepareHostLifecycle } from './host-lifecycle.js';
 /**
@@ -145,6 +146,11 @@ const AiToolbarControl = lazy(() =>
 const AiReviewPanel = lazy(() =>
   import('../Ai/AiEditorAssistant.js').then((module) => ({
     default: module.AiReviewPanel,
+  })),
+);
+const AiIllustratePanel = lazy(() =>
+  import('../Ai/AiDiagrams.js').then((module) => ({
+    default: module.AiIllustratePanel,
   })),
 );
 const SpeechToolbarControl = lazy(() =>
@@ -1444,7 +1450,7 @@ export function DocBlocksShell({
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
   // First-run gateway over the welcome document's Play view.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
-  const [aiReviewOpen, setAiReviewOpen] = useState(false);
+  const [aiPanel, setAiPanel] = useState<AiPanel | null>(null);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
   const preparedCloseRequestRef = useRef<string | null>(null);
@@ -5021,11 +5027,15 @@ export function DocBlocksShell({
                     statusBarSlotRight={statusBarSlotRight}
                     sidePanelSlot={
                       ai &&
-                      aiReviewOpen &&
+                      aiPanel &&
                       selectedImage === undefined &&
                       (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
                         <Suspense fallback={null}>
-                          <AiReviewPanel ai={ai} onClose={() => setAiReviewOpen(false)} />
+                          {aiPanel === 'review' ? (
+                            <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                          ) : (
+                            <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
+                          )}
                         </Suspense>
                       ) : undefined
                     }
@@ -5052,8 +5062,8 @@ export function DocBlocksShell({
                                 selectedImage !== undefined ||
                                 (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
                               }
-                              reviewOpen={aiReviewOpen}
-                              onOpenReview={() => setAiReviewOpen(true)}
+                              openPanel={aiPanel}
+                              onOpenPanel={setAiPanel}
                             />
                           </Suspense>
                         )}

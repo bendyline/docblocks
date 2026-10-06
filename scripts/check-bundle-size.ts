@@ -81,6 +81,10 @@ const surfaces: BundleSurface[] = [
       // the diagram runtimes are still split out separately.
       { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
+      // AI features load on demand. These guard against a heavy import
+      // (Mermaid, a model client) sliding into them by accident.
+      { label: 'deferred AI assistant', prefix: 'AiEditorAssistant-', budgetBytes: 150_000 },
+      { label: 'deferred AI diagrams', prefix: 'AiDiagrams-', budgetBytes: 150_000 },
     ],
   },
   {

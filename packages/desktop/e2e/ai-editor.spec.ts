@@ -2,8 +2,9 @@
  * The AI editor features through the whole desktop stack, against a fake of
  * the person's installed Gezel: pairing with a typed code, then Add content,
  * Rewrite selection and Review document, each landing in the saved file and
- * each removed again by a single undo; and Stop, which must close the stream
- * at the provider.
+ * each removed again by a single undo; Stop, which must close the stream at
+ * the provider; and AI diagrams — Illustrate document and Diagram this… —
+ * inserted as one undo step.
  *
  * Set DOCBLOCKS_E2E_AI_UPSTREAM (an OpenAI-compatible base URL) and
  * DOCBLOCKS_E2E_AI_UPSTREAM_MODEL to answer with a real model instead of the
@@ -36,6 +37,32 @@ const DOCUMENT = [
   'DocBlocks stood out because it stores plain Markdown files.',
   '',
 ].join('\n');
+
+/** Prose with a process and dated events, for the diagram features. */
+const DIAGRAM_DOCUMENT = [
+  '# Release process',
+  '',
+  '## How a release ships',
+  '',
+  // "Next" and "After" are sequence cues, so the Illustrate shortlist offers
+  // this passage to the planner alongside the dated History one.
+  'The team drafts the release notes. Next, a reviewer checks every change. After that, the ' +
+    'build is signed and published. Customers are notified by email.',
+  '',
+  '## History',
+  '',
+  'The project started in 2019, released its first stable version in 2021, and moved to monthly ' +
+    'releases in 2023.',
+  '',
+].join('\n');
+
+/** Markers that only an inserted diagram puts in the file. */
+const DIAGRAM_MARKERS = ['```mermaid', '```timeline', '{[drawing]}', '{[layout]}'];
+
+function diagramCount(file: string): number {
+  const text = readDocument(file);
+  return DIAGRAM_MARKERS.reduce((total, marker) => total + text.split(marker).length - 1, 0);
+}
 
 const upstreamBase = process.env.DOCBLOCKS_E2E_AI_UPSTREAM?.trim();
 const upstream = upstreamBase
@@ -118,14 +145,15 @@ async function withConnectedEditor(
   launchApp: () => Promise<{ window: Page }>,
   workspaceDir: string,
   gezelHome: string,
-  options: Omit<FakeGezelOptions, 'home'>,
+  options: Omit<FakeGezelOptions, 'home'> & { document?: string; readyText?: string },
   run: (context: { window: Page; editor: Locator; file: string; fake: FakeGezel }) => Promise<void>,
 ): Promise<void> {
   let fake: FakeGezel | null = null;
+  const { document = DOCUMENT, readyText = 'DocBlocks stood out', ...fakeOptions } = options;
   try {
-    fake = await startFakeGezel({ home: gezelHome, ...options });
+    fake = await startFakeGezel({ home: gezelHome, ...fakeOptions });
     const file = path.join(workspaceDir, 'ai-review.md');
-    fs.writeFileSync(file, DOCUMENT, 'utf8');
+    fs.writeFileSync(file, document, 'utf8');
 
     const { window } = await launchApp();
     await window.waitForSelector('.db-shell', { timeout: 30_000 });
@@ -133,7 +161,7 @@ async function withConnectedEditor(
 
     await window.locator('.db-tree-row[data-path$="ai-review.md"]').click();
     const editor = window.locator('.squisq-editor-content [contenteditable="true"]').first();
-    await expect(editor).toContainText('DocBlocks stood out', { timeout: 30_000 });
+    await expect(editor).toContainText(readyText, { timeout: 30_000 });
     await run({ window, editor, file, fake });
   } finally {
     await fake?.close();
@@ -254,6 +282,104 @@ test('Stop ends a streaming draft at the provider and inserts nothing', async ({
       await expect(dialog).toBeHidden();
       await window.waitForTimeout(1_000);
       expect(readDocument(file)).not.toContain(partial.trim());
+    },
+  );
+});
+
+test('Illustrate suggests diagrams and inserts them all as one undo step', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(upstream ? 900_000 : 180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      ...(upstream ? { upstream } : {}),
+      document: DIAGRAM_DOCUMENT,
+      readyText: 'moved to monthly',
+    },
+    async ({ window, editor, file, fake }) => {
+      await openAiMenuItem(window, 'Illustrate document…');
+      const panel = window.getByRole('complementary', { name: 'AI illustrations' });
+      await expect(panel.locator('.db-ai-review-count')).toBeVisible({
+        timeout: ANSWER_TIMEOUT_MS * 3,
+      });
+      const ready = panel.locator('.db-ai-illustrate-card').filter({
+        has: window.getByRole('button', { name: 'Insert', exact: true }),
+      });
+      const count = await ready.count();
+      // A real model may decline to suggest anything; the fake always suggests two.
+      if (!upstream) expect(count).toBe(2);
+      test.skip(count === 0, 'The model suggested no diagrams for this document.');
+      await expect(ready.first().locator('.db-ai-diagram-preview[role="img"]')).toBeVisible();
+
+      if (count > 1) {
+        await panel.getByRole('button', { name: `Insert all (${String(count)})` }).click();
+      } else {
+        await ready.first().getByRole('button', { name: 'Insert', exact: true }).click();
+      }
+      await expect.poll(() => diagramCount(file)).toBe(count);
+      expect(readDocument(file)).toContain('Customers are notified by email.');
+
+      await undo(window, editor);
+      await expect.poll(() => diagramCount(file)).toBe(0);
+      expect(readDocument(file)).toContain('moved to monthly releases in 2023.');
+
+      // One plan call, then one call per suggestion, all marked as illustration work.
+      if (!upstream) expect(fake.chats.length).toBe(3);
+    },
+  );
+});
+
+test('Diagram this… draws the selected text and inserts it after it, one undo step', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(upstream ? 600_000 : 180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      ...(upstream ? { upstream } : {}),
+      document: DIAGRAM_DOCUMENT,
+      readyText: 'moved to monthly',
+    },
+    async ({ window, editor, file }) => {
+      const paragraph = editor.locator('p', { hasText: 'The team drafts the release notes.' });
+      await paragraph.click({ clickCount: 3 });
+      await paragraph.click({ button: 'right' });
+      await window
+        .getByRole('menu', { name: 'Editor actions' })
+        .getByRole('menuitem', { name: 'Diagram this…' })
+        .click();
+
+      const dialog = window.getByRole('dialog', { name: 'Insert diagram with AI' });
+      await expect(dialog.locator('.db-ai-selection-preview')).toContainText(
+        'The team drafts the release notes.',
+      );
+      await dialog.getByRole('button', { name: 'Generate' }).click();
+      const insert = dialog.getByRole('button', { name: 'Insert', exact: true });
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+      await expect(dialog.locator('.db-ai-diagram-preview[role="img"]')).toBeVisible();
+      await insert.click();
+      await expect(dialog).toBeHidden();
+
+      await expect.poll(() => diagramCount(file)).toBe(1);
+      const text = readDocument(file);
+      // After the selected paragraph, before the next section.
+      const at = Math.min(
+        ...DIAGRAM_MARKERS.map((marker) => text.indexOf(marker)).filter((index) => index >= 0),
+      );
+      expect(at).toBeGreaterThan(text.indexOf('Customers are notified by email.'));
+      expect(at).toBeLessThan(text.indexOf('## History'));
+
+      await undo(window, editor);
+      await expect.poll(() => diagramCount(file)).toBe(0);
     },
   );
 });

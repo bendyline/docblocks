@@ -54,6 +54,12 @@ describe('parseAiChatRequest', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST, purpose: 'summarise' })).to.equal(null);
   });
 
+  it('accepts every declared purpose', () => {
+    for (const purpose of ['write', 'review', 'illustrate', 'chat'] as const) {
+      expect(parseAiChatRequest({ ...VALID_REQUEST, purpose })?.purpose).to.equal(purpose);
+    }
+  });
+
   it('rejects an empty or oversized message list', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST, messages: [] })).to.equal(null);
     const many = Array.from({ length: AI_WIRE_LIMITS.messageEntries + 1 }, () => ({

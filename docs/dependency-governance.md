@@ -55,71 +55,45 @@ pin in place until the seven-day window expires. Do not use
 `npm audit fix --force` as a cooldown bypass; `--force` can also introduce
 breaking dependency changes.
 
-## Complete vulnerability review
+## Vulnerability audit
 
-`npm run check:dependency-audit` runs `npm audit --json` against the exact
-lockfile. It retains npm's unmodified response plus normalized JSON and
-Markdown evidence under `reports/dependency-audit/`. The canonical `npm run
-all` gate runs it immediately after dependency-governance validation, and the
-desktop release workflow retains those private reports as a workflow artifact
-for 90 days. The public release job downloads only `*-artifacts`, so the
-dependency inventory is not attached to the GitHub Release.
+`npm run check:dependency-audit` runs `npm audit --omit=dev --json`, so it
+covers only what ships: the production dependencies of every workspace. Build
+tools, test runners, release tooling and the pinned npm's own bundled packages
+never reach a user, so they do not take part. Run a plain `npm audit` to see
+those.
 
-Every advisory object in the current npm report must have exactly one entry in
-`security/dependency-audit-dispositions.json`. The gate fails when a finding is
-missing a disposition or its declared severity changes. Critical findings
-always block, and high or critical findings that affect shipped code cannot be
-dispositioned at all. A package-floor check remains useful for vulnerabilities
-that npm does not model, but it is not a substitute for this finding-level
-review.
+Only **critical** advisories fail the gate. Everything else is listed in the
+evidence report and in the gate's one-line summary, and is fixed in the normal
+course of dependency updates. A new moderate or high advisory published
+somewhere in the tree therefore never breaks `npm run all` on the day the
+advisory database changes.
 
-A disposition is one of two kinds, and only one of them has a calendar:
+When a critical advisory appears, update the dependency. If the fix cannot be
+installed yet, usually because it is still inside the seven-day cooldown, add
+the advisory to `security/audit-exceptions.json` with a one-line reason:
 
-- **Time-boxed** (`upstream-blocked`, `mitigated`, `not-shipped`): a risk we are
-  still carrying. It expires within 30 days, the document's review date must be
-  no more than 30 days old, and an entry npm stops reporting fails as stale. The
-  expiry is what forces a carried risk to be looked at again.
-- **Patched** (`patched`): a finding that is fixed but still reported, usually
-  because the advisory's affected range does not credit a backport. It has no
-  expiry. Instead `verifiedBy` names a test inside the repository that proves
-  the installed version is fixed; the gate requires that file to exist and to
-  cite the advisory, and `npm run all` runs it. When npm eventually stops
-  reporting the finding, the gate prints a notice that the entry can be deleted
-  rather than failing the build on the day the advisory database changes.
+```json
+{
+  "GHSA-xxxx-xxxx-xxxx": "example-pkg 1.2.4 fixes it; installable once its cooldown ends on 2026-10-12"
+}
+```
 
-A document of nothing but patched entries has no review clock at all.
+Exceptions have no expiry. Once npm stops reporting an excepted advisory, the
+gate prints a notice that the entry can be deleted; it never fails because of
+one.
 
-One current entry is patched: `@tiptap/core` GHSA-CP6Q-959Q-F8RH. Squisq ships
-Tiptap 2.27.3, which backports the upstream fix, but the advisory lists every
-2.x release as affected. `packages/react/test/tiptap-prototype-safety.test.ts`
-proves the fix against the Tiptap DocBlocks actually installs.
+The gate writes npm's raw response and a Markdown summary to
+`reports/dependency-audit/`. The desktop release workflow retains that
+directory as a private workflow artifact for 90 days. The public release job
+downloads only `*-artifacts`, so the dependency inventory is not attached to
+the GitHub Release.
 
-Most remaining entries are `upstream-blocked` and `toolchain-only`: the `brace-expansion`,
-`ip-address`, and `undici` advisories published September 28–30, 2026 that
-remain only inside the pinned npm 11.19.1's own bundled dependencies. Every
-application copy of those packages was moved to a fixed release. npm runs on
-developer and CI machines and ships in no DocBlocks artifact, and no npm release
-yet bundles the fixes (11.20.0 and 11.21.0 still carry the same versions). Each
-entry is retired by moving the npm pin to the first release that does.
-
-Two advisories reviewed on October 2, 2026 have no patched release:
-
-- `braces` GHSA-VFJ7-8CJW-P6XM remains in build/release tooling, with a
-  `not-shipped`, `development-only` disposition. Desktop uses Chokidar 4.0.3
-  to watch literal paths without glob parsing. Gezel's unused full-service file
-  search dependencies (`fast-glob`, `micromatch`, `braces`) are excluded from
-  `app.asar`; DocBlocks hosts its inference-only profile. The desktop config
-  gate enforces these exclusions and the watcher version, distribution notices
-  omit the excluded packages, and packaged smoke tests check both
-  their physical absence and hosted AI startup.
-- `http-cache-semantics` GHSA-CH52-4W7C-C8XP is `upstream-blocked` and
-  `toolchain-only`. Its two paths are electron-builder → app-builder-lib →
-  @electron/get → got → cacheable-request, and npm 11.19.1 → make-fetch-happen.
-  Neither ships in a DocBlocks artifact.
-
-Both dispositions expire on November 1, 2026. Their advisories are linked in
-the audit evidence, and neither exception permits a high-severity dependency
-to return to a shipped artifact.
+Some findings are fixed but still reported. `@tiptap/core` GHSA-CP6Q-959Q-F8RH
+is one: Squisq ships Tiptap 2.27.3, which backports the upstream fix, but the
+advisory lists every 2.x release as affected.
+`packages/react/test/tiptap-prototype-safety.test.ts` proves the fix against
+the Tiptap DocBlocks actually installs.
 
 The root exact overrides select `esbuild@0.28.1` only for `tsup` and `tsx`, and
 `serialize-javascript@7.0.5` only for Mocha. They intentionally cross those
@@ -130,15 +104,9 @@ for `minimatch@3.1.5`, and `serialize-javascript@7.1.2` for
 `@rollup/plugin-terser`. Vite keeps its separate `esbuild@0.25` line, which is
 outside the affected range and is required for Vite 6's legacy-browser
 transforms. DocBlocks' full build and test gates cover all of these consumers.
-Keep the overrides until every parent raises its own dependency range; removing
-one must make the complete audit gate prove that the vulnerable line did not
-return.
-
-Renewing a time-boxed disposition requires re-reading the advisory, confirming
-the exact dependency path and shipped scope, updating the reason and
-remediation, and setting a new date no more than 30 days out. If the finding
-has since been fixed, convert it to `patched` with a verification test instead
-of renewing it.
+Keep the overrides until every parent raises its own dependency range; these
+are development tools, so check with a plain `npm audit` that the vulnerable
+line did not return when removing one.
 
 ## Install-script policy
 

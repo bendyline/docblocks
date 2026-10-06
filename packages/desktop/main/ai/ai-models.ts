@@ -21,7 +21,7 @@ export interface ProviderModelEntry {
   readonly is_fallback?: boolean;
   readonly availability?: 'available' | 'unavailable' | 'download-required' | 'downloading';
   readonly unavailable_reason?: string;
-  readonly locality?: 'on-device';
+  readonly locality?: 'on-device' | 'network' | 'unknown';
   readonly download_bytes?: number;
 }
 

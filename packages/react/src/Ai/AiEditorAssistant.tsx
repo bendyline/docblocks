@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditorContext, type EditorSelectionInfo } from '@bendyline/squisq-editor-react';
-import type {
-  AiChatEvent,
-  AiChatHandle,
-  AiStatus,
-  DocBlocksHostAiAPI,
-} from '@bendyline/docblocks/host';
+import {
+  useEditorContext,
+  useEditorContextMenuItems,
+  type EditorContextMenuItem,
+  type EditorSelectionInfo,
+} from '@bendyline/squisq-editor-react';
+import type { AiChatEvent, AiChatHandle, DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { unavailableSentence, useAiStatus } from './ai-status.js';
+import { AiDiagramDialog } from './AiDiagrams.js';
 import {
   AI_INSTRUCTION_CHARACTERS,
   AI_REVIEW_DOCUMENT_CHARACTERS,
@@ -24,11 +26,14 @@ import {
   type AiReviewFinding,
 } from './ai-assistant.js';
 
+/** The AI side panels; at most one is open at a time. */
+export type AiPanel = 'review' | 'illustrate';
+
 export interface AiToolbarControlProps {
   ai: DocBlocksHostAiAPI;
   readOnly?: boolean;
-  reviewOpen: boolean;
-  onOpenReview: () => void;
+  openPanel: AiPanel | null;
+  onOpenPanel: (panel: AiPanel) => void;
 }
 
 export interface AiReviewPanelProps {
@@ -36,60 +41,18 @@ export interface AiReviewPanelProps {
   onClose: () => void;
 }
 
-function useAiStatus(ai: DocBlocksHostAiAPI): AiStatus | null {
-  const [status, setStatus] = useState<AiStatus | null>(null);
-  useEffect(() => {
-    let active = true;
-    const unsubscribe = ai.onStatus((next) => {
-      if (active) setStatus(next);
-    });
-    void ai.status().then(
-      (initial) => {
-        if (active) setStatus((current) => current ?? initial);
-      },
-      () => {
-        if (active) {
-          setStatus({
-            kind: 'error',
-            error: { code: 'unknown', message: 'AI status is unavailable.' },
-            retryable: true,
-          });
-        }
-      },
-    );
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [ai]);
-  return status;
-}
-
-function unavailableSentence(status: AiStatus | null): string {
-  if (!status) return 'Checking AI connection…';
-  if (status.kind === 'connecting') return 'AI is getting ready…';
-  if (status.kind === 'error') return status.error.message;
-  if (status.kind === 'ready' && !status.model) return 'Add a model in Settings to use AI.';
-  if (status.kind === 'unavailable') {
-    if (status.reason === 'opt-out') return 'Turn on AI features in Settings.';
-    if (status.reason === 'disconnected') return 'Built-in AI is starting…';
-    if (status.reason === 'not-installed') return 'Built-in AI is not available in this build.';
-    if (status.reason === 'not-running') return 'Built-in AI is restarting…';
-    return 'AI is not available in this build.';
-  }
-  return '';
-}
-
 export function AiToolbarControl({
   ai,
   readOnly = false,
-  reviewOpen,
-  onOpenReview,
+  openPanel,
+  onOpenPanel,
 }: AiToolbarControlProps) {
   const {
     activeView,
     editorMode,
     getSelection,
+    insertBlockAfterCursor,
+    layoutMode,
     markdownSource,
     replaceSelection,
     selectionVersion,
@@ -98,6 +61,7 @@ export function AiToolbarControl({
   const [menuOpen, setMenuOpen] = useState(false);
   const [draftMode, setDraftMode] = useState<AiDraftMode | null>(null);
   const [capturedSelection, setCapturedSelection] = useState<EditorSelectionInfo | null>(null);
+  const [diagramSelection, setDiagramSelection] = useState<EditorSelectionInfo | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(menuOpen, setMenuOpen);
@@ -116,6 +80,29 @@ export function AiToolbarControl({
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
 
+  const ready = status?.kind === 'ready' && status.model !== null;
+  const openDiagram = () => {
+    const current = getSelection();
+    if (!current) return;
+    setDiagramSelection(current);
+    closeMenu(false);
+  };
+  // Registered before any early return: hooks must run on every render.
+  const contextMenuItems: EditorContextMenuItem[] =
+    editorMode === 'markdown' && ready && !readOnly
+      ? [
+          {
+            id: 'docblocks-ai-diagram',
+            label: 'Diagram this…',
+            group: 'ai',
+            when: 'selection',
+            disabled: (context) => !context.editable,
+            onSelect: openDiagram,
+          },
+        ]
+      : [];
+  useEditorContextMenuItems(contextMenuItems);
+
   if (
     editorMode !== 'markdown' ||
     (status?.kind === 'unavailable' && status.reason === 'opt-out')
@@ -123,7 +110,6 @@ export function AiToolbarControl({
     return null;
   }
 
-  const ready = status?.kind === 'ready' && status.model !== null;
   const editableSelection = !readOnly && ready ? selection : null;
   const canCompose = editableSelection?.empty === true;
   const canRewrite =
@@ -149,7 +135,7 @@ export function AiToolbarControl({
         <button
           ref={triggerRef}
           type="button"
-          className={`squisq-toolbar-button db-ai-toolbar-trigger${reviewOpen ? ' squisq-toolbar-button--active' : ''}`}
+          className={`squisq-toolbar-button db-ai-toolbar-trigger${openPanel ? ' squisq-toolbar-button--active' : ''}`}
           onClick={() => setMenuOpen((open) => !open)}
           onKeyDown={handleTriggerKeyDown}
           aria-label="AI actions"
@@ -201,16 +187,44 @@ export function AiToolbarControl({
               disabled={!ready || readOnly}
               onClick={() => {
                 closeMenu(false);
-                onOpenReview();
+                onOpenPanel('review');
               }}
             >
-              {reviewOpen ? 'Show document review' : 'Review document…'}
+              {openPanel === 'review' ? 'Show document review' : 'Review document…'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="db-toolbar-menu-item"
+              disabled={!ready || readOnly || layoutMode !== 'document'}
+              onClick={() => {
+                closeMenu(false);
+                onOpenPanel('illustrate');
+              }}
+            >
+              {openPanel === 'illustrate' ? 'Show illustrations' : 'Illustrate document…'}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="db-toolbar-menu-item"
+              disabled={!editableSelection}
+              onClick={openDiagram}
+            >
+              Insert diagram…
             </button>
             {ready && !selection && (
               <div className="db-ai-toolbar-status">Switch to Write or Source to edit with AI.</div>
             )}
             {ready && selection && !selection.empty && !canRewrite && (
               <div className="db-ai-toolbar-status">The selection is too long to rewrite.</div>
+            )}
+            {ready && layoutMode !== 'document' && (
+              <div className="db-ai-toolbar-status">
+                Switch to the Document layout to illustrate.
+              </div>
             )}
           </div>
         )}
@@ -225,6 +239,16 @@ export function AiToolbarControl({
           getSelection={getSelection}
           replaceSelection={replaceSelection}
           onClose={closeDraft}
+        />
+      )}
+      {diagramSelection && (
+        <AiDiagramDialog
+          ai={ai}
+          documentSource={markdownSource}
+          capturedSelection={diagramSelection}
+          getSelection={getSelection}
+          insertBlockAfterCursor={insertBlockAfterCursor}
+          onClose={() => setDiagramSelection(null)}
         />
       )}
     </>

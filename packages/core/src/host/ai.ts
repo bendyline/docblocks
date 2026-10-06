@@ -157,7 +157,7 @@ export interface AiChatMessage {
  * This exists so the host can apply different budgets to a person waiting on a
  * draft and a background review pass. It is never sent to the model.
  */
-export type AiChatPurpose = 'write' | 'review' | 'chat';
+export type AiChatPurpose = 'write' | 'review' | 'illustrate' | 'chat';
 
 export interface AiChatRequest {
   readonly messages: readonly AiChatMessage[];

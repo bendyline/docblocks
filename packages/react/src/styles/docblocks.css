@@ -6065,6 +6065,80 @@ html:has(.db-shell[data-theme='dark'])
   font-size: 11px;
 }
 
+/* AI diagrams: the Illustrate panel cards and the Insert diagram dialog. */
+.db-ai-illustrate-kind {
+  border-color: var(--db-accent);
+  color: var(--db-accent-deep);
+}
+
+.db-ai-illustrate-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.db-ai-illustrate-actions select,
+.db-ai-field--inline select {
+  min-height: var(--db-target-min);
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+
+.db-ai-illustrate-footer {
+  position: sticky;
+  bottom: 0;
+  padding-bottom: 10px;
+  background: var(--db-bg);
+}
+
+.db-ai-field--inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-ai-diagram-preview {
+  margin: 10px 0 6px;
+  max-height: 340px;
+  overflow: auto;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-diagram-dialog .db-ai-diagram-preview {
+  max-height: 420px;
+}
+
+.db-ai-diagram-source {
+  max-height: 220px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font:
+    11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  white-space: pre;
+}
+
+.db-ai-link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--db-accent-deep);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .db-ai-spinner {
     animation: none;

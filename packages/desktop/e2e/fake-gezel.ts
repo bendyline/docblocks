@@ -103,8 +103,66 @@ function scriptedReview(source: string): string {
   ]);
 }
 
+const YEAR = /\b(1\d{3}|2\d{3})\b/gu;
+const FILLER = new Set(['the', 'a', 'an', 'and', 'in', 'its', 'of', 'to', 'then', 'was', 'it']);
+
+/** Up to `count` words from `text` that are not filler, for grounded labels. */
+function words(text: string, count: number, fromEnd = false): string {
+  const kept = (text.match(/[A-Za-z][A-Za-z-]*/gu) ?? []).filter(
+    (word) => !FILLER.has(word.toLowerCase()),
+  );
+  return (fromEnd ? kept.slice(-count) : kept.slice(0, count)).join(' ');
+}
+
+/**
+ * The planner's picks: the first two passages offered, a timeline for one
+ * with several years in it and a flowchart otherwise.
+ */
+function scriptedPlan(messages: readonly ChatMessage[]): string {
+  const user = messages.find((message) => message.role === 'user')?.content ?? '';
+  const passages = [...user.matchAll(/<passage id="(P\d+)"[^>]*>\n([\s\S]*?)\n<\/passage>/gu)];
+  return JSON.stringify(
+    passages.slice(0, 2).map(([, id, text]) => {
+      const dated = (text?.match(YEAR) ?? []).length >= 2;
+      return {
+        passage: id,
+        kind: dated ? 'timeline' : 'flow',
+        title: dated ? 'Milestones' : 'How it works',
+        why: 'A deterministic pick from the fake Gezel.',
+      };
+    }),
+  );
+}
+
+/** A diagram spec built only from the passage's own words, so it is grounded. */
+function scriptedDiagram(messages: readonly ChatMessage[]): string {
+  const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  const user = messages.find((message) => message.role === 'user')?.content ?? '';
+  const passage = /<passage>\n([\s\S]*?)\n<\/passage>/u.exec(user)?.[1] ?? '';
+  if (system.includes('into a timeline')) {
+    const segments = passage.split(YEAR);
+    const events: { when: string; label: string }[] = [];
+    for (let index = 1; index < segments.length; index += 2) {
+      events.push({
+        when: segments[index] ?? '',
+        label: words(segments[index - 1] ?? '', 3, true),
+      });
+    }
+    return JSON.stringify({ events });
+  }
+  const sentences = passage.split(/(?<=[.!?])\s+/u).filter((sentence) => sentence.trim());
+  const nodes = sentences.slice(0, 4).map((sentence, index) => ({
+    id: `n${String(index + 1)}`,
+    label: words(sentence, 3),
+  }));
+  const edges = nodes.slice(1).map((node, index) => ({ from: nodes[index]?.id, to: node.id }));
+  return JSON.stringify({ direction: 'LR', nodes, edges });
+}
+
 function scriptedAnswer(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  if (system.includes('You plan illustrations')) return scriptedPlan(messages);
+  if (system.includes('You turn one passage into')) return scriptedDiagram(messages);
   if (system.includes('document reviewer')) return scriptedReview(documentFrom(messages));
   if (system.includes('Rewrite only the supplied selection')) return FAKE_REWRITE_TEXT;
   return FAKE_COMPOSE_TEXT;
@@ -226,6 +284,8 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
             {
               id: FAKE_GEZEL_MODEL,
               object: 'model',
+              // The App SDK validates the listing, and `created` is required.
+              created: 0,
               owned_by: 'mlx',
               name: 'Fake Writer',
               context_window: 32_768,

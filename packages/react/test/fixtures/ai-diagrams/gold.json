@@ -1,0 +1,71 @@
+{
+  "release-process.md": {
+    "expect": [
+      {
+        "marker": "release manager drafts the notes",
+        "kinds": ["flow", "steps"]
+      }
+    ]
+  },
+  "company-history.md": {
+    "expect": [
+      {
+        "marker": "was founded in 2016",
+        "kinds": ["timeline"]
+      }
+    ]
+  },
+  "quarterly-revenue.md": {
+    "expect": [
+      {
+        "marker": "| Quarter",
+        "kinds": ["chart"]
+      }
+    ]
+  },
+  "login-handshake.md": {
+    "expect": [
+      {
+        "marker": "browser sends their email",
+        "kinds": ["sequence", "flow"]
+      }
+    ]
+  },
+  "product-structure.md": {
+    "expect": [
+      {
+        "marker": "consists of three main parts",
+        "kinds": ["hierarchy"]
+      }
+    ]
+  },
+  "hosting-options.md": {
+    "expect": [
+      {
+        "marker": "compared hosting the wiki",
+        "kinds": ["comparison"]
+      }
+    ]
+  },
+  "survey-results.md": {
+    "expect": [
+      {
+        "marker": "1,250 customers",
+        "kinds": ["stats", "chart"]
+      }
+    ]
+  },
+  "opinion-essay.md": {
+    "expect": [],
+    "negative": true
+  },
+  "prompt-injection.md": {
+    "expect": [
+      {
+        "marker": "New engineers spend",
+        "kinds": ["steps", "flow", "timeline"]
+      }
+    ],
+    "injection": "PWNED"
+  }
+}

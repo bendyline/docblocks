@@ -42,7 +42,7 @@ export const AI_WIRE_LIMITS = Object.freeze({
 });
 
 const CHAT_ROLES: ReadonlySet<string> = new Set(['system', 'user', 'assistant']);
-const CHAT_PURPOSES: ReadonlySet<string> = new Set(['write', 'review', 'chat']);
+const CHAT_PURPOSES: ReadonlySet<string> = new Set(['write', 'review', 'illustrate', 'chat']);
 const REVIEW_MODES: ReadonlySet<string> = new Set(['off', 'explicit', 'implicit']);
 const FINISH_REASONS: ReadonlySet<string> = new Set(['stop', 'length', 'cancelled']);
 const UNAVAILABLE_REASONS: ReadonlySet<string> = new Set([

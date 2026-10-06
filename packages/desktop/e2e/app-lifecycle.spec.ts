@@ -16,6 +16,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
+import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
 
 test('boots and renders the shell', async ({ launchApp }) => {
@@ -353,6 +354,39 @@ test('exports exact Markdown bytes through the remembered native target', async 
   expect(exported).toContain('# DocBlocks {[title');
 });
 
+test('exports Word with the welcome diagram drawn as a picture, not ASCII art', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  const target = path.join(userDataDir, 'exported-about.docx');
+  prepareRememberedExportTarget(userDataDir, workspaceDir, target, 'docx');
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  await window.locator('.db-toolbar-menu-trigger').click();
+  await window.getByRole('menuitem', { name: 'Export document...' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Export Document' });
+  await dialog.getByRole('radio', { name: 'Word' }).click();
+  await expect(dialog.getByLabel('Export to')).toHaveValue(target);
+  await dialog.getByRole('button', { name: 'Save DOCX', exact: true }).click();
+
+  await expect.poll(() => fs.existsSync(target), { timeout: 30_000 }).toBe(true);
+  const pkg = await openPackage(new Uint8Array(fs.readFileSync(target)).slice().buffer);
+  // Drawn in this renderer: a real PNG of a real size.
+  const png = new Uint8Array(
+    (await getPartBinary(pkg, 'word/media/image1.png')) ?? new ArrayBuffer(0),
+  );
+  expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  expect(view.getUint32(16)).toBeGreaterThan(200);
+  const documentXml = new TextDecoder().decode(
+    (await getPartBinary(pkg, 'word/document.xml')) ?? new ArrayBuffer(0),
+  );
+  expect(documentXml).toContain('One source, four ways to publish');
+  expect(documentXml).not.toMatch(/[┌┐└┘│─]/u);
+});
+
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {
   // First launch: write a file directly (avoids brittle UI typing).
   const first = await launchApp();
@@ -571,15 +605,18 @@ function prepareRememberedExportTarget(
   userDataDir: string,
   workspaceDir: string,
   target: string,
+  extension = 'md',
 ): void {
   const workspaceId = deriveWorkspaceId(fs.realpathSync.native(workspaceDir));
   const access = { path: target, confirmedByPicker: true as const };
-  const exportTargets: Record<string, { last: typeof access; byExtension: { md: typeof access } }> =
-    {};
+  const exportTargets: Record<
+    string,
+    { last: typeof access; byExtension: Record<string, typeof access> }
+  > = {};
   for (const selectedFile of ['aboutDocBlocks.md', '/aboutDocBlocks.md']) {
     const documentId = JSON.stringify([workspaceId, selectedFile]);
     const key = createHash('sha256').update(documentId).digest('hex');
-    exportTargets[key] = { last: access, byExtension: { md: access } };
+    exportTargets[key] = { last: access, byExtension: { [extension]: access } };
   }
   fs.writeFileSync(
     path.join(userDataDir, 'settings.json'),

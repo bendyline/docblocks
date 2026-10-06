@@ -9,10 +9,9 @@
  *
  * Tiptap fixed it in 3.30.4 and backported the same guard to 2.27.3, which
  * Squisq ships. The advisory still lists every 2.x release as affected, so
- * `npm audit` keeps reporting it. This test is what the audit disposition
- * points at instead of an expiry date: it checks the `@tiptap/core` DocBlocks
+ * `npm audit` keeps reporting it. This test checks the `@tiptap/core` DocBlocks
  * actually installs and bundles, so a downgrade or an unpatched migration fails
- * the build rather than waiting for a calendar reminder.
+ * the build.
  */
 import { expect } from 'chai';
 import { mergeAttributes } from '@tiptap/core';

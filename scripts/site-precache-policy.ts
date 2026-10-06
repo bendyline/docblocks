@@ -18,8 +18,14 @@ export const SITE_PRECACHE_MAX_BYTES = 18 * 1024 * 1024;
  * which must be one IIFE-capable bundle for the VS Code webview, and again as
  * the lazy chunk behind the main-thread fallback used when a worker cannot
  * start.
+ *
+ * Raised by 4 MiB for the full Squisq player, measured 77.9 MiB: a rendered
+ * HTML export of a document with a Mermaid diagram (which AI illustrations
+ * add) embeds the full player, because the light one leaves Mermaid out. It
+ * loads only for such exports, and like every optional feature it must work
+ * offline.
  */
-export const SITE_PRECACHE_MAX_TOTAL_BYTES = 76 * 1024 * 1024;
+export const SITE_PRECACHE_MAX_TOTAL_BYTES = 80 * 1024 * 1024;
 
 export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'html',

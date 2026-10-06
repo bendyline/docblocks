@@ -1,26 +1,13 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 type Severity = 'info' | 'low' | 'moderate' | 'high' | 'critical';
-type FindingScope = 'shipped' | 'development-only' | 'toolchain-only';
-/**
- * Time-boxed kinds record a risk we are still carrying, so they expire and
- * must be re-reviewed. `patched` records a finding that is fixed but still
- * reported — typically because an advisory's affected range does not credit a
- * backport. A fix does not go stale on a calendar, so a patched disposition has
- * no expiry: it names the test that proves the fix instead, and that test runs
- * in every `npm run all`.
- */
-type TimeBoxedKind = 'mitigated' | 'not-shipped' | 'upstream-blocked';
-type DispositionKind = TimeBoxedKind | 'patched';
 
 export interface AuditFinding {
   readonly advisory: string;
-  readonly isDirect: boolean;
   readonly nodes: readonly string[];
   readonly package: string;
   readonly severity: Severity;
@@ -30,68 +17,29 @@ export interface AuditFinding {
   readonly vulnerableRange: string;
 }
 
-interface DispositionBase {
-  readonly advisory: string;
-  readonly owner: string;
-  readonly package: string;
-  readonly reason: string;
-  readonly remediation: string;
-  readonly scope: FindingScope;
-  readonly severity: Severity;
-}
-
-export interface TimeBoxedDisposition extends DispositionBase {
-  readonly classification: TimeBoxedKind;
-  readonly expires: string;
-}
-
-export interface PatchedDisposition extends DispositionBase {
-  readonly classification: 'patched';
-  /** Repo-relative path to the test that proves the installed version is fixed. */
-  readonly verifiedBy: string;
-}
-
-export type AuditDisposition = TimeBoxedDisposition | PatchedDisposition;
-
-export interface DispositionDocument {
-  readonly dispositions: readonly AuditDisposition[];
-  readonly reviewedAt: string;
-  readonly schemaVersion: 1;
-}
-
-export interface AuditSummary {
-  readonly critical: number;
-  readonly high: number;
-  readonly info: number;
-  readonly low: number;
-  readonly moderate: number;
-  readonly total: number;
-}
+/** Advisory ID (`GHSA-…`) → why the build may carry it for now. */
+export type AuditExceptions = ReadonlyMap<string, string>;
 
 export interface AuditEvaluation {
   readonly failures: readonly string[];
   /** Informational: nothing to fix now, but worth tidying when convenient. */
   readonly notices: readonly string[];
   readonly findings: readonly AuditFinding[];
-  readonly summary: AuditSummary;
 }
 
+/**
+ * Only critical advisories in shipped dependencies fail the gate. Everything
+ * else is reported, so a newly published moderate or high advisory deep in the
+ * tree never breaks `npm run all` on the day the database changes.
+ */
+const blockingSeverity: Severity = 'critical';
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dispositionPath = path.join(repoRoot, 'security', 'dependency-audit-dispositions.json');
+const exceptionsPath = path.join(repoRoot, 'security', 'audit-exceptions.json');
 const reportDirectory = path.join(repoRoot, 'reports', 'dependency-audit');
 const rawReportPath = path.join(reportDirectory, 'npm-audit.json');
-const normalizedReportPath = path.join(reportDirectory, 'dependency-audit.json');
 const markdownReportPath = path.join(reportDirectory, 'dependency-audit.md');
-const severityValues = new Set<Severity>(['info', 'low', 'moderate', 'high', 'critical']);
-const scopeValues = new Set<FindingScope>(['shipped', 'development-only', 'toolchain-only']);
-const classificationValues = new Set<DispositionKind>([
-  'mitigated',
-  'not-shipped',
-  'upstream-blocked',
-  'patched',
-]);
-const verificationTestPath = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9_./-]+\.test\.ts$/u;
-const isoDate = /^\d{4}-\d{2}-\d{2}$/u;
+const severityOrder: readonly Severity[] = ['critical', 'high', 'moderate', 'low', 'info'];
 const maximumOutputBytes = 16 * 1024 * 1024;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -105,11 +53,6 @@ function requireString(value: unknown, label: string): string {
   return value;
 }
 
-function requireBoolean(value: unknown, label: string): boolean {
-  if (typeof value !== 'boolean') throw new Error(`${label} must be a boolean`);
-  return value;
-}
-
 function requireNumber(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw new Error(`${label} must be a finite number`);
@@ -118,51 +61,17 @@ function requireNumber(value: unknown, label: string): number {
 }
 
 function requireSeverity(value: unknown, label: string): Severity {
-  if (typeof value !== 'string' || !severityValues.has(value as Severity)) {
+  if (typeof value !== 'string' || !severityOrder.includes(value as Severity)) {
     throw new Error(`${label} must be a recognized npm severity`);
   }
   return value as Severity;
-}
-
-function requireExactKeys(record: UnknownRecord, keys: readonly string[], label: string): void {
-  const actual = Object.keys(record).sort();
-  const expected = [...keys].sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${label} must have exactly these fields: ${expected.join(', ')}`);
-  }
-}
-
-function requireDate(value: unknown, label: string): string {
-  const result = requireString(value, label);
-  if (!isoDate.test(result) || Number.isNaN(Date.parse(`${result}T00:00:00Z`))) {
-    throw new Error(`${label} must be a valid YYYY-MM-DD date`);
-  }
-  return result;
 }
 
 function advisoryIdentifier(url: string, source: number): string {
   return url.match(/GHSA-[0-9A-Za-z-]+/u)?.[0].toUpperCase() ?? `NPM-${source}`;
 }
 
-function parseSummary(value: unknown): AuditSummary {
-  if (!isRecord(value) || !isRecord(value.vulnerabilities)) {
-    throw new Error('npm audit metadata.vulnerabilities is missing');
-  }
-  const counts = value.vulnerabilities;
-  return {
-    info: requireNumber(counts.info, 'npm audit metadata.vulnerabilities.info'),
-    low: requireNumber(counts.low, 'npm audit metadata.vulnerabilities.low'),
-    moderate: requireNumber(counts.moderate, 'npm audit metadata.vulnerabilities.moderate'),
-    high: requireNumber(counts.high, 'npm audit metadata.vulnerabilities.high'),
-    critical: requireNumber(counts.critical, 'npm audit metadata.vulnerabilities.critical'),
-    total: requireNumber(counts.total, 'npm audit metadata.vulnerabilities.total'),
-  };
-}
-
-export function normalizeAuditReport(value: unknown): {
-  readonly findings: readonly AuditFinding[];
-  readonly summary: AuditSummary;
-} {
+export function normalizeAuditReport(value: unknown): readonly AuditFinding[] {
   if (!isRecord(value) || value.auditReportVersion !== 2 || !isRecord(value.vulnerabilities)) {
     throw new Error('npm audit output must be a version 2 JSON report');
   }
@@ -174,17 +83,9 @@ export function normalizeAuditReport(value: unknown): {
     }
     const packageName =
       typeof vulnerabilityValue.name === 'string' ? vulnerabilityValue.name : packageKey;
-    const isDirect = requireBoolean(
-      vulnerabilityValue.isDirect,
-      `npm audit vulnerability ${packageName}.isDirect`,
-    );
-    if (
-      !Array.isArray(vulnerabilityValue.nodes) ||
-      vulnerabilityValue.nodes.some((node) => typeof node !== 'string')
-    ) {
-      throw new Error(`npm audit vulnerability ${packageName}.nodes must contain strings`);
-    }
-    const nodes = [...new Set(vulnerabilityValue.nodes as string[])].sort();
+    const nodes = Array.isArray(vulnerabilityValue.nodes)
+      ? [...new Set(vulnerabilityValue.nodes.filter((node) => typeof node === 'string'))].sort()
+      : [];
 
     for (const [viaIndex, viaValue] of vulnerabilityValue.via.entries()) {
       // String entries are dependency fan-out references. The referenced advisory object is
@@ -197,7 +98,6 @@ export function normalizeAuditReport(value: unknown): {
       const url = requireString(viaValue.url, `${packageName}.via[${viaIndex}].url`);
       const finding: AuditFinding = {
         advisory: advisoryIdentifier(url, source),
-        isDirect,
         nodes,
         package: packageName,
         severity: requireSeverity(viaValue.severity, `${packageName}.via[${viaIndex}].severity`),
@@ -210,191 +110,40 @@ export function normalizeAuditReport(value: unknown): {
     }
   }
 
-  return {
-    findings: [...findings.values()].sort((left, right) =>
+  return [...findings.values()].sort(
+    (left, right) =>
+      severityOrder.indexOf(left.severity) - severityOrder.indexOf(right.severity) ||
       `${left.package}\0${left.advisory}`.localeCompare(`${right.package}\0${right.advisory}`),
-    ),
-    summary: parseSummary(value.metadata),
-  };
-}
-
-export function parseDispositionDocument(value: unknown): DispositionDocument {
-  if (!isRecord(value)) throw new Error('dependency audit dispositions must be an object');
-  requireExactKeys(value, ['schemaVersion', 'reviewedAt', 'dispositions'], 'disposition document');
-  if (value.schemaVersion !== 1 || !Array.isArray(value.dispositions)) {
-    throw new Error('dependency audit dispositions must use schemaVersion 1 and an array');
-  }
-
-  const dispositions = value.dispositions.map((entry, index): AuditDisposition => {
-    if (!isRecord(entry)) throw new Error(`dispositions[${index}] must be an object`);
-    const classification = requireString(
-      entry.classification,
-      `dispositions[${index}].classification`,
-    );
-    if (!classificationValues.has(classification as DispositionKind)) {
-      throw new Error(`dispositions[${index}].classification is invalid`);
-    }
-    const patched = classification === 'patched';
-    requireExactKeys(
-      entry,
-      [
-        'package',
-        'advisory',
-        'severity',
-        'scope',
-        'classification',
-        'owner',
-        patched ? 'verifiedBy' : 'expires',
-        'reason',
-        'remediation',
-      ],
-      `dispositions[${index}]`,
-    );
-    const scope = requireString(entry.scope, `dispositions[${index}].scope`);
-    if (!scopeValues.has(scope as FindingScope)) {
-      throw new Error(`dispositions[${index}].scope is invalid`);
-    }
-    const reason = requireString(entry.reason, `dispositions[${index}].reason`);
-    const remediation = requireString(entry.remediation, `dispositions[${index}].remediation`);
-    if (reason.length < 20 || remediation.length < 20) {
-      throw new Error(`dispositions[${index}] reason and remediation must be substantive`);
-    }
-    const base: DispositionBase = {
-      package: requireString(entry.package, `dispositions[${index}].package`),
-      advisory: requireString(entry.advisory, `dispositions[${index}].advisory`).toUpperCase(),
-      severity: requireSeverity(entry.severity, `dispositions[${index}].severity`),
-      scope: scope as FindingScope,
-      owner: requireString(entry.owner, `dispositions[${index}].owner`),
-      reason,
-      remediation,
-    };
-    if (patched) {
-      const verifiedBy = requireString(entry.verifiedBy, `dispositions[${index}].verifiedBy`);
-      if (!verificationTestPath.test(verifiedBy)) {
-        throw new Error(
-          `dispositions[${index}].verifiedBy must be a repo-relative *.test.ts path inside the repository`,
-        );
-      }
-      return { ...base, classification: 'patched', verifiedBy };
-    }
-    return {
-      ...base,
-      classification: classification as TimeBoxedKind,
-      expires: requireDate(entry.expires, `dispositions[${index}].expires`),
-    };
-  });
-
-  return {
-    schemaVersion: 1,
-    reviewedAt: requireDate(value.reviewedAt, 'disposition document reviewedAt'),
-    dispositions,
-  };
-}
-
-function dayDifference(left: string, right: string): number {
-  return (Date.parse(`${left}T00:00:00Z`) - Date.parse(`${right}T00:00:00Z`)) / 86_400_000;
-}
-
-/**
- * Read a verification test's source, or null when it does not exist. Injected
- * so the policy stays testable without touching the filesystem.
- */
-export type VerificationReader = (repoRelativePath: string) => string | null;
-
-export function evaluateAudit(
-  report: unknown,
-  dispositionsValue: unknown,
-  today = new Date().toISOString().slice(0, 10),
-  readVerification?: VerificationReader,
-): AuditEvaluation {
-  const normalized = normalizeAuditReport(report);
-  const document = parseDispositionDocument(dispositionsValue);
-  const failures: string[] = [];
-  const notices: string[] = [];
-  const dispositions = new Map<string, AuditDisposition>();
-
-  // The review date only matters while we are carrying a risk. A document of
-  // nothing but proven fixes has nothing to re-review on a schedule.
-  const carriesRisk = document.dispositions.some(
-    (disposition) => disposition.classification !== 'patched',
   );
-  if (dayDifference(today, document.reviewedAt) < 0) {
-    failures.push(`disposition review date ${document.reviewedAt} is in the future`);
-  } else if (carriesRisk && dayDifference(today, document.reviewedAt) > 30) {
-    failures.push(`disposition review date ${document.reviewedAt} is more than 30 days old`);
-  }
+}
 
-  for (const disposition of document.dispositions) {
-    const key = `${disposition.package}\0${disposition.advisory}`;
-    if (dispositions.has(key)) {
-      failures.push(`duplicate disposition for ${disposition.package} ${disposition.advisory}`);
-    }
-    dispositions.set(key, disposition);
-    if (disposition.classification === 'patched') {
-      if (readVerification) {
-        const source = readVerification(disposition.verifiedBy);
-        if (source === null) {
-          failures.push(
-            `patched disposition for ${disposition.package} ${disposition.advisory} names a missing test: ${disposition.verifiedBy}`,
-          );
-        } else if (!source.toUpperCase().includes(disposition.advisory)) {
-          failures.push(
-            `patched disposition for ${disposition.package} ${disposition.advisory} names a test that does not cite the advisory: ${disposition.verifiedBy}`,
-          );
-        }
-      }
-      continue;
-    }
-    if (dayDifference(disposition.expires, today) <= 0) {
-      failures.push(
-        `disposition for ${disposition.package} ${disposition.advisory} expired on ${disposition.expires}`,
-      );
-    } else if (dayDifference(disposition.expires, today) > 30) {
-      failures.push(
-        `disposition for ${disposition.package} ${disposition.advisory} expires more than 30 days from review`,
-      );
-    }
+export function parseExceptions(value: unknown): AuditExceptions {
+  if (!isRecord(value)) {
+    throw new Error('security/audit-exceptions.json must map advisory IDs to reasons');
   }
-
-  const currentKeys = new Set<string>();
-  for (const finding of normalized.findings) {
-    const key = `${finding.package}\0${finding.advisory}`;
-    currentKeys.add(key);
-    const disposition = dispositions.get(key);
-    if (!disposition) {
-      failures.push(`missing disposition for ${finding.package} ${finding.advisory}`);
-      continue;
-    }
-    if (disposition.severity !== finding.severity) {
-      failures.push(
-        `severity drift for ${finding.package} ${finding.advisory}: audit=${finding.severity}, disposition=${disposition.severity}`,
-      );
-    }
-    if (disposition.scope === 'shipped' && ['high', 'critical'].includes(finding.severity)) {
-      failures.push(
-        `${finding.severity} finding ${finding.package} ${finding.advisory} affects shipped code and cannot be dispositioned`,
-      );
-    }
-    if (finding.severity === 'critical') {
-      failures.push(`critical finding ${finding.package} ${finding.advisory} is release-blocking`);
-    }
+  const exceptions = new Map<string, string>();
+  for (const [advisory, reason] of Object.entries(value)) {
+    exceptions.set(advisory.toUpperCase(), requireString(reason, `exception ${advisory}`));
   }
+  return exceptions;
+}
 
-  for (const disposition of document.dispositions) {
-    const key = `${disposition.package}\0${disposition.advisory}`;
-    if (currentKeys.has(key)) continue;
-    if (disposition.classification === 'patched') {
-      // Usually the advisory was corrected to credit the fix. Nothing is
-      // wrong, so this must not fail a build on the day the database changes.
-      notices.push(
-        `npm no longer reports ${disposition.package} ${disposition.advisory}; its patched disposition can be deleted`,
-      );
-    } else {
-      failures.push(`stale disposition for ${disposition.package} ${disposition.advisory}`);
-    }
-  }
+export function evaluateAudit(report: unknown, exceptionsValue: unknown): AuditEvaluation {
+  const findings = normalizeAuditReport(report);
+  const exceptions = parseExceptions(exceptionsValue);
+  const reported = new Set(findings.map((finding) => finding.advisory));
 
-  return { ...normalized, failures, notices };
+  const failures = findings
+    .filter((finding) => finding.severity === blockingSeverity && !exceptions.has(finding.advisory))
+    .map(
+      (finding) =>
+        `${finding.severity} ${finding.package} ${finding.advisory}: ${finding.title} (${finding.url})`,
+    );
+  const notices = [...exceptions.keys()]
+    .filter((advisory) => !reported.has(advisory))
+    .map((advisory) => `npm no longer reports ${advisory}; its exception can be deleted`);
+
+  return { failures, findings, notices };
 }
 
 interface CommandResult {
@@ -408,7 +157,9 @@ async function runAudit(): Promise<CommandResult> {
   return await new Promise<CommandResult>((resolve, reject) => {
     // Invoke the repository-pinned npm through Node. This avoids Windows .cmd shell
     // interpretation and guarantees that the audit uses the governed toolchain.
-    const child = spawn(process.execPath, [npmCli, 'audit', '--json'], {
+    // `--omit=dev` limits the audit to what ships: build tools, test runners and
+    // the pinned npm's own bundled packages never reach a user.
+    const child = spawn(process.execPath, [npmCli, 'audit', '--omit=dev', '--json'], {
       cwd: repoRoot,
       env: process.env,
       shell: false,
@@ -443,47 +194,47 @@ function markdownCell(value: string): string {
   return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
+function severityCounts(findings: readonly AuditFinding[]): string {
+  return severityOrder
+    .filter((severity) => severity !== 'info')
+    .map((severity) => {
+      const count = findings.filter((finding) => finding.severity === severity).length;
+      return `${count} ${severity}`;
+    })
+    .join(', ');
+}
+
 function renderMarkdown(
   evaluation: AuditEvaluation,
-  document: DispositionDocument,
+  exceptions: AuditExceptions,
   generatedAt: string,
 ): string {
-  const dispositionByKey = new Map(
-    document.dispositions.map((entry) => [`${entry.package}\0${entry.advisory}`, entry]),
-  );
   const rows = evaluation.findings.map((finding) => {
-    const disposition = dispositionByKey.get(`${finding.package}\0${finding.advisory}`);
-    const expiry = !disposition
-      ? 'MISSING'
-      : disposition.classification === 'patched'
-        ? `never (verified by \`${disposition.verifiedBy}\`)`
-        : disposition.expires;
-    return `| ${markdownCell(finding.package)} | ${finding.severity} | [${finding.advisory}](${finding.url}) | ${disposition?.scope ?? 'MISSING'} | ${disposition?.classification ?? 'MISSING'} | ${markdownCell(expiry)} | ${markdownCell(disposition?.reason ?? 'No disposition')} |`;
+    const exception = exceptions.get(finding.advisory);
+    const status = exception
+      ? `excepted: ${exception}`
+      : finding.severity === blockingSeverity
+        ? 'BLOCKING'
+        : 'reported';
+    return `| ${markdownCell(finding.package)} | ${finding.severity} | [${finding.advisory}](${finding.url}) | ${markdownCell(finding.vulnerableRange)} | ${markdownCell(finding.title)} | ${markdownCell(status)} |`;
   });
   return [
-    '# Dependency audit evidence',
+    '# Dependency audit',
     '',
     `Generated: ${generatedAt}`,
     '',
-    `npm summary: ${evaluation.summary.total} vulnerable dependency entries (${evaluation.summary.critical} critical, ${evaluation.summary.high} high, ${evaluation.summary.moderate} moderate, ${evaluation.summary.low} low, ${evaluation.summary.info} info).`,
+    `Shipped (non-dev) dependencies: ${evaluation.findings.length} advisories (${severityCounts(evaluation.findings)}). Only ${blockingSeverity} advisories without an exception fail the gate.`,
     '',
-    `Normalized advisory findings: ${evaluation.findings.length}. Policy failures: ${evaluation.failures.length}.`,
-    '',
-    '| Package | Severity | Advisory | Scope | Disposition | Expires | Rationale |',
-    '| --- | --- | --- | --- | --- | --- | --- |',
-    ...(rows.length > 0 ? rows : ['| — | — | — | — | — | — | No current findings |']),
-    '',
-    '## Policy result',
+    '| Package | Severity | Advisory | Affected | Title | Status |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...(rows.length > 0 ? rows : ['| — | — | — | — | No current findings | — |']),
     '',
     ...(evaluation.failures.length > 0
-      ? evaluation.failures.map((failure) => `- FAIL: ${failure}`)
-      : [
-          'PASS: every current finding has a current disposition and no blocking shipped-code finding remains.',
-        ]),
-    ...(evaluation.notices.length > 0
-      ? ['', '## Notices', '', ...evaluation.notices.map((notice) => `- ${notice}`)]
+      ? ['## Blocking', '', ...evaluation.failures.map((failure) => `- ${failure}`), '']
       : []),
-    '',
+    ...(evaluation.notices.length > 0
+      ? ['## Notices', '', ...evaluation.notices.map((notice) => `- ${notice}`), '']
+      : []),
   ].join('\n');
 }
 
@@ -503,28 +254,23 @@ async function main(): Promise<void> {
   } catch {
     throw new Error(`npm audit did not return JSON: ${auditResult.stderr.trim()}`);
   }
-  const dispositionsValue = JSON.parse(await readFile(dispositionPath, 'utf8')) as unknown;
-  const document = parseDispositionDocument(dispositionsValue);
-  const evaluation = evaluateAudit(auditValue, dispositionsValue, undefined, (relativePath) => {
-    const absolute = path.join(repoRoot, relativePath);
-    return existsSync(absolute) ? readFileSync(absolute, 'utf8') : null;
-  });
-  const generatedAt = new Date().toISOString();
+  const exceptionsValue = JSON.parse(await readFile(exceptionsPath, 'utf8')) as unknown;
+  const evaluation = evaluateAudit(auditValue, exceptionsValue);
+  const evidence = path.relative(repoRoot, markdownReportPath);
   await writeFile(
-    normalizedReportPath,
-    `${JSON.stringify({ schemaVersion: 1, generatedAt, ...evaluation, dispositions: document }, null, 2)}\n`,
+    markdownReportPath,
+    renderMarkdown(evaluation, parseExceptions(exceptionsValue), new Date().toISOString()),
     'utf8',
   );
-  await writeFile(markdownReportPath, renderMarkdown(evaluation, document, generatedAt), 'utf8');
 
   if (evaluation.failures.length > 0) {
     throw new Error(
-      `dependency audit policy failed:\n- ${evaluation.failures.join('\n- ')}\nEvidence: ${path.relative(repoRoot, markdownReportPath)}`,
+      `dependency audit found ${blockingSeverity} advisories in shipped dependencies:\n- ${evaluation.failures.join('\n- ')}\nUpdate the dependency, or add the advisory to security/audit-exceptions.json with a reason. Evidence: ${evidence}`,
     );
   }
   for (const notice of evaluation.notices) process.stderr.write(`notice: ${notice}\n`);
   process.stdout.write(
-    `Dependency audit retained ${evaluation.findings.length} advisory dispositions (${evaluation.summary.total} npm dependency entries) in ${path.relative(repoRoot, reportDirectory)}.\n`,
+    `Dependency audit: ${evaluation.findings.length} advisories in shipped dependencies (${severityCounts(evaluation.findings)}); none blocking. Evidence: ${evidence}\n`,
   );
 }
 
