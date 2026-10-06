@@ -55,6 +55,13 @@ export function registerWindowLifecycleIpc(): void {
 }
 
 export function attachWindowCloseGuard(win: BrowserWindow): void {
+  win.webContents.on('will-prevent-unload', (event) => {
+    // The main-owned handshake has already saved the document or obtained
+    // the user's explicit Close Without Saving decision. A renderer conflict
+    // keeps its browser beforeunload warning active; it must not veto that
+    // same close a second time. Unapproved navigation keeps its normal guard.
+    if (approvedWindows.has(win)) event.preventDefault();
+  });
   win.on('close', (event) => {
     if (approvedWindows.has(win) || win.isDestroyed()) return;
     event.preventDefault();

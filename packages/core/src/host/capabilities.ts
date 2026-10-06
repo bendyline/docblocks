@@ -68,6 +68,7 @@ export interface HostCapabilities {
   readonly aiAssist: boolean;
   /** The host can list and download provider-catalog models. */
   readonly aiModelManagement: boolean;
+  readonly aiKnowledgeManagement: boolean;
   /** The host can bind a workspace folder to a provider-side index. */
   readonly aiWorkspaceIndex: boolean;
   readonly aiSearch: boolean;
@@ -102,6 +103,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   systemFfmpeg: false,
   aiAssist: false,
   aiModelManagement: false,
+  aiKnowledgeManagement: false,
   aiWorkspaceIndex: false,
   aiSearch: false,
   aiImages: false,
@@ -212,6 +214,10 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
       hasMethod(host.ai, 'chat') &&
       hasMethod(host.ai, 'onStatus'),
     aiModelManagement: hasMethod(host.ai, 'availableModels') && hasMethod(host.ai, 'installModel'),
+    aiKnowledgeManagement:
+      isRecord(host.ai) &&
+      hasMethod(host.ai.knowledge, 'state') &&
+      hasMethod(host.ai.knowledge, 'update'),
     aiWorkspaceIndex: hasMethod(host.ai, 'ensureWorkspace'),
     aiSearch: hasMethod(host.ai, 'search'),
     aiImages: hasMethod(host.ai, 'generateImage'),

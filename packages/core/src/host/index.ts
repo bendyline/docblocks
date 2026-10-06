@@ -133,6 +133,8 @@ export {
   parsePinnedMenuDocuments,
 } from './wire-policy.js';
 
+export * from './ai-knowledge.js';
+
 import type { DocBlocksHostAPI, HostEnvironment } from './types.js';
 import {
   NO_HOST_CAPABILITIES,

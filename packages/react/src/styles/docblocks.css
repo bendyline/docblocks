@@ -5418,6 +5418,82 @@ html:has(.db-shell[data-theme='dark'])
   outline-offset: 2px;
 }
 
+.db-conflict-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  flex: 1;
+  min-height: 300px;
+}
+
+.db-conflict-version {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+}
+
+.db-conflict-version h3 {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 15px;
+}
+
+.db-conflict-metadata {
+  margin: 4px 0 12px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-conflict-preview {
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  min-height: 160px;
+  padding: 12px;
+  overflow: auto;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-border);
+  border-radius: 4px;
+  font:
+    13px / 1.6 ui-monospace,
+    monospace;
+  resize: none;
+}
+
+.db-conflict-consequence {
+  margin: 12px 0;
+  font-size: 12px;
+}
+
+.db-conflict-dialog button:not(.db-dialog-close) {
+  min-height: var(--db-target-min, 32px);
+  padding: 7px 12px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.db-conflict-dialog button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.db-conflict-dialog button:focus-visible,
+.db-conflict-preview:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+[data-db-width='compact'] .db-conflict-columns {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* Browser PWA update notice. It is docked over the right side of Squisq's
    status bar, while extra status-bar padding keeps its contents visible.
    If the status bar is hidden, it becomes a compact floating badge so the
@@ -5877,6 +5953,29 @@ html:has(.db-shell[data-theme='dark'])
   justify-content: flex-end;
   gap: 7px;
   margin-top: 10px;
+}
+
+.db-settings-ai-knowledge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.db-settings-ai-knowledge-list > li {
+  border-top: 1px solid var(--db-border);
+  padding-block: 12px;
+  overflow-wrap: anywhere;
+}
+
+.db-settings-ai-knowledge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-settings-ai-knowledge progress {
+  max-width: 100%;
 }
 
 .db-ai-review-disclaimer {

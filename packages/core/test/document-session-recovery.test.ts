@@ -38,6 +38,114 @@ function scope(session: DocumentSession): { targetKey: string; generation: numbe
 }
 
 describe('DocumentSession crash recovery integration', () => {
+  for (const strategy of ['use-local', 'use-external'] as const) {
+    it(`does not resurrect a resolved recovery draft after repeated restarts (${strategy})`, async () => {
+      let now = 1_000;
+      const journal = new DocumentRecoveryJournal(new MemoryRecoveryStorage(), {
+        now: () => now++,
+      });
+      const provider = new MemoryFileSystemProvider('restarts', 'Restarts');
+      provider.seedText('/draft.md', 'baseline');
+      const target = createFileSystemDocumentTarget(provider, '/draft.md');
+      const createSession = () =>
+        new DocumentSession({ autoSaveEnabled: false, recoveryJournal: journal });
+      const original = createSession();
+      await original.transitionTo(target, 'baseline');
+      original.edit('old unsaved draft', scope(original));
+
+      // Simulate another app saving, then two launches interrupted before the
+      // conflict is resolved. Each launch journals its own recovered copy.
+      provider.seedText('/draft.md', 'newer saved file');
+      await createSession().transitionTo(target, 'newer saved file');
+      const restarted = createSession();
+      const opened = await restarted.transitionTo(target, 'newer saved file');
+      expect(opened.content).to.equal('old unsaved draft');
+      expect(opened.status).to.equal('conflict');
+      expect(opened.conflict?.recoveredDraft).to.equal(true);
+      expect(journal.list(target.key)).to.have.length(3);
+      expect(opened.conflict?.recoveredDraftCapturedAt).to.equal(
+        Math.min(...journal.list(target.key).map((record) => record.updatedAt)),
+      );
+
+      await restarted.resolveConflict(strategy);
+      expect(journal.list(target.key)).to.deep.equal([]);
+      const expected = strategy === 'use-local' ? 'old unsaved draft' : 'newer saved file';
+      expect(await provider.readFile('/draft.md')).to.equal(expected);
+      const reopened = await createSession().transitionTo(target, expected);
+      expect(reopened.status).to.equal('saved');
+      expect(reopened.content).to.equal(expected);
+    });
+  }
+
+  it('clears all recovered copies only after a successful save', async () => {
+    const journal = new DocumentRecoveryJournal(new MemoryRecoveryStorage());
+    let fail = true;
+    const target = {
+      key: 'repeated-recovery',
+      async commit() {
+        if (fail) throw new Error('disk full');
+      },
+    };
+    const createSession = () =>
+      new DocumentSession({ autoSaveEnabled: false, recoveryJournal: journal });
+    const original = createSession();
+    await original.transitionTo(target, 'baseline');
+    original.edit('draft', scope(original));
+    await createSession().transitionTo(target, 'baseline');
+    const restarted = createSession();
+    await restarted.transitionTo(target, 'baseline');
+    try {
+      await restarted.flush();
+      expect.fail('Expected the save to fail');
+    } catch (error: unknown) {
+      expect(error).to.be.instanceOf(Error).with.property('message', 'disk full');
+    }
+    expect(journal.list(target.key)).to.have.length(3);
+    fail = false;
+    await restarted.flush();
+    expect(journal.list(target.key)).to.deep.equal([]);
+  });
+
+  it('preserves distinct drafts and newer owner edits when resolving recovered copies', async () => {
+    let now = 1_000;
+    const journal = new DocumentRecoveryJournal(new MemoryRecoveryStorage(), { now: () => now++ });
+    const target = { key: 'independent-drafts', commit: async () => ({}) };
+    const createSession = () =>
+      new DocumentSession({ autoSaveEnabled: false, recoveryJournal: journal });
+    const independent = createSession();
+    const original = createSession();
+    await independent.transitionTo(target, 'baseline');
+    await original.transitionTo(target, 'baseline');
+    independent.edit('different draft', scope(independent));
+    original.edit('recovered draft', scope(original));
+    await createSession().transitionTo(target, 'external edit');
+    const restarted = createSession();
+    await restarted.transitionTo(target, 'external edit');
+    original.edit('newer owner edit', scope(original));
+
+    await restarted.resolveConflict('use-external');
+    expect(journal.list(target.key).map((record) => record.content)).to.have.members([
+      'different draft',
+      'newer owner edit',
+    ]);
+  });
+
+  it('retires every matching recovered copy when the file is already saved', async () => {
+    const journal = new DocumentRecoveryJournal(new MemoryRecoveryStorage());
+    const target = { key: 'saved-recovery', commit: async () => ({}) };
+    const createSession = () =>
+      new DocumentSession({ autoSaveEnabled: false, recoveryJournal: journal });
+    const original = createSession();
+    await original.transitionTo(target, 'baseline');
+    original.edit('draft', scope(original));
+    await createSession().transitionTo(target, 'baseline');
+
+    // The file was saved, but the process ended before acknowledgement.
+    const reopened = await createSession().transitionTo(target, 'draft');
+    expect(reopened.status).to.equal('saved');
+    expect(journal.list(target.key)).to.deep.equal([]);
+  });
+
   it('preserves independent drafts when two windows reuse generation and revision numbers', async () => {
     const storage = new MemoryRecoveryStorage();
     const journal = new DocumentRecoveryJournal(storage);
@@ -122,6 +230,11 @@ describe('DocumentSession crash recovery integration', () => {
     expect(opened.status).to.equal('conflict');
     expect(opened.content).to.equal('crashed local draft');
     expect(opened.conflict?.externalContent).to.equal('external edit');
+    expect(opened.conflict?.recoveredDraft).to.equal(true);
+    // An initial watcher observation must not turn recovery into an ordinary
+    // live-edit conflict just because it supplies the file's version.
+    session.observeExternal({ targetKey: target.key, content: 'external edit', version: 1 });
+    expect(session.getSnapshot().conflict?.recoveredDraft).to.equal(true);
     let thrown: unknown;
     try {
       await session.flush('manual');

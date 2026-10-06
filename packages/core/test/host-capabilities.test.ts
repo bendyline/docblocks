@@ -49,6 +49,7 @@ function electronHost(): Record<string, unknown> {
       models: () => undefined,
       availableModels: () => undefined,
       installModel: () => undefined,
+      knowledge: { state: () => undefined, update: () => undefined },
       chat: () => undefined,
       ensureWorkspace: () => undefined,
       search: () => undefined,

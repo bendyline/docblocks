@@ -207,6 +207,18 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
         response.writeHead(204).end();
       } else if (!authorized(request)) {
         sendJson(response, 401, { error: { code: 'unauthorized', message: 'Unauthorized' } });
+      } else if (request.method === 'GET' && url.pathname === '/v1/knowledge/state') {
+        sendJson(response, 200, {
+          catalogs: [],
+          reranker: { ready: true, downloading: false, message: null },
+        });
+      } else if (request.method === 'POST' && url.pathname === '/v1/knowledge/retrieve') {
+        const query = await readJson(request);
+        if (query.rerank !== 'required') {
+          sendJson(response, 400, {
+            error: { code: 'reranker_required', message: 'Reranking is required.' },
+          });
+        } else sendJson(response, 200, { reranked: true, passages: [] });
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {
           object: 'list',

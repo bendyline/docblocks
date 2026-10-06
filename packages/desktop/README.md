@@ -67,6 +67,36 @@ The current service pin (`1.2.1`, native `0.1.46`) lacks `gezel-apple-fm`, so MA
 packaging deliberately fails until the new native release and service package
 are published and pinned. See [the native release handoff](../../docs/desktop-ai-native-release.md).
 
+## Knowledge catalogs in AI settings
+
+The desktop AI bridge exposes optional `host.ai.knowledge` inventory and actions.
+Settings lists installed catalogs, offers curated downloads and updates, shows
+progress and failures, and lets users enable, disable, or confirm removal of a
+catalog. Catalogs belong to the connected provider: switching between built-in
+AI and standalone Gezel switches the catalog registry. Removal from standalone
+Gezel affects other apps using that registry. Catalog downloads require explicit
+gestures. The reranker download button remains disabled until the person checks
+the download-consent checkbox; opening Settings or querying never starts it.
+
+Writing, review, and chat all call the SDK's `knowledge.retrieve` with
+`rerank: 'required'` before inference. Retrieved passages are bounded against the
+prompt budget, marked as untrusted evidence, and retain their catalog/version
+citations. Missing or incomplete reranking fails visibly; no unranked fallback
+is sent to the model. No enabled catalogs or no matches produces an empty
+reference context. Retrieval uses cached embedding models only and falls back to
+keyword candidates if those models are unavailable; candidates still require
+reranking. Catalog installation can prepare its embedding model as part of that
+explicit download. Mobile hosts without this optional SDK capability do not
+expose catalog management.
+
+**Release prerequisite:** the pinned app SDK `1.1.1` and service `1.2.1` do not
+implement this API. The corresponding Gezel source changes add the `knowledge`
+grant and `/v1/knowledge/{state,update,retrieve}`. Publish those changes, then
+update both exact dependency pins and the lockfile before shipping this feature.
+Until then, inference reports an SDK upgrade requirement rather than claiming
+to use knowledge. Existing inference-only grants require reconnection with the
+typed verification code; silent reconnect must never open a consent prompt.
+
 ## Architecture rules
 
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.

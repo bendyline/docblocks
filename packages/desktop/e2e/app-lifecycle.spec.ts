@@ -419,6 +419,28 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
   expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
 });
 
+test('an approved window close cannot be vetoed again by renderer beforeunload', async ({
+  launchApp,
+}) => {
+  const { window } = await launchApp();
+  await expect(window.locator('.squisq-status-item').first()).toBeVisible({ timeout: 30_000 });
+  // Electron handles the veto in main, rather than showing a JavaScript
+  // dialog. Stop Playwright's automatic dialog dismissal racing that handler.
+  window.on('dialog', () => {});
+  // The session is saved, so the main-owned handshake approves this close.
+  // A conflict (including Close Without Saving) or a stale React effect can
+  // leave the browser guard installed even after that approval.
+  await window.evaluate(() => {
+    globalThis.addEventListener('beforeunload', (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    });
+  });
+  const closed = window.waitForEvent('close', { timeout: 5_000 });
+  await requestWindowClose(window);
+  await closed;
+});
+
 test('quick close repacks a DBK origin before acknowledging window destruction', async ({
   launchApp,
   userDataDir,
@@ -471,6 +493,7 @@ test('keeping a local DBK conflict saves durable content without replaying the s
   await window.keyboard.press('Enter');
   await window.keyboard.insertText(sentinel);
 
+  await window.getByRole('button', { name: 'Compare versions' }).click({ timeout: 15_000 });
   const keepMine = window.getByRole('button', { name: 'Keep mine' });
   await expect(keepMine).toBeVisible({ timeout: 15_000 });
   await keepMine.click();

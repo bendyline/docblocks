@@ -6,6 +6,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   parseAiChatEvent,
+  parseAiKnowledgeState,
+  parseAiKnowledgeAction,
   parseAiError,
   parseAiModelDownloadInfoList,
   parseAiModelInstallEvent,
@@ -333,7 +335,42 @@ function parseAvailableModelsResult(value: unknown): AiResult<readonly AiModelDo
   return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
 }
 
+function parseKnowledgeResult<T>(value: unknown, parse: (value: unknown) => T | null): AiResult<T> {
+  if (typeof value === 'object' && value !== null && Object.keys(value).length === 2) {
+    const result = value as { ok?: unknown; value?: unknown; error?: unknown };
+    if (result.ok === true && Object.hasOwn(value, 'value')) {
+      const parsed = parse(result.value);
+      if (parsed !== null) return { ok: true, value: parsed };
+    }
+    if (result.ok === false && Object.hasOwn(value, 'error')) {
+      const error = parseAiError(result.error);
+      if (error) return { ok: false, error };
+    }
+  }
+  return {
+    ok: false,
+    error: aiFailure('DocBlocks received catalog information it could not read.'),
+  };
+}
+
 const aiApi: DocBlocksHostAiAPI = {
+  knowledge: {
+    async state() {
+      return parseKnowledgeResult(
+        await ipcRenderer.invoke('ai:knowledge:state'),
+        parseAiKnowledgeState,
+      );
+    },
+    async update(value) {
+      const action = parseAiKnowledgeAction(value);
+      if (!action) return { ok: false, error: aiFailure('Invalid knowledge catalog action.') };
+      const result = parseKnowledgeResult(
+        await ipcRenderer.invoke('ai:knowledge:update', action),
+        (value) => (value === null ? true : null),
+      );
+      return result.ok ? { ok: true, value: null } : result;
+    },
+  },
   async providerInstalled() {
     const installed: unknown = await ipcRenderer.invoke('ai:providerInstalled');
     if (typeof installed !== 'boolean') throw new Error('Invalid AI provider presence');

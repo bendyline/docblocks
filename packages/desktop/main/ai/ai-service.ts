@@ -21,7 +21,13 @@
  *   lost its provider.
  */
 
-import { AI_WIRE_LIMITS, HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import {
+  AI_WIRE_LIMITS,
+  HOST_WIRE_LIMITS,
+  isBoundedString,
+  parseAiKnowledgeState,
+} from '@bendyline/docblocks/host';
+import type { AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatMessage,
@@ -77,6 +83,7 @@ export interface AiConnectOptions {
 }
 
 export interface ProviderChatRequest {
+  readonly contextWindow?: number | null;
   readonly model: string;
   readonly messages: readonly AiChatMessage[];
   readonly temperature?: number;
@@ -91,6 +98,8 @@ export interface ProviderChatChunk {
 }
 
 export interface AiProviderConnection {
+  knowledgeState?(signal: AbortSignal): Promise<unknown>;
+  updateKnowledge?(action: AiKnowledgeAction, signal: AbortSignal): Promise<void>;
   readonly mode: AiProviderInfo['mode'];
   /** The version of the provider actually serving, when it differs from detection. */
   readonly version?: string | null;
@@ -236,6 +245,7 @@ export class AiService {
   private epoch = 0;
   private readonly chats = new Map<string, ActiveChat>();
   private readonly modelInstalls = new Map<string, AbortController>();
+  private readonly knowledgeRequests = new Map<string, AbortController>();
   private disposed = false;
 
   constructor(options: AiServiceOptions) {
@@ -368,6 +378,72 @@ export class AiService {
       this.setStatus(unavailable('opt-out'));
     }
     return ok(null);
+  }
+
+  cancelKnowledge(owner: string): void {
+    this.knowledgeRequests.get(owner)?.abort();
+  }
+
+  async knowledgeState(owner: string): Promise<AiResult<AiKnowledgeState>> {
+    return this.withKnowledge(owner, async (connection, signal) => {
+      if (!connection.knowledgeState)
+        throw new AiHostError(
+          'unsupported',
+          'This AI provider does not support knowledge catalogs.',
+        );
+      const state = parseAiKnowledgeState(await connection.knowledgeState(signal));
+      if (!state)
+        throw new AiHostError('unknown', 'The AI provider returned invalid catalog information.');
+      return state;
+    });
+  }
+
+  async updateKnowledge(owner: string, action: AiKnowledgeAction): Promise<AiResult<null>> {
+    return this.withKnowledge(owner, async (connection, signal) => {
+      if (!connection.updateKnowledge)
+        throw new AiHostError(
+          'unsupported',
+          'This AI provider does not support knowledge catalogs.',
+        );
+      await connection.updateKnowledge(action, signal);
+      return null;
+    });
+  }
+
+  private async withKnowledge<T>(
+    owner: string,
+    run: (connection: AiProviderConnection, signal: AbortSignal) => Promise<T>,
+  ): Promise<AiResult<T>> {
+    const connection = this.connection;
+    if (!connection || !this.preferences.enabled || this.disposed)
+      return fail(this.notConnectedError());
+    if (this.knowledgeRequests.has(owner) || this.knowledgeRequests.size >= 8)
+      return fail(aiError('rate-limited'));
+    const controller = new AbortController();
+    this.knowledgeRequests.set(owner, controller);
+    const signal = controller.signal;
+    const timer = setTimeout(
+      () => controller.abort(new AiHostError('timeout', 'The catalog request timed out.')),
+      30_000,
+    );
+    let onAbort: () => void = () => undefined;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    try {
+      const value = await Promise.race([run(connection, signal), aborted]);
+      signal.throwIfAborted();
+      if (this.connection !== connection)
+        throw new AiHostError('cancelled', 'The AI connection changed.');
+      return ok(value);
+    } catch (error) {
+      return fail(toAiError(error));
+    } finally {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      this.knowledgeRequests.delete(owner);
+    }
   }
 
   async listModels(): Promise<AiResult<readonly AiModelInfo[]>> {
@@ -517,6 +593,7 @@ export class AiService {
     this.publishActivity();
     const providerRequest: ProviderChatRequest = {
       model,
+      contextWindow: this.models.find((entry) => entry.id === model)?.contextWindow ?? null,
       messages: request.messages,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
       ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
@@ -721,6 +798,7 @@ export class AiService {
       chat.controller.abort();
     }
     for (const install of this.modelInstalls.values()) install.abort();
+    for (const request of this.knowledgeRequests.values()) request.abort();
     const connection = this.connection;
     this.connection = null;
     this.models = [];

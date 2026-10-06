@@ -10,7 +10,8 @@ import type { DbLayoutMode } from '../layout/form-factor.js';
  *
  * Squisq owns the editing keys. Anything bound here must avoid them:
  *   Cmd+B / Cmd+I / Cmd+U   formatting
- *   Cmd+1 / Cmd+2 / Cmd+3   view tabs
+ *   Cmd+1 through Cmd+6     headings
+ *   Cmd+Shift+1/2/3         view tabs
  *   Cmd+K                   link
  *   Cmd+Z / Cmd+Shift+Z     history
  * and the browser's own Cmd+P, Cmd+W, Cmd+T, Cmd+L.

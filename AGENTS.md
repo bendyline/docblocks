@@ -222,9 +222,15 @@ Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/d
 `packages/react` renders it (`AiSettingsControls`, shown when
 `hostSupports('aiAssist')`) and never learns what is behind it. On desktop,
 `main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
-machine — to the renderer, and `main/ai/gezel-connector.ts` is the only code
-that knows Gezel: it discovers the user's own running Gezel and asks for an
-inference-only (`openai`) grant with a typed verification code. Three rules
+machine — to the renderer. `main/ai/gezel-connector.ts` and
+`main/ai/gezel-knowledge.ts` keep Gezel behind that seam: they discover the user's
+own running Gezel and ask for
+`openai` plus scoped `knowledge` access with a typed verification code. Catalog
+inventory and explicit download/update/enable/remove actions use optional
+`host.ai.knowledge`; every desktop chat retrieves bounded cited passages with
+required reranking. Missing SDK support or reranker readiness fails visibly.
+The new Gezel SDK/service API must be published and pinned before shipping;
+see `packages/desktop/README.md`. Three rules
 are load-bearing and each has a test:
 
 - **Opt-out starts nothing.** Settings may use the SDK to detect whether the

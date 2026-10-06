@@ -617,6 +617,7 @@ function classifyDocumentEditKey(event: React.KeyboardEvent<HTMLDivElement>): bo
   const key = event.key.toLowerCase();
   if (event.ctrlKey || event.metaKey) {
     if (key === 'b' || key === 'i' || key === 'y' || key === 'z') return true;
+    if (!event.shiftKey && /^[1-6]$/.test(key)) return true;
     return null;
   }
   if (event.key.length === 1) return /\S/u.test(event.key);

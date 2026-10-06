@@ -126,6 +126,7 @@ function loadEditorShell(): Promise<typeof import('./LazyEditorShell.js')> {
 }
 
 const EditorShell = lazy(loadEditorShell);
+const DocumentConflictDialog = lazy(() => import('./DocumentConflictDialog.js'));
 // The git dialogs/status bar only ever render under the Electron host, so
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
@@ -585,7 +586,7 @@ async function removePinnedProviderFile(
 async function readStableFileSnapshot(
   provider: FileSystemProvider,
   path: string,
-): Promise<{ content: string | null; version: string | null }> {
+): Promise<{ content: string | null; version: string | null; lastModified: string | null }> {
   const providerV2 = getFileSystemProviderV2(provider);
   if (providerV2) {
     const read = await providerV2.readFile(parseWorkspacePath(path));
@@ -597,6 +598,7 @@ async function readStableFileSnapshot(
           })
         : null,
       version: read?.entry.version ?? null,
+      lastModified: read?.entry.lastModified ?? null,
     };
   }
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -609,6 +611,7 @@ async function readStableFileSnapshot(
       return {
         content,
         version: after ? `${after.lastModified}:${after.size}` : null,
+        lastModified: after?.lastModified ?? null,
       };
     }
   }
@@ -2580,6 +2583,17 @@ export function DocBlocksShell({
     [documentSession, showToast],
   );
 
+  const [showConflictComparison, setShowConflictComparison] = useState(false);
+  const readConflictFile = useCallback(async () => {
+    const path = selectedSourceFile ?? selectedFile;
+    // Transient providers describe an in-memory copy, not the origin file's
+    // save time. Do not present its timestamp as the durable file's metadata.
+    if (!provider || !path || (activeWorkspaceId && getTransientWorkspace(activeWorkspaceId))) {
+      return null;
+    }
+    return readStableFileSnapshot(provider, path);
+  }, [provider, selectedSourceFile, selectedFile, activeWorkspaceId]);
+
   const handleUseExternalDocument = useCallback(async () => {
     const conflictKey = documentSession.getSnapshot().conflict?.targetKey;
     const pendingDbk = conflictKey ? pendingDbkConflictsRef.current.get(conflictKey) : undefined;
@@ -2596,11 +2610,13 @@ export function DocBlocksShell({
         adoptSelectedDocument(null);
         if (activeWorkspaceId) pushHash(activeWorkspaceId, null);
       }
+      return true;
     } catch (error: unknown) {
       setSaveToast({
         kind: 'error',
         message: error instanceof Error ? error.message : 'Could not reload the external document.',
       });
+      return false;
     }
   }, [activeWorkspaceId, adoptSelectedDocument, documentSession, pushHash]);
 
@@ -2610,11 +2626,13 @@ export function DocBlocksShell({
       await documentSession.resolveConflict('use-local');
       if (conflictKey) pendingDbkConflictsRef.current.delete(conflictKey);
       setSaveToast({ kind: 'success', message: 'Your version was saved.' });
+      return true;
     } catch (error: unknown) {
       setSaveToast({
         kind: 'error',
         message: error instanceof Error ? error.message : 'Could not save your version.',
       });
+      return false;
     }
   }, [documentSession]);
 
@@ -4634,17 +4652,27 @@ export function DocBlocksShell({
         {documentSnapshot.conflict && (
           <div className="db-document-conflict" role="alert">
             <span>
-              This document changed outside DocBlocks. Your unsaved version is still intact.
+              {documentSnapshot.conflict.recoveredDraft
+                ? 'A recovery draft from a previous session differs from the saved file. The saved file may be newer. Choose which version to use.'
+                : 'This document changed outside DocBlocks. Your unsaved version is still intact.'}
             </span>
             <div className="db-document-conflict-actions">
-              <button type="button" onClick={() => void handleKeepLocalDocument()}>
-                Keep mine
-              </button>
-              <button type="button" onClick={() => void handleUseExternalDocument()}>
-                Reload external
+              <button type="button" onClick={() => setShowConflictComparison(true)}>
+                Compare versions
               </button>
             </div>
           </div>
+        )}
+        {documentSnapshot.conflict && showConflictComparison && (
+          <Suspense fallback={<div role="status">Loading version comparison…</div>}>
+            <DocumentConflictDialog
+              conflict={documentSnapshot.conflict}
+              readSavedFile={readConflictFile}
+              onUseLocal={handleKeepLocalDocument}
+              onUseSaved={handleUseExternalDocument}
+              onClose={() => setShowConflictComparison(false)}
+            />
+          </Suspense>
         )}
         {storageFull && !documentSnapshot.conflict && (
           <div className="db-storage-full-banner" role="alert">

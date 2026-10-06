@@ -68,6 +68,9 @@ const PROVIDER_CODES: ReadonlyMap<string, AiErrorCode> = new Map([
   ['gezel_not_found', 'model-unavailable'],
   ['rate_limited', 'rate-limited'],
   ['cancelled', 'cancelled'],
+  ['reranker_required', 'model-unavailable'],
+  ['reranker_unavailable', 'model-unavailable'],
+  ['knowledge_unavailable', 'unsupported'],
 ]);
 
 /** Module-resolution failures: the SDK is not present in this build. */
@@ -150,6 +153,16 @@ function codeFor(error: unknown): AiErrorCode {
 export function toAiError(error: unknown): AiError {
   const code = codeFor(error);
   if (error instanceof AiHostError) return aiError(code, error.message, error.detail);
+  if (
+    readString(error, 'code') === 'reranker_required' ||
+    readString(error, 'code') === 'reranker_unavailable'
+  ) {
+    return aiError(
+      'model-unavailable',
+      'Knowledge retrieval needs the relevance model. Download it in AI settings, then retry.',
+      error instanceof Error ? error.message : undefined,
+    );
+  }
   const detail = error instanceof Error ? error.message : undefined;
   return aiError(code, USER_MESSAGES[code], detail);
 }

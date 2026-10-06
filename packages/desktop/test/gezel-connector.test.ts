@@ -52,6 +52,7 @@ function sse(events: readonly unknown[]): Response {
 class FakeDaemon {
   validToken: string | null = null;
   decision: 'approved' | 'denied' = 'approved';
+  knowledgePassages: unknown[] = [];
   readonly requests: RecordedRequest[] = [];
 
   readonly fetch: typeof fetch = async (input, init) => {
@@ -86,6 +87,15 @@ class FakeDaemon {
           { id: 'gezel:writer', object: 'model', created: 1, owned_by: 'gezel', is_fallback: true },
         ],
       });
+    }
+    if (method === 'GET' && url.pathname === '/v1/knowledge/state') {
+      return json(200, {
+        catalogs: [],
+        reranker: { ready: true, downloading: false, message: null },
+      });
+    }
+    if (method === 'POST' && url.pathname === '/v1/knowledge/retrieve') {
+      return json(200, { reranked: true, passages: this.knowledgePassages });
     }
     if (method === 'POST' && url.pathname === '/v1/models/ensure') {
       return json(202, {
@@ -186,7 +196,7 @@ describe('Gezel connector against the app SDK', () => {
     expect(daemon.paths()).to.not.include('POST /v1/apps/register');
   });
 
-  it('an interactive connect asks for an inference-only grant with a typed code', async () => {
+  it('an interactive connect asks for inference and catalog authority with a typed code', async () => {
     const daemon = new FakeDaemon();
     const credentials = new MemoryCredentials();
     const codes: string[] = [];
@@ -200,7 +210,7 @@ describe('Gezel connector against the app SDK', () => {
     expect(register?.body).to.deep.equal({
       appId: 'docblocks',
       appName: 'DocBlocks',
-      scopes: ['openai'],
+      scopes: ['openai', 'knowledge'],
       requireVerificationCode: true,
     });
     expect(credentials.token).to.equal('issued-token');
@@ -254,6 +264,36 @@ describe('Gezel connector against the app SDK', () => {
       temperature: 0.2,
       max_tokens: 64,
     });
+  });
+
+  it('sends retrieved, cited knowledge through the real SDK completion request', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    const source = 'knowledge://publisher/science/article';
+    daemon.knowledgePassages = [
+      {
+        uri: source,
+        title: 'Science',
+        text: 'A relevant fact.',
+        catalogId: 'science',
+        version: '1',
+      },
+    ];
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    const stream = await connection.streamChat(
+      { model: 'gezel:writer', messages: [{ role: 'user', content: 'Explain science.' }] },
+      new AbortController().signal,
+    );
+    for await (const chunk of stream) expect(chunk.model).to.equal('gezel:writer');
+    const retrieval = daemon.requests.find((entry) => entry.path === '/v1/knowledge/retrieve');
+    expect(retrieval?.body).to.include({ query: 'Explain science.', rerank: 'required' });
+    const completion = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
+    const body = completion?.body as { messages: Array<{ role: string; content: string }> };
+    expect(body.messages[0].role).to.equal('system');
+    expect(body.messages[0].content).to.contain(source).and.contain('A relevant fact.');
+    expect(body.messages[1]).to.deep.equal({ role: 'user', content: 'Explain science.' });
   });
 
   it('downloads a model only when the caller explicitly requests it', async () => {
@@ -334,6 +374,11 @@ describe('Gezel connector hosting ladder', () => {
     const gezel = {
       openai: {
         models: async () => ({ object: 'list', data: options.models ?? [] }),
+        knowledge: {
+          state: async () => ({}),
+          update: async () => undefined,
+          retrieve: async () => ({ reranked: true, passages: [] }),
+        },
       },
       ensureModel: options.ensureModel ?? (async () => ({ source: 'present' })),
       close: async () => {

@@ -4,7 +4,7 @@
  * Gezel is an optional companion, reached two ways:
  *
  * 1. **The person's own Gezel.** DocBlocks discovers it through its per-user
- *    runtime files and asks for an inference-only (`openai`) grant.
+ *    runtime files and asks for inference (`openai`) and scoped `knowledge` access.
  * 2. **A Gezel DocBlocks hosts itself** — a private service under
  *    `~/.gezel/apps/docblocks/`, normally started in the Electron main process
  *    through the SDK's in-process host. It borrows the models already
@@ -50,6 +50,8 @@ import type { GezelNativeHost } from './gezel-native-host.js';
 import { clearGezelEngineOverrides } from './gezel-native-host.js';
 import { verifyMasNativePayload } from './gezel-mas-native.js';
 import { APPLE_MODEL_ID, appleModelEntry } from './gezel-apple-model.js';
+import { gezelKnowledge, withGezelKnowledge } from './gezel-knowledge.js';
+import type { AiKnowledgeAction } from '@bendyline/docblocks/host';
 
 type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
 type GezelHostSdkModule = typeof import('@bendyline/gezel-app-sdk/host');
@@ -63,10 +65,10 @@ type GezelServiceModule = HostServiceModule &
 export const GEZEL_APP_ID = 'docblocks';
 export const GEZEL_APP_NAME = 'DocBlocks';
 /**
- * Inference only. DocBlocks supplies its own documents and prompts, so it has
- * no use for Gezel's projects, sessions, or tools, and asks for none of them.
+ * Inference and reference catalogs. The knowledge scope allows catalog
+ * downloads/removal and retrieval, without granting project or session access.
  */
-export const GEZEL_SCOPES: readonly string[] = ['openai'];
+export const GEZEL_SCOPES: readonly string[] = ['openai', 'knowledge'];
 
 /**
  * Long enough for someone to switch to Gezel, read the request, and type the
@@ -184,10 +186,17 @@ async function streamFrom(
   request: ProviderChatRequest,
   signal: AbortSignal,
 ): Promise<AsyncIterable<ProviderChatChunk>> {
+  const messages = await withGezelKnowledge(
+    app,
+    request.messages,
+    signal,
+    request.contextWindow,
+    request.maxTokens,
+  );
   const stream = await app.chat(
     {
       model: request.model,
-      messages: request.messages.map((message) => ({
+      messages: messages.map((message) => ({
         role: message.role,
         content: message.content,
       })),
@@ -211,6 +220,12 @@ function hostedModelParts(id: string): { engine: EnsureModelEngine; catalogId: s
 
 /** A connection to the person's own Gezel. */
 class InstalledGezelConnection implements AiProviderConnection {
+  knowledgeState(signal: AbortSignal): Promise<unknown> {
+    return gezelKnowledge(this.app).state({ signal });
+  }
+  updateKnowledge(action: AiKnowledgeAction, signal: AbortSignal): Promise<void> {
+    return gezelKnowledge(this.app).update(action, { signal });
+  }
   readonly mode: AiProviderConnection['mode'];
 
   constructor(
@@ -290,6 +305,12 @@ class InstalledGezelConnection implements AiProviderConnection {
 
 /** A private daemon DocBlocks started, or one a sibling DocBlocks started. */
 class HostedGezelConnection implements AiProviderConnection {
+  knowledgeState(signal: AbortSignal): Promise<unknown> {
+    return gezelKnowledge(this.gezel.openai).state({ signal });
+  }
+  updateKnowledge(action: AiKnowledgeAction, signal: AbortSignal): Promise<void> {
+    return gezelKnowledge(this.gezel.openai).update(action, { signal });
+  }
   readonly mode = 'hosted' as const;
   private readonly probeLifetime = new AbortController();
   private appleProbe: Promise<ProviderModelEntry> | null = null;

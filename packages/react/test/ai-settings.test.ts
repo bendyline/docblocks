@@ -3,6 +3,7 @@ import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
+  AiKnowledgeState,
   AiModelDownloadInfo,
   AiModelInfo,
   AiProgress,
@@ -18,6 +19,40 @@ import { AiSettingsControls } from '../src/Settings/AiSettings.js';
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 const OPTED_OUT: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
+
+const KNOWLEDGE: AiKnowledgeState = {
+  catalogs: [
+    {
+      id: 'science',
+      name: 'Science',
+      description: 'Science reference',
+      version: '2',
+      installedVersion: '1',
+      enabled: true,
+      updateAvailable: true,
+      downloadBytes: 1024,
+      documents: 20,
+      state: 'installed',
+      percent: null,
+      message: null,
+    },
+    {
+      id: 'history',
+      name: 'History',
+      description: 'History reference',
+      version: '1',
+      installedVersion: null,
+      enabled: false,
+      updateAvailable: false,
+      downloadBytes: 2048,
+      documents: 30,
+      state: 'available',
+      percent: null,
+      message: null,
+    },
+  ],
+  reranker: { ready: false, downloading: false, message: null },
+};
 const OPTED_IN: AiPreferences = { ...OPTED_OUT, enabled: true };
 
 const MODELS: AiModelInfo[] = [
@@ -117,6 +152,104 @@ async function render(api: DocBlocksHostAiAPI) {
 function buttonLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('button')).map((button) => button.textContent ?? '');
 }
+
+describe('AI knowledge settings', () => {
+  it('browses downloads and requires a gesture for every mutation', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const actions: unknown[] = [];
+    const api: DocBlocksHostAiAPI = {
+      ...fake.api,
+      knowledge: {
+        state: async () => ({ ok: true, value: KNOWLEDGE }),
+        update: async (action) => {
+          actions.push(action);
+          return { ok: true, value: null };
+        },
+      },
+    };
+    const { container, cleanup } = await render(api);
+    const click = async (label: string) => {
+      await act(async () => {
+        const button = Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === label,
+        );
+        expect(button, label).not.to.equal(undefined);
+        button!.click();
+      });
+      await flush();
+    };
+    try {
+      expect(container.textContent)
+        .to.contain('Science reference')
+        .and.not.contain('History reference');
+      expect(actions).to.deep.equal([]);
+      await click('Browse additional catalogs');
+      expect(container.textContent).to.contain('History reference');
+      await click('Download catalog');
+      await click('Update to 2');
+      await click('Download relevance model');
+      expect(actions).to.have.length(2);
+      const consent = Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Allow downloading a reranker model'))
+        ?.querySelector<HTMLInputElement>('input');
+      expect(consent?.checked).to.equal(false);
+      await act(async () => consent?.click());
+      expect(actions).to.have.length(2);
+      await click('Download relevance model');
+      expect(actions).to.deep.equal([
+        { action: 'install', catalogId: 'history' },
+        { action: 'install', catalogId: 'science' },
+        { action: 'prepare-reranker' },
+      ]);
+      await click('Remove Science…');
+      expect(actions).to.have.length(3);
+      await click('Confirm removal');
+      expect(actions.at(-1)).to.deep.equal({ action: 'remove', catalogId: 'science' });
+    } finally {
+      await cleanup();
+    }
+  });
+  it('does not read catalogs while AI is off', async () => {
+    const fake = fakeAi({ kind: 'unavailable', reason: 'opt-out' }, OPTED_OUT);
+    let calls = 0;
+    const { cleanup } = await render({
+      ...fake.api,
+      knowledge: {
+        state: async () => {
+          calls++;
+          return { ok: true, value: KNOWLEDGE };
+        },
+        update: async () => ({ ok: true, value: null }),
+      },
+    });
+    try {
+      expect(calls).to.equal(0);
+    } finally {
+      await cleanup();
+    }
+  });
+  it('shows provider errors without claiming an empty installed library', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const { container, cleanup } = await render({
+      ...fake.api,
+      knowledge: {
+        state: async () => ({
+          ok: false,
+          error: { code: 'unsupported', message: 'Update Gezel to use knowledge.' },
+        }),
+        update: async () => ({ ok: true, value: null }),
+      },
+    });
+    try {
+      expect(container.querySelector('[role="alert"]')?.textContent).to.equal(
+        'Update Gezel to use knowledge.',
+      );
+      expect(container.textContent).not.to.contain('No downloaded catalogs');
+    } finally {
+      await cleanup();
+    }
+  });
+});
 
 describe('AiSettingsControls', () => {
   it('explains that the built-in host does not require the Gezel app', async () => {

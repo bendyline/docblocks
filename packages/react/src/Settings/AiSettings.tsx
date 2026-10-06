@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { AiKnowledgeSettings } from './AiKnowledgeSettings.js';
 import type {
   AiError,
   AiModelDownloadInfo,
@@ -466,6 +467,10 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                 </div>
               )}
             </>
+          )}
+
+          {ready && ai.knowledge && (
+            <AiKnowledgeSettings key={status.provider.mode} knowledge={ai.knowledge} />
           )}
 
           {ready && status.provider.mode === 'installed' ? (

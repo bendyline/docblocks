@@ -107,8 +107,8 @@ describe('file media provider', () => {
           size: recording.byteLength,
         },
       ]);
-      expect(await reopened.resolveUrl(recordingPath)).to.equal('blob:media-1');
-      expect(probe.created[0]?.type).to.equal('video/webm');
+      expect(await reopened.resolveUrl(recordingPath)).to.equal('blob:media-2');
+      expect(probe.created[1]?.type).to.equal('video/webm');
       expect(
         Array.from(new Uint8Array((await container.readFile(recordingPath)) ?? new ArrayBuffer(0))),
       ).to.deep.equal(Array.from(recording));
@@ -176,5 +176,103 @@ describe('file media provider', () => {
 
     expect(failure).to.be.instanceOf(DOMException);
     expect((failure as DOMException).name).to.equal('NotAllowedError');
+  });
+
+  it('displays a durable upload without rereading it or scanning the workspace', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    const container = new MemoryContentContainer();
+    const provider = createFileMediaProvider(container, 'notes.md');
+    try {
+      const bytes = new Uint8Array([0, 1, 2, 3]).subarray(1, 3);
+      await provider.addMedia('photo', bytes, 'image/png');
+      container.readFile = async () => {
+        throw new Error('The uploaded bytes should already be cached');
+      };
+      container.listFiles = async () => {
+        throw new Error('Displaying an upload must not scan unrelated files');
+      };
+      expect(await provider.resolveUrl('notes_files/photo')).to.equal('blob:media-1');
+      expect(probe.created[0]?.type).to.equal('image/png');
+      expect(Array.from(new Uint8Array(await probe.created[0]!.arrayBuffer()))).to.deep.equal([
+        1, 2,
+      ]);
+    } finally {
+      provider.dispose();
+      restore();
+    }
+  });
+
+  it('shares concurrent resolutions and revokes the single URL', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    const container = new MemoryContentContainer();
+    await container.writeFile('notes_files/photo.png', new Uint8Array([1]), 'image/png');
+    const provider = createFileMediaProvider(container, 'notes.md');
+    try {
+      const urls = await Promise.all([
+        provider.resolveUrl('photo.png'),
+        provider.resolveUrl('/notes_files/photo.png'),
+      ]);
+      expect(urls).to.deep.equal(['blob:media-1', 'blob:media-1']);
+      provider.dispose();
+      expect(probe.created).to.have.length(1);
+      expect(probe.revoked).to.deep.equal(['blob:media-1']);
+    } finally {
+      provider.dispose();
+      restore();
+    }
+  });
+
+  it('returns each original reference when concurrent aliases are missing', async () => {
+    const provider = createFileMediaProvider(new MemoryContentContainer(), 'notes.md');
+    expect(
+      await Promise.all([
+        provider.resolveUrl('missing.png'),
+        provider.resolveUrl('/notes_files/missing.png'),
+      ]),
+    ).to.deep.equal(['missing.png', '/notes_files/missing.png']);
+    provider.dispose();
+  });
+
+  it('does not replace a new upload with an older in-flight read', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    const container = new MemoryContentContainer();
+    await container.writeFile('notes_files/photo.png', new Uint8Array([1]), 'image/png');
+    const provider = createFileMediaProvider(container, 'notes.md');
+    let finishRead!: (data: ArrayBuffer) => void;
+    container.readFile = () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      });
+    try {
+      const reading = provider.resolveUrl('photo.png');
+      await provider.addMedia('photo.png', new Uint8Array([2]), 'image/png');
+      finishRead(new Uint8Array([1]).buffer);
+      expect(await reading).to.equal(await provider.resolveUrl('photo.png'));
+      expect(probe.created).to.have.length(1);
+      expect(Array.from(new Uint8Array(await probe.created[0]!.arrayBuffer()))).to.deep.equal([2]);
+    } finally {
+      provider.dispose();
+      restore();
+    }
+  });
+
+  it('does not create a URL when disposed during an upload', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    const container = new MemoryContentContainer();
+    const provider = createFileMediaProvider(container, 'notes.md');
+    let finishWrite!: () => void;
+    container.writeFile = () =>
+      new Promise((resolve) => {
+        finishWrite = resolve;
+      });
+    try {
+      const uploading = provider.addMedia('photo.png', new Uint8Array([1]), 'image/png');
+      provider.dispose();
+      finishWrite();
+      await uploading;
+      expect(probe.created).to.have.length(0);
+    } finally {
+      restore();
+    }
   });
 });

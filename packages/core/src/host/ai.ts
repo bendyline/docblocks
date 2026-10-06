@@ -272,6 +272,8 @@ export interface AiSpeechAudio {
  * namespace rather than exposing one that always fails.
  */
 export interface DocBlocksHostAiAPI {
+  /** Optional catalog browsing, downloads, and retrieval model setup. */
+  readonly knowledge?: import('./ai-knowledge.js').AiKnowledgeAPI;
   /** Whether the host's user-installed companion provider is present. */
   providerInstalled(): Promise<boolean>;
   status(): Promise<AiStatus>;

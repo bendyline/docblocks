@@ -428,6 +428,24 @@ test.describe('VS Code web and UX integration', () => {
     ).toBeVisible({ timeout: 10_000 });
   });
 
+  test('accepts a heading shortcut as the first document edit', async ({ page }) => {
+    await writeFixture('Format this text.\n');
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const paragraph = editor.getByText('Format this text.').first();
+    await expect(paragraph).toBeVisible({ timeout: 15_000 });
+    await paragraph.click();
+    await page.keyboard.press('ControlOrMeta+2');
+
+    await expect(editor.locator('.ProseMirror h2')).toContainText('Format this text.');
+    await expect(editor.locator('[data-view="wysiwyg"]')).toHaveAttribute('aria-selected', 'true');
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
   test('opens Squisq Find mode from the editor toolbar', async ({ page }) => {
     await bootVSCode(page);
     await openDocBlocksEditor(page);

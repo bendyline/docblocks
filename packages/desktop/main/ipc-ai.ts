@@ -16,6 +16,7 @@ import {
   HOST_WIRE_LIMITS,
   isBoundedString,
   parseAiChatRequest,
+  parseAiKnowledgeAction,
   parseAiPreferencesPatch,
 } from '@bendyline/docblocks/host';
 import type { AiChatEvent, AiModelInstallEvent } from '@bendyline/docblocks/host';
@@ -85,6 +86,7 @@ export function registerAiIpc(service: AiService): void {
   });
 
   const release = (ownerId: number) => {
+    service.cancelKnowledge(`${ownerId}:knowledge`);
     const chatIds = chatOwners.get(ownerId);
     chatOwners.delete(ownerId);
     for (const requestId of chatIds ?? []) service.cancelChat(streamKey(ownerId, requestId));
@@ -119,6 +121,16 @@ export function registerAiIpc(service: AiService): void {
   registerTrustedIpcHandler('ai:disconnect', 0, () => service.disconnect());
   registerTrustedIpcHandler('ai:models', 0, () => service.listModels());
   registerTrustedIpcHandler('ai:availableModels', 0, () => service.listAvailableModels());
+  registerTrustedIpcHandler('ai:knowledge:state', 0, (event) => {
+    watch(event.sender);
+    return service.knowledgeState(`${event.sender.id}:knowledge`);
+  });
+  registerTrustedIpcHandler('ai:knowledge:update', 1, (event, value: unknown) => {
+    const action = parseAiKnowledgeAction(value);
+    if (!action) throw new Error('Invalid knowledge catalog action');
+    watch(event.sender);
+    return service.updateKnowledge(`${event.sender.id}:knowledge`, action);
+  });
 
   registerTrustedIpcHandler(
     'ai:chat:start',

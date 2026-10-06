@@ -98,6 +98,8 @@ const MODEL_ENTRIES: ProviderModelEntry[] = [
 ];
 
 class FakeConnection implements AiProviderConnection {
+  knowledgeState?: AiProviderConnection['knowledgeState'];
+  updateKnowledge?: AiProviderConnection['updateKnowledge'];
   mode: AiProviderConnection['mode'] = 'installed';
   version?: string | null;
   prepare?: AiProviderConnection['prepare'];
@@ -223,6 +225,43 @@ function recorder(): { events: AiChatEvent[]; emit: (event: AiChatEvent) => void
 function terminalEvents(events: readonly AiChatEvent[]): AiChatEvent[] {
   return events.filter((event) => event.kind !== 'delta');
 }
+
+describe('AI catalog lifecycle', () => {
+  afterEach(disposeLiveServices);
+  const state = { catalogs: [], reranker: { ready: true, downloading: false, message: null } };
+  it('never contacts the provider while opted out', async () => {
+    const { service, connector } = createService(DEFAULT_AI_PREFERENCES);
+    connector.connection.knowledgeState = async () => {
+      throw new Error('must not run');
+    };
+    await service.start();
+    expect((await service.knowledgeState('owner')).ok).to.equal(false);
+    expect(connector.connectCalls).to.deep.equal([]);
+  });
+  it('validates catalog state before crossing IPC', async () => {
+    const { service, connector } = await readyService();
+    connector.connection.knowledgeState = async () => ({ ...state, privatePath: 'secret' });
+    expect((await service.knowledgeState('owner')).ok).to.equal(false);
+    connector.connection.knowledgeState = async () => state;
+    expect(await service.knowledgeState('owner')).to.deep.equal({ ok: true, value: state });
+  });
+  it('bounds concurrency and rejects stale responses after opt-out', async () => {
+    const { service, connector } = await readyService();
+    const gate = deferred();
+    let signal: AbortSignal | undefined;
+    connector.connection.knowledgeState = async (received) => {
+      signal = received;
+      await gate.promise;
+      return state;
+    };
+    const pending = service.knowledgeState('owner');
+    expect((await service.knowledgeState('owner')).ok).to.equal(false);
+    await service.setPreferences({ enabled: false });
+    expect(signal?.aborted).to.equal(true);
+    gate.resolve();
+    expect((await pending).ok).to.equal(false);
+  });
+});
 
 const WRITE_REQUEST: AiChatRequest = {
   messages: [{ role: 'user', content: 'Tighten this paragraph.' }],
