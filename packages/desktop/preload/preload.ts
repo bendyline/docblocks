@@ -51,7 +51,9 @@ import { BufferedEventChannel } from './buffered-event-channel.js';
 import {
   parseAiAvailabilityArgument,
   parseHostEnvironmentArguments,
+  parseSpeechAvailabilityArgument,
 } from '../shared/host-environment.js';
+import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
 // ready-to-show, before React effects subscribe. Install this preload listener
@@ -609,8 +611,17 @@ const host: DocBlocksHostAPI = {
   // Omitted, not stubbed, on a build that cannot do AI: capabilities are
   // derived from which members exist.
   ...(parseAiAvailabilityArgument(process.argv) ? { ai: aiApi } : {}),
+  // Likewise per engine: `transcribe` / `synthesize` exist only when main found
+  // the engine, and the namespace only when it found at least one.
+  ...speechNamespace(),
   onMenuCommand,
   onOpenRequest,
 };
+
+function speechNamespace(): Pick<DocBlocksHostAPI, 'speech'> {
+  const availability = parseSpeechAvailabilityArgument(process.argv);
+  if (!availability.stt && !availability.tts) return {};
+  return { speech: createSpeechApi(ipcRenderer, availability, mintId) };
+}
 
 contextBridge.exposeInMainWorld('docBlocksHost', host);

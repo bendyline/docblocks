@@ -57,6 +57,18 @@ function electronHost(): Record<string, unknown> {
       transcribe: () => undefined,
       synthesize: () => undefined,
     },
+    speech: {
+      status: () => undefined,
+      onStatus: () => undefined,
+      catalog: () => undefined,
+      installModel: () => undefined,
+      removeModel: () => undefined,
+      getPreferences: () => undefined,
+      setPreferences: () => undefined,
+      prepare: () => undefined,
+      transcribe: () => undefined,
+      synthesize: () => undefined,
+    },
     git: { status: () => undefined },
     updater: { checkForUpdates: () => undefined },
     lifecycle: { onPrepareClose: () => undefined },
@@ -231,6 +243,31 @@ describe('deriveHostCapabilities', () => {
     expect(capabilities.aiSpeechSynthesis).to.equal(false);
     // Everything unrelated still works.
     expect(capabilities.filesystemV2).to.equal(true);
+  });
+
+  it('reports speech per engine and independently of AI', () => {
+    // Each engine can be missing for a platform while the other works, and
+    // speech runs in the host, so it does not depend on an AI connection.
+    const host = electronHost();
+    delete host.ai;
+    host.speech = {
+      status: () => undefined,
+      onStatus: () => undefined,
+      catalog: () => undefined,
+      installModel: () => undefined,
+      transcribe: () => undefined,
+    };
+    const capabilities = deriveHostCapabilities(host);
+    expect(capabilities.speechInput).to.equal(true);
+    expect(capabilities.speechOutput).to.equal(false);
+    expect(capabilities.speechModelManagement).to.equal(true);
+    expect(capabilities.aiAssist).to.equal(false);
+
+    delete host.speech;
+    const none = deriveHostCapabilities(host);
+    expect(none.speechInput).to.equal(false);
+    expect(none.speechOutput).to.equal(false);
+    expect(none.speechModelManagement).to.equal(false);
   });
 
   it('does not claim assisted writing from an incomplete core bridge', () => {

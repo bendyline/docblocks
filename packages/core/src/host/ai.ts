@@ -305,6 +305,8 @@ export interface DocBlocksHostAiAPI {
   ): AiEnsureWorkspaceHandle;
   search?(workspaceId: string, query: AiSearchQuery): Promise<AiResult<AiSearchResult>>;
   generateImage?(request: AiImageRequest): Promise<AiResult<AiImageResult>>;
+  /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */
   transcribe?(request: AiTranscribeRequest): Promise<AiResult<AiTranscript>>;
+  /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */
   synthesize?(request: AiSynthesizeRequest): Promise<AiResult<AiSpeechAudio>>;
 }

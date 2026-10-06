@@ -10,5 +10,12 @@
     <!-- Network access for auto-updates and external links -->
     <key>com.apple.security.network.client</key>
     <true/>
+    <!-- Recording, narration and dictation. Under the hardened runtime macOS
+         denies capture without a prompt unless these are present; the usage
+         strings live in electron-builder.yml mac.extendInfo. -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
 </dict>
 </plist>

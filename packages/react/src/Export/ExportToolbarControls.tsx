@@ -26,6 +26,7 @@ import type { DisplayMode } from '@bendyline/squisq-react';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportModalProps } from '@bendyline/squisq-video-react';
 import type { MediaEditRenderManager } from '@bendyline/squisq-video-react/media-edit';
+import type { DocBlocksHostSpeechAPI } from '@bendyline/docblocks/host';
 import type { ExportOptions } from './export-options.js';
 import {
   DEFAULT_OPTIONS,
@@ -75,6 +76,8 @@ export interface ExportToolbarControlsProps {
    * pending renders and mixes the processed audio in place of the original.
    */
   mediaEditRenders?: MediaEditRenderManager | null;
+  /** The host's speech API; when present the menu offers "Export audio…". */
+  speech?: DocBlocksHostSpeechAPI;
   /** Override the default browser download behavior for host-provided save flows. */
   saveBlob?: ExportBlobSaver;
   /** Optional host adapter for displaying, picking, and saving to a native target path. */
@@ -126,6 +129,12 @@ interface ResolvedQuickDestination {
 }
 
 class ExportCancelledError extends Error {}
+
+const AudioExportDialog = lazy(() =>
+  import('../Speech/AudioExportDialog.js').then((module) => ({
+    default: module.AudioExportDialog,
+  })),
+);
 
 interface VideoExportModules {
   Modal: ComponentType<VideoExportModalProps>;
@@ -237,6 +246,7 @@ export function ExportToolbarControls({
   videoExportPalette,
   shareBaseUrl,
   initialSharedMode = null,
+  speech,
 }: ExportToolbarControlsProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -244,6 +254,7 @@ export function ExportToolbarControls({
   const [fileShare, setFileShare] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [audioDialogOpen, setAudioDialogOpen] = useState(false);
   const [videoOutputFormat, setVideoOutputFormat] = useState<'mp4' | 'gif'>('mp4');
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState<string | null>(null);
@@ -717,6 +728,20 @@ export function ExportToolbarControls({
                   >
                     Export video...
                   </button>
+                  {speech && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      tabIndex={-1}
+                      className="db-toolbar-menu-item"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setAudioDialogOpen(true);
+                      }}
+                    >
+                      Export audio...
+                    </button>
+                  )}
                   {showAnimatedGifExport && (
                     <button
                       type="button"
@@ -733,6 +758,34 @@ export function ExportToolbarControls({
             </div>
           )}
         </div>
+      )}
+
+      {audioDialogOpen && (
+        <Suspense fallback={null}>
+          <AudioExportDialog
+            speech={speech}
+            selectedFile={selectedFile}
+            workspaceContainer={workspaceContainer ?? null}
+            onSave={async (blob, filename) => {
+              try {
+                if (destinationAdapter) {
+                  // Resolve the remembered destination for this audio file's
+                  // own name and extension, not the last document format's;
+                  // only a file with no remembered destination asks where.
+                  const target = await destinationAdapter.resolveTarget(filename).catch(() => null);
+                  await saveToDestination(blob, filename, target);
+                } else if (saveBlob) {
+                  await saveBlob(blob, filename);
+                }
+                return true;
+              } catch (caught) {
+                if (caught instanceof ExportCancelledError) return false;
+                throw caught;
+              }
+            }}
+            onClose={() => setAudioDialogOpen(false)}
+          />
+        </Suspense>
       )}
 
       {dialogOpen && (

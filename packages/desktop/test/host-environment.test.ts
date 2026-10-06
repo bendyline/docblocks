@@ -5,6 +5,8 @@ import {
   hostEnvironmentArguments,
   parseAiAvailabilityArgument,
   parseHostEnvironmentArguments,
+  parseSpeechAvailabilityArgument,
+  speechAvailabilityArguments,
 } from '../shared/host-environment.js';
 import { isDevelopmentRuntime } from '../main/development-runtime.js';
 
@@ -120,6 +122,31 @@ describe('Host environment argv transport', () => {
     expect(parseHostEnvironmentArguments(argv)).to.deep.equal({
       appVersion: '1.0.2',
       isDev: false,
+    });
+  });
+});
+
+describe('Speech availability argv transport', () => {
+  it('round-trips each engine independently', () => {
+    for (const availability of [
+      { stt: true, tts: true },
+      { stt: true, tts: false },
+      { stt: false, tts: true },
+      { stt: false, tts: false },
+    ]) {
+      const argv = ['/app/DocBlocks', ...speechAvailabilityArguments(availability)];
+      expect(parseSpeechAvailabilityArgument(argv)).to.deep.equal(availability);
+    }
+  });
+
+  it('exposes nothing when the switch is missing or malformed', () => {
+    expect(parseSpeechAvailabilityArgument(['/app/DocBlocks'])).to.deep.equal({
+      stt: false,
+      tts: false,
+    });
+    expect(parseSpeechAvailabilityArgument(['--docblocks-speech=STT;tts1'])).to.deep.equal({
+      stt: false,
+      tts: false,
     });
   });
 });

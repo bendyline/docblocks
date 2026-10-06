@@ -70,10 +70,12 @@ export function validateInstallScriptPolicy(
     throw new Error('package.json must declare a non-empty, version-pinned allowScripts policy');
   }
 
+  // A `false` entry is a reviewed denial: npm skips that script silently, so
+  // it counts as reviewed exactly like an approval and is pinned the same way.
   const approvedSpecs = new Set<string>();
   for (const [key, approved] of Object.entries(policy)) {
-    if (approved !== true) {
-      throw new Error(`allowScripts entry ${key} must be true or be removed`);
+    if (approved !== true && approved !== false) {
+      throw new Error(`allowScripts entry ${key} must be true, false, or be removed`);
     }
     const parsed = splitApprovalKey(key);
     if (!parsed) {

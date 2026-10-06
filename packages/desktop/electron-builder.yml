@@ -25,6 +25,12 @@ files:
   # Chokidar 4 watches literal paths and does not need these packages either.
   - '!node_modules/{braces,fast-glob,micromatch}/**/*'
   - '!node_modules/**/node_modules/{braces,fast-glob,micromatch}/**/*'
+  # ONNX Runtime (narration) ships every platform's binaries in one package;
+  # keep only the target's. On Windows the CPU backend never loads DirectML,
+  # which onnxruntime.dll imports lazily, so its ~40 MB of DLLs stay out too.
+  - '!node_modules/onnxruntime-node/bin/napi-v6/!(${platform})/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v6/${platform}/!(${arch})/**'
+  - '!node_modules/onnxruntime-node/bin/napi-v6/win32/*/{DirectML.dll,dxcompiler.dll,dxil.dll}'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.
@@ -89,6 +95,11 @@ win:
         - arm64
   icon: resources/icon.png
   executableName: DocBlocks
+  # App-local Visual C++ runtime for the native engines and ONNX Runtime,
+  # staged by beforePack (scripts/stage-vc-runtime.cjs). Main adds it to PATH.
+  extraResources:
+    - from: dist/vc-runtime/${arch}
+      to: vc-runtime
   # electron-builder 26 moved signtool options under `signtoolOptions`.
   signtoolOptions:
     publisherName: 'Bendyline LLC'
@@ -158,7 +169,7 @@ mac:
     - /Contents/Resources/gezel-native/
   extendInfo:
     NSCameraUsageDescription: DocBlocks accesses the camera only when you choose to record video for a document.
-    NSMicrophoneUsageDescription: DocBlocks accesses the microphone only when you choose to record audio or video for a document.
+    NSMicrophoneUsageDescription: DocBlocks accesses the microphone only when you choose to record audio or video for a document, or to dictate into one.
     NSAudioCaptureUsageDescription: DocBlocks accesses system audio only when you choose to include it in a screen recording.
     # Electron's base Info.plist declares generic Bluetooth prompts. DocBlocks
     # does not use Bluetooth; null removes inherited keys after plist merging.

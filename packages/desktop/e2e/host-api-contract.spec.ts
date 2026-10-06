@@ -123,6 +123,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'lifecycle',
           'menu',
           'ai',
+          'speech',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       workspace,
@@ -153,6 +154,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'onMenuCommand',
     'onOpenRequest',
     'shell',
+    'speech',
     'updater',
     'workspaces',
   ]);
@@ -245,6 +247,20 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'providerInstalled',
     'setPreferences',
     'status',
+  ]);
+  // Both engines are present: the fixture runs the source app against the fake
+  // whisper-server and narration utility.
+  expect(contract.methods.speech).toEqual([
+    'catalog',
+    'getPreferences',
+    'installModel',
+    'onStatus',
+    'prepare',
+    'removeModel',
+    'setPreferences',
+    'status',
+    'synthesize',
+    'transcribe',
   ]);
   expect(contract.methods.git).toEqual([
     'capabilities',

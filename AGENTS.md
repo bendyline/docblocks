@@ -290,6 +290,23 @@ profiles withhold MLX until a frozen Python runtime ships. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
 
+### Speech runs natively behind `host.speech`
+
+Dictation and narration are desktop-only and run inside DocBlocks, never
+through a Gezel daemon, while sharing Gezel's engines, model pins and Kokoro
+frontend. `packages/core/src/host/speech.ts` (`DocBlocksHostSpeechAPI`) is a
+sibling of `host.ai`, not part of it; `transcribe` and `synthesize` are
+optional one by one and drive `speechInput` / `speechOutput`. Desktop main
+(`main/ipc-speech.ts` → `main/speech/speech-service.ts`) runs the bundled
+`gezel-whisper-server` and Kokoro on `onnxruntime-node` in a `utilityProcess`
+(`main/speech/kokoro-utility.ts`) — never in main, and never by loading ONNX
+Runtime to probe availability. Models download only from a Settings gesture,
+pinned to commit, size and SHA-256 (`main/speech/speech-models.ts`).
+Preferences live in `userData/speech/preferences.json`, not `settings.json`.
+Dictation's UI is Squisq's `speechInput` capability; read aloud lives in
+`packages/react/src/Speech/`. See [`docs/speech.md`](docs/speech.md) for
+packaging, store builds, and the e2e harness.
+
 ### The CLI has one current command contract
 
 [`docs/cli.md`](docs/cli.md) is the authoritative behavioral guide for all

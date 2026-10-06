@@ -152,6 +152,9 @@ jobs:
         run: |
           npm run build
           npx --no-install electron-builder --win appx --publish never
+        env:
+          # Release artifacts must carry the app-local Visual C++ runtime.
+          DOCBLOCKS_VCRUNTIME_REQUIRED: '1'
 
       - name: Attach MSIX to private draft release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2

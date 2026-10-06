@@ -11,6 +11,7 @@ import type { FileCommitResult, FileSystemEntry, FileMeta } from '../filesystem/
 import type { DocBlocksHostAiAPI } from './ai.js';
 import type { DocBlocksHostFsV2API } from './filesystem-v2.js';
 import type { DocBlocksHostGitAPI } from './git.js';
+import type { DocBlocksHostSpeechAPI } from './speech.js';
 import type { HostPlatform, HostSurfaceKind } from './capabilities.js';
 
 /** Filesystem operations scoped to a main-owned registered workspace id. */
@@ -189,7 +190,11 @@ export type MenuCommand =
   | 'git:createPullRequest'
   | 'help:about'
   | 'help:checkForUpdates'
-  | 'help:viewOnGitHub';
+  | 'help:viewOnGitHub'
+  /** Start or stop dictation into the active editor. */
+  | 'edit:toggleDictation'
+  /** Read the document (or the selection) aloud, or stop reading. */
+  | 'edit:readAloud';
 
 /**
  * One pinned document mirrored from the renderer into native menu surfaces.
@@ -363,6 +368,12 @@ export interface DocBlocksHostAPI {
    * omits the namespace rather than exposing one whose every call fails.
    */
   ai?: DocBlocksHostAiAPI;
+  /**
+   * Absent on a host with no speech engine for this platform. Present
+   * independently of `ai`: speech engines run in the host and need only a
+   * downloaded model, not a provider connection.
+   */
+  speech?: DocBlocksHostSpeechAPI;
   /**
    * Subscribe to menu commands dispatched by the native menu.
    * Returns an unsubscribe function.

@@ -53,6 +53,27 @@ describe('dependency governance', () => {
     ).to.throw('is stale or absent');
   });
 
+  it('treats an exact-version denial as reviewed, and pins it like an approval', () => {
+    const packageLock = {
+      packages: {
+        'node_modules/runtime': { hasInstallScript: true, version: '1.24.3' },
+      },
+    } as const;
+    expect(
+      validateInstallScriptPolicy({ allowScripts: { 'runtime@1.24.3': false } }, packageLock)
+        .approvedSpecs,
+    ).to.deep.equal(['runtime@1.24.3']);
+    expect(() =>
+      validateInstallScriptPolicy({ allowScripts: { 'runtime@1.24.2': false } }, packageLock),
+    ).to.throw('is stale or absent');
+    expect(() =>
+      validateInstallScriptPolicy(
+        { allowScripts: { 'runtime@1.24.3': 'no' as unknown as boolean } },
+        packageLock,
+      ),
+    ).to.throw('must be true, false, or be removed');
+  });
+
   it('pins the npm feature floor and the first-party cooldown exceptions', () => {
     const manifest = {
       devDependencies: { npm: '11.19.1' },

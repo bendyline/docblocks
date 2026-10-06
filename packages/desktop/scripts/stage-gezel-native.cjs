@@ -17,6 +17,7 @@ const {
 } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const path = require('node:path');
+const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const {
@@ -269,6 +270,14 @@ async function stageForTarget(context, overrides = {}) {
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
+  if (platform === 'win32') {
+    // The engines and ONNX Runtime need the Visual C++ runtime; see the module.
+    await stageVcRuntime({
+      arch,
+      destination: path.join(appDir, 'dist', 'vc-runtime', arch),
+      ...(overrides.vcRuntime ?? {}),
+    });
+  }
 }
 
 exports.default = (context) => stageForTarget(context);

@@ -147,6 +147,17 @@ const AiReviewPanel = lazy(() =>
     default: module.AiReviewPanel,
   })),
 );
+const SpeechToolbarControl = lazy(() =>
+  import('../Speech/SpeechToolbarControl.js').then((module) => ({
+    default: module.SpeechToolbarControl,
+  })),
+);
+const SpeechMenuBridge = lazy(() =>
+  import('../Speech/SpeechToolbarControl.js').then((module) => ({
+    default: module.SpeechMenuBridge,
+  })),
+);
+import { createSpeechInputProvider } from '../Speech/speech-input-provider.js';
 import {
   loadVersioningPreference,
   resolveVersioningEnabled,
@@ -831,6 +842,21 @@ export function DocBlocksShell({
   // for why that order. Stamped as `data-theme` on the shell root below.
   const resolvedTheme = resolveShellTheme({ preference: themePreference, hostTheme, osTheme });
   const ai = hostSupports('aiAssist') ? maybeGetDocBlocksHost()?.ai : undefined;
+  const speech = hostSupports('speechModelManagement')
+    ? maybeGetDocBlocksHost()?.speech
+    : undefined;
+  /** Bumped to open Settings, e.g. when dictation needs a model first. */
+  const [settingsRequest, setSettingsRequest] = useState(0);
+  const openSettings = useCallback(() => setSettingsRequest((count) => count + 1), []);
+  // Squisq re-resolves a changed capability and cancels any session in
+  // progress, so the provider must keep one identity for the bridge's life.
+  const speechInput = useMemo(
+    () =>
+      speech && hostSupports('speechInput')
+        ? createSpeechInputProvider(speech, { onRequestSetup: openSettings })
+        : null,
+    [speech, openSettings],
+  );
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
     setThemePreference(pref);
@@ -4744,6 +4770,8 @@ export function DocBlocksShell({
                 appVersion={appVersion}
                 appBuildDate={appBuildDate}
                 ai={ai}
+                speech={speech}
+                settingsRequest={settingsRequest}
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -4977,6 +5005,8 @@ export function DocBlocksShell({
                     showCodeCopyButton={showCodeCopyButton}
                     onCopyCode={onCopyCode}
                     allowRecording={allowRecording}
+                    // Dictation uses the microphone, so it follows the same policy.
+                    speechInput={allowRecording ? speechInput : null}
                     allowPresentationWindow={allowPresentationWindow}
                     allowPresentationFullscreen={allowPresentationFullscreen}
                     documentLinkProvider={documentLinkProvider}
@@ -5027,6 +5057,22 @@ export function DocBlocksShell({
                             />
                           </Suspense>
                         )}
+                        {speech && (
+                          <Suspense fallback={null}>
+                            {hostSupports('speechOutput') ? (
+                              <SpeechToolbarControl
+                                speech={speech}
+                                onOpenSettings={openSettings}
+                                readOnly={
+                                  selectedImage !== undefined ||
+                                  (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                                }
+                              />
+                            ) : (
+                              <SpeechMenuBridge />
+                            )}
+                          </Suspense>
+                        )}
                         {/* Restore split view -- offered only where the
                           viewport can actually hold both panes. Pinning is
                           persisted, so an iPad user sets it once. */}
@@ -5056,6 +5102,7 @@ export function DocBlocksShell({
                           videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
                           ffmpegWasm={ffmpegWasm}
                           initialSharedMode={initialSharedMode}
+                          {...(speech ? { speech } : {})}
                         />
                       </>
                     }

@@ -6,6 +6,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   getHostEnvironment,
   type DocBlocksHostAiAPI,
+  type DocBlocksHostSpeechAPI,
   type HostSurfaceKind,
 } from '@bendyline/docblocks/host';
 import type { VersioningPreference } from '../preferences/versioning.js';
@@ -28,6 +29,7 @@ import {
   WriteCanvasSettingsControls,
 } from '../Settings/Settings.js';
 import { AiSettingsControls } from '../Settings/AiSettings.js';
+import { SpeechSettingsControls } from '../Settings/SpeechSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 
@@ -92,6 +94,13 @@ export interface AppMenuProps {
    * omitted — a host without AI — the section is hidden.
    */
   ai?: DocBlocksHostAiAPI;
+  /**
+   * The host's speech API. When present, Settings offers a Speech section for
+   * dictation and narration models; when omitted the section is hidden.
+   */
+  speech?: DocBlocksHostSpeechAPI;
+  /** Opens Settings whenever it changes to a new non-zero value. */
+  settingsRequest?: number;
 }
 
 function formatBytes(bytes: number): string {
@@ -134,10 +143,15 @@ export function AppMenu({
   appVersion,
   appBuildDate,
   ai,
+  speech,
+  settingsRequest = 0,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  useEffect(() => {
+    if (settingsRequest > 0) setShowSettings(true);
+  }, [settingsRequest]);
   const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
   // Genuinely an identity question, not a capability one: each surface has its
   // own product page. Kept as an exhaustive record so a new surface has to
@@ -312,6 +326,7 @@ export function AppMenu({
             onChange={(settings) => onProofingPreferencesChange?.(settings)}
           />
           {ai && <AiSettingsControls ai={ai} />}
+          {speech && <SpeechSettingsControls speech={speech} />}
 
           {getStorageEstimate && (
             <fieldset className="db-settings-fieldset">

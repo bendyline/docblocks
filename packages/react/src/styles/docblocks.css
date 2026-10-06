@@ -2584,6 +2584,61 @@ body.db-resizing-sidebar * {
   accent-color: var(--db-accent);
 }
 
+/* Speech settings: dictation and narration model rows. */
+.db-settings-speech-section + .db-settings-speech-section {
+  margin-top: 14px;
+}
+
+.db-settings-subheading {
+  margin: 10px 0 2px;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-settings-speech-models {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-settings-speech-model {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-settings-speech-model-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.db-settings-speech-model-name {
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-speech-model .db-settings-hint {
+  margin: 0;
+}
+
+.db-settings-speech-model .db-settings-ai-download-progress {
+  min-width: 140px;
+  margin-top: 0;
+}
+
+.db-settings-speech-model .db-settings-action {
+  flex-shrink: 0;
+}
+
 .db-settings-accent {
   position: relative;
   display: flex;
@@ -5657,6 +5712,32 @@ html:has(.db-shell[data-theme='dark'])
 
 .db-ai-toolbar-menu {
   min-width: 220px;
+}
+
+/* Read aloud: the speech menu and its inline transport while playing. */
+.db-speech-toolbar {
+  display: inline-flex;
+  align-items: center;
+  border-left: 0;
+}
+
+.db-speech-toolbar-menu {
+  min-width: 220px;
+}
+
+.db-speech-transport {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.db-speech-transport-label {
+  min-width: 3.5em;
+  padding: 0 6px;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .db-ai-toolbar-status {

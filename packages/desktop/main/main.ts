@@ -60,6 +60,7 @@ import {
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
+import { vcRuntimePath } from './vc-runtime-path.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
 import { pickDisplayCaptureSource } from './display-capture-picker.js';
 import { attachEditorContextMenu } from './context-menu.js';
@@ -67,9 +68,15 @@ import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
 } from './content-security-policy.js';
-import { aiAvailabilityArguments, hostEnvironmentArguments } from '../shared/host-environment.js';
+import {
+  aiAvailabilityArguments,
+  hostEnvironmentArguments,
+  speechAvailabilityArguments,
+} from '../shared/host-environment.js';
 import type { AiService } from './ai/ai-service.js';
 import { createAiService, registerAiIpc } from './ipc-ai.js';
+import type { SpeechService } from './speech/speech-service.js';
+import { createSpeechService, registerSpeechIpc } from './ipc-speech.js';
 
 const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
@@ -84,6 +91,11 @@ const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 // through safeStorage, which this backend obscures rather than protects; see
 // ai/ai-credentials.ts for why that is acceptable for that token.
 configureLinuxCredentialStorage(process.platform, app.commandLine);
+
+// Bundled native engines and ONNX Runtime import the Visual C++ runtime, which
+// packaged Windows builds carry app-local. Children inherit this PATH.
+const vcRuntime = vcRuntimePath(app.isPackaged, process.resourcesPath, process.env.PATH);
+if (vcRuntime !== null) process.env.PATH = vcRuntime;
 
 // Development must not share Chromium storage, settings, window state, or the
 // single-instance lock with an installed DocBlocks build. Honour an explicit
@@ -109,6 +121,7 @@ const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unkno
   );
 });
 let aiService: AiService | null = null;
+let speechService: SpeechService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
 const pendingOpenRequests = new PendingOpenRequests();
@@ -322,6 +335,10 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
           isDev,
         }),
         ...aiAvailabilityArguments(true),
+        ...speechAvailabilityArguments({
+          stt: speechService?.sttAvailable ?? false,
+          tts: speechService?.ttsAvailable ?? false,
+        }),
       ],
     },
   });
@@ -426,10 +443,14 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
   releaseAllScopedResources();
   // Cancel in-flight completions and release the Gezel transport. Bounded: a
   // provider that has stopped answering must not hold the app open.
-  if (aiService) {
+  if (aiService || speechService) {
     let disposeTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
-      aiService.dispose().catch(() => undefined),
+      Promise.all([
+        aiService?.dispose().catch(() => undefined),
+        // Stops the dictation and narration engines' child processes.
+        speechService?.dispose().catch(() => undefined),
+      ]),
       new Promise<void>((resolve) => {
         disposeTimer = setTimeout(resolve, AI_DISPOSE_TIMEOUT_MS);
       }),
@@ -591,6 +612,9 @@ async function bootstrap(): Promise<void> {
   registerAiIpc(aiService);
   // Reads preferences and starts AI only after opt-in, without prompting.
   void aiService.start();
+  // Engines start lazily on first use; nothing is spawned here.
+  speechService = createSpeechService();
+  registerSpeechIpc(speechService);
 
   // Probe before the renderer loads so its Git UI and the native menu use the
   // same process-lifetime capability. On macOS this never executes the Apple
@@ -609,7 +633,10 @@ async function bootstrap(): Promise<void> {
   // first drain and therefore queued one late request.
   drainPendingOpenRequests(win);
 
-  buildMenu(() => mainWindow.current(), gitAvailable);
+  buildMenu(() => mainWindow.current(), gitAvailable, {
+    stt: speechService?.sttAvailable ?? false,
+    tts: speechService?.ttsAvailable ?? false,
+  });
   win.setMenuBarVisibility(false);
 
   registerTray(() => mainWindow.current());
@@ -665,7 +692,10 @@ async function reopenWindow(): Promise<void> {
   const win = await createWindow(developmentWorkspace?.id);
   mainWindow.set(win);
   drainPendingOpenRequests(win);
-  buildMenu(() => mainWindow.current(), gitAvailable);
+  buildMenu(() => mainWindow.current(), gitAvailable, {
+    stt: speechService?.sttAvailable ?? false,
+    tts: speechService?.ttsAvailable ?? false,
+  });
   win.setMenuBarVisibility(false);
 }
 

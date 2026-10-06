@@ -197,6 +197,38 @@ describe('Gezel native packaging', () => {
     ).to.equal('pinned engine');
   });
 
+  it('stages the app-local Visual C++ runtime beside a Windows package', async () => {
+    const input = await fixture('win32');
+    await writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@bendyline/gezel-service': serviceRequire('./package.json').version },
+      }),
+    );
+    const cache = path.join(root, 'dist', 'gezel-native-cache');
+    await mkdir(cache, { recursive: true });
+    await writeFile(path.join(cache, input.name), input.bytes);
+    const crt = path.join(root, 'crt');
+    await mkdir(crt, { recursive: true });
+    for (const dll of ['msvcp140.dll', 'vcruntime140.dll'])
+      await writeFile(path.join(crt, dll), dll);
+    await stageForTarget(
+      {
+        packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'win' } },
+        electronPlatformName: 'win32',
+        arch: 1,
+      },
+      {
+        pins: input.pins,
+        fetchImpl: input.fetchImpl,
+        vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
+      },
+    );
+    expect(
+      await readFile(path.join(root, 'dist', 'vc-runtime', 'x64', 'vcruntime140.dll'), 'utf8'),
+    ).to.equal('vcruntime140.dll');
+  });
+
   it('fails unsupported targets unless the build explicitly disables hosted AI', async () => {
     const input = await fixture();
     expect((await failed(stageNative({ ...input, platform: 'darwin' }))).message).to.contain(

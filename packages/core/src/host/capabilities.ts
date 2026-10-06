@@ -73,8 +73,16 @@ export interface HostCapabilities {
   readonly aiWorkspaceIndex: boolean;
   readonly aiSearch: boolean;
   readonly aiImages: boolean;
+  /** @deprecated Speech moved to `host.speech`; use `speechInput`. Always false on current hosts. */
   readonly aiTranscription: boolean;
+  /** @deprecated Speech moved to `host.speech`; use `speechOutput`. Always false on current hosts. */
   readonly aiSpeechSynthesis: boolean;
+  /** Dictation: the host can transcribe recorded takes. */
+  readonly speechInput: boolean;
+  /** Narration: the host can synthesize speech from text. */
+  readonly speechOutput: boolean;
+  /** The host can list, download, and remove speech models. */
+  readonly speechModelManagement: boolean;
   /** Documents live in the web origin (IndexedDB) rather than on the host. */
   readonly browserOriginStorage: boolean;
   /** The host draws the window chrome, so the shell must leave room for it. */
@@ -109,6 +117,9 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   aiImages: false,
   aiTranscription: false,
   aiSpeechSynthesis: false,
+  speechInput: false,
+  speechOutput: false,
+  speechModelManagement: false,
   // A browser with no host keeps its documents in the origin.
   browserOriginStorage: true,
   ownsWindowChrome: false,
@@ -223,6 +234,10 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     aiImages: hasMethod(host.ai, 'generateImage'),
     aiTranscription: hasMethod(host.ai, 'transcribe'),
     aiSpeechSynthesis: hasMethod(host.ai, 'synthesize'),
+    speechInput: hasMethod(host.speech, 'transcribe'),
+    speechOutput: hasMethod(host.speech, 'synthesize'),
+    speechModelManagement:
+      hasMethod(host.speech, 'catalog') && hasMethod(host.speech, 'installModel'),
     // A host that owns workspace roots keeps documents outside the web origin.
     browserOriginStorage: !hasMethod(workspaces, 'register'),
     ownsWindowChrome: environment.surface === 'electron',

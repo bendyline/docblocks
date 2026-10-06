@@ -44,7 +44,10 @@ export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
   gezelHome: string;
-  launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
+  launchApp: (
+    extraArgs?: string[],
+    extraEnv?: NodeJS.ProcessEnv,
+  ) => Promise<LaunchedDocBlocksApplication>;
   /** This test's allowance list; the launch fixture reads it at teardown. */
   runtimeErrorAllowances: AllowedRuntimeError[];
   /** Allow further renderer runtime errors for the current test only. */
@@ -76,8 +79,24 @@ function removeTmpDir(directory: string): void {
   }
 }
 
+/** Stand-ins for the speech engines, so every run sees the same host contract. */
+const FAKE_WHISPER_SERVER = path.resolve(
+  __dirname,
+  '..',
+  'test',
+  'helpers',
+  'fake-whisper-server.mjs',
+);
+const FAKE_KOKORO_UTILITY = path.resolve(__dirname, 'fake-kokoro-utility.cjs');
+
 function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+  // The source app is unpackaged, so these development-only overrides apply:
+  // dictation talks to a fake whisper-server and narration to a utility that
+  // speaks tones. Neither needs a model download or the native engines.
+  env.DOCBLOCKS_SPEECH_WHISPER_BIN = process.execPath;
+  env.DOCBLOCKS_SPEECH_WHISPER_SCRIPT = FAKE_WHISPER_SERVER;
+  env.DOCBLOCKS_SPEECH_KOKORO_ENTRY = FAKE_KOKORO_UTILITY;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NODE_OPTIONS;
@@ -204,6 +223,7 @@ async function launchSourceApplication(
   workspaceDir: string,
   gezelHome: string,
   extraArgs: string[],
+  extraEnv: NodeJS.ProcessEnv = {},
 ): Promise<RunningApplication> {
   const args = [
     '--remote-debugging-port=0',
@@ -221,7 +241,7 @@ async function launchSourceApplication(
 
   const child = spawn(electronPath, args, {
     cwd: appRoot,
-    env: cleanEnv(workspaceDir, gezelHome),
+    env: { ...cleanEnv(workspaceDir, gezelHome), ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -325,7 +345,7 @@ export const test = base.extend<DocBlocksFixtures>({
     // relaunch cannot drop what the previous renderer reported.
     const errorReaders: Array<() => readonly RuntimeError[]> = [];
 
-    await use(async (extraArgs: string[] = []) => {
+    await use(async (extraArgs: string[] = [], extraEnv: NodeJS.ProcessEnv = {}) => {
       if (running && running.process.exitCode === null && running.process.signalCode === null) {
         throw new Error('The source fixture supports one active application at a time.');
       }
@@ -335,6 +355,7 @@ export const test = base.extend<DocBlocksFixtures>({
         workspaceDir,
         gezelHome,
         extraArgs,
+        extraEnv,
       );
       const current = running;
       errorReaders.push(collectRuntimeErrors(current.window));

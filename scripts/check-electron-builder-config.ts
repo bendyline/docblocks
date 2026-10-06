@@ -9,7 +9,7 @@
  * similar artifact-time failures still surface in packaging jobs.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -426,7 +426,7 @@ function requireMacPrivacyMetadata(): void {
     NSCameraUsageDescription:
       'DocBlocks accesses the camera only when you choose to record video for a document.',
     NSMicrophoneUsageDescription:
-      'DocBlocks accesses the microphone only when you choose to record audio or video for a document.',
+      'DocBlocks accesses the microphone only when you choose to record audio or video for a document, or to dictate into one.',
     NSAudioCaptureUsageDescription:
       'DocBlocks accesses system audio only when you choose to include it in a screen recording.',
   } as const;
@@ -435,6 +435,24 @@ function requireMacPrivacyMetadata(): void {
       failConfigPolicy(
         `electron-builder.yml mac.extendInfo.${key} must be branded and contextual.`,
       );
+    }
+  }
+  // A usage string alone is not enough: under the hardened runtime (Developer
+  // ID) and the sandbox (MAS), capture without the matching device entitlement
+  // is refused without a prompt. Packaged smoke cannot see this — it uses fake
+  // devices and an unhardened build — so it is enforced here.
+  for (const plist of ['entitlements.mac.plist', 'entitlements.mas.plist']) {
+    const entitlements = readFileSync(path.join(repoRoot, 'packages/desktop', plist), 'utf8');
+    for (const device of ['camera', 'audio-input']) {
+      const pattern = new RegExp(
+        `<key>com\\.apple\\.security\\.device\\.${device}</key>\\s*<true\\s*/>`,
+        'u',
+      );
+      if (!pattern.test(entitlements)) {
+        failConfigPolicy(
+          `${plist} must grant com.apple.security.device.${device} to match its usage description.`,
+        );
+      }
     }
   }
   for (const key of [
@@ -449,7 +467,7 @@ function requireMacPrivacyMetadata(): void {
   }
 
   process.stdout.write(
-    'electron-builder.yml: branded macOS privacy prompts; Bluetooth removed OK\n',
+    'electron-builder.yml: branded macOS privacy prompts, device entitlements; Bluetooth removed OK\n',
   );
 }
 
@@ -682,8 +700,9 @@ function packageNameFromSpecifier(specifier: string): string {
 }
 
 // Production dependencies are copied wholesale by electron-builder. Keep that
-// list equal to the packages the built main process actually loads; renderer
-// libraries belong in devDependencies because Vite already emitted them.
+// list equal to the packages the built main process actually loads — main and
+// the utility processes it forks (every `dist/main/*.cjs`); renderer libraries
+// belong in devDependencies because Vite already emitted them.
 if (!existsSync(mainPath)) {
   process.stderr.write(
     `Desktop main artifact is missing at ${mainPath}; build desktop before validating it.\n`,
@@ -700,7 +719,13 @@ if (declaredRuntimeDependencies.has('ffmpeg-static')) {
     'Desktop production dependencies must not include host-native ffmpeg-static; GIF export uses the packaged ffmpeg.wasm core.',
   );
 }
-const mainRequires = collectRuntimeRequires(readFileSync(mainPath, 'utf8'));
+const mainRequires = new Set(
+  readdirSync(path.dirname(mainPath))
+    .filter((file) => file.endsWith('.cjs'))
+    .flatMap((file) => [
+      ...collectRuntimeRequires(readFileSync(path.join(path.dirname(mainPath), file), 'utf8')),
+    ]),
+);
 const requiredPackages = new Set(
   [...mainRequires]
     .filter((specifier) => specifier !== 'electron' && !isBuiltin(specifier))

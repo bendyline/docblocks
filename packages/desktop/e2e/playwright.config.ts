@@ -9,7 +9,7 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: '.',
-  testIgnore: /packaged-smoke\.spec\.ts/u,
+  testIgnore: /packaged-(?:smoke|speech)\.spec\.ts/u,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

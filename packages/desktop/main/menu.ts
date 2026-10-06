@@ -15,7 +15,11 @@ import { reloadWindowWithPreparation } from './window-lifecycle.js';
  *   application menu outlives every window, so a window captured when the menu
  *   was built may be destroyed by the time an item is chosen.
  */
-export function buildMenu(getWindow: () => BrowserWindow | null, gitAvailable: boolean): void {
+export function buildMenu(
+  getWindow: () => BrowserWindow | null,
+  gitAvailable: boolean,
+  speech: { readonly stt: boolean; readonly tts: boolean } = { stt: false, tts: false },
+): void {
   const send = (cmd: MenuCommand): void => {
     getWindow()?.webContents.send('menu:command', cmd);
   };
@@ -87,6 +91,13 @@ export function buildMenu(getWindow: () => BrowserWindow | null, gitAvailable: b
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
+        // Named apart from the "Start Dictation…" item macOS adds to Edit
+        // menus, which drives the system's own dictation, not DocBlocks'.
+        ...(speech.stt || speech.tts ? [{ type: 'separator' as const }] : []),
+        ...(speech.stt
+          ? [{ label: 'Dictate in DocBlocks', click: () => send('edit:toggleDictation') }]
+          : []),
+        ...(speech.tts ? [{ label: 'Read Aloud', click: () => send('edit:readAloud') }] : []),
       ],
     },
     // Keep native Git commands in sync with the renderer's process-lifetime

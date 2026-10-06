@@ -160,6 +160,8 @@ jobs:
           npm run build
           npx --no-install electron-builder --win --publish never
         env:
+          # Release artifacts must carry the app-local Visual C++ runtime.
+          DOCBLOCKS_VCRUNTIME_REQUIRED: '1'
           TRUSTED_SIGNING_DLIB_PATH: ${{ env.TRUSTED_SIGNING_DLIB_PATH }}
           TRUSTED_SIGNING_METADATA_PATH: ${{ env.TRUSTED_SIGNING_METADATA_PATH }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

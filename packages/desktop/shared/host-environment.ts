@@ -72,6 +72,29 @@ export function parseAiAvailabilityArgument(argv: readonly string[]): boolean {
   return switchValue(argv, AI_AVAILABLE_SWITCH) === '1';
 }
 
+const SPEECH_AVAILABLE_SWITCH = '--docblocks-speech=';
+
+export interface SpeechAvailability {
+  readonly stt: boolean;
+  readonly tts: boolean;
+}
+
+/**
+ * Main-side: which speech engines this build can run. Main decides from the
+ * files it can see (never by loading an engine), and the preload exposes
+ * `transcribe` / `synthesize` — or the whole namespace — accordingly.
+ */
+export function speechAvailabilityArguments(availability: SpeechAvailability): string[] {
+  const engines = [availability.stt ? 'stt' : '', availability.tts ? 'tts' : ''].filter(Boolean);
+  return [`${SPEECH_AVAILABLE_SWITCH}${engines.join(',')}`];
+}
+
+/** Preload-side. Fail safe: only named engines are exposed. */
+export function parseSpeechAvailabilityArgument(argv: readonly string[]): SpeechAvailability {
+  const engines = new Set((switchValue(argv, SPEECH_AVAILABLE_SWITCH) ?? '').split(','));
+  return { stt: engines.has('stt'), tts: engines.has('tts') };
+}
+
 /** Preload-side: decode the main-owned values out of `process.argv`. */
 export function parseHostEnvironmentArguments(argv: readonly string[]): HostEnvironmentValues {
   const appVersion = switchValue(argv, APP_VERSION_SWITCH);
