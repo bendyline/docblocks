@@ -631,7 +631,10 @@ function isDocumentMutationControl(target: EventTarget): boolean {
   return Boolean(
     target.closest(
       [
-        '.squisq-toolbar-button[data-btn-index]:not([aria-haspopup="menu"])',
+        // Formatting buttons sit inside a toolbar group; the document chrome
+        // that also carries data-toolbar-item (layouts, settings, files) is a
+        // direct child of the toolbar and must not arm an edit.
+        '.squisq-toolbar-group > .squisq-toolbar-button[data-toolbar-item]:not([aria-haspopup="menu"])',
         '[data-contextual] .squisq-toolbar-button',
         '.squisq-toolbar-overflow-item:not([aria-haspopup="menu"])',
         '.squisq-mermaid-type-card',
