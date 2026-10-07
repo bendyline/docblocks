@@ -8,7 +8,7 @@ describe('bundled Gezel host policy', () => {
       {
         macAppStore: true,
         distributionProfile: 'store',
-        nativeBinDir: '/resources/gezel-native',
+        nativeBinDir: path.join('/resources', 'gezel-native'),
         canHost: true,
       },
     );
