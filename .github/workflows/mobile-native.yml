@@ -45,7 +45,8 @@ jobs:
       - name: Select installed JDK and Android toolchain
         run: |
           echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          # Hosted images install the command-line tools without adding them to PATH.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
       - run: npm run mobile:sync:android
       - run: npm run mobile:test:android
       - name: Build isolated test APKs
