@@ -6,6 +6,7 @@ import {
   pinnedDocumentName,
   type PinnedDocumentListItem,
 } from '../DocBlocksShell/pinned-documents.js';
+import { displayFileName } from './file-names.js';
 
 type PinnedDocumentAction = (document: PinnedDocumentListItem) => void | Promise<void>;
 
@@ -29,8 +30,7 @@ interface PinnedDocumentRowProps {
 }
 
 function displayName(document: PinnedDocumentListItem): string {
-  const name = pinnedDocumentName(document);
-  return name.endsWith('.md') ? name.slice(0, -3) : name;
+  return displayFileName(pinnedDocumentName(document));
 }
 
 function PinnedDocumentRow({

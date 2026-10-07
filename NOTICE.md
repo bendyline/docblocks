@@ -26,7 +26,7 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-calc@2.11.1, @bendyline/squisq-cli@2.8.13, @bendyline/squisq-cli@2.8.16, @bendyline/squisq-editor-react@2.11.18, @bendyline/squisq-formats@2.6.12, @bendyline/squisq-formats@2.6.15, @bendyline/squisq-grid-react@2.11.16, @bendyline/squisq-react@2.11.17, @bendyline/squisq-video-react@2.4.21, @bendyline/squisq-video@2.3.16, @bendyline/squisq-video@2.3.19, @bendyline/squisq@2.11.12, @bendyline/squisq@2.11.13, @bendyline/squisq@2.11.15.
+- Squisq packages: @bendyline/squisq-calc@2.11.1, @bendyline/squisq-cli@2.8.13, @bendyline/squisq-cli@2.8.17, @bendyline/squisq-editor-react@2.11.19, @bendyline/squisq-formats@2.6.12, @bendyline/squisq-formats@2.6.16, @bendyline/squisq-grid-react@2.11.17, @bendyline/squisq-react@2.11.18, @bendyline/squisq-video-react@2.4.22, @bendyline/squisq-video@2.3.16, @bendyline/squisq-video@2.3.20, @bendyline/squisq@2.11.12, @bendyline/squisq@2.11.13, @bendyline/squisq@2.11.16.
 - MCP SDK: @modelcontextprotocol/sdk@1.29.0.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.

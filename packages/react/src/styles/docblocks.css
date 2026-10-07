@@ -1127,9 +1127,12 @@
   margin: 4px 0;
 }
 
+/* 300px when there is room. The picker narrows the dropdown to fit inside the
+   sidebar (see WorkspacePicker), and the form follows it down. */
 .db-workspace-create {
   box-sizing: border-box;
-  width: min(300px, calc(100vw - 24px));
+  width: 300px;
+  max-width: 100%;
   padding: 10px;
 }
 
@@ -1235,6 +1238,14 @@
   height: 20px;
   width: auto;
   display: block;
+}
+
+/* The logo is black lettering on a pale extruded edge. On espresso the black
+   fill vanished and only the edges showed, so it read as a hollow outline.
+   Inverting makes the letters solid and sinks the edge into the background,
+   and the sepia warms them toward --db-text. */
+.db-shell[data-theme='dark'] .db-app-menu-logo {
+  filter: invert(1) brightness(0.88) sepia(0.15);
 }
 
 .db-app-menu-caret {
@@ -1867,7 +1878,18 @@ body.db-resizing-sidebar * {
 /* The compact layout puts Squisq's overflow trigger part-way along the second
    row, wherever the formatting buttons stop. Its desktop right-aligned
    placement would hang the menu off-canvas from there, so anchor the mobile
-   popover to the viewport instead. */
+   popover to the full-width toolbar instead. The trigger's own wrapper must
+   not be the containing block: an offset from it moves with the trigger, and
+   once Squisq kept Insert inline the trigger moved right and the menu ran
+   89px off a 390px screen. */
+.db-shell--mobile .squisq-toolbar {
+  position: relative;
+}
+
+.db-shell--mobile .squisq-toolbar-overflow {
+  position: static;
+}
+
 .db-shell--mobile .squisq-editor-shell .squisq-toolbar-overflow-menu {
   right: auto !important;
   left: max(4px, env(safe-area-inset-left)) !important;
@@ -2164,11 +2186,13 @@ body.db-resizing-sidebar * {
   text-decoration: underline;
 }
 
+/* Spacing, not "·" glyphs, separates the links: a text separator was left
+   orphaned at the start of the line whenever the row wrapped. */
 .db-dialog-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 6px 16px;
 }
 
 .db-about-beta {
@@ -2208,10 +2232,6 @@ body.db-resizing-sidebar * {
   color: var(--db-text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   user-select: all;
-}
-
-.db-dialog-sep {
-  color: var(--db-text-placeholder);
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────── */
@@ -6832,8 +6852,8 @@ button.db-git-file-row:hover {
   }
 
   /* Squisq's overflow measurement deliberately tolerates a 2px overhang.
-     Reserve one pixel beyond that tolerance so the final Insert control
-     moves into More actions instead of being clipped by the caption inset. */
+     Reserve one pixel beyond that tolerance so the rightmost control moves
+     into More actions instead of being clipped by the caption inset. */
   .db-shell .squisq-toolbar-actions {
     margin-right: 3px;
   }

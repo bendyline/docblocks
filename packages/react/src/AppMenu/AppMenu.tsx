@@ -450,7 +450,6 @@ export function AppMenu({
             <a href={moreInformationUrl} target="_blank" rel="noopener noreferrer">
               More information...
             </a>
-            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks"
               target="_blank"
@@ -458,7 +457,6 @@ export function AppMenu({
             >
               GitHub
             </a>
-            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks/releases"
               target="_blank"
@@ -466,7 +464,6 @@ export function AppMenu({
             >
               Release notes
             </a>
-            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks/issues"
               target="_blank"
@@ -474,7 +471,6 @@ export function AppMenu({
             >
               Support
             </a>
-            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks/blob/main/LICENSE"
               target="_blank"
@@ -482,7 +478,6 @@ export function AppMenu({
             >
               License (MIT)
             </a>
-            <span className="db-dialog-sep">&middot;</span>
             <a
               href="https://github.com/bendyline/docblocks/blob/main/NOTICE.md"
               target="_blank"

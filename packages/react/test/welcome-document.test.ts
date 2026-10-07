@@ -15,6 +15,15 @@ const MARKETING_URLS = [
 ] as const;
 
 describe('welcome document', () => {
+  it('survives the Write view unchanged, so opening it does not rewrite the file', async () => {
+    // The Write view saves whatever its Markdown conversion produces. The
+    // welcome text once lacked the trailing newline every saved document
+    // ends with, so simply opening it in Write modified it.
+    const { markdownToTiptap, tiptapToMarkdown } = await import('@bendyline/squisq-editor-react');
+    const body = WELCOME_DOCUMENT_CONTENT.replace(/^---\n[\s\S]*?\n---\n/, '');
+    expect(tiptapToMarkdown(markdownToTiptap(body))).to.equal(body);
+  });
+
   it('uses valid, diverse presentation templates and a complete value-proposition diagram', () => {
     const result = validateMarkdownSource(WELCOME_DOCUMENT_CONTENT);
     expect(result.diagnostics).to.deep.equal([]);

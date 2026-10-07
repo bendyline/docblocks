@@ -5,6 +5,7 @@ import {
   getFileSystemProviderV2,
   parseWorkspacePath,
 } from '@bendyline/docblocks/filesystem';
+import { compareFileNames } from '../FileExplorer/entry-sort.js';
 
 export const DEFAULT_DOCUMENT_DISCOVERY_LIMITS = Object.freeze({
   entries: 10_000,
@@ -227,6 +228,11 @@ export function createDocumentLinkCandidates(
     const description = dirname(entry.path);
     candidates.push(description ? { path, label, description } : { path, label });
   }
-  candidates.sort((left, right) => left.label.localeCompare(right.label));
+  // Same order as the file explorer; the path separates equal names in
+  // different folders.
+  candidates.sort(
+    (left, right) =>
+      compareFileNames(left.label, right.label) || compareFileNames(left.path, right.path),
+  );
   return candidates;
 }

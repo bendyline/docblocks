@@ -3,7 +3,7 @@
  * (IndexedDB-based or native folder via File System Access API).
  */
 
-import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import { Fragment, useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
 import { hostSupports } from '@bendyline/docblocks/host';
@@ -34,6 +34,44 @@ export interface WorkspacePickerProps {
   className?: string;
 }
 
+/** Keeps the dropdown this far inside the edges of whatever clips it. */
+const DROPDOWN_EDGE_MARGIN = 4;
+
+/** The horizontal extent of the nearest ancestor that clips `element`. */
+function clippingBounds(element: HTMLElement): { left: number; right: number } {
+  for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (getComputedStyle(ancestor).overflowX !== 'visible') {
+      const rect = ancestor.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    }
+  }
+  return { left: 0, right: document.documentElement.clientWidth };
+}
+
+/**
+ * Keep the dropdown inside the sidebar. It hangs from the picker, which sits
+ * beside the logo, so anything wider than the picker — the New Workspace form
+ * above all — ran past the sidebar's right edge. The sidebar clips, but a
+ * browser still scrolls a clipping ancestor to reveal a focused field, so
+ * focusing the name field shoved the whole sidebar about 67px sideways.
+ * Narrow it if it can't fit at all, then shift it left as far as it overhangs.
+ */
+function fitDropdownWithinSidebar(dropdown: HTMLElement): void {
+  // Measure from the stylesheet's own placement every time.
+  dropdown.style.left = '';
+  dropdown.style.maxWidth = '';
+  const bounds = clippingBounds(dropdown);
+  const available = bounds.right - bounds.left - 2 * DROPDOWN_EDGE_MARGIN;
+  if (dropdown.getBoundingClientRect().width > available) {
+    dropdown.style.maxWidth = `${Math.max(0, available)}px`;
+  }
+  const rect = dropdown.getBoundingClientRect();
+  const overhang = rect.right - (bounds.right - DROPDOWN_EDGE_MARGIN);
+  const room = rect.left - (bounds.left + DROPDOWN_EDGE_MARGIN);
+  const shift = Math.min(overhang, room);
+  if (shift > 0) dropdown.style.left = `${dropdown.offsetLeft - shift}px`;
+}
+
 function WorkspacePath({ path }: { path: string }) {
   return path.split(/([\\/])/).map((segment, index) => (
     <Fragment key={index}>
@@ -59,6 +97,19 @@ export function WorkspacePicker({
   const [newWorkspacePending, setNewWorkspacePending] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const createInputRef = useRef<HTMLInputElement>(null);
+
+  // Fit before paint, whenever the dropdown's contents can change its width.
+  useLayoutEffect(() => {
+    if (isOpen && dropdownRef.current) fitDropdownWithinSidebar(dropdownRef.current);
+  }, [isOpen, creatingNew, newWorkspaceError, workspaces]);
+
+  // Runs after the fit above. `preventScroll`, because `autoFocus` let the
+  // browser scroll the clipping sidebar to reveal the field.
+  useLayoutEffect(() => {
+    if (creatingNew) createInputRef.current?.focus({ preventScroll: true });
+  }, [creatingNew]);
 
   const closeDropdown = useCallback((returnFocus: boolean) => {
     setIsOpen(false);
@@ -199,7 +250,7 @@ export function WorkspacePicker({
       </button>
 
       {isOpen && (
-        <div className="db-workspace-dropdown">
+        <div ref={dropdownRef} className="db-workspace-dropdown">
           {workspaces.map((ws) => (
             <button
               key={ws.id}
@@ -240,6 +291,7 @@ export function WorkspacePicker({
                   Workspace name
                 </label>
                 <input
+                  ref={createInputRef}
                   id="db-new-workspace-name"
                   className="db-workspace-create-input"
                   value={newWorkspaceName}
@@ -247,7 +299,6 @@ export function WorkspacePicker({
                   disabled={newWorkspacePending}
                   aria-invalid={newWorkspaceError !== null}
                   aria-describedby={newWorkspaceError ? 'db-new-workspace-error' : undefined}
-                  autoFocus
                   onChange={(event) => {
                     setNewWorkspaceName(event.target.value);
                     setNewWorkspaceError(null);
@@ -271,7 +322,7 @@ export function WorkspacePicker({
                     Cancel
                   </button>
                   <button type="submit" disabled={newWorkspacePending}>
-                    {newWorkspacePending ? 'Creatingâ€¦' : 'Create'}
+                    {newWorkspacePending ? 'Creating…' : 'Create'}
                   </button>
                 </div>
               </form>

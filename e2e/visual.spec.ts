@@ -16,6 +16,7 @@
 
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { openInsertMenu } from './helpers/toolbar.js';
 import { expectStableScreenshot } from './helpers/visual.js';
 import type { Page } from '@playwright/test';
 
@@ -178,10 +179,7 @@ test.describe('portaled Squisq surfaces', () => {
     await seedAppearance(page, { theme: 'dark', accent: 'brown' });
     await openInitializedSite(page);
     await openEditor(page);
-    await page.locator('.squisq-toolbar-overflow-trigger').click();
-    const overflow = page.locator('.squisq-toolbar-overflow-menu');
-    await expect(overflow).toBeVisible();
-    await overflow.getByRole('button', { name: 'Insert...' }).click();
+    await openInsertMenu(page);
     const insertMenu = page.locator('.squisq-insert-menu').first();
     await expect(insertMenu).toBeVisible();
     await expectStableScreenshot(page, insertMenu, 'squisq-insert-menu.png');

@@ -90,6 +90,7 @@ import {
   type FileTreeMutationHandler,
 } from '../FileExplorer/FileExplorer.js';
 import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
+import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
 import { SplitViewIcon } from '../icons.js';
@@ -105,6 +106,7 @@ import {
 import { createBrowserSaveAsAdapter } from '../Export/browser-save.js';
 import { saveBlobToHost } from '../Export/host-export-save.js';
 import { createImageSaveOutput } from '../Export/image-save.js';
+import { sharedDocumentFilename } from '../Export/shared-document.js';
 import { GitContext } from '../Git/GitContext.js';
 import { useGit } from '../Git/useGit.js';
 // The editor is only needed after a document and its media container are
@@ -1851,13 +1853,21 @@ export function DocBlocksShell({
     async (payload: SharedDocumentPayload, navigationRequestId: number): Promise<boolean> => {
       const id = `transient-shared-${navigationRequestId}`;
       const mem = await createMemoryFileSystemProvider(id, 'Shared document');
-      const primaryFile = 'shared.md';
+      let primaryFile = 'shared.md';
       try {
-        const snapshot = await decodeDbkWorkspace(payload.archive, {
+        const decoded = await decodeDbkWorkspace(payload.archive, {
           targetDocumentPath: primaryFile,
           profile: 'shared-link',
         });
-        mem.replaceContents(snapshot);
+        // Keep the sender's file name, which the link carries, rather than
+        // calling every received document "shared". A hand-made link is
+        // untrusted, so the name passes through the sender's own sanitizer.
+        primaryFile = sharedDocumentFilename(decoded.sourceDocumentPath);
+        mem.replaceContents({
+          files: decoded.files.map((file) =>
+            file.path === decoded.targetDocumentPath ? { ...file, path: primaryFile } : file,
+          ),
+        });
       } catch (error: unknown) {
         await getFileSystemProviderV2(mem)?.dispose();
         throw error;
@@ -3915,18 +3925,23 @@ export function DocBlocksShell({
       }
 
       const oldName = basenameOf(document.path);
+      const draft = renameDraft(oldName, 'file');
       const response = await promptForText({
         title: 'Rename document',
         label: 'Document name',
-        initialValue: oldName,
+        initialValue: draft.value,
+        initialSelection: [0, draft.selectionEnd],
         confirmLabel: 'Rename',
       });
       if (response === null) return;
-      const newName = response.trim();
-      if (!newName || /[\\/]/.test(newName)) {
+      const typed = response.trim();
+      if (!typed || /[\\/]/.test(typed)) {
         showToast('error', 'Use a document name without slashes.');
         return;
       }
+      // Keeps the document's extension, which the pinned list hides.
+      const newName = renamedFileName(oldName, typed, 'file');
+      if (newName === null) return;
 
       const parent = dirnameOf(document.path);
       let newPath: string;
@@ -4549,14 +4564,21 @@ export function DocBlocksShell({
     // files on the user's disk, so promising the removal is irreversible there
     // would be a lie in the more alarming direction.
     const destroysDocuments = ws?.type === 'indexeddb';
+    // A transient workspace with no origin is a shared link's copy: it lives
+    // only in this session, with no file behind it. Telling the user "the
+    // files on disk will not be deleted" there promised a safety net that
+    // does not exist.
+    const discardsSharedCopy = ws?.type === 'transient' && !ws.origin;
     const confirmed = await confirmAction({
       title: 'Remove workspace',
       message: destroysDocuments
         ? 'Remove this workspace? Its documents will be permanently deleted.'
-        : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.',
+        : discardsSharedCopy
+          ? 'Remove this shared copy? It exists only in this session, so it will be gone unless you first move it into a workspace.'
+          : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.',
       confirmLabel: 'Remove',
-      // Only the browser-local case actually destroys the user's documents.
-      destructive: destroysDocuments,
+      // Only these cases actually destroy the user's documents.
+      destructive: destroysDocuments || discardsSharedCopy,
     });
     if (!confirmed) return;
     // No request-id re-check is needed across this await: unlike the native

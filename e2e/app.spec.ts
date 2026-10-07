@@ -1,5 +1,6 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { openInsertMenu } from './helpers/toolbar.js';
 import {
   buildSharedDocumentUrl,
   createSharedDocumentArchive,
@@ -126,8 +127,9 @@ test.describe('DocBlocks App', () => {
       // Popstate starts shared-archive decoding asynchronously. Wait until
       // the transient document has replaced the welcome document before
       // interacting with its toolbar, or this click can target the obsolete
-      // editor and be lost when the shared document mounts.
-      await expect(page.locator('.db-tree-row[data-path$="shared.md"]')).toHaveAttribute(
+      // editor and be lost when the shared document mounts. It keeps the
+      // sender's file name rather than becoming "shared.md".
+      await expect(page.locator('.db-tree-row[data-path$="build.md"]')).toHaveAttribute(
         'aria-selected',
         'true',
         { timeout: 15_000 },
@@ -694,9 +696,7 @@ test.describe('Squisq overflow menu theming', () => {
 
     const menu = page.locator('.squisq-toolbar-overflow-menu');
     await expect(menu).toBeVisible();
-    const insertItem = menu.getByRole('button', { name: 'Insert...' });
-    await expect(insertItem).toBeVisible();
-    await expect(insertItem).toHaveClass(/squisq-toolbar-overflow-item/);
+    await expect(menu.locator('.squisq-toolbar-overflow-item').first()).toBeVisible();
 
     const colors = await menu.evaluate((element) => {
       const shell = document.querySelector<HTMLElement>('.db-shell');
@@ -751,10 +751,7 @@ test.describe('Squisq overflow menu theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.squisq-toolbar-overflow-trigger').click();
-    const overflowMenu = page.locator('.squisq-toolbar-overflow-menu');
-    await expect(overflowMenu).toBeVisible();
-    await overflowMenu.getByRole('button', { name: 'Insert...' }).click();
+    await openInsertMenu(page);
 
     const insertMenu = page.locator('.squisq-insert-menu').first();
     await expect(insertMenu).toBeVisible();
@@ -1271,5 +1268,31 @@ test.describe('Workspace picker', () => {
 
     await page.locator('.db-explorer-title').click();
     await expect(page.locator('.db-workspace-dropdown')).not.toBeVisible();
+  });
+
+  test('keeps the New Workspace form inside the sidebar without scrolling it', async ({ page }) => {
+    // Regression: the 300px form ran past the sidebar's edge, and focusing its
+    // field scrolled the clipped sidebar ~67px sideways, cutting off the logo,
+    // the file names and the footer.
+    await page.locator('.db-workspace-picker-btn').click();
+    await page
+      .locator('.db-workspace-dropdown')
+      .getByRole('button', { name: 'New Workspace' })
+      .click();
+    const field = page.getByLabel('Workspace name');
+    await expect(field).toBeFocused();
+
+    const layout = await page.evaluate(() => {
+      const sidebar = document.querySelector<HTMLElement>('.db-shell-sidebar')!;
+      const bounds = sidebar.getBoundingClientRect();
+      const dropdown = document.querySelector('.db-workspace-dropdown')!.getBoundingClientRect();
+      return {
+        scrollLeft: sidebar.scrollLeft,
+        dropdownInside: dropdown.left >= bounds.left && dropdown.right <= bounds.right,
+      };
+    });
+    expect(layout.scrollLeft).toBe(0);
+    expect(layout.dropdownInside).toBe(true);
+    await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeInViewport();
   });
 });

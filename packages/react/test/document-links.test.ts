@@ -70,6 +70,14 @@ describe('document link discovery', () => {
     ]);
   });
 
+  it('lists candidates in the file explorer’s order', () => {
+    const entries = [file('Invoice 10.md'), file('Invoice 2.md'), file('apple.md')];
+
+    expect(
+      createDocumentLinkCandidates(entries, 'current.md', '').map((candidate) => candidate.label),
+    ).to.deep.equal(['apple', 'Invoice 2', 'Invoice 10']);
+  });
+
   it('rejects an entry traversal that exceeds its budget', async () => {
     const provider = providerFor({ '': [file('one.md'), file('two.md')] });
     let caught: unknown;

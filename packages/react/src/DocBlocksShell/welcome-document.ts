@@ -54,7 +54,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   '- **Workspaces and file navigation** keep related documents organized without hiding their source.',
   '- **Automatic saving** protects the active revision while still surfacing conflicts or save errors.',
   '- **Optional version history** keeps plain sibling revisions when you want a trail of changes.',
-  '- **Copy-by-link sharing** creates a bounded Markdown copy that can open directly in a chosen Play view.',
+  '- **Copy-by-link sharing** puts a Markdown copy in a link that opens straight into a Document, Page, Slideshow, or Video view.',
   '- **Offline-ready, local-first storage** keeps browser work on this device and native work inside folders you choose.',
   '',
   '## Export without rebuilding the document {[list]}',
@@ -77,7 +77,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   '',
   '1. Create a document with **New file** in the file pane.',
   '2. Write visually or in Markdown source; switch views whenever it helps.',
-  '3. Open **Play** or **Export** when the idea is ready to become something else.',
+  '3. Preview it as a Document, Page, Slideshow, or Video, then choose **Export** when the idea is ready to become something else.',
   '',
   '## Explore DocBlocks {[list]}',
   '',
@@ -86,4 +86,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   '- [CLI and MCP server](https://docblocks.com/cli/) — conversion, rendering, and agent workflows.',
   '- [Supported formats](https://docblocks.com/formats/) — current import and export directions.',
   '- [Documentation](https://docblocks.com/docs/) — guides for using and extending DocBlocks.',
+  // End with a newline, as the Write view saves every document. Without it,
+  // merely opening the welcome document in Write rewrote the file.
+  '',
 ].join('\n');
