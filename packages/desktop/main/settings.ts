@@ -27,6 +27,7 @@ import {
 import { SettingsWriteQueue } from './settings-write-queue.js';
 
 export type {
+  PersistedAiSettings,
   PersistedExportTarget,
   PersistedExportTargetAccess,
   PersistedGitSettings,

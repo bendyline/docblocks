@@ -64,6 +64,10 @@ export interface DocumentExternalSnapshot {
 }
 
 export interface DocumentSessionConflict {
+  /** The local branch was restored from a previous session's recovery journal. */
+  recoveredDraft?: boolean;
+  /** Capture time of the recovered copy, not an acknowledgement of a file save. */
+  recoveredDraftCapturedAt?: number;
   targetKey: string;
   localContent: string;
   localRevision: number;

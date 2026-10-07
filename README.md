@@ -1,5 +1,7 @@
 # DocBlocks
 
+**Mobile development:** [Capacitor iOS and Android app](packages/mobile/README.md), including native storage, device tests, and release packaging.
+
 **A markdown document editor where one file can become anything — a Word doc, a PDF, a slide deck, an e-book, or a video — and the file stays yours.**
 
 [Open DocBlocks in your browser](https://docblocks.com/) — no account required.
@@ -141,7 +143,7 @@ npm run package:vscode
 
 # Run a surface
 npm run dev            # site, preferring http://localhost:5220 and falling forward when busy
-npm run app            # Build shared packages, then launch Electron + Vite on port 5221
+npm run app            # Rebuild stale linked Squisq + shared packages, then launch Electron + Vite on port 5221
 npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5
 
@@ -153,8 +155,8 @@ npm run test:mcp:linked
 ```
 
 Dependency installs enforce a seven-day release cooldown and an exact
-install-script allowlist. The internally maintained `@bendyline/squisq*`
-packages are the only cooldown exception; see
+install-script allowlist. Our own internally maintained `@bendyline/*` packages
+(Squisq, Gezel, and their siblings) are the only cooldown exception; see
 [Dependency governance](docs/dependency-governance.md).
 
 ### Testing

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './helpers/test.js';
 
 /**
  * Between the compact breakpoint (768px) and roughly 1000px the shell keeps

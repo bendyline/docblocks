@@ -13,7 +13,7 @@ import type {
   DocumentSessionTransition,
 } from './types.js';
 import { isFileSystemMoveStateError } from '../filesystem/move-error.js';
-import type { DocumentRecoveryJournal } from './recovery-journal.js';
+import type { DocumentRecoveryJournal, DocumentRecoveryRecord } from './recovery-journal.js';
 
 type SessionListener = () => void;
 
@@ -63,6 +63,7 @@ export class DocumentSession {
   private readonly autoSaveDelayMs: number;
   private readonly autoSaveRetryDelaysMs: readonly number[];
   private readonly recoveryJournal: DocumentRecoveryJournal | null;
+  private recoveredRecords: DocumentRecoveryRecord[] = [];
   private readonly listeners = new Set<SessionListener>();
   private autoSaveEnabled: boolean;
 
@@ -93,7 +94,7 @@ export class DocumentSession {
     this.autoSaveRetryDelaysMs = normalizeRetryDelays(
       options.autoSaveRetryDelaysMs ?? DEFAULT_AUTO_SAVE_RETRY_DELAYS_MS,
     );
-    this.recoveryJournal = options.recoveryJournal ?? null;
+    this.recoveryJournal = options.recoveryJournal?.forOwner(crypto.randomUUID()) ?? null;
     this.snapshot = this.createSnapshot();
   }
 
@@ -385,6 +386,7 @@ export class DocumentSession {
       this.clearAutoSaveTimer();
       this.haltDrain = true;
       this.conflict = {
+        ...this.conflict,
         targetKey: change.targetKey,
         localContent: this.content,
         localRevision: this.revision,
@@ -706,6 +708,7 @@ export class DocumentSession {
         generation,
         persistedRevision: this.persistedRevision,
       });
+      this.acknowledgeRecoveredRecords();
       this.emit();
     }
   }
@@ -727,16 +730,23 @@ export class DocumentSession {
    * baseline becomes an explicit conflict and is never auto-overwritten.
    */
   private restoreRecoverySnapshot(): 'none' | 'dirty' | 'conflict' {
+    this.recoveredRecords = [];
     if (!this.target || !this.recoveryJournal) return 'none';
-    const recovered = this.recoveryJournal.lookup(this.target.key);
+    const records = this.recoveryJournal.list(this.target.key);
+    const recovered = records[0];
     if (!recovered) return 'none';
 
+    // Interrupted recovery can leave the same branch under several owners.
+    // Capture those exact records now so resolving it retires every copy, but
+    // never a distinct draft or an owner's later edit.
+    this.recoveredRecords = records.filter(
+      (record) =>
+        record.content === recovered.content &&
+        record.persistedContent === recovered.persistedContent,
+    );
+
     if (recovered.content === this.content) {
-      this.recoveryJournal.acknowledge({
-        targetKey: recovered.targetKey,
-        generation: recovered.generation,
-        persistedRevision: recovered.revision,
-      });
+      this.acknowledgeRecoveredRecords();
       return 'none';
     }
 
@@ -755,6 +765,10 @@ export class DocumentSession {
     this.persistedContent = recovered.persistedContent;
     this.haltDrain = true;
     this.conflict = {
+      recoveredDraft: true,
+      recoveredDraftCapturedAt: Math.min(
+        ...this.recoveredRecords.map((record) => record.updatedAt),
+      ),
       targetKey: this.target.key,
       localContent: recovered.content,
       localRevision: this.revision,
@@ -780,6 +794,12 @@ export class DocumentSession {
   private discardRecoverySnapshot(): void {
     if (!this.target) return;
     this.recoveryJournal?.discard(this.target.key);
+    this.acknowledgeRecoveredRecords();
+  }
+
+  private acknowledgeRecoveredRecords(): void {
+    for (const record of this.recoveredRecords) this.recoveryJournal?.acknowledgeRecord(record);
+    this.recoveredRecords = [];
   }
 
   private detach(): void {

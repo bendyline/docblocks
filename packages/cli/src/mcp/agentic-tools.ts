@@ -840,6 +840,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               hasDate: boolean;
               hasNumberHighlight: boolean;
               wordCount: number;
+              hasCompoundBody: boolean;
               hasAsciiDiagram: boolean;
               hasTimeline: boolean;
               hasTree: boolean;
@@ -875,6 +876,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
                 title: boundNullableWireText(block.title, MCP_WIRE_LIMITS.labelCharacters),
                 profile: {
                   ...profile,
+                  hasCompoundBody: profile.hasCompoundBody ?? false,
                   hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
                   hasTimeline: profile.hasTimeline ?? false,
                   hasTree: profile.hasTree ?? false,
@@ -1058,6 +1060,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               title: boundNullableWireText(block.title, MCP_WIRE_LIMITS.labelCharacters),
               profile: {
                 ...profile,
+                hasCompoundBody: profile.hasCompoundBody ?? false,
                 hasAsciiDiagram: profile.hasAsciiDiagram ?? false,
                 hasTimeline: profile.hasTimeline ?? false,
                 hasTree: profile.hasTree ?? false,

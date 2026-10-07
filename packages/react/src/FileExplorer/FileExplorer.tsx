@@ -11,6 +11,7 @@ import {
   parseWorkspacePath,
   type FileSystemProvider,
   type FileSystemEntry,
+  type FileSystemEntryMoveOptions,
 } from '@bendyline/docblocks/filesystem';
 import { useFileTree } from './useFileTree.js';
 import {
@@ -72,7 +73,7 @@ export type FileTreeChange =
 
 export type FileTreeMutationHandler = (
   change: FileTreeChange,
-  mutate: () => Promise<void>,
+  mutate: (options?: FileSystemEntryMoveOptions) => Promise<void>,
 ) => Promise<void>;
 
 export interface WorkspaceMoveDestination {
@@ -404,7 +405,10 @@ export function FileExplorer({
   }, [moveDestinationId, movingToWorkspace, onMoveToWorkspace]);
 
   const runTreeMutation = useCallback(
-    async (change: FileTreeChange, mutate: () => Promise<void>) => {
+    async (
+      change: FileTreeChange,
+      mutate: (options?: FileSystemEntryMoveOptions) => Promise<void>,
+    ) => {
       if (onTreeMutation) await onTreeMutation(change, mutate);
       else await mutate();
       onTreeChange?.(change);
@@ -425,7 +429,9 @@ export function FileExplorer({
       setMoveError(null);
       const change: FileTreeChange = { type: 'move', oldPath, newPath, kind };
       try {
-        await runTreeMutation(change, () => tree.renameEntry(oldPath, newPath, kind));
+        await runTreeMutation(change, (options) =>
+          tree.renameEntry(oldPath, newPath, kind, options),
+        );
       } catch (error: unknown) {
         await tree.refresh();
         if (isFileSystemMoveStateError(error) && error.documentLocation === 'destination') {

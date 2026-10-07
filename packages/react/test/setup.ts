@@ -11,7 +11,30 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
-  GlobalRegistrator.register({ url: 'http://localhost/' });
+  GlobalRegistrator.register({
+    url: 'http://localhost/',
+    settings: {
+      fetch: {
+        interceptor: {
+          // happy-dom performs a synchronous request in a child Node process.
+          // No unit test needs one, but Node libraries that see these browser
+          // globals think they are in a page: Playwright's bundled
+          // source-map-support reads source files through synchronous XHR, and
+          // every attempt spawned a child that crashed on localhost:80. Answer
+          // without touching the network so it falls back to the filesystem.
+          beforeSyncRequest: ({ request, window }) => ({
+            status: 404,
+            statusText: 'Not Found',
+            ok: false,
+            url: request.url,
+            redirected: false,
+            headers: new window.Headers(),
+            body: null,
+          }),
+        },
+      },
+    },
+  });
 }
 
 // A parallel ../squisq checkout is linked into this repository for local

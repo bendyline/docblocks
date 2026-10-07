@@ -4,8 +4,23 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
-import { parseOpenRequest } from '@bendyline/docblocks/host';
+import {
+  parseAiChatEvent,
+  parseAiKnowledgeState,
+  parseAiKnowledgeAction,
+  parseAiError,
+  parseAiModelDownloadInfoList,
+  parseAiModelInstallEvent,
+  parseAiStatus,
+  parseOpenRequest,
+} from '@bendyline/docblocks/host';
 import type {
+  AiChatCompletion,
+  AiError,
+  AiModelDownloadInfo,
+  AiModelInfo,
+  AiResult,
+  DocBlocksHostAiAPI,
   DocBlocksHostAPI,
   DocBlocksHostFsAPI,
   DocBlocksHostFsV2API,
@@ -33,7 +48,12 @@ import type {
 } from '@bendyline/docblocks/host';
 import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem';
 import { BufferedEventChannel } from './buffered-event-channel.js';
-import { parseHostEnvironmentArguments } from '../shared/host-environment.js';
+import {
+  parseAiAvailabilityArgument,
+  parseHostEnvironmentArguments,
+  parseSpeechAvailabilityArgument,
+} from '../shared/host-environment.js';
+import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
 // ready-to-show, before React effects subscribe. Install this preload listener
@@ -177,7 +197,7 @@ const clipboardApi: DocBlocksHostClipboardAPI = {
     ipcRenderer.invoke('clipboard:writeWorkspacePath', workspaceId, workspacePath),
 };
 
-// â”€â”€ exports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── exports ─────────────────────────────────────────────────────────
 
 const exportApi: DocBlocksHostExportAPI = {
   resolveTarget: (documentId, filename) =>
@@ -186,6 +206,12 @@ const exportApi: DocBlocksHostExportAPI = {
     ipcRenderer.invoke('exports:pickTarget', documentId, filename, currentGrantId ?? null),
   save: (documentId, filename, grantId, data) =>
     ipcRenderer.invoke('exports:save', documentId, filename, grantId, data),
+  beginSave: (documentId, filename, grantId, size) =>
+    ipcRenderer.invoke('exports:beginSave', documentId, filename, grantId, size),
+  writeChunk: (transferId, offset, data) =>
+    ipcRenderer.invoke('exports:writeChunk', transferId, offset, data),
+  finishSave: (transferId) => ipcRenderer.invoke('exports:finishSave', transferId),
+  closeTransfer: (transferId) => ipcRenderer.invoke('exports:closeTransfer', transferId),
 };
 
 // ── ffmpeg ──────────────────────────────────────────────────────────
@@ -282,6 +308,195 @@ const updaterApi: DocBlocksHostUpdaterAPI = {
   },
 };
 
+// ── ai ──────────────────────────────────────────────────────────────
+
+function aiFailure(message: string, detail?: unknown): AiError {
+  const text = detail instanceof Error ? detail.message : undefined;
+  return {
+    code: 'unknown',
+    message,
+    ...(text ? { detail: text.replaceAll('\0', '').slice(0, 2_000) } : {}),
+  };
+}
+
+function parseAvailableModelsResult(value: unknown): AiResult<readonly AiModelDownloadInfo[]> {
+  if (typeof value !== 'object' || value === null) {
+    return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+  }
+  const record = value as { ok?: unknown; value?: unknown; error?: unknown };
+  if (record.ok === true) {
+    const models = parseAiModelDownloadInfoList(record.value);
+    return models
+      ? { ok: true, value: models }
+      : { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+  }
+  if (record.ok === false && typeof record.error === 'object' && record.error !== null) {
+    const error = parseAiError(record.error);
+    if (error) return { ok: false, error };
+  }
+  return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
+}
+
+function parseKnowledgeResult<T>(value: unknown, parse: (value: unknown) => T | null): AiResult<T> {
+  if (typeof value === 'object' && value !== null && Object.keys(value).length === 2) {
+    const result = value as { ok?: unknown; value?: unknown; error?: unknown };
+    if (result.ok === true && Object.hasOwn(value, 'value')) {
+      const parsed = parse(result.value);
+      if (parsed !== null) return { ok: true, value: parsed };
+    }
+    if (result.ok === false && Object.hasOwn(value, 'error')) {
+      const error = parseAiError(result.error);
+      if (error) return { ok: false, error };
+    }
+  }
+  return {
+    ok: false,
+    error: aiFailure('DocBlocks received catalog information it could not read.'),
+  };
+}
+
+const aiApi: DocBlocksHostAiAPI = {
+  knowledge: {
+    async state() {
+      return parseKnowledgeResult(
+        await ipcRenderer.invoke('ai:knowledge:state'),
+        parseAiKnowledgeState,
+      );
+    },
+    async update(value) {
+      const action = parseAiKnowledgeAction(value);
+      if (!action) return { ok: false, error: aiFailure('Invalid knowledge catalog action.') };
+      const result = parseKnowledgeResult(
+        await ipcRenderer.invoke('ai:knowledge:update', action),
+        (value) => (value === null ? true : null),
+      );
+      return result.ok ? { ok: true, value: null } : result;
+    },
+  },
+  async providerInstalled() {
+    const installed: unknown = await ipcRenderer.invoke('ai:providerInstalled');
+    if (typeof installed !== 'boolean') throw new Error('Invalid AI provider presence');
+    return installed;
+  },
+  status: () => ipcRenderer.invoke('ai:status'),
+  onStatus(listener) {
+    const fn = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      const status = parseAiStatus(value);
+      if (status) listener(status);
+    };
+    ipcRenderer.on('ai:status', fn);
+    return () => ipcRenderer.removeListener('ai:status', fn);
+  },
+  getPreferences: () => ipcRenderer.invoke('ai:getPreferences'),
+  setPreferences: (patch) => ipcRenderer.invoke('ai:setPreferences', patch),
+  connect: () => ipcRenderer.invoke('ai:connect'),
+  disconnect: () => ipcRenderer.invoke('ai:disconnect'),
+  models: () => ipcRenderer.invoke('ai:models'),
+  async availableModels() {
+    return parseAvailableModelsResult(await ipcRenderer.invoke('ai:availableModels'));
+  },
+  installModel(modelId, onProgress) {
+    const requestId = mintId('ai-model');
+    let finished = false;
+    let settle: (result: AiResult<AiModelInfo>) => void = () => undefined;
+    const done = new Promise<AiResult<AiModelInfo>>((resolve) => {
+      settle = resolve;
+    });
+    const finish = (result: AiResult<AiModelInfo>) => {
+      if (finished) return;
+      finished = true;
+      ipcRenderer.removeListener('ai:modelInstall:event', listener);
+      settle(result);
+    };
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (finished || typeof payload !== 'object' || payload === null) return;
+      const record = payload as { requestId?: unknown; event?: unknown };
+      if (record.requestId !== requestId) return;
+      const event = parseAiModelInstallEvent(record.event);
+      if (!event) {
+        const error = aiFailure('DocBlocks received model progress it could not read.');
+        void ipcRenderer.invoke('ai:modelInstall:cancel', requestId).catch(() => undefined);
+        finish({ ok: false, error });
+        return;
+      }
+      if (event.kind === 'progress') onProgress?.(event.progress);
+      else if (event.kind === 'done') finish({ ok: true, value: event.model });
+      else finish({ ok: false, error: event.error });
+    };
+    ipcRenderer.on('ai:modelInstall:event', listener);
+    ipcRenderer.invoke('ai:modelInstall:start', requestId, modelId).catch((cause: unknown) => {
+      finish({
+        ok: false,
+        error: aiFailure('DocBlocks could not start the model download.', cause),
+      });
+    });
+    return {
+      done,
+      cancel: () => {
+        if (!finished) {
+          void ipcRenderer.invoke('ai:modelInstall:cancel', requestId).catch(() => undefined);
+        }
+      },
+    };
+  },
+  chat(request, onEvent) {
+    // Minted here, in the bridge, and scoped to this renderer by main — the
+    // caller never chooses it, so it cannot address anyone else's stream.
+    const requestId = mintId('ai');
+    let finished = false;
+    let settle: (result: AiResult<AiChatCompletion>) => void = () => undefined;
+    const done = new Promise<AiResult<AiChatCompletion>>((resolve) => {
+      settle = resolve;
+    });
+
+    const deliver = (event: Parameters<typeof onEvent>[0]) => {
+      try {
+        onEvent(event);
+      } catch {
+        // A throwing consumer must not strand the stream's bookkeeping.
+      }
+    };
+    const finish = (result: AiResult<AiChatCompletion>) => {
+      if (finished) return;
+      finished = true;
+      ipcRenderer.removeListener('ai:chat:event', listener);
+      settle(result);
+    };
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (finished || typeof payload !== 'object' || payload === null) return;
+      const record = payload as { requestId?: unknown; event?: unknown };
+      if (record.requestId !== requestId) return;
+      const event = parseAiChatEvent(record.event);
+      if (!event) {
+        const error = aiFailure('DocBlocks received a response it could not read.');
+        void ipcRenderer.invoke('ai:chat:cancel', requestId).catch(() => undefined);
+        deliver({ kind: 'error', error });
+        finish({ ok: false, error });
+        return;
+      }
+      deliver(event);
+      if (event.kind === 'done') finish({ ok: true, value: event.completion });
+      else if (event.kind === 'error') finish({ ok: false, error: event.error });
+    };
+
+    // Listen before starting: main may answer synchronously.
+    ipcRenderer.on('ai:chat:event', listener);
+    ipcRenderer.invoke('ai:chat:start', requestId, request).catch((cause: unknown) => {
+      if (finished) return;
+      const error = aiFailure('DocBlocks could not start the AI request.', cause);
+      deliver({ kind: 'error', error });
+      finish({ ok: false, error });
+    });
+
+    return {
+      done,
+      cancel: () => {
+        if (!finished) void ipcRenderer.invoke('ai:chat:cancel', requestId).catch(() => undefined);
+      },
+    };
+  },
+};
+
 // ── event channels ──────────────────────────────────────────────────
 
 let prepareCloseListener:
@@ -370,6 +585,9 @@ const menuApi: DocBlocksHostMenuAPI = {
 // script and `NODE_ENV` is unset in a packaged app, so doing so reported
 // version 0.0.0 and isDev:true to every user of every packaged build.
 const env: HostEnvironment = {
+  surface: 'electron',
+  // Suffixed onto the version in About and issue reports: "2.6.2 desktop".
+  surfaceLabel: 'desktop',
   platform: process.platform as HostEnvironment['platform'],
   ...parseHostEnvironmentArguments(process.argv),
 };
@@ -390,8 +608,20 @@ const host: DocBlocksHostAPI = {
   updater: updaterApi,
   lifecycle: lifecycleApi,
   menu: menuApi,
+  // Omitted, not stubbed, on a build that cannot do AI: capabilities are
+  // derived from which members exist.
+  ...(parseAiAvailabilityArgument(process.argv) ? { ai: aiApi } : {}),
+  // Likewise per engine: `transcribe` / `synthesize` exist only when main found
+  // the engine, and the namespace only when it found at least one.
+  ...speechNamespace(),
   onMenuCommand,
   onOpenRequest,
 };
+
+function speechNamespace(): Pick<DocBlocksHostAPI, 'speech'> {
+  const availability = parseSpeechAvailabilityArgument(process.argv);
+  if (!availability.stt && !availability.tts) return {};
+  return { speech: createSpeechApi(ipcRenderer, availability, mintId) };
+}
 
 contextBridge.exposeInMainWorld('docBlocksHost', host);

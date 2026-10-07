@@ -122,6 +122,8 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'updater',
           'lifecycle',
           'menu',
+          'ai',
+          'speech',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
       workspace,
@@ -138,6 +140,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   });
 
   expect(contract.topLevel).toEqual([
+    'ai',
     'clipboard',
     'env',
     'exports',
@@ -151,6 +154,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'onMenuCommand',
     'onOpenRequest',
     'shell',
+    'speech',
     'updater',
     'workspaces',
   ]);
@@ -207,7 +211,15 @@ test('preload exposes the complete typed host and reaches representative IPC han
   ]);
   expect(contract.methods.shell).toEqual(['openExternal', 'openWorkspaceFolder', 'revealInFolder']);
   expect(contract.methods.clipboard).toEqual(['writeText', 'writeWorkspacePath']);
-  expect(contract.methods.exports).toEqual(['pickTarget', 'resolveTarget', 'save']);
+  expect(contract.methods.exports).toEqual([
+    'beginSave',
+    'closeTransfer',
+    'finishSave',
+    'pickTarget',
+    'resolveTarget',
+    'save',
+    'writeChunk',
+  ]);
   expect(contract.methods.ffmpeg).toEqual(['available', 'version']);
   expect(contract.methods.updater).toEqual([
     'checkForUpdates',
@@ -221,6 +233,35 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'requestWindowClose',
   ]);
   expect(contract.methods.menu).toEqual(['setPinnedDocuments']);
+  // The core AI group only: workspace search, images, and speech are optional
+  // members this host does not implement, so their capabilities stay false.
+  expect(contract.methods.ai).toEqual([
+    'availableModels',
+    'chat',
+    'connect',
+    'disconnect',
+    'getPreferences',
+    'installModel',
+    'models',
+    'onStatus',
+    'providerInstalled',
+    'setPreferences',
+    'status',
+  ]);
+  // Both engines are present: the fixture runs the source app against the fake
+  // whisper-server and narration utility.
+  expect(contract.methods.speech).toEqual([
+    'catalog',
+    'getPreferences',
+    'installModel',
+    'onStatus',
+    'prepare',
+    'removeModel',
+    'setPreferences',
+    'status',
+    'synthesize',
+    'transcribe',
+  ]);
   expect(contract.methods.git).toEqual([
     'capabilities',
     'checkoutBranch',

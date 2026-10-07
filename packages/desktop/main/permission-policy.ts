@@ -4,6 +4,7 @@ import type {
   PermissionCheckHandlerHandlerDetails,
   Session,
   Streams,
+  SystemPreferences,
   WebContents,
 } from 'electron';
 
@@ -29,6 +30,16 @@ const ALLOWED_PERMISSION_CHECKS = new Set<PermissionCheckName>([
   'media',
 ]);
 
+/**
+ * The macOS TCC media types DocBlocks can ask for. `screen` is deliberately
+ * absent: macOS has no programmatic prompt for Screen Recording, so a display
+ * capture either works or sends the user to System Settings on its own.
+ */
+export type MacMediaType = 'camera' | 'microphone';
+
+/** The slice of `systemPreferences` the media gate needs (injectable in tests). */
+export type MacMediaAccess = Pick<SystemPreferences, 'askForMediaAccess' | 'getMediaAccessStatus'>;
+
 export interface DisplayCaptureSource {
   id: string;
   name: string;
@@ -42,9 +53,17 @@ export interface DesktopPermissionPolicyOptions {
   >;
   getOwner: () => WebContents | null;
   getDisplaySources: () => Promise<readonly DisplayCaptureSource[]>;
-  getPrimaryDisplayId: () => number;
+  chooseDisplaySource: (
+    owner: WebContents,
+    sources: readonly DisplayCaptureSource[],
+  ) => Promise<DisplayCaptureSource | null>;
   platform: NodeJS.Platform;
   developmentOrigin?: string;
+  /**
+   * macOS only. Omit on other platforms — `requiredMacMediaTypes` returns
+   * nothing there, so the gate never runs.
+   */
+  mediaAccess?: MacMediaAccess;
 }
 
 function hasTrustedUrl(value: unknown, developmentOrigin?: string): boolean {
@@ -164,13 +183,58 @@ export function allowsDisplayMediaRequest(
   );
 }
 
-export function selectDisplayCaptureSource(
-  sources: readonly DisplayCaptureSource[],
-  primaryDisplayId: number,
-): DisplayCaptureSource | null {
-  if (sources.length === 0) return null;
-  const primaryId = String(primaryDisplayId);
-  return sources.find((source) => source.display_id === primaryId) ?? sources[0] ?? null;
+/**
+ * macOS gates camera and microphone behind TCC, and Chromium inside Electron
+ * never raises that prompt on its own. Without a grant, `getUserMedia`
+ * resolves with a track that reports `live`, `enabled`, and unmuted — and
+ * then delivers no frames at all (`readyState` stays 0, `videoWidth` 0, and
+ * the camera's own indicator light never comes on). There is no error for the
+ * renderer to surface, so the preview is simply black forever.
+ *
+ * `systemPreferences.askForMediaAccess` is the only way to raise the prompt,
+ * so a `media` permission request has to name the TCC types it implies before
+ * it can be granted.
+ *
+ * Returns nothing off darwin and nothing for permissions that carry no TCC
+ * media type, which keeps the gate a no-op everywhere else. A `media` request
+ * with no `mediaTypes` is treated as asking for both — Chromium omits the
+ * field on some paths, and a missing prompt is exactly the bug being fixed.
+ */
+export function requiredMacMediaTypes(
+  platform: NodeJS.Platform,
+  permission: PermissionRequestName,
+  details: PermissionRequestDetails,
+): readonly MacMediaType[] {
+  if (platform !== 'darwin' || permission !== 'media') return [];
+  const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined;
+  if (!mediaTypes) return ['camera', 'microphone'];
+  const types: MacMediaType[] = [];
+  if (mediaTypes.includes('video')) types.push('camera');
+  if (mediaTypes.includes('audio')) types.push('microphone');
+  return types;
+}
+
+/**
+ * Resolve every TCC type the request needs, prompting only for the ones still
+ * undecided. `askForMediaAccess` resolves `false` without a prompt once the
+ * user has denied or the type is MDM-restricted, which turns the renderer's
+ * capture into an honest `NotAllowedError` instead of a black preview the user
+ * cannot explain.
+ */
+export async function grantsMacMediaAccess(
+  types: readonly MacMediaType[],
+  access: MacMediaAccess | undefined,
+): Promise<boolean> {
+  if (types.length === 0) return true;
+  // No injected accessor on a platform that needs one: fail closed rather than
+  // hand Chromium a grant macOS will quietly turn into empty frames.
+  if (!access) return false;
+
+  for (const type of types) {
+    if (access.getMediaAccessStatus(type) === 'granted') continue;
+    if (!(await access.askForMediaAccess(type))) return false;
+  }
+  return true;
 }
 
 export function displayMediaHandlerOptions(platform: NodeJS.Platform): {
@@ -195,11 +259,38 @@ export function grantedDisplayStreams(
 }
 
 export function configureDesktopPermissionPolicy(options: DesktopPermissionPolicyOptions): void {
-  const { session, getOwner, getDisplaySources, getPrimaryDisplayId, platform, developmentOrigin } =
-    options;
+  const {
+    session,
+    getOwner,
+    getDisplaySources,
+    chooseDisplaySource,
+    platform,
+    developmentOrigin,
+    mediaAccess,
+  } = options;
 
   session.setPermissionRequestHandler((sender, permission, callback, details) => {
-    callback(allowsPermissionRequest(getOwner(), sender, permission, details, developmentOrigin));
+    const allowed = () =>
+      allowsPermissionRequest(getOwner(), sender, permission, details, developmentOrigin);
+    if (!allowed()) {
+      callback(false);
+      return;
+    }
+
+    const macMediaTypes = requiredMacMediaTypes(platform, permission, details);
+    if (macMediaTypes.length === 0) {
+      callback(true);
+      return;
+    }
+
+    void grantsMacMediaAccess(macMediaTypes, mediaAccess)
+      .then((granted) => {
+        // The TCC prompt is modal and can outlive the document that triggered
+        // it, so re-prove ownership the same way the display-capture handler
+        // does after its own async hop.
+        callback(granted && allowed());
+      })
+      .catch(() => callback(false));
   });
 
   session.setPermissionCheckHandler((sender, permission, requestingOrigin, details) =>
@@ -213,23 +304,43 @@ export function configureDesktopPermissionPolicy(options: DesktopPermissionPolic
     ),
   );
 
+  let choosingDisplay = false;
   session.setDisplayMediaRequestHandler((request, callback) => {
-    if (!allowsDisplayMediaRequest(getOwner(), request, developmentOrigin)) {
+    const owner = getOwner();
+    const allowed = () =>
+      getOwner() === owner && allowsDisplayMediaRequest(owner, request, developmentOrigin);
+    if (choosingDisplay || !owner || !allowed()) {
       callback({});
       return;
     }
 
+    choosingDisplay = true;
+    let completed = false;
+    const finish = (streams: Streams = {}) => {
+      if (completed) return;
+      completed = true;
+      clearTimeout(timeout);
+      owner.removeListener('did-start-navigation', cancel);
+      owner.removeListener('destroyed', cancel);
+      choosingDisplay = false;
+      callback(streams);
+    };
+    const cancel = () => finish();
+    const timeout = setTimeout(cancel, 120_000);
+    owner.once('did-start-navigation', cancel);
+    owner.once('destroyed', cancel);
     void getDisplaySources()
-      .then((sources) => {
-        // Source enumeration can show an OS picker and outlive the original
-        // document. Revalidate ownership before granting the selected stream.
-        if (!allowsDisplayMediaRequest(getOwner(), request, developmentOrigin)) {
-          callback({});
-          return;
-        }
-        const source = selectDisplayCaptureSource(sources, getPrimaryDisplayId());
-        callback(source ? grantedDisplayStreams(source, request.audioRequested, platform) : {});
+      .then(async (sources) => {
+        if (completed || !allowed() || sources.length === 0) return {};
+        const source = await chooseDisplaySource(owner, sources);
+        // Neither an unrecognized selection nor a picker that outlived its
+        // owning renderer can authorize capture. Cancellation never falls back
+        // to the primary monitor.
+        return !completed && source && sources.includes(source) && allowed()
+          ? grantedDisplayStreams(source, request.audioRequested, platform)
+          : {};
       })
-      .catch(() => callback({}));
+      .catch(() => ({}))
+      .then(finish);
   }, displayMediaHandlerOptions(platform));
 }

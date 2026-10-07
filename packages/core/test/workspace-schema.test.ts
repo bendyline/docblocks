@@ -2,6 +2,18 @@ import { expect } from 'chai';
 import { parsePersistedWorkspaceList } from '../src/workspace/workspace-schema.js';
 
 describe('persisted workspace schema', () => {
+  it('migrates desktop workspace identity without changing its ID or display path', () => {
+    const descriptor = {
+      id: 'desktop',
+      name: 'Desktop',
+      type: 'electron-native',
+      rootPath: '/Documents',
+      lastOpened: new Date().toISOString(),
+    };
+    expect(parsePersistedWorkspaceList([descriptor])).to.deep.equal([
+      { ...descriptor, type: 'host-native' },
+    ]);
+  });
   it('accepts exact durable descriptors', () => {
     const lastOpened = new Date('2026-07-15T00:00:00.000Z').toISOString();
     expect(

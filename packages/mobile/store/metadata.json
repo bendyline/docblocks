@@ -1,0 +1,17 @@
+{
+  "status": "draft-needs-owner-review",
+  "name": "DocBlocks",
+  "subtitle": "Markdown on your own device",
+  "description": "Write and organize Markdown documents with a visual editor and a source view. Work offline in a device workspace, or choose a work folder from Files. Import an editable copy of a Markdown document, export your work, and share a file through your device's share sheet.",
+  "supportUrl": "https://docblocks.com/docs/",
+  "privacyPolicyUrl": null,
+  "iosCategory": "PRODUCTIVITY",
+  "androidCategory": "PRODUCTIVITY",
+  "reviewNotes": "No account is required. Start with On this device, create a document, then switch between Write and Source. Open a folder grants access only to the chosen workspace. Save opens a system destination picker; Share file opens a separate share sheet.",
+  "ownerReviewRequired": [
+    "Privacy policy URL and platform data-safety answers",
+    "Age/content questionnaires and encryption declaration",
+    "Store application records and distribution signing",
+    "Screenshots and physical-device qualification described in docs/mobile-plan.md"
+  ]
+}

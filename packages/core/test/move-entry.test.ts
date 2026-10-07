@@ -6,9 +6,87 @@ import {
   FileSystemPartialMoveError,
   MemoryFileSystemProvider,
   moveFileSystemEntry,
+  FileSystemContentContainer,
+  createFileMediaProvider,
+  rewriteCompanionReferences,
 } from '@bendyline/docblocks/filesystem';
+import { DocumentSession, createFileSystemDocumentTarget } from '@bendyline/docblocks/document';
 
 describe('moveFileSystemEntry', () => {
+  it('keeps Markdown image, reference, audio and video targets valid after a basename rename', async () => {
+    const fs = new MemoryFileSystemProvider('rename-media', 'Media');
+    await fs.writeFile(
+      'notes.md',
+      [
+        '![Photo](notes_files/photo.png)',
+        '[Audio][sound]',
+        '[sound]: notes_files/sound.mp3',
+        '<video src="notes_files/movie.mp4"></video>',
+        '<audio src="notes_files/sound.mp3"></audio>',
+        '`notes_files/photo.png`',
+        'Literal notes_files/photo.png',
+        '![External](https://example.com/notes_files/photo.png)',
+      ].join('\n\n'),
+    );
+    for (const name of ['photo.png', 'sound.mp3', 'movie.mp4']) {
+      await fs.writeBinary(`notes_files/${name}`, new Uint8Array([1, 2, 3]));
+    }
+    await moveFileSystemEntry(fs, 'notes.md', 'renamed.md', 'file');
+    const content = await fs.readFile('renamed.md');
+    expect(content).to.contain('renamed_files/photo.png');
+    expect(content).to.contain('renamed_files/sound.mp3');
+    expect(content).to.contain('renamed_files/movie.mp4');
+    expect(content).to.contain('src="renamed_files/sound.mp3"');
+    expect(content).to.contain('`notes_files/photo.png`');
+    expect(content).to.contain('Literal notes_files/photo.png');
+    expect(content).to.contain('https://example.com/notes_files/photo.png');
+    const media = createFileMediaProvider(new FileSystemContentContainer(fs, ''), 'renamed.md');
+    expect(await media.resolveUrl('renamed_files/photo.png')).to.match(/^blob:/);
+    media.dispose?.();
+    await fs.v2.dispose();
+  });
+
+  it('retargets an active session before rewriting its media and preserves the next edit', async () => {
+    const fs = new MemoryFileSystemProvider('active-rename-media', 'Active media');
+    const initial = '![Photo](notes_files/photo.png)';
+    await fs.writeFile('notes.md', initial);
+    await fs.writeBinary('notes_files/photo.png', new Uint8Array([1, 2, 3]));
+    const session = new DocumentSession({ autoSaveEnabled: false });
+    try {
+      await session.transitionTo(createFileSystemDocumentTarget(fs, 'notes.md'), initial);
+      const moved = await session.retarget(createFileSystemDocumentTarget(fs, 'renamed.md'), () =>
+        moveFileSystemEntry(fs, 'notes.md', 'renamed.md', 'file', { rewriteMarkdown: false }),
+      );
+      const scope = { targetKey: moved.targetKey!, generation: moved.generation };
+      session.edit(
+        await rewriteCompanionReferences(moved.content, 'notes.md', 'renamed.md'),
+        scope,
+      );
+      await session.flush();
+      session.edit(`${session.getSnapshot().content}\n\nContinued editing.`, scope);
+      await session.flush();
+      expect(session.getSnapshot().status).to.equal('saved');
+      expect(await fs.readFile('renamed.md')).to.contain('renamed_files/photo.png');
+      expect(await fs.readFile('renamed.md')).to.contain('Continued editing.');
+      expect(await fs.exists('notes.md')).to.equal(false);
+    } finally {
+      await session.cancel();
+      await fs.v2.dispose();
+    }
+  });
+  for (const extension of ['html', 'htm', 'docx', 'pdf', 'pptx', 'xlsx', 'csv']) {
+    it(`moves the ${extension} companion and assets when renaming`, async () => {
+      const fs = new MemoryFileSystemProvider(`move-${extension}`, 'Move');
+      await fs.writeBinary(`old.${extension}`, new Uint8Array([1, 2, 3]));
+      await fs.writeFile('old_files/old.md', '# Source');
+      await fs.writeBinary('old_files/image.png', new Uint8Array([4, 5]));
+      await moveFileSystemEntry(fs, `old.${extension}`, `new.${extension}`, 'file');
+      expect(await fs.readFile('new_files/old.md')).to.equal('# Source');
+      expect(await fs.exists('new_files/image.png')).to.equal(true);
+      expect(await fs.exists('old_files')).to.equal(false);
+      await fs.v2.dispose();
+    });
+  }
   it('derives a sibling companion directory at any nesting depth', () => {
     expect(documentCompanionPath('/notes.md')).to.equal('/notes_files');
     expect(documentCompanionPath('guides/start.md')).to.equal('guides/start_files');

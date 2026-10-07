@@ -4,11 +4,12 @@ Guidance for Codex (and any other AI coding agent) working in this repo. Read th
 
 ## What DocBlocks is
 
-A markdown document editor and management platform that ships from one npm-workspaces monorepo to **four delivery surfaces**:
+A markdown document editor and management platform that ships from one npm-workspaces monorepo to **five delivery surfaces**:
 
 - **Site** (`packages/site`) — a Vite/React demo of the shell, deployed to GitHub Pages
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
+- **Mobile** (`packages/mobile`) — Capacitor for iOS and Android, mounting the shared shell
 - **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
@@ -23,6 +24,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
+| `packages/mobile`  | `docblocks-mobile`           | Capacitor shell, native workspace storage, Files/SAF folders, import, export, and sharing.                                                                                                                                                                                                                          |
 
 ## Build, test, dev commands
 
@@ -54,9 +56,23 @@ npm run test:e2e:all        # all site, VS Code Web, source desktop, and package
 npm run test:e2e:desktop    # Playwright + Electron launcher
 npm run test:e2e:desktop:packaged # smoke the electron-builder unpacked artifact
 npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
+# Browser E2E suites fail on unexpected console.error / uncaught page errors.
+# Allow one with its reason in e2e/helpers/console-guard.ts, or per test with
+# the `allowRuntimeErrors` fixture. Import `test` from the suite's own helper
+# (e2e/helpers/test.ts, packages/vscode/e2e/test.ts, the desktop fixtures) —
+# importing it from @playwright/test opts the spec out of the guard silently.
+
+# Screenshot inventory for visual/UX review (not a test; writes to reports/)
+npm run ux:crawl            # build the site, serve it locally, crawl and capture
+
+# Visual regression — a PRE-RELEASE gate, deliberately not part of `npm run all`
+npm run test:e2e:visual           # site, VS Code webview, desktop native chrome
+npm run test:e2e:visual -- --site # one surface (also --vscode, --desktop)
+npm run test:e2e:visual:update    # recapture baselines (Linux only; see below)
 
 # Quality gates
 npm run check:dependency-governance # exact install-script allowlist + seven-day dependency cooldown
+npm run check:linux-launchers # packaged AppImage/.deb desktop entries keep the Chromium sandbox
 npm run typecheck           # core, react, CLI, VS Code host + webview, site, and desktop
 npm run lint                # eslint flat config
 npm run format:check        # prettier
@@ -65,6 +81,9 @@ npm run format              # prettier --write
 # Squisq parallel dev — symlinks @bendyline/squisq* from ..\squisq
 npm run link:squisq         # link
 npm run dev:squisq          # link + watch
+# Surfaces load linked Squisq from its dist/, not src/. `npm run app` and
+# `npm run site` rebuild any linked package whose sources are newer first
+# (scripts/build-linked-squisq.ts); edits made while one runs need dev:squisq.
 npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity
@@ -154,6 +173,37 @@ UI code (in `packages/react`, `packages/site`, `packages/desktop/renderer`, and
 `electron` directly. Electron main must re-parse paths and prove physical
 workspace containment; renderer validation is not a security boundary.
 
+### Ask what the host can do, never which host it is
+
+`packages/core/src/host/capabilities.ts` is the seam. `isElectronHost()` was a
+single duck-typed boolean (`globalThis.docBlocksHost?.fs`) standing in for a
+dozen unrelated decisions — filesystem backend, export destinations, menu
+commands, window chrome, storage warnings, git, updater — and no non-Electron
+host can answer it honestly either way. It is deprecated and **lint-banned in
+`packages/react/src/**`and every renderer** via`no-restricted-imports`.
+
+Callers ask `hostSupports('revealInFileManager')`, `hasDocBlocksHost()`, or
+`getHostCapabilities()`. The handful of questions that are genuinely about
+product identity rather than ability — which documentation URL to open — read
+`getHostEnvironment()?.surface` and say so at the call site.
+
+**Capabilities are derived, never declared.** `deriveHostCapabilities()`
+observes which bridge members are actually present, so the two can never drift
+and preload/plugin version skew degrades to "unsupported" rather than a runtime
+`TypeError`. A host whose `env` fails `parseHostEnvironment()` reports _nothing_
+— failing closed beats half-trusting a bridge we cannot identify.
+
+Everything optional on `DocBlocksHostAPI` is optional **in the type**. That is
+deliberate: it turns "audit every call site" into a list the typechecker
+produces, and it is what will make adding a mobile host a mechanical exercise.
+Do not add a non-optional member unless every conceivable host must provide it.
+
+`packages/react/test/host-capabilities-shell.test.ts` and
+`packages/core/test/host-capabilities.test.ts` assert against three fixtures:
+a full Electron-shaped host, a **deliberately reduced mobile-shaped host**, and
+none. The middle fixture validates the model against its real future consumer
+before that consumer exists — keep it in sync with the planned mobile bridge.
+
 ### `DocBlocksHostAPI` is the single seam for Electron capabilities
 
 `packages/core/src/host/types.ts` is the canonical contract for what the desktop shell exposes to the renderer (`fs`, `workspaces`, `shell`, `ffmpeg`, `updater`, `menu`, `open-file`). The contract spans three files that must stay in sync:
@@ -165,6 +215,114 @@ packages/desktop/preload/preload.ts      ← contextBridge exposure
 ```
 
 Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host` and degrades gracefully when running in a non-Electron context (site, vscode webview). **Renderer must never import `electron` or `node:*`.**
+
+### AI is an optional Gezel sidecar behind `host.ai`
+
+`packages/core/src/host/ai.ts` (`DocBlocksHostAiAPI`) names no provider;
+`packages/react` renders it (`AiSettingsControls`, shown when
+`hostSupports('aiAssist')`) and never learns what is behind it. On desktop,
+`main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
+machine — to the renderer. `main/ai/gezel-connector.ts` and
+`main/ai/gezel-knowledge.ts` keep Gezel behind that seam: they discover the user's
+own running Gezel and ask for
+`openai` plus scoped `knowledge` access with a typed verification code. Catalog
+inventory and explicit download/update/enable/remove actions use optional
+`host.ai.knowledge`; every desktop chat retrieves bounded cited passages with
+required reranking. Missing SDK support or reranker readiness fails visibly.
+The new Gezel SDK/service API must be published and pinned before shipping;
+see `packages/desktop/README.md`. Three rules
+are load-bearing and each has a test:
+
+- **Opt-out starts nothing.** Settings may use the SDK to detect whether the
+  person's Gezel is installed; that presence check decides whether the Gezel
+  explanation and connection controls are shown. Until the user ticks the box,
+  DocBlocks does not connect to Gezel, request a grant, or start its hosted
+  fallback.
+- **Only a gesture can prompt.** Startup and re-enabling first reuse a stored
+  grant, then fall back to DocBlocks' private host. Because DocBlocks passes
+  `requireVerificationCode` and omits the code handler on a silent attempt, the
+  SDK refuses to register a new grant — `packages/desktop/test/gezel-connector.test.ts`
+  pins that against the real SDK and a fake daemon, so an SDK upgrade that
+  changed the ordering fails there rather than as an unprompted consent dialog.
+- **Every stream ends exactly once** (`done` with partial text on cancel, or
+  one `error`), streams are scoped to the renderer that started them, and a
+  renderer that reloads or closes has its streams cancelled.
+
+The SDK is ESM-only and the main bundle is CJS, so it stays external in tsup
+and is reached by dynamic `import()`; it must be a desktop **dependency** (not a
+devDependency) or electron-builder leaves it out of app.asar. The grant lives in
+a `safeStorage`-encrypted file under userData, never in `settings.json`. A Mac
+App Store build exposes the same `host.ai` seam but uses a private service in
+`userData/ai/gezel`; it never discovers standalone Gezel or borrows external
+model homes. The main-stamped `--docblocks-ai` switch enables that bridge.
+
+**When the person's Gezel cannot serve, DocBlocks hosts one.** Absent, not
+running, or unwilling to connect DocBlocks (declined, expired, no reusable
+grant, connected apps off) all fall back to a private service under
+`~/.gezel/apps/docblocks/` — the person opted into AI inside DocBlocks, which
+is the consent this rests on. `@bendyline/gezel-service` is a pinned desktop
+runtime dependency and the SDK starts it in the Electron main process; a
+separate Gezel connection is an optional provider switch, never a prerequisite
+for the editor actions. It uses Gezel's `mode: 'in-process', inferenceOnly:
+true` profile and the service's direct Fetch transport: no child Node, loopback
+client connection, machine-service discovery, cloud-provider enumeration, or
+standalone background systems. A running standalone Gezel that fails for any
+other reason is reported, not hidden. The hosted service offers only on-device
+models. Packaged builds stage the installed service's pinned native release in
+`resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
+signatures after opt-in, and pass it as `host.nativeBinDir`. They use
+`distributionProfile: 'store'` so no runtime executable download can repair a
+missing or invalid payload. Preserve the native release's existing signatures
+in direct distributions. MAS verifies those original pins before moving code
+into `Contents/Helpers` and `Contents/Frameworks`, preserving logical resource
+paths with sealed symlinks. It re-signs executables with child sandbox inheritance
+and libraries without entitlements, then seals transformed hashes in the app.
+Runtime authenticates the app's signature/resource seal before trusting those
+hashes. Only authenticated Apple store delivery signatures allow changed hashes;
+local builds must match exactly. Native locations, signatures and inheritance
+remain verified in both cases.
+Development may use an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an
+engine with visible progress. macOS distributions support Apple Silicon only.
+MAS requires the new native release's Apple Foundation Models helper, UV and
+llama.cpp/Metal; the old native 0.1.46 pin cannot package it. Apple Intelligence
+readiness is visible, and unavailable system models cannot be selected. Store
+profiles withhold MLX until a frozen Python runtime ships. Gezel never downloads
+weights implicitly; the Settings **Add model** gesture may request a catalog
+model and shows progress while Gezel installs it.
+
+**AI diagrams are compiled, never written by the model.** "Illustrate
+document" and "Insert diagram" (`packages/react/src/Ai/AiDiagrams.tsx`) ask
+the model for a small JSON spec per diagram (`illustrate-prompts.ts`) and
+compile it deterministically (`diagram-compile.ts`) into a Mermaid fence, a
+Squisq `timeline` fence, or a `{[drawing]}` / `{[layout]}` block whose geometry
+is computed. Every label passes `diagram-sanitize.ts`; chart numbers, timeline
+dates and most labels must appear in the source passage
+(`diagram-grounding.ts`); compiled output is validated before it is offered
+(`diagram-validate.ts`). Calls run one at a time — the mobile host allows a
+single operation and releases it only after `done` — carry
+`purpose: 'illustrate'`, and are budgeted for a 4,096-token context. Inserts go
+through Squisq's `applySourceEdits` / `insertBlockAfterCursor`, so each insert
+and "Insert all" is one undo step, and a heading block lands at its section's
+end at a depth that cannot capture the text after it. `npm run
+eval:ai-diagrams` measures the pipeline against a real model (not part of
+`npm run all`).
+
+### Speech runs natively behind `host.speech`
+
+Dictation and narration are desktop-only and run inside DocBlocks, never
+through a Gezel daemon, while sharing Gezel's engines, model pins and Kokoro
+frontend. `packages/core/src/host/speech.ts` (`DocBlocksHostSpeechAPI`) is a
+sibling of `host.ai`, not part of it; `transcribe` and `synthesize` are
+optional one by one and drive `speechInput` / `speechOutput`. Desktop main
+(`main/ipc-speech.ts` → `main/speech/speech-service.ts`) runs the bundled
+`gezel-whisper-server` and Kokoro on `onnxruntime-node` in a `utilityProcess`
+(`main/speech/kokoro-utility.ts`) — never in main, and never by loading ONNX
+Runtime to probe availability. Models download only from a Settings gesture,
+pinned to commit, size and SHA-256 (`main/speech/speech-models.ts`).
+Preferences live in `userData/speech/preferences.json`, not `settings.json`.
+Dictation's UI is Squisq's `speechInput` capability; read aloud lives in
+`packages/react/src/Speech/`. See [`docs/speech.md`](docs/speech.md) for
+packaging, store builds, and the e2e harness.
 
 ### The CLI has one current command contract
 
@@ -211,6 +369,46 @@ linked `@bendyline/squisq-cli/api` registry; do not add another hard-coded
 conversion switch. `packages/cli/test/documentation.test.ts` keeps the documented
 command, tool, and format catalogs aligned with these runtime contracts.
 
+### Layout is one form-factor system, stamped as `data-db-*`
+
+`packages/react/src/layout/` owns every breakpoint. `form-factor.ts` classifies
+the shell's **measured box** (a `ResizeObserver` on `.db-shell`, not
+`window.matchMedia` — that is what makes Stage Manager, split-screen, and any
+embedded mount correct) into a width class, an input modality, an orientation,
+and a layout mode. `useFormFactorAttributes` stamps the result on
+`document.documentElement` _and_ the shell root, because Squisq portals its
+menus onto `<body>`.
+
+Width and input modality are classified **separately**. Conflating them is why
+an iPad in landscape used to inherit hover-reveal affordances it can never
+trigger. Hover comes from `(any-hover: hover)`, not `(hover: hover)`, so an iPad
+with a Magic Keyboard gets 44px targets _and_ hover reveals.
+
+There is no PostCSS in this repo, so `@custom-media` is unavailable and CSS
+cannot read a custom property inside a media condition. TypeScript therefore
+owns the numbers and `docblocks.css` keys off the attributes. **There are no
+width- or hover-based `@media` rules in that stylesheet** — only
+`prefers-color-scheme`, `prefers-reduced-motion`, and `display-mode`, and
+`packages/react/test/adaptive-styles.test.ts` fails the build if one returns.
+Adaptive values are tokens (`--db-target-min`, `--db-input-font-size`,
+`--db-safe-*`, `--db-drawer-*`) switched by a single `[data-db-pointer='coarse']`
+block.
+
+Two traps the drawer layout has already hit, both guarded by tests:
+
+- **Both panes stay mounted.** The sidebar becomes an absolutely-positioned
+  drawer hidden with `visibility`, never `display: none` and never unmounted.
+  Unmounting tore down Tiptap, Monaco, undo history, scroll position, and tree
+  expansion on every toggle. `inert` keeps the hidden pane out of the tab order.
+- **The open drawer must set `transform: none`.** Any non-`none` transform makes
+  the sidebar the containing block for `position: fixed` descendants, and
+  `.db-dialog-overlay` is rendered inside the sidebar rather than portalled — so
+  a transform sizes and clips every app-menu dialog to the drawer.
+
+Never set `padding-bottom` on `.squisq-status-bar` to apply a safe-area or
+keyboard inset: it replaces Squisq's own padding rather than adding to it. Put
+the inset on `.db-shell-editor-area`, the pane DocBlocks owns.
+
 ### `<DocBlocksShell>` is the canonical editor shell — for site + desktop
 
 Site and the desktop renderer both mount `<DocBlocksShell>`. The VS Code webview ([packages/vscode/webview/src/VscodeEditor.tsx](packages/vscode/webview/src/VscodeEditor.tsx)) is the documented exception: it mounts squisq's `EditorShell` directly because VS Code provides the file explorer, workspace, and theme via its own activity bar / API. New cross-surface UI that lives **inside the shell chrome** (file tree, workspace picker, app menu, export dialog) belongs in `packages/react/src/`. New editor-area features that need to work in vscode too either go in squisq, or get wired into both `DocBlocksShell` and `VscodeEditor` explicitly.
@@ -249,8 +447,31 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Privileged work is budgeted.** Bound strings, arrays, files, decoded payloads, child-process output, execution time, concurrency, and recursive traversal. A fixed argv is still unsafe if it can run forever or return unbounded data.
 - **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, unit/integration tests, and every site, VS Code Web, source-desktop, and packaged-desktop E2E suite runnable on the current OS. Cross-platform CI jobs still cover desktop behavior and artifacts for the other operating systems.
 - **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
-- **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; `@bendyline/squisq*` is the only exception. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
+- **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; our own `@bendyline/*` packages (Squisq, Gezel, and their first-party siblings) are the only exception, and changing it is a policy change that must update the checker and `docs/dependency-governance.md` together. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
+
+## Mobile host
+
+`packages/mobile/src/host.ts` installs the native bridge before loading the shared shell.
+Storage implements the byte-authoritative v2 contract through the generic host provider;
+`filesystem/electron` remains a compatibility wrapper. Persisted `electron-native`
+workspaces migrate to `host-native`. Bookmarks and Android tree URIs stay native.
+Picked folders without a current grant stay listed and fail visibly when opened.
+
+Use `npm run mobile:build`, `npm run mobile:check`, and `npm run mobile:test:available`.
+Native contract tests use real Swift and Java storage. Android device conformance runs
+against a test-only DocumentsProvider in the isolated `.tests` app; it requires an
+explicit device ID. See `packages/mobile/README.md` for build, package, and device commands.
+No test may clear the personal app's documents. Mobile provider atomicity is process-scoped,
+with best-effort durability and no watcher; resume re-observes the active document.
+
+Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
+App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,
+opt-in off by default, model downloads gesture-only, selected models explicit,
+and every stream terminal exactly once. The private SDK tarball and native/source
+hashes live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
+Never patch installed SDK files. Device AI tests use synthetic weights only in the
+isolated Android `.tests` app and require an explicit arm64 device ID.
 
 ## Gotchas worth knowing
 
@@ -272,9 +493,13 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **`@semantic-release/github` must stay out of the `publish` step.** `.releaserc.json` lists it in `plugins` (so it still comments "released" on PRs and opens an issue on failure) but pins `publish`/`addChannel` to `@semantic-release/npm` only. Restoring it to `publish` recreates the bug it fixes: every package release would create an **asset-less GitHub Release**, and because GitHub resolves `/releases/latest` by `created_at`, that release shadows `desktop-v*`. `electron-updater` then fetches `latest*.yml` from a tag that has no assets, 404s, and — since `updaterStatusForError` maps a check-time failure to `not-available` — the app silently claims it is up to date. Package tags are still created by semantic-release core, so CHANGELOG compare links are unaffected.
 - **No `AGENTS.md` per package.** Conventions live here at the root. Per-package READMEs cover package-specific scripts.
 - **Mocha, not Vitest.** The test runner is Mocha (`packages/*/test/**/*.test.ts`) with `tsx` as the loader and Chai for assertions. Don't introduce a second runner.
+- **Visual regression is a pre-release gate, and its baselines are macOS.** Committed under `__screenshots__/` beside each suite; `npm run all` never runs them, because a pixel diff must not block a change that altered nothing visible — `.github/workflows/visual.yml` runs them nightly and on demand, and `check:assurance` fails if they migrate into the canonical gate. Captures are **element-scoped** (a dialog, a menu, a toolbar) rather than full-page: smaller to commit, and they fail only for the thing they name. The suite pins the chrome to the bundled `DocBlocks Fixed UI` face — the Roboto _variable_ binary already shipped for the document theme of that name — because the default `system-ui` stack resolves to a different typeface per OS, and a Linux baseline would otherwise render in whatever that runner resolves, which is a font essentially no user has. That removes metric differences but not rasterisation, so comparison still defaults to Linux; the workflow's cross-platform job measures what is left. Regenerate through the workflow and review every image before committing — `npm run test:e2e:visual:update` refuses to write baselines on a non-Linux host for that reason. A state that differs between two identical runs gets a settle gate (`waitForStableBox`) or gets dropped, never a `maxDiffPixelRatio`.
+- **The desktop app has no visual baselines yet, and that is a product finding.** Its editor toolbar registers a Print control _after_ first paint, so everything left of it shifts when the control lands; the status bar's word, character and proofing-issue counters settle asynchronously on top of that. Captures of that chrome therefore render bimodally between otherwise identical runs — two stable arrangements about 8,600 pixels apart. Settling on size and content narrows the window without closing it. Fix the registration so the toolbar's control set is final before it paints, then add baselines; a `maxDiffPixelRatio` wide enough to absorb the shift would absorb a real regression in the same strip. Both geometries stay covered numerically by `packages/desktop/e2e/titlebar-layout.spec.ts`.
+- **The interface font is a user preference, not only a test lever.** Settings › Appearance › Interface font; `system` by default, and the bundled face is never fetched while nothing references it. It is published as `data-db-interface-font` on the document root, not the shell, because Squisq portals its menus onto `<body>` — and it carries into Squisq's chrome through `--squisq-ux-font`, the same bridge shape as the `--squisq-*` colour tokens. Document typography is untouched either way: a theme's fonts are content the author chose.
 - **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
-- **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. Electron's renderer does not load them yet (known parity gap). Verify any addition is actually referenced before adding.
+- **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. The desktop renderer (`packages/desktop/renderer/public/fonts/`) and the VS Code webview (`packages/vscode/webview/src/fonts/`, generated by `npm run generate:webview-fonts`) carry the same families — a family missing from one surface renders in a fallback face there and nowhere else, silently, so `npm run check:site-fonts` fails on any disagreement with Squisq's `AVAILABLE_FONT_STACKS`. Verify any addition is actually referenced before adding.
+- **Document exports draw diagrams as pictures.** Word, EPUB, PDF and PowerPoint cannot render Mermaid or Squisq diagrams, so `runExport` (`packages/react/src/Export/run-export.ts`) first runs Squisq's `rasterizeDiagrams` with the browser renderer from `@bendyline/squisq-react/diagram-pictures`: Mermaid, ASCII diagram/timeline/tree fences, and drawing/layout/diagram blocks become PNG images (PowerPoint keeps drawings and timelines as native shapes and pictures only Mermaid). The renderer paints plain SVG to a canvas — Mermaid with SVG-text labels, never `<foreignObject>`, which some browsers refuse to read back — and uses system fonts, since a picture cannot load web fonts. A diagram that cannot be drawn stays as source; the export never fails on it. Tests pass a stand-in `diagramRenderer` because happy-dom has no canvas. The CLI and MCP converters run in Node without a renderer and still export diagram source.
 - **Proofing ships the engine, it never downloads one.** Grammar and spellcheck are Squisq's `proofing` capability backed by harper.js (Apache-2.0, no CDN fallback). `scripts/vite-harper-wasm.ts` publishes **both** binaries — the engine derives `harper_wasm_slim_bg.wasm` from the full one's URL and loads the pair — plus the license, under `harper/` on the site, in `app.asar`, and in the VSIX. Each surface passes a module-scope provider from `@bendyline/docblocks-react/proofing` (a factory would be disposed on every document switch and pay the cold WASM setup again). `script-src` needs `'wasm-unsafe-eval'` or compilation is refused and the status sticks on "Proofing…"; the VS Code webview also needs `connect-src`, because the fetch happens inside a blob worker under `default-src 'none'`. That webview reads the engine URL from a `<meta>` tag the host stamps with `asWebviewUri` — a bundle-relative URL resolves against whichever chunk it landed in. Dismissed findings and the app-wide dictionary are **host-persisted, never written into the document** — a file through git carries neither. Site and desktop keep both in browser-local storage (ignores keyed by workspace + path, like `last-state`); the VS Code webview has no durable storage, so `proofStateBridge.ts` puts the dictionary in `globalState` (a personal vocabulary spans workspaces) and ignores in `workspaceState` (their keys are workspace-relative paths). Neither VS Code message names a document: the panel owns one, so the host derives the key from its own URI. Wiring `onDictionaryWord` is what makes Squisq offer "Add to dictionary" at all (`hasAppDictionary`), and the dictionary must be in hand _before_ the provider is built — seeding words afterwards calls `addWords`, which forces the engine to load. Which squiggles appear is a user preference in Settings — "Show inline spell checking" / "Show inline grammar checking", the latter English-only — carried to Squisq as `proofingSpellingEnabled` / `proofingGrammarEnabled`. They are app-level, so they live outside the per-doc `squisq-proofing` frontmatter stack: `packages/react/src/preferences/proofing.ts` (localStorage) on site and desktop, `docblocks.inlineSpellChecking` / `docblocks.inlineGrammarChecking` in VS Code. Turning **both** off is what turns the feature off — the engine is never fetched — so a host that wants no checking at all can simply leave both unchecked rather than dropping the capability.
 - **Linking Squisq silently invalidates Vite's dependency cache.** Vite trusts `node_modules/.vite/deps` while the root lockfile and config hash are unchanged, and `link:squisq` / `unlink:squisq` / `npm install` change neither — yet they move where nested deps resolve (the registry `@bendyline/squisq-formats` carries its own `@xmldom/xmldom`; the linked one uses `..\squisq\node_modules`), so the next re-optimization fails with ENOENT and the renderer never loads. `scripts/vite-squisq-dep-cache.ts` stamps each surface's cache with the link state (plus the sibling lockfile) and clears it on change. Every Vite config that runs a dev server must keep calling `squisqAwareViteCacheDir` and pinning `cacheDir` to its result.
 
@@ -285,7 +510,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 _This section is generated by `npm run generate:agent-guidance`; run `npm run check:agent-guidance` to verify it (not part of `npm run all`)._
 
 - Canonical local and CI gate: use Node and npm versions satisfying `package.json#engines`, then run `npm run all`; success includes dependency-governance checks, every repository unit/integration test, and all locally runnable E2E suites on the current OS.
-- Dependency governance: `npm run check:dependency-governance` verifies the exact install-script allowlist, the pinned npm 11.19.1 toolchain, the seven-day release cooldown, and the sole `@bendyline/squisq*` cooldown exception. `npm run check:dependency-audit` retains the complete audit and requires a current, expiring disposition for every finding. See `docs/dependency-governance.md`.
+- Dependency governance: `npm run check:dependency-governance` verifies the exact install-script allowlist, the pinned npm 11.19.1 toolchain, the seven-day release cooldown, and its first-party Squisq and Gezel exceptions. `npm run check:dependency-audit` audits shipped (non-dev) dependencies and fails only on a critical advisory with no entry in `security/audit-exceptions.json`; everything else is reported, not blocking. See `docs/dependency-governance.md`.
 - Packed public-package consumer check: `npm run check:packages`.
 - Assurance-contract freshness check: `npm run check:assurance`.
 - Third-party distribution notice drift check: `npm run check:notices` (included in `npm run all`); regenerate after a dependency or bundle change with `npm run generate:notices`.

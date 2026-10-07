@@ -20,18 +20,15 @@ function parsePersistedWorkspace(value: unknown, index: number): WorkspaceDescri
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`Persisted workspace ${index} must be an object.`);
   }
-  const record = value as Record<string, unknown>;
+  const record = { ...(value as Record<string, unknown>) };
+  if (record.type === 'electron-native') record.type = 'host-native';
   const allowed = ['id', 'name', 'type', 'lastOpened', 'rootPath', 'versioningOverride'];
   const unknownKey = Object.keys(record).find((key) => !allowed.includes(key));
   if (unknownKey) throw new Error(`Persisted workspace ${index} has unknown field ${unknownKey}.`);
 
   const id = boundedString(record.id, MAX_IDENTIFIER_CHARACTERS, `workspace ${index} id`);
   const name = boundedString(record.name, MAX_LABEL_CHARACTERS, `workspace ${index} name`);
-  if (
-    record.type !== 'indexeddb' &&
-    record.type !== 'native' &&
-    record.type !== 'electron-native'
-  ) {
+  if (record.type !== 'indexeddb' && record.type !== 'native' && record.type !== 'host-native') {
     throw new Error(`Persisted workspace ${index} has an invalid provider type.`);
   }
   const lastOpened = boundedString(
@@ -54,10 +51,10 @@ function parsePersistedWorkspace(value: unknown, index: number): WorkspaceDescri
       `workspace ${index} rootPath`,
     );
   }
-  if (record.type === 'electron-native' && descriptor.rootPath === undefined) {
+  if (record.type === 'host-native' && descriptor.rootPath === undefined) {
     throw new Error(`Persisted Electron workspace ${index} is missing rootPath.`);
   }
-  if (record.type !== 'electron-native' && descriptor.rootPath !== undefined) {
+  if (record.type !== 'host-native' && descriptor.rootPath !== undefined) {
     throw new Error(`Persisted workspace ${index} must not contain rootPath.`);
   }
   if (record.versioningOverride !== undefined) {

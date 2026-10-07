@@ -1,5 +1,8 @@
+export { AiSettingsControls } from './AiSettings.js';
+export type { AiSettingsControlsProps } from './AiSettings.js';
 export {
   AccentColorSettings,
+  InterfaceFontSettings,
   ProofingSettingsControls,
   SettingsDialog,
   ThemeSettings,
@@ -8,6 +11,8 @@ export {
 export type {
   AccentColor,
   AccentColorSettingsProps,
+  InterfaceFontPreference,
+  InterfaceFontSettingsProps,
   ProofingPreferences,
   ProofingSettingsControlsProps,
   SettingsDialogProps,
@@ -20,6 +25,11 @@ export {
   loadProofingPreferences,
   saveProofingPreferences,
 } from '../preferences/proofing.js';
+export {
+  DEFAULT_INTERFACE_FONT,
+  loadInterfaceFont,
+  saveInterfaceFont,
+} from '../preferences/theme.js';
 export {
   DEFAULT_WRITE_CANVAS_FONT_SCHEME,
   resolveWriteCanvasFonts,

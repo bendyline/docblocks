@@ -10,6 +10,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { resolvePackagedArtifact, type PackagedArtifact } from './packaged-artifact.js';
+import {
+  collectRuntimeErrors,
+  formatRuntimeErrors,
+  SHARED_ALLOWED_RUNTIME_ERRORS,
+  unexpectedRuntimeErrors,
+  type AllowedRuntimeError,
+  type RuntimeError,
+} from '../../../e2e/helpers/console-guard.js';
 
 const DEVTOOLS_ENDPOINT_TIMEOUT_MS = 30_000;
 const CDP_CONNECT_TIMEOUT_MS = 60_000;
@@ -31,7 +39,12 @@ export interface PackagedApplication {
 interface PackagedFixtures {
   userDataDir: string;
   workspaceDir: string;
+  gezelHome: string;
   launchPackagedApp: (extraArgs?: string[]) => Promise<PackagedApplication>;
+  /** This test's allowance list; the launch fixture reads it at teardown. */
+  runtimeErrorAllowances: AllowedRuntimeError[];
+  /** Allow further renderer runtime errors for the current test only. */
+  allowRuntimeErrors: (...allowances: readonly AllowedRuntimeError[]) => void;
 }
 
 function makeTmpDir(prefix: string): string {
@@ -47,7 +60,7 @@ function removeTmpDir(directory: string): void {
   }
 }
 
-function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
+function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
@@ -55,6 +68,10 @@ function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
   env.NODE_ENV = 'production';
   env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
+  env.GEZEL_HOME = gezelHome;
+  // A hosted Gezel otherwise stores a device key in the login keychain, and
+  // every run's throwaway home leaves another one behind.
+  env.GEZEL_SECRETS_BACKEND = 'file';
   return env;
 }
 
@@ -144,6 +161,7 @@ async function launchPackagedApplication(
   artifact: PackagedArtifact,
   userDataDir: string,
   workspaceDir: string,
+  gezelHome: string,
   extraArgs: string[],
 ): Promise<PackagedApplication> {
   const args = [
@@ -160,7 +178,7 @@ async function launchPackagedApplication(
 
   const child = spawn(artifact.executablePath, args, {
     cwd: path.dirname(artifact.executablePath),
-    env: cleanEnv(workspaceDir),
+    env: cleanEnv(workspaceDir, gezelHome),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -234,8 +252,38 @@ export const test = base.extend<PackagedFixtures>({
     removeTmpDir(directory);
   },
 
-  launchPackagedApp: async ({ userDataDir, workspaceDir }, use, testInfo) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  gezelHome: async ({}, use) => {
+    const directory = makeTmpDir('docblocks-packaged-gezel-home-');
+    await use(directory);
+    // launchPackagedApp depends on this fixture, so the process has exited
+    // before removal. Retry briefly for Windows to release its file locks.
+    await fs.promises.rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  },
+
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  runtimeErrorAllowances: async ({}, use) => {
+    await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
+  },
+
+  allowRuntimeErrors: async ({ runtimeErrorAllowances }, use) => {
+    await use((...allowances) => {
+      runtimeErrorAllowances.push(...allowances);
+    });
+  },
+
+  launchPackagedApp: async (
+    { userDataDir, workspaceDir, gezelHome, runtimeErrorAllowances },
+    use,
+    testInfo,
+  ) => {
     let running: PackagedApplication | undefined;
+    let readErrors: (() => readonly RuntimeError[]) | undefined;
     await use(async (extraArgs = []) => {
       if (running)
         throw new Error('The packaged fixture supports one active application per test.');
@@ -243,8 +291,10 @@ export const test = base.extend<PackagedFixtures>({
         resolvePackagedArtifact(),
         userDataDir,
         workspaceDir,
+        gezelHome,
         extraArgs,
       );
+      readErrors = collectRuntimeErrors(running.window);
       return running;
     });
 
@@ -255,6 +305,13 @@ export const test = base.extend<PackagedFixtures>({
       });
     }
     await running?.close();
+
+    // A test that already failed reports its own cause; adding renderer noise
+    // on top buries it. The guard only speaks when nothing else did.
+    if (testInfo.errors.length > 0 || readErrors === undefined) return;
+    const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
+    if (unexpected.length === 0) return;
+    throw new Error(formatRuntimeErrors(unexpected));
   },
 });
 

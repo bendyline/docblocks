@@ -1,0 +1,84 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.bendyline.docblocks.mobile"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId (project.hasProperty("docblocksTestApp") ? "com.bendyline.docblocks.mobile.tests" : "com.bendyline.docblocks.mobile")
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode((project.findProperty("docblocksVersionCode") ?: "1").toInteger())
+        versionName (project.findProperty("docblocksVersionName") ?: "2.6.2")
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    if (project.hasProperty("docblocksTestApp")) {
+        sourceSets.debug.java.srcDir "src/contractTest/java"
+        sourceSets.debug.manifest.srcFile "src/contractTest/AndroidManifest.xml"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    implementation "org.apache.cordova:framework:$cordovaAndroidVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+// The same production storage class runs in the host-side v2 contract suite.
+configurations { mobileConformance }
+dependencies { mobileConformance 'org.json:json:20250517' }
+tasks.register('writeMobileConformanceClasspath') {
+    doLast {
+        def output = layout.buildDirectory.file('mobile-conformance-classpath.txt').get().asFile
+        output.parentFile.mkdirs()
+        output.text = configurations.mobileConformance.asPath
+    }
+}
+
+// Pin the complete application runtime graph, including Capacitor's transitive native libraries.
+dependencyLocking { lockAllConfigurations() }
+tasks.register('writeMobileNativeInventory') {
+    doLast {
+        def artifacts = configurations.releaseRuntimeClasspath.incoming.resolutionResult.allComponents
+            .findAll { it.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier }
+            .collect { [coordinate: it.id.toString()] }.sort { it.coordinate }
+        def output = layout.buildDirectory.file('mobile-native-inventory.json').get().asFile
+        output.parentFile.mkdirs()
+        output.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(artifacts))
+    }
+}

@@ -6,7 +6,7 @@
 import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDescriptor } from '@bendyline/docblocks/workspace';
 import { listWorkspaces, saveWorkspace, touchWorkspace } from '@bendyline/docblocks/workspace';
-import { isElectronHost } from '@bendyline/docblocks/host';
+import { hostSupports } from '@bendyline/docblocks/host';
 import { FolderIcon, NewFolderIcon } from '../icons.js';
 
 function isNativeFileSystemSupported(): boolean {
@@ -90,7 +90,8 @@ export function WorkspacePicker({
     };
   }, [closeDropdown, isOpen]);
 
-  const electron = isElectronHost();
+  // Host-owned roots are only openable where the host owns roots.
+  const electron = hostSupports('nativeWorkspaces');
 
   const refresh = useCallback(async () => {
     const list = await listWorkspaces();
@@ -98,8 +99,8 @@ export function WorkspacePicker({
     // session-only documents so loose files and DBKs have a visible current
     // workspace and can be revisited until they are moved or closed.
     const filtered = electron
-      ? list.filter((w) => w.type === 'electron-native' || w.type === 'transient')
-      : list.filter((w) => w.type !== 'electron-native');
+      ? list.filter((w) => w.type === 'host-native' || w.type === 'transient')
+      : list.filter((w) => w.type !== 'host-native');
     setWorkspaces(filtered);
   }, [electron]);
 
@@ -210,7 +211,7 @@ export function WorkspacePicker({
               <span className="db-workspace-details">
                 <span className="db-workspace-heading">
                   <span>{ws.name}</span>
-                  {(ws.type === 'native' || ws.type === 'electron-native') && (
+                  {(ws.type === 'native' || ws.type === 'host-native') && (
                     <span className="db-workspace-type">(folder)</span>
                   )}
                 </span>

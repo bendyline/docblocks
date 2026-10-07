@@ -13,6 +13,7 @@ import {
   workspacePathDirname,
   type FileSystemProvider,
   type FileSystemEntry,
+  type FileSystemEntryMoveOptions,
   type FsErrorCode,
 } from '@bendyline/docblocks/filesystem';
 
@@ -176,7 +177,12 @@ export interface FileTreeActions {
   /** Delete a file or directory. */
   deleteEntry: (path: string) => Promise<void>;
   /** Rename or move a file or directory, including a markdown companion folder. */
-  renameEntry: (oldPath: string, newPath: string, kind?: 'file' | 'directory') => Promise<void>;
+  renameEntry: (
+    oldPath: string,
+    newPath: string,
+    kind?: 'file' | 'directory',
+    options?: FileSystemEntryMoveOptions,
+  ) => Promise<void>;
   /** Force refresh the tree. */
   refresh: () => Promise<void>;
   /** Retry one failed directory without treating it as a workspace-root failure. */
@@ -550,14 +556,19 @@ export function useFileTree(
   );
 
   const renameEntry = useCallback(
-    async (oldPath: string, newPath: string, kind?: 'file' | 'directory') => {
+    async (
+      oldPath: string,
+      newPath: string,
+      kind?: 'file' | 'directory',
+      options?: FileSystemEntryMoveOptions,
+    ) => {
       if (!providerRef.current) return;
       const oldNormalised = normalisePath(oldPath);
       const knownEntry = [...entries, ...childEntries.values()]
         .flat()
         .find((entry) => normalisePath(entry.path) === oldNormalised);
       const entryKind = kind ?? knownEntry?.kind ?? 'file';
-      await moveFileSystemEntry(providerRef.current, oldPath, newPath, entryKind);
+      await moveFileSystemEntry(providerRef.current, oldPath, newPath, entryKind, options);
 
       if (selectedPath) {
         setSelectedPath(relocatePath(selectedPath, oldPath, newPath));

@@ -257,7 +257,7 @@ export function VscodeEditor() {
 
   // EditorShell can emit a normalized WYSIWYG snapshot while it hydrates or
   // responds to navigation. Only content-changing browser input may arm the
-  // first edit; the client additionally rejects a whitespace-only delta.
+  // first edit, including input that changes only semantic whitespace.
   const armEditorEdits = useCallback(
     (substantive: boolean) => {
       if (editorScope) documentClientRef.current.armEdits(editorScope, substantive);
@@ -617,6 +617,7 @@ function classifyDocumentEditKey(event: React.KeyboardEvent<HTMLDivElement>): bo
   const key = event.key.toLowerCase();
   if (event.ctrlKey || event.metaKey) {
     if (key === 'b' || key === 'i' || key === 'y' || key === 'z') return true;
+    if (!event.shiftKey && /^[1-6]$/.test(key)) return true;
     return null;
   }
   if (event.key.length === 1) return /\S/u.test(event.key);

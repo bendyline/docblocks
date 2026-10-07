@@ -56,6 +56,45 @@ function switchValue(argv: readonly string[], prefix: string): string | undefine
   return undefined;
 }
 
+const AI_AVAILABLE_SWITCH = '--docblocks-ai=';
+
+/**
+ * Main-side: whether this build offers AI at all. Kept apart from
+ * `HostEnvironmentValues` because those are spread into `HostEnvironment`,
+ * whose shape is exact; this decides whether the preload exposes `ai`.
+ */
+export function aiAvailabilityArguments(available: boolean): string[] {
+  return [`${AI_AVAILABLE_SWITCH}${available ? '1' : '0'}`];
+}
+
+/** Preload-side. Fail safe: only an explicit '1' exposes the AI namespace. */
+export function parseAiAvailabilityArgument(argv: readonly string[]): boolean {
+  return switchValue(argv, AI_AVAILABLE_SWITCH) === '1';
+}
+
+const SPEECH_AVAILABLE_SWITCH = '--docblocks-speech=';
+
+export interface SpeechAvailability {
+  readonly stt: boolean;
+  readonly tts: boolean;
+}
+
+/**
+ * Main-side: which speech engines this build can run. Main decides from the
+ * files it can see (never by loading an engine), and the preload exposes
+ * `transcribe` / `synthesize` — or the whole namespace — accordingly.
+ */
+export function speechAvailabilityArguments(availability: SpeechAvailability): string[] {
+  const engines = [availability.stt ? 'stt' : '', availability.tts ? 'tts' : ''].filter(Boolean);
+  return [`${SPEECH_AVAILABLE_SWITCH}${engines.join(',')}`];
+}
+
+/** Preload-side. Fail safe: only named engines are exposed. */
+export function parseSpeechAvailabilityArgument(argv: readonly string[]): SpeechAvailability {
+  const engines = new Set((switchValue(argv, SPEECH_AVAILABLE_SWITCH) ?? '').split(','));
+  return { stt: engines.has('stt'), tts: engines.has('tts') };
+}
+
 /** Preload-side: decode the main-owned values out of `process.argv`. */
 export function parseHostEnvironmentArguments(argv: readonly string[]): HostEnvironmentValues {
   const appVersion = switchValue(argv, APP_VERSION_SWITCH);

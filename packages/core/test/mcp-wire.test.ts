@@ -112,6 +112,7 @@ function templateProfileValue() {
     hasDate: false,
     hasNumberHighlight: false,
     wordCount: 12,
+    hasCompoundBody: false,
     hasAsciiDiagram: false,
     hasTimeline: false,
     hasTree: false,

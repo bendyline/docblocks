@@ -16,6 +16,14 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import {
+  collectRuntimeErrors,
+  formatRuntimeErrors,
+  SHARED_ALLOWED_RUNTIME_ERRORS,
+  unexpectedRuntimeErrors,
+  type AllowedRuntimeError,
+  type RuntimeError,
+} from '../../../e2e/helpers/console-guard.js';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -35,7 +43,15 @@ const closingApplications = new WeakMap<ChildProcess, Promise<void>>();
 export interface DocBlocksFixtures {
   userDataDir: string;
   workspaceDir: string;
-  launchApp: (extraArgs?: string[]) => Promise<LaunchedDocBlocksApplication>;
+  gezelHome: string;
+  launchApp: (
+    extraArgs?: string[],
+    extraEnv?: NodeJS.ProcessEnv,
+  ) => Promise<LaunchedDocBlocksApplication>;
+  /** This test's allowance list; the launch fixture reads it at teardown. */
+  runtimeErrorAllowances: AllowedRuntimeError[];
+  /** Allow further renderer runtime errors for the current test only. */
+  allowRuntimeErrors: (...allowances: readonly AllowedRuntimeError[]) => void;
 }
 
 export interface LaunchedDocBlocksApplication {
@@ -63,14 +79,34 @@ function removeTmpDir(directory: string): void {
   }
 }
 
-function cleanEnv(workspaceDir: string): NodeJS.ProcessEnv {
+/** Stand-ins for the speech engines, so every run sees the same host contract. */
+const FAKE_WHISPER_SERVER = path.resolve(
+  __dirname,
+  '..',
+  'test',
+  'helpers',
+  'fake-whisper-server.mjs',
+);
+const FAKE_KOKORO_UTILITY = path.resolve(__dirname, 'fake-kokoro-utility.cjs');
+
+function cleanEnv(workspaceDir: string, gezelHome: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
+  // The source app is unpackaged, so these development-only overrides apply:
+  // dictation talks to a fake whisper-server and narration to a utility that
+  // speaks tones. Neither needs a model download or the native engines.
+  env.DOCBLOCKS_SPEECH_WHISPER_BIN = process.execPath;
+  env.DOCBLOCKS_SPEECH_WHISPER_SCRIPT = FAKE_WHISPER_SERVER;
+  env.DOCBLOCKS_SPEECH_KOKORO_ENTRY = FAKE_KOKORO_UTILITY;
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
   delete env.NODE_OPTIONS;
   env.NODE_ENV = 'production';
   env.DOCBLOCKS_DISABLE_HARDWARE_ACCELERATION = '1';
   env.DOCBLOCKS_E2E_DEFAULT_ROOT = workspaceDir;
+  env.GEZEL_HOME = gezelHome;
+  // A hosted Gezel otherwise stores a device key in the login keychain, and
+  // every run's throwaway home leaves another one behind.
+  env.GEZEL_SECRETS_BACKEND = 'file';
   return env;
 }
 
@@ -185,7 +221,9 @@ async function launchSourceApplication(
   appRoot: string,
   userDataDir: string,
   workspaceDir: string,
+  gezelHome: string,
   extraArgs: string[],
+  extraEnv: NodeJS.ProcessEnv = {},
 ): Promise<RunningApplication> {
   const args = [
     '--remote-debugging-port=0',
@@ -203,7 +241,7 @@ async function launchSourceApplication(
 
   const child = spawn(electronPath, args, {
     cwd: appRoot,
-    env: cleanEnv(workspaceDir),
+    env: { ...cleanEnv(workspaceDir, gezelHome), ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -271,16 +309,56 @@ export const test = base.extend<DocBlocksFixtures>({
     removeTmpDir(directory);
   },
 
-  launchApp: async ({ userDataDir, workspaceDir }, use, testInfo) => {
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  gezelHome: async ({}, use) => {
+    const directory = makeTmpDir('docblocks-e2e-gezel-home-');
+    await use(directory);
+    // launchApp depends on this fixture, so every launched process is closed
+    // before removal, including a relaunched app that hosts Gezel again.
+    await fs.promises.rm(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+  },
+
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixture signature
+  runtimeErrorAllowances: async ({}, use) => {
+    await use([...SHARED_ALLOWED_RUNTIME_ERRORS]);
+  },
+
+  allowRuntimeErrors: async ({ runtimeErrorAllowances }, use) => {
+    await use((...allowances) => {
+      runtimeErrorAllowances.push(...allowances);
+    });
+  },
+
+  launchApp: async (
+    { userDataDir, workspaceDir, gezelHome, runtimeErrorAllowances },
+    use,
+    testInfo,
+  ) => {
     const appRoot = path.resolve(__dirname, '..');
     let running: RunningApplication | undefined;
+    // Every window this test launches contributes to one error budget, so a
+    // relaunch cannot drop what the previous renderer reported.
+    const errorReaders: Array<() => readonly RuntimeError[]> = [];
 
-    await use(async (extraArgs: string[] = []) => {
+    await use(async (extraArgs: string[] = [], extraEnv: NodeJS.ProcessEnv = {}) => {
       if (running && running.process.exitCode === null && running.process.signalCode === null) {
         throw new Error('The source fixture supports one active application at a time.');
       }
-      running = await launchSourceApplication(appRoot, userDataDir, workspaceDir, extraArgs);
+      running = await launchSourceApplication(
+        appRoot,
+        userDataDir,
+        workspaceDir,
+        gezelHome,
+        extraArgs,
+        extraEnv,
+      );
       const current = running;
+      errorReaders.push(collectRuntimeErrors(current.window));
       return {
         window: current.window,
         close: async () => {
@@ -297,6 +375,16 @@ export const test = base.extend<DocBlocksFixtures>({
       });
     }
     await running?.close();
+
+    // A test that already failed reports its own cause; adding renderer noise
+    // on top buries it. The guard only speaks when nothing else did.
+    if (testInfo.errors.length > 0) return;
+    const unexpected = unexpectedRuntimeErrors(
+      errorReaders.flatMap((read) => [...read()]),
+      runtimeErrorAllowances,
+    );
+    if (unexpected.length === 0) return;
+    throw new Error(formatRuntimeErrors(unexpected));
   },
 });
 

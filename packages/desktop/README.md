@@ -21,13 +21,88 @@ Key main-process modules:
 - `menu.ts` / `tray.ts` — native menu and tray integration
 - `updater.ts` — auto-update via electron-updater (checks this repo's GitHub Releases)
 - `settings.ts`, `open-requests.ts`, `icloud-detect.ts` — persisted app settings, open-file handling, iCloud Drive detection
+- `ipc-ai.ts` + `ai/` — optional AI through an in-process private Gezel service, with the user's standalone Gezel as an optional provider switch; off until the user opts in under Settings › AI assistance
+
+Desktop packaging downloads the signed native archives from Gezel's releases
+into `resources/gezel-native/`. The `beforePack` hook imports the release and
+SHA-256 archive pins from the exact installed
+`@bendyline/gezel-service/native-release`, selects all published backends for the
+target architecture, verifies downloads before extraction, and preserves the
+release's license files and existing code signatures. Verified archives are
+cached locally under `dist/gezel-native-cache/`; a corrupt cache fails packaging
+and must be removed before retrying. Updating Gezel requires no separate native
+version edit.
+
+After AI opt-in, the hosted service checks the complete native file set, SHA-256
+hashes, symlinks, and platform signatures against its own source-bundled pins,
+then passes the verified directory to the SDK's `host.nativeBinDir`. Every
+packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
+fail visibly instead of triggering executable downloads. Model weights remain
+data downloads initiated by **Add model**. Development may use an absolute
+`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`; it receives the same native file verification
+without requiring a notarized enclosing app. With no development override, Gezel
+may provision engines as before.
+
+macOS distributions support Apple Silicon only. Mac App Store builds include
+AI through a private service inside `userData/ai/gezel`, with standalone Gezel
+discovery and external model borrowing disabled. AI remains off until opt-in.
+The first MAS implementation offers Apple Intelligence through the bundled
+Foundation Models helper and downloaded GGUF weights through llama.cpp/Metal.
+Apple readiness failures remain visible in Settings. ML Kit GenAI is an Android
+provider, not a macOS API. MLX is withheld in packaged builds until a frozen
+Python runtime is bundled; bundling UV alone does not supply that runtime.
+
+MAS packaging first verifies the upstream native pins, moves executables into
+`Contents/Helpers` and Metal libraries into `Contents/Frameworks`, and preserves
+their logical resource paths with sealed symlinks. It signs executables with
+sandbox inheritance and libraries with the app identity and no entitlements.
+The enclosing app seals a manifest of the resulting bytes. Local builds verify
+those hashes exactly. App Store delivery changes code signatures; only an
+authenticated Apple store signing certificate and complete app resource seal
+permit changed hashes. Runtime also verifies native locations, symlinks,
+signatures and executable inheritance. Direct macOS builds preserve the upstream
+Developer ID signatures.
+
+The current service pin (`1.2.1`, native `0.1.46`) lacks `gezel-apple-fm`, so MAS
+packaging deliberately fails until the new native release and service package
+are published and pinned. See [the native release handoff](../../docs/desktop-ai-native-release.md).
+
+## Knowledge catalogs in AI settings
+
+The desktop AI bridge exposes optional `host.ai.knowledge` inventory and actions.
+Settings lists installed catalogs, offers curated downloads and updates, shows
+progress and failures, and lets users enable, disable, or confirm removal of a
+catalog. Catalogs belong to the connected provider: switching between built-in
+AI and standalone Gezel switches the catalog registry. Removal from standalone
+Gezel affects other apps using that registry. Catalog downloads require explicit
+gestures. The reranker download button remains disabled until the person checks
+the download-consent checkbox; opening Settings or querying never starts it.
+
+Writing, review, and chat all call the SDK's `knowledge.retrieve` with
+`rerank: 'required'` before inference. Retrieved passages are bounded against the
+prompt budget, marked as untrusted evidence, and retain their catalog/version
+citations. Missing or incomplete reranking fails visibly; no unranked fallback
+is sent to the model. No enabled catalogs or no matches produces an empty
+reference context. Retrieval uses cached embedding models only and falls back to
+keyword candidates if those models are unavailable; candidates still require
+reranking. Catalog installation can prepare its embedding model as part of that
+explicit download. Mobile hosts without this optional SDK capability do not
+expose catalog management.
+
+**Release prerequisite:** the pinned app SDK `1.1.1` and service `1.2.1` do not
+implement this API. The corresponding Gezel source changes add the `knowledge`
+grant and `/v1/knowledge/{state,update,retrieve}`. Publish those changes, then
+update both exact dependency pins and the lockfile before shipping this feature.
+Until then, inference reports an SDK upgrade requirement rather than claiming
+to use knowledge. Existing inference-only grants require reconnection with the
+typed verification code; silent reconnect must never open a consent prompt.
 
 ## Architecture rules
 
 - **The host API is the only seam.** The contract lives in `packages/core/src/host/types.ts` (`DocBlocksHostAPI`); `main/ipc-*.ts` implements it and `preload/preload.ts` exposes it. All three must stay in sync. The renderer calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/docblocks/host`.
 - **The renderer never imports `electron` or `node:*`.** It's a browser context; everything native goes through the host API.
 - **The `app://` custom protocol is load-bearing.** It gives IndexedDB a stable origin (workspaces persist across launches) and lets Monaco web workers load. Don't switch to `file://`.
-- **Animated GIF uses the packaged browser core.** The renderer build copies the architecture-neutral pinned ffmpeg.wasm core and its GPL notices under `dist/renderer/ffmpeg-core/`; main adds COOP/COEP to trusted renderer responses so `SharedArrayBuffer` is available. The desktop runtime does not bundle a host-native FFmpeg executable. The VS Code extension deliberately does not ship these assets.
+- **No FFmpeg is distributed.** The renderer once packaged the pinned ffmpeg.wasm core under `dist/renderer/ffmpeg-core/`; that build is GPL-2.0-or-later and could not be reconciled with the Mac App Store's terms, so it was removed from every surface. Video export runs on WebCodecs plus the MIT-licensed `mp4-muxer`; Animated GIF is no longer offered in the editor and remains a CLI/MCP capability backed by a system FFmpeg binary. `ipc-ffmpeg.ts` still _detects_ a host-native FFmpeg but the desktop runtime never bundles one. Main still adds COOP/COEP to trusted renderer responses, now purely as hardening.
 
 ## Development
 
@@ -51,6 +126,14 @@ Main/preload changes rebuild on disk but **do not restart the running app**.
 Save recordings and documents, then restart `npm run dev:desktop` to load those
 changes. The watcher prints a reminder after each rebuild. This keeps unsaved
 recordings in the renderer alive while code is edited.
+
+Screen recording asks which screen or application window to share before
+previewing. On supported macOS versions Electron uses the system picker;
+elsewhere a native menu lists **Screens** and **Application windows**.
+Dismissal cancels capture; it never selects the primary monitor automatically.
+The recording dialog's **What to record** controls offer a whole surface or a
+coordinate region, measured in captured pixels from that surface's top-left.
+Region capture crops the preview and saved video, with audio unchanged.
 
 ## Build & package
 
@@ -83,8 +166,9 @@ validation otherwise rejects Electron Framework before the app can start.
 Installers and release builds continue to use the hardened runtime and the
 normal signing and notarization configuration.
 
-Direct-download releases include x64 and arm64 builds for macOS, Windows, and
-Linux. Linux ships both AppImage and Debian packages for each architecture.
+Direct-download releases include Apple Silicon builds for macOS and x64 and
+arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
+for each architecture.
 
 ## Testing
 

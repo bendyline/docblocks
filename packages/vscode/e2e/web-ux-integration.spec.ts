@@ -1,4 +1,5 @@
-import { test, expect, type FrameLocator, type Page } from '@playwright/test';
+import type { FrameLocator, Page } from '@playwright/test';
+import { expect, test } from './test.js';
 
 const fixturePath = 'test-fixtures/test-doc.md';
 const exportFixturePath = 'test-fixtures/test-doc-export.md';
@@ -384,9 +385,7 @@ test.describe('VS Code web and UX integration', () => {
     await expect(statusBarDirty).toHaveCount(0);
   });
 
-  test('keeps a first whitespace-only edit from authoring a normalized snapshot', async ({
-    page,
-  }) => {
+  test('accepts an intentional line break as the first document edit', async ({ page }) => {
     await writeFixture(
       [
         '# Connectors',
@@ -407,12 +406,9 @@ test.describe('VS Code web and UX integration', () => {
     await paragraph.click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(1_000);
-
-    await expect(editor.getByText('Autosave pending', { exact: true })).toHaveCount(0);
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
-    ).toHaveCount(0);
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test('accepts a first substantive edit made with a formatting control', async ({ page }) => {
@@ -427,6 +423,24 @@ test.describe('VS Code web and UX integration', () => {
     await page.keyboard.press('ControlOrMeta+A');
     await editor.getByRole('button', { name: /Bold/u }).click();
 
+    await expect(
+      page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('accepts a heading shortcut as the first document edit', async ({ page }) => {
+    await writeFixture('Format this text.\n');
+    await bootVSCode(page);
+    await openDocBlocksEditor(page);
+
+    const editor = await getLatestWebviewContent(page);
+    const paragraph = editor.getByText('Format this text.').first();
+    await expect(paragraph).toBeVisible({ timeout: 15_000 });
+    await paragraph.click();
+    await page.keyboard.press('ControlOrMeta+2');
+
+    await expect(editor.locator('.ProseMirror h2')).toContainText('Format this text.');
+    await expect(editor.locator('[data-view="wysiwyg"]')).toHaveAttribute('aria-selected', 'true');
     await expect(
       page.locator('.statusbar-item').filter({ hasText: 'DocBlocks: Unsaved changes' }),
     ).toBeVisible({ timeout: 10_000 });

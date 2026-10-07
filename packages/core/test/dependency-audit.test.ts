@@ -2,122 +2,94 @@ import { expect } from 'chai';
 import {
   evaluateAudit,
   normalizeAuditReport,
-  parseDispositionDocument,
+  parseExceptions,
 } from '../../../scripts/check-dependency-audit.js';
 
-const auditReport = {
-  auditReportVersion: 2,
-  vulnerabilities: {
-    vulnerable: {
-      name: 'vulnerable',
-      severity: 'high',
-      isDirect: false,
-      via: [
-        {
-          source: 123,
-          name: 'vulnerable',
-          dependency: 'vulnerable',
-          title: 'Synthetic advisory',
-          url: 'https://github.com/advisories/GHSA-AAAA-BBBB-CCCC',
-          severity: 'high',
-          cwe: ['CWE-1'],
-          cvss: { score: 8, vectorString: null },
-          range: '<2.0.0',
-        },
-      ],
-      effects: ['consumer'],
-      range: '<2.0.0',
-      nodes: ['node_modules/vulnerable'],
-      fixAvailable: true,
-    },
-    consumer: {
-      name: 'consumer',
-      severity: 'high',
-      isDirect: true,
-      via: ['vulnerable'],
-      effects: [],
-      range: '*',
-      nodes: ['node_modules/consumer'],
-      fixAvailable: true,
-    },
-  },
-  metadata: {
-    vulnerabilities: { info: 0, low: 0, moderate: 0, high: 2, critical: 0, total: 2 },
-  },
-} as const;
+type Severity = 'low' | 'moderate' | 'high' | 'critical';
 
-function disposition(overrides: Readonly<Record<string, unknown>> = {}): unknown {
+function auditReport(severity: Severity): unknown {
   return {
-    schemaVersion: 1,
-    reviewedAt: '2026-09-07',
-    dispositions: [
-      {
-        package: 'vulnerable',
-        advisory: 'GHSA-AAAA-BBBB-CCCC',
-        severity: 'high',
-        scope: 'development-only',
-        classification: 'not-shipped',
-        owner: 'Test maintainers',
-        expires: '2026-09-21',
-        reason: 'This synthetic finding exists only in a test dependency and is not shipped.',
-        remediation:
-          'Update the synthetic dependency as soon as its patched release becomes eligible.',
-        ...overrides,
+    auditReportVersion: 2,
+    vulnerabilities: {
+      vulnerable: {
+        name: 'vulnerable',
+        severity,
+        isDirect: false,
+        via: [
+          {
+            source: 123,
+            name: 'vulnerable',
+            dependency: 'vulnerable',
+            title: 'Synthetic advisory',
+            url: 'https://github.com/advisories/GHSA-aaaa-bbbb-cccc',
+            severity,
+            cwe: ['CWE-1'],
+            cvss: { score: 8, vectorString: null },
+            range: '<2.0.0',
+          },
+        ],
+        effects: ['consumer'],
+        range: '<2.0.0',
+        nodes: ['node_modules/vulnerable'],
+        fixAvailable: true,
       },
-    ],
+      consumer: {
+        name: 'consumer',
+        severity,
+        isDirect: true,
+        via: ['vulnerable'],
+        effects: [],
+        range: '*',
+        nodes: ['node_modules/consumer'],
+        fixAvailable: true,
+      },
+    },
+    metadata: {
+      vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 2 },
+    },
   };
 }
 
+const noFindings = { auditReportVersion: 2, vulnerabilities: {}, metadata: {} };
+
 describe('dependency audit policy', () => {
   it('normalizes advisory objects without duplicating dependency fan-out strings', () => {
-    const result = normalizeAuditReport(auditReport);
-    expect(result.findings).to.have.length(1);
-    expect(result.findings[0]).to.include({
+    const findings = normalizeAuditReport(auditReport('high'));
+    expect(findings).to.have.length(1);
+    expect(findings[0]).to.include({
       package: 'vulnerable',
       advisory: 'GHSA-AAAA-BBBB-CCCC',
       severity: 'high',
     });
-    expect(result.summary.total).to.equal(2);
   });
 
-  it('accepts a current disposition for a non-shipped finding', () => {
-    expect(evaluateAudit(auditReport, disposition(), '2026-09-07').failures).to.deep.equal([]);
+  it('reports but does not block anything below critical', () => {
+    for (const severity of ['low', 'moderate', 'high'] as const) {
+      const evaluation = evaluateAudit(auditReport(severity), {});
+      expect(evaluation.findings, severity).to.have.length(1);
+      expect(evaluation.failures, severity).to.deep.equal([]);
+    }
   });
 
-  it('fails closed for missing, stale, expired, severity-drifted, and shipped high findings', () => {
-    const missing = { schemaVersion: 1, reviewedAt: '2026-09-07', dispositions: [] };
-    expect(evaluateAudit(auditReport, missing, '2026-09-07').failures).to.include(
-      'missing disposition for vulnerable GHSA-AAAA-BBBB-CCCC',
-    );
-    expect(evaluateAudit(auditReport, disposition(), '2026-09-21').failures.join('\n')).to.include(
-      'expired',
-    );
-    expect(
-      evaluateAudit(auditReport, disposition({ severity: 'moderate' }), '2026-09-07').failures.join(
-        '\n',
-      ),
-    ).to.include('severity drift');
-    expect(
-      evaluateAudit(auditReport, disposition({ scope: 'shipped' }), '2026-09-07').failures.join(
-        '\n',
-      ),
-    ).to.include('cannot be dispositioned');
-
-    const noFindings = {
-      auditReportVersion: 2,
-      vulnerabilities: {},
-      metadata: {
-        vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
-      },
-    };
-    expect(evaluateAudit(noFindings, disposition(), '2026-09-07').failures.join('\n')).to.include(
-      'stale disposition',
+  it('blocks a critical advisory', () => {
+    expect(evaluateAudit(auditReport('critical'), {}).failures.join('\n')).to.include(
+      'critical vulnerable GHSA-AAAA-BBBB-CCCC',
     );
   });
 
-  it('rejects unknown disposition fields', () => {
-    expect(() => parseDispositionDocument(disposition({ undocumented: true }))).to.throw(
-      'must have exactly these fields',
-    );
+  it('lets an exception carry a critical advisory, matched case-insensitively', () => {
+    const exceptions = { 'ghsa-aaaa-bbbb-cccc': 'Fix is still inside the release cooldown.' };
+    expect(evaluateAudit(auditReport('critical'), exceptions).failures).to.deep.equal([]);
+  });
+
+  it('turns an exception npm no longer reports into a notice, not a failure', () => {
+    const evaluation = evaluateAudit(noFindings, { 'GHSA-AAAA-BBBB-CCCC': 'Waiting on a fix.' });
+    expect(evaluation.failures).to.deep.equal([]);
+    expect(evaluation.notices.join('\n')).to.include('can be deleted');
+  });
+
+  it('requires every exception to give a reason', () => {
+    expect(() => parseExceptions({ 'GHSA-AAAA-BBBB-CCCC': '' })).to.throw('non-empty string');
+    expect(() => parseExceptions(['GHSA-AAAA-BBBB-CCCC'])).to.throw('map advisory IDs');
   });
 });

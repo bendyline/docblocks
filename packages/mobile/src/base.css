@@ -1,0 +1,10 @@
+/* The native WebView hosts a full-screen app; safe areas belong to the shell. */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}

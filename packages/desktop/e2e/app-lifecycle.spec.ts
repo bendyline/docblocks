@@ -16,6 +16,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
+import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
 
 test('boots and renders the shell', async ({ launchApp }) => {
@@ -25,10 +26,15 @@ test('boots and renders the shell', async ({ launchApp }) => {
   await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
 });
 
-test('cross-origin isolates the renderer and offers Animated GIF export', async ({ launchApp }) => {
+test('cross-origin isolates the renderer and offers MP4 but not GIF export', async ({
+  launchApp,
+}) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
 
+  // Cross-origin isolation is retained as Spectre-class hardening. It once
+  // existed for ffmpeg.wasm's SharedArrayBuffer; nothing shipped needs that
+  // now, but the renderer loads only same-origin subresources so it is free.
   const runtime = await window.evaluate(() => ({
     crossOriginIsolated: globalThis.crossOriginIsolated,
     sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
@@ -36,10 +42,13 @@ test('cross-origin isolates the renderer and offers Animated GIF export', async 
   expect(runtime).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
 
   await window.getByRole('button', { name: 'Export and share' }).click();
-  await window.getByRole('menuitem', { name: 'Export animated gif...' }).click();
-  const dialog = window.getByRole('dialog', { name: 'Export Animated GIF' });
-  await expect(dialog).toBeVisible({ timeout: 30_000 });
-  await expect(dialog.getByLabel('Format')).toHaveValue('gif');
+
+  // The GPL-2.0 ffmpeg.wasm core is no longer packaged in the renderer, so no
+  // host supplies an `ffmpegWasm` config and the GIF entry must not render.
+  await expect(window.getByRole('menuitem', { name: 'Export animated gif...' })).toHaveCount(0);
+
+  // MP4 export is unaffected: WebCodecs plus MIT mp4-muxer.
+  await expect(window.getByRole('menuitem', { name: 'Export video...' })).toBeVisible();
 });
 
 test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => {
@@ -345,6 +354,39 @@ test('exports exact Markdown bytes through the remembered native target', async 
   expect(exported).toContain('# DocBlocks {[title');
 });
 
+test('exports Word with the welcome diagram drawn as a picture, not ASCII art', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  const target = path.join(userDataDir, 'exported-about.docx');
+  prepareRememberedExportTarget(userDataDir, workspaceDir, target, 'docx');
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  await window.locator('.db-toolbar-menu-trigger').click();
+  await window.getByRole('menuitem', { name: 'Export document...' }).click();
+  const dialog = window.getByRole('dialog', { name: 'Export Document' });
+  await dialog.getByRole('radio', { name: 'Word' }).click();
+  await expect(dialog.getByLabel('Export to')).toHaveValue(target);
+  await dialog.getByRole('button', { name: 'Save DOCX', exact: true }).click();
+
+  await expect.poll(() => fs.existsSync(target), { timeout: 30_000 }).toBe(true);
+  const pkg = await openPackage(new Uint8Array(fs.readFileSync(target)).slice().buffer);
+  // Drawn in this renderer: a real PNG of a real size.
+  const png = new Uint8Array(
+    (await getPartBinary(pkg, 'word/media/image1.png')) ?? new ArrayBuffer(0),
+  );
+  expect([...png.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  expect(view.getUint32(16)).toBeGreaterThan(200);
+  const documentXml = new TextDecoder().decode(
+    (await getPartBinary(pkg, 'word/document.xml')) ?? new ArrayBuffer(0),
+  );
+  expect(documentXml).toContain('One source, four ways to publish');
+  expect(documentXml).not.toMatch(/[┌┐└┘│─]/u);
+});
+
 test('content persists across relaunch', async ({ launchApp, workspaceDir }) => {
   // First launch: write a file directly (avoids brittle UI typing).
   const first = await launchApp();
@@ -411,6 +453,28 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
   expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
 });
 
+test('an approved window close cannot be vetoed again by renderer beforeunload', async ({
+  launchApp,
+}) => {
+  const { window } = await launchApp();
+  await expect(window.locator('.squisq-status-item').first()).toBeVisible({ timeout: 30_000 });
+  // Electron handles the veto in main, rather than showing a JavaScript
+  // dialog. Stop Playwright's automatic dialog dismissal racing that handler.
+  window.on('dialog', () => {});
+  // The session is saved, so the main-owned handshake approves this close.
+  // A conflict (including Close Without Saving) or a stale React effect can
+  // leave the browser guard installed even after that approval.
+  await window.evaluate(() => {
+    globalThis.addEventListener('beforeunload', (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    });
+  });
+  const closed = window.waitForEvent('close', { timeout: 5_000 });
+  await requestWindowClose(window);
+  await closed;
+});
+
 test('quick close repacks a DBK origin before acknowledging window destruction', async ({
   launchApp,
   userDataDir,
@@ -463,6 +527,7 @@ test('keeping a local DBK conflict saves durable content without replaying the s
   await window.keyboard.press('Enter');
   await window.keyboard.insertText(sentinel);
 
+  await window.getByRole('button', { name: 'Compare versions' }).click({ timeout: 15_000 });
   const keepMine = window.getByRole('button', { name: 'Keep mine' });
   await expect(keepMine).toBeVisible({ timeout: 15_000 });
   await keepMine.click();
@@ -540,15 +605,18 @@ function prepareRememberedExportTarget(
   userDataDir: string,
   workspaceDir: string,
   target: string,
+  extension = 'md',
 ): void {
   const workspaceId = deriveWorkspaceId(fs.realpathSync.native(workspaceDir));
   const access = { path: target, confirmedByPicker: true as const };
-  const exportTargets: Record<string, { last: typeof access; byExtension: { md: typeof access } }> =
-    {};
+  const exportTargets: Record<
+    string,
+    { last: typeof access; byExtension: Record<string, typeof access> }
+  > = {};
   for (const selectedFile of ['aboutDocBlocks.md', '/aboutDocBlocks.md']) {
     const documentId = JSON.stringify([workspaceId, selectedFile]);
     const key = createHash('sha256').update(documentId).digest('hex');
-    exportTargets[key] = { last: access, byExtension: { md: access } };
+    exportTargets[key] = { last: access, byExtension: { [extension]: access } };
   }
   fs.writeFileSync(
     path.join(userDataDir, 'settings.json'),

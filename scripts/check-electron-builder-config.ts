@@ -9,12 +9,13 @@
  * similar artifact-time failures still surface in packaging jobs.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire, isBuiltin } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import yaml from 'js-yaml';
+import { desktopDependencyExclusions } from './desktop-runtime-policy.js';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -102,6 +103,56 @@ function requireLegalResources(): void {
 }
 
 requireLegalResources();
+
+function requireBundledGezelEngines(): void {
+  if (!isRecord(config) || config.beforePack !== 'scripts/stage-gezel-native.cjs') {
+    failConfigPolicy("Desktop packaging must stage the Gezel service's pinned native engines.");
+  }
+  if (
+    !Array.isArray(config.extraResources) ||
+    !config.extraResources.some(
+      (entry) =>
+        isRecord(entry) &&
+        entry.from === 'dist/gezel-native/${os}-${arch}' &&
+        entry.to === 'gezel-native',
+    )
+  ) {
+    failConfigPolicy(
+      'Desktop packaging must copy Gezel engines outside app.asar for the target architecture.',
+    );
+  }
+  if (
+    !isRecord(config.mac) ||
+    !Array.isArray(config.mac.signIgnore) ||
+    !config.mac.signIgnore.includes('/Contents/Resources/gezel-native/')
+  ) {
+    failConfigPolicy('Desktop signing must preserve the pinned Gezel native release signatures.');
+  }
+  if (
+    config.afterPack !== 'scripts/prepare-mas-gezel.cjs' ||
+    !isRecord(config.mas) ||
+    !Array.isArray(config.mas.signIgnore) ||
+    !config.mas.signIgnore.includes('/Contents/Resources/gezel-native/') ||
+    !config.mas.signIgnore.includes('/Contents/Helpers/(gezel-apple-fm|gezel-llama-server|uv)$') ||
+    !config.mas.signIgnore.includes('/Contents/(Frameworks|Helpers)/[^/]+\\.(dylib|so)$')
+  ) {
+    failConfigPolicy(
+      'MAS signing must authenticate, sandbox-sign and pin native engines before sealing the app.',
+    );
+  }
+  const entitlements = readFileSync(
+    path.join(repoRoot, 'packages/desktop/entitlements.mas.plist'),
+    'utf8',
+  );
+  if (!/<key>com\.apple\.security\.network\.server<\/key>\s*<true\s*\/>/u.test(entitlements)) {
+    failConfigPolicy('MAS must permit bundled inference engines to listen on loopback.');
+  }
+  process.stdout.write(
+    'electron-builder.yml: bundled Gezel engines and signature preservation OK\n',
+  );
+}
+
+requireBundledGezelEngines();
 
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
@@ -296,6 +347,71 @@ function requireLinuxPackageMetadata(): void {
 
 requireLinuxPackageMetadata();
 
+/**
+ * Linux launchers must not disable the Chromium sandbox.
+ *
+ * electron-builder's AppImage target writes `Exec=AppRun --no-sandbox %U` into
+ * the embedded desktop entry whenever `appImage.executableArgs` is absent and
+ * no pinned appimagetool toolset is configured. That flag disables Chromium
+ * process sandboxing for every renderer and utility process on the normal
+ * menu / file-association / protocol launch path — `sandbox: true` on the
+ * BrowserWindow removes Node from the renderer but does not restore OS process
+ * isolation. Declaring the option explicitly is what keeps the default off, so
+ * an empty array is required rather than merely a flag-free one.
+ */
+function requireSandboxedLinuxLaunchers(): void {
+  if (!isRecord(config)) {
+    failConfigPolicy('electron-builder.yml must contain an object configuration.');
+  }
+
+  const sandboxDisablingArguments = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-gpu-sandbox',
+    '--disable-namespace-sandbox',
+    '--disable-seccomp-filter-sandbox',
+  ];
+
+  function requireSandboxSafeExecutableArgs(section: string, value: unknown): void {
+    if (!Array.isArray(value)) {
+      failConfigPolicy(
+        `electron-builder.yml ${section}.executableArgs must be an explicit list so electron-builder cannot supply its sandbox-disabling default.`,
+      );
+    }
+    for (const argument of value) {
+      if (typeof argument !== 'string') {
+        failConfigPolicy(`electron-builder.yml ${section}.executableArgs must contain strings.`);
+      }
+      if (sandboxDisablingArguments.includes(argument)) {
+        failConfigPolicy(
+          `electron-builder.yml ${section}.executableArgs must not disable the Chromium sandbox (${argument}).`,
+        );
+      }
+    }
+  }
+
+  // AppImage is the target whose default injects the flag, so it must declare
+  // the option. The other Linux launchers only need to stay clean if they
+  // choose to pass arguments at all.
+  const appImage = config.appImage;
+  if (!isRecord(appImage)) {
+    failConfigPolicy(
+      'electron-builder.yml must configure appImage options so the desktop entry does not inherit --no-sandbox.',
+    );
+  }
+  requireSandboxSafeExecutableArgs('appImage', appImage.executableArgs);
+
+  for (const section of ['linux', 'deb', 'snap', 'flatpak'] as const) {
+    const options = config[section];
+    if (!isRecord(options) || options.executableArgs === undefined) continue;
+    requireSandboxSafeExecutableArgs(section, options.executableArgs);
+  }
+
+  process.stdout.write('electron-builder.yml: Linux launchers keep the Chromium sandbox OK\n');
+}
+
+requireSandboxedLinuxLaunchers();
+
 function requireMacPrivacyMetadata(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');
@@ -310,7 +426,7 @@ function requireMacPrivacyMetadata(): void {
     NSCameraUsageDescription:
       'DocBlocks accesses the camera only when you choose to record video for a document.',
     NSMicrophoneUsageDescription:
-      'DocBlocks accesses the microphone only when you choose to record audio or video for a document.',
+      'DocBlocks accesses the microphone only when you choose to record audio or video for a document, or to dictate into one.',
     NSAudioCaptureUsageDescription:
       'DocBlocks accesses system audio only when you choose to include it in a screen recording.',
   } as const;
@@ -319,6 +435,24 @@ function requireMacPrivacyMetadata(): void {
       failConfigPolicy(
         `electron-builder.yml mac.extendInfo.${key} must be branded and contextual.`,
       );
+    }
+  }
+  // A usage string alone is not enough: under the hardened runtime (Developer
+  // ID) and the sandbox (MAS), capture without the matching device entitlement
+  // is refused without a prompt. Packaged smoke cannot see this — it uses fake
+  // devices and an unhardened build — so it is enforced here.
+  for (const plist of ['entitlements.mac.plist', 'entitlements.mas.plist']) {
+    const entitlements = readFileSync(path.join(repoRoot, 'packages/desktop', plist), 'utf8');
+    for (const device of ['camera', 'audio-input']) {
+      const pattern = new RegExp(
+        `<key>com\\.apple\\.security\\.device\\.${device}</key>\\s*<true\\s*/>`,
+        'u',
+      );
+      if (!pattern.test(entitlements)) {
+        failConfigPolicy(
+          `${plist} must grant com.apple.security.device.${device} to match its usage description.`,
+        );
+      }
     }
   }
   for (const key of [
@@ -333,7 +467,7 @@ function requireMacPrivacyMetadata(): void {
   }
 
   process.stdout.write(
-    'electron-builder.yml: branded macOS privacy prompts; Bluetooth removed OK\n',
+    'electron-builder.yml: branded macOS privacy prompts, device entitlements; Bluetooth removed OK\n',
   );
 }
 
@@ -346,10 +480,16 @@ for (const [platformName, targetName] of [
   ['linux', 'AppImage'],
   ['linux', 'deb'],
 ] as const) {
-  requireTargetArchitectures(platformName, targetName, ['x64', 'arm64']);
+  requireTargetArchitectures(
+    platformName,
+    targetName,
+    platformName === 'mac' ? ['arm64'] : ['x64', 'arm64'],
+  );
 }
 
-process.stdout.write('electron-builder.yml: x64 + arm64 release matrix OK\n');
+process.stdout.write(
+  'electron-builder.yml: Apple Silicon macOS; x64 + arm64 Windows/Linux release matrix OK\n',
+);
 
 const configuredFiles =
   typeof config === 'object' && config !== null && 'files' in config ? config.files : null;
@@ -366,6 +506,12 @@ if (
     'electron-builder.yml must exclude generated and dependency source metadata from packaged artifacts.\n',
   );
   process.exit(1);
+}
+
+if (desktopDependencyExclusions.some((pattern) => !configuredFiles.includes(pattern))) {
+  failConfigPolicy(
+    "electron-builder.yml must exclude Gezel's unused vulnerable glob dependencies.",
+  );
 }
 
 interface DesktopManifest {
@@ -447,6 +593,19 @@ function requireResolvedVersion(
 function requireSafeDesktopReleaseDependencies(): void {
   const rootManifest = readPackageManifest(path.join(repoRoot, 'package.json'));
   const desktopManifest = readPackageManifest(desktopManifestPath);
+  const chokidarPin = requireSafePin(
+    desktopManifest,
+    'dependencies',
+    'chokidar',
+    '4.0.3',
+    'desktop literal-path watcher (GHSA-VFJ7-8CJW-P6XM)',
+  );
+  requireResolvedVersion(
+    path.join(path.dirname(createRequire(desktopManifestPath).resolve('chokidar')), 'package.json'),
+    '4.0.3',
+    'resolved desktop watcher',
+    chokidarPin,
+  );
   const rootElectronPin = requireSafePin(
     rootManifest,
     'devDependencies',
@@ -524,9 +683,12 @@ function requireSafeDesktopReleaseDependencies(): void {
 
 requireSafeDesktopReleaseDependencies();
 
+// Both `require('x')` and a dynamic `import('x')` load a package at runtime:
+// tsup leaves `import()` in place for external ESM-only packages (the Gezel
+// SDK), and electron-builder still has to ship them.
 function collectRuntimeRequires(source: string): Set<string> {
   const runtimeRequires = new Set<string>();
-  for (const match of source.matchAll(/\brequire\((['"])([^'"]+)\1\)/gu)) {
+  for (const match of source.matchAll(/\b(?:require|import)\((['"])([^'"]+)\1\)/gu)) {
     runtimeRequires.add(match[2]);
   }
   return runtimeRequires;
@@ -538,8 +700,9 @@ function packageNameFromSpecifier(specifier: string): string {
 }
 
 // Production dependencies are copied wholesale by electron-builder. Keep that
-// list equal to the packages the built main process actually loads; renderer
-// libraries belong in devDependencies because Vite already emitted them.
+// list equal to the packages the built main process actually loads — main and
+// the utility processes it forks (every `dist/main/*.cjs`); renderer libraries
+// belong in devDependencies because Vite already emitted them.
 if (!existsSync(mainPath)) {
   process.stderr.write(
     `Desktop main artifact is missing at ${mainPath}; build desktop before validating it.\n`,
@@ -556,7 +719,13 @@ if (declaredRuntimeDependencies.has('ffmpeg-static')) {
     'Desktop production dependencies must not include host-native ffmpeg-static; GIF export uses the packaged ffmpeg.wasm core.',
   );
 }
-const mainRequires = collectRuntimeRequires(readFileSync(mainPath, 'utf8'));
+const mainRequires = new Set(
+  readdirSync(path.dirname(mainPath))
+    .filter((file) => file.endsWith('.cjs'))
+    .flatMap((file) => [
+      ...collectRuntimeRequires(readFileSync(path.join(path.dirname(mainPath), file), 'utf8')),
+    ]),
+);
 const requiredPackages = new Set(
   [...mainRequires]
     .filter((specifier) => specifier !== 'electron' && !isBuiltin(specifier))

@@ -38,7 +38,7 @@ export function saveVersioningPreference(value: VersioningPreference): void {
 
 /** Whether a workspace type is "local" (writes to a real folder on disk). */
 export function isLocalWorkspaceType(type: WorkspaceDescriptor['type']): boolean {
-  return type === 'native' || type === 'electron-native';
+  return type === 'native' || type === 'host-native';
 }
 
 /**

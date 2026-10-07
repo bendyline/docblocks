@@ -45,16 +45,16 @@ export interface WorkspaceDescriptor {
    * Provider kind:
    * - 'indexeddb' — browser-local storage (web only)
    * - 'native' — File System Access API (web Chrome/Edge only)
-   * - 'electron-native' — Electron main-process native filesystem
+   * - 'host-native' — Electron main-process native filesystem
    * - 'transient' — session-only, in-memory (a loose file/`.dbk` opened from
    *   the OS, or a document copied from a shared URL). Never persisted; its
    *   provider lives in an in-memory registry (see workspace-manager). An
    *   `origin` is present only when changes can be saved back externally.
    */
-  type: 'indexeddb' | 'native' | 'electron-native' | 'transient';
+  type: 'indexeddb' | 'native' | 'host-native' | 'transient';
   /** ISO timestamp of last access. */
   lastOpened: string;
-  /** Absolute filesystem path for 'electron-native' workspaces. */
+  /** Absolute filesystem path for 'host-native' workspaces. */
   rootPath?: string;
   /** For 'transient' workspaces: where the contents came from / save back to. */
   origin?: TransientOrigin;

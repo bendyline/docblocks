@@ -38,6 +38,11 @@ function findSignTool() {
 }
 
 exports.default = async function sign(configuration) {
+  // These executables already carry the pinned native release's signatures.
+  // Re-signing would invalidate Gezel's source-bundled per-file SHA-256 pins.
+  if (configuration.path.replaceAll('\\', '/').includes('/resources/gezel-native/')) {
+    return;
+  }
   const dlibPath = process.env.TRUSTED_SIGNING_DLIB_PATH;
   const metadataPath = process.env.TRUSTED_SIGNING_METADATA_PATH;
 

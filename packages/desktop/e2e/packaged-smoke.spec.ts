@@ -1,5 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { listPackage } from '@electron/asar';
+import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
+import { excludedDesktopDependencies } from '../../../scripts/desktop-runtime-policy.js';
 import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
 
@@ -21,6 +24,14 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   const packaged = await launchPackagedApp();
   expect(fs.statSync(packaged.artifact.appAsarPath).isFile()).toBe(true);
   expect(path.basename(packaged.artifact.appAsarPath)).toBe('app.asar');
+  // GHSA-VFJ7-8CJW-P6XM: verify the artifact, rather than just its configuration.
+  const shippedPaths = listPackage(packaged.artifact.appAsarPath, { isPack: false });
+  for (const name of excludedDesktopDependencies) {
+    expect(
+      shippedPaths.some((entry) => entry.replace(/\\/gu, '/').includes(`/node_modules/${name}/`)),
+      name,
+    ).toBe(false);
+  }
   for (const legalResource of [
     'THIRD_PARTY_NOTICES.txt',
     'licenses/ELECTRON_LICENSE.txt',
@@ -32,6 +43,28 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   }
 
   const fuseWires = readFuseWires(packaged.artifact.fuseBinaryPath);
+  const nativeRoot = path.join(packaged.artifact.resourcesPath, 'gezel-native');
+  const nativeRelease = JSON.parse(
+    fs.readFileSync(path.join(nativeRoot, 'release.json'), 'utf8'),
+  ) as {
+    release: string;
+    platform: string;
+    arch: string;
+    archives: { name: string; sha256: string }[];
+  };
+  expect(nativeRelease.platform).toBe(process.platform);
+  expect(nativeRelease.arch).toBe(process.arch);
+  expect(nativeRelease.release).toMatch(/^\d+\.\d+\.\d+$/u);
+  expect(nativeRelease.archives.length).toBeGreaterThan(0);
+  for (const archive of nativeRelease.archives) {
+    const key = archive.name
+      .replace(`gezel-native-${nativeRelease.release}-`, '')
+      .replace(/\.(zip|tar\.gz)$/u, '');
+    expect(fs.statSync(path.join(nativeRoot, key)).isDirectory()).toBe(true);
+  }
+  const cpuOrMetal = `${process.platform}-${process.arch}-${process.platform === 'darwin' ? 'metal' : 'cpu'}`;
+  const executable = process.platform === 'win32' ? 'gezel-llama-server.exe' : 'gezel-llama-server';
+  expect(fs.statSync(path.join(nativeRoot, cpuOrMetal, executable)).isFile()).toBe(true);
   expect(fuseWires.length).toBeGreaterThan(0);
   for (const wire of fuseWires) {
     expect(wire.version).toBe(1);
@@ -227,4 +260,39 @@ test('grants capture only to the trusted renderer and exposes only working prese
       .poll(() => packaged.window.evaluate(() => document.fullscreenElement === null))
       .toBe(true);
   }
+});
+
+test('starts hosted AI from the packaged signed native payload', async ({ launchPackagedApp }) => {
+  // The fixture's empty Gezel home makes the standalone app absent. This
+  // exercises both ESM runtime packages, native verification and SDK hosting
+  // from the production app.asar with its hardened Electron fuses.
+  // Local macOS smoke apps are ad-hoc signed and correctly fail the required
+  // enclosing-app notarization check; release builds retain that check.
+  const packaged = await launchPackagedApp();
+  await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await packaged.window.evaluate(async () => {
+    const host = Reflect.get(globalThis, 'docBlocksHost') as { ai?: DocBlocksHostAiAPI };
+    if (!host.ai) throw new Error('Packaged build exposes no AI capability');
+    await host.ai.setPreferences({ enabled: true });
+  });
+  await expect
+    .poll(
+      async () =>
+        packaged.window.evaluate(async () => {
+          const host = Reflect.get(globalThis, 'docBlocksHost') as { ai?: DocBlocksHostAiAPI };
+          return host.ai?.status();
+        }),
+      { timeout: 60_000 },
+    )
+    .toMatchObject(
+      process.platform === 'darwin'
+        ? {
+            kind: 'error',
+            error: {
+              code: 'runtime-missing',
+              detail: expect.stringContaining('parent app signature/notarization rejected'),
+            },
+          }
+        : { kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } },
+    );
 });

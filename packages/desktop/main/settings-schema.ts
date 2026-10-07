@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
+import type { AiReviewMode } from '@bendyline/docblocks/host';
 
 export interface PersistedWorkspace {
   id: string;
@@ -31,6 +32,17 @@ export interface PersistedGitSettings {
   allowedRepositories?: string[];
 }
 
+/**
+ * AI preferences. Absent means never opted in. The Gezel credential is not
+ * here: it lives in its own encrypted file, never in plain settings.
+ */
+export interface PersistedAiSettings {
+  enabled: boolean;
+  /** Preferred provider model id; absent takes the provider's default. */
+  model?: string;
+  reviewMode?: AiReviewMode;
+}
+
 export interface Settings {
   defaultWorkspaceRoot?: string;
   workspaces: PersistedWorkspace[];
@@ -38,6 +50,7 @@ export interface Settings {
   lastCloneParentDir?: string;
   exportTargets?: Record<string, PersistedExportTarget>;
   git?: PersistedGitSettings;
+  ai?: PersistedAiSettings;
 }
 
 export const SETTINGS_MAX_BYTES = 4 * 1024 * 1024;
@@ -49,7 +62,10 @@ const SETTINGS_KEYS = [
   'lastCloneParentDir',
   'exportTargets',
   'git',
+  'ai',
 ] as const;
+
+const AI_REVIEW_MODES: ReadonlySet<string> = new Set(['off', 'explicit', 'implicit']);
 
 /** Parse the complete persisted settings boundary; unknown fields are rejected. */
 export function parseSettings(value: unknown): Settings {
@@ -81,6 +97,25 @@ export function parseSettings(value: unknown): Settings {
   }
   if (record.git !== undefined) {
     parsed.git = parseGitSettings(record.git);
+  }
+  if (record.ai !== undefined) {
+    parsed.ai = parseAiSettings(record.ai);
+  }
+  return parsed;
+}
+
+function parseAiSettings(value: unknown): PersistedAiSettings {
+  const record = exactRecord(value, ['enabled', 'model', 'reviewMode'], 'ai');
+  if (typeof record.enabled !== 'boolean') invalid('ai.enabled must be a boolean');
+  const parsed: PersistedAiSettings = { enabled: record.enabled };
+  if (record.model !== undefined) {
+    parsed.model = boundedString(record.model, HOST_WIRE_LIMITS.identifierCharacters, 'ai.model');
+  }
+  if (record.reviewMode !== undefined) {
+    if (typeof record.reviewMode !== 'string' || !AI_REVIEW_MODES.has(record.reviewMode)) {
+      invalid('ai.reviewMode must be off, explicit, or implicit');
+    }
+    parsed.reviewMode = record.reviewMode as AiReviewMode;
   }
   return parsed;
 }

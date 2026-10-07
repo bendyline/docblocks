@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <provider android:name="com.bendyline.docblocks.mobile.ContractDocumentsProvider" android:authorities="com.bendyline.docblocks.contract.documents" android:exported="true" android:permission="android.permission.MANAGE_DOCUMENTS" android:grantUriPermissions="true" />
+  </application>
+</manifest>

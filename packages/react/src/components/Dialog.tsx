@@ -6,6 +6,7 @@
  * initial focus. Escape and (by default) backdrop clicks close it.
  */
 
+import { registerDialogCloser, isTopmostDialog } from './dialog-stack.js';
 import React, { useCallback, useEffect, useId, useRef } from 'react';
 
 export interface DialogProps {
@@ -43,9 +44,17 @@ export function Dialog({
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const registeredClose = useRef(() => closeRef.current());
+  useEffect(() => {
+    const close = registeredClose.current;
+    return registerDialogCloser(close);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!isTopmostDialog(registeredClose.current)) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose();

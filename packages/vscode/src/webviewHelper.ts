@@ -60,10 +60,10 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
     content="default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline';
       script-src ${webview.cspSource} 'nonce-${nonce}' 'wasm-unsafe-eval';
-      font-src ${webview.cspSource};
+      font-src ${webview.cspSource} data:;
       img-src ${webview.cspSource} blob: data:;
       media-src blob: data:;
-      connect-src ${webview.cspSource};
+      connect-src ${webview.cspSource} blob: data:;
       worker-src ${webview.cspSource} blob:;">
   <meta name="${HARPER_WASM_META_NAME}" content="${harperWasmUri.toString()}">
   <meta name="${IRONCALC_WASM_META_NAME}" content="${ironCalcWasmUri.toString()}">

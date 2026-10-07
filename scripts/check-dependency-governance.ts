@@ -70,10 +70,12 @@ export function validateInstallScriptPolicy(
     throw new Error('package.json must declare a non-empty, version-pinned allowScripts policy');
   }
 
+  // A `false` entry is a reviewed denial: npm skips that script silently, so
+  // it counts as reviewed exactly like an approval and is pinned the same way.
   const approvedSpecs = new Set<string>();
   for (const [key, approved] of Object.entries(policy)) {
-    if (approved !== true) {
-      throw new Error(`allowScripts entry ${key} must be true or be removed`);
+    if (approved !== true && approved !== false) {
+      throw new Error(`allowScripts entry ${key} must be true, false, or be removed`);
     }
     const parsed = splitApprovalKey(key);
     if (!parsed) {
@@ -132,6 +134,23 @@ function requireNpmrcValue(
   }
 }
 
+/**
+ * The packages exempt from the seven-day release cooldown, exactly as `.npmrc`
+ * must list them.
+ *
+ * Everything under the `@bendyline` scope is first-party and co-developed with
+ * DocBlocks: Squisq is the editor, Gezel is the local AI runtime DocBlocks is
+ * used to prove out, and the rest are packages those two publish alongside
+ * themselves. Waiting a week for our own release would only delay a fix we
+ * wrote. The exemption covers our packages alone; their third-party
+ * dependencies still cool down.
+ *
+ * The list is exact on purpose. Exempting anything outside the scope is a
+ * policy change that must land together with `docs/dependency-governance.md`
+ * and AGENTS.md.
+ */
+export const COOLDOWN_EXCLUSIONS: readonly string[] = Object.freeze(['@bendyline/*']);
+
 export function validateDependencyToolchain(manifest: RootManifest, npmrcSource: string): void {
   if (manifest.engines?.npm !== '>=11.19.1') {
     throw new Error('package.json engines.npm must require >=11.19.1');
@@ -148,7 +167,7 @@ export function validateDependencyToolchain(manifest: RootManifest, npmrcSource:
   const npmrc = parseNpmrc(npmrcSource);
   requireNpmrcValue(npmrc, 'strict-allow-scripts', ['true']);
   requireNpmrcValue(npmrc, 'min-release-age', ['7']);
-  requireNpmrcValue(npmrc, 'min-release-age-exclude[]', ['@bendyline/squisq*']);
+  requireNpmrcValue(npmrc, 'min-release-age-exclude[]', COOLDOWN_EXCLUSIONS);
   if (npmrc.has('allow-scripts') || npmrc.has('dangerously-allow-all-scripts')) {
     throw new Error(
       '.npmrc must not bypass package.json allowScripts with allow-scripts or dangerously-allow-all-scripts',

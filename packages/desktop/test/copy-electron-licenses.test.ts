@@ -77,6 +77,25 @@ describe('copy Electron licenses after extraction', () => {
     await expectCopiedLegalFiles(resourcesDirectory);
   });
 
+  it('finds legal files electron-builder already moved into the macOS app bundle', async () => {
+    const resourcesDirectory = path.join(
+      temporaryDirectory,
+      'Electron.app',
+      'Contents',
+      'Resources',
+    );
+    await fs.mkdir(resourcesDirectory, { recursive: true });
+    await fs.writeFile(path.join(resourcesDirectory, 'LICENSE.electron.txt'), 'electron license');
+    await fs.writeFile(path.join(resourcesDirectory, 'LICENSES.chromium.html'), 'chromium notices');
+
+    await copyElectronLicenses({
+      appOutDir: temporaryDirectory,
+      electronPlatformName: 'darwin',
+    });
+
+    await expectCopiedLegalFiles(resourcesDirectory);
+  });
+
   it('fails packaging when the extracted archive omits legal files', async () => {
     await fs.mkdir(path.join(temporaryDirectory, 'resources'));
     let thrown: unknown;

@@ -99,6 +99,16 @@
       "types": "./dist/mcp/zod.d.ts",
       "import": "./dist/mcp/zod.js",
       "default": "./dist/mcp/zod.js"
+    },
+    "./filesystem/host": {
+      "types": "./dist/filesystem/host.d.ts",
+      "import": "./dist/filesystem/host.js",
+      "default": "./dist/filesystem/host.js"
+    },
+    "./host/mobile": {
+      "types": "./dist/host/mobile.d.ts",
+      "import": "./dist/host/mobile.js",
+      "default": "./dist/host/mobile.js"
     }
   },
   "scripts": {
@@ -106,7 +116,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.11.4",
+    "@bendyline/squisq": "2.11.15",
     "zod": "3.25.76"
   }
 }

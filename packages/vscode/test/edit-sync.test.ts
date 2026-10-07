@@ -127,7 +127,7 @@ describe('VS Code edit sync', () => {
     sync.dispose();
   });
 
-  it('acknowledges first whitespace-only snapshots without dirtying or saving the document', async () => {
+  it('saves a first authored whitespace-only snapshot exactly', async () => {
     const adapter = new FakeDocumentAdapter();
     adapter.content = '# Heading\n\nBody text.\n';
     const sync = await VscodeDocumentSync.create(adapter, {
@@ -140,15 +140,10 @@ describe('VS Code edit sync', () => {
 
     expect(acknowledgement.accepted).to.equal(true);
     expect(sync.getSnapshot().acknowledgedClientRevision).to.equal(1);
-    expect(sync.getSnapshot().session.content).to.equal(adapter.content);
-    expect(sync.getSnapshot().session.status).to.equal('saved');
-    await wait(20);
-    expect(adapter.commits).to.deep.equal([]);
-
-    expect(
-      sync.acceptEdit(editEnvelope(sync, 2, `${whitespaceOnly}Authored text`)).accepted,
-    ).to.equal(true);
     expect(sync.getSnapshot().session.status).to.equal('dirty');
+    await sync.save(saveEnvelope(sync));
+    expect(adapter.content).to.equal(whitespaceOnly);
+    expect(adapter.commits).to.deep.equal([whitespaceOnly]);
     sync.dispose();
   });
 
@@ -790,7 +785,7 @@ describe('VS Code webview document scope', () => {
     expect(client.createEdit(first, 'obsolete')).to.equal(null);
   });
 
-  it('requires edit intent and a substantive first change before authoring a snapshot', () => {
+  it('requires edit intent before authoring a snapshot', () => {
     const client = new WebviewDocumentClient();
     const scope = client.acceptContent({
       type: 'setContent',
@@ -803,7 +798,6 @@ describe('VS Code webview document scope', () => {
     });
 
     expect(client.createEdit(scope, 'testing!')).to.equal(null);
-    expect(client.armEdits(scope, false)).to.equal(true);
     expect(client.createEdit(scope, '\\*\\*testing!\\*\\*\n\n')).to.equal(null);
     expect(client.createSave(1)).to.deep.include({ clientRevision: 0 });
 
@@ -820,4 +814,31 @@ describe('VS Code webview document scope', () => {
       clientRevision: 1,
     });
   });
+
+  for (const content of ['    word', 'wo rd', 'word\n\n', 'word  \n']) {
+    it(`persists an initial whitespace gesture through the client and host: ${JSON.stringify(content)}`, async () => {
+      const adapter = new FakeDocumentAdapter();
+      adapter.content = 'word';
+      const sync = await VscodeDocumentSync.create(adapter, { autoSaveEnabled: false });
+      const state = sync.getSnapshot();
+      const client = new WebviewDocumentClient();
+      const scope = client.acceptContent({
+        type: 'setContent',
+        content: adapter.content,
+        documentVersion: state.baseDocumentVersion,
+        fileName: 'document.md',
+        sessionId: state.sessionId,
+        sessionRevision: state.session.revision,
+        acknowledgedClientRevision: 0,
+      });
+      client.armEdits(scope, false);
+      const edit = client.createEdit(scope, content);
+      expect(edit).not.to.equal(null);
+      expect(sync.acceptEdit(edit!).accepted).to.equal(true);
+      await sync.save(saveEnvelope(sync));
+      expect(adapter.content).to.equal(content);
+      expect(sync.getSnapshot().session.status).to.equal('saved');
+      sync.dispose();
+    });
+  }
 });

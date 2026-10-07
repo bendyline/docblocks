@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { decodeUtf8Text, type FileCommitResult } from '@bendyline/docblocks/filesystem';
@@ -63,9 +64,27 @@ export async function atomicWriteText(absolutePath: string, content: string): Pr
 export async function atomicWriteBinary(
   absolutePath: string,
   content: ArrayBuffer | Uint8Array,
+  exclusive = false,
 ): Promise<void> {
   const bytes = content instanceof Uint8Array ? content : new Uint8Array(content);
-  await atomicWrite(absolutePath, bytes);
+  await atomicWrite(absolutePath, bytes, exclusive);
+}
+
+/** Publish without replacement, including volumes that cannot create hard links. */
+export async function publishFileExclusive(
+  source: string,
+  destination: string,
+  link: typeof fs.link = fs.link,
+): Promise<void> {
+  try {
+    await link(source, destination);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (!['ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EPERM'].includes(code ?? '')) throw error;
+    // Cooperating readers share the workspace mutation lock. On volumes
+    // without links, copying still reserves the destination exclusively.
+    await fs.copyFile(source, destination, constants.COPYFILE_EXCL);
+  }
 }
 
 /** Stage a bounded stream beside its destination; publish only a complete file. */
@@ -73,6 +92,7 @@ export async function atomicWriteStream(
   absolutePath: string,
   chunks: AsyncIterable<Uint8Array>,
   expectedBytes: number,
+  exclusive = false,
 ): Promise<void> {
   const temporaryPath = path.join(
     path.dirname(absolutePath),
@@ -89,7 +109,8 @@ export async function atomicWriteStream(
     if (written !== expectedBytes) throw new Error('File transfer is incomplete.');
     await handle.sync();
     await handle.close();
-    await fs.rename(temporaryPath, absolutePath);
+    if (exclusive) await publishFileExclusive(temporaryPath, absolutePath);
+    else await fs.rename(temporaryPath, absolutePath);
   } finally {
     await handle.close();
     await fs.unlink(temporaryPath).catch((error: unknown) => {
@@ -98,7 +119,11 @@ export async function atomicWriteStream(
   }
 }
 
-async function atomicWrite(absolutePath: string, content: string | Uint8Array): Promise<void> {
+async function atomicWrite(
+  absolutePath: string,
+  content: string | Uint8Array,
+  exclusive = false,
+): Promise<void> {
   const directory = path.dirname(absolutePath);
   await fs.mkdir(directory, { recursive: true });
   const temporaryPath = path.join(
@@ -112,7 +137,10 @@ async function atomicWrite(absolutePath: string, content: string | Uint8Array): 
     await handle.sync();
     await handle.close();
     handle = null;
-    await fs.rename(temporaryPath, absolutePath);
+    // link publishes the complete staged file only if the destination is absent.
+    // A replacing rename cannot implement create semantics against external writers.
+    if (exclusive) await publishFileExclusive(temporaryPath, absolutePath);
+    else await fs.rename(temporaryPath, absolutePath);
   } finally {
     await handle?.close().catch(() => undefined);
     await fs.unlink(temporaryPath).catch(() => undefined);

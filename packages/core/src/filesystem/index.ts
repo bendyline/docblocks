@@ -113,7 +113,12 @@ export {
 export { IndexedDBContentContainer } from './indexeddb-content-container.js';
 export { FileSystemContentContainer } from './filesystem-content-container.js';
 export { createFileMediaProvider } from './file-media-provider.js';
-export { documentCompanionPath, moveFileSystemEntry } from './move-entry.js';
+export {
+  documentCompanionPath,
+  moveFileSystemEntry,
+  type FileSystemEntryMoveOptions,
+} from './move-entry.js';
+export { rewriteCompanionReferences } from './companion-references.js';
 export {
   FileSystemMoveRecoveryError,
   FileSystemPartialMoveError,
