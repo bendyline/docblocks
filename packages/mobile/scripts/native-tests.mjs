@@ -65,11 +65,11 @@ if (
     ...(javaHome ? { JAVA_HOME: javaHome } : {}),
   };
   // The tracked Gradle settings include Capacitor's generated, gitignored
-  // Cordova plugin project, which a fresh checkout lacks. Unlike `cap sync`,
-  // `cap update` regenerates it without needing a web build.
+  // Cordova plugin project and app assets, which a fresh checkout lacks.
+  // `cap sync` generates both from the mobile web build (packages/mobile/dist).
   run(
     process.execPath,
-    [path.join(repo, 'node_modules/@capacitor/cli/bin/capacitor'), 'update', 'android'],
+    [path.join(repo, 'node_modules/@capacitor/cli/bin/capacitor'), 'sync', 'android'],
     { cwd: mobile },
   );
   run(
