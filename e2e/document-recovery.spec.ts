@@ -23,7 +23,12 @@ test('compares a recovered draft with the saved file and remembers the choice af
       ),
     )
     .toBe(0);
-  await page.evaluate(() => {
+  // Real drafts are journaled from editor output, so this one uses the
+  // editor's canonical serialization. Without the final newline, the editor
+  // normalizes the restored draft at a racy moment after reload and the
+  // preview below would sometimes show the normalized copy instead.
+  const draft = '# Older recovery draft\n\nThis was never saved.\n';
+  await page.evaluate((draft) => {
     const state = JSON.parse(localStorage.getItem('docblocks:lastState')!);
     const targetKey = `${state.workspaceId}:${state.filePath.replace(/^\/+/, '')}`;
     const now = Date.now();
@@ -36,7 +41,7 @@ test('compares a recovered draft with the saved file and remembers the choice af
             targetKey,
             generation: 2,
             revision: 4,
-            content: '# Older recovery draft\n\nThis was never saved.',
+            content: draft,
             persistedContent: '# Earlier baseline',
             createdAt: now - 3_600_000,
             updatedAt: now - 3_600_000,
@@ -44,16 +49,14 @@ test('compares a recovered draft with the saved file and remembers the choice af
         ],
       }),
     );
-  });
+  }, draft);
   await page.reload();
   const compare = page.getByRole('button', { name: 'Compare versions' });
   await expect(compare).toBeVisible({ timeout: 20_000 });
   await compare.click();
   const dialog = page.getByRole('dialog', { name: 'Compare document versions' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('textbox', { name: 'Recovery draft preview' })).toHaveValue(
-    '# Older recovery draft\n\nThis was never saved.',
-  );
+  await expect(dialog.getByRole('textbox', { name: 'Recovery draft preview' })).toHaveValue(draft);
   const saved = dialog.getByRole('textbox', { name: 'Saved file preview' });
   await expect(saved).not.toHaveValue(/Older recovery draft/);
   await expect(dialog).toContainText('Recovery copy captured:');
