@@ -17,6 +17,13 @@ const MARKETING_ROUTES = [
   'terms',
 ] as const;
 const STATIC_CSP_PAGES = [...MARKETING_ROUTES, '404'] as const;
+const ONLINE_VIDEO_FRAME_SOURCES = [
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://www.dailymotion.com',
+  'https://fast.wistia.net',
+];
 
 async function read(relativePath: string): Promise<string> {
   return readFile(path.join(SITE_ROOT, relativePath), 'utf8');
@@ -93,7 +100,7 @@ function expectIndexableDocument(html: string, canonicalUrl: string): void {
 }
 
 describe('site SEO surface', () => {
-  it('allows local Blob media without weakening script or object policy', async () => {
+  it('allows local Blob media and supported player frames without weakening script policy', async () => {
     const html = await read('index.html');
     const policyDirectives = parseContentSecurityPolicy(html);
 
@@ -109,7 +116,7 @@ describe('site SEO surface', () => {
     expect(policyDirectives.get('object-src')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('base-uri')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('form-action')).to.deep.equal(["'none'"]);
-    expect(policyDirectives.get('frame-src')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
     expect(html).to.include('<meta name="referrer" content="no-referrer" />');
   });
 

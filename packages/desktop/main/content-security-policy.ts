@@ -1,5 +1,13 @@
 export const DESKTOP_DEVELOPMENT_SERVER_URL = 'http://localhost:5221';
 
+const ONLINE_VIDEO_FRAME_SOURCES = [
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://www.dailymotion.com',
+  'https://fast.wistia.net',
+].join(' ');
+
 /**
  * Renderer CSP for both the packaged app:// origin and the trusted Vite
  * development origin. Recorded and attached audio/video is exposed to the
@@ -16,6 +24,8 @@ export const DESKTOP_DEVELOPMENT_SERVER_URL = 'http://localhost:5221';
  * where `'unsafe-eval'` happens to permit WebAssembly as a side effect. Prefer
  * `'wasm-unsafe-eval'` over `'unsafe-eval'` here: it unblocks WebAssembly
  * without re-enabling JavaScript `eval` in the production renderer.
+ * Remote frames are limited to the origins emitted by Squisq's supported
+ * online video providers.
  */
 export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
   if (isDevelopment) {
@@ -28,7 +38,7 @@ export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
       "font-src 'self' app: http://localhost:5221 data:; " +
       "connect-src 'self' app: http://localhost:5221 ws://localhost:5221 blob:; " +
       "worker-src 'self' app: http://localhost:5221 blob:; " +
-      "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';"
+      `object-src 'none'; base-uri 'none'; frame-src ${ONLINE_VIDEO_FRAME_SOURCES}; frame-ancestors 'none'; form-action 'none';`
     );
   }
 
@@ -41,6 +51,6 @@ export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
     "font-src 'self' app: data:; " +
     "connect-src 'self' app: blob:; " +
     "worker-src 'self' app: blob:; " +
-    "object-src 'none'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none';"
+    `object-src 'none'; base-uri 'none'; frame-src ${ONLINE_VIDEO_FRAME_SOURCES}; frame-ancestors 'none'; form-action 'none';`
   );
 }

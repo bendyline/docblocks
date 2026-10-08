@@ -5950,10 +5950,60 @@ html:has(.db-shell[data-theme='dark'])
   align-items: center;
 }
 
-/* Status sits left of the buttons and takes its own row when it is long. */
+.db-ai-draft-dialog .db-dialog-header,
+.db-ai-draft-dialog .db-dialog-footer {
+  flex-shrink: 0;
+}
+
+.db-ai-draft-dialog .db-ai-draft-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.db-ai-draft-body > .db-ai-field,
+.db-ai-draft-body > .db-ai-selection-preview,
+.db-ai-draft-body > .db-ai-disclaimer {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+/* Let the draft yield space to the prompt, selection and review note. The
+   body still scrolls when a short viewport cannot fit their minimum sizes. */
+.db-ai-draft-body > .db-ai-draft-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: calc(96px + 1.6em + 6px);
+}
+
+.db-ai-draft-body .db-ai-draft-field .db-ai-draft-output {
+  flex: 1 1 auto;
+  height: min(190px, 28dvh);
+  min-height: 96px;
+}
+
+.db-ai-draft-body .db-ai-selection-preview blockquote {
+  box-sizing: border-box;
+  max-height: min(112px, 16dvh);
+}
+
+.db-ai-draft-dialog .db-ai-draft-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.db-ai-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Status has its own row, so errors cannot steal space from the actions. */
 .db-ai-footer-status {
-  flex: 1 1 240px;
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .db-ai-footer-status p {

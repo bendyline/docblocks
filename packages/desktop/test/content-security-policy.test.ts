@@ -1,6 +1,14 @@
 import { expect } from 'chai';
 import { desktopContentSecurityPolicy } from '../main/content-security-policy.js';
 
+const ONLINE_VIDEO_FRAME_SOURCES = [
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://www.dailymotion.com',
+  'https://fast.wistia.net',
+];
+
 function directives(policy: string): Map<string, string[]> {
   return new Map(
     policy
@@ -25,7 +33,13 @@ describe('desktop renderer content security policy', () => {
       expect(policy.get('connect-src')).to.include('blob:');
       expect(policy.get('script-src')).not.to.include('blob:');
       expect(policy.get('object-src')).to.deep.equal(["'none'"]);
-      expect(policy.get('frame-src')).to.deep.equal(["'none'"]);
+    }
+  });
+
+  it('allows frames only from the supported online video players', () => {
+    for (const isDevelopment of [false, true]) {
+      const policy = directives(desktopContentSecurityPolicy(isDevelopment));
+      expect(policy.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
     }
   });
 

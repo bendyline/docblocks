@@ -143,8 +143,14 @@ export interface AiServiceOptions {
   readonly preferences: AiPreferenceStore;
   /** Concurrent completions across every renderer. */
   readonly maxConcurrentChats?: number;
-  /** Abort a stream that produces nothing for this long. */
+  /** Abort a stream that stalls this long between chunks once text is flowing. */
   readonly streamIdleTimeoutMs?: number;
+  /**
+   * Abort a stream that has produced no text after this long. Gezel owns the
+   * real time-to-first-token deadline, sized to the prompt, and reports it as
+   * an error; this only catches a connection that hangs without saying so.
+   */
+  readonly firstTextTimeoutMs?: number;
   /** A status read re-detects an absent provider at most this often. */
   readonly redetectIntervalMs?: number;
   readonly now?: () => number;
@@ -166,9 +172,12 @@ interface ConnectionAttempt {
 }
 
 const DEFAULT_MAX_CONCURRENT_CHATS = 4;
-// Generous: a large local model can spend a minute loading before its first
-// token, and a slow machine should read as slow rather than broken.
+// Between chunks once text flows: a stall this long means the stream is dead.
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+// Before the first text a local model may load, prefill a long document, and
+// think — none of which reaches DocBlocks as chunks. A 180s limit here was a
+// second, shorter deadline under Gezel's own and cut off a model mid-thought.
+const DEFAULT_FIRST_TEXT_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_REDETECT_INTERVAL_MS = 15_000;
 // Across all windows. State reads coalesce per window, so only a runaway
 // renderer reaches this.
@@ -230,6 +239,7 @@ export class AiService {
   private readonly store: AiPreferenceStore;
   private readonly maxConcurrentChats: number;
   private readonly streamIdleTimeoutMs: number;
+  private readonly firstTextTimeoutMs: number;
   private readonly redetectIntervalMs: number;
   private readonly now: () => number;
 
@@ -263,6 +273,7 @@ export class AiService {
     this.store = options.preferences;
     this.maxConcurrentChats = options.maxConcurrentChats ?? DEFAULT_MAX_CONCURRENT_CHATS;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+    this.firstTextTimeoutMs = options.firstTextTimeoutMs ?? DEFAULT_FIRST_TEXT_TIMEOUT_MS;
     this.redetectIntervalMs = options.redetectIntervalMs ?? DEFAULT_REDETECT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
   }
@@ -868,10 +879,13 @@ export class AiService {
     let idle: ReturnType<typeof setTimeout> | undefined;
     const armIdle = () => {
       clearTimeout(idle);
-      idle = setTimeout(() => {
-        chat.ending ??= 'timeout';
-        chat.controller.abort();
-      }, this.streamIdleTimeoutMs);
+      idle = setTimeout(
+        () => {
+          chat.ending ??= 'timeout';
+          chat.controller.abort();
+        },
+        text ? this.streamIdleTimeoutMs : this.firstTextTimeoutMs,
+      );
       // A watchdog must not be the only thing keeping a process alive.
       idle.unref?.();
     };
@@ -880,7 +894,6 @@ export class AiService {
     try {
       const stream = await connection.streamChat(request, chat.controller.signal);
       for await (const chunk of stream) {
-        armIdle();
         if (chunk.model && isBoundedString(chunk.model, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
           model = chunk.model;
         }
@@ -900,6 +913,8 @@ export class AiService {
         }
         if (chunk.finishReason === 'length') finishReason = 'length';
         if (chat.ending) break;
+        // After the text is counted, so the first words switch to the stall limit.
+        armIdle();
       }
       if (chat.ending === 'timeout') throw new AiHostError('timeout', 'Gezel stopped responding.');
       if (chat.ending === 'teardown') {

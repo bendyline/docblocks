@@ -86,6 +86,7 @@
     "eval:mcp": "npm run build:core && npm run build:cli && npm run eval:mcp:run --",
     "eval:mcp:run": "node packages/cli/dist/eval/cli.js",
     "eval:ai-diagrams": "tsx scripts/eval-ai-diagrams.ts",
+    "eval:ai-writing": "tsx scripts/eval-ai-writing.ts",
     "test:eval:mcp": "mocha --no-config --require tsx packages/cli/test/mcp-eval-harness.test.ts",
     "test:mcp:linked:docblocks-contracts": "mocha --no-config --require tsx --timeout 60000 \"packages/cli/test/convert-registry.test.ts\" \"packages/cli/test/video-cancellation.test.ts\" \"packages/cli/test/check-linked-squisq.test.ts\"",
     "test:squisq-linked:mcp-contracts": "npm --prefix ../squisq exec -- vitest run --root ../squisq packages/formats/src/__tests__/convert.test.ts packages/formats/src/__tests__/ooxmlCancellation.test.ts && npm --prefix ../squisq/packages/cli exec -- mocha --no-config --require tsx --timeout 30000 \"../squisq/packages/cli/src/__tests__/capturedFrameBudget.test.ts\" \"../squisq/packages/cli/src/__tests__/registry.test.ts\" \"../squisq/packages/cli/src/__tests__/runFfmpeg.test.ts\" \"../squisq/packages/cli/src/__tests__/thumbnails.test.ts\" \"../squisq/packages/cli/src/__tests__/nativeGifEncoder.test.ts\"",

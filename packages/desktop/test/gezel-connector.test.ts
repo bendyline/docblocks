@@ -261,6 +261,7 @@ describe('Gezel connector against the app SDK', () => {
       model: 'gezel:writer',
       messages: [{ role: 'user', content: 'Hi' }],
       stream: true,
+      reasoning_effort: 'none',
       temperature: 0.2,
       max_tokens: 64,
     });
@@ -291,7 +292,12 @@ describe('Gezel connector against the app SDK', () => {
     // The SDK picks the ranking mode; DocBlocks only asks.
     expect(retrieval?.body).to.include({ query: 'Explain science.' });
     const completion = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
-    const body = completion?.body as { messages: Array<{ role: string; content: string }> };
+    const body = completion?.body as {
+      messages: Array<{ role: string; content: string }>;
+      reasoning_effort?: string;
+    };
+    // No DocBlocks surface shows reasoning, so thinking is turned off.
+    expect(body.reasoning_effort).to.equal('none');
     expect(body.messages[0].role).to.equal('system');
     expect(body.messages[0].content).to.contain(source).and.contain('A relevant fact.');
     expect(body.messages[1]).to.deep.equal({ role: 'user', content: 'Explain science.' });
@@ -581,6 +587,9 @@ describe('Gezel connector hosting ladder', () => {
           authorities.push(process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY);
           const refused = authorities.length === 1;
           return (async function* () {
+            // Gezel opens every stream with an empty chunk before the provider
+            // runs, so the refusal arrives second.
+            yield { choices: [{ delta: { role: 'assistant' }, finish_reason: null }] };
             if (refused)
               throw Object.assign(
                 new Error(
@@ -613,7 +622,7 @@ describe('Gezel connector hosting ladder', () => {
       );
       const chunks: ProviderChatChunk[] = [];
       for await (const chunk of stream) chunks.push(chunk);
-      expect(chunks.map((chunk) => chunk.text)).to.deep.equal(['Draft']);
+      expect(chunks.map((chunk) => chunk.text).join('')).to.equal('Draft');
       // The person never sees the refusal; the retry runs on the local ledger.
       expect(authorities).to.deep.equal([undefined, 'local']);
       await connection.close();

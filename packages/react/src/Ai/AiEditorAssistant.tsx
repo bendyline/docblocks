@@ -367,6 +367,8 @@ function AiDraftDialog({
       closeOnBackdrop={!running}
       initialFocusRef={promptRef as RefObject<HTMLElement | null>}
       className="db-ai-draft-dialog"
+      bodyClassName="db-ai-draft-body"
+      footerClassName="db-ai-draft-footer"
       footer={
         <>
           {/* In the footer, not the scrolling body: a long selection must never
@@ -386,21 +388,23 @@ function AiDraftDialog({
               )}
             </div>
           )}
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
-          {running ? (
-            <button type="button" className="db-ai-secondary-action" onClick={stop}>
-              Stop
+          <div className="db-ai-draft-actions">
+            <button type="button" onClick={onClose}>
+              Cancel
             </button>
-          ) : (
-            <button type="button" className="db-ai-secondary-action" onClick={generate}>
-              {draft ? 'Regenerate' : 'Generate'}
+            {running ? (
+              <button type="button" className="db-ai-secondary-action" onClick={stop}>
+                Stop
+              </button>
+            ) : (
+              <button type="button" className="db-ai-secondary-action" onClick={generate}>
+                {draft ? 'Regenerate' : 'Generate'}
+              </button>
+            )}
+            <button type="button" disabled={!draft.trim() || running} onClick={apply}>
+              {mode === 'compose' ? 'Insert' : 'Replace selection'}
             </button>
-          )}
-          <button type="button" disabled={!draft.trim() || running} onClick={apply}>
-            {mode === 'compose' ? 'Insert' : 'Replace selection'}
-          </button>
+          </div>
         </>
       }
     >
@@ -412,7 +416,7 @@ function AiDraftDialog({
           ref={promptRef}
           value={instructions}
           maxLength={AI_INSTRUCTION_CHARACTERS}
-          rows={3}
+          rows={2}
           placeholder={
             mode === 'compose'
               ? 'For example: Add a concise introduction for this document.'
@@ -432,7 +436,7 @@ function AiDraftDialog({
         </div>
       )}
 
-      <label className="db-ai-field">
+      <label className="db-ai-field db-ai-draft-field">
         <span>AI draft</span>
         <textarea
           className="db-ai-draft-output"

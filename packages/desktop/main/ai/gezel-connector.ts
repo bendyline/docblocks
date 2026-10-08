@@ -197,19 +197,23 @@ async function streamFrom(
     request.contextWindow,
     request.maxTokens,
   );
-  const stream = await app.chat(
-    {
-      model: request.model,
-      messages: messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-      })),
-      stream: true,
-      ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-      ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
-    },
-    { signal },
-  );
+  const body = {
+    model: request.model,
+    messages: messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    })),
+    stream: true as const,
+    // No DocBlocks surface shows reasoning, and Gezel does not forward it to
+    // apps, so a thinking phase is minutes of silence: a thinking model spent
+    // 3,700 tokens before the first word of a rewrite and tripped the idle
+    // watchdog. `none` turns thinking off for local models. SDK 1.1.3 sends
+    // the body verbatim but does not type the field, hence the variable.
+    reasoning_effort: 'none',
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+  };
+  const stream = await app.chat(body, { signal });
   return adaptStream(stream);
 }
 
@@ -227,18 +231,33 @@ function isOutdatedBrokerRefusal(error: unknown): boolean {
   return error instanceof Error && error.message.includes(OUTDATED_BROKER_REFUSAL);
 }
 
-/** Pull the first chunk now, so a refusal that precedes any output can be retried. */
-async function primed(
+/** The private engine runs in this process, so it reads this at its next launch. */
+function admitLocally(): void {
+  process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY = 'local';
+}
+
+/**
+ * Gezel opens a stream with an empty chunk before the engine launches, so the
+ * refusal can arrive after the stream has started. Until the first text it is
+ * still invisible: restart once, admitted locally.
+ */
+async function* restartingOnRefusal(
   stream: AsyncIterable<ProviderChatChunk>,
-): Promise<AsyncIterable<ProviderChatChunk>> {
-  const iterator = stream[Symbol.asyncIterator]();
-  const first = await iterator.next();
-  return (async function* () {
-    if (first.done) return;
-    yield first.value;
-    for (let next = await iterator.next(); !next.done; next = await iterator.next())
-      yield next.value;
-  })();
+  restart: () => Promise<AsyncIterable<ProviderChatChunk>>,
+  signal: AbortSignal,
+): AsyncGenerator<ProviderChatChunk> {
+  let wrote = false;
+  try {
+    for await (const chunk of stream) {
+      if (chunk.text) wrote = true;
+      yield chunk;
+    }
+    return;
+  } catch (error) {
+    if (wrote || signal.aborted || !isOutdatedBrokerRefusal(error)) throw error;
+    admitLocally();
+  }
+  yield* await restart();
 }
 
 /** `llama-cpp:qwen3.8-27b-q4` → the engine and the catalog id it names. */
@@ -487,16 +506,17 @@ class HostedGezelConnection implements AiProviderConnection {
     }
     this.requireSupportedEngine(request.model);
     signal.throwIfAborted();
-    if (process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY)
-      return streamFrom(this.gezel.openai, request, signal);
+    const start = () => streamFrom(this.gezel.openai, request, signal);
+    if (process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY) return start();
+    let stream: AsyncIterable<ProviderChatChunk>;
     try {
-      return await primed(await streamFrom(this.gezel.openai, request, signal));
+      stream = await start();
     } catch (error) {
       if (signal.aborted || !isOutdatedBrokerRefusal(error)) throw error;
-      // The private engine runs in this process, so it reads this at its next launch.
-      process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY = 'local';
-      return streamFrom(this.gezel.openai, request, signal);
+      admitLocally();
+      return start();
     }
+    return restartingOnRefusal(stream, start, signal);
   }
 
   /** A private daemon holds no grant to withdraw. */

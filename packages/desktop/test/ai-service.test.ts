@@ -640,13 +640,49 @@ describe('desktop AI service: chat', () => {
     ]);
   });
 
-  it('times out a stream that stops producing', async () => {
-    const { service } = await readyService({ streamIdleTimeoutMs: 20 });
+  it('waits past the stall limit for the first text', async () => {
+    // Loading, a long prefill, and thinking send no text; Gezel owns that deadline.
+    const { service, connector } = await readyService({
+      streamIdleTimeoutMs: 20,
+      firstTextTimeoutMs: 10_000,
+    });
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    stream.push('');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await settle();
+    expect(terminalEvents(events)).to.deep.equal([]);
+    stream.push('Draft', { finishReason: 'stop' });
+    stream.end();
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('done');
+  });
+
+  it('times out a stream that stalls after its text starts', async () => {
+    const { service, connector } = await readyService({
+      streamIdleTimeoutMs: 20,
+      firstTextTimeoutMs: 10_000,
+    });
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    connector.connection.streams[0].stream.push('Dra');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('error');
+    if (terminal.kind === 'error') expect(terminal.error.code).to.equal('timeout');
+  });
+
+  it('still gives up on a connection that never produces text', async () => {
+    const { service } = await readyService({ firstTextTimeoutMs: 20 });
     const { events, emit } = recorder();
     service.startChat('1:a', WRITE_REQUEST, emit);
     await new Promise((resolve) => setTimeout(resolve, 60));
     await settle();
-    expect(terminalEvents(events)).to.have.length(1);
     const [terminal] = terminalEvents(events);
     expect(terminal.kind).to.equal('error');
     if (terminal.kind === 'error') expect(terminal.error.code).to.equal('timeout');
