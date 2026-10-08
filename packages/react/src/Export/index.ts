@@ -11,6 +11,7 @@ export {
   FORMAT_EXTENSIONS,
   FORMAT_LABELS,
   loadLastExportOptions,
+  resolveExportDialogInitial,
   saveExportOptions,
 } from './export-options.js';
 export type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';

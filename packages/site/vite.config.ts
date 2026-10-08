@@ -255,6 +255,14 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../core/src/filesystem/electron.ts'),
       },
       {
+        find: '@bendyline/docblocks/filesystem/host',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/host.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/share',
+        replacement: path.resolve(__dirname, '../core/src/share/index.ts'),
+      },
+      {
         find: /^@bendyline\/docblocks\/filesystem$/,
         replacement: path.resolve(__dirname, '../core/src/filesystem/index.ts'),
       },

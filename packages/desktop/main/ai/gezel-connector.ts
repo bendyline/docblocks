@@ -50,7 +50,11 @@ import type { GezelNativeHost } from './gezel-native-host.js';
 import { clearGezelEngineOverrides } from './gezel-native-host.js';
 import { verifyMasNativePayload } from './gezel-mas-native.js';
 import { APPLE_MODEL_ID, appleModelEntry } from './gezel-apple-model.js';
-import { gezelKnowledge, withGezelKnowledge } from './gezel-knowledge.js';
+import {
+  gezelKnowledgeState,
+  updateGezelKnowledge,
+  withGezelKnowledge,
+} from './gezel-knowledge.js';
 import type { AiKnowledgeAction } from '@bendyline/docblocks/host';
 
 type GezelSdkModule = typeof import('@bendyline/gezel-app-sdk');
@@ -209,6 +213,34 @@ async function streamFrom(
   return adaptStream(stream);
 }
 
+/**
+ * Bridge until the gezel-service pin falls back on its own: service 1.2.3
+ * defers memory admission to an installed Gezel of another version, and an
+ * installed Gezel too old to coordinate refuses every launch with this
+ * sentence. DocBlocks' private engine then admits through its own ledger,
+ * which still checks the RAM the OS reports free, and retries once. The
+ * person never hears about the version mismatch. Delete with that pin bump.
+ */
+const OUTDATED_BROKER_REFUSAL = 'needs an update before isolated local engines can share memory';
+
+function isOutdatedBrokerRefusal(error: unknown): boolean {
+  return error instanceof Error && error.message.includes(OUTDATED_BROKER_REFUSAL);
+}
+
+/** Pull the first chunk now, so a refusal that precedes any output can be retried. */
+async function primed(
+  stream: AsyncIterable<ProviderChatChunk>,
+): Promise<AsyncIterable<ProviderChatChunk>> {
+  const iterator = stream[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  return (async function* () {
+    if (first.done) return;
+    yield first.value;
+    for (let next = await iterator.next(); !next.done; next = await iterator.next())
+      yield next.value;
+  })();
+}
+
 /** `llama-cpp:qwen3.8-27b-q4` → the engine and the catalog id it names. */
 function hostedModelParts(id: string): { engine: EnsureModelEngine; catalogId: string } | null {
   const separator = id.indexOf(':');
@@ -221,10 +253,10 @@ function hostedModelParts(id: string): { engine: EnsureModelEngine; catalogId: s
 /** A connection to the person's own Gezel. */
 class InstalledGezelConnection implements AiProviderConnection {
   knowledgeState(signal: AbortSignal): Promise<unknown> {
-    return gezelKnowledge(this.app).state({ signal });
+    return gezelKnowledgeState(this.app, signal);
   }
   updateKnowledge(action: AiKnowledgeAction, signal: AbortSignal): Promise<void> {
-    return gezelKnowledge(this.app).update(action, { signal });
+    return updateGezelKnowledge(this.app, action, signal);
   }
   readonly mode: AiProviderConnection['mode'];
 
@@ -306,10 +338,10 @@ class InstalledGezelConnection implements AiProviderConnection {
 /** A private daemon DocBlocks started, or one a sibling DocBlocks started. */
 class HostedGezelConnection implements AiProviderConnection {
   knowledgeState(signal: AbortSignal): Promise<unknown> {
-    return gezelKnowledge(this.gezel.openai).state({ signal });
+    return gezelKnowledgeState(this.gezel.openai, signal);
   }
   updateKnowledge(action: AiKnowledgeAction, signal: AbortSignal): Promise<void> {
-    return gezelKnowledge(this.gezel.openai).update(action, { signal });
+    return updateGezelKnowledge(this.gezel.openai, action, signal);
   }
   readonly mode = 'hosted' as const;
   private readonly probeLifetime = new AbortController();
@@ -455,7 +487,16 @@ class HostedGezelConnection implements AiProviderConnection {
     }
     this.requireSupportedEngine(request.model);
     signal.throwIfAborted();
-    return streamFrom(this.gezel.openai, request, signal);
+    if (process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY)
+      return streamFrom(this.gezel.openai, request, signal);
+    try {
+      return await primed(await streamFrom(this.gezel.openai, request, signal));
+    } catch (error) {
+      if (signal.aborted || !isOutdatedBrokerRefusal(error)) throw error;
+      // The private engine runs in this process, so it reads this at its next launch.
+      process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY = 'local';
+      return streamFrom(this.gezel.openai, request, signal);
+    }
   }
 
   /** A private daemon holds no grant to withdraw. */

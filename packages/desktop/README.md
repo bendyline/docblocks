@@ -75,17 +75,23 @@ progress and failures, and lets users enable, disable, or confirm removal of a
 catalog. Catalogs belong to the connected provider: switching between built-in
 AI and standalone Gezel switches the catalog registry. Removal from standalone
 Gezel affects other apps using that registry. Catalog downloads require explicit
-gestures. The reranker download button remains disabled until the person checks
-the download-consent checkbox; opening Settings or querying never starts it.
+gestures. When the provider reports that a one-time model download would improve
+results (a catalog is enabled and that model is missing), Settings shows a single
+link, "Improve knowledge results with a 23 MB model download"; choosing it starts
+the download, and the link does not return once it is running or installed.
+Opening Settings or querying never starts it, and the UI never calls the model a
+reranker.
 
-Writing, review, and chat all call the SDK's `knowledge.retrieve` with
-`rerank: 'required'` before inference. Retrieved passages are bounded against the
-prompt budget, marked as untrusted evidence, and retain their catalog/version
-citations. Missing or incomplete reranking fails visibly; no unranked fallback
-is sent to the model. No enabled catalogs or no matches produces an empty
-reference context. Retrieval uses cached embedding models only and falls back to
-keyword candidates if those models are unavailable; candidates still require
-reranking. Catalog installation can prepare its embedding model as part of that
+Writing, review, and chat all call the SDK's `knowledge.retrieve` before
+inference and leave ranking to the SDK: Gezel ranks passages with the relevance
+model when it is installed and otherwise returns only what its own bar for
+unranked catalog hits admits. Retrieved passages are bounded against the prompt
+budget, marked as untrusted evidence, and retain their catalog/version
+citations. Knowledge never blocks a request: when retrieval fails or answers
+with anything malformed, the request goes without passages and the main process
+logs one warning. No enabled catalogs or no matches produces an empty reference
+context. Gezel's bundled Handboek is never offered to apps. Catalog installation
+can prepare its embedding model as part of that
 explicit download. Mobile hosts without this optional SDK capability do not
 expose catalog management.
 

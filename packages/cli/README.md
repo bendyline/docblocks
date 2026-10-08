@@ -1,8 +1,8 @@
 # @bendyline/docblocks-cli
 
 The DocBlocks command-line surface for document build and preview, linked-Squisq
-format conversion, MP4 rendering, document parsing, and a local MCP server for
-agents.
+format conversion, MP4 rendering, document parsing, workspace catalog refresh, and
+a local MCP server for agents.
 
 [CLI and MCP overview](https://docblocks.com/cli/)
 
@@ -25,16 +25,17 @@ directions, overwrite behavior, MCP authority, artifact lifecycle, and assurance
 
 ## Commands
 
-| Command                            | Purpose                                               |
-| ---------------------------------- | ----------------------------------------------------- |
-| `docblocks build`                  | Recursively build Markdown into standalone HTML.      |
-| `docblocks serve`                  | Run a constrained local preview server.               |
-| `docblocks convert <input>`        | Convert through the linked Squisq registry.           |
-| `docblocks video <input> [output]` | Render a configurable MP4.                            |
-| `docblocks mcp`                    | Start the artifact-first MCP server over local stdio. |
-| `docblocks themes`                 | List linked Squisq theme IDs.                         |
-| `docblocks transforms`             | List linked Squisq transform IDs.                     |
-| `docblocks parse <input>`          | Parse UTF-8 Markdown into Squisq Markdown AST JSON.   |
+| Command                             | Purpose                                                         |
+| ----------------------------------- | --------------------------------------------------------------- |
+| `docblocks build`                   | Recursively build Markdown into standalone HTML.                |
+| `docblocks serve`                   | Run a constrained local preview server.                         |
+| `docblocks convert <input>`         | Convert through the linked Squisq registry.                     |
+| `docblocks video <input> [output]`  | Render a configurable MP4.                                      |
+| `docblocks mcp`                     | Start the artifact-first MCP server over local stdio.           |
+| `docblocks themes`                  | List linked Squisq theme IDs.                                   |
+| `docblocks transforms`              | List linked Squisq transform IDs.                               |
+| `docblocks parse <input>`           | Parse UTF-8 Markdown into Squisq Markdown AST JSON.             |
+| `docblocks workspace refresh [dir]` | Refresh catalog outputs enabled in `.docblocks/workspace.json`. |
 
 Use `docblocks help <command>` for the installed option summary.
 
@@ -56,6 +57,10 @@ docblocks video story.md --quality high --orientation portrait
 
 # Render the Dashboard rendition to a square image with accent cards
 docblocks convert report.md --formats png --image-resolution square --image-style accent
+
+# Regenerate the catalog.json / index.html a workspace opts into
+docblocks workspace refresh ./docs --dry-run
+docblocks workspace refresh ./docs
 
 # Discover authoring vocabulary from linked Squisq
 docblocks themes
@@ -83,7 +88,12 @@ available at `docblocks://authoring-guide`.
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
 import-capable linked-registry formats. `build`/`serve` standalone HTML includes
-Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams. `build` replaces generated HTML files;
+Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams. Without
+`--theme`, `build`/`serve` apply `documents.defaultTheme` from
+`.docblocks/workspace.json` to documents whose frontmatter names no theme;
+`--ignore-workspace-settings` opts out. `workspace refresh` writes only outputs the
+settings enable, replaces only files carrying the DocBlocks catalog marker, writes
+only when bytes differ, and exits 1 when a hand-written file blocks an output. `build` replaces generated HTML files;
 `convert` and `video` refuse existing destinations unless `--allow-overwrite` is
 passed. Multi-target conversion stages the complete batch and rolls back replacements
 if publication fails. Build traversal, input bytes, and output bytes are bounded, as
@@ -92,7 +102,7 @@ immutable session artifacts; only explicit `save_artifact` materializes one, usi
 no-replace or hash-conditional replacement semantics.
 
 The package root is a side-effect-free programmatic API for `runBuild`, `runConvert`,
-`runVideo`, and `runParse`. Importing it never starts Commander; the executable is
+`runVideo`, `runParse`, and `runWorkspaceRefresh`. Importing it never starts Commander; the executable is
 the separate `docblocks` bin entry.
 
 The live linked registry currently covers Markdown, DOCX, PDF, PPTX, XLSX, CSV,

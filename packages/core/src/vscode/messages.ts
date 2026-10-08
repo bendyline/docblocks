@@ -3,6 +3,12 @@
  */
 
 import { HOST_WIRE_LIMITS, isBoundedString } from '../host/wire-policy.js';
+import {
+  parseWorkspaceSettings,
+  parseWorkspaceSettingsPatch,
+  type WorkspaceSettings,
+  type WorkspaceSettingsPatch,
+} from '../workspace-settings/settings.js';
 
 const MAX_REQUEST_ID = 2_147_483_647;
 
@@ -121,6 +127,39 @@ export interface VscodeEditorSettings {
   proofingSettings: VscodeProofingSettings;
 }
 
+export const VSCODE_WORKSPACE_SETTINGS_STATUSES = [
+  'unavailable',
+  'loading',
+  'missing',
+  'ready',
+  'invalid',
+  'unsupported-version',
+  'error',
+] as const;
+export type VscodeWorkspaceSettingsStatus = (typeof VSCODE_WORKSPACE_SETTINGS_STATUSES)[number];
+
+export const VSCODE_CATALOG_STATES = ['idle', 'pending', 'running', 'done', 'error'] as const;
+export type VscodeCatalogState = (typeof VSCODE_CATALOG_STATES)[number];
+
+/**
+ * The `.docblocks/workspace.json` of the folder containing this panel's
+ * document, as the extension host sees it. `settings` is null unless the
+ * file is missing (defaults apply) or valid; `writable` is false for
+ * untrusted workspaces, read-only file systems, and files DocBlocks cannot
+ * safely rewrite (invalid or newer).
+ */
+export interface VscodeWorkspaceSettingsState {
+  status: VscodeWorkspaceSettingsStatus;
+  settings: WorkspaceSettings | null;
+  writable: boolean;
+  message: string | null;
+  catalog: {
+    state: VscodeCatalogState;
+    message: string | null;
+    documentCount: number | null;
+  };
+}
+
 /**
  * An opaque, one-shot authority to write one host-owned export target.
  * The label is presentation-only and must never be interpreted as a path.
@@ -172,6 +211,8 @@ export type ExtensionToWebviewMessage =
     }
   | { type: 'themeChange'; theme: 'light' | 'dark' }
   | { type: 'editorSettings'; settings: VscodeEditorSettings }
+  | { type: 'workspaceSettings'; state: VscodeWorkspaceSettingsState }
+  | { type: 'workspaceSettingsResult'; requestId: number; ok: boolean; message: string | null }
   | { type: 'codeCopied'; requestId: number }
   | { type: 'codeCopyError'; requestId: number; message: string }
   | { type: 'mediaResolved'; requestId: number; url: string }
@@ -241,7 +282,9 @@ export type WebviewToExtensionMessage =
   | { type: 'loadProofDictionary'; requestId: number }
   | { type: 'addProofDictionaryWord'; word: string }
   | { type: 'loadProofIgnores'; requestId: number }
-  | { type: 'saveProofIgnores'; ignoredJson: string };
+  | { type: 'saveProofIgnores'; ignoredJson: string }
+  | { type: 'updateWorkspaceSettings'; requestId: number; patch: WorkspaceSettingsPatch }
+  | { type: 'refreshWorkspaceOutputs'; requestId: number };
 
 export interface MediaEntryMessage {
   name: string;
@@ -426,6 +469,15 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       return hasOnlyKeys(value, ['type', 'ignoredJson']) &&
         hasBoundedString(value, 'ignoredJson', PROOF_STATE_LIMITS.ignoredJsonCharacters)
         ? { type: 'saveProofIgnores', ignoredJson: value.ignoredJson }
+        : null;
+    case 'updateWorkspaceSettings': {
+      if (!hasOnlyKeys(value, ['type', 'requestId', 'patch']) || !hasRequestId(value)) return null;
+      const patch = tryParse(() => parseWorkspaceSettingsPatch(value.patch));
+      return patch ? { type: 'updateWorkspaceSettings', requestId: value.requestId, patch } : null;
+    }
+    case 'refreshWorkspaceOutputs':
+      return hasOnlyKeys(value, ['type', 'requestId']) && hasRequestId(value)
+        ? { type: 'refreshWorkspaceOutputs', requestId: value.requestId }
         : null;
     default:
       return null;
@@ -647,9 +699,72 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
         hasNullableBoundedString(value, 'dataBase64', HOST_WIRE_LIMITS.base64Characters)
         ? { type: 'workspaceFileRead', requestId: value.requestId, dataBase64: value.dataBase64 }
         : null;
+    case 'workspaceSettings': {
+      if (!hasOnlyKeys(value, ['type', 'state'])) return null;
+      const state = parseVscodeWorkspaceSettingsState(value.state);
+      return state ? { type: 'workspaceSettings', state } : null;
+    }
+    case 'workspaceSettingsResult':
+      return hasOnlyKeys(value, ['type', 'requestId', 'ok', 'message']) &&
+        hasRequestId(value) &&
+        typeof value.ok === 'boolean' &&
+        hasNullableBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters)
+        ? {
+            type: 'workspaceSettingsResult',
+            requestId: value.requestId,
+            ok: value.ok,
+            message: value.message,
+          }
+        : null;
     default:
       return null;
   }
+}
+
+function tryParse<T>(parse: () => T): T | null {
+  try {
+    return parse();
+  } catch {
+    return null;
+  }
+}
+
+export function parseVscodeWorkspaceSettingsState(
+  value: unknown,
+): VscodeWorkspaceSettingsState | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['status', 'settings', 'writable', 'message', 'catalog']) ||
+    !VSCODE_WORKSPACE_SETTINGS_STATUSES.some((status) => status === value.status) ||
+    typeof value.writable !== 'boolean' ||
+    !hasNullableBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters)
+  ) {
+    return null;
+  }
+  const settings =
+    value.settings === null ? null : tryParse(() => parseWorkspaceSettings(value.settings));
+  if (value.settings !== null && settings === null) return null;
+  const catalog = value.catalog;
+  if (
+    !isRecord(catalog) ||
+    !hasOnlyKeys(catalog, ['state', 'message', 'documentCount']) ||
+    !VSCODE_CATALOG_STATES.some((state) => state === catalog.state) ||
+    !hasNullableBoundedString(catalog, 'message', HOST_WIRE_LIMITS.messageCharacters) ||
+    !isNullableNonNegativeInteger(catalog.documentCount)
+  ) {
+    return null;
+  }
+  return {
+    status: value.status as VscodeWorkspaceSettingsStatus,
+    settings,
+    writable: value.writable,
+    message: value.message,
+    catalog: {
+      state: catalog.state as VscodeCatalogState,
+      message: catalog.message,
+      documentCount: catalog.documentCount,
+    },
+  };
 }
 
 /** Accepted words, deduplicated and bounded. Order is not meaningful. */

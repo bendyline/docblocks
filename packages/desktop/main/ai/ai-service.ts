@@ -170,6 +170,9 @@ const DEFAULT_MAX_CONCURRENT_CHATS = 4;
 // token, and a slow machine should read as slow rather than broken.
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
 const DEFAULT_REDETECT_INTERVAL_MS = 15_000;
+// Across all windows. State reads coalesce per window, so only a runaway
+// renderer reaches this.
+const MAX_KNOWLEDGE_REQUESTS = 16;
 
 function ok<T>(value: T): AiResult<T> {
   return { ok: true, value };
@@ -245,7 +248,14 @@ export class AiService {
   private epoch = 0;
   private readonly chats = new Map<string, ActiveChat>();
   private readonly modelInstalls = new Map<string, AbortController>();
-  private readonly knowledgeRequests = new Map<string, AbortController>();
+  /** In-flight catalog requests per window, so closing a window cancels its own. */
+  private readonly knowledgeRequests = new Map<string, Set<AbortController>>();
+  /**
+   * One catalog-state read per window. A StrictMode remount, a progress poll,
+   * and a Refresh click all ask at once; they share the answer, never a
+   * rejection.
+   */
+  private readonly knowledgeStateReads = new Map<string, Promise<AiResult<AiKnowledgeState>>>();
   private disposed = false;
 
   constructor(options: AiServiceOptions) {
@@ -381,11 +391,13 @@ export class AiService {
   }
 
   cancelKnowledge(owner: string): void {
-    this.knowledgeRequests.get(owner)?.abort();
+    for (const controller of this.knowledgeRequests.get(owner) ?? []) controller.abort();
   }
 
-  async knowledgeState(owner: string): Promise<AiResult<AiKnowledgeState>> {
-    return this.withKnowledge(owner, async (connection, signal) => {
+  knowledgeState(owner: string): Promise<AiResult<AiKnowledgeState>> {
+    const pending = this.knowledgeStateReads.get(owner);
+    if (pending) return pending;
+    const read = this.withKnowledge(owner, async (connection, signal) => {
       if (!connection.knowledgeState)
         throw new AiHostError(
           'unsupported',
@@ -395,7 +407,9 @@ export class AiService {
       if (!state)
         throw new AiHostError('unknown', 'The AI provider returned invalid catalog information.');
       return state;
-    });
+    }).finally(() => this.knowledgeStateReads.delete(owner));
+    this.knowledgeStateReads.set(owner, read);
+    return read;
   }
 
   async updateKnowledge(owner: string, action: AiKnowledgeAction): Promise<AiResult<null>> {
@@ -417,10 +431,14 @@ export class AiService {
     const connection = this.connection;
     if (!connection || !this.preferences.enabled || this.disposed)
       return fail(this.notConnectedError());
-    if (this.knowledgeRequests.has(owner) || this.knowledgeRequests.size >= 8)
-      return fail(aiError('rate-limited'));
+    let inFlight = 0;
+    for (const owned of this.knowledgeRequests.values()) inFlight += owned.size;
+    // A local bound, so it must not read as "Gezel is busy".
+    if (inFlight >= MAX_KNOWLEDGE_REQUESTS) return fail(aiError('budget-exceeded'));
     const controller = new AbortController();
-    this.knowledgeRequests.set(owner, controller);
+    const owned = this.knowledgeRequests.get(owner) ?? new Set<AbortController>();
+    owned.add(controller);
+    this.knowledgeRequests.set(owner, owned);
     const signal = controller.signal;
     const timer = setTimeout(
       () => controller.abort(new AiHostError('timeout', 'The catalog request timed out.')),
@@ -442,7 +460,8 @@ export class AiService {
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
-      this.knowledgeRequests.delete(owner);
+      owned.delete(controller);
+      if (owned.size === 0) this.knowledgeRequests.delete(owner);
     }
   }
 
@@ -798,7 +817,9 @@ export class AiService {
       chat.controller.abort();
     }
     for (const install of this.modelInstalls.values()) install.abort();
-    for (const request of this.knowledgeRequests.values()) request.abort();
+    for (const owned of this.knowledgeRequests.values()) {
+      for (const request of owned) request.abort();
+    }
     const connection = this.connection;
     this.connection = null;
     this.models = [];
@@ -904,6 +925,8 @@ export class AiService {
         return;
       }
       const failure = toAiError(error);
+      // The renderer shows only the sentence; the provider's reason is for logs.
+      console.warn(`[ai] request failed (${failure.code}): ${failure.detail ?? failure.message}`);
       emit({ kind: 'error', error: failure });
       this.handleProviderFailure(connection, failure);
     } finally {

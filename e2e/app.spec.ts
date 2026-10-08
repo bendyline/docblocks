@@ -1295,4 +1295,44 @@ test.describe('Workspace picker', () => {
     expect(layout.dropdownInside).toBe(true);
     await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeInViewport();
   });
+
+  test('removes a workspace that is not active from its row menu', async ({ page }) => {
+    const picker = page.locator('.db-workspace-picker-btn');
+    const dropdown = page.locator('.db-workspace-dropdown');
+    const label = page.locator('.db-workspace-picker-label');
+    const activeName = (await label.textContent()) ?? '';
+
+    // Create a second workspace, then switch back so it is not the active one.
+    await picker.click();
+    await dropdown.getByRole('button', { name: 'New Workspace' }).click();
+    await page.getByLabel('Workspace name').fill('Scratch space');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(label).toHaveText('Scratch space');
+    await picker.click();
+    await dropdown.getByRole('button', { name: activeName, exact: true }).click();
+    await expect(label).toHaveText(activeName);
+
+    // A right-click opens the row's menu. Cancelling the confirmation keeps it.
+    await picker.click();
+    const row = dropdown.locator('.db-workspace-dropdown-row', { hasText: 'Scratch space' });
+    await row.locator('.db-workspace-dropdown-item').click({ button: 'right' });
+    await page.getByRole('menu', { name: 'Actions for Scratch space' }).waitFor();
+    await page.getByRole('menuitem', { name: 'Remove workspace…' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Remove workspace' });
+    await expect(confirm).toContainText('Remove “Scratch space”?');
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await picker.click();
+    await expect(row).toBeVisible();
+
+    // The ⋯ button opens the same menu; confirming removes only that workspace.
+    await row.getByRole('button', { name: 'More actions for Scratch space' }).click();
+    await page.getByRole('menuitem', { name: 'Remove workspace…' }).click();
+    await confirm.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(confirm).not.toBeVisible();
+    await expect(label).toHaveText(activeName);
+    await picker.click();
+    await expect(dropdown).toBeVisible();
+    await expect(row).toHaveCount(0);
+    await expect(dropdown.getByRole('button', { name: activeName, exact: true })).toBeVisible();
+  });
 });

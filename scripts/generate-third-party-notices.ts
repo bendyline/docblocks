@@ -160,7 +160,7 @@ const surfaces: readonly Surface[] = [
     id: 'vscode',
     title: 'DocBlocks VS Code extension (VSIX)',
     description:
-      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.',
+      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points. The extension-host entry points also bundle the Squisq Markdown and plain-HTML modules used for workspace catalogs, which are already part of the webview graph.',
     artifactManifest: 'packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json',
     supplementalPackages: ['@ironcalc/wasm', 'harper.js', 'jsonc-parser'],
     output: 'packages/vscode/THIRD_PARTY_NOTICES.txt',

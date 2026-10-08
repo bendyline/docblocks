@@ -21,7 +21,9 @@
   ],
   "main": "./dist/extension.js",
   "browser": "./dist/extension.web.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:.docblocks/workspace.json"
+  ],
   "contributes": {
     "configuration": {
       "title": "DocBlocks",
@@ -132,6 +134,18 @@
         "command": "docblocks.openSetup",
         "title": "Open DocBlocks Tools (CLI+MCP) Setup",
         "category": "DocBlocks"
+      },
+      {
+        "command": "docblocks.refreshWorkspaceOutputs",
+        "title": "Update Workspace Catalogs",
+        "category": "DocBlocks",
+        "enablement": "isWorkspaceTrusted"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": ".docblocks/workspace.json",
+        "url": "./resources/workspace-settings.schema.json"
       }
     ],
     "customEditors": [

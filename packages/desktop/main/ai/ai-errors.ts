@@ -159,7 +159,9 @@ export function toAiError(error: unknown): AiError {
   ) {
     return aiError(
       'model-unavailable',
-      'Knowledge retrieval needs the relevance model. Download it in AI settings, then retry.',
+      // Retrieval never needs the model, so only the improvement download lands
+      // here. People hear "better knowledge results", never "reranker".
+      'Gezel could not download the model that improves knowledge results.',
       error instanceof Error ? error.message : undefined,
     );
   }

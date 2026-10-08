@@ -231,7 +231,7 @@ class FakeWorkspaceEdit {
   }
 }
 
-class FakeFileSystemError extends Error {
+export class FakeFileSystemError extends Error {
   public constructor(
     message: string,
     public readonly code: string,

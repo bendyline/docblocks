@@ -270,12 +270,18 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           catalogs: [],
           reranker: { ready: true, downloading: false, message: null },
         });
+      } else if (request.method === 'GET' && url.pathname === '/v1/knowledge/relevance') {
+        sendJson(response, 200, {
+          ready: true,
+          downloading: false,
+          percent: null,
+          downloadBytes: null,
+        });
       } else if (request.method === 'POST' && url.pathname === '/v1/knowledge/retrieve') {
+        // Gezel's own validation: the SDK picks `auto`; older SDKs send `required`.
         const query = await readJson(request);
-        if (query.rerank !== 'required') {
-          sendJson(response, 400, {
-            error: { code: 'reranker_required', message: 'Reranking is required.' },
-          });
+        if (query.rerank !== 'required' && query.rerank !== 'auto') {
+          sendJson(response, 422, { error: 'Invalid enum value' });
         } else sendJson(response, 200, { reranked: true, passages: [] });
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {

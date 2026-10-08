@@ -94,10 +94,20 @@ import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
 import { SplitViewIcon } from '../icons.js';
+import { WorkspaceSettingsDialog } from '../WorkspacePicker/WorkspaceSettingsDialog.js';
+import { useWorkspaceSettings } from '../WorkspaceSettings/useWorkspaceSettings.js';
+import { useWorkspaceOutputs } from '../WorkspaceSettings/useWorkspaceOutputs.js';
+import { assertNotGeneratedCatalog } from '../WorkspaceSettings/managed-outputs.js';
 import {
-  WorkspaceSettingsDialog,
-  type WorkspaceVersioningOverride,
-} from '../WorkspacePicker/WorkspaceSettingsDialog.js';
+  GeneratedCatalogPage,
+  GeneratedFileFrame,
+} from '../WorkspaceSettings/GeneratedFileView.js';
+import {
+  isEmptyWorkspaceSettingsPatch,
+  resolveCatalogOutputs,
+  resolveWorkspaceDefaultThemeId,
+  type WorkspaceSettingsPatch,
+} from '@bendyline/docblocks/workspace-settings';
 import { useDocumentSession } from '../hooks/useDocumentSession.js';
 import {
   ExportToolbarControls,
@@ -201,6 +211,7 @@ import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
 import {
+  createNewOutsideInDocument,
   createOutsideInContentContainer,
   createOutsideInDocumentTarget,
   defaultOutsideInLayoutMode,
@@ -213,10 +224,18 @@ import {
   type EditableShellDocument,
   type EditableOutsideInDocument,
   type OutsideInLayout,
+  type OutsideInRenderOptions,
 } from './outside-in.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
+import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import { newFileHtmlOutput, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
+import {
+  DEFAULT_NEW_FILE_FORMAT,
+  loadLastNewFileFormat,
+  saveLastNewFileFormat,
+} from '../preferences/new-file-format.js';
 import { resolveShellTheme } from './resolve-theme.js';
 import { buildIssueReportUrl } from './issue-report.js';
 import { loadLastState, saveLastState } from './last-state.js';
@@ -250,7 +269,11 @@ import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
 import { createNativeFileActions } from './native-file-actions.js';
-import { WELCOME_DOCUMENT_CONTENT, WELCOME_DOCUMENT_PATH } from './welcome-document.js';
+import {
+  isAppDefaultWorkspace,
+  WELCOME_DOCUMENT_CONTENT,
+  WELCOME_DOCUMENT_PATH,
+} from './welcome-document.js';
 import {
   loadPinnedDocuments,
   missingPinnedDocumentMessage,
@@ -1011,6 +1034,7 @@ export function DocBlocksShell({
   // The shell's stand-in for `window.prompt()`, which Electron's renderer does
   // not implement -- calling it there throws and the action dies silently.
   const { prompt: promptForText, promptDialog } = usePromptDialog();
+  const [newDocumentDialogOpen, setNewDocumentDialogOpen] = useState(false);
 
   // Stand-ins for `window.confirm()` (a question) and `window.alert()` (a
   // message worth stopping for). Transient outcomes use showToast instead.
@@ -1120,6 +1144,22 @@ export function DocBlocksShell({
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
   const [workspaceStartupError, setWorkspaceStartupError] = useState<string | null>(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  // The type last created in this workspace becomes the next default.
+  const [defaultNewFileFormat, setDefaultNewFileFormat] =
+    useState<NewFileFormat>(DEFAULT_NEW_FILE_FORMAT);
+  useEffect(() => {
+    setDefaultNewFileFormat(loadLastNewFileFormat(activeWorkspaceId));
+  }, [activeWorkspaceId]);
+  const rememberNewFileFormat = useCallback(
+    (format: NewFileFormat) => {
+      setDefaultNewFileFormat(format);
+      // Transient workspaces (a loose file, a DBK bundle) have ids that never recur.
+      if (activeWorkspaceId && getTransientWorkspace(activeWorkspaceId) === null) {
+        saveLastNewFileFormat(activeWorkspaceId, format);
+      }
+    },
+    [activeWorkspaceId],
+  );
   const [activeWorkspaceDescriptor, setActiveWorkspaceDescriptor] =
     useState<WorkspaceDescriptor | null>(null);
   // Dismissed findings are keyed by workspace as well as path, so the store is
@@ -1292,10 +1332,50 @@ export function DocBlocksShell({
     activeWorkspaceDescriptor.type === 'host-native'
       ? activeWorkspaceDescriptor.id
       : null;
-  const git = useGit(provider, nativeWorkspaceId, resolvedTheme);
+  // A pull or branch switch rewrites files behind the editor's back: re-read
+  // workspace settings and refresh catalog outputs (assigned further down).
+  const workingTreeChangedRef = useRef<() => void>(() => undefined);
+  const handleWorkingTreeChanged = useCallback(() => workingTreeChangedRef.current(), []);
+  const git = useGit(provider, nativeWorkspaceId, resolvedTheme, handleWorkingTreeChanged);
   const gitRef = useRef(git);
   gitRef.current = git;
   const { scheduleRefresh: gitScheduleRefresh } = git;
+
+  // Workspace-scoped settings live in the folder's `.docblocks/workspace.json`.
+  // Transient workspaces (single files, DBK bundles) have no folder for them.
+  const workspaceSettingsEnabled =
+    provider !== null &&
+    provider.id === activeWorkspaceId &&
+    getTransientWorkspace(provider.id) === null;
+  const workspaceSettings = useWorkspaceSettings(provider, workspaceSettingsEnabled);
+  const { refresh: refreshWorkspaceSettings, save: saveWorkspaceSettings } = workspaceSettings;
+  const workspaceDefaultThemeId = resolveWorkspaceDefaultThemeId(workspaceSettings.settings);
+  const workspaceDefaultThemeRef = useRef(workspaceDefaultThemeId);
+  workspaceDefaultThemeRef.current = workspaceDefaultThemeId;
+  // Read at render time, so a regenerated page always uses the current default.
+  const outsideInRenderRef = useRef<OutsideInRenderOptions>({
+    defaultThemeId: () => workspaceDefaultThemeRef.current,
+  });
+  const workspaceOutputs = useWorkspaceOutputs(
+    provider,
+    workspaceSettingsEnabled ? activeWorkspaceId : null,
+    workspaceSettings.settings,
+    workspaceSettingsEnabled,
+  );
+  const workspaceOutputsSchedulerRef = useRef(workspaceOutputs.scheduler);
+  workspaceOutputsSchedulerRef.current = workspaceOutputs.scheduler;
+  /** Something in `workspaceId` changed; refresh that workspace's catalog outputs. */
+  const notifyWorkspaceChanged = useCallback(
+    (workspaceId: string | null | undefined, path?: string) => {
+      const scheduler = workspaceOutputsSchedulerRef.current;
+      if (scheduler && workspaceId && scheduler.workspaceId === workspaceId) scheduler.notify(path);
+    },
+    [],
+  );
+  workingTreeChangedRef.current = () => {
+    refreshWorkspaceSettings();
+    workspaceOutputsSchedulerRef.current?.notify();
+  };
 
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [versioningPreference, setVersioningPreference] =
@@ -1305,27 +1385,51 @@ export function DocBlocksShell({
     saveVersioningPreference(pref);
   }, []);
   const effectiveVersioning =
-    allowVersioning && resolveVersioningEnabled(activeWorkspaceDescriptor, versioningPreference);
+    allowVersioning &&
+    resolveVersioningEnabled(
+      activeWorkspaceDescriptor,
+      versioningPreference,
+      workspaceSettings.settings,
+    );
+  const workspaceVersionKeep = workspaceSettings.settings?.versionHistory?.keep;
+  const effectivePrunePolicy = useMemo<PrunePolicy | undefined>(
+    () =>
+      workspaceVersionKeep !== undefined
+        ? { type: 'keep-last-n', n: workspaceVersionKeep }
+        : versioningPrunePolicy,
+    [versioningPrunePolicy, workspaceVersionKeep],
+  );
 
   const handleOpenWorkspaceSettings = useCallback(() => {
     if (!activeWorkspaceDescriptor) return;
     setWorkspaceSettingsOpen(true);
   }, [activeWorkspaceDescriptor]);
 
-  const handleWorkspaceVersioningOverrideChange = useCallback(
-    async (override: WorkspaceVersioningOverride) => {
-      if (!activeWorkspaceDescriptor) return;
-      await saveWorkspace({ ...activeWorkspaceDescriptor, versioningOverride: override });
-      setDescriptorRefreshKey((k) => k + 1);
-      setWorkspaceSettingsOpen(false);
+  const handleSaveWorkspaceSettings = useCallback(
+    async (patch: WorkspaceSettingsPatch) => {
+      const descriptor = activeWorkspaceDescriptor;
+      if (!isEmptyWorkspaceSettingsPatch(patch)) await saveWorkspaceSettings(patch);
+      // The file now owns the per-workspace version-history choice. Drop the
+      // older browser-local copy so the two can never disagree.
+      if (descriptor && descriptor.versioningOverride !== undefined) {
+        const moved: WorkspaceDescriptor = { ...descriptor };
+        delete moved.versioningOverride;
+        await saveWorkspace(moved);
+        setDescriptorRefreshKey((k) => k + 1);
+      }
     },
-    [activeWorkspaceDescriptor],
+    [activeWorkspaceDescriptor, saveWorkspaceSettings],
   );
+  const handleRegenerateWorkspaceOutputs = useCallback(() => {
+    void workspaceOutputsSchedulerRef.current?.regenerate({ force: true });
+  }, []);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedSourceFile, setSelectedSourceFile] = useState<string | null>(null);
   const [selectedOutsideIn, setSelectedOutsideIn] = useState<OutsideInLayout | null>(null);
   const [selectedOutsideInEditingEnabled, setSelectedOutsideInEditingEnabled] = useState(false);
   const [selectedImage, setSelectedImage] = useState<EditableShellDocument['image']>(undefined);
+  const [selectedManagedOutput, setSelectedManagedOutput] =
+    useState<EditableShellDocument['managedOutput']>(undefined);
   const editorViewPreferences = useMemo(() => {
     const layoutMode = defaultOutsideInLayoutMode(selectedOutsideIn);
     return layoutMode && viewPreferences.layoutMode === undefined
@@ -1338,6 +1442,7 @@ export function DocBlocksShell({
     setSelectedOutsideIn(document?.outsideIn ?? null);
     setSelectedOutsideInEditingEnabled(document?.outsideInEditingEnabled ?? false);
     setSelectedImage(document?.image);
+    setSelectedManagedOutput(document?.managedOutput);
   }, []);
   const adoptRegularDocument = useCallback((path: string | null) => {
     if (path === null) {
@@ -1346,6 +1451,7 @@ export function DocBlocksShell({
       setSelectedOutsideIn(null);
       setSelectedOutsideInEditingEnabled(false);
       setSelectedImage(undefined);
+      setSelectedManagedOutput(undefined);
       return;
     }
     setSelectedFile(path);
@@ -1353,6 +1459,7 @@ export function DocBlocksShell({
     setSelectedOutsideIn(null);
     setSelectedOutsideInEditingEnabled(false);
     setSelectedImage(undefined);
+    setSelectedManagedOutput(undefined);
   }, []);
   const selectedImageUrl = useMemo(() => {
     if (!selectedImage || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
@@ -1441,6 +1548,14 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
+  // A newly created catalog file is invisible to explorers over providers
+  // that cannot watch (IndexedDB, File System Access) until the tree re-reads.
+  const workspaceOutputsResult = workspaceOutputs.status.result;
+  useEffect(() => {
+    if (!workspaceOutputsResult?.outputs.some((output) => output.created)) return;
+    if (provider && getFileSystemProviderV2(provider)?.capabilities.watch) return;
+    setExplorerKey((key) => key + 1);
+  }, [provider, workspaceOutputsResult]);
   const [fileExplorerSortMode, setFileExplorerSortMode] =
     useState<FileExplorerSortMode>(loadFileExplorerSortMode);
   const handleFileExplorerSortModeChange = useCallback((mode: FileExplorerSortMode) => {
@@ -1458,6 +1573,15 @@ export function DocBlocksShell({
   const preparedCloseRequestRef = useRef<string | null>(null);
   const pendingDbkConflictsRef = useRef(new Map<string, PendingDbkConflict>());
 
+  /** Every durable document commit in a folder workspace funnels through here. */
+  const afterWorkspaceCommit = useCallback(
+    (workspaceId: string, path: string) => {
+      gitScheduleRefresh();
+      notifyWorkspaceChanged(workspaceId, path);
+    },
+    [gitScheduleRefresh, notifyWorkspaceChanged],
+  );
+
   const createDocumentTarget = useCallback(
     (
       fsProvider: FileSystemProvider,
@@ -1466,7 +1590,12 @@ export function DocBlocksShell({
       outsideIn: OutsideInLayout | null = null,
     ): DocumentCommitTarget => {
       if (outsideIn) {
-        return createOutsideInDocumentTarget(fsProvider, outsideIn, gitScheduleRefresh);
+        return createOutsideInDocumentTarget(
+          fsProvider,
+          outsideIn,
+          () => afterWorkspaceCommit(workspaceId, outsideIn.targetPath),
+          outsideInRenderRef.current,
+        );
       }
       const transient = getTransientWorkspace(workspaceId);
       const baseTarget = createFileSystemDocumentTarget(fsProvider, filePath);
@@ -1480,8 +1609,9 @@ export function DocBlocksShell({
         return {
           key: baseTarget.key,
           async commit(request) {
+            await assertNotGeneratedCatalog(fsProvider, filePath);
             const result = await baseTarget.commit(request);
-            gitScheduleRefresh();
+            afterWorkspaceCommit(workspaceId, filePath);
             return result;
           },
         };
@@ -1671,7 +1801,7 @@ export function DocBlocksShell({
         },
       };
     },
-    [gitScheduleRefresh],
+    [afterWorkspaceCommit, gitScheduleRefresh],
   );
 
   /**
@@ -1748,7 +1878,11 @@ export function DocBlocksShell({
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
           if (filePath) {
-            const document = await loadEditableShellDocument(fsProvider, filePath);
+            const document = await loadEditableShellDocument(
+              fsProvider,
+              filePath,
+              outsideInRenderRef.current,
+            );
             if (requestId !== navigationRequestRef.current) return null;
             if (document !== null) openedDocument = document;
           }
@@ -1887,8 +2021,14 @@ export function DocBlocksShell({
     [adoptTransientWorkspace],
   );
 
+  /**
+   * Open the starter document when a workspace has nothing else selected.
+   * An existing lone `aboutDocBlocks.md` is selected in any workspace, but the
+   * file is only *written* when `seedWhenEmpty` is set — for the app's own
+   * default workspace. A folder the user picked is never written to.
+   */
   const seedWelcomeFile = useCallback(
-    async (fs: FileSystemProvider, navigationRequestId?: number) => {
+    async (fs: FileSystemProvider, seedWhenEmpty: boolean, navigationRequestId?: number) => {
       const isCurrent = () =>
         navigationRequestId === undefined || navigationRequestId === navigationRequestRef.current;
       if (!isCurrent()) return;
@@ -1898,12 +2038,13 @@ export function DocBlocksShell({
       // If the only file is the welcome doc, auto-select it.
       // Match either casing so workspaces seeded before the rename
       // (aboutDocblocks.md) keep working alongside new ones (aboutDocBlocks.md).
+      const visibleEntries = filterVisibleFileEntries(entries);
       if (
-        entries.length === 1 &&
-        entries[0].kind === 'file' &&
-        entries[0].path.replace(/^\//, '').toLowerCase() === 'aboutdocblocks.md'
+        visibleEntries.length === 1 &&
+        visibleEntries[0].kind === 'file' &&
+        visibleEntries[0].path.replace(/^\//, '').toLowerCase() === 'aboutdocblocks.md'
       ) {
-        const aboutPath = entries[0].path;
+        const aboutPath = visibleEntries[0].path;
         const content = await readProviderText(fs, aboutPath);
         if (content !== null && isCurrent()) {
           await documentSession.transitionTo(createDocumentTarget(fs, fs.id, aboutPath), content);
@@ -1919,7 +2060,7 @@ export function DocBlocksShell({
         return;
       }
 
-      if (entries.length > 0) return;
+      if (!seedWhenEmpty || entries.length > 0) return;
 
       const welcomePath = WELCOME_DOCUMENT_PATH;
       const welcomeContent = WELCOME_DOCUMENT_CONTENT;
@@ -1989,6 +2130,11 @@ export function DocBlocksShell({
     void (async () => {
       const electron = hostSupports('workspaceAuthority');
       let workspaceIdRemap: Readonly<Record<string, string>> = {};
+      // Only the app's own default workspace may be seeded with the starter
+      // document; hosts mark theirs during reconciliation below.
+      const defaultHostWorkspaceIds = new Set<string>();
+      const isDefaultWorkspace = (workspaceId: string) =>
+        isAppDefaultWorkspace(workspaceId, electron ? defaultHostWorkspaceIds : null);
       if (electron) {
         // Main-process persisted roots are authoritative after an upgrade or
         // collision repair. Reconcile renderer metadata before hash or
@@ -2006,6 +2152,9 @@ export function DocBlocksShell({
           for (const id of reconciliation.removeIds) await removeWorkspace(id);
           for (const workspace of reconciliation.upsert) await saveWorkspace(workspace);
           workspaceIdRemap = reconciliation.idRemap;
+          for (const workspace of hostWorkspaces) {
+            if (workspace.isDefault === true) defaultHostWorkspaceIds.add(workspace.id);
+          }
         } catch {
           workspaceAuthorityBarrier.markReady();
           if (isCurrent()) {
@@ -2064,7 +2213,11 @@ export function DocBlocksShell({
         if (restoredProvider) {
           // If the hash had no file, check whether we should auto-select the welcome doc
           if (!hashState.filePath) {
-            await startupSeedWelcomeFileRef.current(restoredProvider, requestId);
+            await startupSeedWelcomeFileRef.current(
+              restoredProvider,
+              isDefaultWorkspace(restoredProvider.id),
+              requestId,
+            );
           }
           return;
         }
@@ -2090,6 +2243,7 @@ export function DocBlocksShell({
       }
 
       let fsProvider: FileSystemProvider | null = null;
+      let createdDefaultWorkspace = false;
 
       const workspaces = await listWorkspaces();
       if (!isCurrent()) return;
@@ -2180,6 +2334,7 @@ export function DocBlocksShell({
           }
           fsProvider = p;
         }
+        createdDefaultWorkspace = true;
       }
 
       let adopted = false;
@@ -2188,7 +2343,11 @@ export function DocBlocksShell({
         // Set the root hash before seeding; seedWelcomeFile replaces it with
         // the welcome path when it opens that document.
         pushHash(fsProvider.id, null);
-        await startupSeedWelcomeFileRef.current(fsProvider, requestId);
+        await startupSeedWelcomeFileRef.current(
+          fsProvider,
+          createdDefaultWorkspace || isDefaultWorkspace(fsProvider.id),
+          requestId,
+        );
         if (!isCurrent()) return;
         setProvider(fsProvider);
         setActiveWorkspaceId(fsProvider.id);
@@ -2511,12 +2670,28 @@ export function DocBlocksShell({
     return () => assign(null);
   }, [versioningRef, effectiveVersioning, versionBasename, selectedFile, versionsContainer]);
 
+  // An open generated catalog file is rewritten by the catalog scheduler,
+  // which providers without a watcher (IndexedDB, File System Access) never
+  // report. Re-read it once after each run that rewrote it.
+  const managedOutputRefreshToken = useMemo(() => {
+    if (!selectedManagedOutput || !selectedFile || !workspaceOutputsResult) return null;
+    return workspaceOutputsResult.outputs.some(
+      (output) => output.status === 'written' && sameProviderPath(output.path, selectedFile),
+    )
+      ? workspaceOutputsResult
+      : null;
+  }, [selectedFile, selectedManagedOutput, workspaceOutputsResult]);
+
   // React to external file changes watched by the Electron host (chokidar).
   useEffect(() => {
     if (!provider) return;
     const providerV2 = getFileSystemProviderV2(provider);
     const lifecycle = maybeGetDocBlocksHost()?.lifecycle;
-    if (!providerV2 || (!providerV2.capabilities.watch && !lifecycle?.onResume)) return;
+    if (
+      !providerV2 ||
+      (!providerV2.capabilities.watch && !lifecycle?.onResume && !managedOutputRefreshToken)
+    )
+      return;
     const watchedFile = selectedSourceFile ?? selectedFile;
     if (!watchedFile || !documentSnapshot.targetKey || selectedImage) return;
     const targetKey = documentSnapshot.targetKey;
@@ -2588,6 +2763,7 @@ export function DocBlocksShell({
       void drainWatcherReads();
     });
     void subscription?.ready.catch(() => undefined);
+    if (managedOutputRefreshToken) void drainWatcherReads();
     return () => {
       disposed = true;
       stopResume?.();
@@ -2598,6 +2774,7 @@ export function DocBlocksShell({
     selectedFile,
     selectedSourceFile,
     selectedImage,
+    managedOutputRefreshToken,
     documentSession,
     documentSnapshot.targetKey,
     showToast,
@@ -2906,7 +3083,11 @@ export function DocBlocksShell({
         let openedDocument: EditableShellDocument | null = null;
         const transitioned = await documentSession.transitionWithLoad(async () => {
           if (requestId !== navigationRequestRef.current) return null;
-          openedDocument = await loadEditableShellDocument(openedProvider, document.path);
+          openedDocument = await loadEditableShellDocument(
+            openedProvider,
+            document.path,
+            outsideInRenderRef.current,
+          );
           if (openedDocument === null) {
             disappearedDuringRead = true;
             return null;
@@ -3178,75 +3359,111 @@ export function DocBlocksShell({
     [adoptSelectedDocument, pushHash, transitionAwayFromDocument],
   );
 
-  const handleNewFile = useCallback(async () => {
-    if (!provider) return;
-    const name = await promptForText({
-      title: 'New document',
-      label: 'Document name',
-      initialValue: 'Untitled.md',
-      confirmLabel: 'Create',
-    });
-    if (!name) return;
-    const filename = /\.[a-zA-Z0-9]+$/.test(name) ? name : `${name}.md`;
-    const path = '/' + filename;
-    const content = '# ' + filename.replace(/\.[^.]+$/, '') + '\n';
-    const requestId = ++navigationRequestRef.current;
-    try {
-      const transitioned = await documentSession.transitionWithLoad(async () => {
-        if (requestId !== navigationRequestRef.current) return null;
-        const providerV2 = getFileSystemProviderV2(provider);
-        if (providerV2) {
-          try {
-            await writeProviderText(provider, path, content, 'create');
-          } catch (error: unknown) {
-            if (error instanceof FsError && error.code === 'already-exists') {
-              throw new Error('A document with that name already exists.');
+  // Every "New document" entry point (landing page, shortcut, menu, PWA
+  // shortcut) opens the dialog; createNewDocument acts on its answer.
+  const handleNewFile = useCallback(() => {
+    if (provider) setNewDocumentDialogOpen(true);
+  }, [provider]);
+
+  const createNewDocument = useCallback(
+    async ({ filename, format }: NewDocumentChoice) => {
+      if (!provider) return;
+      const path = '/' + filename;
+      const requestId = ++navigationRequestRef.current;
+      const createdRef: { current: EditableShellDocument | null } = { current: null };
+      try {
+        const transitioned = await documentSession.transitionWithLoad(async () => {
+          if (requestId !== navigationRequestRef.current) return null;
+          if (format === 'markdown') {
+            const content = '# ' + filename.replace(/\.[^.]+$/, '') + '\n';
+            const providerV2 = getFileSystemProviderV2(provider);
+            if (providerV2) {
+              try {
+                await writeProviderText(provider, path, content, 'create');
+              } catch (error: unknown) {
+                if (error instanceof FsError && error.code === 'already-exists') {
+                  throw new Error('A document with that name already exists.');
+                }
+                throw error;
+              }
+            } else if (provider.commitFile) {
+              const result = await provider.commitFile(path, content, null);
+              if (result.status === 'conflict') {
+                throw new Error('A document with that name already exists.');
+              }
+            } else {
+              if (await providerEntryExists(provider, path)) {
+                throw new Error('A document with that name already exists.');
+              }
+              await writeProviderText(provider, path, content);
             }
-            throw error;
+            createdRef.current = {
+              displayPath: path,
+              sourcePath: path,
+              content,
+              outsideIn: null,
+              outsideInEditingEnabled: false,
+            };
+          } else {
+            createdRef.current = await createNewOutsideInDocument(
+              provider,
+              path,
+              newFileHtmlOutput(format),
+              outsideInRenderRef.current,
+            );
           }
-        } else if (provider.commitFile) {
-          const result = await provider.commitFile(path, content, null);
-          if (result.status === 'conflict') {
-            throw new Error('A document with that name already exists.');
-          }
-        } else {
-          if (await providerEntryExists(provider, path)) {
-            throw new Error('A document with that name already exists.');
-          }
-          await writeProviderText(provider, path, content);
-        }
-        if (requestId !== navigationRequestRef.current) return null;
-        return {
-          target: createDocumentTarget(provider, activeWorkspaceId ?? provider.id, path),
-          content,
-        };
-      });
-      if (!transitioned) return;
-    } catch (error: unknown) {
-      showToast('error', error instanceof Error ? error.message : 'Could not create the document.');
-      return;
-    }
-    adoptRegularDocument(path);
-    setMobileShowEditor(true);
-    setInitialView('wysiwyg');
-    setInitialSharedMode(null);
-    setExplorerKey((k) => k + 1);
-    closeWelcomeGateway();
-    if (activeWorkspaceId) {
-      pushHash(activeWorkspaceId, '/' + filename);
-      saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
-    }
-  }, [
-    provider,
-    adoptRegularDocument,
-    activeWorkspaceId,
-    pushHash,
-    closeWelcomeGateway,
-    createDocumentTarget,
-    documentSession,
-    promptForText,
-    showToast,
-  ]);
+          if (requestId !== navigationRequestRef.current) return null;
+          const created = createdRef.current;
+          return {
+            target: createDocumentTarget(
+              provider,
+              activeWorkspaceId ?? provider.id,
+              created.sourcePath,
+              created.outsideIn,
+            ),
+            content: created.content,
+          };
+        });
+        if (!transitioned) return;
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          error instanceof Error ? error.message : 'Could not create the document.',
+        );
+        return;
+      }
+      const created = createdRef.current;
+      if (!created) return;
+      notifyWorkspaceChanged(activeWorkspaceId ?? provider.id, created.displayPath);
+      rememberNewFileFormat(format);
+      adoptSelectedDocument(created);
+      setMobileShowEditor(true);
+      setInitialView('wysiwyg');
+      setInitialSharedMode(null);
+      setExplorerKey((k) => k + 1);
+      closeWelcomeGateway();
+      if (activeWorkspaceId) {
+        pushHash(activeWorkspaceId, created.displayPath);
+        saveLastState({
+          workspaceId: activeWorkspaceId,
+          filePath: created.displayPath,
+          view: 'wysiwyg',
+        });
+      }
+    },
+    [
+      provider,
+      adoptSelectedDocument,
+      activeWorkspaceId,
+      pushHash,
+      closeWelcomeGateway,
+      createDocumentTarget,
+      documentSession,
+      notifyWorkspaceChanged,
+      rememberNewFileFormat,
+      showToast,
+    ],
+  );
 
   const handleNewFolder = useCallback(async () => {
     if (!provider) return;
@@ -3509,7 +3726,11 @@ export function DocBlocksShell({
         try {
           const transitioned = await documentSession.transitionWithLoad(async () => {
             if (requestId !== navigationRequestRef.current) return null;
-            openedDocument = await loadEditableShellDocument(provider, path);
+            openedDocument = await loadEditableShellDocument(
+              provider,
+              path,
+              outsideInRenderRef.current,
+            );
             if (requestId !== navigationRequestRef.current || openedDocument === null) return null;
             return {
               target: createDocumentTarget(
@@ -3531,6 +3752,10 @@ export function DocBlocksShell({
         }
         if (requestId !== navigationRequestRef.current) return;
         if (!openedDocument) return;
+        // A first open of a rendered file creates its Markdown companion.
+        if ((openedDocument as EditableShellDocument).outsideIn) {
+          notifyWorkspaceChanged(activeWorkspaceId, path);
+        }
         adoptSelectedDocument(openedDocument);
         setSelectedFolder(null);
         setFolderEntries([]);
@@ -3551,6 +3776,7 @@ export function DocBlocksShell({
       adoptSelectedDocument,
       createDocumentTarget,
       documentSession,
+      notifyWorkspaceChanged,
       transitionAwayFromDocument,
       showToast,
     ],
@@ -3565,7 +3791,7 @@ export function DocBlocksShell({
       const editableRef: { current: EditableOutsideInDocument | null } = { current: null };
       const transitioned = await documentSession.transitionWithLoad(async () => {
         if (requestId !== navigationRequestRef.current) return null;
-        const opened = await loadEditableShellDocument(provider, path);
+        const opened = await loadEditableShellDocument(provider, path, outsideInRenderRef.current);
         if (!opened?.outsideIn) {
           throw new Error('This file does not support outside-in Markdown editing.');
         }
@@ -3583,6 +3809,7 @@ export function DocBlocksShell({
       });
       const editable = editableRef.current;
       if (!transitioned || !editable || requestId !== navigationRequestRef.current) return;
+      notifyWorkspaceChanged(activeWorkspaceId, path);
       adoptSelectedDocument(editable);
       setSelectedFolder(null);
       setFolderEntries([]);
@@ -3603,6 +3830,7 @@ export function DocBlocksShell({
       closeWelcomeGateway,
       createDocumentTarget,
       documentSession,
+      notifyWorkspaceChanged,
       singlePane,
       provider,
       pushHash,
@@ -3610,9 +3838,17 @@ export function DocBlocksShell({
     ],
   );
 
+  const catalogHtmlPath = useMemo(() => {
+    try {
+      return resolveCatalogOutputs(workspaceSettings.settings)?.html?.path ?? null;
+    } catch {
+      return null;
+    }
+  }, [workspaceSettings.settings]);
   const outsideInActionsForEntry = useCallback(
     (entry: FileSystemEntry) => {
       if (entry.kind !== 'file' || resolveOutsideInLayout(entry.path) === null) return [];
+      if (catalogHtmlPath !== null && sameProviderPath(entry.path, catalogHtmlPath)) return [];
       if (
         selectedOutsideInEditingEnabled &&
         selectedFile !== null &&
@@ -3627,7 +3863,7 @@ export function DocBlocksShell({
         },
       ];
     },
-    [handleEnableOutsideInEditing, selectedFile, selectedOutsideInEditingEnabled],
+    [catalogHtmlPath, handleEnableOutsideInEditing, selectedFile, selectedOutsideInEditingEnabled],
   );
 
   const actionsForEntry = useCallback(
@@ -3796,6 +4032,7 @@ export function DocBlocksShell({
     async (change?: FileTreeChange) => {
       if (!provider) return;
       setDocumentLinkEpoch((epoch) => epoch + 1);
+      notifyWorkspaceChanged(activeWorkspaceId);
       if (change?.type === 'move' && change.oldPath && change.newPath) {
         if (activeWorkspaceId) {
           setPinnedDocuments((current) =>
@@ -3811,7 +4048,11 @@ export function DocBlocksShell({
 
         if (nextFile !== selectedFile) {
           if (nextFile) {
-            const opened = await loadEditableShellDocument(provider, nextFile);
+            const opened = await loadEditableShellDocument(
+              provider,
+              nextFile,
+              outsideInRenderRef.current,
+            );
             adoptSelectedDocument(opened);
           } else {
             adoptRegularDocument(nextFile);
@@ -3863,6 +4104,7 @@ export function DocBlocksShell({
       selectedFile,
       selectedFolder,
       activeWorkspaceId,
+      notifyWorkspaceChanged,
       pinnedDocuments,
       pushHash,
       setPinnedAvailability,
@@ -4091,13 +4333,14 @@ export function DocBlocksShell({
     async (files: File[]) => {
       if (!provider) return;
       const result = await importDroppedFiles(files, provider);
+      notifyWorkspaceChanged(activeWorkspaceId);
       // Refresh file tree so the new markdown files + _files folders show up.
       setExplorerKey((k) => k + 1);
       // A drop that failed used to be indistinguishable from no drop at all.
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
     },
-    [provider, showToast],
+    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast],
   );
 
   /**
@@ -4109,6 +4352,7 @@ export function DocBlocksShell({
     async (files: File[]) => {
       if (!provider) return;
       const result = await importDroppedFiles(files, provider);
+      notifyWorkspaceChanged(activeWorkspaceId);
       setExplorerKey((k) => k + 1);
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
@@ -4118,7 +4362,7 @@ export function DocBlocksShell({
         if (only) void handleSelect(only.path, 'file');
       }
     },
-    [provider, showToast, handleSelect],
+    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, handleSelect],
   );
 
   const editorDropActive = useEditorFileDrop(
@@ -4556,115 +4800,133 @@ export function DocBlocksShell({
     }
   }, []);
 
-  const handleRemoveWorkspace = useCallback(async () => {
-    if (!activeWorkspaceId) return;
-    const ws = await getWorkspace(activeWorkspaceId);
-    // Only a browser-local workspace's documents are DocBlocks' to destroy.
-    // Folder-backed workspaces (Electron or File System Access) keep their
-    // files on the user's disk, so promising the removal is irreversible there
-    // would be a lie in the more alarming direction.
-    const destroysDocuments = ws?.type === 'indexeddb';
-    // A transient workspace with no origin is a shared link's copy: it lives
-    // only in this session, with no file behind it. Telling the user "the
-    // files on disk will not be deleted" there promised a safety net that
-    // does not exist.
-    const discardsSharedCopy = ws?.type === 'transient' && !ws.origin;
-    const confirmed = await confirmAction({
-      title: 'Remove workspace',
-      message: destroysDocuments
-        ? 'Remove this workspace? Its documents will be permanently deleted.'
-        : discardsSharedCopy
-          ? 'Remove this shared copy? It exists only in this session, so it will be gone unless you first move it into a workspace.'
-          : 'Remove this workspace from DocBlocks? The files on disk will not be deleted.',
-      confirmLabel: 'Remove',
-      // Only these cases actually destroy the user's documents.
-      destructive: destroysDocuments || discardsSharedCopy,
-    });
-    if (!confirmed) return;
-    // No request-id re-check is needed across this await: unlike the native
-    // confirm() it replaces, nothing above claimed a navigation. The id is
-    // still taken *after* the user answers, so a navigation that happened
-    // while the dialog was open is the one this request supersedes -- exactly
-    // the ordering the synchronous version had.
-    const requestId = ++navigationRequestRef.current;
-    if (!(await transitionAwayFromDocument(requestId))) return;
-
-    if (ws?.type === 'host-native') {
-      try {
-        await getDocBlocksHost().workspaces.unregister(activeWorkspaceId);
-      } catch {
-        // ignore -- host cleanup is best-effort
+  // Removes the active workspace (gear menu) or any listed one (the picker's
+  // row menu). Only removing the active one navigates.
+  const handleRemoveWorkspace = useCallback(
+    async (workspaceId: string) => {
+      const ws = await getWorkspace(workspaceId);
+      const removingActive = workspaceId === activeWorkspaceId;
+      // Only a browser-local workspace's documents are DocBlocks' to destroy.
+      // Folder-backed workspaces (Electron or File System Access) keep their
+      // files on the user's disk, so promising the removal is irreversible there
+      // would be a lie in the more alarming direction.
+      const destroysDocuments = ws?.type === 'indexeddb';
+      // A transient workspace with no origin is a shared link's copy: it lives
+      // only in this session, with no file behind it. Telling the user "the
+      // files on disk will not be deleted" there promised a safety net that
+      // does not exist.
+      const discardsSharedCopy = ws?.type === 'transient' && !ws.origin;
+      const name = ws ? `“${ws.name}”` : 'this workspace';
+      const confirmed = await confirmAction({
+        title: 'Remove workspace',
+        message: destroysDocuments
+          ? `Remove ${name}? Its documents are stored only in this browser and will be permanently deleted.`
+          : discardsSharedCopy
+            ? 'Remove this shared copy? It exists only in this session, so it will be gone unless you first move it into a workspace.'
+            : ws?.type === 'transient'
+              ? `Remove ${name} from DocBlocks? The file on disk will not be deleted.`
+              : `Remove ${name} from DocBlocks? ${
+                  ws?.rootPath ? `The folder ${ws.rootPath}` : 'The folder'
+                } and its files will not be deleted. You can add it back later with Open Folder.`,
+        confirmLabel: 'Remove',
+        // Only these cases actually destroy the user's documents.
+        destructive: destroysDocuments || discardsSharedCopy,
+      });
+      if (!confirmed) return;
+      // No request-id re-check is needed across this await: unlike the native
+      // confirm() it replaces, nothing above claimed a navigation. The id is
+      // still taken *after* the user answers, so a navigation that happened
+      // while the dialog was open is the one this request supersedes -- exactly
+      // the ordering the synchronous version had.
+      let requestId = 0;
+      if (removingActive) {
+        requestId = ++navigationRequestRef.current;
+        if (!(await transitionAwayFromDocument(requestId))) return;
       }
-    } else if (ws?.type === 'transient') {
-      const origin = ws.origin;
-      const externalApi = maybeGetDocBlocksHost()?.external;
-      if (externalApi && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+
+      if (ws?.type === 'host-native') {
         try {
-          await externalApi.revoke(origin.resourceId);
+          await getDocBlocksHost().workspaces.unregister(workspaceId);
         } catch {
-          // Navigation/destruction also revokes the capability; removal is best effort.
+          // ignore -- host cleanup is best-effort
+        }
+      } else if (ws?.type === 'transient') {
+        const origin = ws.origin;
+        const externalApi = maybeGetDocBlocksHost()?.external;
+        if (externalApi && origin && (origin.kind === 'loose-file' || origin.kind === 'dbk')) {
+          try {
+            await externalApi.revoke(origin.resourceId);
+          } catch {
+            // Navigation/destruction also revokes the capability; removal is best effort.
+          }
+        }
+      } else if (ws?.type === 'native') {
+        await (await loadNativeFileSystem()).removeDirectoryHandle(workspaceId);
+      } else if (ws?.type === 'indexeddb') {
+        // A browser-local workspace's documents live in a DocBlocks-owned
+        // IndexedDB database. Dropping only the descriptor would strand them:
+        // invisible to the user, still charged against the origin quota, and
+        // ready to reappear the moment a workspace reuses this id -- which
+        // `ensureDefaultWorkspace` does on the very next launch for 'default'.
+        await (await loadIndexedDbFileSystem()).deleteIndexedDBWorkspaceData(workspaceId);
+      }
+      await removeWorkspace(workspaceId);
+      for (const document of pinnedDocuments) {
+        if (document.workspaceId === workspaceId) {
+          setPinnedAvailability(document, 'missing');
         }
       }
-    } else if (ws?.type === 'native') {
-      await (await loadNativeFileSystem()).removeDirectoryHandle(activeWorkspaceId);
-    } else if (ws?.type === 'indexeddb') {
-      // A browser-local workspace's documents live in a DocBlocks-owned
-      // IndexedDB database. Dropping only the descriptor would strand them:
-      // invisible to the user, still charged against the origin quota, and
-      // ready to reappear the moment a workspace reuses this id -- which
-      // `ensureDefaultWorkspace` does on the very next launch for 'default'.
-      await (await loadIndexedDbFileSystem()).deleteIndexedDBWorkspaceData(activeWorkspaceId);
-    }
-    await removeWorkspace(activeWorkspaceId);
-    for (const document of pinnedDocuments) {
-      if (document.workspaceId === activeWorkspaceId) {
-        setPinnedAvailability(document, 'missing');
+      if (!removingActive) {
+        // The active workspace is unchanged, so the picker would not reload.
+        setDescriptorRefreshKey((key) => key + 1);
+        return;
       }
-    }
-    if (requestId !== navigationRequestRef.current) return;
+      if (requestId !== navigationRequestRef.current) return;
 
-    const electron = hostSupports('nativeWorkspaces');
-    // Switch to most recent remaining workspace or create default
-    const remaining = (await listWorkspaces()).filter((w) =>
-      electron ? w.type === 'host-native' : w.type !== 'host-native',
-    );
-    if (remaining.length > 0) {
-      const next = remaining[0];
-      await handleWorkspaceSelect(next);
-    } else if (electron) {
-      const info = await getDocBlocksHost().workspaces.getDefault();
-      const descriptor: WorkspaceDescriptor = {
-        id: info.id,
-        name: info.name,
-        type: 'host-native',
-        rootPath: info.rootPath,
-        lastOpened: new Date().toISOString(),
-      };
-      await saveWorkspace(descriptor);
-      const p = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
-      setProvider(p);
-      setActiveWorkspaceId(info.id);
-      adoptSelectedDocument(null);
-      setSelectedFolder(null);
-      setFolderEntries([]);
-    } else {
-      const defaultWs = await ensureDefaultWorkspace();
-      const fsProvider = await createIndexedDbFileSystemProvider(defaultWs.id, defaultWs.name);
-      setProvider(fsProvider);
-      setActiveWorkspaceId(defaultWs.id);
-      adoptSelectedDocument(null);
-      setSelectedFolder(null);
-      setFolderEntries([]);
-    }
-  }, [
-    activeWorkspaceId,
-    adoptSelectedDocument,
-    confirmAction,
-    handleWorkspaceSelect,
-    pinnedDocuments,
-    setPinnedAvailability,
-    transitionAwayFromDocument,
-  ]);
+      const electron = hostSupports('nativeWorkspaces');
+      // Switch to most recent remaining workspace or create default
+      const remaining = (await listWorkspaces()).filter((w) =>
+        electron ? w.type === 'host-native' : w.type !== 'host-native',
+      );
+      if (remaining.length > 0) {
+        const next = remaining[0];
+        await handleWorkspaceSelect(next);
+      } else if (electron) {
+        const info = await getDocBlocksHost().workspaces.getDefault();
+        const descriptor: WorkspaceDescriptor = {
+          id: info.id,
+          name: info.name,
+          type: 'host-native',
+          rootPath: info.rootPath,
+          lastOpened: new Date().toISOString(),
+        };
+        await saveWorkspace(descriptor);
+        const p = await createHostFileSystemProvider(info.id, info.name, info.rootPath);
+        setProvider(p);
+        setActiveWorkspaceId(info.id);
+        adoptSelectedDocument(null);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+      } else {
+        const defaultWs = await ensureDefaultWorkspace();
+        const fsProvider = await createIndexedDbFileSystemProvider(defaultWs.id, defaultWs.name);
+        setProvider(fsProvider);
+        setActiveWorkspaceId(defaultWs.id);
+        adoptSelectedDocument(null);
+        setSelectedFolder(null);
+        setFolderEntries([]);
+      }
+    },
+    [
+      activeWorkspaceId,
+      adoptSelectedDocument,
+      confirmAction,
+      handleWorkspaceSelect,
+      pinnedDocuments,
+      setPinnedAvailability,
+      transitionAwayFromDocument,
+    ],
+  );
 
   return (
     <div
@@ -4684,6 +4946,15 @@ export function DocBlocksShell({
       <GitContext.Provider value={git}>
         {promptDialog}
         {confirmDialog}
+        {newDocumentDialogOpen && (
+          <NewDocumentDialog
+            initialFormat={defaultNewFileFormat}
+            onSettle={(choice) => {
+              setNewDocumentDialogOpen(false);
+              if (choice) void createNewDocument(choice);
+            }}
+          />
+        )}
         {workspaceStartupError && (
           <div className="db-save-toast db-save-toast--error" role="alert" aria-live="assertive">
             {workspaceStartupError}
@@ -4748,7 +5019,11 @@ export function DocBlocksShell({
           <WorkspaceSettingsDialog
             workspace={activeWorkspaceDescriptor}
             globalVersioningPreference={versioningPreference}
-            onChange={handleWorkspaceVersioningOverrideChange}
+            settings={workspaceSettings}
+            showVersionHistory={allowVersioning}
+            outputsStatus={workspaceOutputs.status}
+            onSave={handleSaveWorkspaceSettings}
+            onRegenerate={handleRegenerateWorkspaceOutputs}
             onClose={() => setWorkspaceSettingsOpen(false)}
           />
         )}
@@ -4784,6 +5059,9 @@ export function DocBlocksShell({
                 onProofingPreferencesChange={handleProofingPreferencesChange}
                 versioningPreference={versioningPreference}
                 onVersioningPreferenceChange={handleVersioningPreferenceChange}
+                onOpenWorkspaceSettings={
+                  activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
+                }
                 onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
                 onKeepBrowserData={
                   showBrowserStorageWarning && !browserStoragePersistent
@@ -4809,12 +5087,15 @@ export function DocBlocksShell({
                 onCloneRepository={
                   git.available ? () => git.openDialog({ kind: 'clone' }) : undefined
                 }
+                onRemoveWorkspace={(workspace) => void handleRemoveWorkspace(workspace.id)}
               />
               <WorkspaceSettingsButton
                 onSettings={handleOpenWorkspaceSettings}
                 onRename={handleRenameWorkspace}
                 onDownload={handleDownloadWorkspace}
-                onRemove={handleRemoveWorkspace}
+                onRemove={() => {
+                  if (activeWorkspaceId) void handleRemoveWorkspace(activeWorkspaceId);
+                }}
               />
               {canRestoreSplitView && (
                 <button
@@ -4839,6 +5120,9 @@ export function DocBlocksShell({
             <FileExplorer
               key={explorerKey}
               provider={provider}
+              outsideInRender={outsideInRenderRef.current}
+              defaultNewFileFormat={defaultNewFileFormat}
+              onNewFileFormatUsed={rememberNewFileFormat}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
               activeFilePath={selectedFile}
@@ -4982,164 +5266,188 @@ export function DocBlocksShell({
           >
             {selectedFile && mediaProvider ? (
               <>
-                <Suspense
-                  fallback={
-                    <div className="db-shell-empty" role="status">
-                      Loading your document&hellip;
-                    </div>
-                  }
-                >
-                  <EditorShell
-                    key={`${selectedFile}-${editorKey}`}
-                    initialMarkdown={editorContent}
-                    readOnly={
-                      selectedImage !== undefined ||
-                      (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                {selectedManagedOutput === 'catalog-html' ? (
+                  <GeneratedCatalogPage
+                    html={editorContent}
+                    fileName={basenameOf(selectedFile)}
+                    onOpenSettings={
+                      activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                     }
-                    initialView={initialView}
-                    // At compact width the centred page column and its page
-                    // padding waste most of a 390px screen. Squisq already
-                    // exposes both switches; below 720px it is also auto-hiding
-                    // its outline and inline preview, so these agree with the
-                    // density it has already chosen for itself.
-                    fullWidth={formFactor.widthClass === 'compact'}
-                    thinMargins={formFactor.widthClass === 'compact'}
-                    defaultViewportPreset={defaultPreviewViewportPreset}
-                    articleId={selectedFile}
-                    // Outside-in documents navigate/export as their rendered
-                    // file, but Squisq edits the hidden Markdown companion.
-                    // Passing `report.csv` here classifies the editor as a
-                    // raw data/code surface and suppresses Write + data cards.
-                    fileName={selectedSourceFile ?? selectedFile}
-                    imageSrc={selectedImageUrl}
-                    imageAlt={basenameOf(selectedFile)}
-                    saveCoverImageOutput={saveRenderedImageOutput}
-                    saveDashboardImageOutput={saveRenderedImageOutput}
-                    onChange={handleEditorChange}
-                    onLinkClick={handleEditorLinkClick}
-                    colorScheme={resolvedTheme}
-                    writeCanvasSettings={editorWriteCanvasSettings}
-                    height="100%"
-                    placeholder={editorPlaceholder}
-                    outlineWidth={280}
-                    mediaProvider={mediaProvider}
-                    mediaEditRenders={mediaEditRenders}
-                    calcEngineFactory={calcEngineFactory}
-                    proofing={proofing}
-                    proofingDefaultEnabled={proofingDefaultEnabled}
-                    proofingSpellingEnabled={proofingPreferences.spelling}
-                    proofingGrammarEnabled={proofingPreferences.grammar}
-                    proofingIgnoreStore={effectiveProofingIgnoreStore}
-                    showCodeCopyButton={showCodeCopyButton}
-                    onCopyCode={onCopyCode}
-                    allowRecording={allowRecording}
-                    // Dictation uses the microphone, so it follows the same policy.
-                    speechInput={allowRecording ? speechInput : null}
-                    allowPresentationWindow={allowPresentationWindow}
-                    allowPresentationFullscreen={allowPresentationFullscreen}
-                    documentLinkProvider={documentLinkProvider}
-                    workspaceContainer={versionsContainer ?? undefined}
-                    allowVersioning={selectedImage === undefined && effectiveVersioning}
-                    viewPreferences={editorViewPreferences}
-                    onViewPreferencesChange={handleViewPreferencesChange}
-                    versionBasename={versionBasename ?? stripExtension(basenameOf(selectedFile))}
-                    versioningPrunePolicy={versioningPrunePolicy}
-                    versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                    onSaveVersion={onSaveVersion}
-                    statusBarSlotRight={statusBarSlotRight}
-                    sidePanelSlot={
-                      ai &&
-                      aiPanel &&
-                      selectedImage === undefined &&
-                      (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
-                        <Suspense fallback={null}>
-                          {aiPanel === 'review' ? (
-                            <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
-                          ) : (
-                            <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
-                          )}
-                        </Suspense>
-                      ) : undefined
+                    onBack={singlePane ? openDrawer : undefined}
+                  />
+                ) : (
+                  <GeneratedFileFrame
+                    kind={selectedManagedOutput}
+                    onOpenSettings={
+                      activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                     }
-                    toolbarSlotLeft={
-                      singlePane ? (
-                        <button
-                          className="db-mobile-back"
-                          onClick={() => setMobileShowEditor(false)}
-                          aria-label="Show file list"
-                        >
-                          <span className="db-mobile-files-icon">
-                            <FolderGlyph />
-                          </span>
-                        </button>
-                      ) : undefined
-                    }
-                    toolbarSlotRight={
-                      <>
-                        {ai && (
-                          <Suspense fallback={null}>
-                            <AiToolbarControl
-                              ai={ai}
-                              readOnly={
-                                selectedImage !== undefined ||
-                                (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                              }
-                              openPanel={aiPanel}
-                              onOpenPanel={setAiPanel}
-                            />
-                          </Suspense>
-                        )}
-                        {speech && (
-                          <Suspense fallback={null}>
-                            {hostSupports('speechOutput') ? (
-                              <SpeechToolbarControl
-                                speech={speech}
-                                onOpenSettings={openSettings}
-                                readOnly={
-                                  selectedImage !== undefined ||
-                                  (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                                }
-                              />
-                            ) : (
-                              <SpeechMenuBridge />
+                    onBack={singlePane ? openDrawer : undefined}
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="db-shell-empty" role="status">
+                          Loading your document&hellip;
+                        </div>
+                      }
+                    >
+                      <EditorShell
+                        key={`${selectedFile}-${editorKey}`}
+                        initialMarkdown={editorContent}
+                        readOnly={
+                          selectedImage !== undefined ||
+                          selectedManagedOutput !== undefined ||
+                          (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                        }
+                        initialView={initialView}
+                        // At compact width the centred page column and its page
+                        // padding waste most of a 390px screen. Squisq already
+                        // exposes both switches; below 720px it is also auto-hiding
+                        // its outline and inline preview, so these agree with the
+                        // density it has already chosen for itself.
+                        fullWidth={formFactor.widthClass === 'compact'}
+                        thinMargins={formFactor.widthClass === 'compact'}
+                        defaultViewportPreset={defaultPreviewViewportPreset}
+                        articleId={selectedFile}
+                        // Outside-in documents navigate/export as their rendered
+                        // file, but Squisq edits the hidden Markdown companion.
+                        // Passing `report.csv` here classifies the editor as a
+                        // raw data/code surface and suppresses Write + data cards.
+                        fileName={selectedSourceFile ?? selectedFile}
+                        imageSrc={selectedImageUrl}
+                        imageAlt={basenameOf(selectedFile)}
+                        saveCoverImageOutput={saveRenderedImageOutput}
+                        saveDashboardImageOutput={saveRenderedImageOutput}
+                        onChange={handleEditorChange}
+                        onLinkClick={handleEditorLinkClick}
+                        colorScheme={resolvedTheme}
+                        writeCanvasSettings={editorWriteCanvasSettings}
+                        height="100%"
+                        placeholder={editorPlaceholder}
+                        outlineWidth={280}
+                        mediaProvider={mediaProvider}
+                        mediaEditRenders={mediaEditRenders}
+                        calcEngineFactory={calcEngineFactory}
+                        proofing={proofing}
+                        proofingDefaultEnabled={proofingDefaultEnabled}
+                        proofingSpellingEnabled={proofingPreferences.spelling}
+                        proofingGrammarEnabled={proofingPreferences.grammar}
+                        proofingIgnoreStore={effectiveProofingIgnoreStore}
+                        showCodeCopyButton={showCodeCopyButton}
+                        onCopyCode={onCopyCode}
+                        allowRecording={allowRecording}
+                        // Dictation uses the microphone, so it follows the same policy.
+                        speechInput={allowRecording ? speechInput : null}
+                        allowPresentationWindow={allowPresentationWindow}
+                        allowPresentationFullscreen={allowPresentationFullscreen}
+                        documentLinkProvider={documentLinkProvider}
+                        workspaceContainer={versionsContainer ?? undefined}
+                        allowVersioning={selectedImage === undefined && effectiveVersioning}
+                        viewPreferences={editorViewPreferences}
+                        onViewPreferencesChange={handleViewPreferencesChange}
+                        versionBasename={
+                          versionBasename ?? stripExtension(basenameOf(selectedFile))
+                        }
+                        versioningPrunePolicy={effectivePrunePolicy}
+                        versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                        onSaveVersion={onSaveVersion}
+                        statusBarSlotRight={statusBarSlotRight}
+                        sidePanelSlot={
+                          ai &&
+                          aiPanel &&
+                          selectedImage === undefined &&
+                          (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
+                            <Suspense fallback={null}>
+                              {aiPanel === 'review' ? (
+                                <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                              ) : (
+                                <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
+                              )}
+                            </Suspense>
+                          ) : undefined
+                        }
+                        toolbarSlotLeft={
+                          singlePane ? (
+                            <button
+                              className="db-mobile-back"
+                              onClick={() => setMobileShowEditor(false)}
+                              aria-label="Show file list"
+                            >
+                              <span className="db-mobile-files-icon">
+                                <FolderGlyph />
+                              </span>
+                            </button>
+                          ) : undefined
+                        }
+                        toolbarSlotRight={
+                          <>
+                            {ai && (
+                              <Suspense fallback={null}>
+                                <AiToolbarControl
+                                  ai={ai}
+                                  readOnly={
+                                    selectedImage !== undefined ||
+                                    (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                                  }
+                                  openPanel={aiPanel}
+                                  onOpenPanel={setAiPanel}
+                                />
+                              </Suspense>
                             )}
-                          </Suspense>
-                        )}
-                        {/* Restore split view -- offered only where the
+                            {speech && (
+                              <Suspense fallback={null}>
+                                {hostSupports('speechOutput') ? (
+                                  <SpeechToolbarControl
+                                    speech={speech}
+                                    onOpenSettings={openSettings}
+                                    readOnly={
+                                      selectedImage !== undefined ||
+                                      (selectedOutsideIn !== null &&
+                                        !selectedOutsideInEditingEnabled)
+                                    }
+                                  />
+                                ) : (
+                                  <SpeechMenuBridge />
+                                )}
+                              </Suspense>
+                            )}
+                            {/* Restore split view -- offered only where the
                           viewport can actually hold both panes. Pinning is
                           persisted, so an iPad user sets it once. */}
-                        {canRestoreSplitView && (
-                          <button
-                            className="db-restore-split"
-                            onClick={() => updateSidebarPreference('pinned')}
-                            aria-label="Restore split view"
-                            title="Restore split view"
-                          >
-                            <SplitViewIcon />
-                          </button>
-                        )}
-                        {git.repo && (
-                          <Suspense fallback={null}>
-                            <GitToolbarControl selectedFile={selectedFile} />
-                          </Suspense>
-                        )}
-                        <ExportToolbarControls
-                          selectedFile={selectedFile}
-                          mediaContainer={mediaContainerRef.current}
-                          workspaceContainer={versionsContainer}
-                          mediaProvider={mediaProvider}
-                          mediaEditRenders={mediaEditRenders}
-                          destinationAdapter={exportDestinationAdapter}
-                          colorScheme={resolvedTheme}
-                          videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
-                          ffmpegWasm={ffmpegWasm}
-                          initialSharedMode={initialSharedMode}
-                          {...(speech ? { speech } : {})}
-                        />
-                      </>
-                    }
-                  />
-                </Suspense>
+                            {canRestoreSplitView && (
+                              <button
+                                className="db-restore-split"
+                                onClick={() => updateSidebarPreference('pinned')}
+                                aria-label="Restore split view"
+                                title="Restore split view"
+                              >
+                                <SplitViewIcon />
+                              </button>
+                            )}
+                            {git.repo && (
+                              <Suspense fallback={null}>
+                                <GitToolbarControl selectedFile={selectedFile} />
+                              </Suspense>
+                            )}
+                            <ExportToolbarControls
+                              selectedFile={selectedFile}
+                              mediaContainer={mediaContainerRef.current}
+                              workspaceContainer={versionsContainer}
+                              mediaProvider={mediaProvider}
+                              mediaEditRenders={mediaEditRenders}
+                              destinationAdapter={exportDestinationAdapter}
+                              colorScheme={resolvedTheme}
+                              videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
+                              ffmpegWasm={ffmpegWasm}
+                              initialSharedMode={initialSharedMode}
+                              defaultThemeId={workspaceDefaultThemeId}
+                              {...(speech ? { speech } : {})}
+                            />
+                          </>
+                        }
+                      />
+                    </Suspense>
+                  </GeneratedFileFrame>
+                )}
                 {showWelcomeGateway && !singlePane && (
                   <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
                     <span className="db-welcome-gateway-text">

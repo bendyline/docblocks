@@ -61,6 +61,8 @@ export interface AppMenuProps {
   versioningPreference?: VersioningPreference;
   /** Called when the user changes the global versioning preference. */
   onVersioningPreferenceChange?: (pref: VersioningPreference) => void;
+  /** Opens the active workspace's own settings (`.docblocks/workspace.json`). */
+  onOpenWorkspaceSettings?: () => void;
   /**
    * Called when the user clicks "Download all workspaces". When omitted,
    * the menu item is hidden.
@@ -135,6 +137,7 @@ export function AppMenu({
   onProofingPreferencesChange,
   versioningPreference = 'browser-only',
   onVersioningPreferenceChange,
+  onOpenWorkspaceSettings,
   onDownloadAllWorkspaces,
   onKeepBrowserData,
   onInstallApp,
@@ -400,6 +403,18 @@ export function AppMenu({
                 />
                 Off for all workspaces
               </label>
+              {onOpenWorkspaceSettings && (
+                <button
+                  type="button"
+                  className="db-git-secondary-btn db-settings-link-btn"
+                  onClick={() => {
+                    setShowSettings(false);
+                    onOpenWorkspaceSettings();
+                  }}
+                >
+                  This workspace&rsquo;s settings&hellip;
+                </button>
+              )}
             </fieldset>
           )}
         </SettingsDialog>

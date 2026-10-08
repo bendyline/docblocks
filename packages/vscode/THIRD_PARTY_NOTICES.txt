@@ -3,7 +3,7 @@ Run `npm run generate:notices` from the repository root.
 
 # Third-Party Notices: DocBlocks VS Code extension (VSIX)
 
-Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.
+Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points. The extension-host entry points also bundle the Squisq Markdown and plain-HTML modules used for workspace catalogs, which are already part of the webview graph.
 
 Inventory source: package-lock.json and packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json.
 Components: 208.

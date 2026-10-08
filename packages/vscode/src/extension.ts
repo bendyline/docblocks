@@ -2,8 +2,34 @@ import * as vscode from 'vscode';
 import { MarkdownEditorLauncher } from './markdownEditorLauncher.js';
 import { MarkdownEditorPanel } from './markdownEditorPanel.js';
 import { SetupViewProvider } from './setupViewProvider.js';
+import {
+  registerWorkspaceSettingsService,
+  WorkspaceSettingsService,
+} from './workspaceSettingsService.js';
+import { requireTrustedWorkspace } from './workspaceTrust.js';
 
 export function activate(context: vscode.ExtensionContext) {
+  // Workspace settings (`.docblocks/workspace.json`) and the catalogs they
+  // keep current. Created before any editor panel so panels can subscribe.
+  const output = vscode.window.createOutputChannel('DocBlocks');
+  const workspaceSettings = new WorkspaceSettingsService(output);
+  context.subscriptions.push(
+    output,
+    workspaceSettings,
+    registerWorkspaceSettingsService(workspaceSettings),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('docblocks.refreshWorkspaceOutputs', async () => {
+      if (!(await requireTrustedWorkspace('updates workspace catalogs'))) return;
+      const refreshed = await workspaceSettings.regenerateAll();
+      if (refreshed === 0) {
+        await vscode.window.showInformationMessage(
+          'No folder in this window has a catalog enabled in .docblocks/workspace.json.',
+        );
+      }
+    }),
+  );
+
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       MarkdownEditorLauncher.viewType,

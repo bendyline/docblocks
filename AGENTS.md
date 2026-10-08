@@ -10,7 +10,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
 - **Mobile** (`packages/mobile`) — Capacitor for iOS and Android, mounting the shared shell
-- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
+- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms / workspace
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
 
@@ -20,7 +20,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types and runtime boundary schemas. Multi-entry tsup build with filesystem backends plus `/document`, `/workspace`, `/host`, and `/vscode`. **Single source of truth for wire types.**                                                                                                                       |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`. Consumed by site + desktop renderer. (Ships no fonts — theme fonts live in `packages/site/public/fonts/`.) (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 8 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                                                                        |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                                                                        |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
@@ -227,8 +227,9 @@ machine — to the renderer. `main/ai/gezel-connector.ts` and
 own running Gezel and ask for
 `openai` plus scoped `knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
-`host.ai.knowledge`; every desktop chat retrieves bounded cited passages with
-required reranking. Missing SDK support or reranker readiness fails visibly.
+`host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
+leaves ranking to the SDK. Knowledge never blocks a request: missing SDK support,
+a failed retrieval, or a malformed answer sends the request without passages.
 The new Gezel SDK/service API must be published and pinned before shipping;
 see `packages/desktop/README.md`. Three rules
 are load-bearing and each has a test:
@@ -330,7 +331,8 @@ packaging, store builds, and the e2e harness.
 `docblocks` commands: arguments, defaults, streams, filesystem effects, linked
 Squisq ownership, and current format directions. Command implementation lives in
 `packages/cli/src/commands/`; register each public command once in
-`packages/cli/src/index.ts`. Keep the guide and the concise publishable
+`packages/cli/src/program.ts` and export any programmatic API from the
+side-effect-free `packages/cli/src/index.ts`. Keep the guide and the concise publishable
 `packages/cli/README.md` synchronized when behavior changes.
 
 Direct build/convert/video commands run with the invoking process's filesystem
@@ -423,6 +425,43 @@ Media and `.versions/` live at the companion root. HTML targets share the
 nearest ancestor `_squisq/squisq-player.js`. Keep companion path/frontmatter
 rules in `@bendyline/squisq-formats/outside-in`; hosts own filesystem authority,
 transaction ordering, visibility, and lifecycle behavior.
+
+### Workspace settings live in `.docblocks/workspace.json`
+
+Settings that belong to a folder — the default document theme, catalog
+outputs, the per-folder version-history choice — live in
+`<root>/.docblocks/workspace.json` so they travel with the folder.
+[`docs/workspace-settings.md`](docs/workspace-settings.md) is the reference.
+`packages/core/src/workspace-settings/` (subpath
+`@bendyline/docblocks/workspace-settings`, deliberately not re-exported from
+the root) is the one implementation: exact-shape parser and serializer, patch
+merging over concurrent edits, catalog model, budgeted walker with a
+marker-guarded writer, and a debounced single-flight scheduler. The shell
+(`useWorkspaceSettings` / `useWorkspaceOutputs`), the VS Code host
+(`workspaceSettingsService.ts` over a `vscode.workspace.fs` adapter) and the
+CLI (`docblocks workspace refresh`) supply only IO and a renderer.
+
+- The file is created on the first explicit Save, never on open, and never
+  for settings that are all defaults (`isDefaultWorkspaceSettings`, enforced
+  in `saveWorkspaceSettingsPatch`); an existing file is updated, not deleted.
+  Transient workspaces (loose files, DBK) never get one: a DBK re-zip rejects
+  non-`.md` entries.
+- Exact shape per `version`. An unknown field is `invalid`, a newer version
+  `unsupported-version`; either way nothing applies and nothing is rewritten.
+- The workspace theme is a fallback. Every Squisq exporter lets an explicit
+  `themeId` beat frontmatter, so pass the workspace default only when
+  `readFrontmatterThemeId` finds none (`resolveFallbackThemeId`).
+- Catalog outputs are opt-in, deterministic (no timestamps or mtimes,
+  code-unit ordering), and marked. They are written only when bytes or the
+  HTML inputs digest change, and a file without the marker is never replaced.
+  A marked file opens read-only and is never imported outside-in.
+- Every durable commit in a folder workspace reaches `afterWorkspaceCommit`
+  in `DocBlocksShell`. A new mutation path must call `notifyWorkspaceChanged`
+  with the workspace ID it acted on, never the currently active one.
+- Desktop chokidar ignores dot-folders and IndexedDB/native providers cannot
+  watch, so settings are re-read on activation, focus, resume, and after a git
+  pull or branch switch. VS Code writes catalogs only in trusted, writable
+  folders.
 
 ### Squisq is a dependency, not a fork
 
@@ -532,13 +571,14 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture               |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
-| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/index.ts`                    |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure            |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                  |
-| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule |
+| Task                       | Start with                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
+| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                          |
+| Add a workspace setting    | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
+| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
+| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |

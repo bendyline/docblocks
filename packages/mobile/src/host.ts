@@ -57,7 +57,12 @@ export async function installMobileHost(): Promise<void> {
     ...(mobileAi ? { ai: mobileAi.ai } : {}),
     fsV2: createMobileFileSystemBridge((request) => native.request({ request }), info.capabilities),
     workspaces: {
-      list: async () => parseMobileBootstrap(await native.bootstrap()).workspaces,
+      // The first bootstrap workspace is the app's own storage, also returned
+      // by getDefault(); picked folders follow it and are never default.
+      list: async () =>
+        parseMobileBootstrap(await native.bootstrap()).workspaces.map((workspace) =>
+          workspace.id === info.workspaces[0]?.id ? { ...workspace, isDefault: true } : workspace,
+        ),
       ...(info.folderPicker
         ? { pickFolder: async () => parseMobilePickedFolder(await native.pickFolder()) }
         : {}),

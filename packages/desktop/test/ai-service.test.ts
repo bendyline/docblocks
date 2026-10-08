@@ -3,6 +3,7 @@ import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatRequest,
+  AiKnowledgeAction,
   AiModelInstallEvent,
   AiPreferences,
   AiStatus,
@@ -228,7 +229,7 @@ function terminalEvents(events: readonly AiChatEvent[]): AiChatEvent[] {
 
 describe('AI catalog lifecycle', () => {
   afterEach(disposeLiveServices);
-  const state = { catalogs: [], reranker: { ready: true, downloading: false, message: null } };
+  const state = { catalogs: [], improvement: null };
   it('never contacts the provider while opted out', async () => {
     const { service, connector } = createService(DEFAULT_AI_PREFERENCES);
     connector.connection.knowledgeState = async () => {
@@ -245,7 +246,46 @@ describe('AI catalog lifecycle', () => {
     connector.connection.knowledgeState = async () => state;
     expect(await service.knowledgeState('owner')).to.deep.equal({ ok: true, value: state });
   });
-  it('bounds concurrency and rejects stale responses after opt-out', async () => {
+  it('shares one in-flight state read per window instead of rejecting the second', async () => {
+    // A StrictMode remount asks twice before the first answer arrives.
+    const { service, connector } = await readyService();
+    const gate = deferred();
+    let reads = 0;
+    connector.connection.knowledgeState = async () => {
+      reads += 1;
+      await gate.promise;
+      return state;
+    };
+    const first = service.knowledgeState('owner');
+    const second = service.knowledgeState('owner');
+    gate.resolve();
+    expect(await first).to.deep.equal({ ok: true, value: state });
+    expect(await second).to.deep.equal({ ok: true, value: state });
+    expect(reads).to.equal(1);
+    expect(await service.knowledgeState('owner')).to.deep.equal({ ok: true, value: state });
+    expect(reads).to.equal(2);
+  });
+  it('runs a catalog action while a state read is pending', async () => {
+    const { service, connector } = await readyService();
+    const gate = deferred();
+    connector.connection.knowledgeState = async () => {
+      await gate.promise;
+      return state;
+    };
+    const actions: AiKnowledgeAction[] = [];
+    connector.connection.updateKnowledge = async (action) => {
+      actions.push(action);
+    };
+    const pending = service.knowledgeState('owner');
+    expect(await service.updateKnowledge('owner', { action: 'improve' })).to.deep.equal({
+      ok: true,
+      value: null,
+    });
+    expect(actions).to.deep.equal([{ action: 'improve' }]);
+    gate.resolve();
+    expect((await pending).ok).to.equal(true);
+  });
+  it('rejects stale responses after opt-out', async () => {
     const { service, connector } = await readyService();
     const gate = deferred();
     let signal: AbortSignal | undefined;
@@ -255,7 +295,6 @@ describe('AI catalog lifecycle', () => {
       return state;
     };
     const pending = service.knowledgeState('owner');
-    expect((await service.knowledgeState('owner')).ok).to.equal(false);
     await service.setPreferences({ enabled: false });
     expect(signal?.aborted).to.equal(true);
     gate.resolve();

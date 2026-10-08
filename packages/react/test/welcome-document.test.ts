@@ -4,7 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { flattenBlocks, validateMarkdownSource } from '@bendyline/squisq/doc';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { MarkdownRenderer } from '@bendyline/squisq-react';
-import { WELCOME_DOCUMENT_CONTENT } from '../src/DocBlocksShell/welcome-document.js';
+import {
+  isAppDefaultWorkspace,
+  WELCOME_DOCUMENT_CONTENT,
+} from '../src/DocBlocksShell/welcome-document.js';
 
 const MARKETING_URLS = [
   'https://docblocks.com/desktop/',
@@ -80,5 +83,25 @@ describe('welcome document', () => {
       await act(async () => root.unmount());
       container.remove();
     }
+  });
+});
+
+describe('welcome document seeding target', () => {
+  it('only treats the browser default workspace as default in the browser', () => {
+    expect(isAppDefaultWorkspace('default', null)).to.equal(true);
+    expect(isAppDefaultWorkspace('ws-1780000000000', null)).to.equal(false);
+    expect(isAppDefaultWorkspace('native-posts-1780000000000', null)).to.equal(false);
+  });
+
+  it('trusts only the host-marked default for folder workspaces', () => {
+    const defaults = new Set(['electron-docblocks-dev-0123456789abcdef']);
+    expect(isAppDefaultWorkspace('electron-docblocks-dev-0123456789abcdef', defaults)).to.equal(
+      true,
+    );
+    // A folder the user opened, even an empty one, is never written to.
+    expect(isAppDefaultWorkspace('electron-posts-fedcba9876543210', defaults)).to.equal(false);
+    // The browser id means nothing on a folder host, and no marked default means none.
+    expect(isAppDefaultWorkspace('default', defaults)).to.equal(false);
+    expect(isAppDefaultWorkspace('electron-posts-fedcba9876543210', new Set())).to.equal(false);
   });
 });

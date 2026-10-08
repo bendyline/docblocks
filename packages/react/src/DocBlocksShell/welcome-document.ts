@@ -1,5 +1,23 @@
-/** The starter document created for an empty DocBlocks workspace. */
+import { DEFAULT_WORKSPACE_ID } from '@bendyline/docblocks/workspace';
+
+/** The starter document created for the app's own empty default workspace. */
 export const WELCOME_DOCUMENT_PATH = '/aboutDocBlocks.md';
+
+/**
+ * Whether a workspace is the app's own default — the only place the starter
+ * document may be written. On hosts with folder workspaces, the host marks
+ * its default (`ElectronWorkspaceInfo.isDefault`); in the browser it is the
+ * `default` IndexedDB workspace. A folder the user picked, cloned, or created
+ * is never default, so an empty one stays empty.
+ */
+export function isAppDefaultWorkspace(
+  workspaceId: string,
+  hostDefaultWorkspaceIds: ReadonlySet<string> | null,
+): boolean {
+  return hostDefaultWorkspaceIds
+    ? hostDefaultWorkspaceIds.has(workspaceId)
+    : workspaceId === DEFAULT_WORKSPACE_ID;
+}
 
 /**
  * Keep annotations attached to headings: each heading becomes a deliberate

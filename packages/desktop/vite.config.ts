@@ -101,6 +101,17 @@ export default defineConfig({
         find: '@bendyline/docblocks/filesystem/electron',
         replacement: path.resolve(__dirname, '../core/src/filesystem/electron.ts'),
       },
+      // Every core subpath the renderer imports needs an alias. An unaliased one
+      // resolves to core's dist, a second copy of core whose FsError class fails
+      // `instanceof` checks against the src copy's.
+      {
+        find: '@bendyline/docblocks/filesystem/host',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/host.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/share',
+        replacement: path.resolve(__dirname, '../core/src/share/index.ts'),
+      },
       {
         find: /^@bendyline\/docblocks\/filesystem$/,
         replacement: path.resolve(__dirname, '../core/src/filesystem/index.ts'),

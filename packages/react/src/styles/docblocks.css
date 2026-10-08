@@ -1087,6 +1087,54 @@
   font-weight: 500;
 }
 
+/* A listed workspace: the select button plus its ⋯ actions button. The row
+   carries the hover and selected backgrounds so they span both. */
+.db-workspace-dropdown-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.db-workspace-dropdown-row:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-workspace-dropdown-row--active {
+  background: var(--db-bg-selected);
+}
+
+.db-workspace-dropdown-row .db-workspace-dropdown-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+}
+
+.db-workspace-dropdown-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--db-text-muted);
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.db-workspace-dropdown-row--active .db-workspace-dropdown-more {
+  color: var(--db-text-on-selected);
+}
+
+.db-workspace-dropdown-more:hover,
+.db-workspace-dropdown-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.db-workspace-dropdown-more:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
 .db-workspace-type {
   font-size: 11px;
   color: var(--db-text-placeholder);
@@ -2374,6 +2422,130 @@ body.db-resizing-sidebar * {
 
 .db-settings-select-input:focus-visible {
   border-color: var(--db-accent);
+}
+
+/* Generated catalog files (index.html, catalog.json): shown, never edited */
+
+.db-generated-file,
+.db-generated-file-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-generated-file-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-bg-subtle);
+  color: var(--db-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.db-generated-file-notice-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.db-generated-file-notice strong {
+  color: var(--db-text);
+  font-weight: 600;
+}
+
+.db-generated-file-back {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Show the page as a browser would, whatever the app theme: a page that
+   paints no background of its own is drawn on white, never on the app's dark
+   surface (its dark text would vanish). `color-scheme: light` keeps the frame
+   opaque-light rather than inheriting the host's dark canvas. Themed pages
+   paint their own background over this. */
+.db-generated-file-preview {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color-scheme: light;
+}
+
+/* Workspace settings (`.docblocks/workspace.json`) */
+
+.db-settings-subfields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 10px 24px;
+}
+
+.db-settings-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-text-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--db-input-font-size);
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.db-settings-text-input:focus-visible {
+  border-color: var(--db-accent);
+}
+
+.db-settings-textarea {
+  min-height: 3.5em;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.db-settings-number-input {
+  max-width: 8em;
+}
+
+.db-settings-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.db-settings-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--db-text-muted);
+}
+
+.db-settings-status--warning {
+  color: var(--db-danger);
+}
+
+.db-settings-link-btn {
+  margin-top: 8px;
 }
 
 .db-font-picker {
@@ -5773,6 +5945,21 @@ html:has(.db-shell[data-theme='dark'])
   width: min(680px, 100%);
 }
 
+.db-ai-draft-dialog .db-dialog-footer {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Status sits left of the buttons and takes its own row when it is long. */
+.db-ai-footer-status {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.db-ai-footer-status p {
+  margin: 0;
+}
+
 .db-ai-field {
   display: grid;
   gap: 6px;
@@ -5811,6 +5998,16 @@ html:has(.db-shell[data-theme='dark'])
   margin: 0 0 14px;
   color: var(--db-text-muted);
   font-size: 12px;
+}
+
+/* A whole-document selection must not push the draft below the dialog. */
+.db-ai-selection-preview blockquote {
+  max-height: calc(8 * 1.5em + 16px);
+}
+
+.db-ai-selection-preview blockquote:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
 }
 
 .db-ai-selection-preview blockquote,
@@ -6564,6 +6761,15 @@ button.db-git-file-row:hover {
   color: var(--db-text);
   font-size: var(--db-input-font-size);
   box-sizing: border-box;
+}
+
+/* New document dialog: label/field pairs in two aligned columns */
+.db-new-document-fields {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 8px;
+  margin: 10px 0;
 }
 
 .db-git-form-error,

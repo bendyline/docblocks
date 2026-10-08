@@ -369,6 +369,23 @@ function AiDraftDialog({
       className="db-ai-draft-dialog"
       footer={
         <>
+          {/* In the footer, not the scrolling body: a long selection must never
+              push progress or an error out of sight of the buttons. */}
+          {(running || finishNote || error) && (
+            <div className="db-ai-footer-status">
+              {running && (
+                <p className="db-ai-progress" role="status">
+                  <span className="db-ai-spinner" aria-hidden="true" /> Writing…
+                </p>
+              )}
+              {finishNote && <p className="db-ai-note">{finishNote}</p>}
+              {error && (
+                <p className="db-ai-error" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
           <button type="button" onClick={onClose}>
             Cancel
           </button>
@@ -408,7 +425,10 @@ function AiDraftDialog({
       {mode === 'rewrite' && (
         <div className="db-ai-selection-preview">
           <span>Selected text</span>
-          <blockquote>{capturedSelection.text}</blockquote>
+          {/* Focusable so keyboard users can scroll a long selection. */}
+          <blockquote tabIndex={0} aria-label="Selected text">
+            {capturedSelection.text}
+          </blockquote>
         </div>
       )}
 
@@ -423,17 +443,6 @@ function AiDraftDialog({
           onChange={(event) => setDraft(event.currentTarget.value)}
         />
       </label>
-      {running && (
-        <p className="db-ai-progress" role="status">
-          <span className="db-ai-spinner" aria-hidden="true" /> Writing…
-        </p>
-      )}
-      {finishNote && <p className="db-ai-note">{finishNote}</p>}
-      {error && (
-        <p className="db-ai-error" role="alert">
-          {error}
-        </p>
-      )}
       <p className="db-ai-disclaimer">Review AI-generated content before adding it.</p>
     </Dialog>
   );

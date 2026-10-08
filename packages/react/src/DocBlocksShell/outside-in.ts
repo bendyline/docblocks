@@ -9,6 +9,10 @@ import {
   createFileSystemDocumentTarget,
   type DocumentCommitTarget,
 } from '@bendyline/docblocks/document';
+import {
+  isGeneratedCatalogHtml,
+  isGeneratedCatalogJson,
+} from '@bendyline/docblocks/workspace-settings';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { providerEntryExists, writeProviderText } from './provider-io.js';
 import {
@@ -16,6 +20,7 @@ import {
   importOutsideInDocument,
   isOutsideInMarkdownEditingEnabled,
   isOutsideInDataFormat,
+  readFrontmatterTheme,
   readOutsideInHtmlOutput,
   readOutsideInMetadata,
   renderOutsideInDocument,
@@ -61,6 +66,31 @@ export interface EditableShellDocument {
   outsideInEditingEnabled: boolean;
   /** Binary image payload rendered through Squisq's image-viewer mode. */
   image?: { data: ArrayBuffer; mimeType: string };
+  /**
+   * Set for a workspace catalog file DocBlocks generates. `content` is the
+   * file's own text; the shell shows it read-only (the page rendered in a
+   * sandboxed frame) and never saves or imports it.
+   */
+  managedOutput?: 'catalog-html' | 'catalog-json';
+}
+
+/** Host-supplied rendering context for regenerated outside-in files. */
+export interface OutsideInRenderOptions {
+  /**
+   * The workspace default theme, read at render time. Applied only to
+   * documents whose frontmatter names no theme of their own: every Squisq
+   * exporter lets an explicit theme beat the document's frontmatter.
+   */
+  defaultThemeId?: () => string | undefined;
+}
+
+async function resolveFallbackRenderTheme(
+  markdown: string,
+  render: OutsideInRenderOptions | undefined,
+): Promise<string | undefined> {
+  const fallback = render?.defaultThemeId?.();
+  if (!fallback) return undefined;
+  return (await readFrontmatterTheme(markdown)) ? undefined : fallback;
 }
 
 export interface EditableOutsideInDocument extends EditableShellDocument {
@@ -106,6 +136,7 @@ async function finishPendingRender(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
   content: string,
+  render?: OutsideInRenderOptions,
 ): Promise<void> {
   const marker = await readText(provider, join(layout.companionDirectory, PENDING_RENDER_FILENAME));
   if (marker === null) return;
@@ -116,7 +147,7 @@ async function finishPendingRender(
   }
   // Finish the derived output before a new session can acknowledge the source.
   // A failure keeps the marker for the next open or retry.
-  const rendered = await prepareOutsideInRender(provider, layout, content);
+  const rendered = await prepareOutsideInRender(provider, layout, content, render);
   if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
   await writeBytes(provider, layout.targetPath, rendered.bytes);
   await clearPendingRender(provider, layout);
@@ -221,6 +252,7 @@ async function persistImportedMedia(
 export async function loadEditableShellDocument(
   provider: FileSystemProvider,
   selectedPath: string,
+  render?: OutsideInRenderOptions,
 ): Promise<EditableShellDocument | null> {
   const imageExtension = selectedPath.slice(selectedPath.lastIndexOf('.') + 1).toLowerCase();
   const imageMimeType = IMAGE_MIME_TYPES[imageExtension];
@@ -240,15 +272,16 @@ export async function loadEditableShellDocument(
 
   if (!OUTSIDE_IN_EXTENSION.test(selectedPath)) {
     const content = await readText(provider, selectedPath);
-    return content === null
-      ? null
-      : {
-          displayPath: selectedPath,
-          sourcePath: selectedPath,
-          content,
-          outsideIn: null,
-          outsideInEditingEnabled: true,
-        };
+    if (content === null) return null;
+    const generatedCatalog = /\.json$/i.test(selectedPath) && isGeneratedCatalogJson(content);
+    return {
+      displayPath: selectedPath,
+      sourcePath: selectedPath,
+      content,
+      outsideIn: null,
+      outsideInEditingEnabled: !generatedCatalog,
+      ...(generatedCatalog ? { managedOutput: 'catalog-json' as const } : {}),
+    };
   }
 
   const resolved = resolveOutsideInLayout(selectedPath);
@@ -276,7 +309,7 @@ export async function loadEditableShellDocument(
     }
     const linkedContent = await withOutsideInMetadata(content, layout);
     if (linkedContent !== content) await writeProviderText(provider, chosen, linkedContent);
-    await finishPendingRender(provider, { ...layout, markdownPath: chosen }, linkedContent);
+    await finishPendingRender(provider, { ...layout, markdownPath: chosen }, linkedContent, render);
     return {
       displayPath: selectedPath,
       sourcePath: chosen,
@@ -288,6 +321,21 @@ export async function loadEditableShellDocument(
 
   const rendered = await readBytes(provider, selectedPath);
   if (!rendered) return null;
+  if (layout.format === 'html') {
+    // A catalog page DocBlocks generates is shown as the page it is and never
+    // imported: importing would create a companion and make it editable.
+    const head = new TextDecoder().decode(rendered.slice(0, 4096));
+    if (isGeneratedCatalogHtml(head)) {
+      return {
+        displayPath: selectedPath,
+        sourcePath: selectedPath,
+        content: new TextDecoder().decode(rendered),
+        outsideIn: null,
+        outsideInEditingEnabled: false,
+        managedOutput: 'catalog-html',
+      };
+    }
+  }
   const imported = await importOutsideInDocument({
     data: rendered,
     targetPath: selectedPath,
@@ -367,6 +415,7 @@ async function renderPlainOutsideInHtml(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
   markdown: string,
+  themeId: string | undefined,
 ): Promise<Uint8Array> {
   const [{ parseMarkdown }, { markdownDocToPlainHtml }] = await Promise.all([
     import('@bendyline/squisq/markdown'),
@@ -383,6 +432,7 @@ async function renderPlainOutsideInHtml(
     markdownDocToPlainHtml(parseMarkdown(markdown), {
       title: layout.stem,
       images: images.size > 0 ? images : undefined,
+      ...(themeId ? { themeId } : {}),
     }),
   );
 }
@@ -396,11 +446,13 @@ async function prepareOutsideInRender(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
   markdown: string,
+  render?: OutsideInRenderOptions,
 ): Promise<PreparedOutsideInRender> {
+  const themeId = await resolveFallbackRenderTheme(markdown, render);
   const htmlOutput = layout.format === 'html' ? await readOutsideInHtmlOutput(markdown) : null;
   if (htmlOutput === 'static') {
     return {
-      bytes: await renderPlainOutsideInHtml(provider, layout, markdown),
+      bytes: await renderPlainOutsideInHtml(provider, layout, markdown, themeId),
       runtimePath: null,
     };
   }
@@ -414,17 +466,20 @@ async function prepareOutsideInRender(
       targetPath: layout.targetPath,
       container: new FileSystemContentContainer(provider, layout.companionDirectory),
     },
-    runtimePath
-      ? {
-          html: {
-            playerScriptPath: relativePath(outputDirectory, runtimePath),
-            basePath: relativePath(outputDirectory, layout.companionDirectory),
-          },
-          ...(htmlOutput === 'interactive'
-            ? { formatOptions: { html: { mode: 'slideshow' as const } } }
-            : {}),
-        }
-      : {},
+    {
+      ...(themeId ? { themeId } : {}),
+      ...(runtimePath
+        ? {
+            html: {
+              playerScriptPath: relativePath(outputDirectory, runtimePath),
+              basePath: relativePath(outputDirectory, layout.companionDirectory),
+            },
+            ...(htmlOutput === 'interactive'
+              ? { formatOptions: { html: { mode: 'slideshow' as const } } }
+              : {}),
+          }
+        : {}),
+    },
   );
   return { bytes: rendered.bytes, runtimePath };
 }
@@ -438,6 +493,7 @@ export async function createNewOutsideInDocument(
   provider: FileSystemProvider,
   targetPath: string,
   htmlOutput?: OutsideInHtmlOutput,
+  render?: OutsideInRenderOptions,
 ): Promise<EditableOutsideInDocument> {
   const layout = resolveOutsideInLayout(targetPath);
   if (!layout) throw new Error(`Outside-in editing does not support "${targetPath}".`);
@@ -462,7 +518,7 @@ export async function createNewOutsideInDocument(
   if (layout.format === 'html') {
     content = await withOutsideInHtmlOutput(content, htmlOutput ?? 'interactive');
   }
-  const prepared = await prepareOutsideInRender(provider, layout, content);
+  const prepared = await prepareOutsideInRender(provider, layout, content, render);
   if (prepared.runtimePath) await writeRuntimeIfNeeded(provider, prepared.runtimePath);
   // Publish the visible target first. If the second create loses a race, the
   // rendered file remains a valid importable document instead of leaving only
@@ -488,6 +544,7 @@ export function createOutsideInDocumentTarget(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
   onCommitted?: () => void,
+  render?: OutsideInRenderOptions,
 ): DocumentCommitTarget {
   const sourceTarget = createFileSystemDocumentTarget(provider, layout.markdownPath);
   let partialSource: { baseline: string | null; content: string } | undefined;
@@ -499,7 +556,7 @@ export function createOutsideInDocumentTarget(
           'Outside-in editing is read-only until squisq-updatefrommarkdown: true is set.',
         );
       }
-      const rendered = await prepareOutsideInRender(provider, layout, request.content);
+      const rendered = await prepareOutsideInRender(provider, layout, request.content, render);
       await writeProviderText(
         provider,
         join(layout.companionDirectory, PENDING_RENDER_FILENAME),

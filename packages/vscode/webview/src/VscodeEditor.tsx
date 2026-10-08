@@ -21,6 +21,7 @@ import type {
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
   VscodeProofingSettings,
+  VscodeWorkspaceSettingsState,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
 import {
@@ -43,6 +44,8 @@ import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
+import { createVscodeWorkspaceSettingsBridge } from './vscodeWorkspaceSettingsBridge.js';
+import { resolveWorkspaceDefaultThemeId } from '@bendyline/docblocks/workspace-settings';
 import { createVscodeCalcEngineFactory } from './calculationConfig.js';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
@@ -96,6 +99,14 @@ export function VscodeEditor() {
   const [clipboardBridge, setClipboardBridge] = useState<VscodeClipboardBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
+  const [workspaceSettings, setWorkspaceSettings] = useState<VscodeWorkspaceSettingsState | null>(
+    null,
+  );
+  const [workspaceSettingsBridge] = useState(() =>
+    createVscodeWorkspaceSettingsBridge((message) => vscode.postMessage(message)),
+  );
+  useEffect(() => () => workspaceSettingsBridge.dispose(), [workspaceSettingsBridge]);
+  const workspaceDefaultThemeId = resolveWorkspaceDefaultThemeId(workspaceSettings?.settings);
   const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
   const [recoveryConflict, setRecoveryConflict] = useState<string | null>(null);
   const [findMode, setFindMode] = useState(false);
@@ -175,6 +186,9 @@ export function VscodeEditor() {
           break;
         case 'editorSettings':
           setSettings(msg.settings);
+          break;
+        case 'workspaceSettings':
+          setWorkspaceSettings(msg.state);
           break;
       }
     }
@@ -492,6 +506,9 @@ export function VscodeEditor() {
                 onAccentColorChange={handleAccentColorChange}
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 onProofingSettingsChange={handleProofingSettingsChange}
+                workspaceSettings={workspaceSettings}
+                onSaveWorkspaceSettings={workspaceSettingsBridge.save}
+                onRefreshWorkspaceOutputs={workspaceSettingsBridge.refreshOutputs}
               />
             </Suspense>
           }
@@ -505,6 +522,7 @@ export function VscodeEditor() {
                   saveBlob={exportBridge.saveBlob}
                   resolveExportTarget={exportBridge.resolveExportTarget}
                   pickExportTarget={exportBridge.pickExportTarget}
+                  defaultThemeId={workspaceDefaultThemeId}
                 />
               </Suspense>
             </>

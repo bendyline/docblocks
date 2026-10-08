@@ -288,7 +288,8 @@ describe('Gezel connector against the app SDK', () => {
     );
     for await (const chunk of stream) expect(chunk.model).to.equal('gezel:writer');
     const retrieval = daemon.requests.find((entry) => entry.path === '/v1/knowledge/retrieve');
-    expect(retrieval?.body).to.include({ query: 'Explain science.', rerank: 'required' });
+    // The SDK picks the ranking mode; DocBlocks only asks.
+    expect(retrieval?.body).to.include({ query: 'Explain science.' });
     const completion = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
     const body = completion?.body as { messages: Array<{ role: string; content: string }> };
     expect(body.messages[0].role).to.equal('system');
@@ -567,6 +568,59 @@ describe('Gezel connector hosting ladder', () => {
     ).to.equal('model-unavailable');
     expect(installs).to.equal(0);
     await connection.close();
+  });
+
+  it('runs on its own memory ledger when an older installed Gezel refuses to coordinate', async () => {
+    const previous = process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY;
+    delete process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY;
+    try {
+      const hosted = fakeHostedGezel();
+      const authorities: Array<string | undefined> = [];
+      Object.assign(hosted.gezel.openai, {
+        chat: async () => {
+          authorities.push(process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY);
+          const refused = authorities.length === 1;
+          return (async function* () {
+            if (refused)
+              throw Object.assign(
+                new Error(
+                  'The installed machine engine needs an update before isolated local engines can share memory safely.',
+                ),
+                { code: 'provider_error' },
+              );
+            yield { choices: [{ delta: { content: 'Draft' }, finish_reason: 'stop' }] };
+          })();
+        },
+      });
+      const id = 'apple-foundation-models:apple-foundation-models';
+      const { connector } = ladder({
+        standalone: false,
+        hostInProcess: true,
+        hosted,
+        connectLocal: async () => {
+          throw new Error('must not connect standalone');
+        },
+        appleModel: async () => ({
+          id,
+          owned_by: 'apple-foundation-models',
+          availability: 'available',
+        }),
+      });
+      const connection = await connector.connect({ interactive: false });
+      const stream = await connection.streamChat(
+        { model: id, messages: [{ role: 'user' as const, content: 'Hi' }] },
+        new AbortController().signal,
+      );
+      const chunks: ProviderChatChunk[] = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      expect(chunks.map((chunk) => chunk.text)).to.deep.equal(['Draft']);
+      // The person never sees the refusal; the retry runs on the local ledger.
+      expect(authorities).to.deep.equal([undefined, 'local']);
+      await connection.close();
+    } finally {
+      if (previous === undefined) delete process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY;
+      else process.env.GEZEL_NATIVE_CAPACITY_AUTHORITY = previous;
+    }
   });
 
   it('routes Apple inference through Gezel and refuses an unavailable system model', async () => {
