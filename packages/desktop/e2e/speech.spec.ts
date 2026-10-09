@@ -56,6 +56,47 @@ test('Settings lists speech models and downloads start only from a button', asyn
   await expect(section.getByRole('button', { name: 'Download' })).toHaveCount(2);
 });
 
+test('Settings completes an interrupted model update only after a button press', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const env = installFakeSpeechModels(userDataDir);
+  const manifestPath = path.join(
+    userDataDir,
+    'speech',
+    'models',
+    'kokoro-82m-v1.0',
+    'manifest.json',
+  );
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const currentHash = manifest.files[0].sha256;
+  // The files are verified, but cancellation left the old manifest in place.
+  // Retrying should publish it without fetching anything from example.invalid.
+  manifest.files[0].sha256 = '0'.repeat(64);
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  const { window } = await launchApp([], env);
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  expect(await speechStatus(window)).toMatchObject({
+    stt: { state: 'ready' },
+    tts: {
+      state: 'download-required',
+      reason: 'Update the narration model in Settings to read documents aloud.',
+    },
+  });
+  await window.locator('.db-app-menu-btn').click();
+  await window.getByRole('menuitem', { name: 'Settings' }).click();
+  const section = window
+    .getByRole('dialog', { name: 'Settings' })
+    .getByRole('group', { name: 'Speech' });
+  await expect(section).toContainText('Update required');
+  await expect(section.getByRole('button', { name: 'Update', exact: true })).toHaveCount(1);
+  expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).files[0].sha256).toBe('0'.repeat(64));
+  await section.getByRole('button', { name: 'Update', exact: true }).click();
+  await expect(section.getByRole('button', { name: 'Update', exact: true })).toHaveCount(0);
+  await expect.poll(() => speechStatus(window)).toMatchObject({ tts: { state: 'ready' } });
+  expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).files[0].sha256).toBe(currentHash);
+});
+
 test('dictation inserts transcribed phrases at the caret, one undo each', async ({
   launchApp,
   userDataDir,
@@ -192,12 +233,15 @@ test('generates narration into the document folder and exports it as audio', asy
     version: number;
     generator: { method: string; name: string };
     blocks: unknown[];
-    bookmarks: unknown[];
+    bookmarks: Array<{ time: number }>;
   };
   expect(sidecar.version).toBe(3);
   expect(sidecar.generator).toMatchObject({ method: 'tts', name: 'docblocks-kokoro' });
   expect(sidecar.blocks.length).toBeGreaterThan(0);
   expect(sidecar.bookmarks.length).toBeGreaterThan(0);
+  // The fake utility emits a 100 ms leading allocation. A syllable estimate
+  // starts at zero, so this exercises the entire timing path through IPC/save.
+  expect(sidecar.bookmarks[0]!.time).toBeCloseTo(0.1, 6);
 
   // Export the narration as audio through the remembered target.
   await window.getByRole('button', { name: 'Export and share' }).click();

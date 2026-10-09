@@ -7,10 +7,10 @@ is **desktop only** — the site and the VS Code webview do not offer it.
 The engines are the ones Gezel uses, but DocBlocks runs them itself rather than
 asking a Gezel daemon:
 
-|                 | Engine                                                                                      | Model                                                            | Runs in                                     |
-| --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
-| Dictation (STT) | whisper.cpp `gezel-whisper-server`, from the Gezel native payload DocBlocks already bundles | `whisper-base.en` (recommended), `tiny.en`, `small.en`           | a child process of main, on a loopback port |
-| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.24.3                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
+|                 | Engine                                                                                      | Model                                                                        | Runs in                                     |
+| --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------- |
+| Dictation (STT) | whisper.cpp `gezel-whisper-server`, from the Gezel native payload DocBlocks already bundles | `whisper-base.en` (recommended), `tiny.en`, `small.en`                       | a child process of main, on a loopback port |
+| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.24.3                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX-timestamped` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
 
 ## Host contract
 
@@ -53,6 +53,58 @@ the renderer argv. It never loads ONNX Runtime to find out.
 - Preferences are `userData/speech/preferences.json`, deliberately not
   `settings.json`, whose parser quarantines unknown keys.
 
+### Kokoro export and model updates
+
+The ONNX model is pinned separately from the npm dependencies and native
+engine payload. The timestamped q8 export is pinned to revision
+`dd4401a9add81ac692d20e240d22ec9dda82cc29`, with 92,361,055 bytes and SHA-256
+`c0c02b3299fd97c34ea92a98e6d41eaa1a739c8f77bf685aac34bd7b34c1132c`.
+The eight voice files retain their original revision and hashes. This model
+works with the existing ONNX Runtime; no native engine rebuild is required.
+
+The outputs are `waveform` and float32 `durations` with shape `[1, inputTokens]`.
+Durations are speed-scaled predictions **before** ONNX `Round` (nearest,
+ties to even) and `Clip(min=1)`. Apply both operations before summing frames:
+one frame is 600 samples at 24 kHz (25 ms). Account for padding and punctuation
+tokens as well as phonemes. The utility process maps these allocations through
+Gezel's `planKokoroSpeech` source ranges, then sends optional `wordTimings` with
+each audio chunk. The exact wire parser bounds and copies those entries.
+Generation adds each chunk's audio and script offsets and writes the resulting
+word starts into the existing v3 sidecar. Expanded numbers share their original
+source range; a word split across chunks retains its earliest onset.
+
+These are model-derived frame allocations, not calibrated acoustic word
+boundaries. No unverified padding correction is applied. Missing, invalid, or
+PCM-inconsistent duration metadata falls back to syllable estimates within the
+chunk. In-memory alignment marks estimates as `interpolated`; the existing v3
+bookmark format stores the times but does not preserve that per-word flag.
+Acoustic calibration and persisted timing-quality provenance remain follow-up
+work. The new shared frontend also corrects multi-digit ordinal expansion
+(`21st` becomes `twenty first`) and retains overlong words across model chunks.
+
+**Release prerequisite:** publish the sibling Gezel core's new
+`@bendyline/gezel/kokoro` source-mapping API, then update the desktop Gezel npm
+pins and lockfile to a release that includes it. Development uses the existing
+local links. The ONNX artifact is already published upstream; DocBlocks does
+not publish or patch its own model, and no new native binary is needed for this
+timing path.
+
+An existing app manifest with different file pins reports
+`updateRequired: true`, `installed: false`, and `source: null`. Settings offers
+**Update** and **Remove**; readiness asks for an update before using that model.
+This is an explicit replacement path, without running older unqualified
+models or downloading on startup. No compatibility catalog for the unshipped
+Kokoro export is retained.
+
+Updates use the existing verified installer: unchanged files (including
+voices) are reused, changed files replace their destination only after hash
+verification, and the manifest is published last. Cancellation or failure
+leaves the old manifest and any verified progress for retry. A partially
+updated bundle is unavailable until the manifest matches the current pins;
+this does not promise uninterrupted playback of the old model during an
+update. Tests cover changed pins, checksum failure, cancellation at the last
+file, retry without redownload, and malformed manifests.
+
 ## Renderer
 
 - **Dictation** is Squisq's `speechInput` capability: Squisq owns the mic
@@ -64,7 +116,7 @@ the renderer argv. It never loads ONNX Runtime to find out.
   segments from Squisq's narration script — headings and lines each become a
   sentence; fenced code is skipped — and streams them into a progressive Web
   Audio player using Gezel's auto-play rule.
-- **Settings → Speech** downloads, removes and chooses models, picks the voice
+- **Settings → Speech** downloads, updates, removes and chooses models, picks the voice
   and speed, and previews the voice.
 - Native menu: Edit → **Dictate in DocBlocks** / **Read Aloud**
   (`edit:toggleDictation`, `edit:readAloud`), named apart from macOS's own

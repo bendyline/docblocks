@@ -21,6 +21,7 @@ import type {
   SpeechTranscribeRequest,
   SpeechTranscript,
   SpeechVoiceInfo,
+  SpeechWordTiming,
 } from './speech.js';
 
 /**
@@ -38,6 +39,7 @@ export const SPEECH_WIRE_LIMITS = Object.freeze({
   segmentEntries: 4_096,
   synthesizeTextCharacters: 20_000,
   chunkPcmBytes: 16 * 1024 * 1024,
+  chunkWordEntries: 1_024,
   minSampleRate: 8_000,
   maxSampleRate: 96_000,
   minSpeed: 0.5,
@@ -290,18 +292,22 @@ function parseHttpsUrl(value: unknown): value is string {
 export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
   if (!isRecord(value)) return null;
   if (
-    !hasExactKeys(value, [
-      'id',
-      'kind',
-      'label',
-      'description',
-      'downloadBytes',
-      'installed',
-      'source',
-      'recommended',
-      'license',
-      'licenseUrl',
-    ])
+    !hasKeysWithin(
+      value,
+      [
+        'id',
+        'kind',
+        'label',
+        'description',
+        'downloadBytes',
+        'installed',
+        'source',
+        'recommended',
+        'license',
+        'licenseUrl',
+      ],
+      ['updateRequired'],
+    )
   ) {
     return null;
   }
@@ -313,6 +319,8 @@ export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
   if (typeof value.installed !== 'boolean' || typeof value.recommended !== 'boolean') return null;
   if (value.source !== 'app' && value.source !== 'shared' && value.source !== null) return null;
   if (value.installed !== (value.source !== null)) return null;
+  if ('updateRequired' in value && typeof value.updateRequired !== 'boolean') return null;
+  if (value.updateRequired === true && value.installed) return null;
   if (!parseHttpsUrl(value.licenseUrl)) return null;
   return {
     id: value.id,
@@ -321,6 +329,7 @@ export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
     description: value.description,
     downloadBytes: value.downloadBytes,
     installed: value.installed,
+    ...(typeof value.updateRequired === 'boolean' ? { updateRequired: value.updateRequired } : {}),
     source: value.source,
     recommended: value.recommended,
     license: value.license,
@@ -449,7 +458,13 @@ export function parseSpeechTranscript(value: unknown): SpeechTranscript | null {
 
 export function parseSpeechAudioChunk(value: unknown): SpeechAudioChunk | null {
   if (!isRecord(value)) return null;
-  if (!hasExactKeys(value, ['index', 'pcm', 'sampleRate', 'durationSec', 'textStart', 'textEnd'])) {
+  if (
+    !hasKeysWithin(
+      value,
+      ['index', 'pcm', 'sampleRate', 'durationSec', 'textStart', 'textEnd'],
+      ['wordTimings'],
+    )
+  ) {
     return null;
   }
   if (!isNonNegativeInteger(value.index, Number.MAX_SAFE_INTEGER)) return null;
@@ -466,6 +481,47 @@ export function parseSpeechAudioChunk(value: unknown): SpeechAudioChunk | null {
   if (!isNonNegativeInteger(value.textStart, textCeiling)) return null;
   if (!isNonNegativeInteger(value.textEnd, textCeiling) || value.textEnd < value.textStart)
     return null;
+  const wordTimings: SpeechWordTiming[] = [];
+  if ('wordTimings' in value) {
+    if (
+      !Array.isArray(value.wordTimings) ||
+      value.wordTimings.length > SPEECH_WIRE_LIMITS.chunkWordEntries
+    )
+      return null;
+    let previousEnd = 0;
+    let previousTextStart = value.textStart;
+    let previousTextEnd = value.textStart;
+    for (const word of value.wordTimings) {
+      if (!isRecord(word) || !hasExactKeys(word, ['textStart', 'textEnd', 'startSec', 'endSec']))
+        return null;
+      if (
+        !isNonNegativeInteger(word.textStart, value.textEnd) ||
+        word.textStart < previousTextStart
+      )
+        return null;
+      if (
+        !isNonNegativeInteger(word.textEnd, value.textEnd) ||
+        word.textEnd <= word.textStart ||
+        word.textEnd < previousTextEnd
+      )
+        return null;
+      if (
+        !isFiniteInRange(word.startSec, previousEnd, value.durationSec) ||
+        !isFiniteInRange(word.endSec, word.startSec, value.durationSec) ||
+        word.endSec === word.startSec
+      )
+        return null;
+      wordTimings.push({
+        textStart: word.textStart,
+        textEnd: word.textEnd,
+        startSec: word.startSec,
+        endSec: word.endSec,
+      });
+      previousEnd = word.endSec;
+      previousTextStart = word.textStart;
+      previousTextEnd = word.textEnd;
+    }
+  }
   return {
     index: value.index,
     pcm,
@@ -473,6 +529,7 @@ export function parseSpeechAudioChunk(value: unknown): SpeechAudioChunk | null {
     durationSec: value.durationSec,
     textStart: value.textStart,
     textEnd: value.textEnd,
+    ...('wordTimings' in value ? { wordTimings } : {}),
   };
 }
 

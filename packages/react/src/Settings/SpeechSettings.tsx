@@ -185,6 +185,7 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
               {model.license}
             </a>
             {model.source === 'shared' ? ' · Shared with Gezel, using no extra space' : ''}
+            {model.updateRequired ? ' · Update required' : ''}
           </span>
         </div>
         {busy ? (
@@ -219,14 +220,26 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
             Remove
           </button>
         ) : model.installed ? null : (
-          <button
-            type="button"
-            className="db-settings-action"
-            disabled={installing !== null}
-            onClick={() => void install(model)}
-          >
-            Download
-          </button>
+          <>
+            <button
+              type="button"
+              className="db-settings-action"
+              disabled={installing !== null}
+              onClick={() => void install(model)}
+            >
+              {model.updateRequired ? 'Update' : 'Download'}
+            </button>
+            {model.updateRequired && (
+              <button
+                type="button"
+                className="db-settings-action db-settings-action--secondary"
+                disabled={installing !== null}
+                onClick={() => void remove(model)}
+              >
+                Remove
+              </button>
+            )}
+          </>
         )}
       </li>
     );

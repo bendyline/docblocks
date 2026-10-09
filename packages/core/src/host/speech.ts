@@ -77,6 +77,8 @@ export interface SpeechModelInfo {
   readonly description: string;
   readonly downloadBytes: number;
   readonly installed: boolean;
+  /** An older app download exists; update it explicitly before using this model. */
+  readonly updateRequired?: boolean;
   /**
    * Where the installed copy lives. `shared` is a verified read-only copy
    * another local app already downloaded, which costs this app no disk.
@@ -165,6 +167,14 @@ export interface SpeechSynthesizeRequest {
   readonly speed?: number;
 }
 
+/** Model-derived word allocation, relative to the chunk's audio and request text. */
+export interface SpeechWordTiming {
+  readonly textStart: number;
+  readonly textEnd: number;
+  readonly startSec: number;
+  readonly endSec: number;
+}
+
 /** One independently playable piece of a synthesis, usually a sentence. */
 export interface SpeechAudioChunk {
   readonly index: number;
@@ -175,6 +185,8 @@ export interface SpeechAudioChunk {
   /** UTF-16 range of the request text this chunk speaks. */
   readonly textStart: number;
   readonly textEnd: number;
+  /** Optional for engines without model durations. Expanded words may share a source range. */
+  readonly wordTimings?: readonly SpeechWordTiming[];
 }
 
 export interface SpeechSynthesisSummary {

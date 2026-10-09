@@ -69,6 +69,7 @@ export {
 export type {
   DocBlocksHostSpeechAPI,
   SpeechAudioChunk,
+  SpeechWordTiming,
   SpeechCatalog,
   SpeechError,
   SpeechErrorCode,

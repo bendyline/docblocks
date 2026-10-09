@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
+import type { SpeechWordTiming } from '@bendyline/docblocks/host';
 import { KokoroFrontend, styleOffset } from './kokoro-frontend.js';
+import { kokoroWordTimings } from './kokoro-timing.js';
 
 /**
  * The narration engine as it runs inside its utility process.
@@ -65,6 +67,7 @@ export type KokoroReply =
       readonly durationSec: number;
       readonly textStart: number;
       readonly textEnd: number;
+      readonly wordTimings?: readonly SpeechWordTiming[];
     }
   | {
       readonly type: 'done';
@@ -178,6 +181,7 @@ export class KokoroRuntime {
         const waveform = output.waveform?.data;
         if (!(waveform instanceof Float32Array)) throw new Error('Kokoro returned no audio.');
         const seconds = waveform.length / KOKORO_OUTPUT_SAMPLE_RATE;
+        const wordTimings = kokoroWordTimings(utterance, output.durations?.data, waveform.length);
         durationSec += seconds;
         post({
           type: 'chunk',
@@ -188,6 +192,7 @@ export class KokoroRuntime {
           durationSec: seconds,
           textStart: utterance.textStart,
           textEnd: utterance.textEnd,
+          ...(wordTimings !== undefined ? { wordTimings } : {}),
         });
         index += 1;
       }

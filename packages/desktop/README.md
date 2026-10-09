@@ -50,6 +50,13 @@ the connector reports a missing runtime if the required SDK export is absent.
 See Gezel's `docs/handboek/technical/docblocks-text-ai-with-gezel.md` for the
 request flow and code examples.
 
+Kokoro narration also requires the sibling core's new `planKokoroSpeech` export
+from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
+timestamped ONNX model. Include those frontend changes in the next Gezel npm
+release and update the exact desktop pins and lockfile before shipping. The
+model pin itself uses an existing upstream artifact and requires no new native
+engine build. See [speech timing](../../docs/speech.md#kokoro-export-and-model-updates).
+
 Inference fixes, including MLX's Python prompt builder, ship in
 `@bendyline/gezel-service`. Updating only `@bendyline/gezel-app-sdk` or the user's
 standalone Gezel does not update DocBlocks' private hosted service. To adopt an

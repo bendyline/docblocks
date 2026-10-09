@@ -146,6 +146,123 @@ describe('SpeechModelStore', () => {
     expect(await models.locate('stt-test')).to.equal(null);
   });
 
+  const updatedModel = bytes(11, MODEL.length);
+  const updatedCatalog = CATALOG.map((entry) => ({
+    ...entry,
+    files: entry.files.map((file) =>
+      file.name === 'onnx/model.onnx' ? { ...file, sha256: sha(updatedModel) } : file,
+    ),
+  }));
+
+  const updatedStore = (fetchImpl: typeof fetch) =>
+    new SpeechModelStore({
+      root: path.join(root, 'models'),
+      sharedHome: null,
+      catalog: updatedCatalog,
+      fetchImpl,
+    });
+
+  async function installPreviousRevision() {
+    await store(
+      fetchFor({
+        'https://m.test/model.onnx': MODEL,
+        'https://m.test/a.bin': VOICE,
+      }).fetchImpl,
+    ).install('tts-test');
+  }
+
+  it('offers an explicit update after a pin change and reuses unchanged voices', async () => {
+    await installPreviousRevision();
+    const fake = fetchFor({ 'https://m.test/model.onnx': updatedModel });
+    const models = updatedStore(fake.fetchImpl);
+    expect((await models.list())[1]).to.include({
+      installed: false,
+      source: null,
+      updateRequired: true,
+    });
+    expect(await models.locate('tts-test')).to.equal(null);
+    expect(fake.urls).to.deep.equal([]);
+    await models.install('tts-test');
+    expect(fake.urls).to.deep.equal(['https://m.test/model.onnx']);
+    expect((await models.list())[1]).to.include({ installed: true, source: 'app' });
+    expect((await models.list())[1]?.updateRequired).not.to.equal(true);
+    const located = await models.locate('tts-test');
+    expect(new Uint8Array(await readFile(located!.files['onnx/model.onnx']!))).to.deep.equal(
+      updatedModel,
+    );
+    expect(new Uint8Array(await readFile(located!.files['voices/a.bin']!))).to.deep.equal(VOICE);
+  });
+
+  it('preserves the previous manifest and file when update verification fails, then retries', async () => {
+    await installPreviousRevision();
+    const manifestPath = path.join(root, 'models', 'tts-test', 'manifest.json');
+    const previous = await readFile(manifestPath, 'utf8');
+    const failed = updatedStore(fetchFor({ 'https://m.test/model.onnx': MODEL }).fetchImpl);
+    await failed.install('tts-test').then(
+      () => {
+        throw new Error('Unverified update was accepted');
+      },
+      (error: unknown) => expect(error).to.have.property('failure', 'checksum'),
+    );
+    expect(await readFile(manifestPath, 'utf8')).to.equal(previous);
+    expect(
+      new Uint8Array(await readFile(path.join(root, 'models', 'tts-test', 'onnx/model.onnx'))),
+    ).to.deep.equal(MODEL);
+    expect(await failed.locate('tts-test')).to.equal(null);
+    expect((await failed.list())[1]?.updateRequired).to.equal(true);
+    const retry = fetchFor({ 'https://m.test/model.onnx': updatedModel });
+    await updatedStore(retry.fetchImpl).install('tts-test');
+    expect(retry.urls).to.deep.equal(['https://m.test/model.onnx']);
+  });
+
+  it('does not publish an update cancelled after its last file, and retries without downloads', async () => {
+    await installPreviousRevision();
+    const manifestPath = path.join(root, 'models', 'tts-test', 'manifest.json');
+    const previous = await readFile(manifestPath, 'utf8');
+    const models = updatedStore(fetchFor({ 'https://m.test/model.onnx': updatedModel }).fetchImpl);
+    const controller = new AbortController();
+    await models
+      .install('tts-test', {
+        signal: controller.signal,
+        onProgress: (received, total) => {
+          if (received === total) controller.abort();
+        },
+      })
+      .then(
+        () => {
+          throw new Error('Cancelled update was published');
+        },
+        (error: unknown) => expect(error).to.have.property('failure', 'aborted'),
+      );
+    expect(await readFile(manifestPath, 'utf8')).to.equal(previous);
+    expect(await models.locate('tts-test')).to.equal(null);
+    const retry = fetchFor({});
+    await updatedStore(retry.fetchImpl).install('tts-test');
+    expect(retry.urls).to.deep.equal([]);
+    expect((await models.list())[1]?.installed).to.equal(true);
+  });
+
+  it('treats malformed manifests as unavailable without throwing or inventing an update', async () => {
+    await installPreviousRevision();
+    const manifestPath = path.join(root, 'models', 'tts-test', 'manifest.json');
+    const previous = JSON.parse(await readFile(manifestPath, 'utf8'));
+    const models = store();
+    for (const invalid of [
+      null,
+      [],
+      { ...previous, files: {} },
+      { ...previous, files: [null] },
+      {
+        ...previous,
+        files: [previous.files[0], previous.files[0]],
+      },
+    ]) {
+      await writeFile(manifestPath, JSON.stringify(invalid));
+      expect(await models.locate('tts-test')).to.equal(null);
+      expect((await models.list())[1]?.updateRequired).not.to.equal(true);
+    }
+  });
+
   it('uses a verified shared copy read-only and never deletes it', async () => {
     const shared = path.join(
       home,
@@ -217,6 +334,6 @@ describe('the pinned speech catalog', () => {
     expect(
       kokoro?.files.every((f) => !f.name.startsWith('voices/') || f.size === KOKORO_VOICE_BYTES),
     ).to.equal(true);
-    expect(downloadBytes(kokoro!)).to.equal(92_361_116 + KOKORO_VOICES.length * KOKORO_VOICE_BYTES);
+    expect(downloadBytes(kokoro!)).to.equal(92_361_055 + KOKORO_VOICES.length * KOKORO_VOICE_BYTES);
   });
 });

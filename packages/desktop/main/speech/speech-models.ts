@@ -1,16 +1,15 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SpeechModelInfo, SpeechModelKind, SpeechVoiceInfo } from '@bendyline/docblocks/host';
-import { verifiedDownload, verifyFile } from './verified-download.js';
+import { VerifiedDownloadError, verifiedDownload, verifyFile } from './verified-download.js';
 
 /**
  * The speech model catalog and the on-disk store.
  *
  * Every file is pinned to an exact Hugging Face commit, byte length and
  * SHA-256, so a download can only ever produce the bytes reviewed here. The
- * Whisper entries match Gezel's `WHISPER_MODEL_CATALOG` and the Kokoro entry
- * matches the model and curated voices Gezel narrates with, so both products
- * hear and speak identically.
+ * Whisper entries match Gezel's `WHISPER_MODEL_CATALOG`. Kokoro uses the
+ * timestamped export of the same weights, with Gezel's curated voice files.
  *
  * Layout mirrors Gezel's: `<root>/<modelId>/<file>` plus a `manifest.json`
  * written last. The manifest's presence is what "installed" means; partial
@@ -42,11 +41,12 @@ export interface SpeechModelEntry {
 }
 
 const WHISPER_COMMIT = '5359861c739e955e79d9a303bcbc70fb988958b1';
-const KOKORO_COMMIT = '1939ad2a8e416c0acfeecc08a694d14ef25f2231';
+const KOKORO_MODEL_COMMIT = 'dd4401a9add81ac692d20e240d22ec9dda82cc29';
+const KOKORO_VOICES_COMMIT = '1939ad2a8e416c0acfeecc08a694d14ef25f2231';
 const whisperUrl = (file: string) =>
   `https://huggingface.co/ggerganov/whisper.cpp/resolve/${WHISPER_COMMIT}/${file}`;
-const kokoroUrl = (file: string) =>
-  `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/${KOKORO_COMMIT}/${file}`;
+const kokoroVoiceUrl = (file: string) =>
+  `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/${KOKORO_VOICES_COMMIT}/${file}`;
 
 function whisper(
   id: string,
@@ -182,13 +182,15 @@ export const SPEECH_MODEL_CATALOG: readonly SpeechModelEntry[] = [
     files: [
       {
         name: KOKORO_MODEL_FILE,
-        url: kokoroUrl(KOKORO_MODEL_FILE),
-        sha256: 'fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478',
-        size: 92_361_116,
+        // `durations` contains float predictions BEFORE ONNX Round (ties to
+        // even) and Clip(min=1). Each resulting frame is 600 samples at 24 kHz.
+        url: `https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX-timestamped/resolve/${KOKORO_MODEL_COMMIT}/${KOKORO_MODEL_FILE}`,
+        sha256: 'c0c02b3299fd97c34ea92a98e6d41eaa1a739c8f77bf685aac34bd7b34c1132c',
+        size: 92_361_055,
       },
       ...KOKORO_VOICES.map((voice) => ({
         name: `voices/${voice.id}.bin`,
-        url: kokoroUrl(`voices/${voice.id}.bin`),
+        url: kokoroVoiceUrl(`voices/${voice.id}.bin`),
         sha256: voice.sha256,
         size: KOKORO_VOICE_BYTES,
       })),
@@ -208,6 +210,15 @@ interface Manifest {
   readonly id: string;
   readonly files: readonly { readonly name: string; readonly sha256: string }[];
   readonly installedAt: string;
+}
+
+function matchesPins(manifest: Manifest, entry: SpeechModelEntry): boolean {
+  return (
+    manifest.files.length === entry.files.length &&
+    entry.files.every((file) =>
+      manifest.files.some((saved) => saved.name === file.name && saved.sha256 === file.sha256),
+    )
+  );
 }
 
 /** Absolute paths of an installed model's files, keyed by catalog file name. */
@@ -260,21 +271,42 @@ export class SpeechModelStore {
     return path.join(this.sharedHome, ...entry.sharedPath);
   }
 
+  private async readManifest(id: string): Promise<Manifest | null> {
+    try {
+      const file = path.join(this.modelDir(id), 'manifest.json');
+      if ((await stat(file)).size > 64 * 1024) return null;
+      const value: unknown = JSON.parse(await readFile(file, 'utf8'));
+      if (typeof value !== 'object' || value === null) return null;
+      const manifest = value as Partial<Manifest>;
+      if (
+        manifest.id !== id ||
+        typeof manifest.installedAt !== 'string' ||
+        !Array.isArray(manifest.files) ||
+        manifest.files.length === 0 ||
+        manifest.files.length > 256 ||
+        !manifest.files.every(
+          (file) =>
+            file !== null &&
+            typeof file === 'object' &&
+            typeof file.name === 'string' &&
+            file.name.length > 0 &&
+            typeof file.sha256 === 'string' &&
+            /^[0-9a-f]{64}$/u.test(file.sha256),
+        ) ||
+        new Set(manifest.files.map((file) => file.name)).size !== manifest.files.length
+      )
+        return null;
+      return manifest as Manifest;
+    } catch {
+      return null;
+    }
+  }
+
   /** Installed in this app's store: the manifest matches the catalog pins and sizes. */
   private async appInstalled(entry: SpeechModelEntry): Promise<boolean> {
-    let manifest: Manifest;
-    try {
-      manifest = JSON.parse(
-        await readFile(path.join(this.modelDir(entry.id), 'manifest.json'), 'utf8'),
-      ) as Manifest;
-    } catch {
-      return false;
-    }
-    if (manifest.id !== entry.id || manifest.files.length !== entry.files.length) return false;
+    const manifest = await this.readManifest(entry.id);
+    if (!manifest || !matchesPins(manifest, entry)) return false;
     for (const file of entry.files) {
-      if (!manifest.files.some((m) => m.name === file.name && m.sha256 === file.sha256)) {
-        return false;
-      }
       try {
         if ((await stat(this.filePath(entry.id, file.name))).size !== file.size) return false;
       } catch {
@@ -317,6 +349,7 @@ export class SpeechModelStore {
 
   async info(entry: SpeechModelEntry): Promise<SpeechModelInfo> {
     const source = await this.sourceOf(entry);
+    const previous = source === null ? await this.readManifest(entry.id) : null;
     return {
       id: entry.id,
       kind: entry.kind,
@@ -324,6 +357,7 @@ export class SpeechModelStore {
       description: entry.description,
       downloadBytes: downloadBytes(entry),
       installed: source !== null,
+      ...(previous && !matchesPins(previous, entry) ? { updateRequired: true } : {}),
       source,
       recommended: entry.recommended,
       license: entry.license,
@@ -381,10 +415,17 @@ export class SpeechModelStore {
       readonly onProgress?: (receivedBytes: number, totalBytes: number) => void;
     },
   ): Promise<void> {
+    const checkCancelled = () => {
+      if (options.signal?.aborted) {
+        throw new VerifiedDownloadError('aborted', 'Download cancelled.');
+      }
+    };
+    checkCancelled();
     if (await this.appInstalled(entry)) return;
     const total = downloadBytes(entry);
     let completed = 0;
     for (const file of entry.files) {
+      checkCancelled();
       const destination = this.filePath(entry.id, file.name);
       await mkdir(path.dirname(destination), { recursive: true });
       if (!(await verifyFile(destination, file.sha256, file.size))) {
@@ -401,6 +442,7 @@ export class SpeechModelStore {
       completed += file.size;
       options.onProgress?.(completed, total);
     }
+    checkCancelled();
     const manifest: Manifest = {
       id: entry.id,
       files: entry.files.map(({ name, sha256 }) => ({ name, sha256 })),
@@ -408,6 +450,7 @@ export class SpeechModelStore {
     };
     const manifestPath = path.join(this.modelDir(entry.id), 'manifest.json');
     await writeFile(`${manifestPath}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
+    checkCancelled();
     await rename(`${manifestPath}.tmp`, manifestPath);
   }
 
