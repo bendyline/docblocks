@@ -18,6 +18,7 @@ export type {
   AiChatEvent,
   AiChatHandle,
   AiChatMessage,
+  AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
   AiConnectionStep,
@@ -51,6 +52,7 @@ export type {
 export {
   AI_WIRE_LIMITS,
   parseAiChatEvent,
+  parseAiChatProgress,
   parseAiChatRequest,
   parseAiError,
   parseAiModelDownloadInfo,

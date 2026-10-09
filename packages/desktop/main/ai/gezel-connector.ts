@@ -34,6 +34,7 @@ import type {
   HostServiceModule,
 } from '@bendyline/gezel-app-sdk/host';
 import type { AiErrorCode, AiProgress } from '@bendyline/docblocks/host';
+import { parseAiChatProgress } from '@bendyline/docblocks/host';
 
 import { AiHostError, toAiError } from './ai-errors.js';
 import type {
@@ -166,11 +167,17 @@ function downloadPercent(completed: number | undefined, total: number | undefine
 }
 
 function toProviderChunk(chunk: ChatCompletionChunk): ProviderChatChunk {
+  // SDK 1.1.3 preserves additive chunk fields. Validate the extension until
+  // its typed SDK release is pinned, and tolerate providers without it.
+  const progress = parseAiChatProgress(
+    (chunk as ChatCompletionChunk & { gezel_progress?: unknown }).gezel_progress,
+  );
   const choice = chunk.choices[0];
   const reason: string | null = choice?.finish_reason ?? null;
   const promptTokens = nonNegativeInteger(chunk.usage?.prompt_tokens);
   const completionTokens = nonNegativeInteger(chunk.usage?.completion_tokens);
   return {
+    ...(progress ? { progress } : {}),
     text: typeof choice?.delta?.content === 'string' ? choice.delta.content : '',
     finishReason: reason === 'length' ? 'length' : reason === null ? null : 'stop',
     model: typeof chunk.model === 'string' && chunk.model ? chunk.model : null,
@@ -197,6 +204,14 @@ async function streamFrom(
     request.contextWindow,
     request.maxTokens,
   );
+  // Omission alone would restore Gezel's shorter catalog output default.
+  // For local writing, allow the model's full reported context capacity;
+  // reasoning and visible output share this allowance. Remote providers own
+  // their output limits, which can be smaller than their context windows.
+  const localEngine = /^(?:mlx|llama-cpp|ollama|ds4):/u.test(request.model);
+  const maxTokens =
+    request.maxTokens ??
+    (request.purpose === 'write' && localEngine ? request.contextWindow : undefined);
   const body = {
     model: request.model,
     messages: messages.map((message) => ({
@@ -204,14 +219,15 @@ async function streamFrom(
       content: message.content,
     })),
     stream: true as const,
-    // No DocBlocks surface shows reasoning, and Gezel does not forward it to
-    // apps, so a thinking phase is minutes of silence: a thinking model spent
-    // 3,700 tokens before the first word of a rewrite and tripped the idle
-    // watchdog. `none` turns thinking off for local models. SDK 1.1.3 sends
-    // the body verbatim but does not type the field, hence the variable.
-    reasoning_effort: 'none',
+    stream_options: { include_usage: true, include_progress: true },
+    // Writing uses Gezel's model defaults: rewrite A/Bs did not justify
+    // forcing reasoning off. Other tasks retain their existing latency/token
+    // budgets pending their own evals.
+    // The draft receives content only; reasoning stays inside Gezel.
+    // SDK 1.1.3 sends this untyped field verbatim, hence the variable.
+    ...(request.purpose === 'write' ? {} : { reasoning_effort: 'none' }),
     ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
-    ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+    ...(maxTokens == null ? {} : { max_tokens: maxTokens }),
   };
   const stream = await app.chat(body, { signal });
   return adaptStream(stream);

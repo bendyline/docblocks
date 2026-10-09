@@ -33,6 +33,78 @@ cached locally under `dist/gezel-native-cache/`; a corrupt cache fails packaging
 and must be removed before retrying. Updating Gezel requires no separate native
 version edit.
 
+Inference fixes, including MLX's Python prompt builder, ship in
+`@bendyline/gezel-service`. Updating only `@bendyline/gezel-app-sdk` or the user's
+standalone Gezel does not update DocBlocks' private hosted service. To adopt an
+upstream fix, publish the corrected service, update the desktop's exact service
+pin and lockfile (and any companion packages required by that release), rebuild,
+and restart DocBlocks. Do not patch the installed package's Python files.
+MLX's launcher loads the script from the service bundle when starting the
+engine; existing model weights can be reused.
+
+For local development against `../gezel`, run `npm run link:gezel` from the
+DocBlocks root. This links the desktop's SDK, service, and core contracts to that
+checkout, preserving the installed packages for `npm run unlink:gezel`.
+`npm run check:gezel-linked` prints the actual package paths and checks their
+built entry points. Linking does not change release pins or the lockfile.
+
+`npm run all` (through `build`'s preflight), `npm run build`, and desktop dev
+startup rebuild linked Gezel's SDK/service runtime dependency graph in order,
+under Gezel's shared dependency-read lease. No dependencies are installed and
+registry-only checkouts continue to use their pinned packages. A partial link
+set, mixed checkouts, or overwritten configured links fail instead of silently
+using an older service. The build includes copied Python assets; it never
+restarts a running Electron process. Restart the desktop app after rebuilding
+to load the current backend. `npm run build:gezel-linked` runs this step alone.
+
+When evaluating reasoning settings, verify the rendered model prompt as well as
+the SDK request. Service `1.2.3` dropped `chat_template_kwargs` on text-only MLX
+requests without tools or images: `reasoning_effort: 'none'` reached Gezel but
+the model still started in a thinking block. The stream splitter assumed the
+requested setting had applied, so thinking appeared as draft text. The upstream
+`prompt_reasoning_test.py` regression covers this path. Compare omitted effort
+with `none` only after adopting the fix, keeping the writing prompt, model,
+sampling settings, and output budget the same.
+
+Writing requests (compose and rewrite) omit a fixed output-token cap. For local
+MLX, llama.cpp, Ollama, and DS4 models, the connector requests the reported
+context capacity instead of falling back to a short catalog response budget;
+reasoning tokens count toward that same capacity. Remote providers and models
+without reported capacity keep their provider defaults. Model/context limits
+still apply, and generated text shares DocBlocks' normal document-size boundary.
+The draft dialog warns before requests estimated to exceed the selected model's
+reported context, including room for a comparable rewrite and thinking. This is
+an advisory text-size estimate, not tokenizer accounting or a universal context
+size; a local runtime may configure less context than the model advertises.
+Exact, unique selections are sent once rather than duplicated in the document
+context. Write-view selections use Squisq's optional `EditorSelectionInfo.markdown`
+so headings, block annotations, inline formatting, and tables reach the model;
+the plain-text selection remains the readable preview. Older editors fall back
+to `text`. A truncated or interrupted draft stays editable and offers **Continue
+draft**, which sends the original task plus the entire edited draft and appends
+the response. Continuation does not discard source to make a request fit, and
+may also reach the model's limit. Choose a smaller section or a larger-context
+model when this happens. Known incomplete drafts require confirmation before
+insertion or replacement; continuing and then applying is still one editor
+undo step.
+Writing also omits `reasoning_effort` so Gezel can use the selected model's
+defaults. It can take longer to produce the first visible text, but reasoning
+remains separate from the draft. Chat, review, and diagram
+requests retain `none` until those tasks have their own quality and budget
+comparisons. The connector's real-SDK tests pin both policies.
+
+Draft dialogs request `stream_options.include_progress` alongside usage. Gezel's
+opt-in `gezel_progress` chunks carry request-local loading, queue, prefill,
+reasoning, and writing status; percentages and token counters are shown only
+when measured by the engine. These chunks contain no prompt or reasoning text
+and remain separate from draft content and terminal events. Older services fall
+back to elapsed time and received characters. Full phase reporting requires the
+Gezel service progress extension, either built through the local links above or
+released and adopted using the service pin/rebuild procedure; widening the SDK
+types alone does not enable it in an already installed service. The connector
+also validates the extension when using the current SDK's pass-through stream
+parser.
+
 After AI opt-in, the hosted service checks the complete native file set, SHA-256
 hashes, symlinks, and platform signatures against its own source-bundled pins,
 then passes the verified directory to the SDK's `host.nativeBinDir`. Every

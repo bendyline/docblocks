@@ -1,7 +1,6 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { CROSS_ORIGIN_ISOLATION_HEADERS } from '../../scripts/vite-cross-origin-isolation.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
@@ -155,7 +154,6 @@ export default defineConfig({
     port: 5221,
     strictPort: true,
     open: false,
-    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     fs: {
       // Local Squisq development uses package symlinks into ../squisq.
       // Its editor CSS imports Font Awesome, whose relative webfont URLs

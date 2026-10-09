@@ -53,6 +53,7 @@ class FakeDaemon {
   validToken: string | null = null;
   decision: 'approved' | 'denied' = 'approved';
   knowledgePassages: unknown[] = [];
+  chatProgress: unknown[] = [];
   readonly requests: RecordedRequest[] = [];
 
   readonly fetch: typeof fetch = async (input, init) => {
@@ -132,6 +133,17 @@ class FakeDaemon {
         ...(usage ? { usage } : {}),
       });
       return sse([
+        ...this.chatProgress.map((gezel_progress) => ({
+          ...chunk(undefined, null),
+          choices: [],
+          gezel_progress,
+        })),
+        {
+          ...chunk(undefined, null),
+          choices: [
+            { index: 0, delta: { reasoning_content: 'Private planning.' }, finish_reason: null },
+          ],
+        },
         chunk('Hel', null),
         chunk('lo', null),
         chunk(undefined, 'stop', { prompt_tokens: 9, completion_tokens: 2, total_tokens: 11 }),
@@ -261,10 +273,114 @@ describe('Gezel connector against the app SDK', () => {
       model: 'gezel:writer',
       messages: [{ role: 'user', content: 'Hi' }],
       stream: true,
+      stream_options: { include_usage: true, include_progress: true },
       reasoning_effort: 'none',
       temperature: 0.2,
       max_tokens: 64,
     });
+  });
+
+  for (const purpose of ['write', 'chat', 'review', 'illustrate'] as const) {
+    it(`uses the expected reasoning policy for ${purpose} through the real SDK`, async () => {
+      const daemon = new FakeDaemon();
+      daemon.validToken = 'kept-token';
+      const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+        interactive: false,
+      });
+      const stream = await connection.streamChat(
+        {
+          model: 'gezel:writer',
+          messages: [{ role: 'user', content: 'Rewrite this.' }],
+          purpose,
+          maxTokens: 8192,
+          temperature: 0.35,
+        },
+        new AbortController().signal,
+      );
+      const chunks: ProviderChatChunk[] = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      expect(chunks.map((chunk) => chunk.text).join('')).to.equal('Hello');
+      const request = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
+      expect(request?.body).to.deep.equal({
+        model: 'gezel:writer',
+        messages: [{ role: 'user', content: 'Rewrite this.' }],
+        stream: true,
+        stream_options: { include_usage: true, include_progress: true },
+        ...(purpose === 'write' ? {} : { reasoning_effort: 'none' }),
+        temperature: 0.35,
+        max_tokens: 8192,
+      });
+    });
+  }
+
+  for (const model of ['mlx:writer', 'llama-cpp:writer', 'ollama:writer', 'ds4:writer']) {
+    it(`uses model capacity instead of a fixed writing cap for ${model}`, async () => {
+      const daemon = new FakeDaemon();
+      daemon.validToken = 'kept-token';
+      const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+        interactive: false,
+      });
+      const stream = await connection.streamChat(
+        {
+          model,
+          purpose: 'write',
+          contextWindow: 262_144,
+          messages: [{ role: 'user', content: 'Rewrite the complete document.' }],
+        },
+        new AbortController().signal,
+      );
+      for await (const chunk of stream) expect(chunk).to.have.property('text');
+      const request = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
+      expect(request?.body).to.have.property('max_tokens', 262_144);
+    });
+  }
+
+  it('leaves unknown and remote output capacity to the provider without a fixed app cap', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    for (const request of [
+      { model: 'mlx:writer', contextWindow: null },
+      { model: 'openai:writer', contextWindow: 262_144 },
+    ]) {
+      const stream = await connection.streamChat(
+        { ...request, purpose: 'write', messages: [{ role: 'user', content: 'Write.' }] },
+        new AbortController().signal,
+      );
+      for await (const chunk of stream) expect(chunk).to.have.property('text');
+    }
+    for (const request of daemon.requests.filter(
+      (entry) => entry.path === '/v1/chat/completions',
+    )) {
+      expect(request.body).not.to.have.property('max_tokens');
+    }
+  });
+
+  it('receives validated progress through the installed SDK without changing completion text', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    const progress = { phase: 'prefill', percent: 42, outputTokens: null, tokensPerSecond: null };
+    daemon.chatProgress = [
+      progress,
+      { ...progress, percent: 101 },
+      { ...progress, detail: 'private' },
+    ];
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    const stream = await connection.streamChat(
+      { model: 'gezel:writer', messages: [{ role: 'user', content: 'Hi' }], purpose: 'write' },
+      new AbortController().signal,
+    );
+    const chunks: ProviderChatChunk[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    expect(chunks.flatMap((chunk) => (chunk.progress ? [chunk.progress] : []))).to.deep.equal([
+      progress,
+    ]);
+    expect(chunks.map((chunk) => chunk.text).join('')).to.equal('Hello');
+    expect(chunks.at(-1)?.finishReason).to.equal('stop');
   });
 
   it('sends retrieved, cited knowledge through the real SDK completion request', async () => {

@@ -25,12 +25,14 @@ import {
   AI_WIRE_LIMITS,
   HOST_WIRE_LIMITS,
   isBoundedString,
+  parseAiChatProgress,
   parseAiKnowledgeState,
 } from '@bendyline/docblocks/host';
 import type { AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatMessage,
+  AiChatProgress,
   AiChatRequest,
   AiConnectionStep,
   AiError,
@@ -86,11 +88,14 @@ export interface ProviderChatRequest {
   readonly contextWindow?: number | null;
   readonly model: string;
   readonly messages: readonly AiChatMessage[];
+  /** Task intent lets the connector choose the provider's writing defaults. */
+  readonly purpose?: AiChatRequest['purpose'];
   readonly temperature?: number;
   readonly maxTokens?: number;
 }
 
 export interface ProviderChatChunk {
+  readonly progress?: AiChatProgress;
   readonly text: string;
   readonly finishReason: 'stop' | 'length' | null;
   readonly model: string | null;
@@ -175,8 +180,8 @@ const DEFAULT_MAX_CONCURRENT_CHATS = 4;
 // Between chunks once text flows: a stall this long means the stream is dead.
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
 // Before the first text a local model may load, prefill a long document, and
-// think — none of which reaches DocBlocks as chunks. A 180s limit here was a
-// second, shorter deadline under Gezel's own and cut off a model mid-thought.
+// think. Progress metadata is optional; older providers can stay silent until
+// the reply. A shorter deadline here would cut off a model mid-thought.
 const DEFAULT_FIRST_TEXT_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_REDETECT_INTERVAL_MS = 15_000;
 // Across all windows. State reads coalesce per window, so only a runaway
@@ -623,6 +628,7 @@ export class AiService {
     this.publishActivity();
     const providerRequest: ProviderChatRequest = {
       model,
+      purpose: request.purpose,
       contextWindow: this.models.find((entry) => entry.id === model)?.contextWindow ?? null,
       messages: request.messages,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
@@ -894,6 +900,9 @@ export class AiService {
     try {
       const stream = await connection.streamChat(request, chat.controller.signal);
       for await (const chunk of stream) {
+        if (chat.ending) break;
+        const progress = parseAiChatProgress(chunk.progress);
+        if (progress) emit({ kind: 'progress', progress });
         if (chunk.model && isBoundedString(chunk.model, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
           model = chunk.model;
         }

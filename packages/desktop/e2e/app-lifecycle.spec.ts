@@ -26,20 +26,38 @@ test('boots and renders the shell', async ({ launchApp }) => {
   await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
 });
 
-test('cross-origin isolates the renderer and offers MP4 but not GIF export', async ({
+test('loads supported hosted-video frames without rewriting their responses', async ({
   launchApp,
 }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const playerUrl = 'https://www.youtube-nocookie.com/embed/gus8wVPU5lo';
+  await window.route(playerUrl, async (route) => {
+    await route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><html><body><p>Hosted player ready</p></body></html>',
+    });
+  });
 
-  // Cross-origin isolation is retained as Spectre-class hardening. It once
-  // existed for ffmpeg.wasm's SharedArrayBuffer; nothing shipped needs that
-  // now, but the renderer loads only same-origin subresources so it is free.
-  const runtime = await window.evaluate(() => ({
-    crossOriginIsolated: globalThis.crossOriginIsolated,
-    sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
-  }));
-  expect(runtime).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
+  await window.evaluate((src) => {
+    const frame = document.createElement('iframe');
+    frame.title = 'Hosted player probe';
+    frame.src = src;
+    document.body.append(frame);
+  }, playerUrl);
+
+  await expect(
+    window.frameLocator('iframe[title="Hosted player probe"]').getByText('Hosted player ready'),
+  ).toBeVisible();
+});
+
+test('supports hosted players and offers MP4 but not GIF export', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+
+  // Hosted video players cannot opt into the app's embedder policy, and no
+  // shipped feature needs SharedArrayBuffer, so the renderer stays unisolated.
+  expect(await window.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
   await window.getByRole('button', { name: 'Export and share' }).click();
 

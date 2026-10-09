@@ -1,4 +1,5 @@
 import {
+  AI_WIRE_LIMITS,
   parseAiChatRequest,
   parseAiPreferences,
   parseAiPreferencesPatch,
@@ -345,10 +346,10 @@ export function createMobileAi(options: MobileAiOptions): {
             controller.abort();
           }, options.requestTimeoutMs ?? 180_000);
           const maxTokens = Math.min(
-            request.maxTokens ?? 512,
+            request.maxTokens ??
+              (request.purpose === 'write' ? nativeProvider.maxOutputTokens : 512),
             nativeProvider.maxOutputTokens,
-            Math.floor((model.contextWindow ?? 4096) / 2),
-            2048,
+            Math.max(1, (model.contextWindow ?? 4096) - 1),
           );
           // Portable App SDK supports provider-default sampling only. Do not send
           // the desktop temperature hint as an unsupported native request field.
@@ -367,7 +368,7 @@ export function createMobileAi(options: MobileAiOptions): {
             const choice = chunk.choices[0];
             const delta = choice?.delta.content;
             if (typeof delta === 'string' && delta) {
-              if (text.length + delta.length > 256_000)
+              if (text.length + delta.length > AI_WIRE_LIMITS.completionCharacters)
                 throw new MobileAiError(
                   'budget-exceeded',
                   'The AI response exceeded its size limit.',

@@ -8,13 +8,13 @@ This file is the distribution-level entry point for third-party software used by
 
 | Distribution                           | Notice shipped with the artifact                                                             | Inventory basis       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
-| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 219 locked components |
+| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 220 locked components |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 112 locked components |
 | @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 378 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 350 locked components |
-| DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 216 locked components |
-| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 208 locked components |
-| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 599 locked components |
+| DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 217 locked components |
+| DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 209 locked components |
+| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 600 locked components |
 
 The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
 

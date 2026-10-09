@@ -88,6 +88,14 @@ npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity
 
+# Gezel parallel dev — links desktop SDK, service, and core to ../gezel
+npm run link:gezel          # preserve registry copies and create local links
+npm run check:gezel-linked  # show actual paths and verify built entry points
+npm run build:gezel-linked  # rebuild SDK/service runtime dependencies under a read lease
+npm run unlink:gezel        # restore the saved registry copies, without an install
+# npm run all/build refresh linked Squisq and Gezel before DocBlocks builds.
+# Desktop dev startup also rebuilds linked Gezel. Restart Electron to load it.
+
 # Release — multi-semantic-release per package
 npm run release
 ```

@@ -94,6 +94,7 @@ describe('Core exports', () => {
       'moveFileSystemEntry',
       'openNativeFolder',
       'parseAiChatEvent',
+      'parseAiChatProgress',
       'parseAiChatRequest',
       'parseAiError',
       'parseAiKnowledgeAction',

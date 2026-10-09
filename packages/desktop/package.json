@@ -14,7 +14,7 @@
   "main": "dist/main/main.cjs",
   "type": "module",
   "scripts": {
-    "predev": "npm run build:main",
+    "predev": "npm run build:gezel-linked --prefix ../.. && npm run build:main",
     "dev": "node scripts/dev.cjs",
     "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.dev.config.ts --watch",
     "build": "npm run build:renderer && npm run build:main",

@@ -5983,6 +5983,12 @@ html:has(.db-shell[data-theme='dark'])
   min-height: 96px;
 }
 
+.db-ai-draft-start {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
 .db-ai-draft-body .db-ai-selection-preview blockquote {
   box-sizing: border-box;
   max-height: min(112px, 16dvh);
@@ -6053,6 +6059,8 @@ html:has(.db-shell[data-theme='dark'])
 /* A whole-document selection must not push the draft below the dialog. */
 .db-ai-selection-preview blockquote {
   max-height: calc(8 * 1.5em + 16px);
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
 }
 
 .db-ai-selection-preview blockquote:focus-visible {
@@ -6065,7 +6073,6 @@ html:has(.db-shell[data-theme='dark'])
   margin: 5px 0 0;
   padding: 8px 10px;
   overflow: auto;
-  border-left: 3px solid var(--db-border-strong);
   background: var(--db-bg-subtle);
   color: var(--db-text-secondary);
   font:
@@ -6075,6 +6082,10 @@ html:has(.db-shell[data-theme='dark'])
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.db-ai-review-excerpt blockquote {
+  border-left: 3px solid var(--db-border-strong);
 }
 
 .db-ai-progress,
@@ -6089,6 +6100,17 @@ html:has(.db-shell[data-theme='dark'])
   align-items: center;
   gap: 7px;
   color: var(--db-text-secondary);
+}
+
+.db-ai-generation-status {
+  display: grid;
+  gap: 6px;
+}
+
+.db-ai-generation-status progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--db-accent);
 }
 
 .db-ai-error {
@@ -6119,6 +6141,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-ai-draft-dialog .db-dialog-footer button,
+.db-ai-draft-start button,
 .db-ai-review-panel button {
   min-height: var(--db-target-min);
   padding: 6px 10px;
@@ -6131,6 +6154,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-ai-draft-dialog .db-dialog-footer button:last-child,
+.db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
 .db-ai-review-actions button {
   border-color: var(--db-accent);
@@ -6139,6 +6163,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-ai-draft-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-draft-start button:hover,
 .db-ai-review-panel button:hover:not(:disabled) {
   border-color: var(--db-accent-hover);
   background: var(--db-bg-hover);
@@ -6146,6 +6171,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-ai-draft-dialog .db-dialog-footer button:focus-visible,
+.db-ai-draft-start button:focus-visible,
 .db-ai-review-panel button:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 2px;

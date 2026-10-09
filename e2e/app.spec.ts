@@ -1011,14 +1011,9 @@ test.describe('Simple diagram theming', () => {
 test.describe('Video export dialog theming', () => {
   test('offers MP4 video export but not the removed ffmpeg-backed GIF export', async ({ page }) => {
     await openInitializedSite(page);
-    // Cross-origin isolation is retained as hardening even though nothing
-    // shipped needs SharedArrayBuffer any more.
-    expect(
-      await page.evaluate(() => ({
-        crossOriginIsolated: globalThis.crossOriginIsolated,
-        sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
-      })),
-    ).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
+    // Hosted video players cannot opt into the app's embedder policy, and no
+    // shipped feature needs SharedArrayBuffer, so the editor stays unisolated.
+    expect(await page.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
     await page.getByRole('button', { name: 'Export and share' }).click();
 

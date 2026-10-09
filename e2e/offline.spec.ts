@@ -273,7 +273,7 @@ test.describe('DocBlocks offline (PWA)', () => {
     await context.setOffline(true);
     await page.reload();
     await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
-    expect(await page.evaluate(() => globalThis.crossOriginIsolated)).toBe(true);
+    expect(await page.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
     // Edit and save offline — documents live in IndexedDB, which needs no
     // network. The welcome gateway only shows on a fresh session, so click

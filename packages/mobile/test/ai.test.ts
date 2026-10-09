@@ -103,6 +103,19 @@ function fixture(initial: Partial<AiPreferences> = {}) {
   };
 }
 describe('mobile AI through the Gezel App SDK', () => {
+  it('uses native output capacity for writing without a caller cap', async () => {
+    const f = fixture();
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: 'Complete draft.', stopReason: 'stop' };
+    };
+    await f.ai.setPreferences({ enabled: true });
+    const result = await f.ai.chat(request, () => {}).done;
+    assert.ok(result.ok);
+    assert.equal(routed?.maxTokens, 2048);
+  });
+
   for (const [providerId, label] of [
     ['apple-foundation-models', 'Apple Foundation Models'],
     ['android-mlkit', 'Gemini Nano (Android ML Kit)'],

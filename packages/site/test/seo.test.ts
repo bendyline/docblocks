@@ -255,10 +255,9 @@ describe('site SEO surface', () => {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
     }
     expect(serviceWorker).to.include("createHandlerBoundToURL('index.html')");
-    expect(serviceWorker).to.include("headers.set('Cross-Origin-Opener-Policy', 'same-origin')");
-    expect(serviceWorker).to.include(
-      "headers.set('Cross-Origin-Embedder-Policy', 'credentialless')",
-    );
+    expect(config).not.to.include('CROSS_ORIGIN_ISOLATION_HEADERS');
+    expect(serviceWorker).not.to.include('Cross-Origin-Opener-Policy');
+    expect(serviceWorker).not.to.include('Cross-Origin-Embedder-Policy');
 
     const allowlist = parseRegexLiterals(extractAllowlistSource(serviceWorker));
     expect(allowlist.length, 'NavigationRoute allowlist entries').to.be.greaterThan(0);

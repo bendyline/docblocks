@@ -111,6 +111,25 @@ describe('parseAiChatRequest', () => {
 });
 
 describe('parseAiChatEvent', () => {
+  it('accepts bounded progress separately from text and terminal events', () => {
+    const progress = { phase: 'prefill', percent: 37.5, outputTokens: null, tokensPerSecond: null };
+    expect(parseAiChatEvent({ kind: 'progress', progress })).to.deep.equal({
+      kind: 'progress',
+      progress,
+    });
+    for (const invalid of [
+      { ...progress, percent: 101 },
+      { ...progress, percent: Number.NaN },
+      { ...progress, phase: 'reasoning' },
+      { ...progress, outputTokens: -1 },
+      { ...progress, outputTokens: 1.5 },
+      { ...progress, tokensPerSecond: Infinity },
+      { ...progress, detail: 'private engine detail' },
+    ]) {
+      expect(parseAiChatEvent({ kind: 'progress', progress: invalid })).to.equal(null);
+    }
+  });
+
   it('accepts a delta', () => {
     expect(parseAiChatEvent({ kind: 'delta', text: 'Once' })).to.deep.equal({
       kind: 'delta',

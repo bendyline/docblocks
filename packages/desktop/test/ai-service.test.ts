@@ -224,7 +224,7 @@ function recorder(): { events: AiChatEvent[]; emit: (event: AiChatEvent) => void
 }
 
 function terminalEvents(events: readonly AiChatEvent[]): AiChatEvent[] {
-  return events.filter((event) => event.kind !== 'delta');
+  return events.filter((event) => event.kind === 'done' || event.kind === 'error');
 }
 
 describe('AI catalog lifecycle', () => {
@@ -585,6 +585,7 @@ describe('desktop AI service: chat', () => {
 
     const { request, stream } = connector.connection.streams[0];
     expect(request.model).to.equal('gezel:writer');
+    expect(request.purpose).to.equal('write');
     stream.push('Hel');
     stream.push('lo', {
       model: 'gezel:writer@2',
@@ -640,6 +641,39 @@ describe('desktop AI service: chat', () => {
     ]);
   });
 
+  it('relays progress without completing the stream and remains cancellable', async () => {
+    const { service, connector } = await readyService();
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    const progress = {
+      phase: 'prefill',
+      percent: 50,
+      outputTokens: null,
+      tokensPerSecond: null,
+    } as const;
+    stream.push('', { progress });
+    await settle();
+    expect(events).to.deep.equal([{ kind: 'progress', progress }]);
+    expect(service.activeChatCount).to.equal(1);
+    stream.push('', { progress: { ...progress, percent: 101 } });
+    await settle();
+    expect(events).to.have.length(1);
+    service.cancelChat('1:a');
+    await settle();
+    expect(terminalEvents(events)).to.deep.equal([
+      {
+        kind: 'done',
+        completion: { text: '', model: 'gezel:writer', finishReason: 'cancelled', usage: null },
+      },
+    ]);
+    stream.push('Too late', { progress });
+    stream.end();
+    await settle();
+    expect(events).to.have.length(2);
+  });
+
   it('waits past the stall limit for the first text', async () => {
     // Loading, a long prefill, and thinking send no text; Gezel owns that deadline.
     const { service, connector } = await readyService({
@@ -688,7 +722,26 @@ describe('desktop AI service: chat', () => {
     if (terminal.kind === 'error') expect(terminal.error.code).to.equal('timeout');
   });
 
-  it('caps a runaway completion and says so', async () => {
+  it('allows a document draft past the former response-size cap', async () => {
+    const { service, connector } = await readyService();
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    const text = 'A'.repeat(256 * 1024 + 1);
+    stream.push(text);
+    stream.push('\nComplete ending.', { finishReason: 'stop' });
+    stream.end();
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('done');
+    if (terminal.kind === 'done') {
+      expect(terminal.completion.finishReason).to.equal('stop');
+      expect(terminal.completion.text).to.equal(`${text}\nComplete ending.`);
+    }
+  });
+
+  it('enforces the normal document-size boundary and says so', async () => {
     const { service, connector } = await readyService();
     const { events, emit } = recorder();
     service.startChat('1:a', WRITE_REQUEST, emit);
