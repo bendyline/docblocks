@@ -613,7 +613,7 @@ async function bootstrap(): Promise<void> {
   // Reads preferences and starts AI only after opt-in, without prompting.
   void aiService.start();
   // Engines start lazily on first use; nothing is spawned here.
-  speechService = createSpeechService();
+  speechService = await createSpeechService();
   registerSpeechIpc(speechService);
 
   // Probe before the renderer loads so its Git UI and the native menu use the

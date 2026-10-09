@@ -165,6 +165,11 @@ const AiIllustratePanel = lazy(() =>
     default: module.AiIllustratePanel,
   })),
 );
+const TextFromNarration = lazy(() =>
+  import('../Speech/TextFromNarration.js').then((module) => ({
+    default: module.TextFromNarration,
+  })),
+);
 const SpeechToolbarControl = lazy(() =>
   import('../Speech/SpeechToolbarControl.js').then((module) => ({
     default: module.SpeechToolbarControl,
@@ -5395,6 +5400,17 @@ export function DocBlocksShell({
                             )}
                             {speech && (
                               <Suspense fallback={null}>
+                                <TextFromNarration
+                                  speech={speech}
+                                  ai={ai ?? undefined}
+                                  allowRecording={allowRecording}
+                                  readOnly={
+                                    selectedImage !== undefined ||
+                                    selectedManagedOutput !== undefined ||
+                                    (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                                  }
+                                  onOpenSettings={openSettings}
+                                />
                                 {hostSupports('speechOutput') ? (
                                   <SpeechToolbarControl
                                     speech={speech}

@@ -10,7 +10,9 @@ import {
 } from '../src/DocBlocksShell/welcome-document.js';
 
 const MARKETING_URLS = [
+  'https://docblocks.com/web/',
   'https://docblocks.com/desktop/',
+  'https://docblocks.com/docs/#mobile-preview',
   'https://docblocks.com/vscode/',
   'https://docblocks.com/cli/',
   'https://docblocks.com/formats/',

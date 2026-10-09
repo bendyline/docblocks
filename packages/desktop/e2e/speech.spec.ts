@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
+import { NATIVE_ENGINE_RELEASE } from '@bendyline/gezel-service/native-release';
 
 import { expect, test } from './fixtures.js';
 import { installFakeSpeechModels, writeFakeMicrophoneWav } from './fake-speech.js';
@@ -230,4 +231,172 @@ test('generates narration into the document folder and exports it as audio', asy
   if (extension === 'm4a') expect(exported.subarray(4, 8).toString('latin1')).toBe('ftyp');
   if (extension === 'webm') expect(exported.subarray(0, 4).toString('hex')).toBe('1a45dfa3');
   if (extension === 'wav') expect(exported.subarray(0, 4).toString('latin1')).toBe('RIFF');
+});
+
+test('Text from narration records a draft, cleans it, inserts once and undoes', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  test.setTimeout(120_000);
+  const env = installFakeSpeechModels(userDataDir);
+  const microphone = writeFakeMicrophoneWav(path.join(userDataDir, 'microphone.wav'));
+  const { window } = await launchApp(
+    ['--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${microphone}`],
+    {
+      ...env,
+      FAKE_WHISPER_TEXT: 'Um... the… the narrated words. [ Pause ] [ Inaudible conversations ]',
+    },
+  );
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const { file, editor } = await openDocument(window, workspaceDir);
+  await window.evaluate(() => {
+    const state = globalThis as typeof globalThis & { narrationTracks?: MediaStreamTrack[] };
+    state.narrationTracks = [];
+    const acquire = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints) => {
+      const stream = await acquire(constraints);
+      state.narrationTracks?.push(...stream.getTracks());
+      return stream;
+    };
+  });
+  await editor.locator('p', { hasText: 'already here' }).click();
+  await window.getByRole('button', { name: 'Insert', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Text from narration', exact: true }).click();
+  const dialog = window.getByRole('dialog', { name: 'Text from narration', exact: true });
+  await dialog.getByRole('button', { name: 'Record', exact: true }).click();
+  const transcript = dialog.getByRole('textbox', { name: 'Transcript' });
+  await expect(transcript).toHaveValue(/narrated words/, { timeout: 30_000 });
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('narrated words');
+  await dialog.getByRole('button', { name: 'Stop recording' }).click();
+  await expect(dialog.getByRole('button', { name: 'Insert text' })).toBeEnabled({
+    timeout: 30_000,
+  });
+  expect(
+    await window.evaluate(() => {
+      const state = globalThis as typeof globalThis & { narrationTracks?: MediaStreamTrack[] };
+      return state.narrationTracks?.map((track) => track.readyState);
+    }),
+  ).toEqual(['ended']);
+  const original = await transcript.inputValue();
+  expect(original).toContain('[ Inaudible conversations ]');
+  expect(original).toContain('Um... the… the');
+  await dialog.getByRole('button', { name: 'Clean up fillers' }).click();
+  expect(await transcript.inputValue()).not.toMatch(/Um|the the|\[|\]|\.{2,}|…/u);
+  expect(await transcript.inputValue()).toContain('the narrated words.');
+  await dialog.getByRole('button', { name: 'Undo cleanup' }).click();
+  await expect(transcript).toHaveValue(original);
+  await transcript.fill('Reviewed narrated words.');
+  await dialog.screenshot({ path: 'reports/text-from-narration-dialog.png' });
+  await dialog.getByRole('button', { name: 'Insert text' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => fs.readFileSync(file, 'utf8')).toContain('Reviewed narrated words.');
+  await editor.click();
+  await window.keyboard.press('ControlOrMeta+Z');
+  await expect.poll(() => fs.readFileSync(file, 'utf8')).not.toContain('Reviewed narrated words.');
+});
+
+test('Text from narration uploads audio and cancellation leaves the document untouched', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  const env = installFakeSpeechModels(userDataDir);
+  const upload = writeFakeMicrophoneWav(path.join(userDataDir, 'upload.wav'));
+  const { window } = await launchApp([], { ...env, FAKE_WHISPER_TEXT: 'Uploaded narration.' });
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  const { file } = await openDocument(window, workspaceDir);
+  await window.getByRole('button', { name: 'Insert', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Text from narration', exact: true }).click();
+  const dialog = window.getByRole('dialog', { name: 'Text from narration', exact: true });
+  await dialog
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'broken.wav', mimeType: 'audio/wav', buffer: Buffer.from('not audio') });
+  await expect(dialog.getByRole('alert')).toContainText('could not be read');
+  await dialog.locator('input[type=file]').setInputFiles(upload);
+  await expect(dialog.getByRole('textbox', { name: 'Transcript' })).toHaveValue(
+    /Uploaded narration/,
+    { timeout: 30_000 },
+  );
+  await expect(dialog.getByRole('button', { name: 'Insert text' })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(fs.readFileSync(file, 'utf8')).not.toContain('Uploaded narration');
+});
+
+test('Text from narration opens Settings when a dictation model is missing', async ({
+  launchApp,
+  userDataDir,
+  workspaceDir,
+}) => {
+  const { window } = await launchApp(
+    [],
+    installFakeSpeechModels(userDataDir, { installed: false }),
+  );
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await openDocument(window, workspaceDir);
+  await window.getByRole('button', { name: 'Insert', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Text from narration', exact: true }).click();
+  const dialog = window.getByRole('dialog', { name: 'Text from narration', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Record', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Upload audio', exact: true })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'Speech settings' }).click();
+  await expect(dialog).toHaveCount(0);
+  const settings = window.getByRole('dialog', { name: 'Settings', exact: true });
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole('group', { name: 'Speech' })).toContainText('Whisper Base');
+});
+
+test('Text from narration stays discoverable without a speech recognition engine', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  const { window } = await launchApp([], {
+    DOCBLOCKS_SPEECH_WHISPER_BIN: '',
+    DOCBLOCKS_SPEECH_WHISPER_SCRIPT: '',
+    DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: path.join(gezelHome, 'missing-native-payload'),
+  });
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  expect(await speechStatus(window)).toMatchObject({ stt: { state: 'unavailable' } });
+  await openDocument(window, workspaceDir);
+  await window.getByRole('button', { name: 'Insert', exact: true }).click();
+  await window.getByRole('menuitem', { name: 'Text from narration', exact: true }).click();
+  const dialog = window.getByRole('dialog', { name: 'Text from narration', exact: true });
+  await expect(dialog).toContainText('could not find its local Whisper engine');
+  await expect(dialog.getByRole('button', { name: 'Record', exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: 'Upload audio', exact: true })).toBeDisabled();
+});
+
+test('source startup discovers its installed Whisper engine without a binary override', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  const binary = path.join(
+    gezelHome,
+    'apps',
+    'docblocks',
+    'engines',
+    'native-bin',
+    NATIVE_ENGINE_RELEASE,
+    `${process.platform}-${process.arch}`,
+    process.platform === 'win32' ? 'gezel-whisper-server.exe' : 'gezel-whisper-server',
+  );
+  fs.mkdirSync(path.dirname(binary), { recursive: true });
+  // Availability probes files only. This sentinel must never be executed.
+  fs.writeFileSync(binary, 'Engine discovery fixture; not executable.');
+  const { window } = await launchApp([], {
+    DOCBLOCKS_SPEECH_WHISPER_BIN: '',
+    DOCBLOCKS_SPEECH_WHISPER_SCRIPT: '',
+    DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: '',
+  });
+  await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  expect(await speechStatus(window)).toMatchObject({ stt: { state: 'download-required' } });
+  await openDocument(window, workspaceDir);
+  await expect(window.getByRole('button', { name: 'Start dictation' })).toBeVisible();
+  await window.getByRole('button', { name: 'Insert', exact: true }).click();
+  await expect(
+    window.getByRole('menuitem', { name: 'Text from narration', exact: true }),
+  ).toBeVisible();
+  await window.screenshot({ path: 'reports/text-from-narration-insert-menu.png' });
 });

@@ -24,14 +24,31 @@ Key main-process modules:
 - `ipc-ai.ts` + `ai/` — optional AI through an in-process private Gezel service, with the user's standalone Gezel as an optional provider switch; off until the user opts in under Settings › AI assistance
 
 Desktop packaging downloads the signed native archives from Gezel's releases
-into `resources/gezel-native/`. The `beforePack` hook imports the release and
-SHA-256 archive pins from the exact installed
-`@bendyline/gezel-service/native-release`, selects all published backends for the
-target architecture, verifies downloads before extraction, and preserves the
+into `resources/gezel-native/`. The `beforePack` hook calls the exact installed
+`@bendyline/gezel-service/packaging` helper. Gezel selects its pinned release and
+all published backends for the target architecture, verifies downloads before
+extraction, and preserves the
 release's license files and existing code signatures. Verified archives are
 cached locally under `dist/gezel-native-cache/`; a corrupt cache fails packaging
 and must be removed before retrying. Updating Gezel requires no separate native
 version edit.
+
+The text AI connector uses `connectDesktopEmbedding` from the App SDK host
+entry point. Gezel owns stored-grant adoption, consent gating, private fallback,
+model preparation, Apple model readiness, download observation, evidence
+serialization, native verification, and host-environment restoration. DocBlocks
+retains its provider-neutral `AiService`, renderer ownership, wire limits,
+preferences, encrypted token storage, editor prompts/transactions, and MAS seal
+verification. `withKnowledgeContext` receives the host's prompt/message limits;
+model locality comes from SDK metadata, never from an engine name.
+
+These APIs require the refactored sibling Gezel SDK/service. The existing
+registry pins (SDK 1.1.3 and service 1.2.3) are not a release of this refactor.
+Use the local link workflow below while developing. Publish compatible
+SDK/service packages and update exact pins and the lockfile before shipping;
+the connector reports a missing runtime if the required SDK export is absent.
+See Gezel's `docs/handboek/technical/docblocks-text-ai-with-gezel.md` for the
+request flow and code examples.
 
 Inference fixes, including MLX's Python prompt builder, ship in
 `@bendyline/gezel-service`. Updating only `@bendyline/gezel-app-sdk` or the user's
@@ -107,8 +124,8 @@ parser.
 
 After AI opt-in, the hosted service checks the complete native file set, SHA-256
 hashes, symlinks, and platform signatures against its own source-bundled pins,
-then passes the verified directory to the SDK's `host.nativeBinDir`. Every
-packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
+using the directory supplied as the SDK's `host.nativeBinDir` before the service
+starts. Every packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
 fail visibly instead of triggering executable downloads. Model weights remain
 data downloads initiated by **Add model**. Development may use an absolute
 `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`; it receives the same native file verification

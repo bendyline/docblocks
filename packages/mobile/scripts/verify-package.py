@@ -21,6 +21,7 @@ if platform == 'ios':
     config = json.loads((app / 'capacitor.config.json').read_text())
     assert 'GezelRuntimePlugin' in config['packageClassList'], 'Missing native AI plugin'
     assert b'llama_model_load_from_file_impl' in (app / 'App').read_bytes(), 'Missing linked inference engine'
+    assert b'DocBlocksAiSmoke' not in (app / 'App').read_bytes(), 'Test runner shipped in release'
 else:
     with zipfile.ZipFile(artifact) as archive:
         prefix = 'base/assets/' if artifact.endswith('.aab') else 'assets/'
@@ -43,4 +44,5 @@ assert config['appId'] == 'com.bendyline.docblocks.mobile'
 assert 'url' not in config.get('server', {}) and not config.get('server', {}).get('allowNavigation')
 assert all(actual.get(name) == digest for name, digest in expected.items()), 'Native web payload is stale or incomplete'
 assert not any('ffmpeg-core' in name for name in actual)
+assert not any(name.endswith(('ai-smoke.js', 'mobile-ai-fixture.gguf')) for name in actual), 'AI test assets shipped in release'
 print(json.dumps({'platform': platform, 'webFilesVerified': len(expected), 'artifact': artifact}))

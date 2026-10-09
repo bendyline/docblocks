@@ -6140,6 +6140,7 @@ html:has(.db-shell[data-theme='dark'])
   }
 }
 
+.db-text-from-narration button:not(.db-dialog-close),
 .db-ai-draft-dialog .db-dialog-footer button,
 .db-ai-draft-start button,
 .db-ai-review-panel button {
@@ -6153,6 +6154,7 @@ html:has(.db-shell[data-theme='dark'])
   cursor: pointer;
 }
 
+.db-text-from-narration .db-dialog-footer button:last-child,
 .db-ai-draft-dialog .db-dialog-footer button:last-child,
 .db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
@@ -6162,6 +6164,7 @@ html:has(.db-shell[data-theme='dark'])
   color: var(--db-text-on-accent);
 }
 
+.db-text-from-narration button:not(.db-dialog-close):hover:not(:disabled),
 .db-ai-draft-dialog .db-dialog-footer button:hover:not(:disabled),
 .db-ai-draft-start button:hover,
 .db-ai-review-panel button:hover:not(:disabled) {
@@ -6170,6 +6173,8 @@ html:has(.db-shell[data-theme='dark'])
   color: var(--db-text);
 }
 
+.db-text-from-narration button:focus-visible,
+.db-text-from-narration textarea:focus-visible,
 .db-ai-draft-dialog .db-dialog-footer button:focus-visible,
 .db-ai-draft-start button:focus-visible,
 .db-ai-review-panel button:focus-visible {
@@ -6177,6 +6182,7 @@ html:has(.db-shell[data-theme='dark'])
   outline-offset: 2px;
 }
 
+.db-text-from-narration button:disabled,
 .db-ai-draft-dialog .db-dialog-footer button:disabled,
 .db-ai-review-panel button:disabled {
   opacity: 0.5;
@@ -7231,4 +7237,56 @@ button.db-git-file-row:hover {
     box-sizing: border-box;
     padding-top: calc(24px + var(--db-wco-titlebar-height));
   }
+}
+
+/* Transcript review shares the shell's dialog and theme tokens. */
+.db-text-from-narration {
+  font-family: var(--db-ui-font);
+}
+.db-text-from-narration .db-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.db-text-from-narration p {
+  margin: 0;
+}
+.db-narration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.db-narration-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-narration-transcript textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 160px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.db-narration-note {
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.db-narration-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-narration-rewrite {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }

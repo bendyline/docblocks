@@ -40,7 +40,7 @@ describe('docblocks workspace refresh', function () {
 
   it('writes enabled outputs once and leaves unchanged bytes alone', async () => {
     await writeSettings(workspace, CATALOG_SETTINGS);
-    // A rendered HTML document with no Markdown companion is imported for its metadata.
+    // Imported HTML title metadata takes precedence over the first body heading.
     await writeFile(
       path.join(workspace, 'page.html'),
       '<html><head><title>Page</title></head><body><h1>Rendered Page</h1><p>Text.</p></body></html>',
@@ -66,7 +66,7 @@ describe('docblocks workspace refresh', function () {
     expect(catalog.documents.map((entry) => [entry.path, entry.title])).to.deep.equal([
       ['alpha.md', 'Alpha Story'],
       ['notes/beta.md', 'Beta'],
-      ['page.html', 'Rendered Page'],
+      ['page.html', 'Page'],
     ]);
     const html = await readFile(path.join(workspace, 'index.html'), 'utf8');
     expect(html).to.match(/^<!DOCTYPE html>\n<!-- docblocks-workspace-catalog v1 inputs=sha256:/i);

@@ -72,6 +72,14 @@ the renderer argv. It never loads ONNX Runtime to find out.
 
 ## Packaging
 
+Source builds first honor `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`. Otherwise they look
+for an already installed Whisper engine at the installed Gezel service's exact
+native-release pin in `~/.gezel/apps/docblocks/engines/native-bin/<release>` and
+then `~/.gezel/engines/native-bin/<release>` (`GEZEL_HOME` overrides `~/.gezel`).
+Discovery starts no service and downloads nothing. Restart the desktop app
+after installing or changing an engine. Packaged builds only use their bundled
+payload; they never fall back to these development locations.
+
 - `onnxruntime-node` is a desktop runtime dependency, external to the main
   bundle and loaded only by `dist/main/kokoro-utility.cjs`. Its CUDA-fetching
   postinstall is explicitly denied in `allowScripts`. electron-builder unpacks
@@ -116,3 +124,36 @@ Until then the MAS payload omits whisper and dictation reports unavailable.
   DOCBLOCKS_E2E_KOKORO_VOICES=<dir with the 8 curated voice .bin files> \
   npm run test:e2e:packaged -w docblocks-desktop
   ```
+
+## Text from narration
+
+Desktop **Insert → Text from narration** opens a draft transcript. **Record**
+uses the same progressive microphone capture as dictation, updating the textbox
+as phrases arrive. **Stop recording** releases the microphone and finishes the
+last phrases. **Upload audio** decodes browser-supported audio (including WAV,
+MP3, M4A and WebM), then sends independent mono WAV takes to the local recognizer
+in order. Uploads are limited to 25 MB / 10 minutes; recording stops at 10 minutes.
+The microphone preference gates recording, while uploads remain available.
+A missing dictation model links to Speech settings; opening the dialog downloads
+nothing and does not request microphone permission.
+The entry appears between **Emoji** and **Record media**. On hosts with speech
+settings it remains visible even when recognition is unavailable; the dialog
+explains why and disables recording and uploads until recognition is ready.
+
+The transcript is editable when transcription finishes. **Clean up fillers**
+removes English filler sounds, obvious adjacent word repeats, ellipsis pauses
+(`...`, `..` or `…`), and common bracketed transcript cues such as `[Pause]`,
+`[Silence]` and `[Inaudible conversations]` without an AI model. Single periods
+and other bracketed content, such as names and citations, stay intact.
+**Rewrite with AI** is available when the host's AI is enabled and a model
+is ready. It asks for natural prose preserving facts, names, numbers and meaning;
+long transcripts are processed in bounded pieces. A failed, cancelled, empty or
+incomplete rewrite leaves the transcript intact. **Undo cleanup** restores the
+text before the latest cleanup or rewrite. Review edits before inserting.
+
+**Insert text** adds literal prose after the current block as one undoable edit.
+No audio is saved to the workspace by this flow. Closing the dialog or switching
+documents stops capture and ignores pending transcription results. The transcript is a dialog
+session draft, so copy it before closing if you want to keep it without inserting.
+The Insert action and capture reuse Squisq's public `useEditorInsertMenuItems`
+and `/speech` session APIs; changes to those APIs live in the linked Squisq repo.

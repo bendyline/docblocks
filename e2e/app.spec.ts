@@ -917,6 +917,7 @@ test.describe('Simple diagram theming', () => {
     const scene = page.locator('.squisq-scene-shell').first();
     const card = scene.locator('[data-layer-id^="node-card-"]').first();
     await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.scrollIntoViewIfNeeded();
     const cardBox = await card.boundingBox();
     if (!cardBox) throw new Error('Diagram card bounds were not found');
     await page.mouse.click(cardBox.x + 8, cardBox.y + 8);

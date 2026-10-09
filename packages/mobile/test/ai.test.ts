@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
-import { connectRuntime, type GezelRuntimePlugin } from '@bendyline/gezel-capacitor';
+import {
+  connectEmbeddingRuntime,
+  mobileCatalog,
+  type GezelRuntimePlugin,
+} from '@bendyline/gezel-capacitor';
 import type { MobileModelInventory, MobileProvider } from '@bendyline/gezel/mobile-providers';
 import type { AiChatEvent, AiPreferences } from '@bendyline/docblocks/host';
 import { createMobileAi } from '../src/ai/host';
-import { catalog } from '../src/ai/models';
+import { buildReviewRequest } from '../../react/src/Ai/ai-assistant';
+import { WELCOME_DOCUMENT_CONTENT } from '../../react/src/DocBlocksShell/welcome-document';
+const catalog = mobileCatalog.map((model) => ({
+  ...model,
+  id: `catalog:${model.source.catalogId}`,
+}));
 const request = {
   purpose: 'write' as const,
   messages: [{ role: 'user' as const, content: 'Hello' }],
@@ -55,8 +64,8 @@ function fixture(initial: Partial<AiPreferences> = {}) {
     cancel: async () => {
       calls.push('cancel');
     },
-    addListener: async (_event, listener) => {
-      emit = listener as typeof emit;
+    addListener: async (event, listener) => {
+      if (event === 'chatDelta') emit = listener as typeof emit;
       return {
         remove: async () => {
           calls.push('removeListener');
@@ -79,7 +88,7 @@ function fixture(initial: Partial<AiPreferences> = {}) {
   };
   let load = async () => {
     calls.push('load');
-    return { runtime, client: connectRuntime(runtime) };
+    return connectEmbeddingRuntime(runtime, { pollIntervalMs: 10 });
   };
   const host = createMobileAi({
     load: () => load(),
@@ -88,7 +97,6 @@ function fixture(initial: Partial<AiPreferences> = {}) {
       preferences = value;
     },
     requestTimeoutMs: 40,
-    pollMs: 1,
   });
   return {
     ...host,
@@ -103,6 +111,54 @@ function fixture(initial: Partial<AiPreferences> = {}) {
   };
 }
 describe('mobile AI through the Gezel App SDK', () => {
+  it('leaves native reply capacity for the editor answer when reasoning controls are supported', async () => {
+    const f = fixture({ enabled: true });
+    f.providers[0].capabilities.structuredChat = true;
+    let emit: (event: unknown) => void = () => {};
+    f.runtime.addListener = async (name, listener) => {
+      if (name === 'chatChunk') emit = listener as typeof emit;
+      return { remove: async () => {} };
+    };
+    let body: Record<string, unknown> | undefined;
+    f.runtime.chat = async (input) => {
+      body = JSON.parse(input.requestJson);
+      emit({
+        requestId: input.requestId,
+        chunks: [
+          JSON.stringify({
+            choices: [{ index: 0, delta: { content: '[]' }, finish_reason: 'stop' }],
+          }),
+        ],
+      });
+      return { status: 'ok' };
+    };
+    const result = await f.ai.chat(buildReviewRequest(WELCOME_DOCUMENT_CONTENT), () => {}).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.equal(body?.reasoning_effort, 'none');
+    assert.equal(result.value.text, '[]');
+    assert.ok(!f.calls.includes('generate'));
+    const written = await f.ai.chat(request, () => {}).done;
+    assert.ok(written.ok, JSON.stringify(written));
+    assert.equal(body?.reasoning_effort, 'none');
+  });
+
+  it('reviews the welcome document with the reply and context budgets the native model supports', async () => {
+    const f = fixture({ enabled: true });
+    f.providers[0].contextTokens = 16384;
+    f.providers[0].maxOutputTokens = 4096;
+    f.models.models[0].contextTokens = 8192;
+    let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
+    f.runtime.generate = async (input) => {
+      routed = input;
+      return { text: '[]', stopReason: 'stop' };
+    };
+    const result = await f.ai.chat(buildReviewRequest(WELCOME_DOCUMENT_CONTENT), () => {}).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.equal(routed?.contextSize, 8192);
+    assert.equal(routed?.maxTokens, 4096);
+    assert.ok(routed?.messages.at(-1)?.content.includes(WELCOME_DOCUMENT_CONTENT));
+  });
+
   it('uses native output capacity for writing without a caller cap', async () => {
     const f = fixture();
     let routed: Parameters<GezelRuntimePlugin['generate']>[0] | undefined;
@@ -112,7 +168,7 @@ describe('mobile AI through the Gezel App SDK', () => {
     };
     await f.ai.setPreferences({ enabled: true });
     const result = await f.ai.chat(request, () => {}).done;
-    assert.ok(result.ok);
+    assert.ok(result.ok, JSON.stringify(result));
     assert.equal(routed?.maxTokens, 2048);
   });
 
@@ -143,7 +199,7 @@ describe('mobile AI through the Gezel App SDK', () => {
         assert.equal(models.value.find((m) => m.id === modelId)?.isDefault, true);
       }
       const result = await f.ai.chat({ ...request, maxTokens: 2048 }, () => {}).done;
-      assert.ok(result.ok);
+      assert.ok(result.ok, JSON.stringify(result));
       assert.equal(routed?.providerId, providerId);
       assert.equal(routed?.modelId, providerId);
       assert.equal(routed?.maxTokens, 1024);
@@ -204,8 +260,8 @@ describe('mobile AI through the Gezel App SDK', () => {
     assert.ok(available.ok);
     if (available.ok) assert.equal(available.value[0].label, 'Gemini Nano (Android ML Kit)');
     assert.equal(prepared, false);
-    const result = await f.ai.installModel!('provider:android-mlkit').done;
-    assert.ok(result.ok);
+    const result = await f.ai.installModel!('android-mlkit:android-mlkit').done;
+    assert.ok(result.ok, JSON.stringify(result));
     if (result.ok) {
       assert.equal(result.value.id, 'android-mlkit:android-mlkit');
       assert.equal(result.value.availability, 'available');
@@ -263,7 +319,7 @@ describe('mobile AI through the Gezel App SDK', () => {
     f.models.memoryBudgetBytes = catalog[0].approxSizeBytes + 512 * 1024 ** 2;
     await f.ai.setPreferences({ enabled: true });
     const result = await f.ai.availableModels!();
-    assert.ok(result.ok);
+    assert.ok(result.ok, JSON.stringify(result));
     if (result.ok)
       assert.deepEqual(
         result.value.map((m) => m.id),
@@ -306,7 +362,7 @@ describe('mobile AI through the Gezel App SDK', () => {
         assert.equal(result.ok, false);
         if (!result.ok) assert.equal(result.error.code, 'timeout');
       } else {
-        assert.ok(result.ok);
+        assert.ok(result.ok, JSON.stringify(result));
         if (result.ok) {
           assert.equal(result.value.finishReason, 'cancelled');
           assert.equal(result.value.text, 'Partial');
@@ -323,13 +379,13 @@ describe('mobile AI through the Gezel App SDK', () => {
       await new Promise<void>((r) => {
         release = r;
       });
-      return { runtime: f.runtime, client: connectRuntime(f.runtime) };
+      return connectEmbeddingRuntime(f.runtime);
     });
     const enabling = f.ai.setPreferences({ enabled: true });
     while (!release) await tick();
-    await f.ai.setPreferences({ enabled: false });
+    const disabling = f.ai.setPreferences({ enabled: false });
     release();
-    await enabling;
+    await Promise.all([enabling, disabling]);
     assert.deepEqual(await f.ai.status(), { kind: 'unavailable', reason: 'opt-out' });
     assert.deepEqual(f.calls, []);
   });
@@ -377,14 +433,20 @@ describe('explicit mobile model installation', () => {
     };
     f.runtime.listModelDownloads = async () => {
       if (!started) return { downloads: [] };
-      f.models.models.push({ id: modelId, name: entry.name, sizeBytes: source.sizeBytes, source });
+      if (!f.models.models.some((model) => model.id === modelId))
+        f.models.models.push({
+          id: modelId,
+          name: entry.name,
+          sizeBytes: source.sizeBytes,
+          source,
+        });
       return {
         downloads: [{ ...initial, state: 'complete', downloadedBytes: source.sizeBytes, modelId }],
       };
     };
     const progress: string[] = [];
     const result = await f.ai.installModel!(entry.id, (event) => progress.push(event.phase)).done;
-    assert.ok(result.ok);
+    assert.ok(result.ok, JSON.stringify(result));
     if (result.ok) assert.equal(result.value.id, `llama-cpp:${modelId}`);
     assert.deepEqual(progress, ['resolving', 'downloading']);
   });
@@ -453,7 +515,7 @@ describe('mobile AI answer content', () => {
     };
     const events: AiChatEvent[] = [];
     const result = await f.ai.chat(request, (event) => events.push(event)).done;
-    assert.ok(result.ok);
+    assert.ok(result.ok, JSON.stringify(result));
     if (result.ok) assert.equal(result.value.text, 'Tuesday.');
     assert.equal(
       events
@@ -474,5 +536,42 @@ describe('mobile AI answer content', () => {
       events.map((event) => event.kind),
       ['error'],
     );
+  });
+});
+
+describe('mobile AI shared progress', () => {
+  it('forwards scoped engine progress to the same host events used by desktop', async () => {
+    const f = fixture({ enabled: true });
+    const listeners = new Map<string, (event: unknown) => void>();
+    f.runtime.addListener = async (name, listener) => {
+      listeners.set(name, listener as (event: unknown) => void);
+      return {
+        remove: async () => {
+          listeners.delete(name);
+        },
+      };
+    };
+    f.runtime.generate = async ({ requestId }) => {
+      listeners.get('enginePhase')?.({ requestId: 'stale', phase: 'loading_model', progress: 1 });
+      listeners.get('enginePhase')?.({ requestId, phase: 'loading_model', progress: 0.5 });
+      listeners.get('enginePhase')?.({ requestId, phase: 'generating', outputTokens: 4 });
+      return { text: 'Done.', stopReason: 'stop' };
+    };
+    const events: AiChatEvent[] = [];
+    const result = await f.ai.chat(request, (event) => events.push(event)).done;
+    assert.ok(result.ok, JSON.stringify(result));
+    assert.deepEqual(
+      events.filter((event) => event.kind === 'progress').map((event) => event.progress),
+      [
+        { phase: 'loading_model', percent: 50, outputTokens: null, tokensPerSecond: null },
+        { phase: 'generating', percent: null, outputTokens: 4, tokensPerSecond: null },
+      ],
+    );
+    assert.equal(listeners.size, 0);
+    assert.equal(
+      events.filter((event) => event.kind === 'done' || event.kind === 'error').length,
+      1,
+    );
+    await f.ai.setPreferences({ enabled: false });
   });
 });

@@ -21,7 +21,6 @@ import {
 import type { SpeechInstallEvent, SpeechSynthesizeEvent } from '@bendyline/docblocks/host';
 
 import { registerTrustedIpcHandler } from './ipc-authority.js';
-import { resolveGezelNativeHost } from './ai/gezel-native-host.js';
 import { KokoroEngine, type KokoroChannel } from './speech/kokoro-engine.js';
 import { kokoroLexiconDir, onnxRuntimeBinding } from './speech/kokoro-frontend.js';
 import type { KokoroReply } from './speech/kokoro-runtime.js';
@@ -35,17 +34,18 @@ import {
   type UnavailableEngine,
 } from './speech/speech-service.js';
 import { WhisperEngine } from './speech/whisper-engine.js';
+import { findWhisperBinary } from './speech/whisper-location.js';
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
 /**
  * Locate the bundled whisper server for this platform. Main-authoritative: the
- * path comes from the packaged payload (or an explicit development override),
+ * path comes from the packaged payload (or an installed development engine),
  * never from the renderer.
  */
-export function resolveWhisperEngine(
+export async function resolveWhisperEngine(
   env: NodeJS.ProcessEnv = process.env,
-): SttEngine | UnavailableEngine {
+): Promise<SttEngine | UnavailableEngine> {
   if (!app.isPackaged) {
     // Development and e2e only: a stand-in server, optionally run through an
     // interpreter. Cleared from packaged builds by construction.
@@ -58,24 +58,24 @@ export function resolveWhisperEngine(
       });
     }
   }
-  const native = resolveGezelNativeHost(
-    app.isPackaged,
-    process.resourcesPath,
+  // This small, data-only module imports no service runtime and starts nothing.
+  const { NATIVE_ENGINE_RELEASE } = await import('@bendyline/gezel-service/native-release');
+  const binary = findWhisperBinary({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
     env,
-    process.platform,
-    process.arch,
-    process.mas === true,
-  );
-  if (!native.canHost || !native.nativeBinDir) {
-    return { unavailable: 'Dictation is not available on this computer.' };
-  }
-  const binary = path.join(
-    native.nativeBinDir,
-    `${process.platform}-${process.arch}`,
-    process.platform === 'win32' ? 'gezel-whisper-server.exe' : 'gezel-whisper-server',
-  );
-  if (!existsSync(binary)) {
-    return { unavailable: 'Dictation is not included in this build of DocBlocks.' };
+    platform: process.platform,
+    arch: process.arch,
+    macAppStore: process.mas === true,
+    home: app.getPath('home'),
+    nativeRelease: NATIVE_ENGINE_RELEASE,
+  });
+  if (!binary) {
+    return {
+      unavailable: app.isPackaged
+        ? 'Speech recognition is not included in this build of DocBlocks.'
+        : 'Speech recognition could not find its local Whisper engine. Configure DOCBLOCKS_GEZEL_NATIVE_BIN_DIR for this development build, then restart DocBlocks.',
+    };
   }
   return new WhisperEngine({ binary });
 }
@@ -152,7 +152,9 @@ function developmentCatalog(env: NodeJS.ProcessEnv): readonly SpeechModelEntry[]
   return JSON.parse(readFileSync(file, 'utf8')) as SpeechModelEntry[];
 }
 
-export function createSpeechService(env: NodeJS.ProcessEnv = process.env): SpeechService {
+export async function createSpeechService(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<SpeechService> {
   const root = path.join(app.getPath('userData'), 'speech');
   const macAppStore = process.mas === true;
   // Automation must not pick up models a developer's own Gezel downloaded.
@@ -166,8 +168,8 @@ export function createSpeechService(env: NodeJS.ProcessEnv = process.env): Speec
       ...(catalog ? { catalog } : {}),
     }),
     preferences: new SpeechPreferenceStore(path.join(root, 'preferences.json')),
-    stt: resolveWhisperEngine(),
-    tts: resolveKokoroEngine(),
+    stt: await resolveWhisperEngine(env),
+    tts: resolveKokoroEngine(env),
     microphoneAccess,
   });
 }

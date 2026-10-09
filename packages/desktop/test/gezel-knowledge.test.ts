@@ -61,7 +61,7 @@ describe('Gezel knowledge in inference', () => {
         messages,
         new AbortController().signal,
       ),
-    ).to.equal(messages);
+    ).to.deep.equal(messages);
   });
   it('sends the request without knowledge whenever retrieval fails', async () => {
     for (const code of ['knowledge_unavailable', 'unauthorized', 'rate_limited']) {
@@ -73,26 +73,11 @@ describe('Gezel knowledge in inference', () => {
           messages,
           new AbortController().signal,
         ),
-      ).to.equal(messages);
+      ).to.deep.equal(messages);
     }
     expect(
       await withGezelKnowledge({} as GezelApp, messages, new AbortController().signal),
-    ).to.equal(messages);
-  });
-  it('asks an SDK that predates default ranking in the mode it knows', async () => {
-    const sent: unknown[] = [];
-    const result = await withGezelKnowledge(
-      app(async (request) => {
-        sent.push(request.rerank);
-        if (request.rerank === undefined)
-          throw Object.assign(new Error('Invalid input'), { name: 'ZodError' });
-        return { reranked: true, passages: [passage] };
-      }),
-      messages,
-      new AbortController().signal,
-    );
-    expect(sent).to.deep.equal([undefined, 'required']);
-    expect(result[0].content).to.contain(passage.text);
+    ).to.deep.equal(messages);
   });
   it('skips retrieval when the context window leaves no room', async () => {
     let called = false;
@@ -107,7 +92,7 @@ describe('Gezel knowledge in inference', () => {
         new AbortController().signal,
         4096,
       ),
-    ).to.equal(long);
+    ).to.deep.equal(long);
     expect(called).to.equal(false);
   });
   it('injects passages Gezel admitted without ranking', async () => {
@@ -130,7 +115,7 @@ describe('Gezel knowledge in inference', () => {
           messages,
           new AbortController().signal,
         ),
-      ).to.equal(messages);
+      ).to.deep.equal(messages);
     }
   });
   it('does not include late retrieval after cancellation', async () => {
@@ -155,7 +140,7 @@ describe('Gezel knowledge in inference', () => {
       new AbortController().signal,
       4096,
     );
-    expect(result).to.equal(messages);
+    expect(result).to.deep.equal(messages);
   });
 });
 

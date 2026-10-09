@@ -1,116 +1,142 @@
-/** Explicit producer refresh; normal npm ci/build never needs the sibling checkout. */
+/** Explicit preview refresh. Installed builds never require the producer checkout. */
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL, URL } from 'node:url';
 import process from 'node:process';
 const mobile = fileURLToPath(new URL('../', import.meta.url));
 const repo = path.resolve(process.argv[2] ?? path.join(mobile, '../../../gezel'));
+const releaseDir = process.argv[3] && path.resolve(process.argv[3]);
+if (!releaseDir)
+  throw new Error('Usage: refresh-gezel.mjs <gezel-checkout> <native-release-archives>');
 const load = (relative) => import(pathToFileURL(path.join(repo, relative)).href);
 const { withDependencyReadLease } = await load('scripts/dependency-lease.mjs');
 const { spawnPnpm } = await load('scripts/pnpm-cli.mjs');
+const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const read = async (file) => JSON.parse(await readFile(file, 'utf8'));
+const write = (file, value) => writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+function run(command, args, cwd) {
+  const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `${command} failed`);
+  return result.stdout;
+}
+const pins = await read(path.join(mobile, 'vendor/native-release.json'));
+for (const pin of Object.values(pins.archives))
+  if (hash(await readFile(path.join(releaseDir, pin.file))) !== pin.sha256)
+    throw new Error(`Native release archive integrity mismatch: ${pin.file}`);
+const packages = ['gezk', 'core', 'client', 'app-sdk', 'capacitor'];
 await withDependencyReadLease(
   repo,
   async ({ leaseEnv }) => {
-    const manifest = JSON.parse(await readFile(path.join(mobile, 'package.json'), 'utf8'));
-    for (const [name, folder] of [
-      ['@bendyline/gezel', 'core'],
-      ['@bendyline/gezel-app-sdk', 'app-sdk'],
-    ]) {
-      const producer = JSON.parse(
-        await readFile(path.join(repo, 'packages', folder, 'package.json'), 'utf8'),
+    const work = await mkdtemp(path.join(tmpdir(), 'docblocks-gezel-preview-'));
+    try {
+      const manifests = await Promise.all(
+        packages.map((folder) => read(path.join(repo, 'packages', folder, 'package.json'))),
       );
-      if (producer.version !== manifest.dependencies[name])
-        throw new Error(`Review and pin the new ${name} version before refreshing.`);
-    }
-    for (const command of ['build', 'pack']) {
-      const args = ['--filter', '@bendyline/gezel-capacitor', command];
-      if (command === 'pack') args.push('--pack-destination', path.join(mobile, 'vendor'));
-      const child = spawnPnpm(args, {
-        cwd: repo,
-        env: { ...process.env, ...leaseEnv },
-        stdio: 'inherit',
-      });
-      await new Promise((resolve, reject) => {
-        child.on('error', reject);
-        child.on('exit', (code) =>
-          code === 0 ? resolve() : reject(new Error(`SDK ${command} failed: ${code}`)),
-        );
-      });
-    }
-    const { BundledSource } = await load('packages/catalog/src/source.ts');
-    const { portableCatalogModels } = await load('packages/core/src/runtime/portable-catalog.ts');
-    const require = createRequire(path.join(repo, 'packages/catalog/package.json'));
-    const gildePath = require.resolve('@bendyline/gilde/package.json');
-    const gilde = JSON.parse(await readFile(gildePath, 'utf8'));
-    const models = portableCatalogModels(
-      await new BundledSource({ dataDir: path.join(path.dirname(gildePath), 'data') }).list(
-        'chat-model',
-      ),
-    );
-    const snapshot = {
-      package: '@bendyline/gilde',
-      version: gilde.version,
-      models: models.map(({ name, license, approxSizeBytes, contextWindow, source }) => ({
-        name,
-        license,
-        approxSizeBytes,
-        contextWindow,
-        source,
-      })),
-    };
-    await writeFile(
-      path.join(mobile, 'src/ai/catalog.json'),
-      JSON.stringify(snapshot, null, 2) + '\n',
-    );
-    const file = 'bendyline-gezel-capacitor-0.1.0.tgz';
-    const native = {};
-    for (const target of ['ios', 'android']) {
-      const nativeManifest = JSON.parse(
-        await readFile(
-          path.join(repo, 'packages/capacitor/native', target, 'sdk-manifest.json'),
-          'utf8',
-        ),
+      // Distinguish unpublished source from registry releases with the same producer version.
+      const versions = Object.fromEntries(
+        manifests.map((pkg) => [pkg.name, `${pkg.version}-docblocks.2`]),
       );
-      native[target] = { version: nativeManifest.packageVersion, sources: nativeManifest.sources };
+      const provenance = {
+        repository: 'https://github.com/bendyline/gezel',
+        baseCommit: run('git', ['rev-parse', 'HEAD'], repo).trim(),
+        nativeRelease: pins,
+        packages: {},
+      };
+      const pnpm = async (args) => {
+        const child = spawnPnpm(args, {
+          cwd: repo,
+          env: { ...process.env, ...leaseEnv },
+          stdio: 'inherit',
+        });
+        await new Promise((resolve, reject) => {
+          child.on('error', reject);
+          child.on('exit', (code) =>
+            code === 0 ? resolve() : reject(new Error(`SDK command failed: ${code}`)),
+          );
+        });
+      };
+      for (const [index, folder] of packages.entries()) {
+        const pkg = manifests[index];
+        await pnpm(['--filter', pkg.name, 'build']);
+        const raw = path.join(work, folder);
+        await mkdir(raw);
+        await pnpm([
+          '--config.ignore-scripts=true',
+          '--filter',
+          pkg.name,
+          'pack',
+          '--pack-destination',
+          raw,
+        ]);
+        const original = `${pkg.name.replace('@', '').replace('/', '-')}-${pkg.version}.tgz`;
+        run('tar', ['-xzf', path.join(raw, original), '-C', raw], repo);
+        const staged = path.join(raw, 'package');
+        const manifest = await read(path.join(staged, 'package.json'));
+        manifest.version = versions[pkg.name];
+        for (const key of ['dependencies', 'optionalDependencies'])
+          for (const name of Object.keys(manifest[key] ?? {}))
+            if (versions[name]) manifest[key][name] = versions[name];
+        await write(path.join(staged, 'package.json'), manifest);
+        if (folder === 'capacitor') {
+          const { stageNative, writeEmbeddingManifest, verifyCapacitorPackage } = await load(
+            'packages/capacitor/scripts/embedding-package.mjs',
+          );
+          for (const platform of ['ios', 'android']) {
+            const source = path.join(work, platform);
+            await mkdir(source);
+            run(
+              'tar',
+              ['-xzf', path.join(releaseDir, pins.archives[platform].file), '-C', source],
+              repo,
+            );
+            await stageNative(platform, source, path.join(staged, 'native', platform));
+          }
+          // Pair native bridge calls with the published runtime's API, not unreleased engines.
+          for (const [relative, expected] of Object.entries(pins.bridgeSources)) {
+            const source = run(
+              'git',
+              ['show', `${pins.bridgeCommit}:packages/capacitor/${relative}`],
+              repo,
+            );
+            if (hash(source) !== expected)
+              throw new Error(`Native bridge integrity mismatch: ${relative}`);
+            await writeFile(path.join(staged, relative), source);
+          }
+          // Released native sources are authenticated by the external archive pins above.
+          // They deliberately need not match the producer checkout's newer native sources.
+          await writeEmbeddingManifest(staged);
+          await verifyCapacitorPackage(staged);
+        }
+        const output = JSON.parse(
+          run(
+            process.execPath,
+            [
+              path.join(mobile, '../../node_modules/npm/bin/npm-cli.js'),
+              'pack',
+              '--ignore-scripts',
+              '--json',
+              '--pack-destination',
+              path.join(mobile, 'vendor'),
+            ],
+            staged,
+          ),
+        )[0];
+        provenance.packages[pkg.name] = {
+          version: manifest.version,
+          file: output.filename,
+          sha256: hash(await readFile(path.join(mobile, 'vendor', output.filename))),
+        };
+      }
+      await write(path.join(mobile, 'vendor/provenance.json'), provenance);
+    } finally {
+      await rm(work, { recursive: true, force: true });
     }
-    const sources = {};
-    for (const relative of [
-      'package.json',
-      'src/index.ts',
-      'src/transport.ts',
-      'src/chat.ts',
-      'src/models.ts',
-      'src/definitions.ts',
-      'src/answer-text.ts',
-      'ios/Sources/GezelCapacitor/GezelRuntimePlugin.swift',
-      'android/src/main/java/com/bendyline/gezel/capacitor/GezelRuntimePlugin.java',
-    ])
-      sources[relative] = createHash('sha256')
-        .update(await readFile(path.join(repo, 'packages/capacitor', relative)))
-        .digest('hex');
-    const provenance = {
-      file,
-      sha256: createHash('sha256')
-        .update(await readFile(path.join(mobile, 'vendor', file)))
-        .digest('hex'),
-      repository: 'https://github.com/bendyline/gezel',
-      baseCommit: spawnSync('git', ['rev-parse', 'HEAD'], {
-        cwd: repo,
-        encoding: 'utf8',
-      }).stdout.trim(),
-      sources,
-      native,
-    };
-    await writeFile(
-      path.join(mobile, 'vendor/provenance.json'),
-      JSON.stringify(provenance, null, 2) + '\n',
-    );
   },
-  { command: 'Refresh DocBlocks mobile SDK and catalog', env: process.env },
+  { command: 'Refresh DocBlocks mobile embedding SDK preview', env: process.env },
 );
 process.stdout.write(
-  'SDK refreshed. Reinstall its tarball with the governed npm CLI, regenerate notices, sync and qualify both native builds.\n',
+  'Preview packages refreshed. Install the five pinned tarballs, regenerate notices, sync and qualify native builds.\n',
 );

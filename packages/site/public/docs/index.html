@@ -8,19 +8,19 @@
     />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DocBlocks Documentation — Web, Desktop, VS Code, CLI &amp; MCP</title>
+    <title>DocBlocks Apps &amp; Getting Started — Web, Desktop, Mobile, VS Code &amp; CLI</title>
     <meta
       name="description"
-      content="Find DocBlocks documentation for the local-first web and desktop editors, VS Code extension, CLI, format conversion, and artifact-first MCP server."
+      content="Choose a DocBlocks app, create your first document, and move your Markdown between web, desktop, and VS Code. Explore the mobile preview, CLI, and MCP server."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/docs/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="DocBlocks" />
-    <meta property="og:title" content="DocBlocks documentation" />
+    <meta property="og:title" content="DocBlocks apps and getting started" />
     <meta
       property="og:description"
-      content="Guides for the web and desktop editors, VS Code extension, CLI, conversion formats, and local MCP server."
+      content="Find the right DocBlocks app, follow the first-run tutorial, and keep your documents portable."
     />
     <meta property="og:url" content="https://docblocks.com/docs/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
@@ -50,28 +50,26 @@
     <main class="page-main" id="content">
       <section class="hero">
         <div>
-          <p class="eyebrow">Documentation</p>
-          <h1>Choose a surface. Keep the same Markdown.</h1>
+          <p class="eyebrow">Apps &amp; documentation</p>
+          <h1>Choose your app. Keep your Markdown.</h1>
           <p class="lede">
-            DocBlocks ships as a web application, desktop app, VS Code extension, and command-line
-            tool. Start with the surface you use, then follow the deeper references for conversion
-            and agent workflows.
+            Start in a browser, download the desktop app, or write inside VS Code. Use the CLI and
+            MCP server for repeatable document work, and explore the iOS and Android preview. Every
+            option keeps readable Markdown at the center.
           </p>
           <div class="hero-actions">
-            <a class="button" href="https://github.com/bendyline/docblocks#readme">Project guide</a>
-            <a class="button button--secondary" href="https://github.com/bendyline/docblocks/issues"
-              >Get help</a
-            >
+            <a class="button" href="#apps">Compare the apps</a>
+            <a class="button button--secondary" href="#quick-start">Create your first document</a>
           </div>
         </div>
         <aside class="hero-aside" aria-label="About these guides">
-          <h2>Kept current</h2>
-          <p>
-            These guides describe the latest release. If something on screen doesn&rsquo;t match
-            what you read here,
-            <a href="https://github.com/bendyline/docblocks/issues">let us know</a> and we&rsquo;ll
-            fix the guide.
-          </p>
+          <h2>One document, familiar tools</h2>
+          <ul>
+            <li>Visual writing and Markdown source</li>
+            <li>Document, Page, Slideshow, and Video previews</li>
+            <li>Portable files and local storage</li>
+            <li>App-specific setup and features below</li>
+          </ul>
         </aside>
       </section>
 
@@ -91,6 +89,89 @@
         </figure>
       </section>
 
+      <section class="section" aria-labelledby="apps">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">The DocBlocks apps</p>
+            <h2 id="apps">Start where you work.</h2>
+          </div>
+          <p class="section-copy">
+            Choose by where you keep your files and how you like to write. The installed web app
+            uses browser storage; the desktop and mobile apps have their own storage and native file
+            access. Workspaces do not automatically sync between them.
+          </p>
+        </div>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Web app</h3>
+            <p>
+              <strong>For a quick start on any device.</strong> Open the editor with no account.
+              Keep work in this browser or open a folder in a supported browser. Choose
+              <strong>Install DocBlocks…</strong> in the app menu when offered to launch it from
+              your desktop. Offline editing is ready once the app finishes downloading.
+            </p>
+            <p><a href="/web/">Web app and installation guide</a></p>
+          </article>
+          <article class="card">
+            <h3>Desktop app</h3>
+            <p>
+              <strong>For everyday work in your own folders.</strong> Download for macOS (Apple
+              silicon), Windows, or Linux, then choose <strong>Open a folder</strong>. Get native
+              menus and file opening, plus optional AI assistance, dictation, and read aloud where
+              supported.
+            </p>
+            <p><a href="/desktop/">Download and set up Desktop</a></p>
+          </article>
+          <article class="card" id="mobile-preview">
+            <h3>Mobile apps · preview</h3>
+            <p>
+              <strong>For iPhone, iPad, and Android.</strong> Native apps are in development; store
+              distribution is pending. Preview builds offer an <strong>On this device</strong>
+              workspace, picked folders, import, export, and system sharing. Use the web app on your
+              phone or tablet today.
+            </p>
+            <p>
+              <a href="https://github.com/bendyline/docblocks/tree/main/packages/mobile"
+                >Mobile preview and build guide</a
+              >
+            </p>
+          </article>
+          <article class="card">
+            <h3>VS Code extension</h3>
+            <p>
+              <strong>For documents beside your code.</strong> Install the extension and open a
+              Markdown file. If needed, right-click the file and choose
+              <strong>Open in DocBlocks</strong>. Keep VS Code&rsquo;s explorer, tabs, saving, and
+              source control while editing visually.
+            </p>
+            <p><a href="/vscode/">VS Code extension and setup</a></p>
+          </article>
+          <article class="card">
+            <h3>CLI</h3>
+            <p>
+              <strong>For terminal and build workflows.</strong> Install
+              <code>@bendyline/docblocks-cli</code> with npm, then run
+              <code>docblocks --help</code>. Build HTML, preview locally, convert files, and render
+              video using repeatable commands.
+            </p>
+            <p><a href="/cli/">CLI installation and commands</a></p>
+          </article>
+          <article class="card">
+            <h3>MCP server</h3>
+            <p>
+              <strong>For document work with an agent.</strong> Connect the local MCP server
+              included in the CLI. Let your agent convert, inspect, or preview documents, then save
+              the resulting artifacts. File access is limited to roots you explicitly allow.
+            </p>
+            <p>
+              <a href="https://github.com/bendyline/docblocks/blob/main/docs/mcp.md"
+                >MCP setup and reference</a
+              >
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section class="section" aria-labelledby="quick-start">
         <div class="section-heading">
           <div>
@@ -98,107 +179,88 @@
             <h2 id="quick-start">Create, protect, and publish a document.</h2>
           </div>
           <p class="section-copy">
-            The web editor requires no account. These three steps cover the first successful
-            document and the local-first storage choices that matter before you begin real work.
+            The web and desktop apps share these first steps. In a fresh default workspace, open
+            <strong>aboutDocBlocks.md</strong> for the built-in tutorial. In VS Code, create or open
+            a Markdown file in the Explorer, then follow the same writing workflow.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
             <h3>1. Create or open</h3>
             <p>
-              Open the web editor and choose <strong>New document</strong>. To work with an existing
-              local folder in a supported browser, choose <strong>Open a folder</strong> and grant
-              only that folder.
+              Choose <strong>New file</strong> in the file pane, or <strong>New document</strong> on
+              the welcome screen. Name it <code>my-first-document.md</code>. Add a heading and a few
+              sentences in <strong>Write</strong>, then switch to <strong>Source</strong>
+              to see the same document as Markdown.
             </p>
             <p><a href="/">Open the web editor</a></p>
           </article>
           <article class="card">
             <h3>2. Keep a backup</h3>
             <p>
-              Browser workspaces stay on this device. In Settings, request persistent storage when
-              available, and use <strong>Backup browser docs frequently</strong> to download a
-              portable copy before clearing browser data or changing devices.
+              Edits save automatically in web and desktop workspaces; check any save or conflict
+              message. Browser storage belongs to this browser profile. Follow the
+              <strong>Backup browser docs frequently</strong> reminder and use
+              <strong>Download all workspaces</strong> in the app menu. For native folders, use your
+              usual file backup tools.
             </p>
           </article>
           <article class="card">
             <h3>3. Export or share</h3>
             <p>
-              Open <strong>Export and share</strong> from the editor toolbar. Export creates a local
-              file. A share link embeds a copy of the document in the URL, so never include secrets
-              and treat anyone with the link as able to read that copy.
+              Preview your document as a Document, Page, Slideshow, or Video, then open
+              <strong>Export and share</strong>. Choose a format and save the result. A share link
+              embeds a snapshot of the document in the URL; anyone with the link can read that copy,
+              and later edits do not update it.
             </p>
             <p><a href="/formats/">Compare export formats</a></p>
           </article>
         </div>
       </section>
 
-      <section class="section" aria-labelledby="documentation-index">
+      <section class="section" aria-labelledby="moving-between-apps">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Guide index</p>
-            <h2 id="documentation-index">From first document to automated delivery.</h2>
+            <p class="eyebrow">Keep your work portable</p>
+            <h2 id="moving-between-apps">Move files, keep writing.</h2>
           </div>
           <p class="section-copy">
-            The editor surfaces share the same Markdown model, but each host owns its surrounding
-            chrome and storage boundary. The CLI and MCP references describe their different output
-            and authority rules explicitly.
+            Installing another DocBlocks app does not move your existing workspaces. Choose a shared
+            folder or make an explicit copy to continue elsewhere.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
-            <h3>Web editor</h3>
+            <h3>From the browser</h3>
             <p>
-              Open the full editor at the site root. Browser workspaces use local storage or folders
-              you explicitly grant.
-            </p>
-            <p><a href="/web/">Web overview</a></p>
-          </article>
-          <article class="card">
-            <h3>Desktop app</h3>
-            <p>
-              Use native folders, menus, file opening, and packaged applications on macOS, Windows,
-              and Linux.
-            </p>
-            <p><a href="/desktop/">Desktop overview</a></p>
-          </article>
-          <article class="card">
-            <h3>VS Code extension</h3>
-            <p>
-              Edit Markdown visually inside VS Code while the host keeps ownership of files, tabs,
-              themes, and save boundaries.
-            </p>
-            <p><a href="/vscode/">VS Code overview</a></p>
-          </article>
-          <article class="card">
-            <h3>CLI reference</h3>
-            <p>Review every command, argument, stream, output rule, and format direction.</p>
-            <p>
-              <a href="https://github.com/bendyline/docblocks/blob/main/docs/cli.md"
-                >Read the CLI reference</a
-              >
+              Export Markdown with its media, or a DBK bundle that keeps documents and media
+              together, then open it in another DocBlocks app. Keep a separate backup before
+              clearing browser data. Installing the web app continues to use its browser profile.
             </p>
           </article>
           <article class="card">
-            <h3>MCP protocol</h3>
+            <h3>Between Desktop and VS Code</h3>
             <p>
-              Understand strict tools, root grants, artifacts, conversion fidelity, resources,
-              budgets, and lifecycle.
-            </p>
-            <p>
-              <a href="https://github.com/bendyline/docblocks/blob/main/docs/mcp.md"
-                >Read the MCP guide</a
-              >
+              Open the same folder in either app. Your Markdown and relative media links travel
+              together. If two apps edit a document, resolve any external-change conflict before
+              continuing. File sync, when wanted, comes from your own folder or backup service.
             </p>
           </article>
           <article class="card">
-            <h3>Formats</h3>
+            <h3>In a mobile preview</h3>
             <p>
-              Compare current import and export directions before choosing an editor, CLI, or MCP
-              workflow.
+              Use a picked folder or export and share files through the system controls.
+              <strong>On this device</strong> storage is private to the app and is removed on
+              uninstall. Opening a Markdown file from another app imports a copy; it does not
+              automatically update the original.
             </p>
-            <p><a href="/formats/">Explore formats</a></p>
           </article>
         </div>
+        <p>
+          For automated workflows, see the
+          <a href="https://github.com/bendyline/docblocks/blob/main/docs/cli.md">CLI reference</a>
+          and <a href="/formats/">supported import and export formats</a>.
+        </p>
       </section>
 
       <section class="section" aria-labelledby="troubleshooting">

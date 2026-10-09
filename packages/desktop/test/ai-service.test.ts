@@ -95,7 +95,12 @@ class ControlledStream implements AsyncIterable<ProviderChatChunk> {
 
 const MODEL_ENTRIES: ProviderModelEntry[] = [
   { id: 'gezel:writer', owned_by: 'gezel', name: 'Writer', is_fallback: true },
-  { id: 'llama-cpp:qwen3-4b', owned_by: 'llama-cpp', context_window: 32_768 },
+  {
+    id: 'llama-cpp:qwen3-4b',
+    owned_by: 'llama-cpp',
+    locality: 'on-device',
+    context_window: 32_768,
+  },
 ];
 
 class FakeConnection implements AiProviderConnection {
@@ -840,7 +845,12 @@ describe('desktop AI service: hosting', () => {
 
   function hostingService(
     entries: ProviderModelEntry[] = [
-      { id: 'llama-cpp:qwen3.8-27b-q4', owned_by: 'llama-cpp', context_window: 262_144 },
+      {
+        id: 'llama-cpp:qwen3.8-27b-q4',
+        owned_by: 'llama-cpp',
+        locality: 'on-device',
+        context_window: 262_144,
+      },
     ],
   ) {
     const created = createService(ENABLED);

@@ -484,6 +484,24 @@ describe('AiSettingsControls', () => {
     }
   });
 
+  it('describes a missing selection without showing its internal model ID or changing it', async () => {
+    const missing = 'llama-cpp:6d818d84-3d15-46eb-9a63-e9b64d6edb3b';
+    const fake = fakeAi(READY, { ...OPTED_IN, model: missing });
+    const { container, cleanup } = await render(fake.api);
+    try {
+      const select = container.querySelector<HTMLSelectElement>('select');
+      expect(select?.value).to.equal(missing);
+      expect(select?.selectedOptions[0]?.textContent).to.equal(
+        'Previously selected model (not available)',
+      );
+      expect(select?.selectedOptions[0]?.disabled).to.equal(true);
+      expect(container.textContent).not.to.include(missing);
+      expect(fake.calls).to.deep.equal([]);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('downloads a model with progress, selects it, and adds it to the model picker', async () => {
     const downloadable: AiModelDownloadInfo = {
       id: 'llama-cpp:small-writer',

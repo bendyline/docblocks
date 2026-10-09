@@ -86,13 +86,13 @@
   },
   "dependencies": {
     "@bendyline/docblocks": "2.6.2",
-    "@bendyline/squisq": "2.11.16",
+    "@bendyline/squisq": "2.11.17",
     "@bendyline/squisq-calc": "2.11.1",
-    "@bendyline/squisq-editor-react": "2.11.19",
-    "@bendyline/squisq-formats": "2.6.16",
-    "@bendyline/squisq-react": "2.11.18",
-    "@bendyline/squisq-video": "2.3.20",
-    "@bendyline/squisq-video-react": "2.4.22",
+    "@bendyline/squisq-editor-react": "2.11.20",
+    "@bendyline/squisq-formats": "2.6.17",
+    "@bendyline/squisq-react": "2.11.19",
+    "@bendyline/squisq-video": "2.3.21",
+    "@bendyline/squisq-video-react": "2.4.23",
     "qrcode": "1.5.4"
   },
   "devDependencies": {

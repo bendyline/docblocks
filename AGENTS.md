@@ -230,13 +230,17 @@ Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/d
 `packages/react` renders it (`AiSettingsControls`, shown when
 `hostSupports('aiAssist')`) and never learns what is behind it. On desktop,
 `main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
-machine — to the renderer. `main/ai/gezel-connector.ts` and
-`main/ai/gezel-knowledge.ts` keep Gezel behind that seam: they discover the user's
-own running Gezel and ask for
-`openai` plus scoped `knowledge` access with a typed verification code. Catalog
+machine — to the renderer. `main/ai/gezel-connector.ts` delegates consent,
+standalone/private fallback, and model preparation to the SDK's
+`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets
+to `withKnowledgeContext`; Gezel owns retrieval validation, ranking, citations,
+and evidence serialization. The connection asks for `openai` plus scoped
+`knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
 `host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
-leaves ranking to the SDK. Knowledge never blocks a request: missing SDK support,
+leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
+inventory, never provider-name heuristics or a DocBlocks native-helper probe.
+Knowledge never blocks a request: missing SDK support,
 a failed retrieval, or a malformed answer sends the request without passages.
 The new Gezel SDK/service API must be published and pinned before shipping;
 see `packages/desktop/README.md`. Three rules
@@ -277,8 +281,8 @@ true` profile and the service's direct Fetch transport: no child Node, loopback
 client connection, machine-service discovery, cloud-provider enumeration, or
 standalone background systems. A running standalone Gezel that fails for any
 other reason is reported, not hidden. The hosted service offers only on-device
-models. Packaged builds stage the installed service's pinned native release in
-`resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
+models. Packaged builds call `@bendyline/gezel-service/packaging` to stage the
+installed service's pinned native release in `resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
 signatures after opt-in, and pass it as `host.nativeBinDir`. They use
 `distributionProfile: 'store'` so no runtime executable download can repair a
 missing or invalid payload. Preserve the native release's existing signatures
@@ -515,10 +519,13 @@ with best-effort durability and no watcher; resume re-observes the active docume
 Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
 App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,
 opt-in off by default, model downloads gesture-only, selected models explicit,
-and every stream terminal exactly once. The private SDK tarball and native/source
-hashes live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
+and every stream terminal exactly once. Gezel's shared `createEmbedding`/`streamText`
+and model manager own lifecycle, catalog, preparation and inference; avoid duplicating
+them in the host adapter. Matched preview tarballs and native release/bridge hashes
+live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
 Never patch installed SDK files. Device AI tests use synthetic weights only in the
-isolated Android `.tests` app and require an explicit arm64 device ID.
+isolated iOS/Android `.tests` app and require an explicit arm64 device ID.
+`--download` explicitly opts the isolated test app into a real-model check.
 
 ## Gotchas worth knowing
 
