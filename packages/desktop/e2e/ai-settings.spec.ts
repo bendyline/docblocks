@@ -57,7 +57,8 @@ test('AI self-hosts without an installed Gezel, and the choice persists', async 
   await expect
     .poll(async () => (await readAi(first.window)).status, { timeout: 30_000 })
     .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
-  await expect(section.getByRole('status')).toContainText('inside DocBlocks');
+  // Knowledge catalogs can show a loading status alongside the connection status.
+  await expect(section.getByRole('status').filter({ hasText: 'inside DocBlocks' })).toBeVisible();
   await expect(section.getByRole('button', { name: 'Connect Gezel app' })).toHaveCount(0);
   await first.close();
 
