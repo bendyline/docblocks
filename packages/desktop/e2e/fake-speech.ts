@@ -25,9 +25,22 @@ const FILES = {
  */
 export function installFakeSpeechModels(
   userDataDir: string,
-  options: { installed?: boolean } = {},
+  options: { installed?: boolean; kokoro?: { model: string; voice: string } } = {},
 ): NodeJS.ProcessEnv {
-  const catalog = Object.entries(FILES).map(([id, files]) => ({
+  // An opt-in qualification run can use real, already-downloaded weights in
+  // the same isolated store. Routine E2E never downloads or runs a model.
+  const filesByModel: Record<string, Record<string, Buffer>> = {
+    ...FILES,
+    ...(options.kokoro
+      ? {
+          'kokoro-82m-v1.0': {
+            'onnx/model_quantized.onnx': fs.readFileSync(options.kokoro.model),
+            'voices/af_heart.bin': fs.readFileSync(options.kokoro.voice),
+          },
+        }
+      : {}),
+  };
+  const catalog = Object.entries(filesByModel).map(([id, files]) => ({
     id,
     kind: id.startsWith('whisper') ? 'stt' : 'tts',
     label: id.startsWith('whisper') ? 'Whisper Base (English)' : 'Kokoro (English voices)',
@@ -48,7 +61,7 @@ export function installFakeSpeechModels(
   if (options.installed !== false) {
     for (const entry of catalog) {
       const dir = path.join(userDataDir, 'speech', 'models', entry.id);
-      for (const [name, data] of Object.entries(FILES[entry.id as keyof typeof FILES])) {
+      for (const [name, data] of Object.entries(filesByModel[entry.id]!)) {
         const file = path.join(dir, ...name.split('/'));
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, data);

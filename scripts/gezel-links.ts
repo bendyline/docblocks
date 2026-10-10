@@ -42,7 +42,7 @@ export function linkGezel(root = repoRoot, source = path.resolve(root, '../gezel
     }
     if (current && !current.isSymbolicLink() && stat(backup)) {
       throw new Error(
-        `${name} has both an installed copy and a saved copy; resolve this before relinking.`,
+        `${name} has both an installed copy and a saved copy; run npm run unlink:gezel before relinking to keep the installed copy.`,
       );
     }
     return { installed, target, backup, current };
@@ -74,8 +74,9 @@ export function linkedGezelRoot(root = repoRoot, required = false): string | nul
     installed: path.join(modules, name),
     linked: stat(path.join(modules, name))?.isSymbolicLink() ?? false,
   }));
-  const configured = stat(path.join(saved, 'source.json')) !== null;
-  if (!links.some((entry) => entry.linked) && !configured && !required) return null;
+  // npm install can replace every link while leaving our saved-copy marker.
+  // The installed packages, not that historical marker, decide what to build.
+  if (!links.some((entry) => entry.linked) && !required) return null;
   if (links.some((entry) => !entry.linked)) {
     throw new Error(
       'Gezel links are missing or incomplete. Run npm run link:gezel (or npm run unlink:gezel to restore registry packages).',
@@ -87,6 +88,7 @@ export function linkedGezelRoot(root = repoRoot, required = false): string | nul
       throw new Error(`${entry.name} must resolve to the same Gezel checkout as the other links.`);
     }
   }
+  const configured = stat(path.join(saved, 'source.json')) !== null;
   if (
     configured &&
     JSON.parse(fs.readFileSync(path.join(saved, 'source.json'), 'utf8')) !== source
@@ -104,19 +106,28 @@ export function unlinkGezel(root = repoRoot): void {
   const plan = GEZEL_PACKAGES.map(([dir, name]) => {
     const installed = path.join(modules, name);
     const current = stat(installed);
+    const linked = current?.isSymbolicLink() ?? false;
     if (
       current &&
-      (!current.isSymbolicLink() ||
-        path.resolve(path.dirname(installed), fs.readlinkSync(installed)) !==
-          path.join(source, 'packages', dir))
+      (linked
+        ? path.resolve(path.dirname(installed), fs.readlinkSync(installed)) !==
+          path.join(source, 'packages', dir)
+        : !current.isDirectory() ||
+          JSON.parse(fs.readFileSync(path.join(installed, 'package.json'), 'utf8')).name !== name)
     ) {
       throw new Error(`${installed} changed since linking; it will not be overwritten.`);
     }
-    return { installed, current, backup: path.join(saved, name) };
+    return { installed, current, linked, backup: path.join(saved, name) };
   });
-  for (const { installed, current, backup } of plan) {
-    if (current) fs.unlinkSync(installed);
-    if (stat(backup)) fs.renameSync(backup, installed);
+  for (const { installed, current, linked, backup } of plan) {
+    if (current && !linked) {
+      // npm has already restored this package, possibly at a newer version.
+      // Keep it and discard only the obsolete copy saved by linkGezel().
+      if (stat(backup)) fs.rmSync(backup, { recursive: true });
+    } else {
+      if (current) fs.unlinkSync(installed);
+      if (stat(backup)) fs.renameSync(backup, installed);
+    }
   }
   fs.unlinkSync(marker);
 }

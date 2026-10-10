@@ -34,6 +34,14 @@ describe('local Gezel links', () => {
   }
 
   const installed = (name: string) => path.join(root, 'packages/desktop/node_modules', name);
+  const saved = (name: string) =>
+    path.join(root, 'packages/desktop/node_modules/.docblocks-gezel', name);
+
+  function replaceWithRegistry(name: string) {
+    fs.unlinkSync(installed(name));
+    write(path.join(installed(name), 'package.json'), JSON.stringify({ name, version: 'new' }));
+    write(path.join(installed(name), 'dist/index.js'), 'updated registry bytes');
+  }
 
   beforeEach(() => {
     base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'docblocks-gezel-links-')));
@@ -88,14 +96,65 @@ describe('local Gezel links', () => {
     }
   });
 
-  it('fails if npm replaces configured links with registry packages', () => {
+  it('builds with registry packages after npm replaces every link, without the sibling checkout', async () => {
     linkGezel(root);
     for (const [, name] of GEZEL_PACKAGES) {
-      fs.unlinkSync(installed(name));
-      write(path.join(installed(name), 'package.json'), JSON.stringify({ name }));
+      replaceWithRegistry(name);
     }
+    fs.rmSync(source, { recursive: true });
+    expect(linkedGezelRoot(root)).to.equal(null);
+    expect(() => linkedGezelRoot(root, true)).to.throw('links are missing');
+    expect(await buildLinkedGezel(root)).to.equal(0);
+    unlinkGezel(root);
+    expect(fs.existsSync(saved('source.json'))).to.equal(false);
+    for (const [, name] of GEZEL_PACKAGES) {
+      expect(fs.readFileSync(path.join(installed(name), 'dist/index.js'), 'utf8')).to.equal(
+        'updated registry bytes',
+      );
+      expect(fs.existsSync(saved(name))).to.equal(false);
+    }
+  });
+
+  it('can relink and restore the updated registry copies after clearing stale configuration', () => {
+    linkGezel(root);
+    for (const [, name] of GEZEL_PACKAGES) replaceWithRegistry(name);
+    expect(() => linkGezel(root)).to.throw('run npm run unlink:gezel');
+    unlinkGezel(root);
+    linkGezel(root);
+    expect(linkedGezelRoot(root)).to.equal(source);
+    unlinkGezel(root);
+    for (const [, name] of GEZEL_PACKAGES) {
+      expect(fs.readFileSync(path.join(installed(name), 'dist/index.js'), 'utf8')).to.equal(
+        'updated registry bytes',
+      );
+    }
+  });
+
+  it('rejects a partly replaced link set but unlinks it without downgrading installed packages', () => {
+    linkGezel(root);
+    replaceWithRegistry('@bendyline/gezel-app-sdk');
+    fs.unlinkSync(installed('@bendyline/gezel-service'));
     expect(() => linkedGezelRoot(root)).to.throw('links are missing');
+    unlinkGezel(root);
+    expect(linkedGezelRoot(root)).to.equal(null);
+    for (const [, name] of GEZEL_PACKAGES) {
+      expect(fs.lstatSync(installed(name)).isSymbolicLink()).to.equal(false);
+      expect(fs.readFileSync(path.join(installed(name), 'dist/index.js'), 'utf8')).to.equal(
+        name === '@bendyline/gezel-app-sdk' ? 'updated registry bytes' : 'original registry bytes',
+      );
+    }
+  });
+
+  it('validates replacement packages before unlinking anything', () => {
+    linkGezel(root);
+    replaceWithRegistry('@bendyline/gezel-service');
+    write(
+      path.join(installed('@bendyline/gezel-service'), 'package.json'),
+      JSON.stringify({ name: 'unexpected' }),
+    );
     expect(() => unlinkGezel(root)).to.throw('will not be overwritten');
+    expect(fs.lstatSync(installed('@bendyline/gezel')).isSymbolicLink()).to.equal(true);
+    expect(fs.existsSync(saved('@bendyline/gezel-service'))).to.equal(true);
   });
 
   it('refuses a partial or mixed-checkout link set', () => {
@@ -108,6 +167,8 @@ describe('local Gezel links', () => {
     fs.symlinkSync(other, sdk, process.platform === 'win32' ? 'junction' : 'dir');
     expect(() => linkedGezelRoot(root)).to.throw('same Gezel checkout');
     expect(() => linkGezel(root)).to.throw('already links elsewhere');
+    expect(() => unlinkGezel(root)).to.throw('will not be overwritten');
+    expect(fs.lstatSync(installed('@bendyline/gezel')).isSymbolicLink()).to.equal(true);
   });
 
   it('can restore installed packages after the sibling checkout is removed', () => {

@@ -342,6 +342,13 @@ Input uses the same linked Squisq reader as `convert`, so import-capable Office,
 PDF, spreadsheet, HTML, Markdown, JSON Doc, DBK/ZIP, and folder sources are valid.
 The linked default dimensions are 1920x1080 landscape and 1080x1920 portrait.
 
+**Dynamic slides** (`squisq-transform: dynamic-slides`) regenerates the visual
+presentation from current prose and optional `squisq-presentation-hints`. Its cues
+are resolved from the current narration and adjacent timing sidecar, including
+WebM audio. Keep the Markdown and its media folder together. Stale narration or
+missing timings fail export with a repair message. Legacy `squisq-presentation`
+plans remain readable. See [Dynamic slides](presentations.md).
+
 Media-edit recipes carry through: cuts, gain, and fades on audio and video clips
 shape the mix, and a clip with an audio-cleanup recipe (`fx`) uses its processed
 render from the document's `.mediaEdits/` folder when one exists (the editor makes

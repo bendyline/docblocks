@@ -306,7 +306,7 @@ export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
         'license',
         'licenseUrl',
       ],
-      ['updateRequired'],
+      ['updateRequired', 'sharedStorage'],
     )
   ) {
     return null;
@@ -317,8 +317,10 @@ export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
   if (!isNonNegativeInteger(value.downloadBytes, SPEECH_WIRE_LIMITS.downloadBytesCeiling))
     return null;
   if (typeof value.installed !== 'boolean' || typeof value.recommended !== 'boolean') return null;
+  if (value.sharedStorage !== undefined && typeof value.sharedStorage !== 'boolean') return null;
   if (value.source !== 'app' && value.source !== 'shared' && value.source !== null) return null;
   if (value.installed !== (value.source !== null)) return null;
+  if (value.sharedStorage === true && value.source !== 'app') return null;
   if ('updateRequired' in value && typeof value.updateRequired !== 'boolean') return null;
   if (value.updateRequired === true && value.installed) return null;
   if (!parseHttpsUrl(value.licenseUrl)) return null;
@@ -331,6 +333,7 @@ export function parseSpeechModelInfo(value: unknown): SpeechModelInfo | null {
     installed: value.installed,
     ...(typeof value.updateRequired === 'boolean' ? { updateRequired: value.updateRequired } : {}),
     source: value.source,
+    ...(value.sharedStorage !== undefined ? { sharedStorage: value.sharedStorage } : {}),
     recommended: value.recommended,
     license: value.license,
     licenseUrl: value.licenseUrl as string,

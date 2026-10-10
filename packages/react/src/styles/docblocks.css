@@ -7290,3 +7290,193 @@ button.db-git-file-row:hover {
   align-items: flex-start;
   gap: 6px;
 }
+
+/* Presentation review uses the same source and timeline as the saved player. */
+.db-presentation-workspace {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(140px, 24%) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.db-presentation-beats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+  overflow-y: auto;
+}
+.db-presentation-beats button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  min-height: var(--db-target-min);
+  padding: 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+}
+.db-presentation-beat-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.db-presentation-beats button:hover {
+  background: var(--db-bg-hover);
+}
+.db-presentation-beats button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+.db-presentation-beats button[aria-current='step'] {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+  box-shadow: inset 3px 0 0 var(--db-accent);
+}
+.db-presentation-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.db-presentation-preview {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: clamp(120px, 23vh, 240px);
+  overflow: hidden;
+  border: 1px solid var(--db-input-border);
+  border-radius: 8px;
+}
+.db-presentation-preview > * {
+  width: 100%;
+  height: 100%;
+}
+.db-presentation-fields {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.db-presentation-preferences {
+  align-items: flex-end;
+}
+.db-presentation-beats small {
+  display: block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text-muted);
+  overflow-wrap: anywhere;
+}
+.db-presentation label.db-presentation-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  box-sizing: border-box;
+  width: auto;
+  max-width: 100%;
+  min-height: var(--db-target-min);
+  padding: 8px 0;
+}
+.db-presentation input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.db-presentation-fields label {
+  width: min(100%, 320px);
+}
+.db-presentation-source {
+  flex-shrink: 0;
+  padding: 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+}
+.db-presentation-source-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.db-presentation-source-label h3 {
+  margin: 0;
+  font-size: inherit;
+}
+.db-presentation-source-label span {
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+.db-presentation-source p {
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.db-presentation-wording summary {
+  cursor: pointer;
+  min-height: var(--db-target-min);
+  align-content: center;
+}
+.db-presentation-wording label + label {
+  margin-top: 12px;
+}
+.db-presentation label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-weight: 600;
+}
+.db-presentation input,
+.db-presentation select,
+.db-presentation textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--db-target-min);
+  padding: 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+.db-presentation [role='alert'] {
+  color: var(--db-danger);
+}
+.db-presentation details p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--db-text-secondary);
+}
+:root[data-db-width='compact'] .db-presentation-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 140px) minmax(0, 1fr);
+}
+:root[data-db-width='compact'] .db-presentation-beats {
+  max-height: 140px;
+}

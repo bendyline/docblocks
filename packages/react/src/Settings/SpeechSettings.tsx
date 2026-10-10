@@ -184,7 +184,11 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
             <a href={model.licenseUrl} target="_blank" rel="noreferrer">
               {model.license}
             </a>
-            {model.source === 'shared' ? ' · Shared with Gezel, using no extra space' : ''}
+            {model.source === 'shared'
+              ? ' · Available from Gezel, no download needed'
+              : model.sharedStorage
+                ? ' · Shared speech storage'
+                : ''}
             {model.updateRequired ? ' · Update required' : ''}
           </span>
         </div>

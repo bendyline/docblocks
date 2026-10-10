@@ -45,13 +45,47 @@ the renderer argv. It never loads ONNX Runtime to find out.
   `@bendyline/gezel-service`, so pronunciation matches Gezel exactly and
   eSpeak NG (GPL-3) is never involved. A stalled or crashed process is killed
   and respawned; an idle one is unloaded after five minutes.
-- `main/speech/speech-models.ts` pins every file to a Hugging Face commit, byte
-  length and SHA-256; `verified-download.ts` resumes, times out idle transfers
-  and renames into place only after verification. A Whisper model the user's
-  own Gezel already downloaded is used read-only once its hash matches (never
-  under the MAS sandbox or automation).
+- `@bendyline/gezel/speech-models` pins every file to a Hugging Face commit, byte
+  length and SHA-256. Its shared downloader resumes, times out idle transfers,
+  and renames into place only after verification. `main/speech/speech-models.ts`
+  owns DocBlocks' installation manifests and adapts this shared storage API.
+  Both Whisper and Kokoro can reuse Gezel downloads (never under the MAS
+  sandbox or automation).
 - Preferences are `userData/speech/preferences.json`, deliberately not
   `settings.json`, whose parser quarantines unknown keys.
+
+### Shared downloads with Gezel
+
+Both applications use `@bendyline/gezel/speech-models` for the pinned catalog,
+verified downloads, and a cache at `<GEZEL_HOME>/engines/speech-assets/<sha256>`
+(default `~/.gezel`). Each app keeps its own model paths and manifest. These
+paths are hard links to shared bytes, so removing a model in one app leaves
+other installations usable. On different filesystems, verified bytes are
+copied; the download is still reused. Cache collection removes a blob only
+after all installation links have gone. Cross-process locks serialize writers
+and collection; a cancelled waiter cannot stop another app's download.
+
+Discovery checks complete, verified files without downloading. It recognizes
+legacy Gezel Whisper folders, configured read-only homes, and the machine's
+public model assets directory. Custom `GEZEL_HOME` and
+`GEZEL_SHARED_ASSETS_DIR` paths are honored. Model use acquires DocBlocks' own
+references before loading, and existing private DocBlocks downloads join the
+cache when next used. Gezel follows the same rule for its existing Whisper
+files. A partially available multi-file model is unavailable until complete;
+explicit installation reuses the files already present.
+
+Kokoro q8 uses the same timestamped export in both apps. Gezel ships the small
+model/tokenizer metadata its loader needs, while its packaged voice vectors
+are reusable after verification. Older standard ONNX exports have different
+bytes and require an explicit Gezel model update. No service connection,
+AI opt-in, or new download is needed simply to reuse an installed model.
+Settings labels owned shared references as **Shared speech storage** and
+retains **Remove**; a discovered installation offers use without a download.
+MAS and automation pass no shared cache or discovery roots and remain private.
+
+Gezel core and service `1.2.4` are pinned in the desktop manifest and lockfile.
+The published core provides `./speech-models`; sibling links remain available
+for local development.
 
 ### Kokoro export and model updates
 
@@ -82,10 +116,9 @@ Acoustic calibration and persisted timing-quality provenance remain follow-up
 work. The new shared frontend also corrects multi-digit ordinal expansion
 (`21st` becomes `twenty first`) and retains overlong words across model chunks.
 
-**Release prerequisite:** publish the sibling Gezel core's new
-`@bendyline/gezel/kokoro` source-mapping API, then update the desktop Gezel npm
-pins and lockfile to a release that includes it. Development uses the existing
-local links. The ONNX artifact is already published upstream; DocBlocks does
+Gezel core `1.2.4` includes the `@bendyline/gezel/kokoro` source-mapping API
+and is pinned in the desktop manifest and lockfile.
+The ONNX artifact is already published upstream; DocBlocks does
 not publish or patch its own model, and no new native binary is needed for this
 timing path.
 

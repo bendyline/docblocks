@@ -167,6 +167,22 @@ function scriptedDiagram(messages: readonly ChatMessage[]): string {
 
 function scriptedAnswer(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  if (system.includes('You edit a narrated presentation')) {
+    const input = JSON.parse(messages.at(-1)?.content ?? '{}') as {
+      position: string;
+      current: { layout: string; headline: string; points: string[] };
+    };
+    return JSON.stringify({
+      ...input.current,
+      headline:
+        [
+          'Your ideas deserve a voice',
+          'Write. Present. Share.',
+          'Your words, in sync',
+          'One document. A complete story.',
+        ][Number.parseInt(input.position, 10) - 1] ?? input.current.headline,
+    });
+  }
   if (system.includes('You plan illustrations')) return scriptedPlan(messages);
   if (system.includes('You turn one passage into')) return scriptedDiagram(messages);
   if (system.includes('document reviewer')) return scriptedReview(documentFrom(messages));

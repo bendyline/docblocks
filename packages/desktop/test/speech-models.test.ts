@@ -263,7 +263,7 @@ describe('SpeechModelStore', () => {
     }
   });
 
-  it('uses a verified shared copy read-only and never deletes it', async () => {
+  it('acquires its own reference to a verified shared copy and never deletes the original', async () => {
     const shared = path.join(
       home,
       '.gezel',
@@ -277,9 +277,87 @@ describe('SpeechModelStore', () => {
     await writeFile(shared, WEIGHTS);
     const models = store(undefined, home);
     expect((await models.list())[0]).to.include({ installed: true, source: 'shared' });
-    expect((await models.locate('stt-test'))?.files['weights.bin']).to.equal(shared);
+    const owned = (await models.locate('stt-test'))!.files['weights.bin']!;
+    expect((await stat(owned)).ino).to.equal((await stat(shared)).ino);
     await models.remove('stt-test');
     expect((await stat(shared)).size).to.equal(WEIGHTS.length);
+  });
+
+  it('reuses complete multi-file models in both directions and keeps the other installation usable', async () => {
+    const fetcher = fetchFor({ 'https://m.test/model.onnx': MODEL, 'https://m.test/a.bin': VOICE });
+    const cache = path.join(root, 'gezel-home', 'engines', 'speech-assets');
+    const first = new SpeechModelStore({
+      root: path.join(root, 'first'),
+      sharedHome: null,
+      assets: { root: cache },
+      catalog: CATALOG,
+      fetchImpl: fetcher.fetchImpl,
+    });
+    const second = new SpeechModelStore({
+      root: path.join(root, 'second'),
+      sharedHome: null,
+      assets: { root: cache },
+      catalog: CATALOG,
+      fetchImpl: fetcher.fetchImpl,
+    });
+    await first.install('tts-test');
+    expect((await second.list())[1]).to.include({ installed: true, source: 'shared' });
+    const b = await second.locate('tts-test');
+    const a = await first.locate('tts-test');
+    expect(fetcher.urls).to.have.length(2);
+    expect((await stat(a!.files['onnx/model.onnx']!)).ino).to.equal(
+      (await stat(b!.files['onnx/model.onnx']!)).ino,
+    );
+    await first.remove('tts-test');
+    expect(await second.locate('tts-test')).not.to.equal(null);
+    await first.install('tts-test');
+    expect(fetcher.urls).to.have.length(2);
+    await second.remove('tts-test');
+    expect(await first.locate('tts-test')).not.to.equal(null);
+    await first.remove('tts-test');
+    expect((await second.list())[1].installed).to.equal(false);
+  });
+
+  it('cancels a shared-cache waiter without cancelling the other app’s download', async () => {
+    let start: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    let release: () => void = () => undefined;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = (async () => {
+      start();
+      await waiting;
+      return new Response(WEIGHTS);
+    }) as typeof fetch;
+    const assets = { root: path.join(root, 'shared-cache') };
+    const first = new SpeechModelStore({
+      root: path.join(root, 'first'),
+      sharedHome: null,
+      assets,
+      catalog: CATALOG,
+      fetchImpl,
+    });
+    const second = new SpeechModelStore({
+      root: path.join(root, 'second'),
+      sharedHome: null,
+      assets,
+      catalog: CATALOG,
+      fetchImpl,
+    });
+    const download = first.install('stt-test');
+    await started;
+    const controller = new AbortController();
+    const cancelled = second
+      .install('stt-test', { signal: controller.signal })
+      .catch((error) => error);
+    controller.abort();
+    expect(await cancelled).to.have.property('failure', 'aborted');
+    release();
+    await download;
+    expect(await first.locate('stt-test')).not.to.equal(null);
   });
 
   it('rejects a shared copy whose hash does not match', async () => {

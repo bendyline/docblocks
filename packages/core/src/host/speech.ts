@@ -84,6 +84,8 @@ export interface SpeechModelInfo {
    * another local app already downloaded, which costs this app no disk.
    */
   readonly source: 'app' | 'shared' | null;
+  /** This installation uses the shared speech cache; Remove releases only its references. */
+  readonly sharedStorage?: boolean;
   readonly recommended: boolean;
   readonly license: string;
   readonly licenseUrl: string;

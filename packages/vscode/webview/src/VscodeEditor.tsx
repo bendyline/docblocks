@@ -49,6 +49,12 @@ import { resolveWorkspaceDefaultThemeId } from '@bendyline/docblocks/workspace-s
 import { createVscodeCalcEngineFactory } from './calculationConfig.js';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
+const PresentationMaker = lazy(() =>
+  import('@bendyline/docblocks-react/editor').then((module) => ({
+    default: module.PresentationMaker,
+  })),
+);
+
 const vscode = getVscodeApi();
 const VSCODE_CALC_ENGINE_FACTORY = createVscodeCalcEngineFactory();
 
@@ -512,6 +518,11 @@ export function VscodeEditor() {
               />
             </Suspense>
           }
+          summarizationDesigner={(onClose) => (
+            <Suspense fallback={null}>
+              <PresentationMaker onClose={onClose} />
+            </Suspense>
+          )}
           toolbarSlotRight={
             <>
               <VscodeFindButton active={findMode} onActiveChange={setFindMode} />

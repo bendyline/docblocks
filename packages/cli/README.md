@@ -87,7 +87,9 @@ question only when the choice is materially ambiguous. The complete catalog rema
 available at `docblocks://authoring-guide`.
 
 `convert` and `video` accept Markdown, Squisq JSON Doc, DBK/ZIP, folders, and
-import-capable linked-registry formats. `build`/`serve` standalone HTML includes
+import-capable linked-registry formats. `video` also renders **Dynamic slides** from current text and saved design
+preferences against narration sidecars; stale narration or missing timings fail
+export. Legacy saved presentation plans remain readable. `build`/`serve` standalone HTML includes
 Copy controls for ordinary fenced code blocks; Mermaid fences remain diagrams. Without
 `--theme`, `build`/`serve` apply `documents.defaultTheme` from
 `.docblocks/workspace.json` to documents whose frontmatter names no theme;

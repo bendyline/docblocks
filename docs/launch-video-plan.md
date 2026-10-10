@@ -1,18 +1,48 @@
 # DocBlocks launch video plan
 
-DocBlocks can plausibly create its own narrated launch video using the existing editor, local speech engine, Squisq presentation machinery, and MP4 exporter. The largest addition is an AI presentation planner that turns narration into concise visual beats. Before building it, fix composition bugs that can shorten a narrated presentation, move its visuals away from the voice, or discard introductory content.
+The implementation is available in the linked DocBlocks and Squisq checkouts.
+**Dynamic slides** is an advanced Summarize mode. The **Summarization designer**
+opens from **Design…** beside **Summarize** in Slideshow/Video and saves preferences plus optional
+source-bound AI/manual wording, without saving deterministic generated prose.
+Slides regenerate from current text at preview and export time. Squisq owns the
+planner, schema, compiler, and word-cue timing; DocBlocks owns the host AI calls
+and designer UI. See [Dynamic slides](presentations.md) for the workflow.
 
-The initial product target is the desktop app, where `host.ai` and `host.speech.synthesize` are available. Keep presentation plans and playback portable across Squisq consumers. Other surfaces should expose creation actions according to host capabilities; they do not all currently synthesize narration.
+Qualla already delegates deterministic segment generation to Squisq's
+`transformNarratedSegment`. The new planner reuses that extraction machinery,
+then compiles a constrained set of source-anchored layouts against narration
+bookmarks. It does not copy Qualla's application code or its low-level AI slide
+JSON generator. Dynamic slides is its own transform style and locks the compiled narration
+timeline against generic slideshow pacing.
 
-**Current behavior, inspected and checked on October 9, 2026**
+The desktop harness now passes blank-document AI insertion, narration,
+automatic layout, AI refinement, manual editing, one-step undo/redo,
+save/reopen, and actual MP4 export. AI is scripted in this harness; a separate
+mode runs production Kokoro inference with cached model and voice files.
+The initial target remains desktop. Automatic planning is also wired into the
+VS Code editor, while AI and speech depend on each host's capabilities.
 
-| Requested step                   | Existing implementation                                                                                                                                          | Work remaining                                                                                                                                         |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Draft from bullet points         | AI compose inserts Markdown; rewrite preserves heading annotations.                                                                                              | Compose has no Squisq authoring guide or explicit launch/presentation structure.                                                                       |
-| Divide the story into blocks     | Squisq headings become blocks, with content-aware template inference.                                                                                            | Encourage useful section boundaries and validate generated structure; headings alone do not guarantee a good story.                                    |
-| Generate and attach narration    | Speech → Generate narration synthesizes the document, encodes Opus/WebM, saves audio plus a v3 timing sidecar, and inserts a document-anchored audio annotation. | Improve accuracy/provenance of word timing and harden long-running generation/save behavior. The attachment feature already exists.                    |
-| Make the presentation compelling | Squisq has six deterministic transform styles and a narrated-segment planner; DocBlocks has a separate AI diagram pipeline.                                      | Add an AI editorial plan and compile it into visuals tied to the narration, with preview and editing. Fix current transform timing/content loss first. |
-| Export narrated MP4              | GUI export resolves narration and applies the saved transform before invoking Squisq video export. CLI also supports MP4 and resolves narration.                 | Prove audio/video synchronization through an encoded file, and unify projection behavior between GUI, CLI, and other render consumers.                 |
+| Requested step           | Implementation now                                                                                                           | Remaining qualification                                                                                         |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Draft from bullet points | Existing AI compose inserts Markdown into a blank document.                                                                  | Better presentation-oriented compose guidance and real-model editorial evaluation.                              |
+| Divide into blocks       | Heading structure feeds the canonical narration script, retaining parent prose.                                              | Evaluate sparse, long, and complex briefs.                                                                      |
+| Attach narration         | Kokoro audio and v3 word-cue sidecar are saved beside the document.                                                          | Acoustic boundary calibration, other voices, persisted timing provenance, and broader failure/retake scenarios. |
+| Improve presentation     | Automatic source-anchored plan, six layouts, steps diagrams, existing images, optional bounded AI refinement, and review UI. | Real-model quality comparisons and a polished launch brief with product imagery.                                |
+| Export narrated MP4      | Current text and preferences compile through shared Squisq logic for desktop and CLI.                                        | Release/package qualification and final human review of the launch video.                                       |
+
+Implementation also fixed problems exposed by the full workflow: sidecars saved
+under a duplicated media directory, frontmatter changes bypassing rich-text undo,
+unresolved workspace audio URLs briefly reaching the app origin, repeated AAC
+encoder flushes overlapping timestamps, and transparent diagram slides exporting
+against a black background. The presentation supplies its opening, so applying it
+disables the extra automatic cover slide.
+
+**Initial audit and design rationale — retained below for context**
+
+The findings below preceded the implementation. In particular, the historical
+generic-transform measurements do not describe the new saved-plan path. The
+original sidecar proposal was replaced with bounded JSON in frontmatter, making
+plan application, undo, and save atomic without another asset-reference protocol.
 
 Key implementation evidence:
 
@@ -57,7 +87,7 @@ Keep the approved narration script and its audio take stable while improving the
 
 For example, the narration “Start with a few bullet points and build your document” might display “Start with an idea” and a simple bullet-points-to-document diagram. Shortening that headline must not change the script, regenerate the voice, or cause fuzzy matching to bind it to a different passage.
 
-The default action should be **Make presentation**, which keeps narration unchanged. A separate **Rewrite narration** action can change the script and explicitly regenerate affected audio/timing. This preserves the requested order of draft → narrate → improve visuals → export. Reordering the spoken argument belongs before narration or requires a new take.
+The default action should be **Prepare for slides**, which keeps narration unchanged. A separate **Rewrite narration** action can change the script and explicitly regenerate affected audio/timing. This preserves the requested order of draft → narrate → improve visuals → export. Reordering the spoken argument belongs before narration or requires a new take.
 
 **1. Establish one narration-preserving projection in Squisq**
 
@@ -103,7 +133,7 @@ Acceptance: the same validated plan compiles deterministically after reopening; 
 
 Add a presentation-oriented compose option with a short Squisq guide derived from the actual template registry: one meaningful heading per major point, concise sections, correct annotation placement, and no unsupported syntax. Keep ordinary drafting lightweight. Test the returned Markdown by parsing and round-tripping it, including insertion into a blank document.
 
-Add **Make presentation…** to the AI menu, with audience, purpose, and optional target length before narration. With narration already present, show its actual duration and preserve it. Offer editable beat cards with their source excerpt, displayed text, template, and timed preview. Include a deterministic automatic-layout option when AI is unavailable.
+Add **Prepare for slides…** to the AI menu, with audience, purpose, and optional target length before narration. With narration already present, show its actual duration and preserve it. Offer editable beat cards with their source excerpt, displayed text, template, and timed preview. Include a deterministic automatic-layout option when AI is unavailable.
 
 Connect the existing Speech → Generate narration action with presentation preview and Export video. Show progress for planning, narration, saving, and rendering; retain cancellation and retry behavior. Update `docs/speech.md`, which currently describes read aloud but omits the generated-narration workflow. Wire editor-area features into VS Code explicitly if that surface is included; desktop remains the first full creation path.
 
@@ -119,10 +149,21 @@ Build three complementary checks:
 
 The release demonstration must start in the desktop UI and finish with an MP4 that has been watched and heard in full. Keep the Markdown, narration audio, timing sidecar, presentation plan, screenshots, and output video together so another person can reproduce it. Automated tones can prove plumbing but cannot establish natural voice quality or word synchronization.
 
-**Implementation order and completion gate**
+**Implementation status and remaining release gate**
 
-The timestamped Kokoro pin, shared frontend source mapping, and word-timing-to-sidecar path are implemented locally. Validation passed: 26 shared frontend tests; 78 focused DocBlocks tests including real inference at three speeds; 2,635 full-suite tests (28 skipped); and three Electron speech tests, including native-timing metadata in the saved sidecar and audio export. Build, typecheck, lint, and formatting checks passed. The full `npm run all` gate encountered existing generated-notice drift from linked dependencies; those unrelated notice files were left unchanged. Publish and pin the Gezel frontend API before shipping.
+The timestamped Kokoro pin, shared frontend source mapping, narration sidecar
+path, constrained presentation compiler, AI refinement, review UI, and desktop
+end-to-end harness are implemented locally. Shared tests cover parent prose,
+source coverage, exact bookmark placement, retakes, stale plans, missing timings,
+invalid model output, cancellation, and preservation of narration across undo.
+The current saved-plan path bypasses the older style transforms; this work does
+not claim to repair every legacy transform mode.
 
-Next fix and test upstream composition and projection parity, harden narration identity/save behavior, and add the script-span resolver. Then implement the constrained plan compiler and AI review flow, followed by richer presentation prompts and the real launch-video demonstration. Qualify acoustic boundary accuracy alongside the planner once the shared span contract exists. The current checks do not yet prove the complete AI-to-MP4 workflow.
-
-For implementation, run focused upstream and DocBlocks contracts as each seam changes, verify linked provenance, and qualify exact published Squisq pins before shipping. Finish with `npm run all` and the visual pre-release gate for changed UI. The feature is complete when the approved brief becomes a saved, reopenable project and a reviewed narrated MP4 through the supported UI, with no manual sidecar editing or external timeline repair.
+Before shipping, publish the changed Squisq packages and Gezel frontend API,
+pin those releases in DocBlocks, and repeat qualification against the published
+artifacts. Real-model editorial quality, acoustic word-onset measurements,
+other voices, a polished launch story, and packaged/surface visual release gates
+remain separate work. The full DocBlocks `npm run all` gate encountered existing
+generated-notice drift from linked dependencies; unrelated notices were left
+unchanged and the later relevant unit, type, lint, and formatting checks were run
+separately. Current verification details belong in [Dynamic slides](presentations.md).

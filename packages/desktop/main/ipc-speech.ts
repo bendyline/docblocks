@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow, app, systemPreferences, utilityProcess } from 'electron';
 import type { WebContents } from 'electron';
+import { defaultSharedSpeechAssetsDir, speechAssetOptions } from '@bendyline/gezel/speech-models';
 import {
   isSpeechModelId,
   parseSpeechModelKind,
@@ -164,7 +165,20 @@ export async function createSpeechService(
     models: new SpeechModelStore({
       root: path.join(root, 'models'),
       // A sandboxed build cannot read another app's downloads.
-      sharedHome: macAppStore || automation ? null : app.getPath('home'),
+      sharedHome: null,
+      ...(!macAppStore && !automation
+        ? {
+            assets: speechAssetOptions({
+              home:
+                env.GEZEL_HOME && path.isAbsolute(env.GEZEL_HOME)
+                  ? env.GEZEL_HOME
+                  : path.join(app.getPath('home'), '.gezel'),
+              env,
+              sharedAssets:
+                env.GEZEL_SHARED_ASSETS_DIR ?? defaultSharedSpeechAssetsDir(process.platform, env),
+            }),
+          }
+        : {}),
       ...(catalog ? { catalog } : {}),
     }),
     preferences: new SpeechPreferenceStore(path.join(root, 'preferences.json')),

@@ -42,19 +42,16 @@ preferences, encrypted token storage, editor prompts/transactions, and MAS seal
 verification. `withKnowledgeContext` receives the host's prompt/message limits;
 model locality comes from SDK metadata, never from an engine name.
 
-These APIs require the refactored sibling Gezel SDK/service. The existing
-registry pins (SDK 1.1.3 and service 1.2.3) are not a release of this refactor.
-Use the local link workflow below while developing. Publish compatible
-SDK/service packages and update exact pins and the lockfile before shipping;
-the connector reports a missing runtime if the required SDK export is absent.
+These APIs ship in the pinned Gezel App SDK `1.1.4` and service `1.2.4`.
+Use the local link workflow below for further sibling development. The
+connector reports a missing runtime if the required SDK export is absent.
 See Gezel's `docs/handboek/technical/docblocks-text-ai-with-gezel.md` for the
 request flow and code examples.
 
-Kokoro narration also requires the sibling core's new `planKokoroSpeech` export
+Kokoro narration uses Gezel core `1.2.4`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
-timestamped ONNX model. Include those frontend changes in the next Gezel npm
-release and update the exact desktop pins and lockfile before shipping. The
-model pin itself uses an existing upstream artifact and requires no new native
+timestamped ONNX model. The model pin itself uses an existing upstream artifact
+and requires no new native
 engine build. See [speech timing](../../docs/speech.md#kokoro-export-and-model-updates).
 
 Inference fixes, including MLX's Python prompt builder, ship in
@@ -75,9 +72,12 @@ built entry points. Linking does not change release pins or the lockfile.
 `npm run all` (through `build`'s preflight), `npm run build`, and desktop dev
 startup rebuild linked Gezel's SDK/service runtime dependency graph in order,
 under Gezel's shared dependency-read lease. No dependencies are installed and
-registry-only checkouts continue to use their pinned packages. A partial link
-set, mixed checkouts, or overwritten configured links fail instead of silently
-using an older service. The build includes copied Python assets; it never
+registry-only checkouts continue to use their pinned packages, including after
+`npm install` replaces all local links. A leftover link marker does not require
+the sibling checkout. `npm run unlink:gezel` clears the old configuration while
+preserving any packages npm has already installed; saved copies restore only
+packages that are still linked or missing. A partial link set or mixed checkouts
+still fail the build. The build includes copied Python assets; it never
 restarts a running Electron process. Restart the desktop app after rebuilding
 to load the current backend. `npm run build:gezel-linked` runs this step alone.
 
@@ -159,9 +159,9 @@ permit changed hashes. Runtime also verifies native locations, symlinks,
 signatures and executable inheritance. Direct macOS builds preserve the upstream
 Developer ID signatures.
 
-The current service pin (`1.2.1`, native `0.1.46`) lacks `gezel-apple-fm`, so MAS
-packaging deliberately fails until the new native release and service package
-are published and pinned. See [the native release handoff](../../docs/desktop-ai-native-release.md).
+The service pin `1.2.4` selects notarized native release `0.1.48`.
+Signed MAS build and runtime qualification remain separate release gates.
+See [the native release handoff](../../docs/desktop-ai-native-release.md).
 
 ## Knowledge catalogs in AI settings
 
@@ -191,13 +191,10 @@ can prepare its embedding model as part of that
 explicit download. Mobile hosts without this optional SDK capability do not
 expose catalog management.
 
-**Release prerequisite:** the pinned app SDK `1.1.1` and service `1.2.1` do not
-implement this API. The corresponding Gezel source changes add the `knowledge`
-grant and `/v1/knowledge/{state,update,retrieve}`. Publish those changes, then
-update both exact dependency pins and the lockfile before shipping this feature.
-Until then, inference reports an SDK upgrade requirement rather than claiming
-to use knowledge. Existing inference-only grants require reconnection with the
-typed verification code; silent reconnect must never open a consent prompt.
+The pinned App SDK `1.1.4` and service `1.2.4` provide the `knowledge` grant and
+`/v1/knowledge/{state,update,retrieve}`. Existing inference-only grants require
+reconnection with the typed verification code; silent reconnect must never
+open a consent prompt.
 
 ## Architecture rules
 

@@ -155,6 +155,11 @@ const AiToolbarControl = lazy(() =>
     default: module.AiToolbarControl,
   })),
 );
+const PresentationMaker = lazy(() =>
+  import('../Presentation/PresentationMaker.js').then((module) => ({
+    default: module.PresentationMaker,
+  })),
+);
 const AiReviewPanel = lazy(() =>
   import('../Ai/AiEditorAssistant.js').then((module) => ({
     default: module.AiReviewPanel,
@@ -2611,7 +2616,9 @@ export function DocBlocksShell({
     const baseNoExt = base.replace(/\.[^.]+$/, '');
     const container = new FileSystemContentContainer(provider, parentDir);
     const vPrefix = parentDir ? `${parentDir}/${baseNoExt}_files` : `${baseNoExt}_files`;
-    const vContainer = new FileSystemContentContainer(provider, vPrefix);
+    const vContainer = new FileSystemContentContainer(provider, vPrefix, {
+      documentMediaPrefix: `${baseNoExt}_files`,
+    });
     const mp = createFileMediaProvider(container, base);
     mediaContainerRef.current = container;
     versionsContainerRef.current = vContainer;
@@ -5382,6 +5389,17 @@ export function DocBlocksShell({
                               </span>
                             </button>
                           ) : undefined
+                        }
+                        summarizationDesigner={
+                          selectedImage === undefined &&
+                          selectedManagedOutput === undefined &&
+                          (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
+                            ? (onClose) => (
+                                <Suspense fallback={null}>
+                                  <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
+                                </Suspense>
+                              )
+                            : undefined
                         }
                         toolbarSlotRight={
                           <>

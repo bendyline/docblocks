@@ -3,6 +3,35 @@ import { FileSystemContentContainer } from '../src/filesystem/filesystem-content
 import { MemoryFileSystemProvider } from '../src/filesystem/memory-provider.js';
 
 describe('FileSystemContentContainer', () => {
+  it('keeps narration sidecars beside their audio when document references include the media folder', async () => {
+    const provider = new MemoryFileSystemProvider('narration-container', 'Narration');
+    const container = new FileSystemContentContainer(provider, 'nested/notes_files', {
+      documentMediaPrefix: 'notes_files',
+    });
+    await container.writeFile('audio/take.webm', new Uint8Array([1, 2]));
+    await container.writeFile(
+      'notes_files/audio/take.webm.timing.json',
+      new TextEncoder().encode('{}'),
+    );
+    expect(await container.exists('notes_files/audio/take.webm')).to.equal(true);
+    expect(await container.readFile('notes_files/audio/take.webm')).to.deep.equal(
+      await container.readFile('audio/take.webm'),
+    );
+    expect((await container.listFiles()).map((entry) => entry.path).sort()).to.deep.equal([
+      'audio/take.webm',
+      'audio/take.webm.timing.json',
+    ]);
+    await container.writeFile('.versions/notes.v1.md', new TextEncoder().encode('old'));
+    expect(await provider.exists('nested/notes_files/.versions/notes.v1.md')).to.equal(true);
+    await container.removeFile('notes_files/audio/take.webm.timing.json');
+    expect(await container.readFile('audio/take.webm.timing.json')).to.equal(null);
+    try {
+      await container.writeFile('notes_files/../../escape', new Uint8Array([0]));
+      throw new Error('accepted traversal');
+    } catch (error: unknown) {
+      expect(String(error)).not.to.contain('accepted traversal');
+    }
+  });
   it('lists content under prefixes containing regular-expression metacharacters', async () => {
     const provider = new MemoryFileSystemProvider('container-prefix', 'Container');
     await provider.writeBinary('/[draft/image.png', new Uint8Array([1, 2, 3]));

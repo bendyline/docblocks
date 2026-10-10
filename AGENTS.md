@@ -331,7 +331,9 @@ optional one by one and drive `speechInput` / `speechOutput`. Desktop main
 `gezel-whisper-server` and Kokoro on `onnxruntime-node` in a `utilityProcess`
 (`main/speech/kokoro-utility.ts`) — never in main, and never by loading ONNX
 Runtime to probe availability. Models download only from a Settings gesture,
-pinned to commit, size and SHA-256 (`main/speech/speech-models.ts`).
+pinned to commit, size and SHA-256 by `@bendyline/gezel/speech-models`.
+That API also owns the shared speech cache; each app keeps independent hard
+links and manifests, and MAS/automation remain private.
 Preferences live in `userData/speech/preferences.json`, not `settings.json`.
 Dictation's UI is Squisq's `speechInput` capability; read aloud lives in
 `packages/react/src/Speech/`. See [`docs/speech.md`](docs/speech.md) for

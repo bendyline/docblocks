@@ -20,16 +20,31 @@ function joinPrefix(prefix: string, p: string): string {
 
 export class FileSystemContentContainer implements ContentContainer {
   private readonly prefix: string;
+  private readonly documentMediaPrefix: string;
 
   constructor(
     private readonly provider: FileSystemProvider,
     prefix = '.docblocks/media',
+    options: { documentMediaPrefix?: string } = {},
   ) {
     this.prefix = parseWorkspacePath(prefix);
+    this.documentMediaPrefix = parseWorkspacePath(options.documentMediaPrefix ?? '');
+  }
+
+  /** A document-scoped container also accepts the media references written
+   * into its Markdown, e.g. notes_files/audio/take.webm. Version paths and
+   * container-relative discovery still live directly under the scoped root. */
+  private resolve(path: string): string {
+    const canonical = parseWorkspacePath(path);
+    const alias = this.documentMediaPrefix;
+    return joinPrefix(
+      this.prefix,
+      alias && canonical.startsWith(`${alias}/`) ? canonical.slice(alias.length + 1) : canonical,
+    );
   }
 
   async readFile(path: string): Promise<ArrayBuffer | null> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) return (await providerV2.readFile(parseWorkspacePath(full)))?.data ?? null;
     const binary = await this.provider.readBinary(full);
@@ -46,7 +61,7 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async writeFile(path: string, data: ArrayBuffer | Uint8Array, _mimeType?: string): Promise<void> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) {
       await providerV2.writeFile(parseWorkspacePath(full), data, {
@@ -59,7 +74,7 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async removeFile(path: string): Promise<void> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) {
       await providerV2.remove(parseWorkspacePath(full), { missing: 'ignore' });
@@ -123,7 +138,7 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async exists(path: string): Promise<boolean> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     return providerV2
       ? (await providerV2.stat(parseWorkspacePath(full))) !== null

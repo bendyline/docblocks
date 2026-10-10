@@ -3,6 +3,7 @@ import {
   SPEECH_WIRE_LIMITS,
   parseSpeechAudioChunk,
   parseSpeechCatalog,
+  parseSpeechModelInfo,
   parseSpeechError,
   parseSpeechInstallEvent,
   parseSpeechNullResult,
@@ -175,6 +176,13 @@ describe('speech status and catalog', () => {
     expect(
       parseSpeechCatalog({ ...catalog, models: [{ ...MODEL, licenseUrl: 'http://x.test' }] }),
     ).to.equal(null);
+  });
+
+  it('round-trips shared storage ownership and rejects malformed flags', () => {
+    const model = { ...MODEL, source: 'app' as const, sharedStorage: true };
+    expect(parseSpeechModelInfo(model)).to.deep.equal(model);
+    expect(parseSpeechModelInfo({ ...model, sharedStorage: 1 })).to.equal(null);
+    expect(parseSpeechModelInfo({ ...model, source: 'shared' })).to.equal(null);
   });
 
   it('parses install progress, completion and failure', () => {

@@ -42,7 +42,7 @@ port.on('message', ({ data }) => {
         textStart: start + word.index,
         textEnd: start + word.index + word[0].length,
         startSec: 0.1 + ((seconds - 0.1) * wordIndex) / words.length,
-        endSec: 0.1 + ((seconds - 0.1) * (wordIndex + 1)) / words.length,
+        endSec: Math.min(seconds, 0.1 + ((seconds - 0.1) * (wordIndex + 1)) / words.length),
       })),
     });
     index += 1;
