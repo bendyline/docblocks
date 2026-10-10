@@ -10,7 +10,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
 - **Mobile** (`packages/mobile`) — Capacitor for iOS and Android, mounting the shared shell
-- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
+- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms / workspace
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, published as `@bendyline/squisq*`; an optional parallel checkout lives at `..\squisq`.
 
@@ -20,7 +20,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types and runtime boundary schemas. Multi-entry tsup build with filesystem backends plus `/document`, `/workspace`, `/host`, and `/vscode`. **Single source of truth for wire types.**                                                                                                                       |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`. Consumed by site + desktop renderer. (Ships no fonts — theme fonts live in `packages/site/public/fonts/`.) (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 8 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                                                                        |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns format conversion through the linked Squisq CLI registry, video rendering (Playwright + ffmpeg), and the MCP server.                                                                                                                                                        |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
@@ -87,6 +87,14 @@ npm run dev:squisq          # link + watch
 npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity
+
+# Gezel parallel dev — links desktop SDK, service, and core to ../gezel
+npm run link:gezel          # preserve registry copies and create local links
+npm run check:gezel-linked  # show actual paths and verify built entry points
+npm run build:gezel-linked  # rebuild SDK/service runtime dependencies under a read lease
+npm run unlink:gezel        # restore the saved registry copies, without an install
+# npm run all/build refresh linked Squisq and Gezel before DocBlocks builds.
+# Desktop dev startup also rebuilds linked Gezel. Restart Electron to load it.
 
 # Release — multi-semantic-release per package
 npm run release
@@ -222,13 +230,18 @@ Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/d
 `packages/react` renders it (`AiSettingsControls`, shown when
 `hostSupports('aiAssist')`) and never learns what is behind it. On desktop,
 `main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
-machine — to the renderer. `main/ai/gezel-connector.ts` and
-`main/ai/gezel-knowledge.ts` keep Gezel behind that seam: they discover the user's
-own running Gezel and ask for
-`openai` plus scoped `knowledge` access with a typed verification code. Catalog
+machine — to the renderer. `main/ai/gezel-connector.ts` delegates consent,
+standalone/private fallback, and model preparation to the SDK's
+`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets
+to `withKnowledgeContext`; Gezel owns retrieval validation, ranking, citations,
+and evidence serialization. The connection asks for `openai` plus scoped
+`knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
-`host.ai.knowledge`; every desktop chat retrieves bounded cited passages with
-required reranking. Missing SDK support or reranker readiness fails visibly.
+`host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
+leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
+inventory, never provider-name heuristics or a DocBlocks native-helper probe.
+Knowledge never blocks a request: missing SDK support,
+a failed retrieval, or a malformed answer sends the request without passages.
 The new Gezel SDK/service API must be published and pinned before shipping;
 see `packages/desktop/README.md`. Three rules
 are load-bearing and each has a test:
@@ -268,8 +281,8 @@ true` profile and the service's direct Fetch transport: no child Node, loopback
 client connection, machine-service discovery, cloud-provider enumeration, or
 standalone background systems. A running standalone Gezel that fails for any
 other reason is reported, not hidden. The hosted service offers only on-device
-models. Packaged builds stage the installed service's pinned native release in
-`resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
+models. Packaged builds call `@bendyline/gezel-service/packaging` to stage the
+installed service's pinned native release in `resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
 signatures after opt-in, and pass it as `host.nativeBinDir`. They use
 `distributionProfile: 'store'` so no runtime executable download can repair a
 missing or invalid payload. Preserve the native release's existing signatures
@@ -318,7 +331,9 @@ optional one by one and drive `speechInput` / `speechOutput`. Desktop main
 `gezel-whisper-server` and Kokoro on `onnxruntime-node` in a `utilityProcess`
 (`main/speech/kokoro-utility.ts`) — never in main, and never by loading ONNX
 Runtime to probe availability. Models download only from a Settings gesture,
-pinned to commit, size and SHA-256 (`main/speech/speech-models.ts`).
+pinned to commit, size and SHA-256 by `@bendyline/gezel/speech-models`.
+That API also owns the shared speech cache; each app keeps independent hard
+links and manifests, and MAS/automation remain private.
 Preferences live in `userData/speech/preferences.json`, not `settings.json`.
 Dictation's UI is Squisq's `speechInput` capability; read aloud lives in
 `packages/react/src/Speech/`. See [`docs/speech.md`](docs/speech.md) for
@@ -330,7 +345,8 @@ packaging, store builds, and the e2e harness.
 `docblocks` commands: arguments, defaults, streams, filesystem effects, linked
 Squisq ownership, and current format directions. Command implementation lives in
 `packages/cli/src/commands/`; register each public command once in
-`packages/cli/src/index.ts`. Keep the guide and the concise publishable
+`packages/cli/src/program.ts` and export any programmatic API from the
+side-effect-free `packages/cli/src/index.ts`. Keep the guide and the concise publishable
 `packages/cli/README.md` synchronized when behavior changes.
 
 Direct build/convert/video commands run with the invoking process's filesystem
@@ -424,6 +440,43 @@ nearest ancestor `_squisq/squisq-player.js`. Keep companion path/frontmatter
 rules in `@bendyline/squisq-formats/outside-in`; hosts own filesystem authority,
 transaction ordering, visibility, and lifecycle behavior.
 
+### Workspace settings live in `.docblocks/workspace.json`
+
+Settings that belong to a folder — the default document theme, catalog
+outputs, the per-folder version-history choice — live in
+`<root>/.docblocks/workspace.json` so they travel with the folder.
+[`docs/workspace-settings.md`](docs/workspace-settings.md) is the reference.
+`packages/core/src/workspace-settings/` (subpath
+`@bendyline/docblocks/workspace-settings`, deliberately not re-exported from
+the root) is the one implementation: exact-shape parser and serializer, patch
+merging over concurrent edits, catalog model, budgeted walker with a
+marker-guarded writer, and a debounced single-flight scheduler. The shell
+(`useWorkspaceSettings` / `useWorkspaceOutputs`), the VS Code host
+(`workspaceSettingsService.ts` over a `vscode.workspace.fs` adapter) and the
+CLI (`docblocks workspace refresh`) supply only IO and a renderer.
+
+- The file is created on the first explicit Save, never on open, and never
+  for settings that are all defaults (`isDefaultWorkspaceSettings`, enforced
+  in `saveWorkspaceSettingsPatch`); an existing file is updated, not deleted.
+  Transient workspaces (loose files, DBK) never get one: a DBK re-zip rejects
+  non-`.md` entries.
+- Exact shape per `version`. An unknown field is `invalid`, a newer version
+  `unsupported-version`; either way nothing applies and nothing is rewritten.
+- The workspace theme is a fallback. Every Squisq exporter lets an explicit
+  `themeId` beat frontmatter, so pass the workspace default only when
+  `readFrontmatterThemeId` finds none (`resolveFallbackThemeId`).
+- Catalog outputs are opt-in, deterministic (no timestamps or mtimes,
+  code-unit ordering), and marked. They are written only when bytes or the
+  HTML inputs digest change, and a file without the marker is never replaced.
+  A marked file opens read-only and is never imported outside-in.
+- Every durable commit in a folder workspace reaches `afterWorkspaceCommit`
+  in `DocBlocksShell`. A new mutation path must call `notifyWorkspaceChanged`
+  with the workspace ID it acted on, never the currently active one.
+- Desktop chokidar ignores dot-folders and IndexedDB/native providers cannot
+  watch, so settings are re-read on activation, focus, resume, and after a git
+  pull or branch switch. VS Code writes catalogs only in trusted, writable
+  folders.
+
 ### Squisq is a dependency, not a fork
 
 Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives in the optional `..\squisq` checkout and ships as `@bendyline/squisq*`. Patch upstream — never reach into `node_modules/@bendyline/squisq*` from this repo. Use `npm run link:squisq` for parallel development.
@@ -468,10 +521,13 @@ with best-effort durability and no watcher; resume re-observes the active docume
 Mobile AI implements the existing optional `host.ai` seam through Gezel's Capacitor
 App SDK in `packages/mobile/src/ai`. Keep native engines in the upstream SDK,
 opt-in off by default, model downloads gesture-only, selected models explicit,
-and every stream terminal exactly once. The private SDK tarball and native/source
-hashes live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
+and every stream terminal exactly once. Gezel's shared `createEmbedding`/`streamText`
+and model manager own lifecycle, catalog, preparation and inference; avoid duplicating
+them in the host adapter. Matched preview tarballs and native release/bridge hashes
+live in `packages/mobile/vendor`; `mobile:check` verifies their integrity.
 Never patch installed SDK files. Device AI tests use synthetic weights only in the
-isolated Android `.tests` app and require an explicit arm64 device ID.
+isolated iOS/Android `.tests` app and require an explicit arm64 device ID.
+`--download` explicitly opts the isolated test app into a real-model check.
 
 ## Gotchas worth knowing
 
@@ -532,13 +588,14 @@ Tracked repository skills:
 
 ## Where to look first
 
-| Task                       | Start with                                                                                                |
-| -------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture               |
-| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
-| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/index.ts`                    |
-| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
-| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
-| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure            |
-| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                  |
-| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule |
+| Task                       | Start with                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Add a storage backend      | `filesystem/v2.ts`, `workspace-path.ts`, `fs-error.ts`, then the shared conformance fixture                  |
+| Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                   |
+| Add a CLI command          | `docs/cli.md` → `packages/cli/src/commands/` → register in `packages/cli/src/program.ts`                     |
+| Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides        |
+| Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                          |
+| Add a workspace setting    | `core/src/workspace-settings/settings.ts` + `schema.ts` → `react/src/Settings/WorkspaceSettingsControls.tsx` |
+| Add a new format converter | Linked Squisq CLI registry in `..\squisq`; then `docs/mcp.md` and MCP target/fidelity exposure               |
+| Change theming             | `packages/react/src/styles/docblocks.css` + verify in all three surfaces and both themes                     |
+| Retone the Squisq editor   | The `--squisq-*` bridge in `docblocks.css` (search "Squisq chrome palette") — not a new per-selector rule    |

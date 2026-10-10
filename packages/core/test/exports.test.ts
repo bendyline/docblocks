@@ -19,6 +19,7 @@ describe('Core exports', () => {
   it('keeps the intentionally stable root surface explicit', () => {
     expect(Object.keys(coreRoot).sort()).to.deep.equal([
       'AI_WIRE_LIMITS',
+      'DEFAULT_WORKSPACE_ID',
       'DOCUMENT_RECOVERY_JOURNAL_SCHEMA_VERSION',
       'DOCUMENT_RECOVERY_JOURNAL_STORAGE_KEY',
       'DocumentCommitConflictError',
@@ -93,6 +94,7 @@ describe('Core exports', () => {
       'moveFileSystemEntry',
       'openNativeFolder',
       'parseAiChatEvent',
+      'parseAiChatProgress',
       'parseAiChatRequest',
       'parseAiError',
       'parseAiKnowledgeAction',

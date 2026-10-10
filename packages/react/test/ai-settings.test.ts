@@ -51,7 +51,7 @@ const KNOWLEDGE: AiKnowledgeState = {
       message: null,
     },
   ],
-  reranker: { ready: false, downloading: false, message: null },
+  improvement: { downloadBytes: 23_856_961, downloading: false },
 };
 const OPTED_IN: AiPreferences = { ...OPTED_OUT, enabled: true };
 
@@ -187,19 +187,12 @@ describe('AI knowledge settings', () => {
       expect(container.textContent).to.contain('History reference');
       await click('Download catalog');
       await click('Update to 2');
-      await click('Download relevance model');
       expect(actions).to.have.length(2);
-      const consent = Array.from(container.querySelectorAll('label'))
-        .find((label) => label.textContent?.includes('Allow downloading a reranker model'))
-        ?.querySelector<HTMLInputElement>('input');
-      expect(consent?.checked).to.equal(false);
-      await act(async () => consent?.click());
-      expect(actions).to.have.length(2);
-      await click('Download relevance model');
+      await click('Improve knowledge results with a 23 MB model download');
       expect(actions).to.deep.equal([
         { action: 'install', catalogId: 'history' },
         { action: 'install', catalogId: 'science' },
-        { action: 'prepare-reranker' },
+        { action: 'improve' },
       ]);
       await click('Remove Science…');
       expect(actions).to.have.length(3);
@@ -207,6 +200,38 @@ describe('AI knowledge settings', () => {
       expect(actions.at(-1)).to.deep.equal({ action: 'remove', catalogId: 'science' });
     } finally {
       await cleanup();
+    }
+  });
+  it('offers the improvement download only while it would help, never naming the model', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const textFor = async (improvement: AiKnowledgeState['improvement']) => {
+      const { container, cleanup } = await render({
+        ...fake.api,
+        knowledge: {
+          state: async () => ({ ok: true, value: { ...KNOWLEDGE, improvement } }),
+          update: async () => ({ ok: true, value: null }),
+        },
+      });
+      try {
+        return container.textContent ?? '';
+      } finally {
+        await cleanup();
+      }
+    };
+    const offered = await textFor({ downloadBytes: 23_856_961, downloading: false });
+    expect(offered).to.contain('Improve knowledge results with a 23 MB model download');
+    expect(offered.toLowerCase()).not.to.contain('rerank');
+    expect(await textFor({ downloadBytes: 8 * 1024 ** 2, downloading: false })).to.contain(
+      'with an 8 MB model download',
+    );
+    expect(await textFor({ downloadBytes: 18 * 1024 ** 2, downloading: false })).to.contain(
+      'with an 18 MB model download',
+    );
+    // Once chosen it downloads quietly, and once installed the offer is gone.
+    for (const improvement of [{ downloadBytes: 23_856_961, downloading: true }, null]) {
+      const text = await textFor(improvement);
+      expect(text).not.to.contain('Improve knowledge results');
+      expect(text.toLowerCase()).not.to.contain('rerank');
     }
   });
   it('does not read catalogs while AI is off', async () => {
@@ -454,6 +479,24 @@ describe('AiSettingsControls', () => {
       });
       await flush();
       expect(fake.calls).to.include('disconnect');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('describes a missing selection without showing its internal model ID or changing it', async () => {
+    const missing = 'llama-cpp:6d818d84-3d15-46eb-9a63-e9b64d6edb3b';
+    const fake = fakeAi(READY, { ...OPTED_IN, model: missing });
+    const { container, cleanup } = await render(fake.api);
+    try {
+      const select = container.querySelector<HTMLSelectElement>('select');
+      expect(select?.value).to.equal(missing);
+      expect(select?.selectedOptions[0]?.textContent).to.equal(
+        'Previously selected model (not available)',
+      );
+      expect(select?.selectedOptions[0]?.disabled).to.equal(true);
+      expect(container.textContent).not.to.include(missing);
+      expect(fake.calls).to.deep.equal([]);
     } finally {
       await cleanup();
     }

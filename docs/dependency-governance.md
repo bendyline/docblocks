@@ -146,3 +146,21 @@ The governance check reads `package-lock.json` rather than the current
 platform's `node_modules`, so optional scripts needed only on macOS, Windows,
 or Linux cannot disappear from review on another host. It also rejects stale
 approvals after a dependency version leaves the lockfile.
+
+## Notices for linked development builds
+
+The renderer's component manifest records the package versions actually bundled.
+With Squisq linked, these can differ from DocBlocks' registry lockfile: a linked
+import resolves transitive dependencies in the sibling checkout. Notice generation
+also consults the v3 lockfiles of actively linked `@bendyline/*` packages, including
+workspace-local Gezel links. A sibling directory alone does not enable this lookup.
+
+Every additional bundled version must exist in a linked lockfile and match the
+installed package's name and version. Its license text comes from that exact
+package directory, and the generated notice identifies the supplying lockfile.
+Unknown versions and stale sibling installs still fail; the root lockfile and
+dependency-governance rules are unchanged.
+
+Run `npm run generate:notices` after changing linked dependencies or switching back
+to registry packages. Notices describe the current artifacts, so regenerate them
+against the published, pinned dependencies before preparing a registry-based release.

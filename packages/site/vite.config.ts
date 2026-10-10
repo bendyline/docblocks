@@ -4,7 +4,6 @@ import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import docblocksPackage from '../core/package.json';
 import { SITE_PRECACHE_GLOB, SITE_PRECACHE_MAX_BYTES } from '../../scripts/site-precache-policy.js';
-import { CROSS_ORIGIN_ISOLATION_HEADERS } from '../../scripts/vite-cross-origin-isolation.js';
 import { harperWasmPlugin } from '../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../scripts/vite-ironcalc-wasm.js';
 import { squisqAwareViteCacheDir } from '../../scripts/vite-squisq-dep-cache.js';
@@ -255,6 +254,14 @@ export default defineConfig({
         replacement: path.resolve(__dirname, '../core/src/filesystem/electron.ts'),
       },
       {
+        find: '@bendyline/docblocks/filesystem/host',
+        replacement: path.resolve(__dirname, '../core/src/filesystem/host.ts'),
+      },
+      {
+        find: '@bendyline/docblocks/share',
+        replacement: path.resolve(__dirname, '../core/src/share/index.ts'),
+      },
+      {
         find: /^@bendyline\/docblocks\/filesystem$/,
         replacement: path.resolve(__dirname, '../core/src/filesystem/index.ts'),
       },
@@ -294,7 +301,6 @@ export default defineConfig({
     // Deterministic harnesses pass --strictPort explicitly.
     strictPort: false,
     open: true,
-    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
     fs: {
       // Allow serving files from the symlinked squisq workspace —
       // its CSS @imports `@fortawesome/fontawesome-free/css/all.min.css`,
@@ -303,9 +309,6 @@ export default defineConfig({
       // so we need to whitelist it for Vite to serve the font assets.
       allow: [path.resolve(__dirname, '../..'), path.resolve(__dirname, '../../../squisq')],
     },
-  },
-  preview: {
-    headers: CROSS_ORIGIN_ISOLATION_HEADERS,
   },
   optimizeDeps: {
     include: [

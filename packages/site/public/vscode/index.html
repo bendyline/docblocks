@@ -61,9 +61,9 @@
             <a
               class="button"
               href="https://github.com/bendyline/docblocks/tree/main/packages/vscode"
-              >Extension source</a
+              >Extension and setup guide</a
             >
-            <a class="button button--secondary" href="/docs/">Read the docs</a>
+            <a class="button button--secondary" href="/docs/#apps">Compare the apps</a>
           </div>
         </div>
         <aside class="hero-aside" aria-label="VS Code highlights">
@@ -100,17 +100,18 @@
             <h2 id="vscode-features">A document editor that respects the IDE around it.</h2>
           </div>
           <p class="section-copy">
-            DocBlocks deliberately uses a chrome-less editor webview in VS Code. Your project tree,
-            editor tabs, save behavior, and external file changes stay under VS Code’s control,
-            while DocBlocks focuses on the document itself.
+            Keep your project tree, editor tabs, keyboard shortcuts, and source control. Open
+            Markdown visually when you want a document view, and save with VS Code&rsquo;s usual
+            File → Save or Ctrl+S / Cmd+S.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
             <h3>Open Markdown visually</h3>
             <p>
-              Make DocBlocks the default editor for <code>.md</code> files or use “Open in
-              DocBlocks” only when you want the rich document surface.
+              Install the extension, then open a <code>.md</code> file. If it opens as text,
+              right-click the file and choose <strong>Open in DocBlocks</strong>, or run
+              <strong>DocBlocks: Open Editor</strong> from the Command Palette.
             </p>
           </article>
           <article class="card">
@@ -123,8 +124,9 @@
           <article class="card">
             <h3>Add tools when needed</h3>
             <p>
-              The Setup pane can add the local DocBlocks CLI to a workspace and register its MCP
-              server without granting filesystem roots automatically.
+              Run <strong>DocBlocks: Open DocBlocks Tools (CLI+MCP) Setup</strong> to install the
+              CLI in your workspace and configure its MCP server. The setup grants access to the
+              current workspace; edit <code>.vscode/mcp.json</code> for narrower roots.
             </p>
           </article>
         </div>

@@ -65,6 +65,19 @@ const PROVIDER_CODES: ReadonlyMap<string, AiErrorCode> = new Map([
   ['tools_not_supported_for_provider', 'unsupported'],
   ['model_not_found', 'model-unavailable'],
   ['model_download_required', 'model-unavailable'],
+  ['model_not_ready', 'model-unavailable'],
+  ['model_unavailable', 'model-unavailable'],
+  ['system_model_unavailable', 'model-unavailable'],
+  ['model_download_failed', 'model-download-failed'],
+  ['engine_download_failed', 'model-download-failed'],
+  ['service_not_installed', 'runtime-missing'],
+  ['service_inference_only_unsupported', 'runtime-missing'],
+  ['native_payload_required', 'runtime-missing'],
+  ['native_verification_unavailable', 'runtime-missing'],
+  ['native_verification_failed', 'runtime-missing'],
+  ['unsupported_option', 'unsupported'],
+  ['aborted', 'cancelled'],
+  ['busy', 'rate-limited'],
   ['gezel_not_found', 'model-unavailable'],
   ['rate_limited', 'rate-limited'],
   ['cancelled', 'cancelled'],
@@ -159,7 +172,9 @@ export function toAiError(error: unknown): AiError {
   ) {
     return aiError(
       'model-unavailable',
-      'Knowledge retrieval needs the relevance model. Download it in AI settings, then retry.',
+      // Retrieval never needs the model, so only the improvement download lands
+      // here. People hear "better knowledge results", never "reranker".
+      'Gezel could not download the model that improves knowledge results.',
       error instanceof Error ? error.message : undefined,
     );
   }

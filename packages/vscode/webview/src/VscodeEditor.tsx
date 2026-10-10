@@ -21,6 +21,7 @@ import type {
   ExtensionToWebviewMessage,
   VscodeEditorSettings,
   VscodeProofingSettings,
+  VscodeWorkspaceSettingsState,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
 import {
@@ -43,8 +44,16 @@ import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
+import { createVscodeWorkspaceSettingsBridge } from './vscodeWorkspaceSettingsBridge.js';
+import { resolveWorkspaceDefaultThemeId } from '@bendyline/docblocks/workspace-settings';
 import { createVscodeCalcEngineFactory } from './calculationConfig.js';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
+
+const PresentationMaker = lazy(() =>
+  import('@bendyline/docblocks-react/editor').then((module) => ({
+    default: module.PresentationMaker,
+  })),
+);
 
 const vscode = getVscodeApi();
 const VSCODE_CALC_ENGINE_FACTORY = createVscodeCalcEngineFactory();
@@ -96,6 +105,14 @@ export function VscodeEditor() {
   const [clipboardBridge, setClipboardBridge] = useState<VscodeClipboardBridge | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [settings, setSettings] = useState<VscodeEditorSettings>(DEFAULT_EDITOR_SETTINGS);
+  const [workspaceSettings, setWorkspaceSettings] = useState<VscodeWorkspaceSettingsState | null>(
+    null,
+  );
+  const [workspaceSettingsBridge] = useState(() =>
+    createVscodeWorkspaceSettingsBridge((message) => vscode.postMessage(message)),
+  );
+  useEffect(() => () => workspaceSettingsBridge.dispose(), [workspaceSettingsBridge]);
+  const workspaceDefaultThemeId = resolveWorkspaceDefaultThemeId(workspaceSettings?.settings);
   const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
   const [recoveryConflict, setRecoveryConflict] = useState<string | null>(null);
   const [findMode, setFindMode] = useState(false);
@@ -175,6 +192,9 @@ export function VscodeEditor() {
           break;
         case 'editorSettings':
           setSettings(msg.settings);
+          break;
+        case 'workspaceSettings':
+          setWorkspaceSettings(msg.state);
           break;
       }
     }
@@ -492,9 +512,17 @@ export function VscodeEditor() {
                 onAccentColorChange={handleAccentColorChange}
                 onWriteCanvasSettingsChange={handleWriteCanvasSettingsChange}
                 onProofingSettingsChange={handleProofingSettingsChange}
+                workspaceSettings={workspaceSettings}
+                onSaveWorkspaceSettings={workspaceSettingsBridge.save}
+                onRefreshWorkspaceOutputs={workspaceSettingsBridge.refreshOutputs}
               />
             </Suspense>
           }
+          summarizationDesigner={(onClose) => (
+            <Suspense fallback={null}>
+              <PresentationMaker onClose={onClose} />
+            </Suspense>
+          )}
           toolbarSlotRight={
             <>
               <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
@@ -505,6 +533,7 @@ export function VscodeEditor() {
                   saveBlob={exportBridge.saveBlob}
                   resolveExportTarget={exportBridge.resolveExportTarget}
                   pickExportTarget={exportBridge.pickExportTarget}
+                  defaultThemeId={workspaceDefaultThemeId}
                 />
               </Suspense>
             </>
@@ -631,7 +660,10 @@ function isDocumentMutationControl(target: EventTarget): boolean {
   return Boolean(
     target.closest(
       [
-        '.squisq-toolbar-button[data-btn-index]:not([aria-haspopup="menu"])',
+        // Formatting buttons sit inside a toolbar group; the document chrome
+        // that also carries data-toolbar-item (layouts, settings, files) is a
+        // direct child of the toolbar and must not arm an edit.
+        '.squisq-toolbar-group > .squisq-toolbar-button[data-toolbar-item]:not([aria-haspopup="menu"])',
         '[data-contextual] .squisq-toolbar-button',
         '.squisq-toolbar-overflow-item:not([aria-haspopup="menu"])',
         '.squisq-mermaid-type-card',

@@ -39,27 +39,20 @@ import { PinnedDocuments } from './PinnedDocuments.js';
 import type { PinnedDocumentListItem } from '../DocBlocksShell/pinned-documents.js';
 import { filterVisibleFileEntries } from './entry-visibility.js';
 import { sortFileEntries, type FileExplorerSortMode } from './entry-sort.js';
-import { createNewOutsideInDocument } from '../DocBlocksShell/outside-in.js';
+import {
+  createNewOutsideInDocument,
+  type OutsideInRenderOptions,
+} from '../DocBlocksShell/outside-in.js';
 import { isSupportedImportFile } from '../DocBlocksShell/import-file-types.js';
+import { newFileHtmlOutput, newFileName, type NewFileFormat } from './new-file-formats.js';
+import { NewFileFormatOptions } from './NewFileFormatOptions.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
+export type { NewFileFormat } from './new-file-formats.js';
 
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';
-
-export type NewFileFormat = 'markdown' | 'docx' | 'xlsx' | 'pdf' | 'web-interactive' | 'web-static';
-
-const NEW_FILE_EXTENSIONS: Record<NewFileFormat, string> = {
-  markdown: '.md',
-  docx: '.docx',
-  xlsx: '.xlsx',
-  pdf: '.pdf',
-  'web-interactive': '.html',
-  'web-static': '.html',
-};
-
-const SELECTABLE_FILE_EXTENSION = /\.(?:md|docx|xlsx|pdf|html?)$/i;
 
 export type FileTreeChange =
   | { type: 'create'; path: string; kind?: 'file' | 'directory' }
@@ -175,6 +168,12 @@ export interface FileExplorerProps {
   moveDestinations?: readonly WorkspaceMoveDestination[];
   /** When provided, shows the transient-workspace move action above the tree. */
   onMoveToWorkspace?: (workspaceId: string) => Promise<void>;
+  /** Rendering context (e.g. the workspace default theme) for new rendered documents. */
+  outsideInRender?: OutsideInRenderOptions;
+  /** The type the New File form preselects. Defaults to Markdown. */
+  defaultNewFileFormat?: NewFileFormat;
+  /** Called with the type of each file the New File form creates. */
+  onNewFileFormatUsed?: (format: NewFileFormat) => void;
   /** Optional className for the root element. */
   className?: string;
 }
@@ -202,6 +201,9 @@ export function FileExplorer({
   confirmDelete,
   moveDestinations = [],
   onMoveToWorkspace,
+  outsideInRender,
+  defaultNewFileFormat = 'markdown',
+  onNewFileFormatUsed,
   className,
 }: FileExplorerProps) {
   const tree = useFileTree(provider, metadataRefreshKey, activeFilePath);
@@ -215,7 +217,7 @@ export function FileExplorer({
   );
 
   const [newItemName, setNewItemName] = useState('');
-  const [newFileFormat, setNewFileFormat] = useState<NewFileFormat>('markdown');
+  const [newFileFormat, setNewFileFormat] = useState<NewFileFormat>(defaultNewFileFormat);
   const [uncontrolledSortMode, setUncontrolledSortMode] = useState<FileExplorerSortMode>('name');
   const selectedSortMode = sortMode ?? uncontrolledSortMode;
   const selectSortMode = useCallback(
@@ -347,12 +349,11 @@ export function FileExplorer({
     setNewItemCreationPending(true);
     try {
       if (itemType === 'file') {
-        const stem = name.replace(SELECTABLE_FILE_EXTENSION, '');
-        if (!stem) {
+        const filename = newFileName(name, newFileFormat);
+        if (!filename) {
           setNewItemError('Enter a file name before the extension.');
           return;
         }
-        const filename = `${stem}${NEW_FILE_EXTENSIONS[newFileFormat]}`;
         createdPath = `${prefix}${filename}`;
         if (newFileFormat === 'markdown') {
           await tree.createFile(createdPath, '');
@@ -361,14 +362,12 @@ export function FileExplorer({
           await createNewOutsideInDocument(
             provider,
             createdPath,
-            newFileFormat === 'web-static'
-              ? 'static'
-              : newFileFormat === 'web-interactive'
-                ? 'interactive'
-                : undefined,
+            newFileHtmlOutput(newFileFormat),
+            outsideInRender,
           );
           await tree.refresh();
         }
+        onNewFileFormatUsed?.(newFileFormat);
         handleSelect(createdPath);
       } else if (itemType === 'directory') {
         await tree.createDirectory(createdPath);
@@ -387,7 +386,17 @@ export function FileExplorer({
     setNewItemName('');
     setNewItemType(null);
     onTreeChange?.({ type: 'create', path: createdPath });
-  }, [newFileFormat, newItemName, newItemType, onTreeChange, provider, tree, handleSelect]);
+  }, [
+    newFileFormat,
+    newItemName,
+    newItemType,
+    onNewFileFormatUsed,
+    onTreeChange,
+    outsideInRender,
+    provider,
+    tree,
+    handleSelect,
+  ]);
 
   const handleMoveToWorkspace = useCallback(async () => {
     if (!onMoveToWorkspace || !moveDestinationId || movingToWorkspace) return;
@@ -787,7 +796,7 @@ export function FileExplorer({
             disabled={newItemCreationPending}
             onClick={() => {
               setNewItemError(null);
-              setNewFileFormat('markdown');
+              setNewFileFormat(defaultNewFileFormat);
               setNewItemType('file');
             }}
             title="New File"
@@ -901,7 +910,7 @@ export function FileExplorer({
                 if (e.key === 'Escape') {
                   setNewItemType(null);
                   setNewItemName('');
-                  setNewFileFormat('markdown');
+                  setNewFileFormat(defaultNewFileFormat);
                   setNewItemError(null);
                 }
               }}
@@ -919,16 +928,7 @@ export function FileExplorer({
                     setNewItemError(null);
                   }}
                 >
-                  <optgroup label="Document">
-                    <option value="markdown">Markdown (.md)</option>
-                    <option value="docx">Word document (.docx)</option>
-                    <option value="xlsx">Excel workbook (.xlsx)</option>
-                    <option value="pdf">PDF document (.pdf)</option>
-                  </optgroup>
-                  <optgroup label="Web page">
-                    <option value="web-interactive">Web page — Interactive (.html)</option>
-                    <option value="web-static">Web page — Static (.html)</option>
-                  </optgroup>
+                  <NewFileFormatOptions />
                 </select>
                 <button type="submit" className="db-new-item-add" disabled={newItemCreationPending}>
                   {newItemCreationPending ? 'Adding…' : 'Add'}

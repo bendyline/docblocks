@@ -4,6 +4,31 @@ Build an offline document editor for iPhone, iPad, and Android using Capacitor a
 
 The implementation now lives in `packages/mobile`, following the sibling Gezel infrastructure. The original design below is retained as the qualification contract. This record was updated on October 4, 2026. The five implementation phases are present; phase 5 release qualification remains incomplete.
 
+**AI parity qualification — October 8, 2026**
+
+Mobile now consumes Gezel's shared embedding lifecycle, model manager, selection and streaming APIs. The DocBlocks-local catalog and download orchestration were removed. Upstream Capacitor fixes accept the shared stream options, forward native phase/token progress, and keep catalog downloads available before the first model is installed. Matched preview packages bundle native release v0.1.48 with its matching Swift/Java bridge sources and checked archive hashes.
+
+- The isolated iOS app passed on an arm64 iPhone 17 Pro simulator and Mike's connected iPhone 14 Pro Max: Settings opt-in, native readiness, first-run downloads, write/review/illustrate streaming, one terminal event per request, and opt-out cleanup. Synthetic weights test integration, not answer quality.
+- The simulator downloaded and verified Qwen3.5 0.8B (549,698,976 bytes) and completed a real rewrite request with nonempty output and no reasoning envelope. Seven native runtime tests also passed on the simulator. All nine desktop AI end-to-end tests passed, including writing/review, progress/cancellation, diagrams with undo, and Settings persistence.
+- Device reports: `reports/mobile-native/ios-ai-device-2P8qPF/ai-smoke.json` and `reports/mobile-native/ios-ai-simulator-PaR9Js/ai-smoke.json`; each directory includes a Settings screenshot. The iPhone correctly exposes Apple Intelligence's unsupported-hardware reason.
+- Android Debug builds with the same pinned release. Mobile adapter tests and upstream SDK transport/model/packaging tests cover the shared path. Actual Apple/ML Kit generation, broad model quality/performance, mobile speech and knowledge support, and store release qualification remain outside these checks.
+
+The broader repository gate is not green: 2,618 unit/integration tests passed with 27 pending, but the CLI workspace-refresh test expects the HTML heading title while the importer returns the document title. The site suite passed 79 tests with 16 skipped and failed three separate editor checks (CSV grid React hooks, diagram selection, and heading shortcuts). These failures are outside the mobile AI paths; downstream E2E suites in the chained gate were not run. Builds, lint, formatting, type checks, dependency/artifact checks, package consumers, critical coverage, and native storage suites passed.
+
+This supersedes the earlier locked-phone launch limitation for the isolated AI test app; it does not qualify the entire physical-device interaction matrix or update the personal app.
+
+Follow-up: the test app previously retained the ID of its removed synthetic model and shared the regular app's display name. Its cleanup now clears the temporary selection, its name is **DocBlocks AI Test**, and shared Settings uses a human-readable placeholder for unavailable saved selections. Forty focused Settings/mobile tests and the corrected iPhone smoke test passed (`reports/mobile-native/ios-ai-device-EWcU89/ai-smoke.json`). The regular **DocBlocks 2.6.2, build 2** app was then installed in place and launched on the connected iPhone; its private documents were preserved.
+
+The reported Qwen 3.5 2B review failure exposed a Gezel budget mismatch: inventory advertised a 4,095-token reply in a 4,096-token context, while request admission required a 128-token prompt reserve. The SDK now derives both limits from one contract and uses each installed model's native fitted context. Capacitor also uses the v0.1.48 native chat API when advertised, giving it desktop's model templates, answer parser, sampling and reasoning controls. Mobile editor actions disable hidden reasoning when supported so the bounded reply budget remains available for their answers; desktop writing retains its separately evaluated policy.
+
+- Qwen 3.5 2B completed a rewrite and the full default-document review on the iPhone 14 Pro Max with a 16,384-token fitted context. The review request contained 9,462 characters, finished normally in 52 seconds, and rendered five findings. This verifies operation and parsing, not the correctness of every suggestion. Report and screenshot: `reports/mobile-native/ios-ai-device-DtGjvC/`.
+- The final simulator run passed synthetic native integration and real Qwen 0.8B rewriting, but its document review repeated findings until the reply was truncated; the UI rejected that response. The 2B model exceeds the simulator's native test-model size limit. Earlier legacy-transport simulator reviews passed; they do not substitute for this final result. Report: `reports/mobile-native/ios-ai-simulator-ivW8z5/ai-smoke.json`.
+- Gezel's 10 budget-schema and 59 Capacitor tests passed, including native-chat cancellation and malformed responses. The focused DocBlocks mobile/Settings/review suite passed 48 tests. Mobile build/type checks, SDK integrity, notices, dependency governance and formatting/lint checks passed. The preview packages are now `-docblocks.2`; native binaries remain pinned to v0.1.48. The broader repository failures described above remain unresolved.
+
+The verified fix is installed in the regular **DocBlocks 2.6.2, build 4** app and was launched successfully on the connected iPhone. The update preserved the app's private documents and downloaded models. Android Debug also builds with the same final SDK and renderer.
+
+**Earlier qualification — October 4, 2026**
+
 **Implemented and verified so far**
 
 | Phase                           | Implementation                                                                                                                                | Evidence and remaining qualification                                                                                                                                                                                                                                                          |

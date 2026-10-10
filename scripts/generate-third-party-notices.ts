@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { format as formatWithPrettier } from 'prettier';
 import { excludedDesktopDependencies } from './desktop-runtime-policy.js';
+import { linkedNoticePackages, verifyLinkedNoticePackage } from './linked-notice-packages.js';
 import {
   normalizeNoticeText,
   noticeTextMatches,
@@ -53,6 +54,7 @@ interface Component extends ArtifactComponent {
   readonly license: string;
   readonly lockKey: string;
   readonly repository: string;
+  readonly lockfile?: string;
 }
 
 interface LicenseMaterial {
@@ -85,6 +87,7 @@ if (lock.lockfileVersion !== 3 || !lock.packages) {
   throw new Error('Third-party notices require package-lock.json lockfileVersion 3.');
 }
 const lockPackages = lock.packages;
+const linkedPackages = linkedNoticePackages(repoRoot, Object.keys(lockPackages));
 
 const FIRST_PARTY_PACKAGES = new Set([
   'docblocks',
@@ -160,7 +163,7 @@ const surfaces: readonly Surface[] = [
     id: 'vscode',
     title: 'DocBlocks VS Code extension (VSIX)',
     description:
-      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points.',
+      'Packages present in the emitted webview Vite/Rollup module graph, plus the copied harper.js and IronCalc WebAssembly engines and jsonc-parser bundled into the desktop and web extension-host entry points. The extension-host entry points also bundle the Squisq Markdown and plain-HTML modules used for workspace catalogs, which are already part of the webview graph.',
     artifactManifest: 'packages/vscode/dist/webview/THIRD_PARTY_COMPONENTS.json',
     supplementalPackages: ['@ironcalc/wasm', 'harper.js', 'jsonc-parser'],
     output: 'packages/vscode/THIRD_PARTY_NOTICES.txt',
@@ -323,7 +326,23 @@ function componentFromLockKey(lockKey: string): Component | null {
   const name = packageNameFromLockKey(canonicalKey);
   if (!name || FIRST_PARTY_PACKAGES.has(name)) return null;
   if (!lockEntry.version) throw new Error(`${canonicalKey} has no locked version.`);
-  const manifest = readManifest(canonicalKey);
+  // Linking replaces package directories, including their former nested deps.
+  // Use another locked copy of the same identity for retained metadata/license
+  // material, including registry copies preserved by link:gezel.
+  const candidates = [
+    ...new Set([canonicalKey, ...lockKeysForIdentity(name, lockEntry.version)]),
+  ].flatMap((key) => [
+    key,
+    key.replace(
+      /^(packages\/desktop\/node_modules\/)(@bendyline\/gezel(?:-app-sdk|-service)?)(\/.*)?$/u,
+      '$1.docblocks-gezel/$2$3',
+    ),
+  ]);
+  const sourceKey = candidates.find((key) => {
+    const candidate = readManifest(key);
+    return candidate?.name === name && candidate.version === lockEntry.version;
+  });
+  const manifest = sourceKey ? readManifest(sourceKey) : null;
   const license =
     lockEntry.license ??
     manifestLicense(manifest) ??
@@ -333,7 +352,7 @@ function componentFromLockKey(lockKey: string): Component | null {
     name,
     version: lockEntry.version,
     license,
-    lockKey: canonicalKey,
+    lockKey: sourceKey ?? canonicalKey,
     repository: repositoryUrl(
       manifest,
       name,
@@ -345,8 +364,28 @@ function componentFromLockKey(lockKey: string): Component | null {
 function componentFromIdentity(identity: ArtifactComponent): Component {
   const keys = lockKeysForIdentity(identity.name, identity.version);
   if (keys.length === 0) {
+    const linked = linkedPackages.get(`${identity.name}@${identity.version}`);
+    if (linked) {
+      verifyLinkedNoticePackage(linked, identity.name, identity.version);
+      const lockKey = path.relative(repoRoot, linked.directory).replaceAll('\\', '/');
+      const manifest = readManifest(lockKey);
+      const license = linked.entry.license ?? manifestLicense(manifest);
+      if (!license)
+        throw new Error(`${identity.name}@${identity.version} has no declared license.`);
+      return {
+        ...identity,
+        license,
+        lockKey,
+        lockfile: path.relative(repoRoot, linked.lockfile).replaceAll('\\', '/'),
+        repository: repositoryUrl(
+          manifest,
+          identity.name,
+          Boolean(linked.entry.cpu?.length || linked.entry.os?.length),
+        ),
+      };
+    }
     throw new Error(
-      `Built artifact contains ${identity.name}@${identity.version}, which is absent from package-lock.json.`,
+      `Built artifact contains ${identity.name}@${identity.version}, which is absent from package-lock.json and the active linked checkouts' lockfiles.`,
     );
   }
   const component = componentFromLockKey(keys[0]);
@@ -498,6 +537,12 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
 
 function renderSurfaceNotice(surface: Surface, components: readonly Component[]): string {
   const { materials, missing } = collectLicenseMaterials(components);
+  const lockfiles = [
+    ...new Set([
+      'package-lock.json',
+      ...components.flatMap((component) => (component.lockfile ? [component.lockfile] : [])),
+    ]),
+  ].sort();
   const lines = [
     'GENERATED FILE - DO NOT EDIT',
     'Run `npm run generate:notices` from the repository root.',
@@ -506,7 +551,7 @@ function renderSurfaceNotice(surface: Surface, components: readonly Component[])
     '',
     surface.description,
     '',
-    `Inventory source: package-lock.json${surface.artifactManifest ? ` and ${surface.artifactManifest}` : ''}.`,
+    `Inventory source: ${lockfiles.join(', ')}${surface.artifactManifest ? ` and ${surface.artifactManifest}` : ''}.`,
     `Components: ${components.length}.`,
     '',
     ...surfaceAssetNotes(surface),

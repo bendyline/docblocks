@@ -1,0 +1,19 @@
+{
+  "version": "0.1.48",
+  "release": "https://github.com/bendyline/gezel/releases/tag/native-v0.1.48",
+  "archives": {
+    "ios": {
+      "file": "gezel-mobile-0.1.48-ios.tar.gz",
+      "sha256": "1f5ee5267993325f1f6ed9c82744bfa87973d4fe159b8924dbf36fdf5f2c5ea8"
+    },
+    "android": {
+      "file": "gezel-mobile-0.1.48-android.tar.gz",
+      "sha256": "c55fd9999a0fbaf0e5b55fe0fbeb6afb6c0aac02d8883c8c852fdd6462b4abda"
+    }
+  },
+  "bridgeCommit": "9b0dd14fa6fde3286c885756b8ce93b6fb9478e5",
+  "bridgeSources": {
+    "ios/Sources/GezelCapacitor/GezelRuntimePlugin.swift": "a849c30c5a6cbe59c8d048ce3047a80a4548e23e37996c9c7b8e0eb9917bf846",
+    "android/src/main/java/com/bendyline/gezel/capacitor/GezelRuntimePlugin.java": "324e1daf95b152aa787918521ffa35f54da79323e985d77d9231edc2d1e4ba95"
+  }
+}

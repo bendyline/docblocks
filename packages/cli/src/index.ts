@@ -12,4 +12,7 @@ export type { VideoOptions, VideoResult, VideoRunDependencies } from './commands
 export { runParse } from './commands/parse.js';
 export type { ParseOptions } from './commands/parse.js';
 
+export { describeWorkspaceOutput, runWorkspaceRefresh } from './commands/workspace.js';
+export type { WorkspaceRefreshOptions, WorkspaceRefreshResult } from './commands/workspace.js';
+
 export { getPackageVersion } from './version.js';

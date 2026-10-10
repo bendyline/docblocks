@@ -3,6 +3,7 @@ import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatRequest,
+  AiKnowledgeAction,
   AiModelInstallEvent,
   AiPreferences,
   AiStatus,
@@ -94,7 +95,12 @@ class ControlledStream implements AsyncIterable<ProviderChatChunk> {
 
 const MODEL_ENTRIES: ProviderModelEntry[] = [
   { id: 'gezel:writer', owned_by: 'gezel', name: 'Writer', is_fallback: true },
-  { id: 'llama-cpp:qwen3-4b', owned_by: 'llama-cpp', context_window: 32_768 },
+  {
+    id: 'llama-cpp:qwen3-4b',
+    owned_by: 'llama-cpp',
+    locality: 'on-device',
+    context_window: 32_768,
+  },
 ];
 
 class FakeConnection implements AiProviderConnection {
@@ -223,12 +229,12 @@ function recorder(): { events: AiChatEvent[]; emit: (event: AiChatEvent) => void
 }
 
 function terminalEvents(events: readonly AiChatEvent[]): AiChatEvent[] {
-  return events.filter((event) => event.kind !== 'delta');
+  return events.filter((event) => event.kind === 'done' || event.kind === 'error');
 }
 
 describe('AI catalog lifecycle', () => {
   afterEach(disposeLiveServices);
-  const state = { catalogs: [], reranker: { ready: true, downloading: false, message: null } };
+  const state = { catalogs: [], improvement: null };
   it('never contacts the provider while opted out', async () => {
     const { service, connector } = createService(DEFAULT_AI_PREFERENCES);
     connector.connection.knowledgeState = async () => {
@@ -245,7 +251,46 @@ describe('AI catalog lifecycle', () => {
     connector.connection.knowledgeState = async () => state;
     expect(await service.knowledgeState('owner')).to.deep.equal({ ok: true, value: state });
   });
-  it('bounds concurrency and rejects stale responses after opt-out', async () => {
+  it('shares one in-flight state read per window instead of rejecting the second', async () => {
+    // A StrictMode remount asks twice before the first answer arrives.
+    const { service, connector } = await readyService();
+    const gate = deferred();
+    let reads = 0;
+    connector.connection.knowledgeState = async () => {
+      reads += 1;
+      await gate.promise;
+      return state;
+    };
+    const first = service.knowledgeState('owner');
+    const second = service.knowledgeState('owner');
+    gate.resolve();
+    expect(await first).to.deep.equal({ ok: true, value: state });
+    expect(await second).to.deep.equal({ ok: true, value: state });
+    expect(reads).to.equal(1);
+    expect(await service.knowledgeState('owner')).to.deep.equal({ ok: true, value: state });
+    expect(reads).to.equal(2);
+  });
+  it('runs a catalog action while a state read is pending', async () => {
+    const { service, connector } = await readyService();
+    const gate = deferred();
+    connector.connection.knowledgeState = async () => {
+      await gate.promise;
+      return state;
+    };
+    const actions: AiKnowledgeAction[] = [];
+    connector.connection.updateKnowledge = async (action) => {
+      actions.push(action);
+    };
+    const pending = service.knowledgeState('owner');
+    expect(await service.updateKnowledge('owner', { action: 'improve' })).to.deep.equal({
+      ok: true,
+      value: null,
+    });
+    expect(actions).to.deep.equal([{ action: 'improve' }]);
+    gate.resolve();
+    expect((await pending).ok).to.equal(true);
+  });
+  it('rejects stale responses after opt-out', async () => {
     const { service, connector } = await readyService();
     const gate = deferred();
     let signal: AbortSignal | undefined;
@@ -255,7 +300,6 @@ describe('AI catalog lifecycle', () => {
       return state;
     };
     const pending = service.knowledgeState('owner');
-    expect((await service.knowledgeState('owner')).ok).to.equal(false);
     await service.setPreferences({ enabled: false });
     expect(signal?.aborted).to.equal(true);
     gate.resolve();
@@ -546,6 +590,7 @@ describe('desktop AI service: chat', () => {
 
     const { request, stream } = connector.connection.streams[0];
     expect(request.model).to.equal('gezel:writer');
+    expect(request.purpose).to.equal('write');
     stream.push('Hel');
     stream.push('lo', {
       model: 'gezel:writer@2',
@@ -601,19 +646,107 @@ describe('desktop AI service: chat', () => {
     ]);
   });
 
-  it('times out a stream that stops producing', async () => {
-    const { service } = await readyService({ streamIdleTimeoutMs: 20 });
+  it('relays progress without completing the stream and remains cancellable', async () => {
+    const { service, connector } = await readyService();
     const { events, emit } = recorder();
     service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    const progress = {
+      phase: 'prefill',
+      percent: 50,
+      outputTokens: null,
+      tokensPerSecond: null,
+    } as const;
+    stream.push('', { progress });
+    await settle();
+    expect(events).to.deep.equal([{ kind: 'progress', progress }]);
+    expect(service.activeChatCount).to.equal(1);
+    stream.push('', { progress: { ...progress, percent: 101 } });
+    await settle();
+    expect(events).to.have.length(1);
+    service.cancelChat('1:a');
+    await settle();
+    expect(terminalEvents(events)).to.deep.equal([
+      {
+        kind: 'done',
+        completion: { text: '', model: 'gezel:writer', finishReason: 'cancelled', usage: null },
+      },
+    ]);
+    stream.push('Too late', { progress });
+    stream.end();
+    await settle();
+    expect(events).to.have.length(2);
+  });
+
+  it('waits past the stall limit for the first text', async () => {
+    // Loading, a long prefill, and thinking send no text; Gezel owns that deadline.
+    const { service, connector } = await readyService({
+      streamIdleTimeoutMs: 20,
+      firstTextTimeoutMs: 10_000,
+    });
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    stream.push('');
     await new Promise((resolve) => setTimeout(resolve, 60));
     await settle();
-    expect(terminalEvents(events)).to.have.length(1);
+    expect(terminalEvents(events)).to.deep.equal([]);
+    stream.push('Draft', { finishReason: 'stop' });
+    stream.end();
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('done');
+  });
+
+  it('times out a stream that stalls after its text starts', async () => {
+    const { service, connector } = await readyService({
+      streamIdleTimeoutMs: 20,
+      firstTextTimeoutMs: 10_000,
+    });
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    connector.connection.streams[0].stream.push('Dra');
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await settle();
     const [terminal] = terminalEvents(events);
     expect(terminal.kind).to.equal('error');
     if (terminal.kind === 'error') expect(terminal.error.code).to.equal('timeout');
   });
 
-  it('caps a runaway completion and says so', async () => {
+  it('still gives up on a connection that never produces text', async () => {
+    const { service } = await readyService({ firstTextTimeoutMs: 20 });
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('error');
+    if (terminal.kind === 'error') expect(terminal.error.code).to.equal('timeout');
+  });
+
+  it('allows a document draft past the former response-size cap', async () => {
+    const { service, connector } = await readyService();
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    const text = 'A'.repeat(256 * 1024 + 1);
+    stream.push(text);
+    stream.push('\nComplete ending.', { finishReason: 'stop' });
+    stream.end();
+    await settle();
+    const [terminal] = terminalEvents(events);
+    expect(terminal.kind).to.equal('done');
+    if (terminal.kind === 'done') {
+      expect(terminal.completion.finishReason).to.equal('stop');
+      expect(terminal.completion.text).to.equal(`${text}\nComplete ending.`);
+    }
+  });
+
+  it('enforces the normal document-size boundary and says so', async () => {
     const { service, connector } = await readyService();
     const { events, emit } = recorder();
     service.startChat('1:a', WRITE_REQUEST, emit);
@@ -712,7 +845,12 @@ describe('desktop AI service: hosting', () => {
 
   function hostingService(
     entries: ProviderModelEntry[] = [
-      { id: 'llama-cpp:qwen3.8-27b-q4', owned_by: 'llama-cpp', context_window: 262_144 },
+      {
+        id: 'llama-cpp:qwen3.8-27b-q4',
+        owned_by: 'llama-cpp',
+        locality: 'on-device',
+        context_window: 262_144,
+      },
     ],
   ) {
     const created = createService(ENABLED);

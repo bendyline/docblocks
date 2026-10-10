@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { existsSync } from 'node:fs';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,13 +23,23 @@ import {
   KokoroEngineError,
   type KokoroChannel,
 } from '../main/speech/kokoro-engine.js';
-import { KOKORO_VOICE_BYTES } from '../main/speech/speech-models.js';
+import {
+  KOKORO_MODEL_ID,
+  KOKORO_MODEL_FILE,
+  KOKORO_VOICE_BYTES,
+  catalogEntry,
+} from '../main/speech/speech-models.js';
+import { verifyFile } from '../main/speech/verified-download.js';
+import { kokoroWordTimings } from '../main/speech/kokoro-timing.js';
+import { parseSpeechAudioChunk } from '@bendyline/docblocks/host';
 
 const require = createRequire(import.meta.url);
 const LEXICON_DIR = kokoroLexiconDir(require.resolve('@bendyline/gezel-service/package.json'));
 
 /** A fake ONNX Runtime: 100 samples of audio per input token. */
-function fakeOrt(options: { failLoad?: boolean; runs?: number[] } = {}): OrtLike {
+function fakeOrt(
+  options: { failLoad?: boolean; runs?: number[]; durations?: boolean } = {},
+): OrtLike {
   class Tensor {
     constructor(
       readonly type: string,
@@ -46,6 +56,12 @@ function fakeOrt(options: { failLoad?: boolean; runs?: number[] } = {}): OrtLike
           async run(feeds: Record<string, unknown>) {
             const ids = (feeds.input_ids as Tensor).data;
             options.runs?.push(ids.length);
+            if (options.durations) {
+              return {
+                waveform: { data: new Float32Array(ids.length * 600).fill(0.25) },
+                durations: { data: new Float32Array(ids.length).fill(1) },
+              };
+            }
             return { waveform: { data: new Float32Array(ids.length * 100).fill(0.25) } };
           },
         };
@@ -230,12 +246,18 @@ describe('KokoroEngine', () => {
   it('relays chunks as wire events and summarises the synthesis', async () => {
     const engine = new KokoroEngine({
       lexiconDir: LEXICON_DIR,
-      fork: () => new FakeChannel(new KokoroRuntime(fakeOrt())),
+      fork: () => new FakeChannel(new KokoroRuntime(fakeOrt({ durations: true }))),
     });
     const kinds: string[] = [];
     const summary = await engine.synthesize(input(), (event) => {
       kinds.push(event.kind);
-      if (event.kind === 'chunk') expect(event.chunk.pcm).to.be.instanceOf(ArrayBuffer);
+      if (event.kind === 'chunk') {
+        expect(event.chunk.pcm).to.be.instanceOf(ArrayBuffer);
+        expect(event.chunk.wordTimings!.length).to.be.greaterThan(0);
+        expect(parseSpeechAudioChunk(event.chunk)?.wordTimings).to.deep.equal(
+          event.chunk.wordTimings,
+        );
+      }
     });
     expect(kinds.filter((k) => k === 'chunk')).to.have.length(2);
     expect(summary).to.include({ voice: 'af_heart', model: 'kokoro-82m-v1.0', chunks: 2 });
@@ -342,6 +364,68 @@ describe('KokoroRuntime with the real model', function () {
     if (!model || !voice || !existsSync(model) || !existsSync(voice)) this.skip();
   });
 
+  it('pins a model whose duration predictions account for the audio at different speeds', async () => {
+    const pin = catalogEntry(KOKORO_MODEL_ID)!.files.find(
+      (file) => file.name === KOKORO_MODEL_FILE,
+    )!;
+    expect(
+      await verifyFile(model!, pin.sha256, pin.size),
+      'model must match the catalog pin',
+    ).to.equal(true);
+    const ort = require('onnxruntime-node') as OrtLike;
+    const session = await ort.InferenceSession.create(model!);
+    try {
+      const [utterance] = await new KokoroFrontend(LEXICON_DIR).plan(
+        'Save 42% and pay $3.50 for 2 items.',
+        'af_heart',
+      );
+      const data = await readFile(voice!);
+      const voiceData = new Float32Array(data.buffer, data.byteOffset, data.byteLength / 4);
+      const offset = styleOffset(utterance!.tokens.length);
+      for (const speed of [0.75, 1, 1.25]) {
+        const output = await session.run({
+          input_ids: new ort.Tensor('int64', BigInt64Array.from(utterance!.tokens, BigInt), [
+            1,
+            utterance!.tokens.length,
+          ]),
+          style: new ort.Tensor('float32', voiceData.slice(offset, offset + 256), [1, 256]),
+          speed: new ort.Tensor('float32', new Float32Array([speed]), [1]),
+        });
+        const predictions = output.durations?.data;
+        const waveform = output.waveform?.data;
+        if (!(predictions instanceof Float32Array) || !(waveform instanceof Float32Array)) {
+          throw new Error('Expected float32 durations and waveform outputs');
+        }
+        expect(predictions.length).to.equal(utterance!.tokens.length);
+        // This published output precedes ONNX Round (nearest, ties to even)
+        // and Clip(min=1). Match those operators, not JavaScript's tie rule.
+        const frames = Array.from(predictions, (value) => {
+          expect(Number.isFinite(value) && value > 0).to.equal(true);
+          const lower = Math.floor(value);
+          return Math.max(1, value - lower === 0.5 ? lower + (lower % 2) : Math.round(value));
+        });
+        expect(frames.reduce((sum, duration) => sum + duration, 0) * 600).to.equal(waveform.length);
+        const words = kokoroWordTimings(utterance!, predictions, waveform.length)!;
+        expect(words.length).to.equal(utterance!.words.length);
+        expect(words[0]!.startSec).to.equal(frames[0]! / 40);
+        expect(words.at(-1)!.endSec).to.be.lessThan(waveform.length / 24000);
+        expect(
+          parseSpeechAudioChunk({
+            index: 0,
+            pcm: waveform,
+            sampleRate: 24000,
+            durationSec: waveform.length / 24000,
+            textStart: utterance!.textStart,
+            textEnd: utterance!.textEnd,
+            wordTimings: words,
+          }),
+        ).not.to.equal(null);
+      }
+    } finally {
+      await session.release?.();
+    }
+  });
+
   it('speaks a sentence with audible output', async () => {
     const ort = require('onnxruntime-node') as OrtLike;
     const runtime = new KokoroRuntime(ort);
@@ -370,5 +454,7 @@ describe('KokoroRuntime with the real model', function () {
     const peak = chunk.pcm.reduce((max, sample) => Math.max(max, Math.abs(sample)), 0);
     expect(chunk.durationSec).to.be.greaterThan(1);
     expect(peak).to.be.greaterThan(0.05);
+    expect(chunk.wordTimings).to.have.length(6);
+    expect(chunk.wordTimings![0]!.startSec).to.be.greaterThan(0);
   });
 });

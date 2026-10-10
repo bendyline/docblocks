@@ -3,14 +3,17 @@ import type {
   DocBlocksAccentColor,
   VscodeEditorSettings,
   VscodeProofingSettings,
+  VscodeWorkspaceSettingsState,
   VscodeWriteCanvasSettings,
 } from '@bendyline/docblocks/vscode';
+import type { WorkspaceSettingsPatch } from '@bendyline/docblocks/workspace-settings';
 import {
   AccentColorSettings,
   ProofingSettingsControls,
   SettingsDialog,
   WriteCanvasSettingsControls,
 } from '@bendyline/docblocks-react/settings';
+import { VscodeWorkspaceSettings } from './VscodeWorkspaceSettings.js';
 
 export interface VscodeSettingsButtonProps {
   settings: VscodeEditorSettings;
@@ -18,6 +21,10 @@ export interface VscodeSettingsButtonProps {
   onAccentColorChange: (color: DocBlocksAccentColor) => void;
   onWriteCanvasSettingsChange: (settings: VscodeWriteCanvasSettings) => void;
   onProofingSettingsChange: (settings: VscodeProofingSettings) => void;
+  /** The `.docblocks/workspace.json` of this document's folder, once the host reports it. */
+  workspaceSettings?: VscodeWorkspaceSettingsState | null;
+  onSaveWorkspaceSettings?: (patch: WorkspaceSettingsPatch) => Promise<void>;
+  onRefreshWorkspaceOutputs?: () => Promise<void>;
 }
 
 export function VscodeSettingsButton({
@@ -26,6 +33,9 @@ export function VscodeSettingsButton({
   onAccentColorChange,
   onWriteCanvasSettingsChange,
   onProofingSettingsChange,
+  workspaceSettings,
+  onSaveWorkspaceSettings,
+  onRefreshWorkspaceOutputs,
 }: VscodeSettingsButtonProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -72,6 +82,14 @@ export function VscodeSettingsButton({
               Automatically save files as you edit
             </label>
           </fieldset>
+
+          {workspaceSettings && onSaveWorkspaceSettings && onRefreshWorkspaceOutputs && (
+            <VscodeWorkspaceSettings
+              state={workspaceSettings}
+              onSave={onSaveWorkspaceSettings}
+              onRefreshOutputs={onRefreshWorkspaceOutputs}
+            />
+          )}
         </SettingsDialog>
       )}
     </>

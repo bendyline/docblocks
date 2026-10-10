@@ -21,6 +21,7 @@ import { useCallback, useState, useRef, useEffect, useLayoutEffect } from 'react
 import { createPortal } from 'react-dom';
 import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
 import { MoreIcon } from '../icons.js';
+import { displayFileName, renameDraft, renamedFileName } from './file-names.js';
 import { LastModifiedTime } from './LastModifiedTime.js';
 import { useLongPress } from './useLongPress.js';
 
@@ -158,6 +159,8 @@ export function FileTreeNode({
    * exists.
    */
   const renameSubmittedRef = useRef(false);
+  /** How much of the rename field to pre-select: the title, never the extension. */
+  const renameSelectionEndRef = useRef(0);
   /** Return keyboard focus to the treeitem after Enter/Escape unmounts the input. */
   const returnFocusAfterRenameRef = useRef(false);
 
@@ -279,11 +282,13 @@ export function FileTreeNode({
   const handleRenameStart = useCallback(() => {
     renameSubmittedRef.current = false;
     setActionError(null);
-    setRenameValue(entry.name);
+    const draft = renameDraft(entry.name, entry.kind);
+    renameSelectionEndRef.current = draft.selectionEnd;
+    setRenameValue(draft.value);
     setRenaming(true);
     // The rename input focuses itself, so don't pull focus back to the row.
     closeMenu(false);
-  }, [entry.name, closeMenu]);
+  }, [entry.name, entry.kind, closeMenu]);
 
   /** Abandon the rename and make sure a trailing blur cannot submit it. */
   const handleRenameCancel = useCallback(() => {
@@ -301,11 +306,12 @@ export function FileTreeNode({
       // keeping a stale textbox mounted while the filesystem move resolves.
       setRenaming(false);
 
-      if (renameValue && renameValue !== entry.name) {
+      const newName = renamedFileName(entry.name, renameValue, entry.kind);
+      if (newName) {
         const parentPath = entry.path.includes('/')
           ? entry.path.slice(0, entry.path.lastIndexOf('/'))
           : '';
-        const newPath = parentPath ? `${parentPath}/${renameValue}` : renameValue;
+        const newPath = parentPath ? `${parentPath}/${newName}` : newName;
         try {
           await onRename(entry.path, newPath, entry.kind);
         } catch (caught: unknown) {
@@ -390,7 +396,7 @@ export function FileTreeNode({
   useEffect(() => {
     if (renaming && inputRef.current) {
       inputRef.current.focus();
-      inputRef.current.select();
+      inputRef.current.setSelectionRange(0, renameSelectionEndRef.current);
     }
   }, [renaming]);
 
@@ -510,9 +516,7 @@ export function FileTreeNode({
           />
         ) : (
           <>
-            <span className="db-tree-label">
-              {entry.name.endsWith('.md') ? entry.name.slice(0, -3) : entry.name}
-            </span>
+            <span className="db-tree-label">{displayFileName(entry.name)}</span>
             {badge && (
               <span className={`db-git-badge db-git-badge--${badge.kind}`} aria-hidden="true">
                 {badge.glyph}

@@ -9,9 +9,27 @@ export function useSpeechStatus(speech: DocBlocksHostSpeechAPI): SpeechStatus | 
     const unsubscribe = speech.onStatus((next) => {
       if (live) setStatus(next);
     });
-    void speech.status().then((initial) => {
-      if (live) setStatus((current) => current ?? initial);
-    });
+    void speech.status().then(
+      (initial) => {
+        if (live) setStatus((current) => current ?? initial);
+      },
+      () => {
+        if (live)
+          setStatus(
+            (current) =>
+              current ?? {
+                stt: {
+                  state: 'unavailable',
+                  reason: 'Speech status is unavailable. Try opening Settings.',
+                },
+                tts: {
+                  state: 'unavailable',
+                  reason: 'Speech status is unavailable. Try opening Settings.',
+                },
+              },
+          );
+      },
+    );
     return () => {
       live = false;
       unsubscribe();

@@ -103,3 +103,5 @@ export function pickEmptyDocumentPrompt(random: () => number = Math.random): Emp
   const index = Math.floor(random() * EMPTY_DOCUMENT_PROMPTS.length);
   return EMPTY_DOCUMENT_PROMPTS[index] ?? EMPTY_DOCUMENT_PROMPTS[0];
 }
+
+export { PresentationMaker } from './Presentation/PresentationMaker.js';

@@ -38,6 +38,12 @@ port.on('message', ({ data }) => {
       durationSec: seconds,
       textStart: start,
       textEnd: start + text.length,
+      wordTimings: [...text.matchAll(/\S+/gu)].map((word, wordIndex, words) => ({
+        textStart: start + word.index,
+        textEnd: start + word.index + word[0].length,
+        startSec: 0.1 + ((seconds - 0.1) * wordIndex) / words.length,
+        endSec: Math.min(seconds, 0.1 + ((seconds - 0.1) * (wordIndex + 1)) / words.length),
+      })),
     });
     index += 1;
     duration += seconds;

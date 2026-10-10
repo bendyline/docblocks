@@ -56,6 +56,54 @@ describe('file explorer entry sorting', () => {
     ]);
   });
 
+  it('orders names the way people read them: ignoring case, numbers by value', () => {
+    // Regression: a code-unit comparison listed these as
+    // Invoice 10 · Invoice 2 · aboutDocBlocks · apple orchard estimate · newsletter.
+    const entries = [
+      file('Invoice 10.md'),
+      file('Invoice 2.md'),
+      file('aboutDocBlocks.md'),
+      file('apple orchard estimate.md'),
+      file('newsletter.md'),
+    ];
+
+    expect(sortFileEntries(entries, 'name').map((entry) => entry.name)).to.deep.equal([
+      'aboutDocBlocks.md',
+      'apple orchard estimate.md',
+      'Invoice 2.md',
+      'Invoice 10.md',
+      'newsletter.md',
+    ]);
+  });
+
+  it('sorts folders by the same rules', () => {
+    const entries = [directory('Clients 10'), directory('archive'), directory('clients 2')];
+
+    expect(sortFileEntries(entries, 'name').map((entry) => entry.name)).to.deep.equal([
+      'archive',
+      'clients 2',
+      'Clients 10',
+    ]);
+  });
+
+  it('compares the titles the list shows, so "notes" comes before "notes 2"', () => {
+    const entries = [file('notes 2.md'), file('notes.md'), file('notes.docx')];
+
+    // `.md` is hidden; a raw comparison put "notes 2.md" first (space < dot).
+    expect(sortFileEntries(entries, 'name').map((entry) => entry.name)).to.deep.equal([
+      'notes.md',
+      'notes 2.md',
+      'notes.docx',
+    ]);
+  });
+
+  it('gives names that differ only in case a fixed order', () => {
+    const forward = sortFileEntries([file('b.md'), file('B.md')], 'name');
+    const backward = sortFileEntries([file('B.md'), file('b.md')], 'name');
+
+    expect(forward.map((entry) => entry.name)).to.deep.equal(backward.map((entry) => entry.name));
+  });
+
   it('does not mutate provider-owned listing arrays', () => {
     const entries = [file('z.md'), file('a.md')];
 

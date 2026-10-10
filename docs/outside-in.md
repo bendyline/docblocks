@@ -76,6 +76,12 @@ toward the workspace root for the nearest `_squisq` directory and writes
 `squisq-player.js` there. If none exists, it creates the root-level runtime.
 Both Web page variants resolve media back to the document's companion folder.
 
+A workspace default theme (`documents.defaultTheme` in
+[workspace settings](workspace-settings.md)) styles regenerated pages whose
+companion names no theme of its own; a page picks up a changed default the
+next time it is saved. A workspace catalog lists each outside-in document by
+its rendered file, described from its companion Markdown.
+
 Companion and `_squisq` directories are hidden in the user-facing explorer.
 Moving or renaming a visible outside-in document carries its companion with it;
 the frontmatter relationship is refreshed before the next save. Dropping a

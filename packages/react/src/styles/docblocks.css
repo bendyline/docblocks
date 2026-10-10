@@ -1087,6 +1087,54 @@
   font-weight: 500;
 }
 
+/* A listed workspace: the select button plus its ⋯ actions button. The row
+   carries the hover and selected backgrounds so they span both. */
+.db-workspace-dropdown-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.db-workspace-dropdown-row:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-workspace-dropdown-row--active {
+  background: var(--db-bg-selected);
+}
+
+.db-workspace-dropdown-row .db-workspace-dropdown-item {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+}
+
+.db-workspace-dropdown-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--db-text-muted);
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.db-workspace-dropdown-row--active .db-workspace-dropdown-more {
+  color: var(--db-text-on-selected);
+}
+
+.db-workspace-dropdown-more:hover,
+.db-workspace-dropdown-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.db-workspace-dropdown-more:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
 .db-workspace-type {
   font-size: 11px;
   color: var(--db-text-placeholder);
@@ -1127,9 +1175,12 @@
   margin: 4px 0;
 }
 
+/* 300px when there is room. The picker narrows the dropdown to fit inside the
+   sidebar (see WorkspacePicker), and the form follows it down. */
 .db-workspace-create {
   box-sizing: border-box;
-  width: min(300px, calc(100vw - 24px));
+  width: 300px;
+  max-width: 100%;
   padding: 10px;
 }
 
@@ -1235,6 +1286,14 @@
   height: 20px;
   width: auto;
   display: block;
+}
+
+/* The logo is black lettering on a pale extruded edge. On espresso the black
+   fill vanished and only the edges showed, so it read as a hollow outline.
+   Inverting makes the letters solid and sinks the edge into the background,
+   and the sepia warms them toward --db-text. */
+.db-shell[data-theme='dark'] .db-app-menu-logo {
+  filter: invert(1) brightness(0.88) sepia(0.15);
 }
 
 .db-app-menu-caret {
@@ -1867,7 +1926,18 @@ body.db-resizing-sidebar * {
 /* The compact layout puts Squisq's overflow trigger part-way along the second
    row, wherever the formatting buttons stop. Its desktop right-aligned
    placement would hang the menu off-canvas from there, so anchor the mobile
-   popover to the viewport instead. */
+   popover to the full-width toolbar instead. The trigger's own wrapper must
+   not be the containing block: an offset from it moves with the trigger, and
+   once Squisq kept Insert inline the trigger moved right and the menu ran
+   89px off a 390px screen. */
+.db-shell--mobile .squisq-toolbar {
+  position: relative;
+}
+
+.db-shell--mobile .squisq-toolbar-overflow {
+  position: static;
+}
+
 .db-shell--mobile .squisq-editor-shell .squisq-toolbar-overflow-menu {
   right: auto !important;
   left: max(4px, env(safe-area-inset-left)) !important;
@@ -2164,11 +2234,13 @@ body.db-resizing-sidebar * {
   text-decoration: underline;
 }
 
+/* Spacing, not "·" glyphs, separates the links: a text separator was left
+   orphaned at the start of the line whenever the row wrapped. */
 .db-dialog-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 6px 16px;
 }
 
 .db-about-beta {
@@ -2208,10 +2280,6 @@ body.db-resizing-sidebar * {
   color: var(--db-text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   user-select: all;
-}
-
-.db-dialog-sep {
-  color: var(--db-text-placeholder);
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────── */
@@ -2354,6 +2422,130 @@ body.db-resizing-sidebar * {
 
 .db-settings-select-input:focus-visible {
   border-color: var(--db-accent);
+}
+
+/* Generated catalog files (index.html, catalog.json): shown, never edited */
+
+.db-generated-file,
+.db-generated-file-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-generated-file-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--db-border);
+  background: var(--db-bg-subtle);
+  color: var(--db-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.db-generated-file-notice-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.db-generated-file-notice strong {
+  color: var(--db-text);
+  font-weight: 600;
+}
+
+.db-generated-file-back {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Show the page as a browser would, whatever the app theme: a page that
+   paints no background of its own is drawn on white, never on the app's dark
+   surface (its dark text would vanish). `color-scheme: light` keeps the frame
+   opaque-light rather than inheriting the host's dark canvas. Themed pages
+   paint their own background over this. */
+.db-generated-file-preview {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  color-scheme: light;
+}
+
+/* Workspace settings (`.docblocks/workspace.json`) */
+
+.db-settings-subfields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 10px 24px;
+}
+
+.db-settings-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-settings-text-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--db-input-font-size);
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  border: 1px solid var(--db-input-border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.db-settings-text-input:focus-visible {
+  border-color: var(--db-accent);
+}
+
+.db-settings-textarea {
+  min-height: 3.5em;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.db-settings-number-input {
+  max-width: 8em;
+}
+
+.db-settings-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.db-settings-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--db-text-muted);
+}
+
+.db-settings-status--warning {
+  color: var(--db-danger);
+}
+
+.db-settings-link-btn {
+  margin-top: 8px;
 }
 
 .db-font-picker {
@@ -5753,6 +5945,77 @@ html:has(.db-shell[data-theme='dark'])
   width: min(680px, 100%);
 }
 
+.db-ai-draft-dialog .db-dialog-footer {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.db-ai-draft-dialog .db-dialog-header,
+.db-ai-draft-dialog .db-dialog-footer {
+  flex-shrink: 0;
+}
+
+.db-ai-draft-dialog .db-ai-draft-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.db-ai-draft-body > .db-ai-field,
+.db-ai-draft-body > .db-ai-selection-preview,
+.db-ai-draft-body > .db-ai-disclaimer {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+/* Let the draft yield space to the prompt, selection and review note. The
+   body still scrolls when a short viewport cannot fit their minimum sizes. */
+.db-ai-draft-body > .db-ai-draft-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: calc(96px + 1.6em + 6px);
+}
+
+.db-ai-draft-body .db-ai-draft-field .db-ai-draft-output {
+  flex: 1 1 auto;
+  height: min(190px, 28dvh);
+  min-height: 96px;
+}
+
+.db-ai-draft-start {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+.db-ai-draft-body .db-ai-selection-preview blockquote {
+  box-sizing: border-box;
+  max-height: min(112px, 16dvh);
+}
+
+.db-ai-draft-dialog .db-ai-draft-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.db-ai-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Status has its own row, so errors cannot steal space from the actions. */
+.db-ai-footer-status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.db-ai-footer-status p {
+  margin: 0;
+}
+
 .db-ai-field {
   display: grid;
   gap: 6px;
@@ -5793,12 +6056,23 @@ html:has(.db-shell[data-theme='dark'])
   font-size: 12px;
 }
 
+/* A whole-document selection must not push the draft below the dialog. */
+.db-ai-selection-preview blockquote {
+  max-height: calc(8 * 1.5em + 16px);
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+}
+
+.db-ai-selection-preview blockquote:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
 .db-ai-selection-preview blockquote,
 .db-ai-review-excerpt blockquote {
   margin: 5px 0 0;
   padding: 8px 10px;
   overflow: auto;
-  border-left: 3px solid var(--db-border-strong);
   background: var(--db-bg-subtle);
   color: var(--db-text-secondary);
   font:
@@ -5808,6 +6082,10 @@ html:has(.db-shell[data-theme='dark'])
     monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.db-ai-review-excerpt blockquote {
+  border-left: 3px solid var(--db-border-strong);
 }
 
 .db-ai-progress,
@@ -5822,6 +6100,17 @@ html:has(.db-shell[data-theme='dark'])
   align-items: center;
   gap: 7px;
   color: var(--db-text-secondary);
+}
+
+.db-ai-generation-status {
+  display: grid;
+  gap: 6px;
+}
+
+.db-ai-generation-status progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--db-accent);
 }
 
 .db-ai-error {
@@ -5851,7 +6140,9 @@ html:has(.db-shell[data-theme='dark'])
   }
 }
 
+.db-text-from-narration button:not(.db-dialog-close),
 .db-ai-draft-dialog .db-dialog-footer button,
+.db-ai-draft-start button,
 .db-ai-review-panel button {
   min-height: var(--db-target-min);
   padding: 6px 10px;
@@ -5863,7 +6154,9 @@ html:has(.db-shell[data-theme='dark'])
   cursor: pointer;
 }
 
+.db-text-from-narration .db-dialog-footer button:last-child,
 .db-ai-draft-dialog .db-dialog-footer button:last-child,
+.db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
 .db-ai-review-actions button {
   border-color: var(--db-accent);
@@ -5871,19 +6164,25 @@ html:has(.db-shell[data-theme='dark'])
   color: var(--db-text-on-accent);
 }
 
+.db-text-from-narration button:not(.db-dialog-close):hover:not(:disabled),
 .db-ai-draft-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-draft-start button:hover,
 .db-ai-review-panel button:hover:not(:disabled) {
   border-color: var(--db-accent-hover);
   background: var(--db-bg-hover);
   color: var(--db-text);
 }
 
+.db-text-from-narration button:focus-visible,
+.db-text-from-narration textarea:focus-visible,
 .db-ai-draft-dialog .db-dialog-footer button:focus-visible,
+.db-ai-draft-start button:focus-visible,
 .db-ai-review-panel button:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 2px;
 }
 
+.db-text-from-narration button:disabled,
 .db-ai-draft-dialog .db-dialog-footer button:disabled,
 .db-ai-review-panel button:disabled {
   opacity: 0.5;
@@ -6546,6 +6845,15 @@ button.db-git-file-row:hover {
   box-sizing: border-box;
 }
 
+/* New document dialog: label/field pairs in two aligned columns */
+.db-new-document-fields {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 8px;
+  margin: 10px 0;
+}
+
 .db-git-form-error,
 .db-export-error {
   margin: 8px 0 0;
@@ -6832,8 +7140,8 @@ button.db-git-file-row:hover {
   }
 
   /* Squisq's overflow measurement deliberately tolerates a 2px overhang.
-     Reserve one pixel beyond that tolerance so the final Insert control
-     moves into More actions instead of being clipped by the caption inset. */
+     Reserve one pixel beyond that tolerance so the rightmost control moves
+     into More actions instead of being clipped by the caption inset. */
   .db-shell .squisq-toolbar-actions {
     margin-right: 3px;
   }
@@ -6929,4 +7237,246 @@ button.db-git-file-row:hover {
     box-sizing: border-box;
     padding-top: calc(24px + var(--db-wco-titlebar-height));
   }
+}
+
+/* Transcript review shares the shell's dialog and theme tokens. */
+.db-text-from-narration {
+  font-family: var(--db-ui-font);
+}
+.db-text-from-narration .db-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.db-text-from-narration p {
+  margin: 0;
+}
+.db-narration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.db-narration-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-narration-transcript textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 160px;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.db-narration-note {
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.db-narration-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.db-narration-rewrite {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Presentation review uses the same source and timeline as the saved player. */
+.db-presentation-workspace {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(140px, 24%) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.db-presentation-beats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--db-border);
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+  overflow-y: auto;
+}
+.db-presentation-beats button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+  min-height: var(--db-target-min);
+  padding: 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  cursor: pointer;
+  font: inherit;
+  overflow: hidden;
+}
+.db-presentation-beat-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.db-presentation-beats button:hover {
+  background: var(--db-bg-hover);
+}
+.db-presentation-beats button:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+.db-presentation-beats button[aria-current='step'] {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+  box-shadow: inset 3px 0 0 var(--db-accent);
+}
+.db-presentation-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.db-presentation-preview {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: clamp(120px, 23vh, 240px);
+  overflow: hidden;
+  border: 1px solid var(--db-input-border);
+  border-radius: 8px;
+}
+.db-presentation-preview > * {
+  width: 100%;
+  height: 100%;
+}
+.db-presentation-fields {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.db-presentation-preferences {
+  align-items: flex-end;
+}
+.db-presentation-beats small {
+  display: block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text-muted);
+  overflow-wrap: anywhere;
+}
+.db-presentation label.db-presentation-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  box-sizing: border-box;
+  width: auto;
+  max-width: 100%;
+  min-height: var(--db-target-min);
+  padding: 8px 0;
+}
+.db-presentation input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.db-presentation-fields label {
+  width: min(100%, 320px);
+}
+.db-presentation-source {
+  flex-shrink: 0;
+  padding: 12px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 6px;
+}
+.db-presentation-source-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.db-presentation-source-label h3 {
+  margin: 0;
+  font-size: inherit;
+}
+.db-presentation-source-label span {
+  color: var(--db-text-secondary);
+  font-size: 12px;
+}
+.db-presentation-source p {
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.db-presentation-wording summary {
+  cursor: pointer;
+  min-height: var(--db-target-min);
+  align-content: center;
+}
+.db-presentation-wording label + label {
+  margin-top: 12px;
+}
+.db-presentation label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-weight: 600;
+}
+.db-presentation input,
+.db-presentation select,
+.db-presentation textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--db-target-min);
+  padding: 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+}
+.db-presentation [role='alert'] {
+  color: var(--db-danger);
+}
+.db-presentation details p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--db-text-secondary);
+}
+:root[data-db-width='compact'] .db-presentation-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 140px) minmax(0, 1fr);
+}
+:root[data-db-width='compact'] .db-presentation-beats {
+  max-height: 140px;
 }

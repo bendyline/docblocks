@@ -1,65 +1,50 @@
 {
-  "file": "bendyline-gezel-capacitor-0.1.0.tgz",
-  "sha256": "34a14fc75494119a11674978fb699c7613385c4b576072454427297b3679b86b",
   "repository": "https://github.com/bendyline/gezel",
-  "baseCommit": "eaa8855876d39ed635b30f7cee38e074a458ad3f",
-  "sources": {
-    "package.json": "06f69d629571d0550006a91112e95a2974c7da3212e8242c2c1f894adca1023c",
-    "src/index.ts": "c85565c3d353b76359bbd3ad7f6bb0e790b350af738d24aa65412c08e124036d",
-    "src/transport.ts": "9fcb7204f5aedd756ed2ad7f1b8f2cea7e0d5f37a6d7a1a39c687f36bced94c6",
-    "src/chat.ts": "03b03373a87b54b13df4fe0539ffa8e72318256b6ef084c48164baf9591fd662",
-    "src/models.ts": "25f2b7b06da0dd739d70740ec3d9796494579fc5806d448d8efa640f6f380c3f",
-    "src/definitions.ts": "34addf72e5fd63b8c6ef16fc226ac26554afca3072790bb3f23bdff2e5baece5",
-    "src/answer-text.ts": "b764671b65bf93aa85c1e5d30f3b51a95b7d2b116178e0d8a2aea2bd840047c6",
-    "ios/Sources/GezelCapacitor/GezelRuntimePlugin.swift": "a849c30c5a6cbe59c8d048ce3047a80a4548e23e37996c9c7b8e0eb9917bf846",
-    "android/src/main/java/com/bendyline/gezel/capacitor/GezelRuntimePlugin.java": "324e1daf95b152aa787918521ffa35f54da79323e985d77d9231edc2d1e4ba95"
-  },
-  "native": {
-    "ios": {
-      "version": "0.1.0-local.18",
-      "sources": {
-        "native/runtime/android/build.gradle": "0c8e0decceda7a8dbbae0c0674f302a0d8fe3e01711dd9c3fa8374d4a2937fcc",
-        "native/runtime/android/src/main/AndroidManifest.xml": "678647a824ef7ab16066708585790ab265135d32fdf84bcd918a4b050f8891b9",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/GezelNativeRuntime.java": "b67677fb1ba40ebe0844a9c5b3f991fb1cc8c5bf2c78fd5d02873ad80ee95034",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/MlKitPrompt.java": "ca647664dda6c8543fe3c2fe7588348daa61c0cecc8bce701adbff9e9e346aa0",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/MobileModelStore.java": "2ffba6b046363f430197f104e323ebfaa2a757581c2f1e7a15196affb000a622",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/ModelDownloadSource.java": "310b0a27e2e85be8c924a627146a34915ebdc22e4527f2303d78e1b6860fcf1b",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/ModelDownloads.java": "5d92fbe39fc1e21016f4ebc7e7c77f7fde292e91cb55b7ee6b3d8cde564237f7",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/NativeCall.java": "6ef9714339cc6c72054682b06a58ea636665262caf41a580f1bc6c04199ab231",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/NativeObject.java": "c29bf616360ae8f5ca225d9f76abd73a57e293361b0d55bca676cf48cf0c6008",
-        "native/runtime/ios/Sources/GezelRuntime/AppleFoundationProvider.swift": "a5ddc5a1ba8e1e0dc44562e043440030ffa3a41a93c74f91cd6623a0049c1a83",
-        "native/runtime/ios/Sources/GezelRuntime/AppleNativeTools.swift": "bd3adb00be011a2475e95f0510d617ef8ef33ba116b08cb43957517f77a0baf6",
-        "native/runtime/ios/Sources/GezelRuntime/GezelNativeRuntime.swift": "318a9200cc59de357f94c8e37f302ef121defca5923d6fa02a1bfdfe71136d7c",
-        "native/runtime/ios/Sources/GezelRuntime/NativeCall.swift": "beaeb537dea9226b9f84fec61f2385f53f3982a2cbdf3c58e359069f9e4d9d50",
-        "native/runtime/models/Sources/GezelModelStorage/MobileModelStore.swift": "54297be4a4decd728463057577c191eb2b33c20bf5270054720928a478fc2fbc",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloadHTTP.swift": "fd45587477d683a5fc445c413b7e2d72b6cf526d339b2efbc1a3a4f5f891aa36",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloadSource.swift": "3b388cd22710ee48d76d134c81ae26d4992c06cc21d54f19d4b8dc986193675f",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloads.swift": "be6da9e1c871130cedb188a4b62936dac904295dd1e9f15a13bf98fe38ef2b6c",
-        "native/runtime/stage-sdk.py": "a706a9f8d645f7c7a0edeb23f8543a7eb6e3edb0c3b4c733a5f5fb70d68e32f5"
+  "baseCommit": "94e1ec762e38d240defe3a1f3fcf4b78b26f49f4",
+  "nativeRelease": {
+    "version": "0.1.48",
+    "release": "https://github.com/bendyline/gezel/releases/tag/native-v0.1.48",
+    "archives": {
+      "ios": {
+        "file": "gezel-mobile-0.1.48-ios.tar.gz",
+        "sha256": "1f5ee5267993325f1f6ed9c82744bfa87973d4fe159b8924dbf36fdf5f2c5ea8"
+      },
+      "android": {
+        "file": "gezel-mobile-0.1.48-android.tar.gz",
+        "sha256": "c55fd9999a0fbaf0e5b55fe0fbeb6afb6c0aac02d8883c8c852fdd6462b4abda"
       }
     },
-    "android": {
-      "version": "0.1.0-local.18",
-      "sources": {
-        "native/runtime/android/build.gradle": "0c8e0decceda7a8dbbae0c0674f302a0d8fe3e01711dd9c3fa8374d4a2937fcc",
-        "native/runtime/android/src/main/AndroidManifest.xml": "678647a824ef7ab16066708585790ab265135d32fdf84bcd918a4b050f8891b9",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/GezelNativeRuntime.java": "b67677fb1ba40ebe0844a9c5b3f991fb1cc8c5bf2c78fd5d02873ad80ee95034",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/MlKitPrompt.java": "ca647664dda6c8543fe3c2fe7588348daa61c0cecc8bce701adbff9e9e346aa0",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/MobileModelStore.java": "2ffba6b046363f430197f104e323ebfaa2a757581c2f1e7a15196affb000a622",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/ModelDownloadSource.java": "310b0a27e2e85be8c924a627146a34915ebdc22e4527f2303d78e1b6860fcf1b",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/ModelDownloads.java": "5d92fbe39fc1e21016f4ebc7e7c77f7fde292e91cb55b7ee6b3d8cde564237f7",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/NativeCall.java": "6ef9714339cc6c72054682b06a58ea636665262caf41a580f1bc6c04199ab231",
-        "native/runtime/android/src/main/java/com/bendyline/gezel/runtime/NativeObject.java": "c29bf616360ae8f5ca225d9f76abd73a57e293361b0d55bca676cf48cf0c6008",
-        "native/runtime/ios/Sources/GezelRuntime/AppleFoundationProvider.swift": "a5ddc5a1ba8e1e0dc44562e043440030ffa3a41a93c74f91cd6623a0049c1a83",
-        "native/runtime/ios/Sources/GezelRuntime/AppleNativeTools.swift": "bd3adb00be011a2475e95f0510d617ef8ef33ba116b08cb43957517f77a0baf6",
-        "native/runtime/ios/Sources/GezelRuntime/GezelNativeRuntime.swift": "318a9200cc59de357f94c8e37f302ef121defca5923d6fa02a1bfdfe71136d7c",
-        "native/runtime/ios/Sources/GezelRuntime/NativeCall.swift": "beaeb537dea9226b9f84fec61f2385f53f3982a2cbdf3c58e359069f9e4d9d50",
-        "native/runtime/models/Sources/GezelModelStorage/MobileModelStore.swift": "54297be4a4decd728463057577c191eb2b33c20bf5270054720928a478fc2fbc",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloadHTTP.swift": "fd45587477d683a5fc445c413b7e2d72b6cf526d339b2efbc1a3a4f5f891aa36",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloadSource.swift": "3b388cd22710ee48d76d134c81ae26d4992c06cc21d54f19d4b8dc986193675f",
-        "native/runtime/models/Sources/GezelModelStorage/ModelDownloads.swift": "be6da9e1c871130cedb188a4b62936dac904295dd1e9f15a13bf98fe38ef2b6c",
-        "native/runtime/stage-sdk.py": "a706a9f8d645f7c7a0edeb23f8543a7eb6e3edb0c3b4c733a5f5fb70d68e32f5"
-      }
+    "bridgeCommit": "9b0dd14fa6fde3286c885756b8ce93b6fb9478e5",
+    "bridgeSources": {
+      "ios/Sources/GezelCapacitor/GezelRuntimePlugin.swift": "a849c30c5a6cbe59c8d048ce3047a80a4548e23e37996c9c7b8e0eb9917bf846",
+      "android/src/main/java/com/bendyline/gezel/capacitor/GezelRuntimePlugin.java": "324e1daf95b152aa787918521ffa35f54da79323e985d77d9231edc2d1e4ba95"
+    }
+  },
+  "packages": {
+    "@bendyline/gezk": {
+      "version": "1.0.2-docblocks.2",
+      "file": "bendyline-gezk-1.0.2-docblocks.2.tgz",
+      "sha256": "ef2e8fc20ef98aef7c30a22fff5563d5d0f0e6a40e496c183ad5cf622a5786e4"
+    },
+    "@bendyline/gezel": {
+      "version": "1.2.2-docblocks.2",
+      "file": "bendyline-gezel-1.2.2-docblocks.2.tgz",
+      "sha256": "a1811e83e770427bc6c9f8f32b0e0bde77a35ba1002f5f38e268f5a0147d67d7"
+    },
+    "@bendyline/gezel-client": {
+      "version": "1.2.2-docblocks.2",
+      "file": "bendyline-gezel-client-1.2.2-docblocks.2.tgz",
+      "sha256": "8daa3a1107e0a9cbaa2c225310b7adf2641c6ae4fa56a51df1d548b508d9a224"
+    },
+    "@bendyline/gezel-app-sdk": {
+      "version": "1.1.2-docblocks.2",
+      "file": "bendyline-gezel-app-sdk-1.1.2-docblocks.2.tgz",
+      "sha256": "500da942023ed5cd55fa589f6ad1a7cf64dfc14b97a3c936f764fe1ff82a78b8"
+    },
+    "@bendyline/gezel-capacitor": {
+      "version": "0.1.0-docblocks.2",
+      "file": "bendyline-gezel-capacitor-0.1.0-docblocks.2.tgz",
+      "sha256": "1ce2401f4b2eae411bb0e9701959e9293585818e96ba580c99ed43b553878bc6"
     }
   }
 }

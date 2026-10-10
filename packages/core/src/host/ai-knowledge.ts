@@ -19,11 +19,12 @@ export interface AiKnowledgeCatalog {
 
 export interface AiKnowledgeState {
   readonly catalogs: readonly AiKnowledgeCatalog[];
-  readonly reranker: {
-    readonly ready: boolean;
-    readonly downloading: boolean;
-    readonly message: string | null;
-  };
+  /**
+   * A one-time model download that improves knowledge results, sized for the
+   * offer. Null when not offered: installed, unavailable, or no enabled
+   * catalog would use it. The provider decides; people only see the offer.
+   */
+  readonly improvement: { readonly downloadBytes: number; readonly downloading: boolean } | null;
 }
 
 export type AiKnowledgeAction =
@@ -31,7 +32,8 @@ export type AiKnowledgeAction =
       readonly action: 'install' | 'remove' | 'enable' | 'disable' | 'cancel';
       readonly catalogId: string;
     }
-  | { readonly action: 'prepare-reranker' };
+  /** Start the `improvement` download. */
+  | { readonly action: 'improve' };
 
 export interface AiKnowledgeAPI {
   state(): Promise<AiResult<AiKnowledgeState>>;
@@ -56,8 +58,7 @@ const count = (value: unknown): value is number | null =>
 
 export function parseAiKnowledgeAction(value: unknown): AiKnowledgeAction | null {
   if (!record(value)) return null;
-  if (value.action === 'prepare-reranker' && exact(value, ['action']))
-    return { action: value.action };
+  if (value.action === 'improve' && exact(value, ['action'])) return { action: value.action };
   if (!exact(value, ['action', 'catalogId']) || !label(value.catalogId)) return null;
   switch (value.action) {
     case 'install':
@@ -74,20 +75,24 @@ export function parseAiKnowledgeAction(value: unknown): AiKnowledgeAction | null
 export function parseAiKnowledgeState(value: unknown): AiKnowledgeState | null {
   if (
     !record(value) ||
-    !exact(value, ['catalogs', 'reranker']) ||
+    !exact(value, ['catalogs', 'improvement']) ||
     !Array.isArray(value.catalogs) ||
     value.catalogs.length > 512
   )
     return null;
-  const reranker = value.reranker;
-  if (
-    !record(reranker) ||
-    !exact(reranker, ['ready', 'downloading', 'message']) ||
-    typeof reranker.ready !== 'boolean' ||
-    typeof reranker.downloading !== 'boolean' ||
-    !message(reranker.message)
-  )
-    return null;
+  let improvement: AiKnowledgeState['improvement'] = null;
+  if (value.improvement !== null) {
+    const raw = value.improvement;
+    if (
+      !record(raw) ||
+      !exact(raw, ['downloadBytes', 'downloading']) ||
+      typeof raw.downloadBytes !== 'number' ||
+      !count(raw.downloadBytes) ||
+      typeof raw.downloading !== 'boolean'
+    )
+      return null;
+    improvement = { downloadBytes: raw.downloadBytes, downloading: raw.downloading };
+  }
   const catalogs: AiKnowledgeCatalog[] = [];
   const ids = new Set<string>();
   for (const raw of value.catalogs) {
@@ -156,12 +161,5 @@ export function parseAiKnowledgeState(value: unknown): AiKnowledgeState | null {
       message: raw.message,
     });
   }
-  return {
-    catalogs,
-    reranker: {
-      ready: reranker.ready,
-      downloading: reranker.downloading,
-      message: reranker.message,
-    },
-  };
+  return { catalogs, improvement };
 }

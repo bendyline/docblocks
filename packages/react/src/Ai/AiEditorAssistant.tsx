@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import {
   useEditorContext,
@@ -6,17 +6,27 @@ import {
   type EditorContextMenuItem,
   type EditorSelectionInfo,
 } from '@bendyline/squisq-editor-react';
-import type { AiChatEvent, AiChatHandle, DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
+import type {
+  AiChatEvent,
+  AiChatHandle,
+  AiChatRequest,
+  AiModelInfo,
+  DocBlocksHostAiAPI,
+} from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
+import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import { AiDiagramDialog } from './AiDiagrams.js';
+import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
+import { draftCapacityNotice } from './draft-capacity.js';
 import {
   AI_INSTRUCTION_CHARACTERS,
   AI_REVIEW_DOCUMENT_CHARACTERS,
   AI_REWRITE_SELECTION_CHARACTERS,
   applyAiReviewFinding,
+  buildDraftContinuation,
   buildDraftRequest,
   buildReviewRequest,
   findUniqueExcerpt,
@@ -114,7 +124,8 @@ export function AiToolbarControl({
   const canCompose = editableSelection?.empty === true;
   const canRewrite =
     editableSelection?.empty === false &&
-    editableSelection.text.length <= AI_REWRITE_SELECTION_CHARACTERS;
+    (editableSelection.markdown ?? editableSelection.text).length <=
+      AI_REWRITE_SELECTION_CHARACTERS;
 
   const openDraft = (mode: AiDraftMode) => {
     const current = getSelection();
@@ -233,6 +244,7 @@ export function AiToolbarControl({
       {draftMode && capturedSelection && (
         <AiDraftDialog
           ai={ai}
+          model={status?.kind === 'ready' ? status.model : null}
           mode={draftMode}
           documentSource={markdownSource}
           capturedSelection={capturedSelection}
@@ -257,6 +269,7 @@ export function AiToolbarControl({
 
 interface AiDraftDialogProps {
   ai: DocBlocksHostAiAPI;
+  model?: AiModelInfo | null;
   mode: AiDraftMode;
   documentSource: string;
   capturedSelection: EditorSelectionInfo;
@@ -265,8 +278,9 @@ interface AiDraftDialogProps {
   onClose: () => void;
 }
 
-function AiDraftDialog({
+export function AiDraftDialog({
   ai,
+  model,
   mode,
   documentSource,
   capturedSelection,
@@ -274,16 +288,49 @@ function AiDraftDialog({
   replaceSelection,
   onClose,
 }: AiDraftDialogProps) {
-  const [instructions, setInstructions] = useState(
-    mode === 'compose' ? '' : 'Improve clarity and flow while preserving the meaning and voice.',
-  );
-  const [draft, setDraft] = useState('');
+  const defaultInstructions =
+    mode === 'compose'
+      ? 'Add a concise introduction for this document.'
+      : 'Improve clarity and flow while preserving the meaning and voice.';
+  const [instructions, setInstructions] = useState('');
+  // null is the initial Generate affordance; an empty string is a draft the
+  // model (or the user) cleared, which must remain editable and regenerable.
+  const [draft, setDraft] = useState<string | null>(null);
+  const generatedDraftRef = useRef('');
+  const carriedEditsRef = useRef(false);
+  const [originalRequest, setOriginalRequest] = useState<AiChatRequest | null>(null);
+  const [incomplete, setIncomplete] = useState(false);
+  const [prefixCharacters, setPrefixCharacters] = useState(0);
   const [running, setRunning] = useState(false);
+  const [generation, setGeneration] = useState<AiGenerationState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [finishNote, setFinishNote] = useState<string | null>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
+  const { confirm: confirmAction, confirmDialog } = useConfirmDialog();
+  const selectedMarkdown = capturedSelection.markdown ?? capturedSelection.text;
+  const draftRequest = useMemo(
+    () => ({
+      ...buildDraftRequest({
+        mode,
+        instructions: instructions.trim() || defaultInstructions,
+        documentSource,
+        selectedText: selectedMarkdown,
+      }),
+      ...(model ? { model: model.id } : {}),
+    }),
+    [mode, instructions, defaultInstructions, documentSource, selectedMarkdown, model],
+  );
+  const continuationRequest =
+    originalRequest && draft
+      ? buildDraftContinuation({ ...originalRequest, ...(model ? { model: model.id } : {}) }, draft)
+      : null;
+  const capacity = draftCapacityNotice(
+    incomplete && continuationRequest ? continuationRequest : draftRequest,
+    model,
+    incomplete || mode === 'compose' ? '' : selectedMarkdown,
+  );
 
   useEffect(
     () => () => {
@@ -293,52 +340,129 @@ function AiDraftDialog({
     [],
   );
 
-  const generate = useCallback(() => {
-    const prompt = instructions.trim();
-    if (!prompt) {
-      setError('Describe what you want the AI to write.');
-      promptRef.current?.focus();
-      return;
-    }
-    handleRef.current?.cancel();
-    const requestId = ++requestRef.current;
-    setDraft('');
-    setError(null);
-    setFinishNote(null);
-    setRunning(true);
-    const handle = ai.chat(
-      buildDraftRequest({
-        mode,
-        instructions: prompt,
-        documentSource,
-        selectedText: capturedSelection.text,
-      }),
-      (event: AiChatEvent) => {
+  const start = useCallback(
+    (request: AiChatRequest, prefix = '') => {
+      const requestId = ++requestRef.current;
+      handleRef.current?.cancel();
+      generatedDraftRef.current = prefix;
+      setDraft(prefix);
+      setPrefixCharacters(prefix.length);
+      setError(null);
+      setFinishNote(null);
+      setIncomplete(false);
+      setRunning(true);
+      const startedAt = Date.now();
+      setGeneration({ progress: null, startedAt, lastActivityAt: startedAt });
+      const handle = ai.chat(request, (event: AiChatEvent) => {
         if (requestRef.current !== requestId) return;
+        if (event.kind === 'progress') {
+          setGeneration(
+            (current) =>
+              current && {
+                ...current,
+                progress: event.progress,
+                lastActivityAt: Date.now(),
+              },
+          );
+          return;
+        }
         if (event.kind === 'delta') {
-          setDraft((current) => current + event.text);
+          generatedDraftRef.current += event.text;
+          setDraft(generatedDraftRef.current);
+          setGeneration(
+            (current) =>
+              current && {
+                ...current,
+                lastActivityAt: Date.now(),
+                progress: {
+                  phase: 'generating',
+                  percent: null,
+                  outputTokens: current.progress?.outputTokens ?? null,
+                  tokensPerSecond: current.progress?.tokensPerSecond ?? null,
+                },
+              },
+          );
           return;
         }
         setRunning(false);
         if (event.kind === 'error') {
           setError(event.error.message);
+          setIncomplete(Boolean(generatedDraftRef.current.trim()));
           return;
         }
-        setDraft(sanitizeGeneratedMarkdown(event.completion.text));
-        if (event.completion.finishReason === 'cancelled') setFinishNote('Generation stopped.');
-        if (event.completion.finishReason === 'length') {
-          setFinishNote('The model reached its output limit; review the ending before inserting.');
+        const emptyContinuation = Boolean(prefix) && !event.completion.text.trim();
+        const finished = event.completion.finishReason === 'stop' && !emptyContinuation;
+        // Keep whitespace at the join: the preceding response may end mid-word
+        // or mid-table. Never trim a continuation independently of its draft.
+        generatedDraftRef.current =
+          prefix || !finished
+            ? prefix + event.completion.text
+            : sanitizeGeneratedMarkdown(event.completion.text);
+        setDraft(generatedDraftRef.current);
+        setIncomplete(!finished && Boolean(generatedDraftRef.current.trim()));
+        if (event.completion.finishReason === 'cancelled') {
+          setFinishNote('Generation stopped. The draft may be incomplete.');
         }
-      },
-    );
-    handleRef.current = handle;
-  }, [ai, capturedSelection.text, documentSource, instructions, mode]);
+        if (event.completion.finishReason === 'length') {
+          setFinishNote(
+            generatedDraftRef.current.trim()
+              ? 'Draft incomplete: the model reached a limit. Continue the draft to request the rest. If this repeats, use a smaller selection or a model with more context. Your draft and original document are preserved.'
+              : 'The model reached a limit before producing a draft. Try a smaller selection or a model with more context. Your original document is unchanged.',
+          );
+        }
+        if (emptyContinuation && event.completion.finishReason === 'stop') {
+          setFinishNote(
+            'The model returned no additional text. Your draft is preserved and may still be incomplete. Try a smaller selection or a model with more context.',
+          );
+        }
+      });
+      handleRef.current = handle;
+    },
+    [ai],
+  );
+
+  const generate = useCallback(async () => {
+    if (running || draftCapacityNotice(draftRequest, model)?.blocked) return;
+    const previousRequest = requestRef.current;
+    if (draft !== null && (carriedEditsRef.current || draft !== generatedDraftRef.current)) {
+      const accepted = await confirmAction({
+        title: 'Regenerate AI draft',
+        message: 'This will remove all edits you have made. Continue?',
+        confirmLabel: 'Continue',
+        destructive: true,
+      });
+      if (!accepted || requestRef.current !== previousRequest) return;
+    }
+    carriedEditsRef.current = false;
+    setOriginalRequest(draftRequest);
+    start(draftRequest);
+  }, [running, draftRequest, model, draft, confirmAction, start]);
+
+  const continueDraft = () => {
+    if (running || !incomplete || !draft || !continuationRequest || capacity?.blocked) return;
+    carriedEditsRef.current ||= draft !== generatedDraftRef.current;
+    start(continuationRequest, draft);
+  };
 
   const stop = useCallback(() => handleRef.current?.cancel(), []);
 
-  const apply = useCallback(() => {
-    const replacement = sanitizeGeneratedMarkdown(draft);
+  const apply = useCallback(async () => {
+    if (running) return;
+    const replacement = sanitizeGeneratedMarkdown(draft ?? '');
     if (!replacement) return;
+    if (incomplete) {
+      const previousRequest = requestRef.current;
+      const accepted = await confirmAction({
+        title: 'Use incomplete AI draft?',
+        message:
+          mode === 'rewrite'
+            ? 'This draft did not finish. Replacing the selection may remove content that has not been rewritten. Use it only if you have reviewed and completed it yourself.'
+            : 'This draft did not finish. Use it only if you have reviewed and completed it yourself.',
+        confirmLabel: mode === 'rewrite' ? 'Replace anyway' : 'Insert anyway',
+        destructive: mode === 'rewrite',
+      });
+      if (!accepted || requestRef.current !== previousRequest) return;
+    }
     const current = getSelection();
     if (!current || current.view !== capturedSelection.view) {
       setError('Return to the original editor view and try again.');
@@ -348,7 +472,12 @@ function AiDraftDialog({
       setError('The cursor selection changed. Close this dialog and choose Add content again.');
       return;
     }
-    if (mode === 'rewrite' && (current.empty || current.text !== capturedSelection.text)) {
+    if (
+      mode === 'rewrite' &&
+      (current.empty ||
+        current.text !== capturedSelection.text ||
+        (current.markdown ?? current.text) !== selectedMarkdown)
+    ) {
       setError('The selected text changed. Close this dialog and select it again.');
       return;
     }
@@ -357,7 +486,18 @@ function AiDraftDialog({
       return;
     }
     onClose();
-  }, [capturedSelection, draft, getSelection, mode, onClose, replaceSelection]);
+  }, [
+    capturedSelection,
+    selectedMarkdown,
+    draft,
+    getSelection,
+    mode,
+    onClose,
+    replaceSelection,
+    running,
+    incomplete,
+    confirmAction,
+  ]);
 
   const dialog = (
     <Dialog
@@ -367,23 +507,57 @@ function AiDraftDialog({
       closeOnBackdrop={!running}
       initialFocusRef={promptRef as RefObject<HTMLElement | null>}
       className="db-ai-draft-dialog"
+      bodyClassName="db-ai-draft-body"
+      footerClassName="db-ai-draft-footer"
       footer={
         <>
-          <button type="button" onClick={onClose}>
-            Cancel
-          </button>
-          {running ? (
-            <button type="button" className="db-ai-secondary-action" onClick={stop}>
-              Stop
-            </button>
-          ) : (
-            <button type="button" className="db-ai-secondary-action" onClick={generate}>
-              {draft ? 'Regenerate' : 'Generate'}
-            </button>
+          {/* In the footer, not the scrolling body: a long selection must never
+              push progress or an error out of sight of the buttons. */}
+          {(running || finishNote || error || capacity) && (
+            <div className="db-ai-footer-status">
+              {running && generation && (
+                <AiGenerationStatus
+                  state={generation}
+                  characters={Math.max(0, (draft?.length ?? 0) - prefixCharacters)}
+                />
+              )}
+              {finishNote && <p className="db-ai-note">{finishNote}</p>}
+              {!running && capacity && (
+                <p className="db-ai-note" role="status">
+                  {capacity.message}
+                </p>
+              )}
+              {error && (
+                <p className="db-ai-error" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
           )}
-          <button type="button" disabled={!draft.trim() || running} onClick={apply}>
-            {mode === 'compose' ? 'Insert' : 'Replace selection'}
-          </button>
+          <div className="db-ai-draft-actions">
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+            {running ? (
+              <button type="button" className="db-ai-secondary-action" onClick={stop}>
+                Stop
+              </button>
+            ) : draft !== null ? (
+              <>
+                <button type="button" className="db-ai-secondary-action" onClick={generate}>
+                  Regenerate
+                </button>
+                {incomplete && draft.trim() && (
+                  <button type="button" disabled={capacity?.blocked} onClick={continueDraft}>
+                    Continue draft
+                  </button>
+                )}
+              </>
+            ) : null}
+            <button type="button" disabled={!draft?.trim() || running} onClick={apply}>
+              {mode === 'compose' ? 'Insert' : 'Replace selection'}
+            </button>
+          </div>
         </>
       }
     >
@@ -395,12 +569,8 @@ function AiDraftDialog({
           ref={promptRef}
           value={instructions}
           maxLength={AI_INSTRUCTION_CHARACTERS}
-          rows={3}
-          placeholder={
-            mode === 'compose'
-              ? 'For example: Add a concise introduction for this document.'
-              : 'For example: Make this shorter and more direct.'
-          }
+          rows={2}
+          placeholder={defaultInstructions}
           onChange={(event) => setInstructions(event.currentTarget.value)}
         />
       </label>
@@ -408,37 +578,46 @@ function AiDraftDialog({
       {mode === 'rewrite' && (
         <div className="db-ai-selection-preview">
           <span>Selected text</span>
-          <blockquote>{capturedSelection.text}</blockquote>
+          {/* Focusable so keyboard users can scroll a long selection. */}
+          <blockquote tabIndex={0} aria-label="Selected text">
+            {capturedSelection.text}
+          </blockquote>
         </div>
       )}
 
-      <label className="db-ai-field">
-        <span>AI draft</span>
-        <textarea
-          className="db-ai-draft-output"
-          value={draft}
-          rows={10}
-          placeholder={running ? 'Writing…' : 'The generated Markdown will appear here.'}
-          aria-busy={running}
-          onChange={(event) => setDraft(event.currentTarget.value)}
-        />
-      </label>
-      {running && (
-        <p className="db-ai-progress" role="status">
-          <span className="db-ai-spinner" aria-hidden="true" /> Writing…
-        </p>
+      {draft === null ? (
+        <div className="db-ai-draft-start">
+          <button type="button" onClick={generate} disabled={capacity?.blocked}>
+            {capacity && !capacity.blocked ? 'Generate anyway' : 'Generate'}
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className="db-ai-field db-ai-draft-field">
+            <span>AI draft</span>
+            <textarea
+              className="db-ai-draft-output"
+              value={draft}
+              rows={10}
+              placeholder={running ? 'The draft will appear here.' : ''}
+              aria-busy={running}
+              readOnly={running}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </label>
+          <p className="db-ai-disclaimer">Review and edit AI-generated content before adding it.</p>
+        </>
       )}
-      {finishNote && <p className="db-ai-note">{finishNote}</p>}
-      {error && (
-        <p className="db-ai-error" role="alert">
-          {error}
-        </p>
-      )}
-      <p className="db-ai-disclaimer">Review AI-generated content before adding it.</p>
     </Dialog>
   );
 
-  return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body);
+  const dialogs = (
+    <>
+      {dialog}
+      {confirmDialog}
+    </>
+  );
+  return typeof document === 'undefined' ? dialogs : createPortal(dialogs, document.body);
 }
 
 type ReviewPhase = 'idle' | 'running' | 'ready' | 'error';
@@ -486,7 +665,8 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     setApplyErrorId(null);
     setError(null);
     const handle = ai.chat(buildReviewRequest(source), (event: AiChatEvent) => {
-      if (requestRef.current !== requestId || event.kind === 'delta') return;
+      if (requestRef.current !== requestId || event.kind === 'delta' || event.kind === 'progress')
+        return;
       handleRef.current = null;
       if (event.kind === 'error') {
         setError(event.error.message);

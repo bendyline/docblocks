@@ -5,6 +5,15 @@ import type {
   AiKnowledgeState,
 } from '@bendyline/docblocks/host';
 
+/** "a 23 MB", "an 8 MB", "an 18 MB": the article follows the spoken number. */
+function sizedArticle(bytes: number): string {
+  const megabytes = String(Math.max(1, Math.round(bytes / 1024 ** 2)));
+  const an =
+    megabytes.startsWith('8') ||
+    (megabytes.length % 3 === 2 && (megabytes.startsWith('11') || megabytes.startsWith('18')));
+  return `${an ? 'an' : 'a'} ${megabytes} MB`;
+}
+
 export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }) {
   const [state, setState] = useState<AiKnowledgeState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -14,7 +23,6 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
   const [browse, setBrowse] = useState(false);
   const [query, setQuery] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
-  const [rerankerConsent, setRerankerConsent] = useState(false);
   const generation = useRef(0);
   useEffect(
     () => () => {
@@ -37,7 +45,7 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
         setState(result.value);
         setLoadError(null);
         if (
-          result.value.reranker.downloading ||
+          result.value.improvement?.downloading ||
           result.value.catalogs.some((catalog) => catalog.state === 'downloading')
         ) {
           timer = setTimeout(() => void refresh(), 1500);
@@ -83,7 +91,7 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
       <h3 className="db-settings-select-header">Knowledge catalogs</h3>
       <p className="db-settings-hint">
         Add reference material for AI writing, review, and chat. Relevant passages from enabled
-        catalogs are included in each request after reranking.
+        catalogs are included in each request.
       </p>
       {(error ?? loadError) && (
         <p className="db-settings-hint db-settings-ai-error" role="alert">
@@ -95,37 +103,20 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
           Loading knowledge catalogs…
         </p>
       )}
-      {state && !state.reranker.ready && (
-        <div className="db-settings-hint">
-          <p>
-            {state.reranker.message ??
-              'Download the relevance model to use knowledge catalogs. AI requests require reranking when catalogs are enabled.'}
-          </p>
-          <label className="db-settings-checkbox">
-            <input
-              type="checkbox"
-              checked={rerankerConsent}
-              disabled={busy || state.reranker.downloading}
-              onChange={(event) => setRerankerConsent(event.currentTarget.checked)}
-            />
-            Allow downloading a reranker model to improve knowledge results
-          </label>
+      {/* The provider offers this only while it would help; once chosen, the
+          download runs quietly and the offer never returns. */}
+      {state?.improvement && !state.improvement.downloading && (
+        <p className="db-settings-hint">
           <button
             type="button"
-            className="db-settings-action"
-            disabled={busy || state.reranker.downloading || !rerankerConsent}
-            onClick={() => {
-              if (rerankerConsent) void update({ action: 'prepare-reranker' });
-            }}
+            className="db-ai-link-button"
+            disabled={busy}
+            onClick={() => void update({ action: 'improve' })}
           >
-            {state.reranker.downloading
-              ? 'Downloading relevance model…'
-              : 'Download relevance model'}
+            Improve knowledge results with {sizedArticle(state.improvement.downloadBytes)} model
+            download
           </button>
-        </div>
-      )}
-      {state?.reranker.ready && (
-        <p className="db-settings-hint">Reranker ready. Knowledge results are ranked before use.</p>
+        </p>
       )}
       <div className="db-settings-ai-knowledge-actions">
         <button

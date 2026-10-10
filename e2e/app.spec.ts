@@ -1,5 +1,6 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
+import { openInsertMenu } from './helpers/toolbar.js';
 import {
   buildSharedDocumentUrl,
   createSharedDocumentArchive,
@@ -126,8 +127,9 @@ test.describe('DocBlocks App', () => {
       // Popstate starts shared-archive decoding asynchronously. Wait until
       // the transient document has replaced the welcome document before
       // interacting with its toolbar, or this click can target the obsolete
-      // editor and be lost when the shared document mounts.
-      await expect(page.locator('.db-tree-row[data-path$="shared.md"]')).toHaveAttribute(
+      // editor and be lost when the shared document mounts. It keeps the
+      // sender's file name rather than becoming "shared.md".
+      await expect(page.locator('.db-tree-row[data-path$="build.md"]')).toHaveAttribute(
         'aria-selected',
         'true',
         { timeout: 15_000 },
@@ -694,9 +696,7 @@ test.describe('Squisq overflow menu theming', () => {
 
     const menu = page.locator('.squisq-toolbar-overflow-menu');
     await expect(menu).toBeVisible();
-    const insertItem = menu.getByRole('button', { name: 'Insert...' });
-    await expect(insertItem).toBeVisible();
-    await expect(insertItem).toHaveClass(/squisq-toolbar-overflow-item/);
+    await expect(menu.locator('.squisq-toolbar-overflow-item').first()).toBeVisible();
 
     const colors = await menu.evaluate((element) => {
       const shell = document.querySelector<HTMLElement>('.db-shell');
@@ -751,10 +751,7 @@ test.describe('Squisq overflow menu theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.squisq-toolbar-overflow-trigger').click();
-    const overflowMenu = page.locator('.squisq-toolbar-overflow-menu');
-    await expect(overflowMenu).toBeVisible();
-    await overflowMenu.getByRole('button', { name: 'Insert...' }).click();
+    await openInsertMenu(page);
 
     const insertMenu = page.locator('.squisq-insert-menu').first();
     await expect(insertMenu).toBeVisible();
@@ -920,6 +917,7 @@ test.describe('Simple diagram theming', () => {
     const scene = page.locator('.squisq-scene-shell').first();
     const card = scene.locator('[data-layer-id^="node-card-"]').first();
     await expect(card).toBeVisible({ timeout: 10_000 });
+    await card.scrollIntoViewIfNeeded();
     const cardBox = await card.boundingBox();
     if (!cardBox) throw new Error('Diagram card bounds were not found');
     await page.mouse.click(cardBox.x + 8, cardBox.y + 8);
@@ -1014,14 +1012,9 @@ test.describe('Simple diagram theming', () => {
 test.describe('Video export dialog theming', () => {
   test('offers MP4 video export but not the removed ffmpeg-backed GIF export', async ({ page }) => {
     await openInitializedSite(page);
-    // Cross-origin isolation is retained as hardening even though nothing
-    // shipped needs SharedArrayBuffer any more.
-    expect(
-      await page.evaluate(() => ({
-        crossOriginIsolated: globalThis.crossOriginIsolated,
-        sharedArrayBuffer: typeof SharedArrayBuffer !== 'undefined',
-      })),
-    ).toEqual({ crossOriginIsolated: true, sharedArrayBuffer: true });
+    // Hosted video players cannot opt into the app's embedder policy, and no
+    // shipped feature needs SharedArrayBuffer, so the editor stays unisolated.
+    expect(await page.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
     await page.getByRole('button', { name: 'Export and share' }).click();
 
@@ -1271,5 +1264,71 @@ test.describe('Workspace picker', () => {
 
     await page.locator('.db-explorer-title').click();
     await expect(page.locator('.db-workspace-dropdown')).not.toBeVisible();
+  });
+
+  test('keeps the New Workspace form inside the sidebar without scrolling it', async ({ page }) => {
+    // Regression: the 300px form ran past the sidebar's edge, and focusing its
+    // field scrolled the clipped sidebar ~67px sideways, cutting off the logo,
+    // the file names and the footer.
+    await page.locator('.db-workspace-picker-btn').click();
+    await page
+      .locator('.db-workspace-dropdown')
+      .getByRole('button', { name: 'New Workspace' })
+      .click();
+    const field = page.getByLabel('Workspace name');
+    await expect(field).toBeFocused();
+
+    const layout = await page.evaluate(() => {
+      const sidebar = document.querySelector<HTMLElement>('.db-shell-sidebar')!;
+      const bounds = sidebar.getBoundingClientRect();
+      const dropdown = document.querySelector('.db-workspace-dropdown')!.getBoundingClientRect();
+      return {
+        scrollLeft: sidebar.scrollLeft,
+        dropdownInside: dropdown.left >= bounds.left && dropdown.right <= bounds.right,
+      };
+    });
+    expect(layout.scrollLeft).toBe(0);
+    expect(layout.dropdownInside).toBe(true);
+    await expect(page.getByRole('button', { name: 'Create', exact: true })).toBeInViewport();
+  });
+
+  test('removes a workspace that is not active from its row menu', async ({ page }) => {
+    const picker = page.locator('.db-workspace-picker-btn');
+    const dropdown = page.locator('.db-workspace-dropdown');
+    const label = page.locator('.db-workspace-picker-label');
+    const activeName = (await label.textContent()) ?? '';
+
+    // Create a second workspace, then switch back so it is not the active one.
+    await picker.click();
+    await dropdown.getByRole('button', { name: 'New Workspace' }).click();
+    await page.getByLabel('Workspace name').fill('Scratch space');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(label).toHaveText('Scratch space');
+    await picker.click();
+    await dropdown.getByRole('button', { name: activeName, exact: true }).click();
+    await expect(label).toHaveText(activeName);
+
+    // A right-click opens the row's menu. Cancelling the confirmation keeps it.
+    await picker.click();
+    const row = dropdown.locator('.db-workspace-dropdown-row', { hasText: 'Scratch space' });
+    await row.locator('.db-workspace-dropdown-item').click({ button: 'right' });
+    await page.getByRole('menu', { name: 'Actions for Scratch space' }).waitFor();
+    await page.getByRole('menuitem', { name: 'Remove workspace…' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Remove workspace' });
+    await expect(confirm).toContainText('Remove “Scratch space”?');
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await picker.click();
+    await expect(row).toBeVisible();
+
+    // The ⋯ button opens the same menu; confirming removes only that workspace.
+    await row.getByRole('button', { name: 'More actions for Scratch space' }).click();
+    await page.getByRole('menuitem', { name: 'Remove workspace…' }).click();
+    await confirm.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(confirm).not.toBeVisible();
+    await expect(label).toHaveText(activeName);
+    await picker.click();
+    await expect(dropdown).toBeVisible();
+    await expect(row).toHaveCount(0);
+    await expect(dropdown.getByRole('button', { name: activeName, exact: true })).toBeVisible();
   });
 });

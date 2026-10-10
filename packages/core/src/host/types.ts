@@ -45,6 +45,12 @@ export interface ElectronWorkspaceInfo {
   name: string;
   /** Display/persistence metadata only. Privileged host calls accept `id`, never this path. */
   rootPath: string;
+  /**
+   * True for the app's own default workspace — the one DocBlocks creates and
+   * may seed with its starter document. Folders the user picked or cloned are
+   * never default. Hosts that cannot tell omit it.
+   */
+  isDefault?: boolean;
 }
 
 /** Workspace-management operations exposed to the renderer. */

@@ -21,7 +21,9 @@
   ],
   "main": "./dist/extension.js",
   "browser": "./dist/extension.web.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:.docblocks/workspace.json"
+  ],
   "contributes": {
     "configuration": {
       "title": "DocBlocks",
@@ -132,6 +134,18 @@
         "command": "docblocks.openSetup",
         "title": "Open DocBlocks Tools (CLI+MCP) Setup",
         "category": "DocBlocks"
+      },
+      {
+        "command": "docblocks.refreshWorkspaceOutputs",
+        "title": "Update Workspace Catalogs",
+        "category": "DocBlocks",
+        "enablement": "isWorkspaceTrusted"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": ".docblocks/workspace.json",
+        "url": "./resources/workspace-settings.schema.json"
       }
     ],
     "customEditors": [
@@ -186,10 +200,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.11.15",
-    "@bendyline/squisq-editor-react": "2.11.18",
-    "@bendyline/squisq-formats": "2.6.15",
-    "@bendyline/squisq-react": "2.11.17",
+    "@bendyline/squisq": "2.11.18",
+    "@bendyline/squisq-editor-react": "2.11.21",
+    "@bendyline/squisq-formats": "2.6.18",
+    "@bendyline/squisq-react": "2.11.20",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"

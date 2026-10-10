@@ -1,4 +1,10 @@
 export { AiSettingsControls } from './AiSettings.js';
+export { WorkspaceSettingsControls } from './WorkspaceSettingsControls.js';
+export type {
+  WorkspaceCatalogStatusView,
+  WorkspaceSettingsControlsProps,
+  WorkspaceSettingsThemeOption,
+} from './WorkspaceSettingsControls.js';
 export type { AiSettingsControlsProps } from './AiSettings.js';
 export {
   AccentColorSettings,

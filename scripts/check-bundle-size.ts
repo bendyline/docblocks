@@ -267,8 +267,41 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
   return messages;
 }
 
-const results = await Promise.all(surfaces.map((surface) => assertSurface(surface)));
+/**
+ * VS Code extension-host bundles. Both carry Squisq's Markdown parser and
+ * plain-HTML renderer so workspace catalogs regenerate without a webview
+ * open; the VSIX ships no node_modules, so they are bundled. The budget keeps
+ * an accidental import of a heavy format runtime (DOCX, PDF, PPTX) out of a
+ * bundle VS Code parses on activation.
+ */
+const extensionHostBundles = [
+  {
+    name: 'vscode extension host',
+    path: 'packages/vscode/dist/extension.js',
+    budgetBytes: 3_200_000,
+  },
+  {
+    name: 'vscode web extension host',
+    path: 'packages/vscode/dist/extension.web.js',
+    budgetBytes: 3_000_000,
+  },
+] as const;
 
-for (const line of results.flat()) {
+async function assertExtensionHostBundle(
+  bundle: (typeof extensionHostBundles)[number],
+): Promise<string> {
+  const size = (await stat(bundle.path)).size;
+  if (size > bundle.budgetBytes) {
+    throw new Error(
+      `${bundle.name}: ${bundle.path} is ${formatBytes(size)}, above ${formatBytes(bundle.budgetBytes)}`,
+    );
+  }
+  return `${bundle.name}: ${formatBytes(size)}`;
+}
+
+const results = await Promise.all(surfaces.map((surface) => assertSurface(surface)));
+const hostResults = await Promise.all(extensionHostBundles.map(assertExtensionHostBundle));
+
+for (const line of [...results.flat(), ...hostResults]) {
   process.stdout.write(`${line}\n`);
 }

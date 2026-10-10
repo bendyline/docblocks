@@ -2,11 +2,12 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditorContext } from '@bendyline/squisq-editor-react/shell';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import { docToPptx } from '@bendyline/squisq-formats/pptx';
+import { readFrontmatterThemeId } from '@bendyline/squisq/markdown';
 import {
-  DEFAULT_OPTIONS,
   ExportDialog,
   buildExportFilename,
   loadLastExportOptions,
+  resolveExportDialogInitial,
   runExport,
   updateExportTargetExtension,
   type ExportOptions,
@@ -28,6 +29,8 @@ export interface VscodeExportButtonProps {
     filename: string,
     currentTarget?: ExportTargetGrantMessage | null,
   ) => Promise<ExportTargetGrantMessage | null>;
+  /** The folder's default theme, pre-selected for documents without their own. */
+  defaultThemeId?: string;
 }
 
 export function VscodeExportButton({
@@ -36,6 +39,7 @@ export function VscodeExportButton({
   saveBlob,
   resolveExportTarget,
   pickExportTarget,
+  defaultThemeId,
 }: VscodeExportButtonProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -48,20 +52,15 @@ export function VscodeExportButton({
   const destinationEditedRef = useRef(false);
   const destinationTargetRef = useRef<ExportTargetGrantMessage | null>(null);
 
-  const docThemeId = useMemo(() => {
-    const frontmatter = markdownDoc?.frontmatter as Record<string, unknown> | undefined;
-    if (!frontmatter) return null;
-    const candidates = [frontmatter['squisq-theme'], frontmatter['theme'], frontmatter['themeId']];
-    for (const value of candidates) {
-      if (typeof value === 'string' && value.trim()) return value.trim();
-    }
-    return null;
-  }, [markdownDoc]);
+  const docThemeId = useMemo(
+    () => readFrontmatterThemeId(markdownDoc?.frontmatter as Record<string, unknown> | undefined),
+    [markdownDoc],
+  );
 
-  const dialogInitial = useMemo(() => {
-    const base = loadLastExportOptions() ?? DEFAULT_OPTIONS;
-    return docThemeId ? { ...base, themeId: docThemeId } : base;
-  }, [docThemeId]);
+  const dialogInitial = useMemo(
+    () => resolveExportDialogInitial(loadLastExportOptions(), docThemeId, defaultThemeId),
+    [docThemeId, defaultThemeId],
+  );
 
   const refreshDestination = useCallback(
     async (options: ExportOptions) => {

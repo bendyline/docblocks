@@ -16,6 +16,12 @@ export interface PromptRequest {
   label: string;
   /** Pre-filled (and pre-selected) value. */
   initialValue?: string;
+  /**
+   * The part of `initialValue` to pre-select, as `[start, end]` offsets.
+   * Defaults to all of it; a rename passes the title so typing keeps the
+   * extension.
+   */
+  initialSelection?: readonly [start: number, end: number];
   /** Confirm button text; defaults to "OK". */
   confirmLabel?: string;
 }
@@ -40,8 +46,14 @@ export function PromptDialog({ request, onSettle }: PromptDialogProps) {
 
   // Pre-select the seeded value so typing replaces it -- the behaviour the
   // native prompt() had, and what a rename dialog needs to feel usable.
+  const initialSelection = request.initialSelection;
   useEffect(() => {
-    inputRef.current?.select();
+    const input = inputRef.current;
+    if (!input) return;
+    if (initialSelection) input.setSelectionRange(initialSelection[0], initialSelection[1]);
+    else input.select();
+    // Only the first render's request seeds the field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

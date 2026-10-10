@@ -238,6 +238,7 @@ export class KokoroEngine implements TtsEngine {
               durationSec: reply.durationSec,
               textStart: reply.textStart,
               textEnd: reply.textEnd,
+              ...(reply.wordTimings !== undefined ? { wordTimings: reply.wordTimings } : {}),
             },
           });
         }
