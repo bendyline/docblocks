@@ -233,6 +233,17 @@ export default defineConfig({
         find: '@bendyline/docblocks-react/styles',
         replacement: path.resolve(__dirname, '../react/src/styles/docblocks.css'),
       },
+      // Keep the optional providers on source just like the shell. Resolving
+      // these through package exports reads dist/, which tsup removes during
+      // a clean rebuild while an existing dev server may still be serving it.
+      {
+        find: '@bendyline/docblocks-react/calculation',
+        replacement: path.resolve(__dirname, '../react/src/Calculation/public-api.ts'),
+      },
+      {
+        find: '@bendyline/docblocks-react/proofing',
+        replacement: path.resolve(__dirname, '../react/src/Proofing/public-api.ts'),
+      },
       {
         find: /^@bendyline\/docblocks-react$/,
         replacement: path.resolve(__dirname, '../react/src/index.ts'),

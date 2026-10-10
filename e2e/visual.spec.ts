@@ -16,7 +16,7 @@
 
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { openInsertMenu } from './helpers/toolbar.js';
+import { openBlockTypePicker, openInsertMenu } from './helpers/toolbar.js';
 import { expectStableScreenshot } from './helpers/visual.js';
 import type { Page } from '@playwright/test';
 
@@ -199,15 +199,7 @@ test.describe('portaled Squisq surfaces', () => {
     await seedAppearance(page, { theme: 'dark', accent: 'green' });
     await openInitializedSite(page);
     await openEditor(page);
-    const heading = page.locator('.tiptap.ProseMirror').locator('h1, h2, h3').first();
-    await heading.click({ position: { x: 8, y: 8 } });
-    const trigger = heading.locator('.squisq-template-badge').first();
-    await expect(trigger).toBeVisible();
-    await trigger.click();
-    const dialog = page.locator(
-      '.squisq-template-gallery-dialog:has([data-squisq-template-gallery-portal])',
-    );
-    await expect(dialog).toBeVisible();
+    const dialog = await openBlockTypePicker(page);
     await expectStableScreenshot(page, dialog, 'squisq-block-type-picker.png');
   });
 
