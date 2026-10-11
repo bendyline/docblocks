@@ -108,6 +108,13 @@ const SPECS: readonly DiagramSpec[] = [
 ];
 
 describe('compileDiagram', () => {
+  // The first Mermaid validation pays the parser's one-time cold import, which
+  // in a loaded full-suite run can exceed the per-test timeout on its own.
+  before(async function () {
+    this.timeout(60_000);
+    expect((await validateMermaidSource('flowchart TD\n  a --> b')).ok).to.equal(true);
+  });
+
   for (const spec of SPECS) {
     const variant =
       spec.kind === 'chart'

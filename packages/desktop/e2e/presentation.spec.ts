@@ -295,14 +295,44 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
         return url;
       };
     });
-    await window.getByRole('button', { name: 'Export and share' }).click();
-    await window.getByRole('menuitem', { name: 'Export video...' }).click();
-    const video = window.getByRole('dialog', { name: 'Export Video', exact: true });
-    await video.getByRole('combobox', { name: 'Frame Rate' }).selectOption('15');
-    await video.getByRole('combobox', { name: 'Quality' }).selectOption('draft');
+    // Chromium encodes AAC only through a platform encoder, which Linux builds
+    // lack, and DocBlocks ships no ffmpeg.wasm fallback. There the exporter
+    // must refuse narration by name, then still deliver the timed video once
+    // audio is excluded. This mirrors Squisq's own capability probe.
+    const aacEncoder = await window.evaluate(async () => {
+      if (typeof AudioEncoder === 'undefined') return false;
+      const support = await AudioEncoder.isConfigSupported({
+        codec: 'mp4a.40.2',
+        sampleRate: 48_000,
+        numberOfChannels: 2,
+        bitrate: 128_000,
+      }).catch(() => ({ supported: false }));
+      return support.supported === true;
+    });
+    const openVideoExport = async () => {
+      await window.getByRole('button', { name: 'Export and share' }).click();
+      await window.getByRole('menuitem', { name: 'Export video...' }).click();
+      const dialog = window.getByRole('dialog', { name: 'Export Video', exact: true });
+      await dialog.getByRole('combobox', { name: 'Frame Rate' }).selectOption('15');
+      await dialog.getByRole('combobox', { name: 'Quality' }).selectOption('draft');
+      return dialog;
+    };
+    let video = await openVideoExport();
+    if (!aacEncoder) {
+      testInfo.annotations.push({
+        type: 'audio',
+        description: 'No WebCodecs AAC encoder on this host; verified a video-only export.',
+      });
+      await video.getByRole('button', { name: 'Export Video', exact: true }).click();
+      await expect(video).toContainText('cannot encode AAC audio', { timeout: 240_000 });
+      await video.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(video).toBeHidden();
+      video = await openVideoExport();
+      await video.getByRole('checkbox', { name: 'Include audio' }).uncheck();
+    }
     await video.getByRole('button', { name: 'Export Video', exact: true }).click();
     await expect(video).toContainText('Export complete!', { timeout: 240_000 });
-    await expect(video).toContainText('Audio included');
+    await expect(video).toContainText(aacEncoder ? 'Audio included' : 'Audio excluded');
     await video.screenshot({ path: testInfo.outputPath('export-complete.png') });
     await window.evaluate(async (id) => {
       const blob = (globalThis as typeof globalThis & { exportedMp4?: Blob }).exportedMp4;
@@ -321,10 +351,9 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
         { encoding: 'utf8' },
       ),
     ) as { streams: Array<{ codec_type: string; duration: string }>; format: { duration: string } };
-    expect(probeOutput.streams.map((stream) => stream.codec_type).sort()).toEqual([
-      'audio',
-      'video',
-    ]);
+    expect(probeOutput.streams.map((stream) => stream.codec_type).sort()).toEqual(
+      aacEncoder ? ['audio', 'video'] : ['video'],
+    );
     expect(Math.abs(Number(probeOutput.format.duration) - timing.duration)).toBeLessThan(0.15);
     fs.writeFileSync(testInfo.outputPath('ffprobe.json'), JSON.stringify(probeOutput, null, 2));
     fs.cpSync(workspaceDir, testInfo.outputPath('project'), { recursive: true });

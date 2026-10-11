@@ -1,0 +1,5 @@
+# The /desktop/ page allows its inline release script by SHA-256 hash in its
+# CSP. The hash covers the script's exact bytes, so a CRLF checkout (Windows
+# with core.autocrlf=true) makes the browser block the script and fails
+# packages/site/test/seo.test.ts.
+packages/site/public/desktop/index.html text eol=lf
