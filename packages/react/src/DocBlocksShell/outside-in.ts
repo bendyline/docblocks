@@ -1,6 +1,7 @@
 import {
   FileSystemContentContainer,
   FsError,
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
   getFileSystemProviderV2,
   parseWorkspacePath,
   type FileSystemProvider,
@@ -50,7 +51,6 @@ const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
   png: 'image/png',
   webp: 'image/webp',
 };
-const SQUISQ_RUNTIME_DIRECTORY = '_squisq';
 const SQUISQ_RUNTIME_FILENAME = 'squisq-player.js';
 const PENDING_RENDER_FILENAME = '.docblocks-pending-render';
 const PENDING_RENDER_CONTENT = 'docblocks-outside-in-pending-render-v1\n';
@@ -385,7 +385,7 @@ export async function enableOutsideInMarkdownEditing(
 async function findRuntimePath(provider: FileSystemProvider, targetPath: string): Promise<string> {
   let directory = dirname(targetPath);
   for (;;) {
-    const candidateDirectory = join(directory, SQUISQ_RUNTIME_DIRECTORY);
+    const candidateDirectory = join(directory, SQUISQ_RUNTIME_DIRECTORY_NAME);
     if (await providerEntryExists(provider, candidateDirectory)) {
       const providerV2 = getFileSystemProviderV2(provider);
       if (providerV2) {
@@ -399,7 +399,7 @@ async function findRuntimePath(provider: FileSystemProvider, targetPath: string)
     if (!directory) break;
     directory = dirname(directory);
   }
-  return join(SQUISQ_RUNTIME_DIRECTORY, SQUISQ_RUNTIME_FILENAME);
+  return join(SQUISQ_RUNTIME_DIRECTORY_NAME, SQUISQ_RUNTIME_FILENAME);
 }
 
 async function writeRuntimeIfNeeded(

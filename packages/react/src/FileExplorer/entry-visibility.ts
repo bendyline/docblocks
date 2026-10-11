@@ -1,4 +1,4 @@
-import { isIgnoredWorkspaceEntryName, type FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import { isBrowsableWorkspaceEntry, type FileSystemEntry } from '@bendyline/docblocks/filesystem';
 
 /**
  * Hide dot-entries (`.git`, `.gitignore`, `.DS_Store`, …), tool-managed
@@ -8,8 +8,7 @@ import { isIgnoredWorkspaceEntryName, type FileSystemEntry } from '@bendyline/do
  */
 export function isHiddenFileEntry(entry: FileSystemEntry): boolean {
   const name = entry.path.replace(/^\/+/, '').split('/').pop() ?? '';
-  if (isIgnoredWorkspaceEntryName(name)) return true;
-  return entry.kind === 'directory' && name.endsWith('_files');
+  return !isBrowsableWorkspaceEntry(name, entry.kind);
 }
 
 export function filterVisibleFileEntries(entries: readonly FileSystemEntry[]): FileSystemEntry[] {

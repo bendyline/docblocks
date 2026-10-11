@@ -18,7 +18,12 @@
 
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import { FsError } from '../filesystem/fs-error.js';
-import { isIgnoredWorkspaceEntryName } from '../filesystem/ignored-entries.js';
+import {
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
+  isDiscoverableWorkspaceEntry,
+  isIgnoredWorkspaceEntryName,
+  isMarkdownFileName,
+} from '../filesystem/workspace-entry-rules.js';
 import type {
   FileSystemEntrySnapshot,
   FileSystemProviderV2,
@@ -147,8 +152,14 @@ function isNotFound(error: unknown): boolean {
   return error instanceof FsError && (error.code === 'not-found' || error.code === 'type-mismatch');
 }
 
-function hasHiddenSegment(path: string): boolean {
-  return path.split('/').some((segment) => segment.startsWith('.'));
+/** Dot-folders, `node_modules`, and the Squisq runtime folder never feed the catalog. */
+function hasUndiscoverableSegment(path: string): boolean {
+  return path
+    .split('/')
+    .some(
+      (segment) =>
+        isIgnoredWorkspaceEntryName(segment) || segment === SQUISQ_RUNTIME_DIRECTORY_NAME,
+    );
 }
 
 function isExcluded(path: string, exclude: readonly string[]): boolean {
@@ -165,8 +176,7 @@ export function isCatalogRelevantPath(
   settings: WorkspaceSettings | null | undefined,
 ): boolean {
   const normalized = path.replace(/^\/+/, '');
-  if (!normalized || hasHiddenSegment(normalized)) return false;
-  if (normalized === '_squisq' || normalized.startsWith('_squisq/')) return false;
+  if (!normalized || hasUndiscoverableSegment(normalized)) return false;
   let resolved: ResolvedCatalogOutputs | null;
   try {
     resolved = resolveCatalogOutputs(settings);
@@ -226,9 +236,9 @@ async function collectCandidates(
       throw error;
     }
     for (const entry of entries) {
-      if (isIgnoredWorkspaceEntryName(entry.name) || isExcluded(entry.path, exclude)) continue;
+      if (!isDiscoverableWorkspaceEntry(entry.name, entry.kind)) continue;
+      if (isExcluded(entry.path, exclude)) continue;
       if (entry.kind === 'directory') {
-        if (entry.name.endsWith('_files') || entry.name === '_squisq') continue;
         if (depth + 1 > limits.maxDepth) {
           throw new WorkspaceOutputsLimitError(
             `Folders nest deeper than ${limits.maxDepth} levels; the catalog was not updated.`,
@@ -238,8 +248,7 @@ async function collectCandidates(
         continue;
       }
       if (outputPaths.has(entry.path.toLowerCase())) continue;
-      const lower = entry.name.toLowerCase();
-      if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+      if (isMarkdownFileName(entry.name)) {
         candidates.push({ kind: 'markdown', entry });
       } else {
         const layout = resolveOutsideInLayout(entry.path);

@@ -30,6 +30,7 @@ import {
   NewFileIcon,
   NewFolderIcon,
   OpenFolderIcon,
+  SearchIcon,
   SortByLastModifiedIcon,
   SortByNameIcon,
 } from '../icons.js';
@@ -174,6 +175,10 @@ export interface FileExplorerProps {
   defaultNewFileFormat?: NewFileFormat;
   /** Called with the type of each file the New File form creates. */
   onNewFileFormatUsed?: (format: NewFileFormat) => void;
+  /** Shows a Search button that switches the sidebar to workspace search. */
+  onShowSearch?: () => void;
+  /** Tooltip shortcut for the Search button, e.g. `Ctrl+Shift+F`. */
+  searchShortcutLabel?: string;
   /** Optional className for the root element. */
   className?: string;
 }
@@ -204,6 +209,8 @@ export function FileExplorer({
   outsideInRender,
   defaultNewFileFormat = 'markdown',
   onNewFileFormatUsed,
+  onShowSearch,
+  searchShortcutLabel,
   className,
 }: FileExplorerProps) {
   const tree = useFileTree(provider, metadataRefreshKey, activeFilePath);
@@ -766,6 +773,17 @@ export function FileExplorer({
             </button>
           </div>
           <span className="db-explorer-action-divider" aria-hidden="true" />
+          {onShowSearch && (
+            <button
+              type="button"
+              className="db-explorer-btn"
+              onClick={onShowSearch}
+              title={searchShortcutLabel ? `Search (${searchShortcutLabel})` : 'Search'}
+              aria-label="Search workspace"
+            >
+              <SearchIcon />
+            </button>
+          )}
           {onOpenWorkspaceFolder && (
             <button
               type="button"

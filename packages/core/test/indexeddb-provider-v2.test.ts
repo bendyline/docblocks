@@ -4,10 +4,11 @@ import {
   IndexedDBFileSystemProviderV2,
   parseWorkspacePath,
 } from '../src/filesystem/index.js';
-import type {
-  IndexedDBFileSystemStore,
-  IndexedDBFileSystemTransaction,
-  IndexedDBFileSystemTransactionMode,
+import {
+  childKeyStep,
+  type IndexedDBFileSystemStore,
+  type IndexedDBFileSystemTransaction,
+  type IndexedDBFileSystemTransactionMode,
 } from '../src/filesystem/indexeddb-store.js';
 import {
   defineFileSystemProviderV2Conformance,
@@ -43,6 +44,7 @@ class FakeTransactionalStore implements IndexedDBFileSystemStore {
   public closeCalls = 0;
   public keysCalls = 0;
   public prefixProbeCalls = 0;
+  public childKeyVisits = 0;
 
   public seed(key: string, value: unknown): void {
     this.values.set(key, structuredClone(value));
@@ -63,6 +65,7 @@ class FakeTransactionalStore implements IndexedDBFileSystemStore {
   public resetOperationCounts(): void {
     this.keysCalls = 0;
     this.prefixProbeCalls = 0;
+    this.childKeyVisits = 0;
   }
 
   public get activeWriteCount(): number {
@@ -103,6 +106,21 @@ class FakeTransactionalStore implements IndexedDBFileSystemStore {
         this.maybeFail('keys');
         return [...working.keys()].some((key) => key.startsWith(prefix));
       },
+      // Emulates the real key cursor: sorted keys, seek by lower bound.
+      childKeys: async (prefix: string) => {
+        this.maybeFail('keys');
+        const sorted = [...working.keys()].sort(compareCodeUnits);
+        const found: string[] = [];
+        let index = lowerBound(sorted, prefix);
+        while (index < sorted.length) {
+          this.childKeyVisits += 1;
+          const step = childKeyStep(prefix, sorted[index]);
+          if (step.kind === 'done') break;
+          if (step.kind === 'child') found.push(sorted[index]);
+          index = step.kind === 'skip' ? lowerBound(sorted, step.seek) : index + 1;
+        }
+        return found;
+      },
     };
     try {
       if (pause) await pause;
@@ -130,6 +148,22 @@ class FakeTransactionalStore implements IndexedDBFileSystemStore {
     this.failure = null;
     throw new Error(`Injected ${operation} failure${key ? ` for ${key}` : ''}.`);
   }
+}
+
+/** IndexedDB compares string keys by UTF-16 code unit. */
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function lowerBound(sorted: readonly string[], key: string): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (sorted[middle] < key) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 async function waitForActiveWrite(store: FakeTransactionalStore): Promise<void> {
@@ -440,6 +474,30 @@ describe('IndexedDBFileSystemProviderV2 migration and compatibility', () => {
     expect(store.prefixProbeCalls).to.equal(1);
     expect(store.keysCalls).to.equal(0);
 
+    await provider.dispose();
+  });
+
+  it('lists direct children by seeking past subtrees instead of reading every key', async () => {
+    const { provider, store } = createProvider();
+    // Names that sort around `a/`: '-' and '.' before '/', '0'+ after it.
+    for (const path of ['/a-b.md', '/a.md', '/ab.md', '/z.md']) {
+      await provider.writeFile(p(path), encode(path));
+    }
+    await provider.createDirectory(p('/a'));
+    for (let index = 0; index < 40; index += 1) {
+      await provider.writeFile(p(`/a/deep/note-${index}.md`), encode('deep'), {
+        createParents: true,
+      });
+    }
+    store.resetOperationCounts();
+
+    const root = await provider.readDirectory(p('/'));
+    expect(root.map((entry) => entry.name)).to.deep.equal(['a', 'a-b.md', 'a.md', 'ab.md', 'z.md']);
+    expect(store.keysCalls).to.equal(0);
+    // Each root child plus one key for the skipped `a/` subtree and the end.
+    expect(store.childKeyVisits).to.be.lessThan(12);
+
+    expect((await provider.readDirectory(p('/a/deep'))).length).to.equal(40);
     await provider.dispose();
   });
 

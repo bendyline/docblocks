@@ -54,6 +54,12 @@ export interface IndexedDBFileSystemTransaction {
   keys(): Promise<string[]>;
   /** O(log n) namespace probe in the concrete IndexedDB implementation. */
   hasKeyWithPrefix(prefix: string): Promise<boolean>;
+  /**
+   * Keys directly under `prefix` (the remainder contains no `/`), in key
+   * order, skipping each child's subtree instead of visiting it. Optional:
+   * callers fall back to filtering `keys()`.
+   */
+  childKeys?(prefix: string): Promise<string[]>;
 }
 
 export interface IndexedDBFileSystemStore {
@@ -172,6 +178,56 @@ class RawIndexedDBFileSystemTransaction implements IndexedDBFileSystemTransactio
     const cursor = await requestResult(this.store.openKeyCursor(IDBKeyRange.lowerBound(prefix)));
     return cursor !== null && typeof cursor.key === 'string' && cursor.key.startsWith(prefix);
   }
+
+  public childKeys(prefix: string): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      const keys: string[] = [];
+      const request = this.store.openKeyCursor(IDBKeyRange.lowerBound(prefix));
+      request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed.'));
+      // Driven from the success event rather than awaited promises so the
+      // cursor never yields to the event loop between steps.
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(keys);
+          return;
+        }
+        const key = cursor.key;
+        if (typeof key !== 'string') {
+          reject(new Error('The DocBlocks filesystem store contains a non-string key.'));
+          return;
+        }
+        const step = childKeyStep(prefix, key);
+        if (step.kind === 'done') {
+          resolve(keys);
+          return;
+        }
+        if (step.kind === 'child') keys.push(key);
+        if (step.kind === 'skip') cursor.continue(step.seek);
+        else cursor.continue();
+      };
+    });
+  }
+}
+
+/** What a direct-children key scan does with the next key at or after `prefix`. */
+export type ChildKeyStep =
+  | { readonly kind: 'done' }
+  | { readonly kind: 'self' }
+  | { readonly kind: 'child' }
+  | { readonly kind: 'skip'; readonly seek: string };
+
+export function childKeyStep(prefix: string, key: string): ChildKeyStep {
+  if (!key.startsWith(prefix)) return { kind: 'done' };
+  const rest = key.slice(prefix.length);
+  if (!rest) return { kind: 'self' };
+  const slash = rest.indexOf('/');
+  if (slash === -1) return { kind: 'child' };
+  // A descendant of `rest`'s first segment: jump past that whole subtree.
+  // '0' is the code unit directly after '/', so every key below `segment/`
+  // sorts before `segment0`, and siblings such as `segment-b` or `segment.md`
+  // (which sort before `segment/`) have already been visited.
+  return { kind: 'skip', seek: `${prefix}${rest.slice(0, slash)}0` };
 }
 
 async function openDatabaseWithStore(

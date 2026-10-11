@@ -12,6 +12,7 @@ export default defineConfig({
     'document/index': 'src/document/index.ts',
     'workspace/index': 'src/workspace/index.ts',
     'workspace-settings/index': 'src/workspace-settings/index.ts',
+    'workspace-index/index': 'src/workspace-index/index.ts',
     'host/index': 'src/host/index.ts',
     'host/mobile': 'src/host/mobile-wire.ts',
     'share/index': 'src/share/index.ts',

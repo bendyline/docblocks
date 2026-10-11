@@ -105,3 +105,6 @@ export function pickEmptyDocumentPrompt(random: () => number = Math.random): Emp
 }
 
 export { PresentationMaker } from './Presentation/PresentationMaker.js';
+export { FindButton, type FindButtonProps } from './components/FindButton.js';
+export { focusFindInput } from './components/find-input.js';
+export { findShortcutLabel, isFindShortcut } from './DocBlocksShell/keyboard-shortcuts.js';

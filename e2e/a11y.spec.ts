@@ -148,6 +148,37 @@ test.describe('a11y - application dialogs', () => {
   });
 });
 
+test.describe('a11y — quick-open and workspace search', () => {
+  test('no WCAG A/AA violations in the quick-open dialog', async ({ page }, info) => {
+    await waitForShell(page);
+    await page.keyboard.press('ControlOrMeta+p');
+    const dialog = page.getByRole('dialog', { name: 'Go to document' });
+    await expect(dialog).toBeVisible();
+    // The empty list leaves out the open document, the only one on a fresh site.
+    await dialog.getByRole('combobox', { name: 'Go to document' }).fill('about');
+    await expect(dialog.getByRole('option').first()).toBeVisible();
+
+    const violations = await scanAndReport(page, info, 'quick-open');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in quick-open:\n${formatViolations(violations)}`,
+    ).toBe(0);
+  });
+
+  test('no WCAG A/AA violations in the search panel with results', async ({ page }, info) => {
+    await waitForShell(page);
+    await page.getByRole('button', { name: 'Search workspace' }).click();
+    await page.getByRole('searchbox', { name: 'Search workspace' }).fill('DocBlocks');
+    await expect(page.locator('.db-search-line').first()).toBeVisible({ timeout: 20_000 });
+
+    const violations = await scanAndReport(page, info, 'workspace-search');
+    expect(
+      violations.length,
+      `${violations.length} violation(s) in the search panel:\n${formatViolations(violations)}`,
+    ).toBe(0);
+  });
+});
+
 test.describe('a11y — app menu open', () => {
   test('no WCAG A/AA violations with app menu dropdown visible', async ({ page }, info) => {
     await waitForShell(page);

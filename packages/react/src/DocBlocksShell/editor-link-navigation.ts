@@ -1,3 +1,4 @@
+import { isMarkdownFileName } from '@bendyline/docblocks/filesystem';
 import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from '@bendyline/docblocks/host';
 
 export type ShellEditorLinkTarget =
@@ -6,7 +7,6 @@ export type ShellEditorLinkTarget =
   | { readonly kind: 'workspace'; readonly path: string };
 
 const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
-const MARKDOWN_EXTENSION = /\.(?:md|markdown|mdown)$/iu;
 
 /**
  * Classify a link authored in the editor without treating its path as
@@ -53,7 +53,7 @@ export function resolveShellEditorLinkTarget(
   }
 
   const path = targetSegments.join('/');
-  if (!path || path.length > HOST_WIRE_LIMITS.pathCharacters || !MARKDOWN_EXTENSION.test(path)) {
+  if (!path || path.length > HOST_WIRE_LIMITS.pathCharacters || !isMarkdownFileName(path)) {
     return null;
   }
   return { kind: 'workspace', path };

@@ -392,7 +392,10 @@ test.describe('DocBlocks App', () => {
     await expect(toolbar).toBeVisible();
 
     const buttons = toolbar.locator('.db-explorer-btn');
-    await expect(buttons).toHaveCount(4); // Two sort controls plus +F and +D.
+    await expect(buttons).toHaveCount(5); // Two sort controls, Search, +F and +D.
+    await expect(
+      toolbar.getByRole('button', { name: 'Search workspace' }).locator('.fa-magnifying-glass'),
+    ).toBeVisible();
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
     const newFileIcon = newFileButton.locator('.fa-file-circle-plus');

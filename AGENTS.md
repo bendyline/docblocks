@@ -181,6 +181,15 @@ UI code (in `packages/react`, `packages/site`, `packages/desktop/renderer`, and
 `electron` directly. Electron main must re-parse paths and prove physical
 workspace containment; renderer validation is not a security boundary.
 
+Workspace-wide discovery in the shell (link picker, quick-open, search) reads
+the shared in-memory index from `@bendyline/docblocks/workspace-index`, owned by
+`useWorkspaceIndex` and kept current through `notifyWorkspaceChanged` and
+provider watch events. Do not add new recursive walkers: on desktop every
+provider read queues behind the same per-workspace lock as the user's saves.
+Which entries count as documents, and which folders are skipped, lives in
+`packages/core/src/filesystem/workspace-entry-rules.ts`. The index is never
+persisted inside the workspace (`.docblocks/` syncs and lands in git).
+
 ### Ask what the host can do, never which host it is
 
 `packages/core/src/host/capabilities.ts` is the seam. `isElectronHost()` was a

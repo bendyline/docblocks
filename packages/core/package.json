@@ -80,6 +80,11 @@
       "import": "./dist/workspace-settings/index.js",
       "default": "./dist/workspace-settings/index.js"
     },
+    "./workspace-index": {
+      "types": "./dist/workspace-index/index.d.ts",
+      "import": "./dist/workspace-index/index.js",
+      "default": "./dist/workspace-index/index.js"
+    },
     "./host": {
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js",
@@ -121,7 +126,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.11.18",
+    "@bendyline/squisq": "2.11.19",
     "zod": "3.25.76"
   }
 }

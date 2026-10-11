@@ -1,111 +1,56 @@
 import { expect } from 'chai';
-import type {
-  FileMeta,
-  FileSystemEntry,
-  FileSystemProvider,
-} from '@bendyline/docblocks/filesystem';
+import { MemoryFileSystemProviderV2, parseWorkspacePath } from '@bendyline/docblocks/filesystem';
+import { createWorkspaceIndex } from '@bendyline/docblocks/workspace-index';
 import {
-  collectMarkdownFiles,
   createDocumentLinkCandidates,
-  DocumentDiscoveryError,
+  type DocumentLinkTarget,
 } from '../src/DocBlocksShell/document-links.js';
 
-type DirectoryTree = Readonly<Record<string, readonly FileSystemEntry[]>>;
+describe('document link candidates', () => {
+  const file = (name: string, path = name): DocumentLinkTarget => ({ name, path });
 
-function providerFor(tree: DirectoryTree): FileSystemProvider {
-  return {
-    id: 'links',
-    label: 'Links',
-    async readDirectory(path) {
-      return [...(tree[path] ?? [])];
-    },
-    async readFile() {
-      return null;
-    },
-    async writeFile() {},
-    async delete() {},
-    async rename() {},
-    async exists() {
-      return false;
-    },
-    async createDirectory() {},
-    async stat(): Promise<FileMeta | null> {
-      return null;
-    },
-    async readBinary() {
-      return null;
-    },
-    async writeBinary() {},
-  };
-}
-
-describe('document link discovery', () => {
-  const file = (name: string, path = name): FileSystemEntry => ({ kind: 'file', name, path });
-  const directory = (name: string, path = name): FileSystemEntry => ({
-    kind: 'directory',
-    name,
-    path,
-  });
-
-  it('skips implementation folders and returns stable relative candidates', async () => {
-    const provider = providerFor({
-      '': [
-        file('root.md'),
-        directory('docs'),
-        directory('.git'),
-        directory('node_modules'),
-        directory('root_files'),
-      ],
-      docs: [file('zeta.md', 'docs/zeta.md'), file('alpha.md', 'docs/alpha.md')],
-    });
-    const entries = await collectMarkdownFiles(provider, '');
-    expect(entries.map((entry) => entry.path)).to.have.members([
-      'root.md',
-      'docs/zeta.md',
-      'docs/alpha.md',
-    ]);
+  it('returns stable relative candidates, excluding the current document', () => {
+    const entries = [
+      file('root.md'),
+      file('zeta.md', 'docs/zeta.md'),
+      file('alpha.md', 'docs/alpha.md'),
+    ];
     expect(createDocumentLinkCandidates(entries, 'docs/zeta.md', '')).to.deep.equal([
       { path: 'alpha.md', label: 'alpha', description: 'docs' },
       { path: '../root.md', label: 'root' },
     ]);
   });
 
-  it('lists candidates in the file explorer’s order', () => {
-    const entries = [file('Invoice 10.md'), file('Invoice 2.md'), file('apple.md')];
-
+  it('lists candidates in the file explorer’s order and strips any Markdown extension', () => {
+    const entries = [file('Invoice 10.md'), file('Invoice 2.markdown'), file('apple.mdown')];
     expect(
       createDocumentLinkCandidates(entries, 'current.md', '').map((candidate) => candidate.label),
     ).to.deep.equal(['apple', 'Invoice 2', 'Invoice 10']);
   });
 
-  it('rejects an entry traversal that exceeds its budget', async () => {
-    const provider = providerFor({ '': [file('one.md'), file('two.md')] });
-    let caught: unknown;
-    try {
-      await collectMarkdownFiles(provider, '', { maxEntries: 1 });
-    } catch (error: unknown) {
-      caught = error;
+  it('offers the workspace index’s Markdown documents, skipping implementation folders', async () => {
+    const provider = new MemoryFileSystemProviderV2('links', 'Links');
+    const encode = (text: string) => new TextEncoder().encode(text);
+    for (const path of [
+      'root.md',
+      'docs/alpha.md',
+      '.git/x.md',
+      'node_modules/y.md',
+      'root_files/z.md',
+    ]) {
+      await provider.writeFile(parseWorkspacePath(path), encode('# Doc\n'), {
+        createParents: true,
+      });
     }
-    expect(caught).to.be.instanceOf(DocumentDiscoveryError);
-    expect(caught).to.include({ code: 'limit' });
-  });
+    await provider.writeFile(parseWorkspacePath('docs/image.png'), encode('png'));
+    const index = createWorkspaceIndex({ workspaceId: 'links', source: provider });
+    index.start();
+    expect(await index.whenListed()).to.equal(true);
 
-  it('cancels a stalled provider read', async () => {
-    const provider = providerFor({});
-    provider.readDirectory = () => new Promise<FileSystemEntry[]>(() => undefined);
-    const controller = new AbortController();
-    const pending = collectMarkdownFiles(provider, '', {
-      signal: controller.signal,
-      timeoutMs: 1_000,
-    });
-    controller.abort(new Error('workspace changed'));
-    let caught: unknown;
-    try {
-      await pending;
-    } catch (error: unknown) {
-      caught = error;
-    }
-    expect(caught).to.be.instanceOf(Error);
-    expect((caught as Error).message).to.equal('workspace changed');
+    const documents = index.getFiles().filter((entry) => entry.kind === 'markdown');
+    expect(createDocumentLinkCandidates(documents, 'root.md', '')).to.deep.equal([
+      { path: 'docs/alpha.md', label: 'alpha', description: 'docs' },
+    ]);
+    index.dispose();
   });
 });

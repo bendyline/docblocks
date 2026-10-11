@@ -2163,6 +2163,25 @@ body.db-resizing-sidebar * {
   background: rgba(0, 0, 0, 0.4);
 }
 
+/* Palette-style dialogs (quick-open) sit near the top, where the eye already is. */
+.db-dialog-overlay--top {
+  align-items: flex-start;
+  padding-top: min(12vh, 96px);
+}
+
+/* Present to assistive technology, absent from the layout. */
+.db-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .db-dialog {
   box-sizing: border-box;
   background: var(--db-bg);
@@ -7479,4 +7498,281 @@ button.db-git-file-row:hover {
 }
 :root[data-db-width='compact'] .db-presentation-beats {
   max-height: 140px;
+}
+
+/* ── Workspace search and quick-open ───────────────────────────── */
+
+/* The sidebar shows the file tree or workspace search. The hidden view stays
+   mounted so it keeps its expanded folders or its results. */
+.db-file-explorer.db-sidebar-view--hidden,
+.db-search-panel[hidden] {
+  display: none;
+}
+
+/* Query matches in quick-open and search results. */
+.db-search-match {
+  padding: 0;
+  border-radius: 2px;
+  background: var(--db-accent-soft-25);
+  color: inherit;
+}
+
+.db-quick-open .db-quick-open-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+}
+
+.db-quick-open-input {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--db-border);
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--db-text);
+  font: inherit;
+  font-size: max(15px, var(--db-input-font-size));
+  outline: none;
+}
+
+.db-quick-open-input:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--db-focus);
+}
+
+.db-quick-open-list {
+  max-height: min(60vh, 480px);
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.db-quick-open-list:empty {
+  display: none;
+}
+
+.db-quick-open-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--db-row-min-height);
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: var(--db-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-quick-open-option--active {
+  background: var(--db-bg-hover);
+}
+
+.db-quick-open-name,
+.db-quick-open-title,
+.db-quick-open-folder {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-quick-open-name {
+  flex: 0 1 auto;
+  font-weight: 600;
+}
+
+.db-quick-open-title {
+  flex: 0 2 auto;
+  color: var(--db-text-secondary);
+}
+
+.db-quick-open-folder {
+  flex: 1 3 auto;
+  margin-left: auto;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.db-quick-open .db-quick-open-status {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--db-border);
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-quick-open .db-quick-open-status:empty {
+  display: none;
+}
+
+.db-search-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.db-search-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+}
+
+.db-search-input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 4px 8px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 4px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: var(--db-input-font-size);
+}
+
+.db-search-input:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -1px;
+}
+
+.db-search-toggle {
+  min-width: var(--db-target-min);
+  min-height: var(--db-target-min);
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--db-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.db-search-toggle--word {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.db-search-toggle:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-search-toggle[aria-pressed='true'] {
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-search-toggle:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
+}
+
+.db-search-status,
+.db-search-more {
+  margin: 0;
+  padding: 0 10px 6px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-search-status:empty {
+  display: none;
+}
+
+.db-search-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 4px 8px;
+  overflow-y: auto;
+}
+
+.db-search-document,
+.db-search-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: var(--db-row-min-height);
+  padding: 4px 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  color: var(--db-text);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-search-document:hover,
+.db-search-line:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-search-document:focus-visible,
+.db-search-line:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-search-chevron {
+  flex: 0 0 auto;
+  width: 12px;
+  color: var(--db-text-muted);
+  text-align: center;
+}
+
+.db-search-document-title,
+.db-search-document-path,
+.db-search-snippet {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-search-document-title {
+  flex: 0 1 auto;
+  font-weight: 600;
+}
+
+.db-search-document-path {
+  flex: 1 1 auto;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-search-count {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text-secondary);
+  font-size: 11px;
+}
+
+.db-search-line {
+  padding-left: 24px;
+}
+
+.db-search-line-number {
+  flex: 0 0 auto;
+  min-width: 2.5em;
+  color: var(--db-text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.db-search-snippet {
+  flex: 1 1 auto;
 }

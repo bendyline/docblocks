@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import {
   SHELL_SHORTCUTS,
+  isFindShortcut,
   isTypingTarget,
   matchShortcut,
   shortcutLabel,
@@ -63,6 +64,37 @@ describe('shell keyboard shortcuts', () => {
     ).to.equal('save');
   });
 
+  it('claims Ctrl+F from inside the editor so one find bar serves every view', () => {
+    const monaco = document.createElement('div');
+    monaco.className = 'monaco-editor';
+    const textarea = document.createElement('textarea');
+    monaco.append(textarea);
+    expect(
+      matchShortcut(keyEvent({ key: 'f', ctrlKey: true, target: textarea }), 'split-pane'),
+    ).to.equal('find');
+    expect(isFindShortcut(keyEvent({ key: 'F', metaKey: true, target: textarea }))).to.equal(true);
+  });
+
+  it('opens quick-open and workspace search from inside a text field', () => {
+    const input = document.createElement('input');
+    expect(
+      matchShortcut(keyEvent({ key: 'p', ctrlKey: true, target: input }), 'split-pane'),
+    ).to.equal('quick-open');
+    expect(
+      matchShortcut(
+        keyEvent({ key: 'F', metaKey: true, shiftKey: true, target: input }),
+        'split-pane',
+      ),
+    ).to.equal('workspace-search');
+  });
+
+  it('recognises only the plain find chord for hosts without the shell listener', () => {
+    expect(isFindShortcut(keyEvent({ key: 'f' }))).to.equal(false);
+    expect(isFindShortcut(keyEvent({ key: 'f', ctrlKey: true, shiftKey: true }))).to.equal(false);
+    expect(isFindShortcut(keyEvent({ key: 'f', ctrlKey: true, altKey: true }))).to.equal(false);
+    expect(isFindShortcut(keyEvent({ key: 's', ctrlKey: true }))).to.equal(false);
+  });
+
   it('suppresses non-typing bindings inside a text field', () => {
     const textarea = document.createElement('textarea');
     expect(
@@ -98,7 +130,8 @@ describe('shell keyboard shortcuts', () => {
 
   it('collides with none of the keys Squisq or the browser own', () => {
     // Squisq: bold/italic/underline, the three view tabs, link, history.
-    // Browser: print, close, new tab, address bar.
+    // Browser: close, new tab, address bar. Print (Cmd+P) is deliberately
+    // claimed for quick-open; printing stays in the editor's Use view.
     const reserved = [
       { key: 'b', accel: true, shift: false },
       { key: 'i', accel: true, shift: false },
@@ -115,7 +148,6 @@ describe('shell keyboard shortcuts', () => {
       { key: '1', accel: true, shift: true },
       { key: '2', accel: true, shift: true },
       { key: '3', accel: true, shift: true },
-      { key: 'p', accel: true, shift: false },
       { key: 'w', accel: true, shift: false },
       { key: 't', accel: true, shift: false },
       { key: 'l', accel: true, shift: false },
@@ -143,5 +175,6 @@ describe('shell keyboard shortcuts', () => {
   it('renders platform-appropriate labels', () => {
     expect(shortcutLabel('save', false)).to.equal('Ctrl+S');
     expect(shortcutLabel('save', true)).to.equal('⌘S');
+    expect(shortcutLabel('find', true)).to.equal('⌘F');
   });
 });

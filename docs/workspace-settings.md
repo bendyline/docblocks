@@ -53,20 +53,20 @@ own have no folder, so they have no workspace settings.
 Every section and field except `version` is optional. An absent field means
 "inherit" (version history) or "off" (catalog outputs).
 
-| Field                    | Meaning                                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `documents.defaultTheme` | Theme for documents whose frontmatter names none (`squisq-theme`, or the legacy `themeId` / `theme`).                              |
-| `versionHistory.enabled` | `true` / `false` overrides the app-wide version-history preference for this folder.                                                |
-| `versionHistory.keep`    | Revisions kept per document (1–1000; default 50).                                                                                  |
-| `catalog.title`          | Catalog heading (default `Documents`).                                                                                             |
-| `catalog.sort`           | `title` (default), `date` (frontmatter `date`, newest first), or `path`.                                                           |
-| `catalog.exclude`        | Folder or file paths left out of the catalog. `node_modules`, dot-folders, `_files` companions, and `_squisq` are always left out. |
-| `catalog.html.enabled`   | Keep a catalog page up to date.                                                                                                    |
-| `catalog.html.path`      | Catalog page path (default `index.html`); must end in `.html` or `.htm`.                                                           |
-| `catalog.html.theme`     | Theme for the catalog page only (default: `documents.defaultTheme`).                                                               |
-| `catalog.json.enabled`   | Keep catalog data up to date.                                                                                                      |
-| `catalog.json.path`      | Catalog data path (default `catalog.json`); must end in `.json`.                                                                   |
-| `catalog.json.content`   | `metadata` (default) or `markdown` to include each document's Markdown source.                                                     |
+| Field                    | Meaning                                                                                                                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `documents.defaultTheme` | Theme for documents whose frontmatter names none (`squisq-theme`, or the legacy `themeId` / `theme`).                                                                                                                                                                              |
+| `versionHistory.enabled` | `true` / `false` overrides the app-wide version-history preference for this folder.                                                                                                                                                                                                |
+| `versionHistory.keep`    | Revisions kept per document (1–1000; default 50).                                                                                                                                                                                                                                  |
+| `catalog.title`          | Catalog heading (default `Documents`).                                                                                                                                                                                                                                             |
+| `catalog.sort`           | `title` (default), `date` (frontmatter `date`, newest first), or `path`.                                                                                                                                                                                                           |
+| `catalog.exclude`        | Folder or file paths left out of the catalog. Dot-folders, `node_modules` (also `bower_components` and `__pycache__`), `_files` companions, and `_squisq` folders are always left out, at any depth. Documents are `.md`, `.markdown`, and `.mdown` files plus outside-in exports. |
+| `catalog.html.enabled`   | Keep a catalog page up to date.                                                                                                                                                                                                                                                    |
+| `catalog.html.path`      | Catalog page path (default `index.html`); must end in `.html` or `.htm`.                                                                                                                                                                                                           |
+| `catalog.html.theme`     | Theme for the catalog page only (default: `documents.defaultTheme`).                                                                                                                                                                                                               |
+| `catalog.json.enabled`   | Keep catalog data up to date.                                                                                                                                                                                                                                                      |
+| `catalog.json.path`      | Catalog data path (default `catalog.json`); must end in `.json`.                                                                                                                                                                                                                   |
+| `catalog.json.content`   | `metadata` (default) or `markdown` to include each document's Markdown source.                                                                                                                                                                                                     |
 
 The file is validated exactly. An unknown field makes it **invalid**, and a
 `version` newer than this DocBlocks understands makes it **unsupported**. In

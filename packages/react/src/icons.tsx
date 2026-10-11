@@ -62,3 +62,11 @@ export function SplitViewIcon() {
     </svg>
   );
 }
+
+export function SearchIcon() {
+  return <FontAwesomeIcon icon="fa-solid fa-magnifying-glass" />;
+}
+
+export function FilesIcon() {
+  return <FontAwesomeIcon icon="fa-solid fa-folder-tree" />;
+}

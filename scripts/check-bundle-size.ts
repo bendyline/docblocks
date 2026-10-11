@@ -40,6 +40,16 @@ interface BundleChunkBudget {
  */
 const FORBIDDEN_ASSETS = Object.freeze(['ffmpeg-core']);
 
+/**
+ * Quick-open and workspace search load on first use. Their shared index and
+ * fuzzy matcher live in a separate chunk; these guard the UI chunks against
+ * pulling heavier shell code in with them.
+ */
+const WORKSPACE_DISCOVERY_CHUNKS: readonly BundleChunkBudget[] = Object.freeze([
+  { label: 'deferred quick-open', prefix: 'QuickOpenDialog-', budgetBytes: 30_000 },
+  { label: 'deferred workspace search', prefix: 'WorkspaceSearchPanel-', budgetBytes: 30_000 },
+]);
+
 const surfaces: BundleSurface[] = [
   {
     name: 'mobile',
@@ -51,6 +61,7 @@ const surfaces: BundleSurface[] = [
     chunkBudgets: [
       { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
+      ...WORKSPACE_DISCOVERY_CHUNKS,
     ],
   },
   {
@@ -67,6 +78,7 @@ const surfaces: BundleSurface[] = [
       // the diagram runtimes are still split out separately.
       { label: 'deferred editor', prefix: 'LazyEditorShell-', budgetBytes: 2_710_000 },
       { label: 'deferred monaco', prefix: 'monaco-', budgetBytes: 8_000_000 },
+      ...WORKSPACE_DISCOVERY_CHUNKS,
     ],
   },
   {
@@ -85,6 +97,7 @@ const surfaces: BundleSurface[] = [
       // (Mermaid, a model client) sliding into them by accident.
       { label: 'deferred AI assistant', prefix: 'AiEditorAssistant-', budgetBytes: 150_000 },
       { label: 'deferred AI diagrams', prefix: 'AiDiagrams-', budgetBytes: 150_000 },
+      ...WORKSPACE_DISCOVERY_CHUNKS,
     ],
   },
   {

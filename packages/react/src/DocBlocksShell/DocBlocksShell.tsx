@@ -144,6 +144,14 @@ const DocumentConflictDialog = lazy(() => import('./DocumentConflictDialog.js'))
 // they load as a split chunk -- the site never pays for them (the entry
 // bundle budget is enforced by scripts/check-bundle-size.ts).
 const GitUI = lazy(() => import('../Git/GitUI.js').then((m) => ({ default: m.GitUI })));
+const QuickOpenDialog = lazy(() =>
+  import('../QuickOpen/QuickOpenDialog.js').then((m) => ({ default: m.QuickOpenDialog })),
+);
+const WorkspaceSearchPanel = lazy(() =>
+  import('../WorkspaceSearch/WorkspaceSearchPanel.js').then((m) => ({
+    default: m.WorkspaceSearchPanel,
+  })),
+);
 const GitGrantNotice = lazy(() =>
   import('../Git/GitGrantNotice.js').then((m) => ({ default: m.GitGrantNotice })),
 );
@@ -274,8 +282,20 @@ import { useInterfaceFontAttribute } from '../layout/useInterfaceFontAttribute.j
 import { useEdgeSwipe } from './useEdgeSwipe.js';
 import { useEditorFileDrop } from './useEditorFileDrop.js';
 import { useShellShortcuts, type ShellShortcutHandlers } from './useShellShortcuts.js';
+import { findShortcutLabel, isApplePlatform, shortcutLabel } from './keyboard-shortcuts.js';
+import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-ranking.js';
+import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
+import { FindButton } from '../components/FindButton.js';
+import { focusFindInput } from '../components/find-input.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
+import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
+import {
+  forgetRecentDocuments,
+  loadRecentDocuments,
+  recordRecentDocument,
+  relocateRecentDocuments,
+} from '../WorkspaceIndex/recent-documents.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
 import { createNativeFileActions } from './native-file-actions.js';
@@ -479,6 +499,12 @@ export interface DocBlocksShellProps {
   onApplyUpdate?: () => void;
   /** Host-supplied content rendered at the right edge of the editor status bar. */
   statusBarSlotRight?: React.ReactNode;
+  /**
+   * When the shared workspace index (link picker, quick-open, search) reads
+   * the workspace: `eager` once the app is idle (default), `on-demand` when a
+   * feature first needs it (hosts whose listings are expensive), `off` never.
+   */
+  workspaceIndex?: WorkspaceIndexMode;
   /** Show Copy controls on ordinary fenced code blocks (default: true). */
   showCodeCopyButton?: boolean;
   /**
@@ -851,6 +877,7 @@ export function DocBlocksShell({
   updateAvailable = false,
   onApplyUpdate,
   statusBarSlotRight,
+  workspaceIndex: workspaceIndexMode = 'eager',
   showCodeCopyButton = true,
   onCopyCode,
   allowRecording = true,
@@ -1374,17 +1401,31 @@ export function DocBlocksShell({
   );
   const workspaceOutputsSchedulerRef = useRef(workspaceOutputs.scheduler);
   workspaceOutputsSchedulerRef.current = workspaceOutputs.scheduler;
-  /** Something in `workspaceId` changed; refresh that workspace's catalog outputs. */
+  // The one shared listing of the workspace's documents. Workspace-wide
+  // discovery (link picker, quick-open, search) reads it instead of walking.
+  const workspaceIndex = useWorkspaceIndex(provider, activeWorkspaceId, workspaceIndexMode);
+  const workspaceIndexRef = useRef(workspaceIndex.index);
+  workspaceIndexRef.current = workspaceIndex.index;
+  /**
+   * Something in `workspaceId` changed; refresh that workspace's catalog
+   * outputs and index. Every durable commit and tree mutation funnels here.
+   */
   const notifyWorkspaceChanged = useCallback(
     (workspaceId: string | null | undefined, path?: string) => {
       const scheduler = workspaceOutputsSchedulerRef.current;
       if (scheduler && workspaceId && scheduler.workspaceId === workspaceId) scheduler.notify(path);
+      const index = workspaceIndexRef.current;
+      if (index && workspaceId && index.workspaceId === workspaceId) {
+        if (path) index.invalidate(path);
+        else index.refresh({ force: true });
+      }
     },
     [],
   );
   workingTreeChangedRef.current = () => {
     refreshWorkspaceSettings();
     workspaceOutputsSchedulerRef.current?.notify();
+    workspaceIndexRef.current?.refresh({ force: true });
   };
 
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
@@ -1440,6 +1481,39 @@ export function DocBlocksShell({
   const [selectedImage, setSelectedImage] = useState<EditableShellDocument['image']>(undefined);
   const [selectedManagedOutput, setSelectedManagedOutput] =
     useState<EditableShellDocument['managedOutput']>(undefined);
+  // Squisq's find bar is controlled here so Ctrl/Cmd+F, the toolbar button and
+  // the desktop Edit menu all drive one state. Each document starts closed.
+  const [findMode, setFindMode] = useState(false);
+  const findModeRef = useRef(findMode);
+  findModeRef.current = findMode;
+  useEffect(() => {
+    setFindMode(false);
+  }, [selectedFile]);
+  const openFind = useCallback(() => {
+    if (!findModeRef.current) {
+      setFindMode(true);
+      return;
+    }
+    focusFindInput(document.querySelector('.db-shell-editor-area') ?? document);
+  }, []);
+  const findShortcut = useMemo(findShortcutLabel, []);
+  const searchShortcut = useMemo(() => shortcutLabel('workspace-search', isApplePlatform()), []);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [quickOpenFocusRequest, setQuickOpenFocusRequest] = useState(0);
+  // The sidebar shows the file tree or workspace search; the search panel
+  // mounts on first use and then stays mounted so it keeps its results.
+  const [sidebarView, setSidebarView] = useState<'files' | 'search'>('files');
+  const [searchMounted, setSearchMounted] = useState(false);
+  const [searchFocusRequest, setSearchFocusRequest] = useState(0);
+  // Every way of opening a document (explorer, quick-open, pins, links, restore)
+  // ends in `selectedFile`, so recency and index priority follow it here.
+  useEffect(() => {
+    if (!activeWorkspaceId || !selectedFile) return;
+    if (getTransientWorkspace(activeWorkspaceId) === null) {
+      recordRecentDocument(activeWorkspaceId, selectedFile);
+    }
+    workspaceIndex.index?.prioritize([selectedFile]);
+  }, [activeWorkspaceId, selectedFile, workspaceIndex.index]);
   const editorViewPreferences = useMemo(() => {
     const layoutMode = defaultOutsideInLayoutMode(selectedOutsideIn);
     return layoutMode && viewPreferences.layoutMode === undefined
@@ -1572,7 +1646,6 @@ export function DocBlocksShell({
     setFileExplorerSortMode(mode);
     saveFileExplorerSortMode(mode);
   }, []);
-  const [documentLinkEpoch, setDocumentLinkEpoch] = useState(0);
   const [initialView, setInitialView] = useState<EditorView>('wysiwyg');
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
   // First-run gateway over the welcome document's Play view.
@@ -2657,9 +2730,9 @@ export function DocBlocksShell({
   }, [mediaProvider]);
 
   const documentLinkProvider = useDocumentLinkProvider(
-    provider,
+    workspaceIndex.index,
     selectedSourceFile ?? selectedFile,
-    documentLinkEpoch,
+    workspaceIndex.ensure,
   );
 
   // Expose a DocumentVersionManager via versioningRef when requested.
@@ -2832,7 +2905,6 @@ export function DocBlocksShell({
       if (pendingDbk) {
         pendingDbk.provider.replaceContents(pendingDbk.snapshot);
         pendingDbkConflictsRef.current.delete(conflictKey!);
-        setDocumentLinkEpoch((epoch) => epoch + 1);
         setMediaEpoch((epoch) => epoch + 1);
         setExplorerKey((key) => key + 1);
       }
@@ -3534,11 +3606,46 @@ export function DocBlocksShell({
   // PWA jump list). Handled once the first workspace/provider is ready,
   // then stripped from the URL so a reload doesn't re-trigger it.
 
+  // Find needs a mounted text editor -- not the empty state, the generated
+  // catalog page, or an image.
+  const canFind =
+    selectedFile !== null &&
+    mediaProvider !== null &&
+    selectedManagedOutput !== 'catalog-html' &&
+    selectedImage === undefined;
+  const canFindRef = useRef(canFind);
+  canFindRef.current = canFind;
+
+  // Both only open or refocus, never toggle, so a key that also reaches a
+  // native menu accelerator cannot close what it just opened.
+  const { ensure: ensureWorkspaceIndex } = workspaceIndex;
+  const openQuickOpen = useCallback(() => {
+    ensureWorkspaceIndex();
+    setQuickOpenOpen(true);
+    setQuickOpenFocusRequest((request) => request + 1);
+  }, [ensureWorkspaceIndex]);
+  const openWorkspaceSearch = useCallback(() => {
+    ensureWorkspaceIndex();
+    if (singlePane) setMobileShowEditor(false);
+    else if (sidebarPreference === 'collapsed') updateSidebarPreference('pinned');
+    setSidebarView('search');
+    setSearchMounted(true);
+    setSearchFocusRequest((request) => request + 1);
+  }, [ensureWorkspaceIndex, singlePane, sidebarPreference, updateSidebarPreference]);
+  const canBrowseWorkspace =
+    provider !== null && activeWorkspaceId !== null && workspaceIndexMode !== 'off';
+
   // One capture listener for every shell shortcut; see keyboard-shortcuts.ts
   // for what is bound and which keys Squisq owns.
   const shortcutHandlers: ShellShortcutHandlers = useMemo(
     () => ({
       save: saveActiveDocument,
+      // Claimed only while a document can be searched, so Ctrl+F on the empty
+      // state still reaches the browser's own page search.
+      ...(canFind ? { find: openFind } : {}),
+      ...(canBrowseWorkspace
+        ? { 'quick-open': openQuickOpen, 'workspace-search': openWorkspaceSearch }
+        : {}),
       'new-document': () => void handleNewFile(),
       'new-folder': () => void handleNewFolder(),
       'toggle-sidebar': () => {
@@ -3565,12 +3672,22 @@ export function DocBlocksShell({
       // Registered ONLY while the drawer is open. useShellShortcuts claims an
       // event as soon as a handler exists for it, so an always-present
       // Escape handler would swallow Escape from every menu and dialog in the
-      // app even when there was no drawer to close.
+      // app even when there was no drawer to close. While it is registered it
+      // runs before Dialog's own listener, so it closes an open dialog first.
       ...(singlePane && !mobileShowEditor
-        ? { 'close-overlay': () => setMobileShowEditor(true) }
+        ? {
+            'close-overlay': () => {
+              if (!dismissTopmostDialog()) setMobileShowEditor(true);
+            },
+          }
         : {}),
     }),
     [
+      canFind,
+      openFind,
+      canBrowseWorkspace,
+      openQuickOpen,
+      openWorkspaceSearch,
       saveActiveDocument,
       handleNewFile,
       handleNewFolder,
@@ -3661,6 +3778,9 @@ export function DocBlocksShell({
         case 'file:revealWorkspace':
           handleRevealWorkspace();
           break;
+        case 'edit:find':
+          if (canFindRef.current) openFind();
+          break;
         case 'git:commit':
           if (gitRef.current.repo) gitRef.current.openDialog({ kind: 'commit' });
           break;
@@ -3714,7 +3834,7 @@ export function DocBlocksShell({
           break;
       }
     });
-  }, [handleNewFile, handleOpenFolder, handleRevealWorkspace, acknowledge]);
+  }, [handleNewFile, handleOpenFolder, handleRevealWorkspace, acknowledge, openFind]);
 
   // OS open-file / deep-link handling lives after the container helpers it
   // depends on -- see the `openTransient` + onOpenRequest effect below.
@@ -3892,6 +4012,40 @@ export function DocBlocksShell({
     [nativeWorkspaceId, outsideInActionsForEntry],
   );
 
+  const quickOpenPins = useMemo<QuickOpenPin[]>(
+    () =>
+      pinnedDocumentItems.map(({ workspaceId, workspaceName, path }) => ({
+        workspaceId,
+        workspaceName,
+        path,
+      })),
+    [pinnedDocumentItems],
+  );
+  const quickOpenRecent = useMemo(
+    () => (quickOpenOpen && activeWorkspaceId ? loadRecentDocuments(activeWorkspaceId) : []),
+    [quickOpenOpen, activeWorkspaceId],
+  );
+  const handleQuickOpenChoice = useCallback(
+    (item: QuickOpenItem) => {
+      setQuickOpenOpen(false);
+      if (item.workspaceId === activeWorkspaceId) {
+        void handleSelect(item.path, 'file');
+        return;
+      }
+      const pin = pinnedDocumentItems.find(
+        (document) => document.workspaceId === item.workspaceId && document.path === item.path,
+      );
+      if (pin) void handlePinnedDocumentSelect(pin);
+    },
+    [activeWorkspaceId, handleSelect, handlePinnedDocumentSelect, pinnedDocumentItems],
+  );
+  const handleSearchOpen = useCallback(
+    (request: WorkspaceSearchOpenRequest) => {
+      void handleSelect(request.path, 'file');
+    },
+    [handleSelect],
+  );
+
   const handleEditorLinkClick = useCallback(
     (href: string): boolean => {
       const target = resolveShellEditorLinkTarget(href, selectedSourceFile ?? selectedFile);
@@ -4043,13 +4197,13 @@ export function DocBlocksShell({
   const handleTreeChange = useCallback(
     async (change?: FileTreeChange) => {
       if (!provider) return;
-      setDocumentLinkEpoch((epoch) => epoch + 1);
       notifyWorkspaceChanged(activeWorkspaceId);
       if (change?.type === 'move' && change.oldPath && change.newPath) {
         if (activeWorkspaceId) {
           setPinnedDocuments((current) =>
             relocatePinnedDocuments(current, activeWorkspaceId, change.oldPath, change.newPath),
           );
+          relocateRecentDocuments(activeWorkspaceId, change.oldPath, change.newPath);
         }
         const nextFile = selectedFile
           ? relocateProviderPath(selectedFile, change.oldPath, change.newPath)
@@ -4161,6 +4315,7 @@ export function DocBlocksShell({
     setPinnedDocuments((current) =>
       relocatePinnedDocuments(current, document.workspaceId, document.path, newPath),
     );
+    relocateRecentDocuments(document.workspaceId, document.path, newPath);
     setPinnedDocumentAvailability((current) => {
       const oldKey = pinnedDocumentKey(document);
       const nextKey = pinnedDocumentKey(relocated);
@@ -4883,6 +5038,7 @@ export function DocBlocksShell({
         await (await loadIndexedDbFileSystem()).deleteIndexedDBWorkspaceData(workspaceId);
       }
       await removeWorkspace(workspaceId);
+      forgetRecentDocuments(workspaceId);
       for (const document of pinnedDocuments) {
         if (document.workspaceId === workspaceId) {
           setPinnedAvailability(document, 'missing');
@@ -4958,6 +5114,21 @@ export function DocBlocksShell({
       <GitContext.Provider value={git}>
         {promptDialog}
         {confirmDialog}
+        {quickOpenOpen && activeWorkspaceId && (
+          <Suspense fallback={null}>
+            <QuickOpenDialog
+              index={workspaceIndex.index}
+              status={workspaceIndex.status}
+              workspaceId={activeWorkspaceId}
+              activePath={selectedFile}
+              recent={quickOpenRecent}
+              pins={quickOpenPins}
+              focusRequest={quickOpenFocusRequest}
+              onOpen={handleQuickOpenChoice}
+              onClose={() => setQuickOpenOpen(false)}
+            />
+          </Suspense>
+        )}
         {newDocumentDialogOpen && (
           <NewDocumentDialog
             initialFormat={defaultNewFileFormat}
@@ -5131,6 +5302,10 @@ export function DocBlocksShell({
             )}
             <FileExplorer
               key={explorerKey}
+              // Hidden, not unmounted, while search shows: it keeps its expanded folders.
+              className={sidebarView === 'search' ? 'db-sidebar-view--hidden' : undefined}
+              onShowSearch={canBrowseWorkspace ? openWorkspaceSearch : undefined}
+              searchShortcutLabel={searchShortcut}
               provider={provider}
               outsideInRender={outsideInRenderRef.current}
               defaultNewFileFormat={defaultNewFileFormat}
@@ -5169,6 +5344,18 @@ export function DocBlocksShell({
                   : undefined
               }
             />
+            {searchMounted && (
+              <Suspense fallback={null}>
+                <WorkspaceSearchPanel
+                  index={workspaceIndex.index}
+                  status={workspaceIndex.status}
+                  hidden={sidebarView !== 'search'}
+                  focusRequest={searchFocusRequest}
+                  onOpen={handleSearchOpen}
+                  onShowFiles={() => setSidebarView('files')}
+                />
+              </Suspense>
+            )}
             {singlePane && showWelcomeGateway && (
               <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
                 <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
@@ -5356,6 +5543,8 @@ export function DocBlocksShell({
                         allowVersioning={selectedImage === undefined && effectiveVersioning}
                         viewPreferences={editorViewPreferences}
                         onViewPreferencesChange={handleViewPreferencesChange}
+                        findMode={findMode}
+                        onFindModeChange={setFindMode}
                         versionBasename={
                           versionBasename ?? stripExtension(basenameOf(selectedFile))
                         }
@@ -5403,6 +5592,13 @@ export function DocBlocksShell({
                         }
                         toolbarSlotRight={
                           <>
+                            {canFind && (
+                              <FindButton
+                                active={findMode}
+                                onActiveChange={setFindMode}
+                                shortcutLabel={findShortcut}
+                              />
+                            )}
                             {ai && (
                               <Suspense fallback={null}>
                                 <AiToolbarControl

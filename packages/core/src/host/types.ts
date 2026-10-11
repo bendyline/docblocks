@@ -197,6 +197,8 @@ export type MenuCommand =
   | 'help:about'
   | 'help:checkForUpdates'
   | 'help:viewOnGitHub'
+  /** Open (or refocus) the find bar in the active document. */
+  | 'edit:find'
   /** Start or stop dictation into the active editor. */
   | 'edit:toggleDictation'
   /** Read the document (or the selection) aloud, or stop reading. */

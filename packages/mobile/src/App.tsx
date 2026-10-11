@@ -17,6 +17,9 @@ createRoot(document.getElementById('root')!).render(
       appBuildDate={__DOCBLOCKS_BUILD_DATE__}
       calcEngineFactory={SITE_CALC_ENGINE_FACTORY}
       proofing={SITE_PROOFING_PROVIDER}
+      // Native listings re-read every file beneath each folder, so index
+      // only once quick-open, search, or the link picker asks for it.
+      workspaceIndex="on-demand"
     />
   </StrictMode>,
 );

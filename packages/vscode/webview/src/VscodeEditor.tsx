@@ -10,6 +10,10 @@ import React, { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRe
 import '@bendyline/squisq-react/styles';
 import '@bendyline/docblocks-react/styles';
 import {
+  FindButton,
+  findShortcutLabel,
+  focusFindInput,
+  isFindShortcut,
   pickEmptyDocumentPrompt,
   useResponsivePreviewViewportPreset,
 } from '@bendyline/docblocks-react/editor';
@@ -40,7 +44,6 @@ import { readVscodeBodyTheme, type VscodeColorScheme } from './vscodeBodyTheme.j
 import { getVscodeApi } from './vscodeApi.js';
 import { WebviewDocumentClient, type WebviewDocumentScope } from './webviewDocumentClient.js';
 import { VscodeWebviewRecovery } from './webviewRecovery.js';
-import { VscodeFindButton } from './VscodeFindButton.js';
 import { preloadMonacoRuntime } from './monacoRuntime.js';
 import { markdownUsesMonacoWidget } from './optionalEditorRuntimes.js';
 import { createVscodeProofingBridge, type VscodeProofingBridge } from './vscodeProofingBridge.js';
@@ -116,6 +119,9 @@ export function VscodeEditor() {
   const [sessionStatus, setSessionStatus] = useState<DocumentSessionMessageStatus>('idle');
   const [recoveryConflict, setRecoveryConflict] = useState<string | null>(null);
   const [findMode, setFindMode] = useState(false);
+  const findShortcut = useMemo(findShortcutLabel, []);
+  const findModeRef = useRef(findMode);
+  findModeRef.current = findMode;
   const markdownRef = useRef<string | null>(null);
   const fileNameRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
@@ -213,6 +219,20 @@ export function VscodeEditor() {
       const message = documentClientRef.current.createSave(requestId);
       if (!message) return;
       vscode.postMessage(message);
+    }
+
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, []);
+
+  useEffect(() => {
+    // One find UI in every view: claim Ctrl/Cmd+F before Monaco's own widget.
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!isFindShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (findModeRef.current) focusFindInput();
+      else setFindMode(true);
     }
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
@@ -525,7 +545,11 @@ export function VscodeEditor() {
           )}
           toolbarSlotRight={
             <>
-              <VscodeFindButton active={findMode} onActiveChange={setFindMode} />
+              <FindButton
+                active={findMode}
+                onActiveChange={setFindMode}
+                shortcutLabel={findShortcut}
+              />
               <Suspense fallback={null}>
                 <VscodeExportButton
                   selectedFile={fileName}

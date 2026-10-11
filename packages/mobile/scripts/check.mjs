@@ -55,7 +55,7 @@ assert.equal(read('dist/THIRD_PARTY_NOTICES.txt'), read('THIRD_PARTY_NOTICES.txt
 assert.equal(read('dist/NATIVE_NOTICES.txt'), read('NATIVE_NOTICES.txt'));
 const nativeModules = JSON.parse(read('native/android/dependencies.json')).modules;
 const lockedModules = read('android/app/gradle.lockfile')
-  .split('\n')
+  .split(/\r?\n/)
   .filter(
     (line) =>
       !line.startsWith('#') && line.split('=')[1]?.split(',').includes('releaseRuntimeClasspath'),
