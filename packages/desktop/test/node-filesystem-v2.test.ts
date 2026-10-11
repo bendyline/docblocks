@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -321,6 +322,50 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
       await fs.rm(rootPath, { recursive: true, force: true });
     }
   });
+
+  it('rehashes only files whose metadata changed between listings', async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-digest-'));
+    const id = `node-v2-digest-${++providerSequence}`;
+    await fs.writeFile(path.join(rootPath, 'stable.md'), 'stable');
+    await fs.writeFile(path.join(rootPath, 'edited.md'), 'one');
+    roots.register(id, rootPath);
+    const hashed: string[] = [];
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Digest reuse', rootPath, roots, {
+      openReadableFile: async (absolutePath) => {
+        const handle = await fs.open(absolutePath, 'r');
+        return {
+          stat: () => handle.stat({ bigint: true }),
+          readFile: () => handle.readFile(),
+          hashFile: async () => {
+            hashed.push(path.basename(absolutePath));
+            const data = await handle.readFile();
+            const digest = createHash('sha256').update(data).digest('hex');
+            return { digest, byteLength: data.byteLength };
+          },
+          close: () => handle.close(),
+        };
+      },
+    });
+    const versionOf = (listing: readonly { name: string; version: string }[], name: string) =>
+      listing.find((entry) => entry.name === name)?.version;
+    try {
+      await provider.initialize();
+      const root = parseWorkspacePath('/');
+      const first = await provider.readDirectory(root);
+      await provider.readDirectory(root);
+      expect([...hashed].sort()).to.deep.equal(['edited.md', 'stable.md']);
+
+      await fs.writeFile(path.join(rootPath, 'edited.md'), 'two');
+      const second = await provider.readDirectory(root);
+      expect([...hashed].sort()).to.deep.equal(['edited.md', 'edited.md', 'stable.md']);
+      expect(versionOf(second, 'stable.md')).to.equal(versionOf(first, 'stable.md'));
+      expect(versionOf(second, 'edited.md')).not.to.equal(versionOf(first, 'edited.md'));
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
@@ -407,6 +452,43 @@ describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
       expect(external?.type).to.equal('modified');
       expect(external?.version).not.to.equal(localVersion);
       expect(new TextDecoder().decode((await provider.readFile(note))?.data)).to.equal('external');
+      await subscription.dispose();
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  });
+
+  it('does not hash dot-folders or node_modules when a watch session opens', async () => {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-ignored-'));
+    const id = `node-v2-watch-ignored-${++providerSequence}`;
+    for (const folder of ['.git/objects', 'node_modules/pkg', 'notes']) {
+      await fs.mkdir(path.join(rootPath, folder), { recursive: true });
+    }
+    await fs.writeFile(path.join(rootPath, '.git', 'objects', 'blob'), 'object');
+    await fs.writeFile(path.join(rootPath, 'node_modules', 'pkg', 'index.js'), 'module');
+    await fs.writeFile(path.join(rootPath, 'notes', 'note.md'), 'note');
+    roots.register(id, rootPath);
+    const opened: string[] = [];
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Watch ignored', rootPath, roots, {
+      acquireWatcher: () => new ControlledWatcher().handle,
+      openReadableFile: async (absolutePath) => {
+        opened.push(path.relative(rootPath, absolutePath).replace(/\\/g, '/'));
+        const handle = await fs.open(absolutePath, 'r');
+        return {
+          stat: () => handle.stat({ bigint: true }),
+          readFile: () => handle.readFile(),
+          close: () => handle.close(),
+        };
+      },
+    });
+
+    try {
+      await provider.initialize();
+      const subscription = provider.watch(() => undefined);
+      await subscription.ready;
+      expect(new Set(opened)).to.deep.equal(new Set(['notes/note.md']));
       await subscription.dispose();
     } finally {
       await provider.dispose();

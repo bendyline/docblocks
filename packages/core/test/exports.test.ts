@@ -81,6 +81,7 @@ describe('Core exports', () => {
       'isFileSystemMoveRecoveryError',
       'isFileSystemMoveStateError',
       'isFileSystemPartialMoveError',
+      'isIgnoredWorkspaceEntryName',
       'isNativeFileSystemSupported',
       'isQuotaExceededError',
       'isSerializedFsError',

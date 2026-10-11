@@ -3,6 +3,7 @@ import type { FileSystemEntry, FileSystemProvider } from '@bendyline/docblocks/f
 import {
   FsError,
   getFileSystemProviderV2,
+  isIgnoredWorkspaceEntryName,
   parseWorkspacePath,
 } from '@bendyline/docblocks/filesystem';
 import { compareFileNames } from '../FileExplorer/entry-sort.js';
@@ -160,8 +161,8 @@ export async function collectMarkdownFiles(
     for (let index = entries.length - 1; index >= 0; index -= 1) {
       const entry = entries[index];
       if (entry.kind === 'directory') {
-        const lower = entry.name.toLowerCase();
-        if (lower.startsWith('.') || lower === 'node_modules' || lower.endsWith('_files')) continue;
+        if (isIgnoredWorkspaceEntryName(entry.name)) continue;
+        if (entry.name.toLowerCase().endsWith('_files')) continue;
         if (current.depth >= maxDepth) {
           throw new DocumentDiscoveryError(
             'limit',

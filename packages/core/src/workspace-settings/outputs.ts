@@ -18,6 +18,7 @@
 
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import { FsError } from '../filesystem/fs-error.js';
+import { isIgnoredWorkspaceEntryName } from '../filesystem/ignored-entries.js';
 import type {
   FileSystemEntrySnapshot,
   FileSystemProviderV2,
@@ -203,7 +204,7 @@ async function collectCandidates(
   const outputPaths = new Set(
     [resolved.html?.path, resolved.json?.path].filter(Boolean).map((path) => path!.toLowerCase()),
   );
-  const exclude = [...resolved.exclude, 'node_modules'];
+  const exclude = resolved.exclude;
   const candidates: Candidate[] = [];
   const queue: Array<{ path: WorkspacePath; depth: number }> = [{ path: WORKSPACE_ROOT, depth: 0 }];
   let directories = 0;
@@ -225,7 +226,7 @@ async function collectCandidates(
       throw error;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith('.') || isExcluded(entry.path, exclude)) continue;
+      if (isIgnoredWorkspaceEntryName(entry.name) || isExcluded(entry.path, exclude)) continue;
       if (entry.kind === 'directory') {
         if (entry.name.endsWith('_files') || entry.name === '_squisq') continue;
         if (depth + 1 > limits.maxDepth) {

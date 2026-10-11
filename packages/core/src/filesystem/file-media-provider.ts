@@ -16,10 +16,12 @@
  *   • Resolves both bare (`image.png`) and folder-qualified
  *     (`notes_files/image.png`) references — so legacy markdown and
  *     exports from other tools both work
+ *   • Types resolved URLs by file extension, as the workspace containers do
  */
 
 import type { MediaProvider, MediaEntry } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import { guessMimeType } from './internal/mime.js';
 
 function stripExt(name: string): string {
   return name.replace(/\.[^.]+$/, '');
@@ -65,13 +67,10 @@ export function createFileMediaProvider(
       const data = await container.readFile(key);
       if (disposed) return ref;
       if ((generations.get(key) ?? 0) !== generation) return resolveUrl(ref);
-      const entries = data ? await container.listFiles() : [];
-      if (disposed) return ref;
-      if ((generations.get(key) ?? 0) !== generation) return resolveUrl(ref);
       if (!data) return ref;
-      const entry = entries.find((e) => e.path === key);
-      const mimeType = entry?.mimeType ?? 'application/octet-stream';
-      const url = URL.createObjectURL(new Blob([data], { type: mimeType }));
+      // Derive the MIME from the path. Listing the container for it walked
+      // the whole workspace once per media reference.
+      const url = URL.createObjectURL(new Blob([data], { type: guessMimeType(key) }));
       blobUrlCache.set(key, url);
       return url;
     })().finally(() => {

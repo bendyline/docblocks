@@ -6,6 +6,7 @@ import {
   FsError,
   WORKSPACE_ROOT,
   fsErrorFromUnknown,
+  isIgnoredWorkspaceEntryName,
   parseFileSystemVersion,
   parseWorkspacePath,
   workspacePathBasename,
@@ -117,6 +118,12 @@ export interface NodeWorkspaceFileSystemV2Options {
   readonly snapshotByteLimit?: number;
 }
 
+interface RememberedContentDigest {
+  /** `stableMetadataIdentity` of the descriptor observation that was hashed. */
+  readonly identity: string;
+  readonly digest: string;
+}
+
 type PendingWatchEvent =
   | Omit<FileSystemEntryWatchEvent, 'sequence' | 'origin'>
   | Omit<FileSystemOverflowWatchEvent, 'sequence' | 'origin'>;
@@ -124,6 +131,8 @@ type PendingWatchEvent =
 const CAPABILITIES: FileSystemProviderCapabilities = ELECTRON_FILE_SYSTEM_V2_CAPABILITIES;
 const LOCAL_ECHO_WINDOW_MS = 1_000;
 const MAX_STABLE_READ_ATTEMPTS = 3;
+/** Remembered file digests; the oldest is evicted first (~200 bytes each). */
+const MAX_REMEMBERED_CONTENT_DIGESTS = 50_000;
 
 /**
  * Correctness-first Node implementation used behind Electron IPC.
@@ -131,10 +140,13 @@ const MAX_STABLE_READ_ATTEMPTS = 3;
  * Every renderer path is parsed as a canonical WorkspacePath and then passes
  * the physical workspace-root resolver. All local mutations share the same
  * root lock as the v1 IPC handlers. Conditional versions are stable opaque
- * identities derived from file contents. Content-derived versions cost an
- * additional streaming read for metadata-only observations, but prevent a
- * same-size external edit with restored timestamps from bypassing optimistic
- * concurrency. Payload bytes returned by readFile/snapshot remain coupled to
+ * identities derived from file contents, so a same-size external edit with
+ * restored timestamps cannot bypass optimistic concurrency. Each digest is
+ * remembered against the file's full metadata identity (device, inode, size,
+ * mtime, ctime): repeat observations of an unchanged file skip the streaming
+ * read, while any write moves ctime, which utimes cannot restore, and forces a
+ * fresh hash. External watch events also drop the remembered digest. Payload
+ * bytes returned by readFile/snapshot remain coupled to
  * one stable descriptor observation. Directory versions track native metadata
  * and descendant changes observed by this provider; shallow browsing does not
  * hash an entire collapsed subtree.
@@ -153,6 +165,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   private readonly knownEntries = new Map<WorkspacePath, FileSystemEntrySnapshot>();
   private readonly observedVersions = new Map<WorkspacePath, string>();
   private readonly directoryEpochs = new Map<WorkspacePath, number>();
+  private readonly contentDigests = new Map<WorkspacePath, RememberedContentDigest>();
   private readonly echoBatches: EchoBatch[] = [];
   private readonly acquireWatcher: (rootPath: string) => WorkspaceWatcherHandle;
   private readonly openReadableFile: (absolutePath: string) => Promise<NodeWorkspaceReadableFile>;
@@ -316,7 +329,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
             sameFileMetadata(after, pathAfter) &&
             after.size === BigInt(size)
           ) {
-            const scanned = scannedFile(canonical, after, null, 'read', hash.digest('hex'));
+            const digest = hash.digest('hex');
+            this.rememberContentDigest(canonical, after, digest);
+            const scanned = scannedFile(canonical, after, null, 'read', digest);
             this.remember(scanned.entries);
             return withoutData(scanned.root) as FileSystemFileSnapshot;
           }
@@ -685,6 +700,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       this.knownEntries.clear();
       this.observedVersions.clear();
       this.directoryEpochs.clear();
+      this.contentDigests.clear();
     })();
     return this.disposePromise;
   }
@@ -906,7 +922,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           sameFileMetadata(after, pathAfter) &&
           after.size === BigInt(data.byteLength)
         ) {
-          stable = scannedFile(itemPath, after, data, operation, sha256Bytes(data));
+          const digest = sha256Bytes(data);
+          this.rememberContentDigest(itemPath, after, digest);
+          stable = scannedFile(itemPath, after, data, operation, digest);
           if (budget) budget.bytes += data.byteLength;
         }
       } finally {
@@ -936,6 +954,9 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
             'Expected a file, found a directory.',
           );
         }
+        // This exact metadata identity was already hashed; skip the reread.
+        const remembered = this.rememberedContentDigest(itemPath, before);
+        if (remembered !== null) return scannedFile(itemPath, before, null, operation, remembered);
         const hashed = handle.hashFile
           ? await handle.hashFile()
           : hashBytePayload(await handle.readFile());
@@ -947,6 +968,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
           sameFileMetadata(after, pathAfter) &&
           after.size === BigInt(hashed.byteLength)
         ) {
+          this.rememberContentDigest(itemPath, after, hashed.digest);
           stable = scannedFile(itemPath, after, null, operation, hashed.digest);
         }
       } finally {
@@ -997,9 +1019,11 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
       includeData || operation === 'watch' || operation === 'move' || operation === 'remove';
     // Browsing and stat observe the directory itself. Only explicit tree
     // operations descend into collapsed children and consume a traversal budget.
-    const children = (recursive ? await fs.readdir(abs, { withFileTypes: true }) : []).sort(
-      (left, right) => compareText(left.name, right.name),
-    );
+    // The watcher never reports dot-entries or tool-managed folders, so its
+    // baseline scan does not hash `.git` or `node_modules` either.
+    const children = (recursive ? await fs.readdir(abs, { withFileTypes: true }) : [])
+      .filter((child) => operation !== 'watch' || !isIgnoredWorkspaceEntryName(child.name))
+      .sort((left, right) => compareText(left.name, right.name));
     const childScans: ScannedEntry[] = [];
     for (const child of children) {
       childScans.push(
@@ -1352,6 +1376,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     try {
       if (this.watchSession !== session || isClosingWatchSession(session)) return;
       const itemPath = parseWorkspacePath(event.path);
+      // Rehash anything another process touched, even if its metadata looks unchanged.
+      this.contentDigests.delete(itemPath);
       if (await this.shouldSuppressEcho(itemPath)) return;
       if (this.watchSession !== session || isClosingWatchSession(session)) return;
 
@@ -1515,6 +1541,20 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     }
   }
 
+  private rememberedContentDigest(itemPath: WorkspacePath, stat: BigIntStats): string | null {
+    const remembered = this.contentDigests.get(itemPath);
+    return remembered?.identity === stableMetadataIdentity(stat) ? remembered.digest : null;
+  }
+
+  private rememberContentDigest(itemPath: WorkspacePath, stat: BigIntStats, digest: string): void {
+    this.contentDigests.delete(itemPath);
+    if (this.contentDigests.size >= MAX_REMEMBERED_CONTENT_DIGESTS) {
+      const oldest = this.contentDigests.keys().next();
+      if (!oldest.done) this.contentDigests.delete(oldest.value);
+    }
+    this.contentDigests.set(itemPath, { identity: stableMetadataIdentity(stat), digest });
+  }
+
   private observeVersion(itemPath: WorkspacePath, version: string): void {
     const previous = this.observedVersions.get(itemPath);
     if (previous !== undefined && previous !== version) this.invalidateAncestors(itemPath);
@@ -1533,13 +1573,14 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     this.knownEntries.delete(itemPath);
     this.observedVersions.delete(itemPath);
     this.directoryEpochs.delete(itemPath);
+    this.contentDigests.delete(itemPath);
     if (!recursive) return;
     for (const candidate of [...this.knownEntries.keys()]) {
       if (workspacePathContains(itemPath, candidate, false)) {
         this.knownEntries.delete(candidate);
       }
     }
-    for (const cache of [this.observedVersions, this.directoryEpochs]) {
+    for (const cache of [this.observedVersions, this.directoryEpochs, this.contentDigests]) {
       for (const candidate of cache.keys()) {
         if (workspacePathContains(itemPath, candidate, false)) cache.delete(candidate);
       }
