@@ -4,6 +4,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath, URL } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
+import { findJdk21 } from './jdk.mjs';
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const mobile = path.join(root, 'packages/mobile');
 const platform = process.argv[2],
@@ -32,14 +33,8 @@ if (platform === 'android') {
     process.env.ANDROID_HOME ||
     process.env.ANDROID_SDK_ROOT ||
     path.join(process.env.HOME, 'Library/Android/sdk');
-  let java = process.env.JAVA_HOME_21_X64 || process.env.JAVA_HOME;
-  if (!java && process.platform === 'darwin') {
-    const result = spawnSync('/usr/libexec/java_home', ['-v', '21'], { encoding: 'utf8' });
-    if (result.status === 0) java = result.stdout.trim();
-  }
-  if (!existsSync(sdk) || !java)
-    throw new Error('Install Android SDK 36 and JDK 21, then set ANDROID_HOME and JAVA_HOME.');
-  environment = { ...environment, ANDROID_HOME: sdk, JAVA_HOME: java };
+  if (!existsSync(sdk)) throw new Error('Install Android SDK 36, then set ANDROID_HOME.');
+  environment = { ...environment, ANDROID_HOME: sdk, JAVA_HOME: findJdk21() };
 }
 npm(['run', 'mobile:build']);
 npm(['run', 'mobile:check']);

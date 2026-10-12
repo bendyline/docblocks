@@ -1,28 +1,49 @@
 ##
 # App Store Release Workflow
 #
-# Builds the store-submission variants of the DocBlocks desktop app:
+# Builds every store-submission package of DocBlocks:
 #   - Windows: MSIX/APPX for the Microsoft Store (Partner Center)
 #   - macOS:   signed .pkg for the Mac App Store (App Store Connect)
+#   - Android: .aab signed with the upload key, for Google Play (Play Console)
+#   - iOS:     App Store .ipa plus dSYMs, for App Store Connect
 #
-# These are DIFFERENT from the public installers built by desktop-release.yml:
-#   - Auto-update is disabled at runtime (process.windowsStore / process.mas);
-#     the stores deliver updates.
+# These are DIFFERENT from the public installers built by desktop-release.yml
+# and the unsigned review packages built by mobile-native.yml:
+#   - Desktop auto-update is disabled at runtime (process.windowsStore /
+#     process.mas); the stores deliver updates.
 #   - They are attached only to an unpublished draft GitHub Release. Do not use
 #     workflow artifacts here: in a public repository those are directly
 #     downloadable from the workflow run. Maintainers download the private
-#     draft assets for Partner Center / App Store Connect, then delete the
-#     draft when it is no longer needed.
+#     draft assets for each store, then delete the draft when it is no longer
+#     needed. Nothing is uploaded to a store from CI.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
-#     a clean x.y.z version.
+#     a clean x.y.z version. Mobile builds take x.y.z from
+#     packages/mobile/package.json and the explicit `build_number` input as the
+#     Android versionCode and iOS CFBundleVersion. Play and App Store Connect
+#     reject a build number that is not higher than every earlier upload.
 #
-# Prerequisites (one-time setup) — see RELEASING.md:
+# Prerequisites (one-time setup):
 #   Microsoft Store:  reserve the app in Partner Center, fill the appx: identity
 #                     values in electron-builder.yml. No signing cert needed
 #                     (the Store re-signs).
 #   Mac App Store:    "Apple Distribution" + "Mac Installer Distribution" certs
 #                     and a Mac App Store provisioning profile for
-#                     com.bendyline.docblocks.
+#                     com.bendyline.docblocks. Secrets:
+#                     APPLE_MAS_CERTIFICATE_P12_BASE64,
+#                     APPLE_MAS_CERTIFICATE_PASSWORD,
+#                     MAS_PROVISIONING_PROFILE_BASE64, APPLE_TEAM_ID.
+#   Google Play:      a Play Console app for com.bendyline.docblocks.mobile
+#                     enrolled in Play App Signing; Google re-signs with the
+#                     app signing key. Secrets: ANDROID_UPLOAD_KEYSTORE_BASE64,
+#                     ANDROID_UPLOAD_KEYSTORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS,
+#                     ANDROID_UPLOAD_KEY_PASSWORD.
+#   App Store (iOS):  an "Apple Distribution" .p12 (the identity is shared with
+#                     macOS) and an App Store Connect provisioning profile for
+#                     com.bendyline.docblocks.mobile that authorizes it.
+#                     Secrets: IOS_DISTRIBUTION_CERTIFICATE_BASE64,
+#                     IOS_DISTRIBUTION_CERTIFICATE_PASSWORD,
+#                     IOS_PROVISIONING_PROFILE_BASE64.
+#   Store each file secret as single-line base64 (`base64 -i FILE`).
 ##
 
 name: Release Store Builds
@@ -33,19 +54,88 @@ on:
       target:
         description: 'Which store build(s) to produce'
         required: true
-        default: 'both'
+        default: 'all'
         type: choice
         options:
-          - both
+          - all
+          - desktop
+          - mobile
           - windows
           - macos
+          - android
+          - ios
+      build_number:
+        description: 'Mobile build number (Play versionCode / iOS CFBundleVersion), higher than any upload; required for android and ios'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  # Fails in seconds, rather than after the quality gate, when a requested
+  # build lacks its signing secrets or a valid mobile build number.
+  preflight:
+    name: Check Inputs and Signing Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.targets.outputs.windows }}
+      macos: ${{ steps.targets.outputs.macos }}
+      android: ${{ steps.targets.outputs.android }}
+      ios: ${{ steps.targets.outputs.ios }}
+
+    steps:
+      - name: Resolve targets and check signing secrets
+        id: targets
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          APPLE_MAS_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_MAS_CERTIFICATE_P12_BASE64 }}
+          MAS_PROVISIONING_PROFILE_BASE64: ${{ secrets.MAS_PROVISIONING_PROFILE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          case "$TARGET" in
+            all) targets='windows macos android ios' ;;
+            desktop) targets='windows macos' ;;
+            mobile) targets='android ios' ;;
+            *) targets="$TARGET" ;;
+          esac
+          required=()
+          for target in windows macos android ios; do
+            selected=false
+            [[ " $targets " == *" $target "* ]] && selected=true
+            echo "$target=$selected" >> "$GITHUB_OUTPUT"
+            [ "$selected" = true ] || continue
+            case "$target" in
+              macos) required+=(APPLE_MAS_CERTIFICATE_P12_BASE64 MAS_PROVISIONING_PROFILE_BASE64) ;;
+              android) required+=(ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_UPLOAD_KEYSTORE_PASSWORD ANDROID_UPLOAD_KEY_ALIAS ANDROID_UPLOAD_KEY_PASSWORD) ;;
+              ios) required+=(IOS_DISTRIBUTION_CERTIFICATE_BASE64 IOS_DISTRIBUTION_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64) ;;
+            esac
+          done
+          status=0
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for the requested store build"
+              status=1
+            fi
+          done
+          if [[ " $targets " == *" android "* || " $targets " == *" ios "* ]] &&
+            ! [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
+            echo "::error::build_number must be a positive integer of at most 9 digits, higher than every mobile build already uploaded"
+            status=1
+          fi
+          exit "$status"
+
   quality:
     name: Canonical Quality Gate
+    needs: preflight
     runs-on: ubuntu-latest
 
     steps:
@@ -74,7 +164,7 @@ jobs:
 
   create-draft-release:
     name: Create Private Draft Release
-    needs: quality
+    needs: [preflight, quality]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -83,12 +173,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Read desktop version
-        id: desktop
+      - name: Read desktop and mobile versions
+        id: versions
         shell: bash
         run: |
-          version="$(node --print "require('./packages/desktop/package.json').version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          desktop="$(node --print "require('./packages/desktop/package.json').version")"
+          mobile="$(node --print "require('./packages/mobile/package.json').version")"
+          echo "desktop=$desktop" >> "$GITHUB_OUTPUT"
+          echo "mobile=$mobile" >> "$GITHUB_OUTPUT"
+          if [ "$desktop" = "$mobile" ]; then
+            echo "label=v$desktop" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=desktop v$desktop / mobile v$mobile" >> "$GITHUB_OUTPUT"
+          fi
 
       # A unique, previously unpublished tag keeps reruns isolated. GitHub does
       # not publish the release or its tag while the release remains a draft.
@@ -97,11 +194,13 @@ jobs:
         with:
           tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
           target_commitish: ${{ github.sha }}
-          name: DocBlocks Store Build v${{ steps.desktop.outputs.version }} (run ${{ github.run_number }})
+          name: DocBlocks Store Build ${{ steps.versions.outputs.label }} (run ${{ github.run_number }})
           body: |
-            Private store-submission build for DocBlocks Desktop v${{ steps.desktop.outputs.version }}.
+            Private store-submission build for DocBlocks ${{ steps.versions.outputs.label }}.
 
             - Target: `${{ inputs.target }}`
+            - Desktop version: `${{ steps.versions.outputs.desktop }}`
+            - Mobile version: `${{ steps.versions.outputs.mobile }}`, build number `${{ inputs.build_number || 'n/a' }}`
             - Source commit: `${{ github.sha }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -116,8 +215,8 @@ jobs:
   # Windows — Microsoft Store MSIX (unsigned; the Store re-signs on ingestion)
   # ──────────────────────────────────────────────────────────────────────────
   build-msix:
-    needs: [quality, create-draft-release]
-    if: ${{ inputs.target == 'both' || inputs.target == 'windows' }}
+    needs: [preflight, quality, create-draft-release]
+    if: ${{ needs.preflight.outputs.windows == 'true' }}
     runs-on: windows-latest
     permissions:
       contents: write
@@ -168,8 +267,8 @@ jobs:
   # macOS — Mac App Store .pkg (sandboxed; signed with MAS distribution certs)
   # ──────────────────────────────────────────────────────────────────────────
   build-mas:
-    needs: [quality, create-draft-release]
-    if: ${{ inputs.target == 'both' || inputs.target == 'macos' }}
+    needs: [preflight, quality, create-draft-release]
+    if: ${{ needs.preflight.outputs.macos == 'true' }}
     # Pin the signing image to match desktop-release.yml's Developer ID build.
     # `macos-latest` moved from macOS 15 to macOS 26, where codesign changed
     # behavior; keep Mac App Store signing on the same known-good image.
@@ -263,4 +362,118 @@ jobs:
           tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
           draft: true
           files: packages/desktop/dist/artifacts/**/*.pkg
+          fail_on_unmatched_files: true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Android — Google Play app bundle (signed with the upload key; Play App
+  # Signing re-signs it with the app signing key for delivery)
+  # ──────────────────────────────────────────────────────────────────────────
+  build-aab:
+    needs: [preflight, quality, create-draft-release]
+    if: ${{ needs.preflight.outputs.android == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Select installed JDK and Android toolchain
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          # Hosted images install the command-line tools without adding them to PATH.
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+
+      # The Linux quality gate already ran the Android storage contract through
+      # mobile:test:available. mobile:store rebuilds, checks, and syncs the web
+      # payload, signs the bundle, verifies the upload-key signature with
+      # jarsigner, and compares every bundled web file against the Vite output.
+      - name: Build signed app bundle
+        env:
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: npm run mobile:store -- android "$BUILD_NUMBER"
+
+      - name: Attach app bundle to private draft release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          draft: true
+          files: reports/mobile-store/*/docblocks-android-*
+          fail_on_unmatched_files: true
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # iOS — App Store Connect IPA (manually signed with an Apple Distribution
+  # identity and an App Store provisioning profile; nothing is uploaded)
+  # ──────────────────────────────────────────────────────────────────────────
+  build-ipa:
+    needs: [preflight, quality, create-draft-release]
+    if: ${{ needs.preflight.outputs.ios == 'true' }}
+    # The Gezel system-provider adapters require Xcode 27, matching mobile-native.yml.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Setup governed npm
+        uses: ./.github/actions/setup-npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # npm run all runs on Linux, so it cannot run the Swift storage suite.
+      # Qualify this exact commit before signing it.
+      - name: Run iOS native tests
+        run: npm run mobile:test:ios
+
+      # The script restores the Xcode project, keychain search list, and
+      # provisioning profiles, and deletes its temporary keychain, whether or
+      # not the build succeeds.
+      - name: Archive and export App Store IPA
+        env:
+          # Vite's mobile bundle exceeds the Xcode runner's default 2 GiB Node heap.
+          NODE_OPTIONS: --max-old-space-size=4096
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: npm run mobile:store -- ios "$BUILD_NUMBER"
+
+      - name: Attach IPA and symbols to private draft release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: store-build-${{ github.run_id }}-${{ github.run_attempt }}
+          draft: true
+          files: reports/mobile-store/*/docblocks-ios-*
           fail_on_unmatched_files: true

@@ -201,6 +201,21 @@ export default tseslint.config(
         ...globals.node,
       },
     },
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'electron',
+              importNames: ['safeStorage'],
+              message:
+                'DocBlocks never uses the OS credential store: a keychain item prompts whenever the code signature changes. Keep secrets in owner-only files (see main/ai/ai-credentials.ts).',
+            },
+          ],
+        },
+      ],
+    },
   },
 
   // Disable rules that conflict with Prettier (must be last)

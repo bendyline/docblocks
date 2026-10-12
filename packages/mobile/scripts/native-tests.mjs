@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import process from 'node:process';
 import path from 'node:path';
+import { findJdk21 } from './jdk.mjs';
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const mobile = path.join(repo, 'packages/mobile');
 const output = path.join(repo, 'reports/mobile-native');
@@ -51,19 +52,11 @@ if (
 ) {
   if (!androidHome || !existsSync(androidHome))
     throw new Error('Set ANDROID_HOME to an installed Android SDK.');
-  let javaHome = process.env.JAVA_HOME_21_X64 || process.env.JAVA_HOME;
-  if (!javaHome && process.platform === 'darwin') {
-    const result = spawnSync('/usr/libexec/java_home', ['-v', '21'], { encoding: 'utf8' });
-    if (result.status === 0) javaHome = result.stdout.trim();
-  }
+  const javaHome = findJdk21();
   const suffix = process.platform === 'win32' ? '.exe' : '';
-  const java = javaHome ? path.join(javaHome, 'bin', `java${suffix}`) : `java${suffix}`;
-  const javac = javaHome ? path.join(javaHome, 'bin', `javac${suffix}`) : `javac${suffix}`;
-  const environment = {
-    ...process.env,
-    ANDROID_HOME: androidHome,
-    ...(javaHome ? { JAVA_HOME: javaHome } : {}),
-  };
+  const java = path.join(javaHome, 'bin', `java${suffix}`);
+  const javac = path.join(javaHome, 'bin', `javac${suffix}`);
+  const environment = { ...process.env, ANDROID_HOME: androidHome, JAVA_HOME: javaHome };
   // The tracked Gradle settings include Capacitor's generated, gitignored
   // Cordova plugin project and app assets, which a fresh checkout lacks.
   // `cap sync` generates both from the mobile web build (packages/mobile/dist).

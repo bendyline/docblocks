@@ -60,7 +60,13 @@ electronFuses:
   # signature here; signed release builds replace it immediately afterward.
   resetAdHocDarwinSignature: true
   runAsNode: false
-  enableCookieEncryption: true
+  # Cookie encryption keeps its key in the macOS Keychain / a Linux keyring, so
+  # any change of code signature (ad hoc local builds, Mac App Store beside
+  # Developer ID) prompts for the keychain password. DocBlocks keeps nothing in
+  # cookies, so leave it off; check:desktop-config fails if it is re-enabled.
+  # Turning it off after releases that had it on only drops embedded sites'
+  # cookies, which Chromium can no longer decrypt.
+  enableCookieEncryption: false
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true

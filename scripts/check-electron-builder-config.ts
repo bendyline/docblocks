@@ -73,6 +73,23 @@ function requireValidUnsignedMacFuseSignature(): void {
 
 requireValidUnsignedMacFuseSignature();
 
+// DocBlocks must never make the OS credential store prompt. Cookie encryption
+// is the one Chromium feature that would read a keychain key on every launch.
+function requireNoKeychainCookieEncryption(): void {
+  if (!isRecord(config) || !isRecord(config.electronFuses)) {
+    failConfigPolicy('electron-builder.yml must configure Electron fuses.');
+  }
+  if (config.electronFuses.enableCookieEncryption !== false) {
+    failConfigPolicy(
+      'electron-builder.yml must set enableCookieEncryption: false; DocBlocks keeps nothing in cookies and must not use the keychain.',
+    );
+  }
+
+  process.stdout.write('electron-builder.yml: cookie encryption (keychain) off OK\n');
+}
+
+requireNoKeychainCookieEncryption();
+
 function requireLegalResources(): void {
   if (!isRecord(config) || !Array.isArray(config.extraResources)) {
     failConfigPolicy('electron-builder.yml must copy distribution legal notices.');

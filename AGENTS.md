@@ -273,7 +273,10 @@ are load-bearing and each has a test:
 The SDK is ESM-only and the main bundle is CJS, so it stays external in tsup
 and is reached by dynamic `import()`; it must be a desktop **dependency** (not a
 devDependency) or electron-builder leaves it out of app.asar. The grant lives in
-a `safeStorage`-encrypted file under userData, never in `settings.json`. A Mac
+an owner-only file under userData, never in `settings.json`. DocBlocks never uses
+the OS credential store: no `safeStorage` (ESLint rejects it in main) and no
+cookie encryption (`check:desktop-config` rejects it), because a keychain item
+prompts for a password whenever the reading app's signature changes. A Mac
 App Store build exposes the same `host.ai` seam but uses a private service in
 `userData/ai/gezel`; it never discovers standalone Gezel or borrows external
 model homes. The main-stamped `--docblocks-ai` switch enables that bridge.

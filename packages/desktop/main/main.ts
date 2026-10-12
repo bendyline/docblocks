@@ -86,11 +86,11 @@ const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
 const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
 
 // Chromium otherwise auto-detects GNOME Keyring/KWallet and can show an unlock
-// prompt at startup. DocBlocks stores no credentials in its browser session;
-// Git and gh retain ownership of their own credentials outside Electron. The
-// one credential DocBlocks does keep — an inference-only Gezel grant — goes
-// through safeStorage, which this backend obscures rather than protects; see
-// ai/ai-credentials.ts for why that is acceptable for that token.
+// prompt at startup. DocBlocks never uses an OS credential store on any
+// platform: cookies stay unencrypted (electron-builder.yml), Git and gh retain
+// ownership of their own credentials outside Electron, and the one credential
+// DocBlocks keeps — its Gezel grant — is an owner-only file; see
+// ai/ai-credentials.ts.
 configureLinuxCredentialStorage(process.platform, app.commandLine);
 
 // Bundled native engines and ONNX Runtime import the Visual C++ runtime, which

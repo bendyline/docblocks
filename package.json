@@ -133,6 +133,7 @@
     "mobile:test:android": "node packages/mobile/scripts/native-tests.mjs android",
     "mobile:test:available": "node packages/mobile/scripts/native-tests.mjs available",
     "mobile:package": "node packages/mobile/scripts/package-native.mjs",
+    "mobile:store": "node packages/mobile/scripts/store-native.mjs",
     "mobile:test:android:device": "node packages/mobile/scripts/android-device-tests.mjs",
     "mobile:test:android:editor": "node packages/mobile/scripts/android-editor-smoke.mjs",
     "mobile:test:ios:ai": "node packages/mobile/scripts/ios-ai-smoke.mjs",

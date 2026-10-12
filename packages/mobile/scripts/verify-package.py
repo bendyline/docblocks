@@ -11,7 +11,9 @@ web = pathlib.Path(web_dir)
 expected = {str(p.relative_to(web)): hashlib.sha256(p.read_bytes()).hexdigest() for p in web.rglob('*') if p.is_file()}
 assert expected and 'index.html' in expected and 'THIRD_PARTY_NOTICES.txt' in expected
 if platform == 'ios':
-    app = pathlib.Path(artifact) / 'Products/Applications/App.app'
+    # An Xcode archive, or an exported store IPA extracted to a directory.
+    bundle = pathlib.Path(artifact)
+    app = bundle / ('Products/Applications/App.app' if (bundle / 'Products').is_dir() else 'Payload/App.app')
     info = plistlib.loads((app / 'Info.plist').read_bytes())
     assert info['CFBundleIdentifier'] == 'com.bendyline.docblocks.mobile'
     assert info['CFBundleShortVersionString'] == version and info['CFBundleVersion'] == build_number

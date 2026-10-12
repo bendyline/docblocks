@@ -10,7 +10,7 @@
  */
 
 import path from 'node:path';
-import { BrowserWindow, app, safeStorage } from 'electron';
+import { BrowserWindow, app } from 'electron';
 import type { WebContents } from 'electron';
 import {
   HOST_WIRE_LIMITS,
@@ -22,7 +22,7 @@ import {
 import type { AiChatEvent, AiModelInstallEvent } from '@bendyline/docblocks/host';
 
 import { registerTrustedIpcHandler } from './ipc-authority.js';
-import { EncryptedFileCredentialStore } from './ai/ai-credentials.js';
+import { OwnerOnlyFileCredentialStore } from './ai/ai-credentials.js';
 import { createSettingsAiPreferenceStore } from './ai/ai-preferences.js';
 import { AiService } from './ai/ai-service.js';
 import { GezelConnector } from './ai/gezel-connector.js';
@@ -33,9 +33,8 @@ const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
 export function createAiService(): AiService {
   const macAppStore = process.mas === true;
-  const credentials = new EncryptedFileCredentialStore(
+  const credentials = new OwnerOnlyFileCredentialStore(
     path.join(app.getPath('userData'), 'ai', 'gezel-credential.bin'),
-    safeStorage,
   );
   return new AiService({
     connector: new GezelConnector({
