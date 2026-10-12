@@ -30,4 +30,12 @@ describe('file entry visibility', () => {
   it('continues to hide dot entries from user-facing file lists', () => {
     expect(isHiddenFileEntry(entry('/guides/.versions'))).to.equal(true);
   });
+
+  it('hides tool-managed folders but not lookalike names', () => {
+    expect(isHiddenFileEntry(entry('/node_modules'))).to.equal(true);
+    expect(isHiddenFileEntry(entry('/site/Node_Modules'))).to.equal(true);
+    expect(isHiddenFileEntry(entry('/scripts/__pycache__'))).to.equal(true);
+    expect(isHiddenFileEntry(entry('/node_modules_notes'))).to.equal(false);
+    expect(isHiddenFileEntry(entry('/notes/modules'))).to.equal(false);
+  });
 });

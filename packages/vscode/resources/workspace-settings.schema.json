@@ -1,0 +1,114 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DocBlocks workspace settings",
+  "description": "Settings shared by everyone who opens this folder in DocBlocks. Every section is optional.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "version": {
+      "const": 1,
+      "description": "Settings format version."
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultTheme": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+          "description": "Theme for documents whose frontmatter does not name one. A document’s own theme always wins."
+        }
+      }
+    },
+    "versionHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Keep prior revisions for documents in this folder. Omit to use the app default."
+        },
+        "keep": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "Revisions kept per document."
+        }
+      }
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Catalog heading. Defaults to \"Documents\"."
+        },
+        "sort": {
+          "enum": ["title", "path", "date"],
+          "description": "Catalog order. Defaults to \"title\"."
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "description": "Workspace-relative folders or files left out of the catalog."
+        },
+        "html": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Regenerate the catalog page on every save."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "\\.html?$",
+              "description": "Catalog page path. Defaults to \"index.html\"."
+            },
+            "theme": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+              "description": "Theme for the catalog page only."
+            }
+          }
+        },
+        "json": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Regenerate the catalog data on every save."
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "\\.json$",
+              "description": "Catalog data path. Defaults to \"catalog.json\"."
+            },
+            "content": {
+              "enum": ["metadata", "markdown"],
+              "description": "\"metadata\" (default) or \"markdown\" to include each document’s source."
+            }
+          }
+        }
+      }
+    }
+  }
+}

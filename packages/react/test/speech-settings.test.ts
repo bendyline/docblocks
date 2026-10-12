@@ -34,11 +34,18 @@ const KOKORO: SpeechModelInfo = {
   id: 'kokoro-82m-v1.0',
   kind: 'tts',
   label: 'Kokoro (English voices)',
-  downloadBytes: 96_539_036,
+  downloadBytes: 96_538_975,
   license: 'Apache-2.0',
 };
 
-function fakeSpeech(options: { installed?: boolean; tts?: boolean } = {}) {
+function fakeSpeech(
+  options: {
+    installed?: boolean;
+    tts?: boolean;
+    updateRequired?: boolean;
+    sharedStorage?: boolean;
+  } = {},
+) {
   const calls: string[] = [];
   let installed = options.installed ?? false;
   let preferences: SpeechPreferences = { sttModel: null, voice: null, speed: 1 };
@@ -54,7 +61,13 @@ function fakeSpeech(options: { installed?: boolean; tts?: boolean } = {}) {
   });
   const catalog = (): SpeechCatalog => ({
     models: [
-      { ...BASE, installed, source: installed ? 'app' : null },
+      {
+        ...BASE,
+        installed,
+        source: installed ? 'app' : null,
+        ...(options.sharedStorage ? { sharedStorage: true } : {}),
+        ...(!installed && options.updateRequired ? { updateRequired: true } : {}),
+      },
       ...(options.tts === false
         ? []
         : [{ ...KOKORO, installed, source: installed ? ('app' as const) : null }]),
@@ -155,6 +168,18 @@ describe('Speech settings', () => {
     expect(formatModelSize(2 * 1024 ** 3)).to.equal('2.0 GB');
   });
 
+  it('keeps removal available for this app’s references to shared storage', async () => {
+    const fake = fakeSpeech({ installed: true, sharedStorage: true, tts: false });
+    const view = await render(fake.api);
+    try {
+      expect(view.container.textContent).to.contain('Shared speech storage');
+      await act(async () => button(view.container, 'Remove')?.click());
+      expect(fake.calls).to.include('remove whisper-base.en');
+    } finally {
+      await view.cleanup();
+    }
+  });
+
   it('downloads a model only from a button press and shows progress', async () => {
     const fake = fakeSpeech();
     const view = await render(fake.api);
@@ -171,6 +196,25 @@ describe('Speech settings', () => {
       expect(fake.calls).to.include('cancel whisper-base.en');
       await act(async () => fake.complete());
       await flush();
+      expect(view.container.textContent).to.contain('Ready. Use the microphone button');
+    } finally {
+      await view.cleanup();
+    }
+  });
+
+  it('offers an update for an older revision and waits for an explicit gesture', async () => {
+    const fake = fakeSpeech({ updateRequired: true, tts: false });
+    const view = await render(fake.api);
+    try {
+      expect(fake.calls).to.deep.equal([]);
+      expect(view.container.textContent).to.contain('Update required');
+      expect(button(view.container, 'Download')).to.equal(undefined);
+      expect(button(view.container, 'Remove')).not.to.equal(undefined);
+      await act(async () => button(view.container, 'Update')?.click());
+      expect(fake.calls).to.deep.equal(['install whisper-base.en']);
+      await act(async () => fake.complete());
+      await flush();
+      expect(button(view.container, 'Update')).to.equal(undefined);
       expect(view.container.textContent).to.contain('Ready. Use the microphone button');
     } finally {
       await view.cleanup();

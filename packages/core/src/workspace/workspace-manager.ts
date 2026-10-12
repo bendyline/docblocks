@@ -18,7 +18,8 @@ import { parsePersistedWorkspaceList } from './workspace-schema.js';
 const DB_NAME = 'docblocks-workspaces';
 const STORE_NAME = 'workspaces';
 const LIST_KEY = 'workspace-list';
-const DEFAULT_WORKSPACE_ID = 'default';
+/** Id of the browser-local workspace `ensureDefaultWorkspace` creates. */
+export const DEFAULT_WORKSPACE_ID = 'default';
 
 /**
  * The registry deliberately uses the error-propagating store rather than the

@@ -4,9 +4,8 @@ import { gunzipSync } from 'node:zlib';
 import {
   type KokoroLexicon,
   parseKokoroLexicon,
-  phonemizeForKokoro,
-  splitForKokoro,
-  tokenizeKokoroPhonemes,
+  planKokoroSpeech,
+  type KokoroWordTokens,
 } from '@bendyline/gezel/kokoro';
 
 /**
@@ -30,6 +29,7 @@ export interface KokoroUtterance {
   readonly phonemes: string;
   /** Padded token ids. */
   readonly tokens: readonly number[];
+  readonly words: readonly KokoroWordTokens[];
 }
 
 /** American voices are `a*`, British voices are `b*`; anything else reads as American. */
@@ -95,18 +95,16 @@ export class KokoroFrontend {
     const lexicon = await this.lexicon(kokoroLanguageForVoice(voiceId));
     const utterances: KokoroUtterance[] = [];
     for (const sentence of splitSentences(text)) {
-      const phonemes = phonemizeForKokoro(sentence.text, { lexicon });
-      if (!phonemes) continue;
-      // A very long sentence still has to fit the model's style table.
-      for (const piece of splitForKokoro(phonemes)) {
-        const { tokens } = tokenizeKokoroPhonemes(piece);
-        // Two pad frames and nothing else would be silence.
-        if (tokens.length <= 2) continue;
+      for (const piece of planKokoroSpeech(sentence.text, { lexicon })) {
         utterances.push({
-          textStart: sentence.start,
-          textEnd: sentence.end,
-          phonemes: piece,
-          tokens,
+          ...piece,
+          textStart: sentence.start + piece.textStart,
+          textEnd: sentence.start + piece.textEnd,
+          words: piece.words.map((word) => ({
+            ...word,
+            textStart: sentence.start + word.textStart,
+            textEnd: sentence.start + word.textEnd,
+          })),
         });
       }
     }

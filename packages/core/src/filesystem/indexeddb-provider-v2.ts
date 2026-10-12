@@ -332,13 +332,10 @@ export class IndexedDBFileSystemProviderV2 implements FileSystemProviderV2 {
           'Expected a directory but found a file.',
         );
       }
-      const paths = await listEntryPaths(tx);
       const children: FileSystemEntrySnapshot[] = [];
-      for (const candidate of paths) {
-        if (candidate && workspacePathDirname(candidate) === canonical) {
-          const entry = await readRequiredEntry(tx, candidate);
-          children.push(toEntrySnapshot(entry));
-        }
+      for (const candidate of await listChildPaths(tx, canonical)) {
+        const entry = await readRequiredEntry(tx, candidate);
+        children.push(toEntrySnapshot(entry));
       }
       children.sort(compareSnapshotsByName);
       return Object.freeze(children);
@@ -1291,6 +1288,24 @@ function entryPathsFromKeys(keys: readonly string[]): WorkspacePath[] {
 
 async function listEntryPaths(tx: IndexedDBFileSystemTransaction): Promise<WorkspacePath[]> {
   return entryPathsFromKeys(await tx.keys());
+}
+
+/**
+ * Direct children of one directory. Reading every key in the store per
+ * listing made a recursive walk O(entries × folders); `childKeys` seeks past
+ * each child's subtree instead.
+ */
+async function listChildPaths(
+  tx: IndexedDBFileSystemTransaction,
+  directory: WorkspacePath,
+): Promise<WorkspacePath[]> {
+  if (!tx.childKeys) {
+    return (await listEntryPaths(tx)).filter(
+      (candidate) => candidate !== '' && workspacePathDirname(candidate) === directory,
+    );
+  }
+  const prefix = directory ? `${entryKey(directory)}/` : ENTRY_PREFIX;
+  return entryPathsFromKeys(await tx.childKeys(prefix));
 }
 
 async function readEntry(

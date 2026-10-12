@@ -56,7 +56,17 @@ test.describe('mobile web-editor ship readiness', () => {
       .getByRole('button', { name: 'More actions' });
     await moreActions.click();
     await expect(page.getByRole('button', { name: 'Bold (Ctrl+B)' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Insert...' })).toBeVisible();
+    // Insert stays inline on current Squisq and sits in this menu on older
+    // releases; either way the phone toolbar must reach it.
+    const insertControl = page
+      .getByRole('button', { name: 'Insert...' })
+      .or(
+        page
+          .locator('.squisq-toolbar-actions')
+          .getByRole('button', { name: 'Insert', exact: true }),
+      )
+      .filter({ visible: true });
+    await expect(insertControl.first()).toBeVisible();
     const overflowMenu = page.locator('.squisq-toolbar-overflow-menu');
     await expect(overflowMenu).toBeVisible();
     const overflowBounds = await overflowMenu.boundingBox();

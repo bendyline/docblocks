@@ -7,6 +7,7 @@ import { mcpCommand } from './commands/mcp.js';
 import { themesCommand } from './commands/themes.js';
 import { transformsCommand } from './commands/transforms.js';
 import { parseCommand } from './commands/parse.js';
+import { workspaceCommand } from './commands/workspace.js';
 import { getPackageVersion } from './version.js';
 
 export const program = new Command()
@@ -20,4 +21,5 @@ export const program = new Command()
   .addCommand(mcpCommand)
   .addCommand(themesCommand)
   .addCommand(transformsCommand)
-  .addCommand(parseCommand);
+  .addCommand(parseCommand)
+  .addCommand(workspaceCommand);

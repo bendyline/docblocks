@@ -13,7 +13,7 @@ A markdown document editor and management platform that ships from one npm-works
 - **Site** (`packages/site`) — a Vite/React demo of the shell, deployed to GitHub Pages
 - **Desktop** (`packages/desktop`) — an Electron app for macOS / Windows / Linux
 - **VS Code extension** (`packages/vscode`) — a custom editor for `*.md` files plus a Setup pane
-- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms
+- **CLI** (`packages/cli`) — `docblocks` binary for build / serve / convert / video / mcp / parse / themes / transforms / workspace
 
 The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendyline/docblocks-react` — the full chrome (file explorer, workspace picker, app menu, export pipeline). The **VS Code webview** is chrome-less: it mounts squisq's `EditorShell` directly because VS Code already provides its own file explorer, workspace, and activity bar. The actual rich-text editor in every surface is **Squisq**, a sister project that lives in `..\squisq` and ships as `@bendyline/squisq*` npm packages.
 
@@ -23,7 +23,7 @@ The **site** and **desktop renderer** both mount `<DocBlocksShell>` from `@bendy
 | ------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core`    | `@bendyline/docblocks`       | Shared types. Multi-entry tsup build with subpaths: `/filesystem`, `/workspace`, `/host`. **Single source of truth for wire types.**                                                                                                                                                                                |
 | `packages/react`   | `@bendyline/docblocks-react` | `<DocBlocksShell>`, `FileExplorer`, `WorkspacePicker`, `AppMenu`, `Export*`, hooks, `styles/docblocks.css`. Consumed by site + desktop renderer. (Ships no fonts — theme fonts live in `packages/site/public/fonts/`.) (VS Code webview uses squisq's `EditorShell` directly — see the editor-shell section below.) |
-| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 8 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                                                                                   |
+| `packages/cli`     | `@bendyline/docblocks-cli`   | Commander program with 9 commands. Owns CLI/MCP policy and delegates parsing, conversion, rendering, and authoring capabilities to linked Squisq.                                                                                                                                                                   |
 | `packages/vscode`  | `docblocks-vscode`           | Extension host (Node) + Vite-built React webview. Dual build: `extension.js` + `extension.web.js` for vscode.dev.                                                                                                                                                                                                   |
 | `packages/desktop` | `docblocks-desktop`          | Electron — `main/` + `preload/preload.ts` + `renderer/` (Vite + React, mounts `<DocBlocksShell>`). Packaged with electron-builder.                                                                                                                                                                                  |
 | `packages/site`    | `docblocks-site`             | Single-component Vite app showing `<DocBlocksShell theme="auto">`.                                                                                                                                                                                                                                                  |
@@ -148,7 +148,7 @@ Four skills live in `.claude/skills/` — invoke with `/<name>`:
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
 | Add a storage backend      | `packages/core/src/filesystem/types.ts` + a new sibling implementation                                    |
 | Add an Electron capability | `packages/core/src/host/types.ts` → `desktop/main/ipc-*.ts` → `desktop/preload/preload.ts`                |
-| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/index.ts`                                    |
+| Add a CLI command          | `packages/cli/src/commands/` + register in `packages/cli/src/program.ts`                                  |
 | Add a VS Code message      | `packages/core/src/vscode/messages.ts` (runtime-validated discriminated union) — handle on both sides     |
 | Add a shared UI component  | `packages/react/src/` — exported via `src/index.ts`                                                       |
 | Add a new format converter | Linked Squisq CLI registry first; then `docs/mcp.md` and DocBlocks MCP exposure                           |

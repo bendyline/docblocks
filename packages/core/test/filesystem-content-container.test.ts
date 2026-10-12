@@ -1,8 +1,38 @@
 import { expect } from 'chai';
 import { FileSystemContentContainer } from '../src/filesystem/filesystem-content-container.js';
 import { MemoryFileSystemProvider } from '../src/filesystem/memory-provider.js';
+import { getFileSystemProviderV2 } from '../src/filesystem/types.js';
 
 describe('FileSystemContentContainer', () => {
+  it('keeps narration sidecars beside their audio when document references include the media folder', async () => {
+    const provider = new MemoryFileSystemProvider('narration-container', 'Narration');
+    const container = new FileSystemContentContainer(provider, 'nested/notes_files', {
+      documentMediaPrefix: 'notes_files',
+    });
+    await container.writeFile('audio/take.webm', new Uint8Array([1, 2]));
+    await container.writeFile(
+      'notes_files/audio/take.webm.timing.json',
+      new TextEncoder().encode('{}'),
+    );
+    expect(await container.exists('notes_files/audio/take.webm')).to.equal(true);
+    expect(await container.readFile('notes_files/audio/take.webm')).to.deep.equal(
+      await container.readFile('audio/take.webm'),
+    );
+    expect((await container.listFiles()).map((entry) => entry.path).sort()).to.deep.equal([
+      'audio/take.webm',
+      'audio/take.webm.timing.json',
+    ]);
+    await container.writeFile('.versions/notes.v1.md', new TextEncoder().encode('old'));
+    expect(await provider.exists('nested/notes_files/.versions/notes.v1.md')).to.equal(true);
+    await container.removeFile('notes_files/audio/take.webm.timing.json');
+    expect(await container.readFile('audio/take.webm.timing.json')).to.equal(null);
+    try {
+      await container.writeFile('notes_files/../../escape', new Uint8Array([0]));
+      throw new Error('accepted traversal');
+    } catch (error: unknown) {
+      expect(String(error)).not.to.contain('accepted traversal');
+    }
+  });
   it('lists content under prefixes containing regular-expression metacharacters', async () => {
     const provider = new MemoryFileSystemProvider('container-prefix', 'Container');
     await provider.writeBinary('/[draft/image.png', new Uint8Array([1, 2, 3]));
@@ -30,6 +60,38 @@ describe('FileSystemContentContainer', () => {
     ];
     expect(await container.listFiles()).to.deep.equal(expected);
     expect(await container.listFiles('notes_files/')).to.deep.equal(expected);
+  });
+
+  it('walks only the folders a prefix scan can match', async () => {
+    const provider = new MemoryFileSystemProvider('pruned-container', 'Container');
+    await provider.writeBinary('/notes_files/video/take.webm', new Uint8Array([1]));
+    await provider.writeBinary('/notes_files/.mediaEdits/take.fx.webm', new Uint8Array([2]));
+    await provider.writeBinary('/other_files/large.webm', new Uint8Array([3]));
+    await provider.writeBinary('/node_modules/pkg/index.js', new Uint8Array([4]));
+    const providerV2 = getFileSystemProviderV2(provider)!;
+    const readDirectory = providerV2.readDirectory.bind(providerV2);
+    const listed: string[] = [];
+    providerV2.readDirectory = (path) => {
+      listed.push(path);
+      return readDirectory(path);
+    };
+    const container = new FileSystemContentContainer(provider, '');
+
+    expect(
+      (await container.listFiles('notes_files/')).map((entry) => entry.path).sort(),
+    ).to.deep.equal(['notes_files/.mediaEdits/take.fx.webm', 'notes_files/video/take.webm']);
+    expect(listed.sort()).to.deep.equal([
+      'notes_files',
+      'notes_files/.mediaEdits',
+      'notes_files/video',
+    ]);
+
+    listed.length = 0;
+    expect((await container.listFiles('notes_files/vi')).map((entry) => entry.path)).to.deep.equal([
+      'notes_files/video/take.webm',
+    ]);
+    expect(listed.sort()).to.deep.equal(['notes_files', 'notes_files/video']);
+    expect(await container.listFiles('missing_files/')).to.deep.equal([]);
   });
 
   it('propagates directory failures instead of returning a partial backup', async () => {

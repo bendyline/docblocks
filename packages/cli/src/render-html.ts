@@ -1,13 +1,13 @@
 import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { markdownToDoc } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { parseMarkdown, readFrontmatterThemeId } from '@bendyline/squisq/markdown';
 import { collectImagePaths, docToHtml } from '@bendyline/squisq-formats/html';
 import { PLAYER_BUNDLE } from '@bendyline/squisq-react/standalone-source';
 import { readContainedFile } from './contained-file.js';
 import { isPathInside } from './internal/paths.js';
 import { isNodeErrorCode } from './internal/node-error.js';
-import { assertKnownThemeId } from './internal/theme.js';
+import { assertKnownThemeId, getAvailableThemeIds } from './internal/theme.js';
 
 export interface ReferencedAssetPath {
   assetRoot: string;
@@ -19,12 +19,19 @@ export interface RenderMarkdownHtmlOptions {
   title: string;
   sourcePath?: string;
   assetRoot?: string;
+  /** Explicit theme; beats the document's own frontmatter. Unknown ids are rejected. */
   themeId?: string;
+  /**
+   * Theme for a document whose frontmatter names none (for example a
+   * workspace default). Never applied over an authored theme; an unknown id
+   * is reported through `onWarning` and ignored.
+   */
+  fallbackThemeId?: string;
   mode?: 'slideshow' | 'static';
   maxAssetBytes?: number;
   /** Optional surface policy applied after mandatory physical containment. */
   allowReferencedAsset?: (asset: ReferencedAssetPath) => boolean;
-  /** Test/programmatic seam; the CLI reports dropped assets on stderr. */
+  /** Test/programmatic seam; the CLI reports dropped assets and ignored themes on stderr. */
   onWarning?: (message: string) => void;
 }
 
@@ -37,8 +44,16 @@ export async function renderMarkdownHtml(
   options: RenderMarkdownHtmlOptions,
 ): Promise<string> {
   await assertKnownThemeId(options.themeId);
+  const warn = options.onWarning ?? ((message: string) => console.warn(message));
   const markdownDoc = parseMarkdown(markdown);
   const doc = markdownToDoc(markdownDoc);
+  // Every Squisq exporter lets an explicit theme beat frontmatter, so a
+  // fallback is passed only when the document names no theme of its own.
+  const themeId =
+    options.themeId ??
+    (readFrontmatterThemeId(markdownDoc.frontmatter)
+      ? undefined
+      : await usableFallbackThemeId(options.fallbackThemeId, warn));
   const images =
     options.sourcePath && options.assetRoot
       ? await readReferencedImages(
@@ -47,7 +62,7 @@ export async function renderMarkdownHtml(
           options.assetRoot,
           options.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES,
           options.allowReferencedAsset,
-          options.onWarning ?? ((message) => console.warn(message)),
+          warn,
         )
       : undefined;
 
@@ -56,9 +71,21 @@ export async function renderMarkdownHtml(
     images,
     title: options.title,
     mode: options.mode ?? 'static',
-    themeId: options.themeId,
+    themeId,
     showCodeCopyButton: true,
   });
+}
+
+async function usableFallbackThemeId(
+  fallbackThemeId: string | undefined,
+  warn: (message: string) => void,
+): Promise<string | undefined> {
+  if (!fallbackThemeId) return undefined;
+  if ((await getAvailableThemeIds()).includes(fallbackThemeId)) return fallbackThemeId;
+  warn(
+    `Ignoring unknown fallback theme "${fallbackThemeId}"; the document's default theme applies.`,
+  );
+  return undefined;
 }
 
 async function readReferencedImages(

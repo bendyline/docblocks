@@ -5,12 +5,14 @@
  * so a large folder is never scanned twice.
  *
  * Callers must pair every acquire with release(); the watcher closes when
- * the last acquisition releases. Dotfiles are ignored (which also keeps
- * `.git` churn out of these events — git state has its own watcher).
+ * the last acquisition releases. Dot-entries and tool-managed folders such as
+ * `node_modules` are ignored (which also keeps `.git` churn out of these
+ * events — git state has its own watcher).
  */
 
 import fss from 'node:fs';
 import path from 'node:path';
+import { isIgnoredWorkspaceEntryName } from '@bendyline/docblocks/filesystem';
 import chokidar, { type FSWatcher } from 'chokidar';
 
 export interface WorkspaceWatcherEvent {
@@ -42,6 +44,12 @@ interface WatcherState {
 
 const watchers = new Map<string, WatcherState>();
 
+/** Match segments below the root only, so a dot-folder above the workspace does not silence it. */
+function isIgnoredBelowRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, path.resolve(candidate));
+  return relative !== '' && relative.split(/[/\\]/).some(isIgnoredWorkspaceEntryName);
+}
+
 function canonicalWatcherRoot(rootPath: string): string {
   // Watching is privileged native I/O. A missing or inaccessible root must
   // fail closed instead of silently falling back to a lexical path that can
@@ -55,7 +63,7 @@ export function acquireWorkspaceWatcher(rootPath: string): WorkspaceWatcherHandl
   if (!state) {
     const watcher = chokidar.watch(key, {
       ignoreInitial: true,
-      ignored: /(^|[/\\])\../,
+      ignored: (candidate: string) => isIgnoredBelowRoot(key, candidate),
       followSymlinks: false,
       awaitWriteFinish: { stabilityThreshold: 150, pollInterval: 50 },
     });

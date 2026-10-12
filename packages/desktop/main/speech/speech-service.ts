@@ -179,7 +179,9 @@ export class SpeechService {
     const recommended = models.find((model) => model.kind === 'stt' && model.recommended);
     return {
       state: 'download-required',
-      reason: 'Download a dictation model to start dictating.',
+      reason: recommended?.updateRequired
+        ? 'Update the dictation model in Settings to start dictating.'
+        : 'Download a dictation model to start dictating.',
       ...(recommended ? { model: recommended.id } : {}),
     };
   }
@@ -193,7 +195,9 @@ export class SpeechService {
       ? { state: 'ready', model: model.id }
       : {
           state: 'download-required',
-          reason: 'Download the narration voices to read documents aloud.',
+          reason: model.updateRequired
+            ? 'Update the narration model in Settings to read documents aloud.'
+            : 'Download the narration voices to read documents aloud.',
           model: model.id,
         };
   }

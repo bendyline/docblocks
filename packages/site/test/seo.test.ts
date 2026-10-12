@@ -17,6 +17,13 @@ const MARKETING_ROUTES = [
   'terms',
 ] as const;
 const STATIC_CSP_PAGES = [...MARKETING_ROUTES, '404'] as const;
+const ONLINE_VIDEO_FRAME_SOURCES = [
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://www.dailymotion.com',
+  'https://fast.wistia.net',
+];
 
 async function read(relativePath: string): Promise<string> {
   return readFile(path.join(SITE_ROOT, relativePath), 'utf8');
@@ -93,7 +100,7 @@ function expectIndexableDocument(html: string, canonicalUrl: string): void {
 }
 
 describe('site SEO surface', () => {
-  it('allows local Blob media without weakening script or object policy', async () => {
+  it('allows local Blob media and supported player frames without weakening script policy', async () => {
     const html = await read('index.html');
     const policyDirectives = parseContentSecurityPolicy(html);
 
@@ -109,7 +116,7 @@ describe('site SEO surface', () => {
     expect(policyDirectives.get('object-src')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('base-uri')).to.deep.equal(["'none'"]);
     expect(policyDirectives.get('form-action')).to.deep.equal(["'none'"]);
-    expect(policyDirectives.get('frame-src')).to.deep.equal(["'none'"]);
+    expect(policyDirectives.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
     expect(html).to.include('<meta name="referrer" content="no-referrer" />');
   });
 
@@ -248,10 +255,9 @@ describe('site SEO surface', () => {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
     }
     expect(serviceWorker).to.include("createHandlerBoundToURL('index.html')");
-    expect(serviceWorker).to.include("headers.set('Cross-Origin-Opener-Policy', 'same-origin')");
-    expect(serviceWorker).to.include(
-      "headers.set('Cross-Origin-Embedder-Policy', 'credentialless')",
-    );
+    expect(config).not.to.include('CROSS_ORIGIN_ISOLATION_HEADERS');
+    expect(serviceWorker).not.to.include('Cross-Origin-Opener-Policy');
+    expect(serviceWorker).not.to.include('Cross-Origin-Embedder-Policy');
 
     const allowlist = parseRegexLiterals(extractAllowlistSource(serviceWorker));
     expect(allowlist.length, 'NavigationRoute allowlist entries').to.be.greaterThan(0);

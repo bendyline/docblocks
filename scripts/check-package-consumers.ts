@@ -73,6 +73,8 @@ const packages: readonly PackageUnderTest[] = [
       '@bendyline/docblocks/filesystem/electron',
       '@bendyline/docblocks/document',
       '@bendyline/docblocks/workspace',
+      '@bendyline/docblocks/workspace-settings',
+      '@bendyline/docblocks/workspace-index',
       '@bendyline/docblocks/host',
       '@bendyline/docblocks/share',
       '@bendyline/docblocks/vscode',

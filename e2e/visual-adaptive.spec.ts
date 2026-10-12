@@ -60,6 +60,15 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   await expect(tour.or(startWriting).first()).toBeVisible({ timeout: 30_000 });
   await ((await tour.count()) > 0 ? tour : startWriting).click();
   await expect(page.locator('.squisq-toolbar')).toBeVisible({ timeout: 30_000 });
+  // Masking the status readouts is not enough on its own: a mask is painted at
+  // the element's box, even where a drawer covers it, and the proofing readout
+  // changes width when "Proofing…" becomes "8 issues". Capturing before harper
+  // finishes moved the mask's edge by a few pixels between otherwise identical
+  // runs, so wait for a settled readout.
+  await expect(page.locator('.squisq-proof-status')).toHaveText(
+    /\d+ issues?|✓ Proofing|⚠ Proofing/,
+    { timeout: 60_000 },
+  );
 
   const shell = page.locator('.db-shell');
   if ((await shell.getAttribute('data-db-layout')) === 'single-pane') {

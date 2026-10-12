@@ -5,12 +5,20 @@ import { renderMarkdownHtml } from '../render-html.js';
 import { positiveLimit } from '../internal/limits.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { assertKnownThemeId } from '../internal/theme.js';
+import { createWorkspaceThemeFallback } from '../internal/workspace-settings.js';
 import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
 
 export interface BuildOptions {
   input: string;
   output: string;
   theme?: string;
+  /**
+   * Skip `<input>/.docblocks/workspace.json`. Otherwise, when `theme` is
+   * unset, its `documents.defaultTheme` styles documents that name no theme.
+   */
+  ignoreWorkspaceSettings?: boolean;
+  /** Receives non-fatal warnings; defaults to stderr. */
+  onWarning?: (message: string) => void;
   /** Programmatic traversal budget; CLI callers use the safe default. */
   maxEntries?: number;
   /** Programmatic directory-depth budget; CLI callers use the safe default. */
@@ -52,6 +60,13 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
     throw new Error(`Input directory not found: ${inputDir}`);
   }
   if (!inputStat.isDirectory()) throw new Error(`Input is not a directory: ${inputDir}`);
+  const warn = opts.onWarning ?? ((message: string) => console.warn(message));
+  // An explicit --theme already beats every document's frontmatter, so the
+  // workspace default is read only when it could matter.
+  const fallbackThemeId =
+    opts.theme || opts.ignoreWorkspaceSettings
+      ? undefined
+      : await (await createWorkspaceThemeFallback(inputDir, warn)).resolve();
 
   const markdownFiles = await listMarkdownFiles(inputDir, {
     maxEntries: positiveLimit(opts.maxEntries, DEFAULT_MAX_BUILD_ENTRIES, 'build entry'),
@@ -89,7 +104,9 @@ export async function runBuild(opts: BuildOptions): Promise<BuildResult> {
       sourcePath,
       assetRoot: inputDir,
       themeId: opts.theme,
+      fallbackThemeId,
       mode: 'static',
+      onWarning: warn,
     });
     const outputBytes = Buffer.byteLength(html, 'utf8');
     if (outputBytes > byteLimits.maxOutputBytes) {
@@ -117,6 +134,10 @@ export const buildCommand = new Command('build')
   .option('-i, --input <dir>', 'input directory', '.')
   .option('-o, --output <dir>', 'output directory', 'dist')
   .option('-t, --theme <id>', 'Squisq theme ID to apply')
+  .option(
+    '--ignore-workspace-settings',
+    'do not apply the default theme from <input>/.docblocks/workspace.json',
+  )
   .option('--max-input-bytes <bytes>', 'maximum bytes in one Markdown input')
   .option('--max-total-input-bytes <bytes>', 'maximum aggregate Markdown input bytes')
   .option('--max-output-bytes <bytes>', 'maximum bytes in one generated HTML file')
@@ -128,6 +149,7 @@ export const buildCommand = new Command('build')
         input: opts.input,
         output: opts.output,
         theme: opts.theme,
+        ignoreWorkspaceSettings: opts.ignoreWorkspaceSettings,
         maxInputBytes: parseOptionalByteLimit('--max-input-bytes', opts.maxInputBytes),
         maxTotalInputBytes: parseOptionalByteLimit(
           '--max-total-input-bytes',
@@ -167,6 +189,7 @@ interface BuildCommandOptions {
   readonly input: string;
   readonly output: string;
   readonly theme?: string;
+  readonly ignoreWorkspaceSettings?: boolean;
   readonly maxInputBytes?: string;
   readonly maxTotalInputBytes?: string;
   readonly maxOutputBytes?: string;

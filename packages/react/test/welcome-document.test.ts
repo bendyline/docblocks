@@ -4,10 +4,15 @@ import { createRoot } from 'react-dom/client';
 import { flattenBlocks, validateMarkdownSource } from '@bendyline/squisq/doc';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { MarkdownRenderer } from '@bendyline/squisq-react';
-import { WELCOME_DOCUMENT_CONTENT } from '../src/DocBlocksShell/welcome-document.js';
+import {
+  isAppDefaultWorkspace,
+  WELCOME_DOCUMENT_CONTENT,
+} from '../src/DocBlocksShell/welcome-document.js';
 
 const MARKETING_URLS = [
+  'https://docblocks.com/web/',
   'https://docblocks.com/desktop/',
+  'https://docblocks.com/docs/#mobile-preview',
   'https://docblocks.com/vscode/',
   'https://docblocks.com/cli/',
   'https://docblocks.com/formats/',
@@ -15,6 +20,15 @@ const MARKETING_URLS = [
 ] as const;
 
 describe('welcome document', () => {
+  it('survives the Write view unchanged, so opening it does not rewrite the file', async () => {
+    // The Write view saves whatever its Markdown conversion produces. The
+    // welcome text once lacked the trailing newline every saved document
+    // ends with, so simply opening it in Write modified it.
+    const { markdownToTiptap, tiptapToMarkdown } = await import('@bendyline/squisq-editor-react');
+    const body = WELCOME_DOCUMENT_CONTENT.replace(/^---\n[\s\S]*?\n---\n/, '');
+    expect(tiptapToMarkdown(markdownToTiptap(body))).to.equal(body);
+  });
+
   it('uses valid, diverse presentation templates and a complete value-proposition diagram', () => {
     const result = validateMarkdownSource(WELCOME_DOCUMENT_CONTENT);
     expect(result.diagnostics).to.deep.equal([]);
@@ -71,5 +85,25 @@ describe('welcome document', () => {
       await act(async () => root.unmount());
       container.remove();
     }
+  });
+});
+
+describe('welcome document seeding target', () => {
+  it('only treats the browser default workspace as default in the browser', () => {
+    expect(isAppDefaultWorkspace('default', null)).to.equal(true);
+    expect(isAppDefaultWorkspace('ws-1780000000000', null)).to.equal(false);
+    expect(isAppDefaultWorkspace('native-posts-1780000000000', null)).to.equal(false);
+  });
+
+  it('trusts only the host-marked default for folder workspaces', () => {
+    const defaults = new Set(['electron-docblocks-dev-0123456789abcdef']);
+    expect(isAppDefaultWorkspace('electron-docblocks-dev-0123456789abcdef', defaults)).to.equal(
+      true,
+    );
+    // A folder the user opened, even an empty one, is never written to.
+    expect(isAppDefaultWorkspace('electron-posts-fedcba9876543210', defaults)).to.equal(false);
+    // The browser id means nothing on a folder host, and no marked default means none.
+    expect(isAppDefaultWorkspace('default', defaults)).to.equal(false);
+    expect(isAppDefaultWorkspace('electron-posts-fedcba9876543210', new Set())).to.equal(false);
   });
 });

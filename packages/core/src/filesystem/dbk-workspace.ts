@@ -106,6 +106,9 @@ export async function createDbkWorkspaceSnapshot(
       throw new Error(`The external DBK contains duplicate paths: ${sourcePath}`);
     }
     seenSourcePaths.add(sourcePath);
+    // Workspace settings (`.docblocks/workspace.json`) ride along in workspace
+    // downloads but never apply to a single-document bundle; skip, don't reject.
+    if (sourcePath.startsWith('.docblocks/')) continue;
     if (!/\.md$/iu.test(sourcePath)) {
       throw new Error(
         `The external DBK is corrupt: only Markdown (.md) files are allowed (${sourcePath}).`,

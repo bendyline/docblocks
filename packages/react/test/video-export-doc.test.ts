@@ -1,7 +1,16 @@
 import { expect } from 'chai';
 import { buildPreviewDoc, markdownToDoc } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
-import { applyTransform } from '@bendyline/squisq/transform';
+import { parseMarkdown, setFrontmatterValues } from '@bendyline/squisq/markdown';
+import {
+  applyTransform,
+  defaultPresentationHints,
+  serializePresentationHints,
+  PRESENTATION_HINTS_KEY,
+  createPresentationPlan,
+  serializePresentationPlan,
+  PRESENTATION_KEY,
+} from '@bendyline/squisq/transform';
+import assert from 'node:assert/strict';
 import type { Doc } from '@bendyline/squisq/schemas';
 
 import { buildVideoExportDoc, persistedTransformStyle } from '../src/Export/video-export-doc.js';
@@ -54,6 +63,43 @@ function containsTable(contents: unknown): boolean {
 }
 
 describe('video export document', () => {
+  it('exports dynamic slides from current text without storing generated prose', async () => {
+    const source = setFrontmatterValues('# Weather\n\nThe sky is pink.', {
+      'squisq-transform': 'dynamic-slides',
+      [PRESENTATION_HINTS_KEY]: serializePresentationHints(defaultPresentationHints()),
+    });
+    const first = await buildVideoExportDoc(source);
+    const updated = await buildVideoExportDoc(source.replace('pink', 'blue'));
+    expect(updated.presentationApplied).to.equal(true);
+    expect(JSON.stringify(first.blocks)).to.contain('pink');
+    expect(JSON.stringify(updated.blocks)).to.contain('blue').and.not.contain('pink');
+    expect(JSON.stringify(updated.frontmatter)).not.to.contain('sky');
+    expect(updated.blocks).to.deep.equal(
+      buildPreviewDoc(markdownToDoc(parseMarkdown(source.replace('pink', 'blue')))).blocks,
+    );
+  });
+  it('uses the saved presentation and refuses stale plans or missing narration timings', async () => {
+    const text = '# An idea\n\nWrite your story.\n\n## Share it\n\nMake slides. Add narration.';
+    const raw = markdownToDoc(parseMarkdown(text));
+    const plan = createPresentationPlan(raw);
+    const source = setFrontmatterValues(text, {
+      [PRESENTATION_KEY]: serializePresentationPlan(plan),
+      'squisq-transform': 'documentary',
+    });
+    const exported = await buildVideoExportDoc(source);
+    expect(exported.presentationApplied).to.equal(true);
+    expect(exported.blocks.map((block) => block.id)).to.deep.equal(
+      plan.beats.map((beat) => beat.id),
+    );
+    expect(exported.audio.segments).to.deep.equal([]);
+    await assert.rejects(buildVideoExportDoc(source + '\n\nChanged.'), /text has changed/);
+    await assert.rejects(
+      buildVideoExportDoc(
+        source.replace('# An idea', '{[audio src=take.webm anchor=document]}\n\n# An idea'),
+      ),
+      /timings are unavailable/,
+    );
+  });
   it('exports a section with a body as a content slide that keeps its table', async () => {
     // The raw document is what the exporter used to receive: title only.
     const raw = markdownToDoc(parseMarkdown(TALK));

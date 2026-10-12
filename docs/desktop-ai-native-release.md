@@ -1,9 +1,10 @@
 # Desktop AI native release handoff
 
-The MAS integration is prepared. The final native release and service dependency
-pins remain pending publication. DocBlocks currently uses Gezel service `1.2.1`,
-whose native `0.1.46` release has UV and Metal inference but lacks the Apple helper.
-MAS packaging refuses that payload. No prospective version or hash is trusted.
+The MAS integration is prepared. DocBlocks now pins published Gezel service
+`1.2.4`, which selects notarized native release `0.1.48`. The publication and
+dependency update steps below describe the release process; signed MAS build
+and runtime qualification are still required. No prospective version or hash
+is trusted.
 
 ## Build and publish in Gezel
 

@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import path from 'node:path';
-import { clearGezelEngineOverrides, resolveGezelNativeHost } from '../main/ai/gezel-native-host.js';
+import { resolveGezelNativeHost } from '../main/ai/gezel-native-host.js';
 
 describe('bundled Gezel host policy', () => {
   it('marks MAS engines for sandbox-aware signature verification', () => {
@@ -54,24 +54,5 @@ describe('bundled Gezel host policy', () => {
     expect(resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64').canHost).to.equal(
       true,
     );
-  });
-
-  it('restores engine overrides and removes variables discovered during a hosted lifetime', () => {
-    const env = {
-      GEZEL_NATIVE_ENGINE_VERSION: 'untrusted',
-      GEZEL_LLAMA_SERVER_BIN: 'untrusted',
-      GGML_BACKEND_PATH: '/untrusted/plugin.so',
-      GEZEL_HOME: '/state',
-    } as NodeJS.ProcessEnv;
-    const restore = clearGezelEngineOverrides(env);
-    expect(env).to.deep.equal({ GEZEL_HOME: '/state' });
-    env.GEZEL_UV_BIN = '/bundled/uv';
-    restore();
-    expect(env).to.deep.equal({
-      GEZEL_NATIVE_ENGINE_VERSION: 'untrusted',
-      GEZEL_LLAMA_SERVER_BIN: 'untrusted',
-      GGML_BACKEND_PATH: '/untrusted/plugin.so',
-      GEZEL_HOME: '/state',
-    });
   });
 });

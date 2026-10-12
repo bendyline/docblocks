@@ -3,8 +3,8 @@ const key = 'docblocks-mobile-ai-v1';
 export function installMobileAi() {
   return createMobileAi({
     load: async () => {
-      const { GezelRuntime, connect } = await import('@bendyline/gezel-capacitor');
-      return { runtime: GezelRuntime, client: connect() };
+      const { GezelRuntime, connectEmbeddingRuntime } = await import('@bendyline/gezel-capacitor');
+      return connectEmbeddingRuntime(GezelRuntime);
     },
     readPreferences: () => {
       const saved = localStorage.getItem(key);

@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type {
@@ -193,6 +193,28 @@ describe('SpeechService', () => {
     const result = await service.transcribe({ audio: new ArrayBuffer(44), mimeType: 'audio/wav' });
     expect(result.ok).to.equal(false);
     if (!result.ok) expect(result.error.code).to.equal('model-missing');
+  });
+
+  it('asks for an explicit update when installed speech pins change', async () => {
+    await install('whisper-base.en');
+    await install('kokoro-82m-v1.0');
+    for (const entry of CATALOG) {
+      const file = path.join(root, 'models', entry.id, 'manifest.json');
+      const manifest = JSON.parse(await readFile(file, 'utf8'));
+      manifest.files[0].sha256 = 'a'.repeat(64);
+      await writeFile(file, JSON.stringify(manifest));
+    }
+    const status = await service.status();
+    expect(status.stt).to.include({
+      state: 'download-required',
+      reason: 'Update the dictation model in Settings to start dictating.',
+    });
+    expect(status.tts).to.include({
+      state: 'download-required',
+      reason: 'Update the narration model in Settings to read documents aloud.',
+    });
+    expect(stt.calls).to.deep.equal([]);
+    expect(tts.inputs).to.deep.equal([]);
   });
 
   it('installs with progress, publishes status, and then transcribes', async () => {

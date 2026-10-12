@@ -152,7 +152,9 @@ export function registerAiIpc(service: AiService): void {
       ids.add(requestId);
 
       service.startChat(streamKey(ownerId, requestId), request, (chatEvent: AiChatEvent) => {
-        if (chatEvent.kind !== 'delta') chatOwners.get(ownerId)?.delete(requestId);
+        if (chatEvent.kind === 'done' || chatEvent.kind === 'error') {
+          chatOwners.get(ownerId)?.delete(requestId);
+        }
         if (!sender.isDestroyed()) sender.send('ai:chat:event', { requestId, event: chatEvent });
       });
     },

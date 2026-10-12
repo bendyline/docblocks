@@ -19,6 +19,7 @@ import {
 } from 'react';
 import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-react';
 import type { SharedDocumentMode } from '@bendyline/docblocks/share';
+import { readFrontmatterThemeId } from '@bendyline/squisq/markdown';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
@@ -29,9 +30,9 @@ import type { MediaEditRenderManager } from '@bendyline/squisq-video-react/media
 import type { DocBlocksHostSpeechAPI } from '@bendyline/docblocks/host';
 import type { ExportOptions } from './export-options.js';
 import {
-  DEFAULT_OPTIONS,
   FORMAT_EXTENSIONS,
   loadLastExportOptions,
+  resolveExportDialogInitial,
   saveExportOptions,
 } from './export-options.js';
 import type { ExportBlobSaver } from './run-export.js';
@@ -78,6 +79,8 @@ export interface ExportToolbarControlsProps {
   mediaEditRenders?: MediaEditRenderManager | null;
   /** The host's speech API; when present the menu offers "Export audio…". */
   speech?: DocBlocksHostSpeechAPI;
+  /** Workspace default theme, pre-selected for documents without their own. */
+  defaultThemeId?: string;
   /** Override the default browser download behavior for host-provided save flows. */
   saveBlob?: ExportBlobSaver;
   /** Optional host adapter for displaying, picking, and saving to a native target path. */
@@ -247,6 +250,7 @@ export function ExportToolbarControls({
   shareBaseUrl,
   initialSharedMode = null,
   speech,
+  defaultThemeId,
 }: ExportToolbarControlsProps) {
   const { markdownSource, markdownDoc } = useEditorContext();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -276,32 +280,17 @@ export function ExportToolbarControls({
   const quickDestinationTarget =
     quickDestination?.key === quickDestinationKey ? quickDestination.target : null;
 
-  /** Doc's currently-set squisq theme, pulled from the markdown
-   *  frontmatter. The Document Settings dialog and Theme Customizer
-   *  write the theme under `squisq-theme` (canonical) or `theme`
-   *  (legacy); some older docs persist it as `themeId`. We honor all
-   *  three so an author who set their theme anywhere upstream sees it
-   *  pre-selected in the export dialog. */
-  const docThemeId = useMemo(() => {
-    const fm = markdownDoc?.frontmatter as Record<string, unknown> | undefined;
-    if (!fm) return null;
-    const candidates = [fm['squisq-theme'], fm['theme'], fm['themeId']];
-    for (const v of candidates) {
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
-    return null;
-  }, [markdownDoc]);
+  /** Doc's currently-set squisq theme, read with the same key order
+   *  (`squisq-theme`, then legacy `themeId` / `theme`) Squisq's exporters use. */
+  const docThemeId = useMemo(
+    () => readFrontmatterThemeId(markdownDoc?.frontmatter as Record<string, unknown> | undefined),
+    [markdownDoc],
+  );
 
-  /** Options used to populate the export dialog. Layered: built-in
-   *  defaults → user's last-chosen export options (if any) → doc's
-   *  current frontmatter theme (wins). The frontmatter override
-   *  guarantees that "set theme in the editor, then export" pre-selects
-   *  the right theme instead of resurrecting whatever the user picked
-   *  for some unrelated previous doc. */
-  const dialogInitial = useMemo(() => {
-    const base = lastOptions ?? DEFAULT_OPTIONS;
-    return docThemeId ? { ...base, themeId: docThemeId } : base;
-  }, [lastOptions, docThemeId]);
+  const dialogInitial = useMemo(
+    () => resolveExportDialogInitial(lastOptions, docThemeId, defaultThemeId),
+    [lastOptions, docThemeId, defaultThemeId],
+  );
 
   // Close menu on outside click
   useEffect(() => {

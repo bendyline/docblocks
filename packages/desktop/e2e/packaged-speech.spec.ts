@@ -9,7 +9,7 @@
  *
  *   DOCBLOCKS_E2E_REAL_SPEECH=1
  *   DOCBLOCKS_E2E_WHISPER_MODEL=~/.gezel/engines/whisper-cpp/models/whisper-base.en/ggml-base.en.bin
- *   DOCBLOCKS_E2E_KOKORO_MODEL=<…>/Kokoro-82M-v1.0-ONNX/onnx/model_quantized.onnx
+ *   DOCBLOCKS_E2E_KOKORO_MODEL=<…>/Kokoro-82M-v1.0-ONNX-timestamped/onnx/model_quantized.onnx
  *   DOCBLOCKS_E2E_KOKORO_VOICES=<a directory holding af_heart.bin and the other curated voices>
  */
 

@@ -108,6 +108,10 @@ export async function buildVideoExportDoc(
     documentTitle: documentTitleFromFileName(options.fileName ?? undefined),
     interleaveImages: !narrationOwnsTimeline,
   });
+  const invalidPresentation = projected.diagnostics?.find(
+    (diagnostic) => diagnostic.code === 'presentation-invalid',
+  );
+  if (invalidPresentation) throw new Error(invalidPresentation.message);
   // A document without narration gets a placeholder `{ src: '' }` segment
   // from `buildPreviewDoc` so a live player has a clock to run. The exporter
   // would treat it as real audio to fetch and mix; the preview likewise takes

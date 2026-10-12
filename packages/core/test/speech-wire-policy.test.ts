@@ -3,6 +3,7 @@ import {
   SPEECH_WIRE_LIMITS,
   parseSpeechAudioChunk,
   parseSpeechCatalog,
+  parseSpeechModelInfo,
   parseSpeechError,
   parseSpeechInstallEvent,
   parseSpeechNullResult,
@@ -177,6 +178,13 @@ describe('speech status and catalog', () => {
     ).to.equal(null);
   });
 
+  it('round-trips shared storage ownership and rejects malformed flags', () => {
+    const model = { ...MODEL, source: 'app' as const, sharedStorage: true };
+    expect(parseSpeechModelInfo(model)).to.deep.equal(model);
+    expect(parseSpeechModelInfo({ ...model, sharedStorage: 1 })).to.equal(null);
+    expect(parseSpeechModelInfo({ ...model, source: 'shared' })).to.equal(null);
+  });
+
   it('parses install progress, completion and failure', () => {
     expect(
       parseSpeechInstallEvent({
@@ -195,6 +203,20 @@ describe('speech status and catalog', () => {
       })?.kind,
     ).to.equal('error');
     expect(parseSpeechInstallEvent({ kind: 'progress', progress: { phase: 'x' } })).to.equal(null);
+  });
+
+  it('round-trips an explicit model update requirement and rejects inconsistent values', () => {
+    const oldModel = { ...MODEL, installed: false, source: null, updateRequired: true };
+    const catalog = { models: [oldModel], voices: [] };
+    expect(parseSpeechCatalog(catalog)).to.deep.equal(catalog);
+    for (const invalid of [
+      { ...MODEL, updateRequired: true },
+      { ...oldModel, updateRequired: 'yes' },
+      { ...oldModel, updateRequired: null },
+      { ...oldModel, unexpected: true },
+    ]) {
+      expect(parseSpeechCatalog({ models: [invalid], voices: [] })).to.equal(null);
+    }
   });
 });
 
@@ -277,6 +299,41 @@ describe('parseSpeechSynthesizeEvent', () => {
     expect(parseSpeechAudioChunk({ ...chunk, pcm: new ArrayBuffer(6) })).to.equal(null);
     expect(parseSpeechAudioChunk({ ...chunk, sampleRate: 100 })).to.equal(null);
     expect(parseSpeechAudioChunk({ ...chunk, textStart: 5 })).to.equal(null);
+  });
+
+  it('copies bounded model timings and rejects malformed or unordered metadata', () => {
+    const word = { textStart: 0, textEnd: 4, startSec: 0.1, endSec: 0.2 };
+    const chunk = {
+      index: 0,
+      pcm: new Float32Array(24000),
+      sampleRate: 24000,
+      durationSec: 1,
+      textStart: 0,
+      textEnd: 10,
+      wordTimings: [word, { ...word, startSec: 0.3, endSec: 0.5 }],
+    };
+    const parsed = parseSpeechAudioChunk(chunk)!;
+    expect(parsed.wordTimings).to.deep.equal(chunk.wordTimings);
+    expect(parsed.wordTimings![0]).not.to.equal(word);
+    for (const invalid of [
+      undefined,
+      null,
+      {},
+      [{ ...word, textStart: -1 }],
+      [{ ...word, textEnd: 11 }],
+      [{ ...word, textEnd: 0 }],
+      [{ ...word, startSec: NaN }],
+      [{ ...word, endSec: 1.1 }],
+      [{ ...word, extra: true }],
+      [word, word],
+      [
+        { ...word, textStart: 5, textEnd: 6 },
+        { ...word, startSec: 0.3, endSec: 0.5 },
+      ],
+      Array.from({ length: 1025 }, () => word),
+    ]) {
+      expect(parseSpeechAudioChunk({ ...chunk, wordTimings: invalid })).to.equal(null);
+    }
   });
 
   it('parses progress, done and error events', () => {

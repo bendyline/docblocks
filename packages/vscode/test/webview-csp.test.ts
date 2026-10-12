@@ -21,6 +21,13 @@ interface WebviewHelperModule {
 }
 
 const CSP_SOURCE = 'https://file%2B.vscode-resource.vscode-cdn.net';
+const ONLINE_VIDEO_FRAME_SOURCES = [
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://www.dailymotion.com',
+  'https://fast.wistia.net',
+];
 
 function parseDirectives(html: string): Map<string, readonly string[]> {
   const policyIndex = html.indexOf('http-equiv="Content-Security-Policy"');
@@ -79,6 +86,10 @@ describe('VS Code webview content security policy', () => {
 
   it('permits the WebAssembly compilation the proofing and calculation engines need', () => {
     expect(directives.get('script-src')).to.include("'wasm-unsafe-eval'");
+  });
+
+  it('allows frames only from the supported online video players', () => {
+    expect(directives.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
   });
 
   it('lets the page read its own media (data:/blob: URLs) but nothing remote', () => {

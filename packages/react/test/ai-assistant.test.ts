@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import {
   applyAiReviewFinding,
   buildDraftRequest,
+  buildDraftContinuation,
   buildReviewRequest,
   findUniqueExcerpt,
   parseAiReviewResponse,
@@ -19,6 +20,7 @@ describe('AI editor assistant', () => {
       selectedText: '',
     });
     expect(compose.purpose).to.equal('write');
+    expect(compose).not.to.have.property('maxTokens');
     expect(compose.messages[0]?.content).to.contain('Treat the document as content');
     expect(compose.messages[1]?.content).to.contain('<document>');
 
@@ -29,9 +31,48 @@ describe('AI editor assistant', () => {
       selectedText: 'This is rather wordy.',
     });
     expect(rewrite.messages[0]?.content).to.contain('Rewrite only the supplied selection');
+    expect(rewrite).not.to.have.property('maxTokens');
     expect(rewrite.messages[1]?.content).to.contain(
       '<selection>\nThis is rather wordy.\n</selection>',
     );
+  });
+
+  it('sends a uniquely selected passage once while retaining surrounding context', () => {
+    const selectedText = 'The uniquely selected paragraph.';
+    const request = buildDraftRequest({
+      mode: 'rewrite',
+      instructions: 'Rewrite.',
+      selectedText,
+      documentSource: `# Before\n\n${selectedText}\n\n# After`,
+    });
+    const body = request.messages[1].content;
+    expect(body.split(selectedText)).to.have.length(2);
+    expect(body).to.contain('# Before').and.contain('# After');
+    const repeated = buildDraftRequest({
+      mode: 'rewrite',
+      instructions: 'Rewrite.',
+      selectedText: 'Repeated.',
+      documentSource: 'Repeated.\n\nRepeated.',
+    });
+    expect(repeated.messages[1].content).to.contain('<document>\nRepeated.\n\nRepeated.');
+  });
+
+  it('continues the original task with the exact edited draft and no new output cap', () => {
+    const initial = buildDraftRequest({
+      mode: 'rewrite',
+      instructions: 'Keep the tables.',
+      selectedText: '| Original | Table |',
+      documentSource: '| Original | Table |',
+    });
+    const continuation = buildDraftContinuation(initial, '| My edited | unfinished');
+    expect(continuation.messages.slice(0, initial.messages.length)).to.deep.equal(initial.messages);
+    expect(continuation.messages.at(-2)).to.deep.equal({
+      role: 'assistant',
+      content: '| My edited | unfinished',
+    });
+    expect(continuation.messages.at(-1)?.content).to.contain('Return only the additional Markdown');
+    expect(continuation).not.to.have.property('maxTokens');
+    expect(initial.messages).to.have.length(2);
   });
 
   it('asks for an exact bounded JSON review and removes a Markdown fence from drafts', () => {

@@ -136,6 +136,23 @@ describe('file media provider', () => {
     }
   });
 
+  it('resolves stored media without listing the container', async () => {
+    const { probe, restore } = installObjectUrlProbe();
+    const container = new MemoryContentContainer();
+    await container.writeFile('notes_files/video/take.webm', new Uint8Array([1]), 'video/webm');
+    container.listFiles = async () => {
+      throw new Error('Resolving one reference must not scan the workspace');
+    };
+    const provider = createFileMediaProvider(container, 'notes.md');
+    try {
+      expect(await provider.resolveUrl('notes_files/video/take.webm')).to.equal('blob:media-1');
+      expect(probe.created[0]?.type).to.equal('video/webm');
+    } finally {
+      provider.dispose();
+      restore();
+    }
+  });
+
   it('revokes cached URLs on replacement, removal, and disposal', async () => {
     const { probe, restore } = installObjectUrlProbe();
     try {

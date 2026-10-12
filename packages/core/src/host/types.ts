@@ -45,6 +45,12 @@ export interface ElectronWorkspaceInfo {
   name: string;
   /** Display/persistence metadata only. Privileged host calls accept `id`, never this path. */
   rootPath: string;
+  /**
+   * True for the app's own default workspace — the one DocBlocks creates and
+   * may seed with its starter document. Folders the user picked or cloned are
+   * never default. Hosts that cannot tell omit it.
+   */
+  isDefault?: boolean;
 }
 
 /** Workspace-management operations exposed to the renderer. */
@@ -191,6 +197,8 @@ export type MenuCommand =
   | 'help:about'
   | 'help:checkForUpdates'
   | 'help:viewOnGitHub'
+  /** Open (or refocus) the find bar in the active document. */
+  | 'edit:find'
   /** Start or stop dictation into the active editor. */
   | 'edit:toggleDictation'
   /** Read the document (or the selection) aloud, or stop reading. */

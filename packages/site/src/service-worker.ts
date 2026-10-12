@@ -1,5 +1,4 @@
 import {
-  addPlugins,
   cleanupOutdatedCaches,
   createHandlerBoundToURL,
   precacheAndRoute,
@@ -18,30 +17,6 @@ const serviceWorker = self as unknown as ServiceWorkerRuntime;
 // Preserve the durable, one-time recovery from the legacy catch-all worker.
 // It runs before Workbox installs its own lifecycle listeners.
 serviceWorker.importScripts('pwa-route-migration.js');
-
-function withCrossOriginIsolationHeaders(response: Response): Response {
-  const headers = new Headers(response.headers);
-  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-  headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
-  headers.set('Cross-Origin-Resource-Policy', 'same-origin');
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
-}
-
-// GitHub Pages cannot emit COOP/COEP itself. Once this PWA controls a page,
-// every cached response carries them. These originally enabled
-// SharedArrayBuffer for ffmpeg.wasm; that core is no longer distributed and
-// nothing shipped needs SharedArrayBuffer, but the headers are retained as
-// Spectre-class hardening. The site loads only same-origin subresources under
-// a `default-src 'none'` CSP, so `credentialless` has nothing to block.
-addPlugins([
-  {
-    handlerWillRespond: async ({ response }) => withCrossOriginIsolationHeaders(response),
-  },
-]);
 
 precacheAndRoute((self as unknown as ServiceWorkerRuntime).__WB_MANIFEST);
 cleanupOutdatedCaches();

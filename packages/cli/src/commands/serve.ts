@@ -10,11 +10,23 @@ import { decodeUtf8Text } from '@bendyline/docblocks/filesystem';
 import { positiveLimit } from '../internal/limits.js';
 import { isNodeErrorCode } from '../internal/node-error.js';
 import { assertKnownThemeId } from '../internal/theme.js';
+import {
+  createWorkspaceThemeFallback,
+  type WorkspaceThemeFallback,
+} from '../internal/workspace-settings.js';
 
 export interface ServeOptions {
   port: number;
   dir: string;
   theme?: string;
+  /**
+   * Skip `<dir>/.docblocks/workspace.json`. Otherwise, when `theme` is unset,
+   * its `documents.defaultTheme` styles previewed documents that name no
+   * theme; the file is re-read for each Markdown preview.
+   */
+  ignoreWorkspaceSettings?: boolean;
+  /** Receives non-fatal warnings; defaults to stderr. */
+  onWarning?: (message: string) => void;
   host?: string;
   allowNetwork?: boolean;
   /** Extra Host-header names this server answers to, beyond the bind policy. */
@@ -48,6 +60,11 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
   if (!rootStat.isDirectory()) throw new Error(`Preview root is not a directory: ${root}`);
 
   const host = validateHost(opts.host ?? DEFAULT_HOST, opts.allowNetwork === true);
+  const warn = opts.onWarning ?? ((message: string) => console.warn(message));
+  const themeFallback =
+    opts.theme || opts.ignoreWorkspaceSettings
+      ? null
+      : await createWorkspaceThemeFallback(root, warn);
   const allowedHosts = validateAllowedHosts(opts.allowedHosts ?? []);
   const maxFileBytes = positiveLimit(
     opts.maxFileBytes,
@@ -81,7 +98,7 @@ export async function startPreviewServer(opts: ServeOptions): Promise<PreviewSer
       return;
     }
     activeRequests += 1;
-    handlePreviewRequest(req, res, root, opts.theme, maxFileBytes)
+    handlePreviewRequest(req, res, root, { themeId: opts.theme, themeFallback, warn }, maxFileBytes)
       .catch((error: unknown) => {
         // A dev server exists to give feedback. Swallowing the cause left a
         // bad theme id, a parser crash, or an asset failure showing a bare
@@ -113,6 +130,10 @@ export const serveCommand = new Command('serve')
   .option('-p, --port <port>', 'port to listen on', '3000')
   .option('-d, --dir <dir>', 'directory to serve', '.')
   .option('-t, --theme <id>', 'Squisq theme ID to apply')
+  .option(
+    '--ignore-workspace-settings',
+    'do not apply the default theme from <dir>/.docblocks/workspace.json',
+  )
   .option('--host <host>', 'interface to bind (loopback by default)', DEFAULT_HOST)
   .option('--allow-network', 'allow a non-loopback --host')
   .option('--allow-host <host...>', 'additional Host header names this server answers to')
@@ -121,6 +142,7 @@ export const serveCommand = new Command('serve')
       port: string;
       dir: string;
       theme?: string;
+      ignoreWorkspaceSettings?: boolean;
       host: string;
       allowNetwork?: boolean;
       allowHost?: string[];
@@ -130,6 +152,7 @@ export const serveCommand = new Command('serve')
           port: parsePort(opts.port),
           dir: opts.dir,
           theme: opts.theme,
+          ignoreWorkspaceSettings: opts.ignoreWorkspaceSettings,
           host: opts.host,
           allowNetwork: opts.allowNetwork,
           allowedHosts: opts.allowHost,
@@ -143,11 +166,18 @@ export const serveCommand = new Command('serve')
     },
   );
 
+interface PreviewRenderOptions {
+  readonly themeId: string | undefined;
+  /** Workspace default theme source; null when --theme or the opt-out applies. */
+  readonly themeFallback: WorkspaceThemeFallback | null;
+  readonly warn: (message: string) => void;
+}
+
 async function handlePreviewRequest(
   req: IncomingMessage,
   res: ServerResponse,
   root: string,
-  themeId: string | undefined,
+  render: PreviewRenderOptions,
   maxFileBytes: number,
 ): Promise<void> {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -184,8 +214,10 @@ async function handlePreviewRequest(
       title: path.basename(target.filePath).replace(/\.(md|markdown)$/i, ''),
       sourcePath: target.filePath,
       assetRoot: root,
-      themeId,
+      themeId: render.themeId,
+      fallbackThemeId: render.themeFallback ? await render.themeFallback.resolve() : undefined,
       mode: 'static',
+      onWarning: render.warn,
       allowReferencedAsset: ({ assetRoot, requestedPath, physicalPath }) =>
         isAllowedPreviewPath(assetRoot, requestedPath, physicalPath, 'embedded-image'),
     });

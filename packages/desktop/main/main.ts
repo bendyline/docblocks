@@ -68,6 +68,7 @@ import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
   desktopContentSecurityPolicy,
 } from './content-security-policy.js';
+import { desktopRendererResponseHeaders } from './renderer-response-headers.js';
 import {
   aiAvailabilityArguments,
   hostEnvironmentArguments,
@@ -545,23 +546,16 @@ async function bootstrap(): Promise<void> {
       }),
   });
 
-  // Strict CSP on the renderer.
+  // Strict headers on the top-level DocBlocks renderer only. The default
+  // session also carries hosted-video subframes; rewriting their responses
+  // with DocBlocks' CSP or same-origin CORP makes Chromium reject them.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        // Cross-origin isolation is retained as Spectre-class hardening. It
-        // originally existed for ffmpeg.wasm's SharedArrayBuffer; no shipped
-        // dependency needs SharedArrayBuffer any more, but the renderer loads
-        // only same-origin subresources so `credentialless` costs nothing.
-        // These apply to both the packaged app:// renderer and the trusted
-        // Vite development origin.
-        'Cross-Origin-Opener-Policy': ['same-origin'],
-        'Cross-Origin-Embedder-Policy': ['credentialless'],
-        'Cross-Origin-Resource-Policy': ['same-origin'],
-        'Content-Security-Policy': [desktopContentSecurityPolicy(isDev)],
-      },
-    });
+    const responseHeaders = desktopRendererResponseHeaders(
+      details,
+      desktopContentSecurityPolicy(isDev),
+      isDev ? DEV_SERVER_URL : undefined,
+    );
+    callback(responseHeaders === null ? {} : { responseHeaders });
   });
 
   registerAppProtocol();
@@ -619,7 +613,7 @@ async function bootstrap(): Promise<void> {
   // Reads preferences and starts AI only after opt-in, without prompting.
   void aiService.start();
   // Engines start lazily on first use; nothing is spawned here.
-  speechService = createSpeechService();
+  speechService = await createSpeechService();
   registerSpeechIpc(speechService);
 
   // Probe before the renderer loads so its Git UI and the native menu use the

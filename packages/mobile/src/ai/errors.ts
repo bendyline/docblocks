@@ -15,27 +15,31 @@ export function aiError(value: unknown): AiError {
         ? value.message
         : 'The on-device runtime returned an invalid response.'
       : 'The on-device AI request failed.';
-  return { code: 'provider-unavailable', message };
+  const codes: Record<string, AiErrorCode> = {
+    disabled: 'inference-disabled',
+    suspended: 'cancelled',
+    aborted: 'cancelled',
+    busy: 'rate-limited',
+    timeout: 'timeout',
+    model_download_failed: 'model-download-failed',
+    download_paused: 'cancelled',
+    model_not_ready: 'model-unavailable',
+    model_unavailable: 'model-unavailable',
+    response_too_large: 'budget-exceeded',
+    model_download_required: 'model-unavailable',
+    insufficient_memory: 'model-unavailable',
+  };
+  const sdkCode =
+    value && typeof value === 'object' && 'code' in value && typeof value.code === 'string'
+      ? value.code
+      : '';
+  return { code: codes[sdkCode] ?? 'provider-unavailable', message };
 }
 export function failure<T>(error: unknown): AiResult<T> {
   return { ok: false, error: aiError(error) };
 }
 export function checkCancelled(signal: AbortSignal) {
   if (signal.aborted) throw new MobileAiError('cancelled', 'The operation was cancelled.');
-}
-export async function delay(signal: AbortSignal, ms: number) {
-  checkCancelled(signal);
-  await new Promise<void>((resolve, reject) => {
-    const abort = () => {
-      clearTimeout(timer);
-      reject(new MobileAiError('cancelled', 'The operation was cancelled.'));
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', abort);
-      resolve();
-    }, ms);
-    signal.addEventListener('abort', abort, { once: true });
-  });
 }
 /** A UI subscriber must not break native cleanup or prevent a terminal result. */
 export function notify<T>(listener: ((value: T) => void) | undefined, value: T) {

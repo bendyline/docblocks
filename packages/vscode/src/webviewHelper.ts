@@ -64,7 +64,8 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
       img-src ${webview.cspSource} blob: data:;
       media-src blob: data:;
       connect-src ${webview.cspSource} blob: data:;
-      worker-src ${webview.cspSource} blob:;">
+      worker-src ${webview.cspSource} blob:;
+      frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.dailymotion.com https://fast.wistia.net;">
   <meta name="${HARPER_WASM_META_NAME}" content="${harperWasmUri.toString()}">
   <meta name="${IRONCALC_WASM_META_NAME}" content="${ironCalcWasmUri.toString()}">
   <link rel="stylesheet" href="${styleUri}">

@@ -164,6 +164,7 @@ export interface AiChatRequest {
   /** Opaque provider model id. Omitted means "the host's current choice". */
   readonly model?: string;
   readonly temperature?: number;
+  /** Optional caller cap. Writing without one uses the host/model's available capacity. */
   readonly maxTokens?: number;
   readonly purpose: AiChatPurpose;
 }
@@ -175,7 +176,18 @@ export interface AiChatCompletion {
   readonly usage: { readonly promptTokens: number; readonly completionTokens: number } | null;
 }
 
+/** Request-local metadata. Unknown counts stay null; streamed chunks are not tokens. */
+export interface AiChatProgress {
+  readonly phase: 'starting' | 'queued' | 'loading_model' | 'prefill' | 'reasoning' | 'generating';
+  /** Engine-reported percentage for model loading or prompt processing only. */
+  readonly percent: number | null;
+  /** Exact engine count, including private reasoning when the engine counts it. */
+  readonly outputTokens: number | null;
+  readonly tokensPerSecond: number | null;
+}
+
 export type AiChatEvent =
+  | { readonly kind: 'progress'; readonly progress: AiChatProgress }
   | { readonly kind: 'delta'; readonly text: string }
   | { readonly kind: 'done'; readonly completion: AiChatCompletion }
   | { readonly kind: 'error'; readonly error: AiError };

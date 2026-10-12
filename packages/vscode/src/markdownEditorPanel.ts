@@ -28,6 +28,7 @@ import {
 } from './documentStatusBar.js';
 import { handleExportMessage } from './exportBridge.js';
 import { toError } from './toError.js';
+import { getWorkspaceSettingsService } from './workspaceSettingsService.js';
 import { ExportTargetGrantRegistry, type ExportGrantScope } from './exportGrants.js';
 import { drainsAfterPanelDispose, EditorMessageQueue } from './editorMessageQueue.js';
 import { LatestDocumentEditQueue, type WebviewEditMessage } from './latestDocumentEditQueue.js';
@@ -305,6 +306,11 @@ export class MarkdownEditorPanel {
       vscode.window.onDidChangeActiveColorTheme(() => {
         this.sendTheme();
       }),
+      getWorkspaceSettingsService()?.onDidChangeState((folderKey) => {
+        if (folderKey === getWorkspaceSettingsService()?.folderKeyFor(this.uri)) {
+          this.sendWorkspaceSettings();
+        }
+      }) ?? new vscode.Disposable(() => undefined),
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (
           !event.affectsConfiguration('docblocks.autoSave', this.uri) &&
@@ -438,6 +444,7 @@ export class MarkdownEditorPanel {
         this.sendSessionState();
         this.sendTheme();
         this.sendEditorSettings();
+        this.sendWorkspaceSettings();
         break;
 
       case 'setAutoSave':
@@ -461,6 +468,11 @@ export class MarkdownEditorPanel {
 
       case 'resolveConflict':
         await this.handleConflictChoice(message.sessionId, message.choice, await this.syncReady);
+        break;
+
+      case 'updateWorkspaceSettings':
+      case 'refreshWorkspaceOutputs':
+        await this.handleWorkspaceSettingsMessage(message);
         break;
 
       default:
@@ -752,9 +764,53 @@ export class MarkdownEditorPanel {
       case 'save':
         this.sendSessionState();
         return;
+      case 'updateWorkspaceSettings':
+      case 'refreshWorkspaceOutputs':
+        this.postMessage({
+          type: 'workspaceSettingsResult',
+          requestId: message.requestId,
+          ok: false,
+          message: responseMessage,
+        });
+        return;
       default:
         return;
     }
+  }
+
+  /**
+   * Workspace settings belong to the folder containing this panel's document;
+   * the folder is derived from the panel's own URI, never from the webview.
+   */
+  private async handleWorkspaceSettingsMessage(
+    message: Extract<
+      QueuedWebviewMessage,
+      { type: 'updateWorkspaceSettings' | 'refreshWorkspaceOutputs' }
+    >,
+  ): Promise<void> {
+    const service = getWorkspaceSettingsService();
+    try {
+      if (!service) throw new Error('Workspace settings are not available in this window.');
+      if (message.type === 'updateWorkspaceSettings') {
+        await service.update(this.uri, message.patch);
+      } else {
+        await service.regenerate(this.uri);
+      }
+      this.postMessage({
+        type: 'workspaceSettingsResult',
+        requestId: message.requestId,
+        ok: true,
+        message: null,
+      });
+    } catch (error) {
+      this.postMessage({
+        type: 'workspaceSettingsResult',
+        requestId: message.requestId,
+        ok: false,
+        message: boundedMessage(toError(error).message),
+      });
+    }
+    this.sendWorkspaceSettings();
   }
 
   private async readHostDocument(): Promise<HostDocumentSnapshot> {
@@ -909,6 +965,12 @@ export class MarkdownEditorPanel {
   private sendEditorSettings(settings = readVscodeEditorSettings(this.uri)): void {
     if (!this.webviewReady) return;
     this.postMessage({ type: 'editorSettings', settings });
+  }
+
+  private sendWorkspaceSettings(): void {
+    const service = getWorkspaceSettingsService();
+    if (!this.webviewReady || !service) return;
+    this.postMessage({ type: 'workspaceSettings', state: service.getState(this.uri) });
   }
 
   private postMessage(message: ExtensionToWebviewMessage): void {

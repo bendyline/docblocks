@@ -173,6 +173,13 @@ describe('AiReviewPanel lifecycle', () => {
     const { container, cleanup } = await render(fake.api, false);
     try {
       expect(fake.requests).to.have.length(1);
+      await act(async () =>
+        fake.requests[0].emit({
+          kind: 'progress',
+          progress: { phase: 'prefill', percent: 50, outputTokens: null, tokensPerSecond: null },
+        }),
+      );
+      expect(container.textContent).to.contain('Reviewing this document');
       await click(container, 'Stop review');
       expect(fake.requests[0].cancelled).to.equal(true);
       await act(async () => fake.requests[0].emit(completion(REVIEW, 'cancelled')));

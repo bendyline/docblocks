@@ -87,7 +87,11 @@ export function registerWorkspaceIpc(): void {
       ) {
         throw new Error('Persisted workspace descriptor is invalid');
       }
-      return { id, name, rootPath };
+      // The renderer seeds its starter document only into the app's own
+      // default folder, never into a folder the user picked.
+      return rootPath === settings.defaultWorkspaceRoot
+        ? { id, name, rootPath, isDefault: true }
+        : { id, name, rootPath };
     });
   });
 

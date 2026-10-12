@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { requireTrustedWorkspace } from './workspaceTrust.js';
 import { parseExternalHttpUrl } from '@bendyline/docblocks/host';
 import {
   createCliInstallCommands,
@@ -487,12 +488,8 @@ export class SetupViewProvider {
     return true;
   }
 
-  private async requireTrustedWorkspace(): Promise<boolean> {
-    if (vscode.workspace.isTrusted) return true;
-    await vscode.window.showWarningMessage(
-      'Trust this workspace before DocBlocks runs setup commands in a terminal.',
-    );
-    return false;
+  private requireTrustedWorkspace(): Promise<boolean> {
+    return requireTrustedWorkspace('runs setup commands in a terminal');
   }
 
   private runInTerminal(command: string | readonly string[], cwd?: string | vscode.Uri): void {

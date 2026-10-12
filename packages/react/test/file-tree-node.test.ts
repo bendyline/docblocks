@@ -244,6 +244,76 @@ describe('FileTreeNode rename', () => {
     expect(selected, 'Enter must not also click the row').to.deep.equal([]);
   });
 
+  it('renames a Markdown document by its title and keeps it a .md file', async () => {
+    // Regression: the field showed "Hendricks Spring Quote.md" wholly
+    // selected, so typing a new title silently dropped the extension.
+    const renames: string[][] = [];
+    await act(async () => {
+      root.render(
+        createElement(
+          FileTreeNode,
+          baseProps({
+            entry: {
+              kind: 'file',
+              name: 'Hendricks Spring Quote.md',
+              path: '/Clients/Hendricks Spring Quote.md',
+            },
+            onRename: async (oldPath, newPath, kind) => {
+              renames.push([oldPath, newPath, kind]);
+            },
+          }),
+        ),
+      );
+    });
+
+    const input = await startRename(container);
+    expect(input.value, 'the field shows the title the tree shows').to.equal(
+      'Hendricks Spring Quote',
+    );
+    expect([input.selectionStart, input.selectionEnd]).to.deep.equal([0, input.value.length]);
+
+    await act(async () => typeInto(input, 'Hendricks - Spring 2026 Quote'));
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(renames).to.deep.equal([
+      ['/Clients/Hendricks Spring Quote.md', '/Clients/Hendricks - Spring 2026 Quote.md', 'file'],
+    ]);
+  });
+
+  it('selects only the base name of a file whose extension is visible', async () => {
+    const renames: string[][] = [];
+    await act(async () => {
+      root.render(
+        createElement(
+          FileTreeNode,
+          baseProps({
+            entry: { kind: 'file', name: 'Price Sheet 2026.docx', path: '/Price Sheet 2026.docx' },
+            onRename: async (oldPath, newPath, kind) => {
+              renames.push([oldPath, newPath, kind]);
+            },
+          }),
+        ),
+      );
+    });
+
+    const input = await startRename(container);
+    expect(input.value).to.equal('Price Sheet 2026.docx');
+    expect([input.selectionStart, input.selectionEnd]).to.deep.equal([
+      0,
+      'Price Sheet 2026'.length,
+    ]);
+
+    // Even with the extension deleted outright, the file keeps it.
+    await act(async () => typeInto(input, 'Prices 2027'));
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(renames).to.deep.equal([['/Price Sheet 2026.docx', 'Prices 2027.docx', 'file']]);
+  });
+
   it('does not toggle a directory when Enter confirms its rename', async () => {
     const toggled: string[] = [];
     const selected: string[] = [];

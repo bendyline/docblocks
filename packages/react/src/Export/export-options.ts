@@ -81,6 +81,23 @@ export const DEFAULT_OPTIONS: ExportOptions = {
   entryAsIndex: false,
 };
 
+/**
+ * Options that populate the export dialog. Layered: built-in defaults → the
+ * user's last-chosen options → the workspace default theme → the document's
+ * own theme (wins). "Set a theme, then export" therefore pre-selects that
+ * theme instead of whatever was picked for an unrelated previous document,
+ * and documents without a theme export in their folder's default.
+ */
+export function resolveExportDialogInitial(
+  lastOptions: ExportOptions | null,
+  docThemeId: string | null | undefined,
+  workspaceThemeId?: string | null,
+): ExportOptions {
+  const base = lastOptions ?? DEFAULT_OPTIONS;
+  const themeId = docThemeId || workspaceThemeId;
+  return themeId ? { ...base, themeId } : base;
+}
+
 export function loadLastExportOptions(): ExportOptions | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

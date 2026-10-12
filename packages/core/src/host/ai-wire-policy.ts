@@ -2,6 +2,7 @@ import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
 import type {
   AiChatEvent,
   AiChatMessage,
+  AiChatProgress,
   AiChatPurpose,
   AiChatRequest,
   AiConnectionStep,
@@ -30,8 +31,8 @@ export const AI_WIRE_LIMITS = Object.freeze({
   /** Sum of every message's content in one request. */
   promptCharacters: 256 * 1024,
   deltaCharacters: 16 * 1024,
-  /** The host aborts a stream whose accumulated text passes this. */
-  completionCharacters: 256 * 1024,
+  /** Generated documents have the same transport capacity as other documents. */
+  completionCharacters: HOST_WIRE_LIMITS.documentCharacters,
   maxTokensCeiling: 32_768,
   temperatureCeiling: 2,
   verificationCodeCharacters: 16,
@@ -338,8 +339,47 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   };
 }
 
+export function parseAiChatProgress(value: unknown): AiChatProgress | null {
+  if (!isRecord(value)) return null;
+  if (!hasExactKeys(value, ['phase', 'percent', 'outputTokens', 'tokensPerSecond'])) return null;
+  if (
+    value.phase !== 'starting' &&
+    value.phase !== 'queued' &&
+    value.phase !== 'loading_model' &&
+    value.phase !== 'prefill' &&
+    value.phase !== 'reasoning' &&
+    value.phase !== 'generating'
+  )
+    return null;
+  if (
+    value.percent !== null &&
+    ((value.phase !== 'loading_model' && value.phase !== 'prefill') ||
+      !isFiniteInRange(value.percent, 0, 100))
+  )
+    return null;
+  if (
+    value.outputTokens !== null &&
+    !isNonNegativeInteger(value.outputTokens, Number.MAX_SAFE_INTEGER)
+  )
+    return null;
+  if (value.tokensPerSecond !== null && !isFiniteInRange(value.tokensPerSecond, 0, 10_000_000))
+    return null;
+  return {
+    phase: value.phase,
+    percent: value.percent as number | null,
+    outputTokens: value.outputTokens as number | null,
+    tokensPerSecond: value.tokensPerSecond as number | null,
+  };
+}
+
 export function parseAiChatEvent(value: unknown): AiChatEvent | null {
   if (!isRecord(value)) return null;
+
+  if (value.kind === 'progress') {
+    if (!hasExactKeys(value, ['kind', 'progress'])) return null;
+    const progress = parseAiChatProgress(value.progress);
+    return progress ? { kind: 'progress', progress } : null;
+  }
 
   if (value.kind === 'delta') {
     if (!hasExactKeys(value, ['kind', 'text'])) return null;

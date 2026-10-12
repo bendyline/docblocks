@@ -14,10 +14,19 @@ import type { DbLayoutMode } from '../layout/form-factor.js';
  *   Cmd+Shift+1/2/3         view tabs
  *   Cmd+K                   link
  *   Cmd+Z / Cmd+Shift+Z     history
- * and the browser's own Cmd+P, Cmd+W, Cmd+T, Cmd+L.
+ * and the browser's own Cmd+W, Cmd+T, Cmd+L.
+ *
+ * Cmd+F is claimed deliberately: Squisq's find bar covers Write, Source and
+ * Use, so the shell takes the key before Monaco's own find widget or the
+ * browser's page search (which cannot see Monaco's virtualized lines).
+ * Cmd+P is claimed for quick-open, the convention in code and note editors;
+ * printing stays available from the editor's Use view.
  */
 export type ShellShortcutId =
   | 'save'
+  | 'find'
+  | 'quick-open'
+  | 'workspace-search'
   | 'toggle-sidebar'
   | 'focus-files'
   | 'new-document'
@@ -40,6 +49,18 @@ export interface ShortcutBinding {
 export const SHELL_SHORTCUTS: readonly ShortcutBinding[] = Object.freeze([
   // Must work mid-sentence; that is the entire point of a save shortcut.
   { id: 'save', key: 's', accel: true, label: 'Ctrl+S', whileTyping: true },
+  // Find is mostly invoked from inside the document being searched.
+  { id: 'find', key: 'f', accel: true, label: 'Ctrl+F', whileTyping: true },
+  // Jumping elsewhere is as likely mid-sentence as from the tree.
+  { id: 'quick-open', key: 'p', accel: true, label: 'Ctrl+P', whileTyping: true },
+  {
+    id: 'workspace-search',
+    key: 'f',
+    accel: true,
+    shift: true,
+    label: 'Ctrl+Shift+F',
+    whileTyping: true,
+  },
   // Deliberately NOT Cmd+B — Squisq owns that for Bold. Cmd+\ is the VS Code
   // convention for toggling the side bar.
   { id: 'toggle-sidebar', key: '\\', accel: true, label: 'Ctrl+\\', whileTyping: true },
@@ -76,19 +97,38 @@ export function matchShortcut(
   event: KeyboardEvent,
   _layoutMode: DbLayoutMode,
 ): ShellShortcutId | null {
+  return SHELL_SHORTCUTS.find((binding) => bindingMatches(binding, event))?.id ?? null;
+}
+
+function bindingMatches(binding: ShortcutBinding, event: KeyboardEvent): boolean {
   // AltGr composes characters on several keyboard layouts; never bind through it.
-  if (event.altKey) return null;
+  if (event.altKey) return false;
   const accel = event.ctrlKey || event.metaKey;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (binding.accel !== accel) return false;
+  if ((binding.shift ?? false) !== event.shiftKey) return false;
+  if (binding.key !== key) return false;
+  return binding.whileTyping === true || !isTypingTarget(event.target);
+}
 
-  for (const binding of SHELL_SHORTCUTS) {
-    if (binding.accel !== accel) continue;
-    if ((binding.shift ?? false) !== event.shiftKey) continue;
-    if (binding.key !== key) continue;
-    if (!binding.whileTyping && isTypingTarget(event.target)) continue;
-    return binding.id;
-  }
-  return null;
+/**
+ * Cmd/Ctrl+F, for hosts that mount Squisq's `EditorShell` without the shell's
+ * listener (the VS Code webview) but still want one find UI everywhere.
+ */
+export function isFindShortcut(event: KeyboardEvent): boolean {
+  const binding = SHELL_SHORTCUTS.find((candidate) => candidate.id === 'find');
+  return binding !== undefined && bindingMatches(binding, event);
+}
+
+/** Tooltip label for the find shortcut on the current platform. */
+export function findShortcutLabel(): string {
+  return shortcutLabel('find', isApplePlatform());
+}
+
+/** True on macOS and iOS, where shortcuts are labelled with ⌘ rather than Ctrl. */
+export function isApplePlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/u.test(navigator.platform || navigator.userAgent);
 }
 
 /** Platform-appropriate label, for menus and `title` attributes. */

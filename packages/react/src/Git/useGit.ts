@@ -61,6 +61,8 @@ export function useGit(
   provider: FileSystemProvider | null,
   requestedWorkspaceId: string | null,
   theme: 'light' | 'dark',
+  /** Called after a pull or branch switch rewrote files in the working tree. */
+  onWorkingTreeChanged?: () => void,
 ): GitValue {
   const host = maybeGetDocBlocksHost();
   const gitApi = host?.git ?? null;
@@ -217,6 +219,11 @@ export function useGit(
     statusRef.current = status;
   }, [status]);
 
+  const workingTreeChangedRef = useRef(onWorkingTreeChanged);
+  useEffect(() => {
+    workingTreeChangedRef.current = onWorkingTreeChanged;
+  }, [onWorkingTreeChanged]);
+
   const runAction = useCallback(
     async <T>(
       kind: Exclude<GitBusyKind, null>,
@@ -232,6 +239,7 @@ export function useGit(
       setLastResult(null);
       try {
         const result = await action(gitApi, repositoryId);
+        if (operation === 'pull' || operation === 'branch') workingTreeChangedRef.current?.();
         if (result.ok) {
           if (successMessage) setLastResult({ tone: 'info', message: successMessage });
           refresh();

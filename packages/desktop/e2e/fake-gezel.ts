@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
+import type { AiChatProgress } from '@bendyline/docblocks/host';
 
 export const FAKE_GEZEL_TOKEN = 'fake-gezel-token';
 export const FAKE_GEZEL_CODE = '428-913';
@@ -31,6 +32,7 @@ export interface RecordedChat {
   readonly model: unknown;
   readonly stream: unknown;
   readonly maxTokens: unknown;
+  readonly streamOptions: unknown;
   readonly messages: readonly ChatMessage[];
 }
 
@@ -51,6 +53,10 @@ export interface FakeGezelOptions {
   readonly upstream?: { readonly baseUrl: string; readonly model: string };
   /** Pause between scripted chunks, so a test can stop a stream midway. */
   readonly chunkDelayMs?: number;
+  /** Request-local engine metadata before visible reply text. */
+  readonly chatProgress?: readonly AiChatProgress[];
+  /** Replies for exercising truncation and continuation across requests. */
+  readonly replies?: readonly { text: string; finishReason: 'stop' | 'length' }[];
 }
 
 async function readJson(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -161,6 +167,22 @@ function scriptedDiagram(messages: readonly ChatMessage[]): string {
 
 function scriptedAnswer(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  if (system.includes('You edit a narrated presentation')) {
+    const input = JSON.parse(messages.at(-1)?.content ?? '{}') as {
+      position: string;
+      current: { layout: string; headline: string; points: string[] };
+    };
+    return JSON.stringify({
+      ...input.current,
+      headline:
+        [
+          'Your ideas deserve a voice',
+          'Write. Present. Share.',
+          'Your words, in sync',
+          'One document. A complete story.',
+        ][Number.parseInt(input.position, 10) - 1] ?? input.current.headline,
+    });
+  }
   if (system.includes('You plan illustrations')) return scriptedPlan(messages);
   if (system.includes('You turn one passage into')) return scriptedDiagram(messages);
   if (system.includes('document reviewer')) return scriptedReview(documentFrom(messages));
@@ -185,8 +207,17 @@ async function streamScripted(
   response: http.ServerResponse,
   text: string,
   delayMs: number,
+  progress: readonly AiChatProgress[] = [],
+  finishReason = 'stop',
 ): Promise<boolean> {
   response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+  for (const gezel_progress of progress) {
+    if (response.destroyed) return false;
+    response.write(
+      `data: ${JSON.stringify({ id: 'fake', object: 'chat.completion.chunk', created: 0, model: FAKE_GEZEL_MODEL, choices: [], gezel_progress })}\n\n`,
+    );
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
   // Several deltas, so the renderer's streaming path is exercised.
   const pieces = text.match(/[\s\S]{1,16}/gu) ?? [];
   for (const piece of pieces) {
@@ -195,7 +226,7 @@ async function streamScripted(
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   if (response.destroyed) return false;
-  response.write(chunk(null, 'stop'));
+  response.write(chunk(null, finishReason));
   response.end('data: [DONE]\n\n');
   return true;
 }
@@ -270,12 +301,18 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           catalogs: [],
           reranker: { ready: true, downloading: false, message: null },
         });
+      } else if (request.method === 'GET' && url.pathname === '/v1/knowledge/relevance') {
+        sendJson(response, 200, {
+          ready: true,
+          downloading: false,
+          percent: null,
+          downloadBytes: null,
+        });
       } else if (request.method === 'POST' && url.pathname === '/v1/knowledge/retrieve') {
+        // Gezel's own validation: the SDK picks `auto`; older SDKs send `required`.
         const query = await readJson(request);
-        if (query.rerank !== 'required') {
-          sendJson(response, 400, {
-            error: { code: 'reranker_required', message: 'Reranking is required.' },
-          });
+        if (query.rerank !== 'required' && query.rerank !== 'auto') {
+          sendJson(response, 422, { error: 'Invalid enum value' });
         } else sendJson(response, 200, { reranked: true, passages: [] });
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {
@@ -300,11 +337,18 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           model: body.model,
           stream: body.stream,
           maxTokens: body.max_tokens,
+          streamOptions: body.stream_options,
           messages,
         });
         if (options.upstream) await streamUpstream(response, body, options.upstream);
         else if (
-          !(await streamScripted(response, scriptedAnswer(messages), options.chunkDelayMs ?? 0))
+          !(await streamScripted(
+            response,
+            options.replies?.[chats.length - 1]?.text ?? scriptedAnswer(messages),
+            options.chunkDelayMs ?? 0,
+            options.chatProgress,
+            options.replies?.[chats.length - 1]?.finishReason,
+          ))
         ) {
           abandonedStreams += 1;
         }

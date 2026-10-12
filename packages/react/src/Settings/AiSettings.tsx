@@ -357,7 +357,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                   )}
                   {preferences.model && !models.some((model) => model.id === preferences.model) && (
                     <option value={preferences.model} disabled>
-                      {preferences.model} (not available)
+                      Previously selected model (not available)
                     </option>
                   )}
                   {models.map((model) => (

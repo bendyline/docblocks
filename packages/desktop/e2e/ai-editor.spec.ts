@@ -205,6 +205,15 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
       await openAiMenuItem(window, 'Rewrite selection…');
       const rewriteDialog = window.getByRole('dialog', { name: 'Rewrite with AI' });
       await expect(rewriteDialog.locator('.db-ai-selection-preview')).toContainText(original);
+      const rewritePrompt = rewriteDialog.getByRole('textbox', {
+        name: 'How should this be rewritten?',
+      });
+      await expect(rewritePrompt).toHaveValue('');
+      await expect(rewritePrompt).toHaveAttribute(
+        'placeholder',
+        'Improve clarity and flow while preserving the meaning and voice.',
+      );
+      await expect(rewriteDialog.getByRole('textbox', { name: 'AI draft' })).toHaveCount(0);
       const rewritten = await generateDraft(rewriteDialog, 'Replace selection');
       await expect.poll(() => readDocument(file)).toContain(rewritten);
       expect(readDocument(file)).not.toContain(original);
@@ -237,6 +246,9 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
 
       // Every request went to the chosen model, streamed, with the granted token.
       expect(fake.chats.length).toBe(3);
+      // Compose and rewrite use the model's advertised capacity through the
+      // renderer → host → SDK path, rather than a fixed short-response cap.
+      expect(fake.chats.slice(0, 2).map((chat) => chat.maxTokens)).toEqual([32_768, 32_768]);
       for (const chat of fake.chats) {
         expect(chat).toMatchObject({
           authorization: `Bearer ${FAKE_GEZEL_TOKEN}`,
@@ -244,6 +256,206 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
           stream: true,
         });
       }
+    },
+  );
+});
+
+test('AI drafts protect edits on regeneration and insert the reviewed response', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {},
+    async ({ window, editor, file, fake }) => {
+      await caretAtNewParagraph(window, editor);
+      await openAiMenuItem(window, 'Add content…');
+      const dialog = window.getByRole('dialog', { name: 'Add content with AI' });
+      const prompt = dialog.getByRole('textbox', { name: 'What should be added?' });
+      const output = dialog.getByRole('textbox', { name: 'AI draft' });
+      const insert = dialog.getByRole('button', { name: 'Insert', exact: true });
+      await expect(prompt).toHaveValue('');
+      await expect(output).toHaveCount(0);
+      await expect(
+        dialog.locator('.db-ai-draft-body').getByRole('button', { name: 'Generate' }),
+      ).toBeVisible();
+      await test.info().attach('Before generation', {
+        body: await dialog.screenshot({ path: test.info().outputPath('before-generation.png') }),
+        contentType: 'image/png',
+      });
+      await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+      await expect(output).toBeEditable();
+      expect(fake.chats[0].messages.at(-1)?.content).toContain(
+        'Instructions:\nAdd a concise introduction for this document.',
+      );
+
+      const edited = 'The team reviewed this draft and **approved the migration**.';
+      await output.fill(edited);
+      await dialog.getByRole('button', { name: 'Regenerate' }).click();
+      const confirmation = window.getByRole('dialog', { name: 'Regenerate AI draft' });
+      await expect(confirmation).toContainText(
+        'This will remove all edits you have made. Continue?',
+      );
+      await test.info().attach('Regeneration confirmation', {
+        body: await window.screenshot({
+          path: test.info().outputPath('regeneration-confirmation.png'),
+        }),
+        contentType: 'image/png',
+      });
+      await confirmation.getByRole('button', { name: 'Cancel' }).click();
+      await expect(confirmation).toBeHidden();
+      await expect(output).toHaveValue(edited);
+      expect(fake.chats).toHaveLength(1);
+
+      await dialog.getByRole('button', { name: 'Regenerate' }).click();
+      await confirmation.getByRole('button', { name: 'Continue' }).click();
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+      await expect(output).toHaveValue(FAKE_COMPOSE_TEXT);
+      expect(fake.chats).toHaveLength(2);
+      // The new generated response starts clean and can be regenerated directly.
+      await dialog.getByRole('button', { name: 'Regenerate' }).click();
+      await expect(confirmation).toBeHidden();
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+      expect(fake.chats).toHaveLength(3);
+
+      await output.fill(edited);
+      await insert.click();
+      await expect(dialog).toBeHidden();
+      await expect.poll(() => readDocument(file)).toContain(edited);
+      expect(readDocument(file)).not.toContain(FAKE_COMPOSE_TEXT);
+      await undo(window, editor);
+      await expect.poll(() => readDocument(file)).not.toContain(edited);
+    },
+  );
+});
+
+test('AI continues a truncated rewrite without losing edits and applies it as one undo step', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      replies: [
+        { text: 'The rewritten para', finishReason: 'length' },
+        { text: 'graph is complete.', finishReason: 'stop' },
+      ],
+    },
+    async ({ window, editor, file, fake }) => {
+      const original = 'The results was mixed, and alot of pages had not been touched since 2021.';
+      await editor.locator('p', { hasText: 'The results was mixed' }).click({ clickCount: 3 });
+      await openAiMenuItem(window, 'Rewrite selection…');
+      const dialog = window.getByRole('dialog', { name: 'Rewrite with AI', exact: true });
+      await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+      const output = dialog.getByRole('textbox', { name: 'AI draft' });
+      const resume = dialog.getByRole('button', { name: 'Continue draft', exact: true });
+      await expect(resume).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
+      await expect(output).toHaveValue('The rewritten para');
+      await expect(dialog).toContainText('Draft incomplete');
+      expect(readDocument(file)).toContain(original);
+
+      await dialog.getByRole('button', { name: 'Replace selection' }).click();
+      const confirmation = window.getByRole('dialog', { name: 'Use incomplete AI draft?' });
+      await expect(confirmation).toContainText('may remove content that has not been rewritten');
+      await confirmation.getByRole('button', { name: 'Cancel' }).click();
+      expect(readDocument(file)).toContain(original);
+      await output.fill('The edited para');
+      await test.info().attach('Incomplete draft recovery', {
+        body: await dialog.screenshot({ path: test.info().outputPath('incomplete-draft.png') }),
+        contentType: 'image/png',
+      });
+      await resume.click();
+      await expect(output).toBeEditable({ timeout: ANSWER_TIMEOUT_MS });
+      await expect(output).toHaveValue('The edited paragraph is complete.');
+      await expect(resume).toBeHidden();
+      expect(fake.chats).toHaveLength(2);
+      expect(fake.chats[1].messages.at(-2)).toEqual({
+        role: 'assistant',
+        content: 'The edited para',
+      });
+      expect(fake.chats[1].messages.slice(0, -2)).toEqual(fake.chats[0].messages);
+      expect(readDocument(file)).toContain(original);
+
+      await dialog.getByRole('button', { name: 'Replace selection' }).click();
+      await expect(dialog).toBeHidden();
+      await expect.poll(() => readDocument(file)).toContain('The edited paragraph is complete.');
+      expect(readDocument(file)).not.toContain(original);
+      await undo(window, editor);
+      await expect.poll(() => readDocument(file)).toContain(original);
+      expect(readDocument(file)).not.toContain('The edited paragraph is complete.');
+    },
+  );
+});
+
+test('AI rewriting preserves heading tags as metadata through replacement, reload and undo', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  const original =
+    '## So what should you use? {[factCard]}\n\nAn **original** answer.\n\n| Model | Score |\n| --- | --- |\n| Writer | 42 |\n';
+  const rewritten = original.replace('An **original** answer.', 'A **rewritten** answer.');
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      document: original,
+      readyText: 'So what should you use?',
+      replies: [{ text: rewritten, finishReason: 'stop' }],
+    },
+    async ({ window, editor, file, fake }) => {
+      await editor.focus();
+      await window.keyboard.press('ControlOrMeta+A');
+      await openAiMenuItem(window, 'Rewrite selection…');
+      const dialog = window.getByRole('dialog', { name: 'Rewrite with AI', exact: true });
+      await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+      const apply = dialog.getByRole('button', { name: 'Replace selection' });
+      await expect(apply).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+      const request = fake.chats[0].messages.at(-1)?.content ?? '';
+      const selection = request.split('<selection>\n')[1]?.split('\n</selection>')[0] ?? '';
+      expect(selection).toContain('## So what should you use? {[factCard]}');
+      expect(selection).toContain('An **original** answer.');
+      expect(selection).toContain('| Model | Score |');
+      await apply.click();
+      await expect(dialog).toBeHidden();
+      const heading = editor.locator('h2[data-template="factCard"]');
+      await expect(heading).toHaveText('So what should you use?');
+      await expect(editor).not.toContainText('{[factCard]}');
+      await expect(editor.locator('strong')).toHaveText('rewritten');
+      await expect(editor.locator('table')).toContainText('Writer');
+      await expect.poll(() => readDocument(file)).toContain('A **rewritten** answer.');
+      expect(readDocument(file)).toContain('## So what should you use? {[factCard]}');
+      await test.info().attach('Tagged rewrite', {
+        body: await editor.screenshot({ path: test.info().outputPath('tagged-rewrite.png') }),
+        contentType: 'image/png',
+      });
+      await undo(window, editor);
+      await expect.poll(() => readDocument(file)).toContain('An **original** answer.');
+      await expect(heading).toHaveText('So what should you use?');
+      expect(readDocument(file)).toContain('{[factCard]}');
+      await editor.focus();
+      await window.keyboard.press('ControlOrMeta+Shift+Z');
+      await expect.poll(() => readDocument(file)).toContain('A **rewritten** answer.');
+      await window.reload();
+      await window.locator('.db-tree-row[data-path$="ai-review.md"]').click();
+      await expect(
+        window.locator('.squisq-editor-content h2[data-template="factCard"]'),
+      ).toHaveText('So what should you use?');
+      await expect(window.locator('.squisq-editor-content').first()).not.toContainText(
+        '{[factCard]}',
+      );
+      await expect(window.locator('.squisq-editor-content strong')).toHaveText('rewritten');
     },
   );
 });
@@ -282,6 +494,59 @@ test('Stop ends a streaming draft at the provider and inserts nothing', async ({
       await expect(dialog).toBeHidden();
       await window.waitForTimeout(1_000);
       expect(readDocument(file)).not.toContain(partial.trim());
+    },
+  );
+});
+
+test('AI rewrite shows prefill and token activity, and Stop works before text arrives', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      chunkDelayMs: 1_500,
+      chatProgress: [
+        { phase: 'prefill', percent: 50, outputTokens: null, tokensPerSecond: null },
+        { phase: 'reasoning', percent: null, outputTokens: 32, tokensPerSecond: 16 },
+      ],
+    },
+    async ({ window, editor, file, fake }) => {
+      await editor.locator('p', { hasText: 'The results was mixed' }).click({ clickCount: 3 });
+      await openAiMenuItem(window, 'Rewrite selection…');
+      const dialog = window.getByRole('dialog', { name: 'Rewrite with AI' });
+      const selection = dialog.locator('.db-ai-selection-preview blockquote');
+      for (const side of ['top', 'right', 'bottom', 'left']) {
+        await expect(selection).toHaveCSS(`border-${side}-style`, 'solid');
+        await expect(selection).toHaveCSS(`border-${side}-width`, '1px');
+      }
+      await dialog.getByRole('button', { name: 'Generate' }).click();
+      await expect(dialog.getByRole('progressbar')).toHaveAttribute('value', '50');
+      await expect(dialog.getByRole('status')).toContainText('Processing input (prefill)… 50%');
+      await expect(dialog.getByRole('textbox', { name: 'AI draft' })).toHaveValue('');
+      await dialog.screenshot({ path: testInfo.outputPath('rewrite-prefill.png') });
+      await dialog.getByRole('button', { name: 'Stop' }).click();
+      await expect(dialog.getByText('Generation stopped.')).toBeVisible();
+      await expect.poll(() => fake.abandonedStreams).toBe(1);
+      expect(readDocument(file)).toBe(DOCUMENT);
+      expect(fake.chats[0].streamOptions).toEqual({ include_usage: true, include_progress: true });
+
+      await dialog.getByRole('button', { name: 'Regenerate' }).click();
+      await expect(dialog.getByRole('status')).toContainText('Thinking');
+      await expect(dialog.locator('.db-ai-generation-status')).toContainText(
+        '32 tokens generated · 16.0 tokens/s',
+      );
+      await expect(dialog.getByRole('progressbar')).toHaveCount(0);
+      await expect(dialog.getByRole('textbox', { name: 'AI draft' })).toHaveValue('');
+      await expect(dialog.getByRole('status')).toContainText('Writing');
+      await expect(dialog.getByRole('button', { name: 'Replace selection' })).toBeEnabled();
+      await expect(dialog.locator('.db-ai-generation-status')).toHaveCount(0);
+      await dialog.getByRole('button', { name: 'Cancel' }).click();
+      expect(readDocument(file)).toBe(DOCUMENT);
     },
   );
 });

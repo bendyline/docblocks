@@ -8,7 +8,15 @@ export default defineConfig([
     sourcemap: false,
     clean: true,
     external: ['vscode'],
-    noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
+    // Workspace catalogs render in the extension host, so the Squisq Markdown
+    // and plain-HTML modules ship inside the bundle (the VSIX carries no
+    // node_modules).
+    noExternal: [
+      '@bendyline/docblocks',
+      '@bendyline/squisq',
+      '@bendyline/squisq-formats',
+      'jsonc-parser',
+    ],
   },
   // Web extension host (vscode.dev) — browser-targeted CJS. The web extension
   // host loads `browser` entries as CommonJS inside its worker, so this is CJS
@@ -19,7 +27,15 @@ export default defineConfig([
     sourcemap: false,
     platform: 'browser',
     external: ['vscode'],
-    noExternal: ['@bendyline/docblocks', 'jsonc-parser'],
+    // Workspace catalogs render in the extension host, so the Squisq Markdown
+    // and plain-HTML modules ship inside the bundle (the VSIX carries no
+    // node_modules).
+    noExternal: [
+      '@bendyline/docblocks',
+      '@bendyline/squisq',
+      '@bendyline/squisq-formats',
+      'jsonc-parser',
+    ],
     define: {
       'process.env.NODE_ENV': '"production"',
     },

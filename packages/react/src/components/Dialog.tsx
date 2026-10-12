@@ -27,6 +27,13 @@ export interface DialogProps {
   bodyClassName?: string;
   /** Additional class on the footer wrapper. */
   footerClassName?: string;
+  /** `top` anchors the panel near the top edge, palette-style. */
+  placement?: 'center' | 'top';
+  /**
+   * Keep the title for assistive technology but drop the visible header and
+   * its close button (Escape still closes). Pass `initialFocusRef`.
+   */
+  titleHidden?: boolean;
 }
 
 export function Dialog({
@@ -40,6 +47,8 @@ export function Dialog({
   className,
   bodyClassName,
   footerClassName,
+  placement = 'center',
+  titleHidden = false,
 }: DialogProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -91,7 +100,7 @@ export function Dialog({
   useEffect(() => {
     const previousFocus =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const target = initialFocusRef?.current ?? closeButtonRef.current;
+    const target = initialFocusRef?.current ?? closeButtonRef.current ?? dialogRef.current;
     target?.focus();
     return () => {
       if (previousFocus?.isConnected) previousFocus.focus();
@@ -112,8 +121,11 @@ export function Dialog({
   const bodyClasses = ['db-dialog-body', bodyClassName].filter(Boolean).join(' ');
   const footerClasses = ['db-dialog-footer', footerClassName].filter(Boolean).join(' ');
 
+  const overlayClassName =
+    placement === 'top' ? 'db-dialog-overlay db-dialog-overlay--top' : 'db-dialog-overlay';
+
   return (
-    <div className="db-dialog-overlay" onClick={handleBackdropClick}>
+    <div className={overlayClassName} onClick={handleBackdropClick}>
       <div
         ref={dialogRef}
         className={panelClassName}
@@ -122,20 +134,26 @@ export function Dialog({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <div className="db-dialog-header">
-          <h2 id={titleId} className="db-dialog-title">
+        {titleHidden ? (
+          <h2 id={titleId} className="db-visually-hidden">
             {title}
           </h2>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="db-dialog-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
+        ) : (
+          <div className="db-dialog-header">
+            <h2 id={titleId} className="db-dialog-title">
+              {title}
+            </h2>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="db-dialog-close"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
+        )}
         <div className={bodyClasses}>{children}</div>
         {footer && <div className={footerClasses}>{footer}</div>}
       </div>

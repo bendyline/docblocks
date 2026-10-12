@@ -91,6 +91,16 @@ export function buildMenu(
         { role: 'copy' },
         { role: 'paste' },
         { role: 'selectAll' },
+        { type: 'separator' },
+        // The renderer's own Ctrl/Cmd+F listener handles the key (the menu bar
+        // is hidden on Windows and Linux), so the accelerator is display-only
+        // here; registering it too would open find twice.
+        {
+          label: 'Find',
+          accelerator: 'CmdOrCtrl+F',
+          registerAccelerator: false,
+          click: () => send('edit:find'),
+        },
         // Named apart from the "Start Dictation…" item macOS adds to Edit
         // menus, which drives the system's own dictation, not DocBlocks'.
         ...(speech.stt || speech.tts ? [{ type: 'separator' as const }] : []),

@@ -103,3 +103,8 @@ export function pickEmptyDocumentPrompt(random: () => number = Math.random): Emp
   const index = Math.floor(random() * EMPTY_DOCUMENT_PROMPTS.length);
   return EMPTY_DOCUMENT_PROMPTS[index] ?? EMPTY_DOCUMENT_PROMPTS[0];
 }
+
+export { PresentationMaker } from './Presentation/PresentationMaker.js';
+export { FindButton, type FindButtonProps } from './components/FindButton.js';
+export { focusFindInput } from './components/find-input.js';
+export { findShortcutLabel, isFindShortcut } from './DocBlocksShell/keyboard-shortcuts.js';

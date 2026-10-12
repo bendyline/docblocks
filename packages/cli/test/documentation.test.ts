@@ -11,6 +11,7 @@ import { serveCommand } from '../src/commands/serve.js';
 import { themesCommand } from '../src/commands/themes.js';
 import { transformsCommand } from '../src/commands/transforms.js';
 import { videoCommand } from '../src/commands/video.js';
+import { workspaceCommand } from '../src/commands/workspace.js';
 import { MCP_FORMAT_CAPABILITIES } from '../src/mcp/conversion-service.js';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -24,6 +25,7 @@ const IMPLEMENTED_COMMAND_NAMES = [
   themesCommand,
   transformsCommand,
   parseCommand,
+  workspaceCommand,
 ].map((command) => command.name());
 
 interface DocumentedFormat {

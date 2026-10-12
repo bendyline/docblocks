@@ -114,6 +114,15 @@ export { IndexedDBContentContainer } from './indexeddb-content-container.js';
 export { FileSystemContentContainer } from './filesystem-content-container.js';
 export { createFileMediaProvider } from './file-media-provider.js';
 export {
+  MARKDOWN_FILE_EXTENSIONS,
+  SQUISQ_RUNTIME_DIRECTORY_NAME,
+  isBrowsableWorkspaceEntry,
+  isCompanionDirectoryName,
+  isDiscoverableWorkspaceEntry,
+  isIgnoredWorkspaceEntryName,
+  isMarkdownFileName,
+} from './workspace-entry-rules.js';
+export {
   documentCompanionPath,
   moveFileSystemEntry,
   type FileSystemEntryMoveOptions,

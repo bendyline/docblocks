@@ -404,6 +404,13 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       .waitFor({ state: 'visible', timeout: 30_000 });
     await shoot(page, 'export-video-dialog-dark', 'Export Video dialog');
     await dismissOpenLayer(page);
+    // Squisq releases before the Escape fix ignored it here, and the dialog
+    // left open blocked every later step of the crawl.
+    const videoDialog = page.locator('[data-squisq-video-export-modal]');
+    if (await videoDialog.isVisible()) {
+      await videoDialog.getByRole('button', { name: 'Close export dialog' }).click();
+      await videoDialog.waitFor({ state: 'hidden', timeout: 5_000 });
+    }
   });
 
   await step('source view (dark)', async () => {
@@ -432,6 +439,11 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
     );
     await page.getByRole('button', { name: /Show file list|Back to files/ }).click();
     await shoot(page, 'sidebar-reopened-dark', 'State after clicking Show file list');
+    // Collapsing switches the shell to single-pane, where the sidebar is a
+    // drawer that Escape closes. Dock it again, or every later step that uses
+    // the workspace controls finds them hidden.
+    await page.getByRole('button', { name: 'Restore split view' }).first().click();
+    await page.locator('.db-workspace-picker-btn').waitFor({ state: 'visible', timeout: 5_000 });
   });
 
   await step('shared document flow (dark)', async () => {
@@ -461,15 +473,22 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('new workspace creation (dark)', async () => {
-    // Runs last within the doc-dependent steps: "New Workspace" creates and
-    // switches to an auto-named workspace immediately, abandoning the
-    // welcome document.
+    // Runs last within the doc-dependent steps: creating a workspace switches
+    // to it, leaving the welcome document behind. "New Workspace" first asks
+    // for a name inline; submitting the form is what creates and switches.
     await page.locator('.db-workspace-picker-btn').click();
     await page
       .locator('.db-workspace-dropdown')
       .getByRole('button', { name: 'New Workspace' })
       .click();
+    await page.getByLabel('Workspace name').waitFor({ state: 'visible', timeout: 5_000 });
     await shoot(page, 'workspace-new-result-dark', 'What appears after clicking New Workspace');
+    await page.getByLabel('Workspace name').fill('UX review workspace');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page
+      .locator('.db-workspace-picker-label', { hasText: 'UX review workspace' })
+      .waitFor({ state: 'visible', timeout: 10_000 });
+    await shoot(page, 'workspace-created-dark', 'A newly created, empty workspace');
   });
 
   await step('rename workspace flow (dark)', async () => {
@@ -499,6 +518,22 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('accent switch to purple (dark)', async () => {
+    // Back to the workspace that holds the welcome document, which the reload
+    // below waits for. The removal above was only previewed, never confirmed.
+    await page.locator('.db-workspace-picker-btn').click();
+    await page
+      .locator('.db-workspace-dropdown')
+      .getByRole('button', { name: /My Documents/ })
+      .click();
+    const welcomeRow = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
+    await welcomeRow.waitFor({ state: 'visible', timeout: 10_000 });
+    // waitForAppReady expects the welcome document to be the one open.
+    await welcomeRow.click();
+    await page.waitForFunction(
+      () => /aboutdocblocks\.md$/i.test(decodeURIComponent(window.location.hash)),
+      undefined,
+      { timeout: 10_000 },
+    );
     await page.evaluate(() => {
       window.localStorage.setItem('docblocks:accentColor', 'purple');
     });

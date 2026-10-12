@@ -16,7 +16,7 @@ import {
 } from '@bendyline/squisq-editor-react/teleprompter';
 import type { DocBlocksHostSpeechAPI, SpeechSynthesisHandle } from '@bendyline/docblocks/host';
 import { planSpeech } from './speakable-text.js';
-import { buildTtsAlignment, type SpokenSpan } from './tts-narration.js';
+import { buildTtsAlignment, spokenSpanForChunk, type SpokenSpan } from './tts-narration.js';
 
 export type GenerateNarrationState =
   | { readonly phase: 'idle' }
@@ -100,16 +100,10 @@ export function useGenerateNarration(speech: DocBlocksHostSpeechAPI): GenerateNa
         for (const [index, segment] of plan.segments.entries()) {
           if (current.cancelled) return;
           setState({ phase: 'generating', done: index, total: plan.segments.length });
-          const sourceLength = segment.sourceEnd - segment.sourceStart;
           const handle = synthesize({ text: segment.text }, (event) => {
             if (event.kind !== 'chunk' || current.cancelled) return;
             const { chunk } = event;
-            spans.push({
-              sourceStart: segment.sourceStart + Math.min(chunk.textStart, sourceLength),
-              sourceEnd: segment.sourceStart + Math.min(chunk.textEnd, sourceLength),
-              startSec: elapsed,
-              endSec: elapsed + chunk.durationSec,
-            });
+            spans.push(spokenSpanForChunk(chunk, segment, elapsed));
             elapsed += chunk.durationSec;
             const samples = new Float32Array(chunk.pcm);
             appending = appending.then(() => encoder.append([samples]));

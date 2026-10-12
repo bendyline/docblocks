@@ -87,6 +87,25 @@ describe('usePromptDialog', () => {
     expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).to.equal('true');
   });
 
+  it('pre-selects the whole value by default', async () => {
+    await open('Untitled.md');
+    const field = input();
+    expect([field?.selectionStart, field?.selectionEnd]).to.deep.equal([0, 'Untitled.md'.length]);
+  });
+
+  it('pre-selects only the requested range, so a rename keeps the extension', async () => {
+    await act(async () => {
+      void controller.prompt({
+        title: 'Rename document',
+        label: 'Document name',
+        initialValue: 'Price Sheet 2026.docx',
+        initialSelection: [0, 'Price Sheet 2026'.length],
+      });
+    });
+    const field = input();
+    expect([field?.selectionStart, field?.selectionEnd]).to.deep.equal([0, 16]);
+  });
+
   it('resolves with the entered text when Enter is pressed', async () => {
     const { pending } = await open();
     await type('Roadmap.md');

@@ -209,6 +209,23 @@ describe('DBK transient workspace reconciliation', () => {
     expect(await provider.readFile('/bundle.md')).to.equal('# original');
   });
 
+  it('skips reserved workspace settings instead of rejecting a downloaded workspace', async () => {
+    const provider = new MemoryFileSystemProvider('bundle', 'Bundle');
+    await provider.writeFile('/bundle.md', '# original');
+    const external = new MemoryContentContainer();
+    await external.writeFile('index.md', encoded('# replacement'), 'text/markdown');
+    await external.writeFile(
+      '.docblocks/workspace.json',
+      encoded('{"version":1}'),
+      'application/json',
+    );
+
+    await replaceMemoryWorkspaceFromDbk(provider, external, { targetDocumentPath: '/bundle.md' });
+
+    expect(await provider.readFile('/bundle.md')).to.equal('# replacement');
+    expect(await provider.exists('/.docblocks/workspace.json')).to.equal(false);
+  });
+
   it('rejects invalid UTF-8 and NUL-bearing Markdown as corrupt text', async () => {
     for (const bytes of [new Uint8Array([0xc3, 0x28]), encoded('# bad\0text')]) {
       const external = new MemoryContentContainer();

@@ -25,12 +25,14 @@ import {
   AI_WIRE_LIMITS,
   HOST_WIRE_LIMITS,
   isBoundedString,
+  parseAiChatProgress,
   parseAiKnowledgeState,
 } from '@bendyline/docblocks/host';
 import type { AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
   AiChatMessage,
+  AiChatProgress,
   AiChatRequest,
   AiConnectionStep,
   AiError,
@@ -86,11 +88,14 @@ export interface ProviderChatRequest {
   readonly contextWindow?: number | null;
   readonly model: string;
   readonly messages: readonly AiChatMessage[];
+  /** Task intent lets the connector choose the provider's writing defaults. */
+  readonly purpose?: AiChatRequest['purpose'];
   readonly temperature?: number;
   readonly maxTokens?: number;
 }
 
 export interface ProviderChatChunk {
+  readonly progress?: AiChatProgress;
   readonly text: string;
   readonly finishReason: 'stop' | 'length' | null;
   readonly model: string | null;
@@ -143,8 +148,14 @@ export interface AiServiceOptions {
   readonly preferences: AiPreferenceStore;
   /** Concurrent completions across every renderer. */
   readonly maxConcurrentChats?: number;
-  /** Abort a stream that produces nothing for this long. */
+  /** Abort a stream that stalls this long between chunks once text is flowing. */
   readonly streamIdleTimeoutMs?: number;
+  /**
+   * Abort a stream that has produced no text after this long. Gezel owns the
+   * real time-to-first-token deadline, sized to the prompt, and reports it as
+   * an error; this only catches a connection that hangs without saying so.
+   */
+  readonly firstTextTimeoutMs?: number;
   /** A status read re-detects an absent provider at most this often. */
   readonly redetectIntervalMs?: number;
   readonly now?: () => number;
@@ -166,10 +177,16 @@ interface ConnectionAttempt {
 }
 
 const DEFAULT_MAX_CONCURRENT_CHATS = 4;
-// Generous: a large local model can spend a minute loading before its first
-// token, and a slow machine should read as slow rather than broken.
+// Between chunks once text flows: a stall this long means the stream is dead.
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 180_000;
+// Before the first text a local model may load, prefill a long document, and
+// think. Progress metadata is optional; older providers can stay silent until
+// the reply. A shorter deadline here would cut off a model mid-thought.
+const DEFAULT_FIRST_TEXT_TIMEOUT_MS = 30 * 60_000;
 const DEFAULT_REDETECT_INTERVAL_MS = 15_000;
+// Across all windows. State reads coalesce per window, so only a runaway
+// renderer reaches this.
+const MAX_KNOWLEDGE_REQUESTS = 16;
 
 function ok<T>(value: T): AiResult<T> {
   return { ok: true, value };
@@ -227,6 +244,7 @@ export class AiService {
   private readonly store: AiPreferenceStore;
   private readonly maxConcurrentChats: number;
   private readonly streamIdleTimeoutMs: number;
+  private readonly firstTextTimeoutMs: number;
   private readonly redetectIntervalMs: number;
   private readonly now: () => number;
 
@@ -245,7 +263,14 @@ export class AiService {
   private epoch = 0;
   private readonly chats = new Map<string, ActiveChat>();
   private readonly modelInstalls = new Map<string, AbortController>();
-  private readonly knowledgeRequests = new Map<string, AbortController>();
+  /** In-flight catalog requests per window, so closing a window cancels its own. */
+  private readonly knowledgeRequests = new Map<string, Set<AbortController>>();
+  /**
+   * One catalog-state read per window. A StrictMode remount, a progress poll,
+   * and a Refresh click all ask at once; they share the answer, never a
+   * rejection.
+   */
+  private readonly knowledgeStateReads = new Map<string, Promise<AiResult<AiKnowledgeState>>>();
   private disposed = false;
 
   constructor(options: AiServiceOptions) {
@@ -253,6 +278,7 @@ export class AiService {
     this.store = options.preferences;
     this.maxConcurrentChats = options.maxConcurrentChats ?? DEFAULT_MAX_CONCURRENT_CHATS;
     this.streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
+    this.firstTextTimeoutMs = options.firstTextTimeoutMs ?? DEFAULT_FIRST_TEXT_TIMEOUT_MS;
     this.redetectIntervalMs = options.redetectIntervalMs ?? DEFAULT_REDETECT_INTERVAL_MS;
     this.now = options.now ?? Date.now;
   }
@@ -381,11 +407,13 @@ export class AiService {
   }
 
   cancelKnowledge(owner: string): void {
-    this.knowledgeRequests.get(owner)?.abort();
+    for (const controller of this.knowledgeRequests.get(owner) ?? []) controller.abort();
   }
 
-  async knowledgeState(owner: string): Promise<AiResult<AiKnowledgeState>> {
-    return this.withKnowledge(owner, async (connection, signal) => {
+  knowledgeState(owner: string): Promise<AiResult<AiKnowledgeState>> {
+    const pending = this.knowledgeStateReads.get(owner);
+    if (pending) return pending;
+    const read = this.withKnowledge(owner, async (connection, signal) => {
       if (!connection.knowledgeState)
         throw new AiHostError(
           'unsupported',
@@ -395,7 +423,9 @@ export class AiService {
       if (!state)
         throw new AiHostError('unknown', 'The AI provider returned invalid catalog information.');
       return state;
-    });
+    }).finally(() => this.knowledgeStateReads.delete(owner));
+    this.knowledgeStateReads.set(owner, read);
+    return read;
   }
 
   async updateKnowledge(owner: string, action: AiKnowledgeAction): Promise<AiResult<null>> {
@@ -417,10 +447,14 @@ export class AiService {
     const connection = this.connection;
     if (!connection || !this.preferences.enabled || this.disposed)
       return fail(this.notConnectedError());
-    if (this.knowledgeRequests.has(owner) || this.knowledgeRequests.size >= 8)
-      return fail(aiError('rate-limited'));
+    let inFlight = 0;
+    for (const owned of this.knowledgeRequests.values()) inFlight += owned.size;
+    // A local bound, so it must not read as "Gezel is busy".
+    if (inFlight >= MAX_KNOWLEDGE_REQUESTS) return fail(aiError('budget-exceeded'));
     const controller = new AbortController();
-    this.knowledgeRequests.set(owner, controller);
+    const owned = this.knowledgeRequests.get(owner) ?? new Set<AbortController>();
+    owned.add(controller);
+    this.knowledgeRequests.set(owner, owned);
     const signal = controller.signal;
     const timer = setTimeout(
       () => controller.abort(new AiHostError('timeout', 'The catalog request timed out.')),
@@ -442,7 +476,8 @@ export class AiService {
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onAbort);
-      this.knowledgeRequests.delete(owner);
+      owned.delete(controller);
+      if (owned.size === 0) this.knowledgeRequests.delete(owner);
     }
   }
 
@@ -593,6 +628,7 @@ export class AiService {
     this.publishActivity();
     const providerRequest: ProviderChatRequest = {
       model,
+      purpose: request.purpose,
       contextWindow: this.models.find((entry) => entry.id === model)?.contextWindow ?? null,
       messages: request.messages,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
@@ -798,7 +834,9 @@ export class AiService {
       chat.controller.abort();
     }
     for (const install of this.modelInstalls.values()) install.abort();
-    for (const request of this.knowledgeRequests.values()) request.abort();
+    for (const owned of this.knowledgeRequests.values()) {
+      for (const request of owned) request.abort();
+    }
     const connection = this.connection;
     this.connection = null;
     this.models = [];
@@ -847,10 +885,13 @@ export class AiService {
     let idle: ReturnType<typeof setTimeout> | undefined;
     const armIdle = () => {
       clearTimeout(idle);
-      idle = setTimeout(() => {
-        chat.ending ??= 'timeout';
-        chat.controller.abort();
-      }, this.streamIdleTimeoutMs);
+      idle = setTimeout(
+        () => {
+          chat.ending ??= 'timeout';
+          chat.controller.abort();
+        },
+        text ? this.streamIdleTimeoutMs : this.firstTextTimeoutMs,
+      );
       // A watchdog must not be the only thing keeping a process alive.
       idle.unref?.();
     };
@@ -859,7 +900,9 @@ export class AiService {
     try {
       const stream = await connection.streamChat(request, chat.controller.signal);
       for await (const chunk of stream) {
-        armIdle();
+        if (chat.ending) break;
+        const progress = parseAiChatProgress(chunk.progress);
+        if (progress) emit({ kind: 'progress', progress });
         if (chunk.model && isBoundedString(chunk.model, HOST_WIRE_LIMITS.identifierCharacters, 1)) {
           model = chunk.model;
         }
@@ -879,6 +922,8 @@ export class AiService {
         }
         if (chunk.finishReason === 'length') finishReason = 'length';
         if (chat.ending) break;
+        // After the text is counted, so the first words switch to the stall limit.
+        armIdle();
       }
       if (chat.ending === 'timeout') throw new AiHostError('timeout', 'Gezel stopped responding.');
       if (chat.ending === 'teardown') {
@@ -904,6 +949,8 @@ export class AiService {
         return;
       }
       const failure = toAiError(error);
+      // The renderer shows only the sentence; the provider's reason is for logs.
+      console.warn(`[ai] request failed (${failure.code}): ${failure.detail ?? failure.message}`);
       emit({ kind: 'error', error: failure });
       this.handleProviderFailure(connection, failure);
     } finally {

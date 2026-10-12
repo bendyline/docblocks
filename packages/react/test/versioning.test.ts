@@ -17,6 +17,7 @@ import {
   isLocalWorkspaceType,
   loadVersioningPreference,
   resolveVersioningEnabled,
+  resolveWorkspaceVersioningOverride,
   saveVersioningPreference,
   type VersioningPreference,
 } from '../src/preferences/versioning.js';
@@ -103,6 +104,27 @@ describe('versioning preference', () => {
     it('browser-only disables versioning for native/host-native folders', () => {
       expect(resolveVersioningEnabled(workspace('native'), 'browser-only')).to.equal(false);
       expect(resolveVersioningEnabled(workspace('host-native'), 'browser-only')).to.equal(false);
+    });
+  });
+  describe('workspace settings file', () => {
+    it('beats the legacy descriptor override and the global preference', () => {
+      const settingsOff = { version: 1 as const, versionHistory: { enabled: false } };
+      const settingsOn = { version: 1 as const, versionHistory: { enabled: true } };
+      expect(resolveVersioningEnabled(workspace('indexeddb', 'on'), 'on', settingsOff)).to.equal(
+        false,
+      );
+      expect(resolveVersioningEnabled(workspace('native', 'off'), 'off', settingsOn)).to.equal(
+        true,
+      );
+    });
+
+    it('falls back to the legacy descriptor override when the file does not decide', () => {
+      const keepOnly = { version: 1 as const, versionHistory: { keep: 5 } };
+      expect(resolveVersioningEnabled(workspace('native', 'on'), 'off', keepOnly)).to.equal(true);
+      expect(resolveWorkspaceVersioningOverride(workspace('native', 'on'), keepOnly)).to.equal(
+        'on',
+      );
+      expect(resolveWorkspaceVersioningOverride(workspace('native'), null)).to.equal('inherit');
     });
   });
 });

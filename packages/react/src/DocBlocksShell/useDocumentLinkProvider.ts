@@ -1,53 +1,29 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import type { DocumentLinkProvider } from '@bendyline/squisq-editor-react';
-import type { FileSystemEntry, FileSystemProvider } from '@bendyline/docblocks/filesystem';
-import { collectMarkdownFiles, createDocumentLinkCandidates } from './document-links.js';
+import type { WorkspaceIndex } from '@bendyline/docblocks/workspace-index';
+import { createDocumentLinkCandidates } from './document-links.js';
 
-interface DocumentLinkCache {
-  readonly provider: FileSystemProvider;
-  readonly epoch: number;
-  readonly controller: AbortController;
-  readonly entries: Promise<FileSystemEntry[]>;
-}
+/** How long the link picker waits for a first listing before offering what it has. */
+const LISTING_WAIT_MS = 5_000;
 
+/**
+ * Link-picker suggestions from the shared workspace index. The index keeps
+ * itself current from change events and commits, so documents created or
+ * renamed since the dialog last opened are always offered.
+ */
 export function useDocumentLinkProvider(
-  provider: FileSystemProvider | null,
+  index: WorkspaceIndex | null,
   selectedFile: string | null,
-  epoch = 0,
+  ensureIndex: () => void,
 ): DocumentLinkProvider {
-  const cacheRef = useRef<DocumentLinkCache | null>(null);
-
-  useEffect(
-    () => () => {
-      if (cacheRef.current?.provider !== provider || cacheRef.current.epoch !== epoch) return;
-      cacheRef.current.controller.abort();
-      cacheRef.current = null;
-    },
-    [provider, epoch],
-  );
-
   return useCallback<DocumentLinkProvider>(
     async (query) => {
-      if (!provider || !selectedFile) return [];
-      let cache = cacheRef.current;
-      if (!cache || cache.provider !== provider || cache.epoch !== epoch) {
-        cache?.controller.abort();
-        const controller = new AbortController();
-        cache = {
-          provider,
-          epoch,
-          controller,
-          entries: collectMarkdownFiles(provider, '', { signal: controller.signal }),
-        };
-        cacheRef.current = cache;
-      }
-      try {
-        return createDocumentLinkCandidates(await cache.entries, selectedFile, query);
-      } catch (error: unknown) {
-        if (cacheRef.current === cache) cacheRef.current = null;
-        throw error;
-      }
+      if (!index || !selectedFile) return [];
+      ensureIndex();
+      await index.whenListed({ timeoutMs: LISTING_WAIT_MS });
+      const documents = index.getFiles().filter((file) => file.kind === 'markdown');
+      return createDocumentLinkCandidates(documents, selectedFile, query);
     },
-    [provider, selectedFile, epoch],
+    [index, selectedFile, ensureIndex],
   );
 }

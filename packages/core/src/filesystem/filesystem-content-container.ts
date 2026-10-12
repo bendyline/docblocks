@@ -18,18 +18,44 @@ function joinPrefix(prefix: string, p: string): string {
   return workspacePathJoin(parseWorkspacePath(prefix), p);
 }
 
+/** The folder part of a listing prefix (`a/b/` → `a/b`), or '' when it is not canonical. */
+function canonicalPrefixFolder(prefix: string | undefined): string {
+  const folder = prefix?.includes('/') ? prefix.slice(0, prefix.lastIndexOf('/')) : '';
+  try {
+    return folder && parseWorkspacePath(folder) === folder ? folder : '';
+  } catch {
+    // A non-canonical prefix matches no listed path; the pruned walk finds nothing.
+    return '';
+  }
+}
+
 export class FileSystemContentContainer implements ContentContainer {
   private readonly prefix: string;
+  private readonly documentMediaPrefix: string;
 
   constructor(
     private readonly provider: FileSystemProvider,
     prefix = '.docblocks/media',
+    options: { documentMediaPrefix?: string } = {},
   ) {
     this.prefix = parseWorkspacePath(prefix);
+    this.documentMediaPrefix = parseWorkspacePath(options.documentMediaPrefix ?? '');
+  }
+
+  /** A document-scoped container also accepts the media references written
+   * into its Markdown, e.g. notes_files/audio/take.webm. Version paths and
+   * container-relative discovery still live directly under the scoped root. */
+  private resolve(path: string): string {
+    const canonical = parseWorkspacePath(path);
+    const alias = this.documentMediaPrefix;
+    return joinPrefix(
+      this.prefix,
+      alias && canonical.startsWith(`${alias}/`) ? canonical.slice(alias.length + 1) : canonical,
+    );
   }
 
   async readFile(path: string): Promise<ArrayBuffer | null> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) return (await providerV2.readFile(parseWorkspacePath(full)))?.data ?? null;
     const binary = await this.provider.readBinary(full);
@@ -46,7 +72,7 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async writeFile(path: string, data: ArrayBuffer | Uint8Array, _mimeType?: string): Promise<void> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) {
       await providerV2.writeFile(parseWorkspacePath(full), data, {
@@ -59,7 +85,7 @@ export class FileSystemContentContainer implements ContentContainer {
   }
 
   async removeFile(path: string): Promise<void> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     if (providerV2) {
       await providerV2.remove(parseWorkspacePath(full), { missing: 'ignore' });
@@ -72,6 +98,18 @@ export class FileSystemContentContainer implements ContentContainer {
     const entries: ContentEntry[] = [];
     const providerV2 = getFileSystemProviderV2(this.provider);
     const root = parseWorkspacePath(this.prefix);
+    // `WorkspacePath`s never carry a leading slash. When this container is
+    // rooted at the workspace root, slicing `prefix.length + 1` therefore
+    // drops the first character of every file path. Besides publishing
+    // corrupt names, that makes prefix scans such as `notes_files/` return no
+    // media at all. Only skip a separator when the container has a non-root
+    // prefix.
+    const relativePath = (childPath: string): string =>
+      root ? (childPath === root ? '' : childPath.slice(root.length + 1)) : childPath;
+    // Start at the deepest folder the prefix names, so `notes_files/` lists
+    // one companion folder instead of walking the entire workspace.
+    const prefixFolder = canonicalPrefixFolder(prefix);
+    const start = prefixFolder ? workspacePathJoin(root, prefixFolder) : root;
     type ListedEntry = {
       readonly kind: 'file' | 'directory';
       readonly path: string;
@@ -84,30 +122,23 @@ export class FileSystemContentContainer implements ContentContainer {
           ? await providerV2.readDirectory(parseWorkspacePath(dir))
           : await this.provider.readDirectory(dir);
       } catch (error: unknown) {
-        // An absent container root means an empty container. Every other
-        // storage fault (including a subtree disappearing mid-snapshot)
-        // remains observable to backup/export callers.
-        if (dir === root && error instanceof FsError && error.code === 'not-found') return;
+        // An absent container root (or prefix folder) means no entries.
+        // Every other storage fault (including a subtree disappearing
+        // mid-snapshot) remains observable to backup/export callers.
+        const absent =
+          error instanceof FsError &&
+          (error.code === 'not-found' || (dir !== root && error.code === 'type-mismatch'));
+        if (dir === start && absent) return;
         throw error;
       }
       for (const child of children) {
+        const childPath = parseWorkspacePath(child.path);
         if (child.kind === 'directory') {
+          if (prefix && !`${relativePath(childPath)}/`.startsWith(prefix)) continue;
           await walk(child.path);
         } else {
-          const childPath = parseWorkspacePath(child.path);
-          const prefixPath = parseWorkspacePath(this.prefix);
-          if (!workspacePathContains(prefixPath, childPath)) continue;
-          // `WorkspacePath`s never carry a leading slash. When this container
-          // is rooted at the workspace root, slicing `prefix.length + 1`
-          // therefore drops the first character of every file path. Besides
-          // publishing corrupt names, that makes prefix scans such as
-          // `notes_files/` return no media at all. Only skip a separator when
-          // the container has a non-root prefix.
-          const rel = prefixPath
-            ? childPath === prefixPath
-              ? ''
-              : childPath.slice(prefixPath.length + 1)
-            : childPath;
+          if (!workspacePathContains(root, childPath)) continue;
+          const rel = relativePath(childPath);
           if (prefix && !rel.startsWith(prefix)) continue;
           const size = child.size ?? (await this.provider.stat(child.path))?.size ?? 0;
           entries.push({
@@ -118,12 +149,12 @@ export class FileSystemContentContainer implements ContentContainer {
         }
       }
     };
-    await walk(root);
+    await walk(start);
     return entries;
   }
 
   async exists(path: string): Promise<boolean> {
-    const full = joinPrefix(this.prefix, path);
+    const full = this.resolve(path);
     const providerV2 = getFileSystemProviderV2(this.provider);
     return providerV2
       ? (await providerV2.stat(parseWorkspacePath(full))) !== null

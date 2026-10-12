@@ -13,7 +13,12 @@ describe('desktop AI model listing', () => {
     const models = toAiModelList([
       { id: 'gezel:router', owned_by: 'gezel', name: 'Meester', role: 'router' },
       { id: 'gezel:writer', owned_by: 'gezel', name: 'Writer', role: 'writer', is_fallback: true },
-      { id: 'llama-cpp:qwen3-4b', owned_by: 'llama-cpp', context_window: 32_768 },
+      {
+        id: 'llama-cpp:qwen3-4b',
+        owned_by: 'llama-cpp',
+        locality: 'on-device',
+        context_window: 32_768,
+      },
       { id: 'anthropic:claude-sonnet-5', owned_by: 'anthropic', context_window: 200_000 },
     ]);
     expect(models).to.deep.equal([
@@ -44,17 +49,40 @@ describe('desktop AI model listing', () => {
     expect(parseAiModelInfoList(models)).to.deep.equal(models);
   });
 
-  it('claims on-device only for engines that run locally', () => {
+  it('claims on-device only when the SDK explicitly reports that locality', () => {
     const local = toAiModelList([
-      { id: 'mlx:gemma4-e4b', owned_by: 'mlx' },
-      { id: 'ollama:llama3.1:8b', owned_by: 'ollama' },
+      { id: 'mlx:gemma4-e4b', owned_by: 'mlx', locality: 'on-device' },
+      { id: 'ollama:llama3.1:8b', owned_by: 'ollama', locality: 'network' },
+      { id: 'llama-cpp:unknown', owned_by: 'llama-cpp' },
       { id: 'copilot:gpt-5', owned_by: 'copilot' },
     ]).map((model) => [model.id, model.local]);
     expect(local).to.deep.equal([
       ['mlx:gemma4-e4b', true],
-      ['ollama:llama3.1:8b', true],
+      ['ollama:llama3.1:8b', false],
+      ['llama-cpp:unknown', false],
       ['copilot:gpt-5', false],
     ]);
+  });
+
+  it('keeps an unavailable system model visible and selects only a ready alternative', () => {
+    const models = toAiModelList([
+      {
+        id: 'system:future-model',
+        name: 'System AI',
+        locality: 'on-device',
+        availability: 'unavailable',
+        unavailable_reason: 'Enable system AI.',
+      },
+      { id: 'local:writer', locality: 'on-device', availability: 'available' },
+    ]);
+    expect(models[0]).to.include({
+      label: 'System AI',
+      availability: 'unavailable',
+      unavailableReason: 'Enable system AI.',
+      local: true,
+    });
+    expect(selectModel(models, 'system:future-model')?.id).to.equal('local:writer');
+    expect(parseAiModelInfoList(models)).to.deep.equal(models);
   });
 
   it('defaults to the first entry when the provider names no fallback', () => {
@@ -131,6 +159,10 @@ describe('desktop AI error mapping', () => {
     expect(codeOf(sdk('already_connected', 409))).to.equal('already-connected');
     expect(codeOf(sdk('openai_endpoints_disabled', 403))).to.equal('inference-disabled');
     expect(codeOf(sdk('model_not_found', 404))).to.equal('model-unavailable');
+    expect(codeOf(sdk('native_verification_failed'))).to.equal('runtime-missing');
+    expect(codeOf(sdk('model_download_failed'))).to.equal('model-download-failed');
+    expect(codeOf(sdk('model_not_ready'))).to.equal('model-unavailable');
+    expect(codeOf(sdk('aborted'))).to.equal('cancelled');
     expect(codeOf(sdk('ERR_MODULE_NOT_FOUND'))).to.equal('runtime-missing');
   });
 

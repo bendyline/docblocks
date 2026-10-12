@@ -21,6 +21,9 @@ jobs:
       - run: npm ci
       - run: npm run mobile:test:ios
       - run: npm run mobile:package -- ios 1
+        env:
+          # Vite's mobile bundle exceeds the Xcode runner's default 2 GiB Node heap.
+          NODE_OPTIONS: --max-old-space-size=4096
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: ${{ !cancelled() }}
         with:

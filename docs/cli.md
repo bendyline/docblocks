@@ -32,6 +32,7 @@ contract.
 | `themes`     | List theme IDs from the linked Squisq registry.               |
 | `transforms` | List transform-style IDs from the linked Squisq registry.     |
 | `parse`      | Parse UTF-8 Markdown content into Squisq's Markdown AST JSON. |
+| `workspace`  | Refresh the catalog outputs a workspace's settings enable.    |
 
 <!-- END CLI COMMAND CATALOG -->
 
@@ -44,12 +45,13 @@ Direct CLI commands run with the normal authority of the invoking process. They 
 not inherit the MCP server's root grants, quotas, conditional-write policy, or
 operation timeout.
 
-| Command   | Existing destination                                                                                                   |
-| --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `build`   | Replaces generated HTML files.                                                                                         |
-| `convert` | Refuses the run when any converter-named destination exists; `--allow-overwrite` atomically replaces them.             |
-| `video`   | Refuses the run when the selected MP4 exists; `--allow-overwrite` replaces it through FFmpeg.                          |
-| `mcp`     | Creates temporary artifacts first; durable writes happen only through the explicitly conditional `save_artifact` tool. |
+| Command     | Existing destination                                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`     | Replaces generated HTML files.                                                                                                                           |
+| `convert`   | Refuses the run when any converter-named destination exists; `--allow-overwrite` atomically replaces them.                                               |
+| `video`     | Refuses the run when the selected MP4 exists; `--allow-overwrite` replaces it through FFmpeg.                                                            |
+| `mcp`       | Creates temporary artifacts first; durable writes happen only through the explicitly conditional `save_artifact` tool.                                   |
+| `workspace` | Writes only outputs enabled in `.docblocks/workspace.json`; replaces only files carrying the DocBlocks catalog marker, and only when their bytes differ. |
 
 Normal progress and human-readable status go to stderr. Commands intended for
 machine discovery keep their values or JSON on stdout. The MCP command reserves
@@ -66,6 +68,7 @@ docblocks build --input ./docs --output ./dist --theme documentary
 | `-i, --input <dir>`                | `.`     | Source directory.                                           |
 | `-o, --output <dir>`               | `dist`  | Generated HTML directory.                                   |
 | `-t, --theme <id>`                 | unset   | Override the document theme; otherwise Squisq resolves it.  |
+| `--ignore-workspace-settings`      | off     | Do not apply the workspace default theme (see below).       |
 | `--max-input-bytes <bytes>`        | 20 MiB  | Maximum bytes in one Markdown input.                        |
 | `--max-total-input-bytes <bytes>`  | 512 MiB | Maximum aggregate Markdown input bytes.                     |
 | `--max-output-bytes <bytes>`       | 128 MiB | Maximum bytes in one generated HTML file.                   |
@@ -90,20 +93,36 @@ containment checks. The default image budget is 100 images, 20 MiB per image, an
 on stderr with the reason, so a document whose images silently fail to embed reports
 itself instead of producing valid-looking HTML with invisibly broken images.
 
+### Workspace default theme
+
+When `--theme` is absent, `build` reads `<input>/.docblocks/workspace.json` and
+applies its `documents.defaultTheme` to every document whose frontmatter names no
+theme (`squisq-theme`, `themeId`, or `theme`). A document's own theme always wins,
+and `--theme` overrides both without reading the file. A missing file changes
+nothing. An invalid file, one written by a newer DocBlocks, or an unknown theme ID is
+reported on stderr and the build continues without it; a permission or I/O failure
+reading the file fails the build. `--ignore-workspace-settings` skips the file.
+
 ## `docblocks serve`
 
 ```bash
 docblocks serve --dir ./docs --port 3000
 ```
 
-| Option                   | Default     | Meaning                                                    |
-| ------------------------ | ----------- | ---------------------------------------------------------- |
-| `-p, --port <port>`      | `3000`      | Listening port; `0` asks the OS for an ephemeral port.     |
-| `-d, --dir <dir>`        | `.`         | Directory to preview.                                      |
-| `-t, --theme <id>`       | unset       | Override the document theme; otherwise Squisq resolves it. |
-| `--host <host>`          | `127.0.0.1` | Interface to bind.                                         |
-| `--allow-network`        | off         | Required for a non-loopback host.                          |
-| `--allow-host <host...>` | none        | Extra Host header names this server answers to (max 32).   |
+| Option                        | Default     | Meaning                                                    |
+| ----------------------------- | ----------- | ---------------------------------------------------------- |
+| `-p, --port <port>`           | `3000`      | Listening port; `0` asks the OS for an ephemeral port.     |
+| `-d, --dir <dir>`             | `.`         | Directory to preview.                                      |
+| `-t, --theme <id>`            | unset       | Override the document theme; otherwise Squisq resolves it. |
+| `--ignore-workspace-settings` | off         | Do not apply the workspace default theme.                  |
+| `--host <host>`               | `127.0.0.1` | Interface to bind.                                         |
+| `--allow-network`             | off         | Required for a non-loopback host.                          |
+| `--allow-host <host...>`      | none        | Extra Host header names this server answers to (max 32).   |
+
+Markdown previews follow the same [workspace default theme](#workspace-default-theme)
+rule as `build`, using `<dir>/.docblocks/workspace.json`. The file is re-read for
+every Markdown preview, so a changed default applies on the next browser refresh, and
+a repeated settings problem is reported on stderr once rather than per request.
 
 The server accepts only `GET` and `HEAD`, performs no directory listing, and serves
 only documented browser-preview asset types. Directory index priority is
@@ -323,6 +342,13 @@ Input uses the same linked Squisq reader as `convert`, so import-capable Office,
 PDF, spreadsheet, HTML, Markdown, JSON Doc, DBK/ZIP, and folder sources are valid.
 The linked default dimensions are 1920x1080 landscape and 1080x1920 portrait.
 
+**Dynamic slides** (`squisq-transform: dynamic-slides`) regenerates the visual
+presentation from current prose and optional `squisq-presentation-hints`. Its cues
+are resolved from the current narration and adjacent timing sidecar, including
+WebM audio. Keep the Markdown and its media folder together. Stale narration or
+missing timings fail export with a repair message. Legacy `squisq-presentation`
+plans remain readable. See [Dynamic slides](presentations.md).
+
 Media-edit recipes carry through: cuts, gain, and fades on audio and video clips
 shape the mix, and a clip with an audio-cleanup recipe (`fx`) uses its processed
 render from the document's `.mediaEdits/` folder when one exists (the editor makes
@@ -376,6 +402,49 @@ linked Squisq `MarkdownDocument` syntax tree. The command is intended for UTF-8
 Markdown content but does not enforce a filename extension, unlike the broader
 linked input reader used by `convert` and `video`. Malformed UTF-8 is rejected.
 Input is limited to 20 MiB and serialized JSON output to 128 MiB.
+
+## `docblocks workspace refresh [dir]`
+
+```bash
+docblocks workspace refresh
+docblocks workspace refresh ./docs --dry-run
+```
+
+| Option      | Default | Meaning                                                                     |
+| ----------- | ------- | --------------------------------------------------------------------------- |
+| `[dir]`     | `.`     | Workspace root that contains `.docblocks/workspace.json`.                   |
+| `--force`   | off     | Re-render the catalog page even when its recorded inputs digest is current. |
+| `--dry-run` | off     | Compute every enabled output and report it; write nothing.                  |
+
+The command runs the same filesystem-independent catalog refresh as the editor
+shell, so scripts and CI produce the same `catalog.json` and catalog page bytes.
+Outputs are opt-in: each is written only when its `catalog.json.enabled` or
+`catalog.html.enabled` setting is true, at its configured path (`catalog.json` and
+`index.html` by default). A folder with no settings file, or settings that enable no
+output, exits 0 and writes nothing.
+
+- An existing file is replaced only when it carries the DocBlocks catalog marker. A
+  hand-written file at the configured path is reported as `blocked` and left
+  untouched.
+- A file is written only when its bytes differ, and without `--force` the catalog
+  page is not even re-rendered while its recorded inputs digest is unchanged, so
+  watchers, Git, and sync clients see no churn.
+- Each write goes to a hidden temporary file in the destination folder and is
+  published by rename, or by an exclusive create when the file is new, after the
+  version that was read is re-checked. When another writer wins that race, the
+  refresh re-runs once.
+- The walk skips hidden files and folders, outside-in `_files` companions, `_squisq`,
+  `node_modules`, `catalog.exclude` prefixes, and symbolic links. A configured path
+  that resolves outside the workspace through a link is refused.
+- The walk stops at 5,000 documents, 20,000 folders, or 32 levels, and after reading
+  256 MiB of documents; over budget, nothing is written. Documents over 4 MiB are
+  listed without extracted metadata, and a file over 256 MiB stops the refresh.
+
+Each output prints one stderr line: `written <path>`, `unchanged <path>`,
+`would write <path>` (dry run), or `blocked <path>: <reason>`. The command exits 1
+when any output is blocked, when the settings file is invalid or was written by a
+newer DocBlocks (the parser's message is printed), when a budget is exceeded, or on a
+filesystem error.
 
 ## `docblocks mcp`
 

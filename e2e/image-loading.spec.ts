@@ -75,8 +75,16 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   await expect(lines).toContainText('image-loading_files/dropped-photo.png');
   await expect(lines).not.toContainText('data:image');
   const source = page.locator('.monaco-editor textarea');
-  await source.press('ControlOrMeta+A');
+  // Monaco chooses shortcuts from the browser's user agent. ControlOrMeta
+  // follows the test host instead, so it sends Cmd+A on macOS even when the
+  // Desktop Chrome device emulates Windows, leaving the old image in place.
+  const selectAll = await source.evaluate(() =>
+    navigator.userAgent.includes('Macintosh') ? 'Meta+A' : 'Control+A',
+  );
+  await source.press(selectAll);
   await page.keyboard.insertText('# Missing image\n\n![Example photo](missing-photo.png)\n');
+  await expect(lines).toContainText('![Example photo](missing-photo.png)');
+  await expect(lines).not.toContainText('dropped-photo.png');
   await page.locator('[data-view="wysiwyg"]').click();
   const failed = editor.getByRole('img', { name: 'Image unavailable: Example photo' });
   await expect(failed).toBeVisible();
