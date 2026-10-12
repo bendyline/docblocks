@@ -1,0 +1,5 @@
+{
+  "macEditorMinimum": "12.0",
+  "macNativeMinimum": "13.3.0",
+  "linuxNativeGlibcMinimum": "2.38"
+}

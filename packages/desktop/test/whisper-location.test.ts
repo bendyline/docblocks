@@ -19,6 +19,7 @@ describe('Whisper engine discovery', () => {
     arch: 'arm64',
     home,
     nativeRelease: '0.1.48',
+    versions: { macOS: '13.3' },
   };
   const installed =
     (...files: string[]) =>
@@ -39,6 +40,17 @@ describe('Whisper engine discovery', () => {
       findWhisperBinary({
         ...defaults,
         exists: installed(cached(gezelHome, '0.1.46')),
+      }),
+    ).to.equal(null);
+  });
+
+  it('does not expose an installed packaged engine on an unsupported OS', () => {
+    expect(
+      findWhisperBinary({
+        ...defaults,
+        isPackaged: true,
+        versions: { macOS: '12.7' },
+        exists: () => true,
       }),
     ).to.equal(null);
   });

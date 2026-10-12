@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import yaml from 'js-yaml';
 import { desktopDependencyExclusions } from './desktop-runtime-policy.js';
+import nativePlatformPolicy from '../packages/desktop/native-platform-policy.json';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -146,7 +147,7 @@ function requireBundledGezelEngines(): void {
     failConfigPolicy('Desktop signing must preserve the pinned Gezel native release signatures.');
   }
   if (
-    config.afterPack !== 'scripts/prepare-mas-gezel.cjs' ||
+    config.afterPack !== 'scripts/after-pack.cjs' ||
     !isRecord(config.mas) ||
     !Array.isArray(config.mas.signIgnore) ||
     !config.mas.signIgnore.includes('/Contents/Resources/gezel-native/') ||
@@ -170,6 +171,61 @@ function requireBundledGezelEngines(): void {
 }
 
 requireBundledGezelEngines();
+
+function requireNativePlatformContract(): void {
+  if (
+    !isRecord(config) ||
+    !isRecord(config.mac) ||
+    config.mac.minimumSystemVersion !== nativePlatformPolicy.macEditorMinimum ||
+    !isRecord(config.linux) ||
+    typeof config.linux.description !== 'string' ||
+    !config.linux.description.includes(`glibc ${nativePlatformPolicy.linuxNativeGlibcMinimum}`)
+  ) {
+    failConfigPolicy(
+      'Desktop package metadata must declare the editor baseline and optional native feature requirements.',
+    );
+  }
+  process.stdout.write('electron-builder.yml: native feature OS contract OK\n');
+}
+
+requireNativePlatformContract();
+
+function requireTargetNativeDependencies(): void {
+  if (!isRecord(config) || !Array.isArray(config.files)) {
+    failConfigPolicy('Desktop native dependency fileset is missing.');
+  }
+  const variants =
+    '{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}';
+  for (const prefix of ['node_modules/', 'node_modules/**/node_modules/']) {
+    if (!config.files.includes(`!${prefix}${variants}/**/*`)) {
+      failConfigPolicy(
+        'Desktop must exclude host-native optional packages before staging target variants.',
+      );
+    }
+  }
+  if (
+    !config.files.some(
+      (entry) =>
+        isRecord(entry) &&
+        entry.from === 'dist/native-modules/${os}-${arch}/node_modules' &&
+        entry.to === 'node_modules' &&
+        Array.isArray(entry.filter) &&
+        entry.filter.includes('**/*'),
+    ) ||
+    !Array.isArray(config.asarUnpack) ||
+    !config.asarUnpack.includes('dist/native-modules/${os}-${arch}/node_modules/**/*') ||
+    config.afterPack !== 'scripts/after-pack.cjs'
+  ) {
+    failConfigPolicy(
+      'Desktop must package, unpack, and verify the target native dependency fileset.',
+    );
+  }
+  process.stdout.write(
+    'electron-builder.yml: target native dependency staging and ASAR verification OK\n',
+  );
+}
+
+requireTargetNativeDependencies();
 
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',

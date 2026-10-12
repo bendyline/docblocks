@@ -10,6 +10,7 @@
  *   npm run ux:crawl                      # build, preview, crawl
  *   npm run ux:crawl -- reports/my-run    # choose the output directory
  *   npm run ux:crawl -- --no-build        # reuse packages/site/dist
+ *   npm run ux:crawl -- --review          # functional, export, accessibility audit
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl   # the live site
  *
  * The service worker only exists in a production build, which is the same
@@ -73,12 +74,16 @@ async function startPreview(): Promise<PreviewServer> {
 async function main(): Promise<void> {
   const passThrough = process.argv.slice(2);
   const skipBuild = passThrough.includes('--no-build');
-  const crawlArgs = passThrough.filter((argument) => argument !== '--no-build');
+  const review = passThrough.includes('--review');
+  const entry = review ? path.join(repoRoot, 'e2e', 'site-ship-review.ts') : crawlEntry;
+  const crawlArgs = passThrough.filter(
+    (argument) => !['--no-build', '--review'].includes(argument),
+  );
 
   const externalBaseUrl = process.env.LIVE_UX_BASE_URL;
   if (externalBaseUrl) {
     say(`Crawling the configured LIVE_UX_BASE_URL (${externalBaseUrl}); no preview is started.`);
-    await runCommand('npx', ['tsx', crawlEntry, ...crawlArgs]);
+    await runCommand('npx', ['tsx', entry, ...crawlArgs]);
     return;
   }
 
@@ -91,7 +96,7 @@ async function main(): Promise<void> {
   const server = await startPreview();
   const baseUrl = `http://127.0.0.1:${PREVIEW_PORT}`;
   try {
-    await runCommand('npx', ['tsx', crawlEntry, ...crawlArgs], {
+    await runCommand('npx', ['tsx', entry, ...crawlArgs], {
       ...process.env,
       LIVE_UX_BASE_URL: baseUrl,
     });

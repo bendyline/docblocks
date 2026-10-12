@@ -29,7 +29,9 @@ describe('ShareDialog', () => {
       });
     }
 
-    expect(container.textContent).to.include('contents of this document are embedded in the URL');
+    expect(container.textContent).to.include('text and formatting of this document are embedded');
+    expect(container.textContent).to.include('Images are excluded from share links.');
+    expect(container.textContent).to.include('Image descriptions are kept when available.');
     const select = container.querySelector<HTMLSelectElement>('#db-share-mode');
     const link = container.querySelector<HTMLTextAreaElement>('#db-share-link');
     expect(select).not.to.equal(null);

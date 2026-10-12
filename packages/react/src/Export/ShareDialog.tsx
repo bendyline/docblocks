@@ -189,9 +189,13 @@ export function ShareDialog({
 
         <div className="db-dialog-body">
           <div className="db-share-warning" role="note">
-            The contents of this document are embedded in the URL. Anyone with the link receives a
-            copy of the document, so do not use it for secrets.
+            The text and formatting of this document are embedded in the URL. Anyone with the link
+            can read the shared copy, so do not use it for secrets.
           </div>
+          <p className="db-export-hint" role="note">
+            Images are excluded from share links. Image descriptions are kept when available. Your
+            original document is unchanged.
+          </p>
 
           <div className="db-export-field">
             <label className="db-export-label" htmlFor="db-share-mode">
@@ -240,7 +244,7 @@ export function ShareDialog({
                   ? isLong
                     ? `${linkResult.url.length.toLocaleString()} characters. Links longer than 4,096 characters may be truncated by messaging or email tools.`
                     : `${linkResult.url.length.toLocaleString()} characters.`
-                  : 'Compressing this document into a Markdown-only DBK...'}
+                  : 'Creating a link with the shared text and formatting...'}
             </span>
           </div>
 
@@ -249,7 +253,8 @@ export function ShareDialog({
               <div>
                 <h3 id="db-share-qr-title">QR code</h3>
                 <span className="db-export-hint">
-                  A self-contained docblocks.com link. No document content is uploaded.
+                  A self-contained docblocks.com link to the shared text. No document content is
+                  uploaded.
                 </span>
               </div>
               <div className="db-share-qr-actions">

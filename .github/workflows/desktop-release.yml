@@ -567,6 +567,8 @@ jobs:
           name: DocBlocks Desktop v${{ needs.build-windows.outputs.version }}
           draft: ${{ inputs.draft || false }}
           generate_release_notes: true
+          body: |
+            Desktop OS requirements: macOS 12 or later on Apple silicon. Optional built-in AI and dictation require macOS 13.3 or Linux glibc 2.38 or later (for example Ubuntu 24.04 or Debian 13). Read aloud requires macOS 14. Older systems retain editing and export with unsupported native features unavailable.
           files: |
             artifacts/windows-artifacts/*
             artifacts/macos-artifacts/*

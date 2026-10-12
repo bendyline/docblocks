@@ -4,14 +4,14 @@ import { resolveGezelNativeHost } from '../main/ai/gezel-native-host.js';
 
 describe('bundled Gezel host policy', () => {
   it('marks MAS engines for sandbox-aware signature verification', () => {
-    expect(resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64', true)).to.deep.include(
-      {
-        macAppStore: true,
-        distributionProfile: 'store',
-        nativeBinDir: path.join('/resources', 'gezel-native'),
-        canHost: true,
-      },
-    );
+    expect(
+      resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64', true, { macOS: '13.3' }),
+    ).to.deep.include({
+      macAppStore: true,
+      distributionProfile: 'store',
+      nativeBinDir: path.join('/resources', 'gezel-native'),
+      canHost: true,
+    });
   });
   it('pins packaged binaries to app resources and prohibits executable downloads', () => {
     const resources = path.resolve('/opt/docblocks/resources');
@@ -51,8 +51,29 @@ describe('bundled Gezel host policy', () => {
 
   it('keeps Intel Mac hosting unavailable while the native release has no matching engines', () => {
     expect(resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'x64').canHost).to.equal(false);
-    expect(resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64').canHost).to.equal(
-      true,
-    );
+    expect(
+      resolveGezelNativeHost(true, '/resources', {}, 'darwin', 'arm64', false, { macOS: '13.3' })
+        .canHost,
+    ).to.equal(true);
+  });
+
+  it('disables packaged hosting below the native OS floor with an actionable reason', () => {
+    for (const [platform, versions, requirement] of [
+      ['darwin', { macOS: '13.2.1' }, 'macOS 13.3'],
+      ['linux', { glibc: '2.37' }, 'glibc 2.38'],
+    ] as const) {
+      const native = resolveGezelNativeHost(
+        true,
+        '/resources',
+        {},
+        platform,
+        'arm64',
+        false,
+        versions,
+      );
+      expect(native.canHost).to.equal(false);
+      expect(native.unavailableReason).to.contain(requirement);
+      expect(native.distributionProfile).to.equal('store');
+    }
   });
 });

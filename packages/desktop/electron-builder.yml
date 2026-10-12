@@ -25,6 +25,14 @@ files:
   # Chokidar 4 watches literal paths and does not need these packages either.
   - '!node_modules/{braces,fast-glob,micromatch}/**/*'
   - '!node_modules/**/node_modules/{braces,fast-glob,micromatch}/**/*'
+  # npm ci installs the runner's optional native variants, even when packaging
+  # another architecture. Replace these with the lockfile-pinned target fileset.
+  - '!node_modules/{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}/**/*'
+  - '!node_modules/**/node_modules/{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}/**/*'
+  - from: dist/native-modules/${os}-${arch}/node_modules
+    to: node_modules
+    filter:
+      - '**/*'
   # ONNX Runtime (narration) ships every platform's binaries in one package;
   # keep only the target's. On Windows the CPU backend never loads DirectML,
   # which onnxruntime.dll imports lazily, so its ~40 MB of DLLs stay out too.
@@ -43,7 +51,7 @@ extraResources:
 # Stage the target architecture from the installed Gezel service's release
 # pins before copying resources. No executable download happens in the app.
 beforePack: scripts/stage-gezel-native.cjs
-afterPack: scripts/prepare-mas-gezel.cjs
+afterPack: scripts/after-pack.cjs
 
 # Electron's own license and Chromium notice are supplied by the exact Electron
 # archive that electron-builder extracts for this platform and architecture.
@@ -77,13 +85,11 @@ electronFuses:
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
 
-# electron-builder auto-detects native modules with .node bindings and
-# unpacks them into app.asar.unpacked automatically. Adding an explicit
-# `asarUnpack` list here is only necessary for runtime resources that
-# the packager can't discover on its own.
-# Leave this block commented until that need arises — in a monorepo,
-# `**/node_modules/...` globs can match workspace symlinks and fail the
-# build with "must be under <app-dir>" errors.
+# Custom filesets do not receive the dependency collector's auto-unpack metadata.
+# Match the staged source paths, which are under appDir and map into the ASAR's
+# node_modules. Never use a broad **/node_modules glob across workspace symlinks.
+asarUnpack:
+  - 'dist/native-modules/${os}-${arch}/node_modules/**/*'
 
 # Auto-update configuration — electron-updater checks this repo for releases.
 # The release workflow uploads installers + latest.yml to GitHub Releases.
@@ -150,6 +156,8 @@ appx:
 # when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are in the env
 # (CI only) — it also staples the ticket. No custom afterSign hook needed.
 mac:
+  # Editor baseline. Optional bundled AI/dictation is gated separately at 13.3.
+  minimumSystemVersion: '12.0'
   target:
     # dmg is the human-facing download; zip is what electron-updater installs
     # from on macOS (it cannot auto-install from a .dmg). latest-mac.yml points
@@ -261,7 +269,11 @@ linux:
   # workspace packages.
   maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
-  description: DocBlocks - a Markdown editor, converter, and publisher.
+  description: >-
+    DocBlocks - a Markdown editor, converter, and publisher.
+    Optional built-in AI and dictation require glibc 2.38 or later
+    (for example Ubuntu 24.04 or Debian 13); editing and export remain available
+    when those native features are unavailable.
 
 appImage:
   # electron-builder's AppImage target injects `--no-sandbox` into the embedded

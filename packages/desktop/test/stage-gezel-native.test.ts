@@ -27,6 +27,8 @@ describe('Gezel native packaging adapter', () => {
 
   it('hands the MAS OS and electron-builder destination to the service packager', async () => {
     const calls: unknown[] = [];
+    const dependencyCalls: unknown[] = [];
+    const verificationCalls: unknown[] = [];
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
@@ -34,11 +36,22 @@ describe('Gezel native packaging adapter', () => {
         arch: 3,
       },
       {
+        stageNativeDependencies: async (options: unknown) => {
+          dependencyCalls.push(options);
+        },
         stageElectronNative: async (options: unknown) => {
           calls.push(options);
         },
+        verifyNativePlatformRequirements: async (options: unknown) => {
+          expect(calls).to.have.length(1);
+          verificationCalls.push(options);
+        },
       },
     );
+    expect(dependencyCalls).to.deep.equal([{ appDir: root, platform: 'darwin', arch: 'arm64' }]);
+    expect(verificationCalls).to.deep.equal([
+      { directory: path.join(root, 'dist', 'gezel-native', 'mac-arm64'), platform: 'darwin' },
+    ]);
     expect(calls).to.deep.equal([
       {
         platform: 'darwin',
@@ -83,6 +96,7 @@ describe('Gezel native packaging adapter', () => {
         arch: 1,
       },
       {
+        stageNativeDependencies: async () => {},
         stageElectronNative: async () => {},
         vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
       },

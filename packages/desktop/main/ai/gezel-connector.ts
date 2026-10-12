@@ -158,9 +158,11 @@ export class GezelConnector implements AiConnector {
 
   async detect(): Promise<AiDetection> {
     const canHost = this.canHost();
+    const unavailable = this.options.hostNative?.unavailableReason;
+    const host = { canHost, ...(unavailable ? { hostUnavailableReason: unavailable } : {}) };
     if (this.options.standalone === false)
-      return { installed: false, running: false, version: null, canHost };
-    if (this.options.endpoint) return { installed: true, running: true, version: null, canHost };
+      return { installed: false, running: false, version: null, ...host };
+    if (this.options.endpoint) return { installed: true, running: true, version: null, ...host };
     const result = await (
       await this.module()
     ).detectGezel(this.options.home ? { home: this.options.home } : undefined);
@@ -168,7 +170,7 @@ export class GezelConnector implements AiConnector {
       installed: result.installed,
       running: result.running,
       version: result.version ?? null,
-      canHost,
+      ...host,
     };
   }
 

@@ -73,6 +73,8 @@ export interface AiDetection {
    * reason to stop.
    */
   readonly canHost: boolean;
+  /** A concrete OS/runtime explanation when the bundled provider cannot run. */
+  readonly hostUnavailableReason?: string;
 }
 
 export interface AiConnectOptions {
@@ -708,6 +710,12 @@ export class AiService {
       return this.failAttempt(error, epoch);
     }
     if (stale()) return fail(aiError('cancelled'));
+    if (!detection.canHost && !detection.running && detection.hostUnavailableReason) {
+      return this.failAttempt(
+        new AiHostError('runtime-missing', detection.hostUnavailableReason),
+        epoch,
+      );
+    }
     // A provider this app can host itself makes the person's own install
     // optional; without one, their Gezel has to be there and running.
     if (!detection.installed && !detection.canHost) {

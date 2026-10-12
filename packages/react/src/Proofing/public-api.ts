@@ -19,6 +19,7 @@
 import { createHarperProofingProvider } from '@bendyline/squisq-editor-react/proofing';
 import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 import type { ProofingDictionaryStore } from './proofing-dictionary.js';
+import { DOCBLOCKS_PROOFING_WORDS } from './proofing-dictionary.js';
 
 export type { ProofingDictionaryStore } from './proofing-dictionary.js';
 export { createLocalProofingDictionary } from './proofing-dictionary.js';
@@ -59,7 +60,10 @@ export function createDocBlocksProofingProvider(
   const { wasmUrl, dictionary } = options;
   return createHarperProofingProvider({
     wasmUrl,
-    initialWords: dictionary?.read() ?? [],
+    // Sentence case is an intentional house style, not a grammar error.
+    // Keep every other spelling, grammar, and spacing rule at its default.
+    lintConfig: { UseTitleCase: false },
+    initialWords: [...DOCBLOCKS_PROOFING_WORDS, ...(dictionary?.read() ?? [])],
     onDictionaryWord: dictionary ? (word) => dictionary.append(word) : undefined,
   });
 }

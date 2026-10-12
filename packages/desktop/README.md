@@ -269,6 +269,39 @@ Direct-download releases include Apple Silicon builds for macOS and x64 and
 arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
 for each architecture.
 
+The editor keeps its macOS 12 minimum. Optional bundled AI and dictation require
+**macOS 13.3 or later** or **Linux glibc 2.38 or later**, on both Linux
+architectures. Ubuntu 24.04 and Debian 13 meet that libc floor; Ubuntu 22.04 and
+Debian 12 do not. Narration has its separate macOS 14 minimum. On older systems,
+Settings explains why the affected features are unavailable; editing and export
+remain available. A compatible running standalone Gezel remains usable without
+starting DocBlocks' bundled service.
+
+`native-platform-policy.json` is shared by the runtime gates and packaging checks.
+Both staging and `afterPack` inspect every real binary in `gezel-native`, including
+shared libraries: Mach-O minimum OS load commands and ELF required symbol versions
+(not arbitrary strings or exported symbols). A higher requirement fails packaging.
+Because these engines are optional and gated before launch, the Debian package
+does not impose their libc floor on the editor; its description states the feature
+requirement. See [OS qualification](../../docs/desktop-ai-native-release.md#os-qualification)
+before treating a new payload as release-qualified.
+
+Cross-packaging does not reuse npm's host-only optional native packages. The
+`beforePack` hook stages canvas, keyring, resvg, ripgrep, and sqlite-vec variants
+from the exact root lockfile into `dist/native-modules/<os>-<arch>/`. The pinned
+npm toolchain verifies each registry tarball's SHA-512 without running package
+scripts. The installed dependency tree stays unchanged. Electron-builder excludes
+the host variants, copies this target fileset into `app.asar`, and unpacks its
+native files. `scripts/after-pack.cjs` rejects missing variants, foreign platform
+packages, wrong PE/ELF/Mach-O architectures, and packed native bindings before
+signing; it then runs the existing MAS native preparation.
+
+Linux targets use glibc variants. sqlite-vec does not publish a Windows ARM64
+binary at the pinned version: that optional accelerator is omitted there, and
+Gezel's existing unavailable-vector-extension fallback applies. No x64 DLL is
+substituted. Changes to those package families or their support matrix must update
+the staging checks and pass a packaged hosted-AI smoke on the target hardware.
+
 ## Testing
 
 ```bash

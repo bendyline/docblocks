@@ -28,12 +28,75 @@ export function sharedDocumentFilename(selectedFile: string | null): string {
   return `${bounded}.md`;
 }
 
-/** Create a compressed DBK containing exactly one bounded Markdown file. */
+async function omitSharedImages(markdown: string): Promise<string> {
+  const { parseMarkdown, rewriteMarkdownReferences, splitFrontmatterBlock, walkMarkdownTree } =
+    await import('@bendyline/squisq/markdown');
+  const { frontmatter, body } = splitFrontmatterBlock(markdown);
+  const imageReferences = new Set<string>();
+  const linkReferences = new Set<string>();
+  walkMarkdownTree(parseMarkdown(body, { frontmatter: false }), (node) => {
+    if (node.type === 'imageReference') imageReferences.add(node.identifier);
+    if (node.type === 'linkReference') linkReferences.add(node.identifier);
+  });
+
+  // Keep Markdown/HTML interpretation in Squisq, leaving code examples and
+  // unrelated source unchanged.
+  let sharedBody = rewriteMarkdownReferences(body, { images: 'omit' });
+  let sharedDocument = parseMarkdown(sharedBody, { frontmatter: false });
+  let descriptionContainsImage = false;
+  walkMarkdownTree(sharedDocument, (node) => {
+    if (node.type === 'image' || node.type === 'imageReference') descriptionContainsImage = true;
+    if (node.type === 'imageReference') imageReferences.add(node.identifier);
+    if (node.type === 'linkReference') linkReferences.add(node.identifier);
+  });
+  // HTML alt text can itself look like Markdown image syntax when emitted as
+  // prose. Omit those images as well, then fail visibly if any remain.
+  if (descriptionContainsImage) {
+    sharedBody = rewriteMarkdownReferences(sharedBody, { images: 'omit' });
+    sharedDocument = parseMarkdown(sharedBody, { frontmatter: false });
+    walkMarkdownTree(sharedDocument, (node) => {
+      if (node.type === 'image' || node.type === 'imageReference') {
+        throw new Error(
+          'An image description contains image markup that cannot be shared as text.',
+        );
+      }
+    });
+  }
+  if (imageReferences.size > 0) {
+    // Image omission leaves reference definitions behind. Remove image-only
+    // definitions too, including embedded data URLs, but retain real text links.
+    const removals: Array<{ start: number; end: number }> = [];
+    walkMarkdownTree(sharedDocument, (node) => {
+      if (
+        node.type !== 'definition' ||
+        !imageReferences.has(node.identifier) ||
+        linkReferences.has(node.identifier)
+      ) {
+        return;
+      }
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (start === undefined || end === undefined) {
+        throw new Error('Cannot locate an image reference in the shared document.');
+      }
+      removals.push({ start, end });
+    });
+    for (const { start, end } of removals.sort((a, b) => b.start - a.start)) {
+      sharedBody = sharedBody.slice(0, start) + sharedBody.slice(end);
+    }
+  }
+  return (frontmatter ?? '') + sharedBody;
+}
+
+/** Share text and formatting only, retaining image descriptions instead of images. */
 export async function createSharedDocumentArchive(
   markdown: string,
   selectedFile: string | null,
 ): Promise<Uint8Array> {
-  const encoded = new TextEncoder().encode(markdown);
+  // The parser applies its own source/complexity limits before transformation;
+  // the smaller share-link budget applies to the resulting text.
+  const sharedMarkdown = await omitSharedImages(markdown);
+  const encoded = new TextEncoder().encode(sharedMarkdown);
   if (encoded.byteLength > SHARED_DOCUMENT_LIMITS.markdownBytes) {
     throw new Error(
       `This document is too large for a shared URL (maximum ${SHARED_DOCUMENT_LIMITS.markdownBytes.toLocaleString()} UTF-8 bytes).`,

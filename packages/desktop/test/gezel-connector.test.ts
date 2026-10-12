@@ -616,6 +616,40 @@ describe('Gezel connector with the real embedding SDK', () => {
     expect(fixture.starts).to.deep.equal([]);
   });
 
+  it('never loads or starts the bundled service below its OS floor', async () => {
+    const reason = 'Built-in AI and dictation need macOS 13.3 or later.';
+    const stopped = new Error('Stopped after inspecting the SDK connection options');
+    let reachedSdk = false;
+    const fixture = hosted({
+      standalone: false,
+      hostNative: {
+        distributionProfile: 'store',
+        allowStandaloneMacPayload: false,
+        canHost: false,
+        unavailableReason: reason,
+      },
+      loadService: async () => {
+        throw new Error('must not load the service');
+      },
+      loadHostSdk: async () =>
+        ({
+          connectDesktopEmbedding: async (options: unknown) => {
+            reachedSdk = true;
+            expect(options).not.to.have.property('host');
+            throw stopped;
+          },
+        }) as unknown as typeof import('@bendyline/gezel-app-sdk/host'),
+    });
+    expect(await fixture.connector.detect()).to.deep.include({
+      canHost: false,
+      hostUnavailableReason: reason,
+    });
+    expect(await rejection(fixture.connect())).to.equal(stopped);
+    expect(reachedSdk).to.equal(true);
+    expect(fixture.starts).to.deep.equal([]);
+    expect(fixture.verifications).to.deep.equal([]);
+  });
+
   it('does not verify or load bundled engines when a stored standalone grant works', async () => {
     const daemon = new FakeDaemon();
     daemon.validToken = 'kept-token';
