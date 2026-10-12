@@ -139,7 +139,8 @@ data downloads initiated by **Add model**. Development may use an absolute
 without requiring a notarized enclosing app. With no development override, Gezel
 may provision engines as before.
 
-macOS distributions support Apple Silicon only. Mac App Store builds include
+macOS distributions support Apple Silicon only; 2.7.1 is Intel Macs' final
+version (see [Intel Macs](#intel-macs)). Mac App Store builds include
 AI through a private service inside `userData/ai/gezel`, with standalone Gezel
 discovery and external model borrowing disabled. AI remains off until opt-in.
 The first MAS implementation offers Apple Intelligence through the bundled
@@ -268,6 +269,28 @@ normal signing and notarization configuration.
 Direct-download releases include Apple Silicon builds for macOS and x64 and
 arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
 for each architecture.
+
+### Intel Macs
+
+DocBlocks 2.7.1 is the final version for Intel Macs (`intel-mac-final.json`).
+The bundled AI and speech engines have no Intel builds. Also, electron-updater on
+an Intel Mac reports a failed download for any feed that has no Intel zip. So
+Intel support ends with one deliberate build rather than a dropped architecture:
+
+- The 2.7.1 release builds one extra x64 update zip, with no `.dmg` and no
+  blockmap. Every later `latest-mac.yml` adds an entry that points at it through
+  `../desktop-v2.7.1/`, so an Intel install on any earlier version still updates
+  to its final build. See `scripts/intel-mac-final-feed.ts` and the release
+  workflow step "Point Intel Macs at their final release".
+- On a real Intel Mac, that build never checks for updates. It explains this once
+  at first launch and again on **Help > Check for Updates**. Rosetta-translated
+  x64 builds on Apple silicon keep updating and move to arm64.
+- No other version builds for `darwin-x64`. Both `stage-gezel-native.cjs` and the
+  feed script refuse, and a test pins the version. Change it only to replace
+  Intel Macs' final build on purpose.
+- An Intel Mac updating from 2.6.2 or earlier shows the newest version number in
+  its update banner, because that banner is the old client's, and then lands on
+  2.7.1.
 
 The editor keeps its macOS 12 minimum. Optional bundled AI and dictation require
 **macOS 13.3 or later** or **Linux glibc 2.38 or later**, on both Linux

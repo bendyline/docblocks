@@ -39,7 +39,7 @@ const FORBIDDEN_RULES: readonly ForbiddenRule[] = [
     reason: 'TypeScript project configuration',
   },
   {
-    pattern: /^tsup\.config\.ts$/u,
+    pattern: /^(?:tsup\.config|web-extension-build)\.ts$/u,
     reason: 'build configuration',
   },
   {

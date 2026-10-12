@@ -308,6 +308,8 @@ local builds must match exactly. Native locations, signatures and inheritance
 remain verified in both cases.
 Development may use an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an
 engine with visible progress. macOS distributions support Apple Silicon only.
+2.7.1 is Intel Macs' final version: never add x64 Mac targets. Its x64 update
+zip stays in every `latest-mac.yml` (`packages/desktop/README.md`, "Intel Macs").
 MAS requires the new native release's Apple Foundation Models helper, UV and
 llama.cpp/Metal; the old native 0.1.46 pin cannot package it. Apple Intelligence
 readiness is visible, and unavailable system models cannot be selected. Store

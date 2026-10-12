@@ -11,14 +11,17 @@
  * and can call `quitAndInstall` once a `'downloaded'` status arrives.
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import pkg, { type UpdateInfo } from 'electron-updater';
+import { access, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type {
   UpdateCheckResult,
   UpdateInstallResult,
   UpdaterStatus,
 } from '@bendyline/docblocks/host';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
+import { INTEL_MAC_FINAL_NOTICE, isUnsupportedIntelMac } from './intel-mac-final.js';
 import {
   classifyUpdateCheck,
   failedUpdateCheck,
@@ -42,6 +45,40 @@ export function isStoreBuild(): boolean {
   return process.mas === true || process.windowsStore === true;
 }
 
+/**
+ * True on an Intel Mac, which has reached its final DocBlocks version and must
+ * not self-update. Rosetta-translated x64 builds still update to arm64.
+ */
+export function isFinalIntelMacBuild(): boolean {
+  return isUnsupportedIntelMac({
+    platform: process.platform,
+    arch: process.arch,
+    translated: app.runningUnderARM64Translation,
+  });
+}
+
+async function showIntelMacFinalNotice(win: BrowserWindow | null): Promise<void> {
+  const options = { type: 'info' as const, buttons: ['OK'], ...INTEL_MAC_FINAL_NOTICE };
+  await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+}
+
+/**
+ * Tell an Intel Mac user once that this is their final version. A marker file,
+ * not a settings field: older versions reject unknown settings keys, and a
+ * manual downgrade must not cost the user their settings.
+ */
+export async function showIntelMacFinalNoticeOnce(win: BrowserWindow): Promise<void> {
+  const marker = path.join(app.getPath('userData'), 'intel-mac-final-notice');
+  try {
+    await access(marker);
+    return;
+  } catch {
+    // Not shown yet.
+  }
+  await showIntelMacFinalNotice(win);
+  await writeFile(marker, `${app.getVersion()}\n`, 'utf8');
+}
+
 function releaseNotesOf(info: UpdateInfo): string | undefined {
   // electron-updater can return a string or an array of per-version objects.
   const notes = info.releaseNotes;
@@ -57,9 +94,10 @@ function broadcast(status: UpdaterStatus): void {
 }
 
 export function initAutoUpdater(): void {
-  // Defensive: the store delivers updates for these builds. main.ts already
-  // guards this call, but never let the GitHub updater run in a store build.
-  if (isStoreBuild()) return;
+  // Defensive: the store delivers updates for these builds, and Intel Macs have
+  // no further updates. main.ts already guards this call, but never let the
+  // GitHub updater run in either case.
+  if (isStoreBuild() || isFinalIntelMacBuild()) return;
 
   autoUpdater.autoDownload = true;
   // Let the renderer drive installation — no silent quit-and-install on
@@ -123,24 +161,33 @@ export function initAutoUpdater(): void {
 export function registerUpdaterIpc(
   prepareForInstall: () => Promise<boolean> = async () => true,
 ): void {
-  registerTrustedIpcHandler('updater:checkForUpdates', 0, async (): Promise<UpdateCheckResult> => {
-    // Store builds are updated by the store, not by electron-updater.
-    if (isStoreBuild()) return { kind: 'store-managed' };
-    updaterActivity = 'checking';
-    try {
-      const res = await autoUpdater.checkForUpdates();
-      return classifyUpdateCheck(app.getVersion(), res?.updateInfo.version);
-    } catch (error: unknown) {
-      const result = failedUpdateCheck(error);
-      // A check failure is returned to the explicit caller for diagnostics,
-      // but it is intentionally not promoted to an in-app alert.
-      if (updaterActivity === 'checking') {
-        updaterActivity = 'idle';
-        broadcast({ kind: 'not-available' });
+  registerTrustedIpcHandler(
+    'updater:checkForUpdates',
+    0,
+    async (event): Promise<UpdateCheckResult> => {
+      // Store builds are updated by the store, not by electron-updater.
+      if (isStoreBuild()) return { kind: 'store-managed' };
+      // An explicit check on an Intel Mac gets the reason, not a failed download.
+      if (isFinalIntelMacBuild()) {
+        await showIntelMacFinalNotice(BrowserWindow.fromWebContents(event.sender));
+        return { kind: 'not-available' };
       }
-      return result;
-    }
-  });
+      updaterActivity = 'checking';
+      try {
+        const res = await autoUpdater.checkForUpdates();
+        return classifyUpdateCheck(app.getVersion(), res?.updateInfo.version);
+      } catch (error: unknown) {
+        const result = failedUpdateCheck(error);
+        // A check failure is returned to the explicit caller for diagnostics,
+        // but it is intentionally not promoted to an in-app alert.
+        if (updaterActivity === 'checking') {
+          updaterActivity = 'idle';
+          broadcast({ kind: 'not-available' });
+        }
+        return result;
+      }
+    },
+  );
 
   registerTrustedIpcHandler('updater:getVersion', 0, async (): Promise<string> => {
     return app.getVersion();

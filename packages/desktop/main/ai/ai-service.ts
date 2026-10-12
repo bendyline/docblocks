@@ -107,6 +107,8 @@ export interface ProviderChatChunk {
 export interface AiProviderConnection {
   knowledgeState?(signal: AbortSignal): Promise<unknown>;
   updateKnowledge?(action: AiKnowledgeAction, signal: AbortSignal): Promise<void>;
+  /** Why this connection offers no knowledge catalogs, in words for people. */
+  readonly knowledgeUnavailable?: string;
   readonly mode: AiProviderInfo['mode'];
   /** The version of the provider actually serving, when it differs from detection. */
   readonly version?: string | null;
@@ -229,6 +231,13 @@ function boundedCode(code: string): string | null {
 }
 
 /** Split text into wire-sized deltas without separating a surrogate pair. */
+function knowledgeUnsupported(connection: AiProviderConnection): AiHostError {
+  return new AiHostError(
+    'unsupported',
+    connection.knowledgeUnavailable ?? 'This AI provider does not support knowledge catalogs.',
+  );
+}
+
 function emitDeltas(text: string, emit: AiChatEmitter): void {
   const limit = AI_WIRE_LIMITS.deltaCharacters;
   let offset = 0;
@@ -416,11 +425,7 @@ export class AiService {
     const pending = this.knowledgeStateReads.get(owner);
     if (pending) return pending;
     const read = this.withKnowledge(owner, async (connection, signal) => {
-      if (!connection.knowledgeState)
-        throw new AiHostError(
-          'unsupported',
-          'This AI provider does not support knowledge catalogs.',
-        );
+      if (!connection.knowledgeState) throw knowledgeUnsupported(connection);
       const state = parseAiKnowledgeState(await connection.knowledgeState(signal));
       if (!state)
         throw new AiHostError('unknown', 'The AI provider returned invalid catalog information.');
@@ -432,11 +437,7 @@ export class AiService {
 
   async updateKnowledge(owner: string, action: AiKnowledgeAction): Promise<AiResult<null>> {
     return this.withKnowledge(owner, async (connection, signal) => {
-      if (!connection.updateKnowledge)
-        throw new AiHostError(
-          'unsupported',
-          'This AI provider does not support knowledge catalogs.',
-        );
+      if (!connection.updateKnowledge) throw knowledgeUnsupported(connection);
       await connection.updateKnowledge(action, signal);
       return null;
     });

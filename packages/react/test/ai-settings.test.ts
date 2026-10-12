@@ -260,16 +260,39 @@ describe('AI knowledge settings', () => {
       knowledge: {
         state: async () => ({
           ok: false,
-          error: { code: 'unsupported', message: 'Update Gezel to use knowledge.' },
+          error: { code: 'unknown', message: 'Gezel could not list catalogs.' },
         }),
         update: async () => ({ ok: true, value: null }),
       },
     });
     try {
       expect(container.querySelector('[role="alert"]')?.textContent).to.equal(
-        'Update Gezel to use knowledge.',
+        'Gezel could not list catalogs.',
       );
       expect(container.textContent).not.to.contain('No downloaded catalogs');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('explains a provider without catalogs instead of offering them', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const reason =
+      'Knowledge catalogs aren’t available with the AI built into DocBlocks yet. They work when DocBlocks is connected to the Gezel app.';
+    const { container, cleanup } = await render({
+      ...fake.api,
+      knowledge: {
+        state: async () => ({ ok: false, error: { code: 'unsupported', message: reason } }),
+        update: async () => ({ ok: true, value: null }),
+      },
+    });
+    try {
+      const section = container.querySelector('[aria-label="Knowledge catalogs"]');
+      expect(section?.textContent).to.contain(reason);
+      // Not an error, and no promise that passages reach requests.
+      expect(section?.querySelector('[role="alert"]')).to.equal(null);
+      expect(section?.textContent).not.to.contain('are included in each request');
+      expect(section?.querySelector('button')).to.equal(null);
     } finally {
       await cleanup();
     }

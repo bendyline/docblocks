@@ -16,6 +16,8 @@ import type { HostServiceModule } from '@bendyline/gezel-app-sdk/host';
 import { toAiError } from '../main/ai/ai-errors.js';
 import {
   GezelConnector,
+  HOSTED_KNOWLEDGE_UNAVAILABLE,
+  knowledgeRuntimeInstalled,
   type AiCredentialStore,
   type GezelConnectorOptions,
 } from '../main/ai/gezel-connector.js';
@@ -720,6 +722,72 @@ describe('Gezel connector with the real embedding SDK', () => {
     expect(error.code).to.equal('model-unavailable');
     expect(error.message).to.equal('Enable Apple Intelligence.');
     expect(fixture.daemon.paths()).not.to.include('POST /v1/chat/completions');
+  });
+
+  describe('knowledge catalogs in the hosted service', () => {
+    const writer = {
+      id: 'llama-cpp:writer',
+      object: 'model',
+      created: 0,
+      owned_by: 'llama-cpp',
+      availability: 'available',
+      locality: 'on-device',
+    };
+
+    it('withholds catalogs and retrieval without the embedding runtime', async () => {
+      const fixture = hosted({ knowledgeRuntime: () => false });
+      fixture.daemon.additionalModels = [writer];
+      fixture.daemon.knowledgePassages = [
+        { uri: 'knowledge://a/b/c', title: 'C', text: 'Fact.', catalogId: 'b', version: '1' },
+      ];
+      const connection = await fixture.connect();
+      expect(connection.knowledgeState).to.equal(undefined);
+      expect(connection.updateKnowledge).to.equal(undefined);
+      expect(connection.knowledgeUnavailable).to.equal(HOSTED_KNOWLEDGE_UNAVAILABLE);
+
+      const stream = await connection.streamChat(
+        { model: 'llama-cpp:writer', messages: [{ role: 'user', content: 'Explain.' }] },
+        new AbortController().signal,
+      );
+      for await (const chunk of stream) void chunk;
+      expect(fixture.daemon.paths()).not.to.include('POST /v1/knowledge/retrieve');
+      const completion = fixture.daemon.requests.find(
+        (entry) => entry.path === '/v1/chat/completions',
+      );
+      expect((completion?.body as { messages: unknown[] }).messages).to.deep.equal([
+        { role: 'user', content: 'Explain.' },
+      ]);
+    });
+
+    it('offers catalogs once the hosted service can embed queries', async () => {
+      const connection = await hosted({ knowledgeRuntime: () => true }).connect();
+      expect(connection.knowledgeState).to.be.a('function');
+      expect(connection.knowledgeUnavailable).to.equal(undefined);
+    });
+
+    it('leaves a connected Gezel app its own catalogs', async () => {
+      const daemon = new FakeDaemon();
+      daemon.validToken = 'kept-token';
+      const connection = await new GezelConnector({
+        credentials: new MemoryCredentials('kept-token'),
+        endpoint: { baseUrl: BASE_URL, fetch: daemon.fetch },
+        knowledgeRuntime: () => false,
+      }).connect({ interactive: false });
+      cleanup.push(() => connection.close());
+      expect(connection.mode).to.equal('installed');
+      expect(connection.knowledgeState).to.be.a('function');
+    });
+
+    it('detects the embedding runtime by resolving it', () => {
+      const failing = (code: string) => () => {
+        throw Object.assign(new Error(code), { code });
+      };
+      expect(knowledgeRuntimeInstalled(() => '/node_modules/@huggingface/transformers')).to.equal(
+        true,
+      );
+      expect(knowledgeRuntimeInstalled(failing('ERR_PACKAGE_PATH_NOT_EXPORTED'))).to.equal(true);
+      expect(knowledgeRuntimeInstalled(failing('MODULE_NOT_FOUND'))).to.equal(false);
+    });
   });
 
   it('requires the embedding SDK instead of quietly running the legacy integration', async () => {

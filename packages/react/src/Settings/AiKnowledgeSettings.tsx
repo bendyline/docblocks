@@ -18,6 +18,8 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
   const [state, setState] = useState<AiKnowledgeState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The provider's reason it offers no catalogs: an explanation, not an error. */
+  const [unsupported, setUnsupported] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [browse, setBrowse] = useState(false);
@@ -39,11 +41,13 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
         const result = await knowledge.state();
         if (!live) return;
         if (!result.ok) {
-          setLoadError(result.error.message);
+          if (result.error.code === 'unsupported') setUnsupported(result.error.message);
+          else setLoadError(result.error.message);
           return;
         }
         setState(result.value);
         setLoadError(null);
+        setUnsupported(null);
         if (
           result.value.improvement?.downloading ||
           result.value.catalogs.some((catalog) => catalog.state === 'downloading')
@@ -86,6 +90,13 @@ export function AiKnowledgeSettings({ knowledge }: { knowledge: AiKnowledgeAPI }
         (browse || catalog.installedVersion !== null || catalog.state === 'downloading') &&
         `${catalog.name} ${catalog.description}`.toLowerCase().includes(query.toLowerCase()),
     ) ?? [];
+  if (unsupported)
+    return (
+      <section className="db-settings-ai-knowledge" aria-label="Knowledge catalogs">
+        <h3 className="db-settings-select-header">Knowledge catalogs</h3>
+        <p className="db-settings-hint">{unsupported}</p>
+      </section>
+    );
   return (
     <section className="db-settings-ai-knowledge" aria-label="Knowledge catalogs">
       <h3 className="db-settings-select-header">Knowledge catalogs</h3>

@@ -36,7 +36,13 @@ import { registerFfmpegIpc } from './ipc-ffmpeg.js';
 import { registerGitIpc } from './ipc-git.js';
 import { detectGit } from './git/detect.js';
 import { killAllGitChildren } from './git/exec.js';
-import { registerUpdaterIpc, initAutoUpdater, isStoreBuild } from './updater.js';
+import {
+  registerUpdaterIpc,
+  initAutoUpdater,
+  isFinalIntelMacBuild,
+  isStoreBuild,
+  showIntelMacFinalNoticeOnce,
+} from './updater.js';
 import { buildMenu } from './menu.js';
 import {
   readSettings,
@@ -645,8 +651,15 @@ async function bootstrap(): Promise<void> {
 
   // Store builds (Mac App Store / Microsoft Store) must not self-update — the
   // store delivers updates. Only run the GitHub updater for direct-download builds.
+  // Intel Macs are on their final version: explain once instead of updating.
   if (!isDev && !isStoreBuild()) {
-    initAutoUpdater();
+    if (isFinalIntelMacBuild()) {
+      void showIntelMacFinalNoticeOnce(win).catch((error: unknown) => {
+        console.warn('[updater] Intel Mac notice failed:', error);
+      });
+    } else {
+      initAutoUpdater();
+    }
   }
 }
 

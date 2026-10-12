@@ -6,7 +6,7 @@ import path from 'node:path';
 import { vcRuntimePath } from '../main/vc-runtime-path.js';
 
 const require = createRequire(import.meta.url);
-const { stageVcRuntime, findCrtFolder } = require('../scripts/stage-vc-runtime.cjs');
+const { stageVcRuntime, findCrtFolder, REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
 
 describe('Visual C++ runtime staging', () => {
   let root: string;
@@ -25,20 +25,18 @@ describe('Visual C++ runtime staging', () => {
   }
 
   it('picks the newest toolset that has a complete runtime for the target arch', async () => {
-    await vsRedist('14.38.33130', 'x64', ['msvcp140.dll', 'vcruntime140.dll']);
-    const newest = await vsRedist('14.40.33807', 'x64', [
-      'msvcp140.dll',
-      'vcruntime140.dll',
-      'vcruntime140_1.dll',
-    ]);
+    await vsRedist('14.38.33130', 'x64', REQUIRED_DLLS);
+    const newest = await vsRedist('14.40.33807', 'x64', [...REQUIRED_DLLS, 'vcruntime140_1.dll']);
     // A newer toolset without the arch must not shadow an older complete one.
-    await vsRedist('14.41.00000', 'arm64', ['msvcp140.dll', 'vcruntime140.dll']);
+    await vsRedist('14.41.00000', 'arm64', REQUIRED_DLLS);
+    // Nor may a newer toolset missing a required DLL.
+    await vsRedist('14.42.00000', 'x64', ['msvcp140.dll', 'vcruntime140.dll']);
     expect(await findCrtFolder([path.join(root, 'vs')], 'x64')).to.equal(newest);
     expect(await findCrtFolder([path.join(root, 'missing')], 'x64')).to.equal(null);
   });
 
   it('copies required and present optional DLLs after verifying each one', async () => {
-    await vsRedist('14.40.33807', 'arm64', ['msvcp140.dll', 'vcruntime140.dll']);
+    await vsRedist('14.40.33807', 'arm64', REQUIRED_DLLS);
     const destination = path.join(root, 'out', 'arm64');
     const verified: string[] = [];
     const files = await stageVcRuntime({
@@ -48,13 +46,13 @@ describe('Visual C++ runtime staging', () => {
       vsRoots: [path.join(root, 'vs')],
       verify: (file: string) => verified.push(path.basename(file)),
     });
-    expect(files).to.deep.equal(['msvcp140.dll', 'vcruntime140.dll']);
+    expect(files).to.deep.equal(REQUIRED_DLLS);
     expect(verified).to.deep.equal(files);
-    expect((await readdir(destination)).sort()).to.deep.equal(files);
+    expect((await readdir(destination)).sort()).to.deep.equal([...files].sort());
   });
 
   it('refuses a DLL that fails signature verification', async () => {
-    await vsRedist('14.40.33807', 'x64', ['msvcp140.dll', 'vcruntime140.dll']);
+    await vsRedist('14.40.33807', 'x64', REQUIRED_DLLS);
     let error: unknown;
     try {
       await stageVcRuntime({
@@ -101,7 +99,7 @@ describe('Visual C++ runtime staging', () => {
   });
 
   it('honours an explicit CRT folder', async () => {
-    const crt = await vsRedist('14.40.33807', 'x64', ['msvcp140.dll', 'vcruntime140.dll']);
+    const crt = await vsRedist('14.40.33807', 'x64', REQUIRED_DLLS);
     const files = await stageVcRuntime({
       arch: 'x64',
       destination: path.join(root, 'out'),
@@ -109,7 +107,7 @@ describe('Visual C++ runtime staging', () => {
       vsRoots: [],
       verify: () => undefined,
     });
-    expect(files).to.deep.equal(['msvcp140.dll', 'vcruntime140.dll']);
+    expect(files).to.deep.equal(REQUIRED_DLLS);
   });
 });
 

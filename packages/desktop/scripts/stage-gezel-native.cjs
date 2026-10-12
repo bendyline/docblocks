@@ -5,6 +5,7 @@ const path = require('node:path');
 const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
 const { stageNativeDependencies } = require('./native-dependencies.cjs');
 const { verifyNativePlatformRequirements } = require('./native-platform-requirements.cjs');
+const intelMacFinal = require('../intel-mac-final.json');
 
 async function stageForTarget(context, overrides = {}) {
   const appDir = context.packager.info.appDir;
@@ -15,6 +16,15 @@ async function stageForTarget(context, overrides = {}) {
   const installed = serviceRequire('./package.json');
   if (manifest.dependencies['@bendyline/gezel-service'] !== installed.version) {
     throw new Error("The installed Gezel service must match DocBlocks' exact dependency pin.");
+  }
+  // Intel Macs stopped at intel-mac-final.json's version. Only that release
+  // builds their final update, and it has no engines to stage: the pinned
+  // native release has no Intel Mac archives.
+  const intelMac = platform === 'darwin' && arch === 'x64';
+  if (intelMac && manifest.version !== intelMacFinal.version) {
+    throw new Error(
+      `Intel Macs are no longer supported; only DocBlocks ${intelMacFinal.version}, their final release, builds for darwin-x64.`,
+    );
   }
   await (overrides.stageNativeDependencies ?? stageNativeDependencies)({ appDir, platform, arch });
   const stage =
@@ -31,6 +41,7 @@ async function stageForTarget(context, overrides = {}) {
     arch,
     destination,
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
+    ...(intelMac ? { allowUnavailable: true } : {}),
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
   await (overrides.verifyNativePlatformRequirements ?? verifyNativePlatformRequirements)({
