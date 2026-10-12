@@ -470,11 +470,14 @@ describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
     await fs.writeFile(path.join(rootPath, 'node_modules', 'pkg', 'index.js'), 'module');
     await fs.writeFile(path.join(rootPath, 'notes', 'note.md'), 'note');
     roots.register(id, rootPath);
+    // The provider opens files under the root's real path. On Windows CI,
+    // os.tmpdir() is an 8.3 short path (RUNNER~1) that realpath expands.
+    const physicalRoot = await fs.realpath(rootPath);
     const opened: string[] = [];
     const provider = new NodeWorkspaceFileSystemV2(id, 'Watch ignored', rootPath, roots, {
       acquireWatcher: () => new ControlledWatcher().handle,
       openReadableFile: async (absolutePath) => {
-        opened.push(path.relative(rootPath, absolutePath).replace(/\\/g, '/'));
+        opened.push(path.relative(physicalRoot, absolutePath).replace(/\\/g, '/'));
         const handle = await fs.open(absolutePath, 'r');
         return {
           stat: () => handle.stat({ bigint: true }),
