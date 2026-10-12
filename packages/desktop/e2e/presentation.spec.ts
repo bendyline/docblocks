@@ -7,8 +7,8 @@ import type { Page } from '@playwright/test';
 import type { DocBlocksHostAPI } from '@bendyline/docblocks/host';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { test, expect } from './fixtures.js';
+import { readMp4Summary } from './mp4-summary.js';
 import { startFakeGezel, FAKE_GEZEL_CODE } from './fake-gezel.js';
 import { installFakeSpeechModels } from './fake-speech.js';
 import { parseMarkdown, splitFrontmatterBlock } from '@bendyline/squisq/markdown';
@@ -344,18 +344,10 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       await api.save(id, 'launch.mp4', target.grantId, await blob.arrayBuffer());
     }, documentId);
     expect(fs.statSync(output).size).toBeGreaterThan(10_000);
-    const probeOutput = JSON.parse(
-      execFileSync(
-        'ffprobe',
-        ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', output],
-        { encoding: 'utf8' },
-      ),
-    ) as { streams: Array<{ codec_type: string; duration: string }>; format: { duration: string } };
-    expect(probeOutput.streams.map((stream) => stream.codec_type).sort()).toEqual(
-      aacEncoder ? ['audio', 'video'] : ['video'],
-    );
-    expect(Math.abs(Number(probeOutput.format.duration) - timing.duration)).toBeLessThan(0.15);
-    fs.writeFileSync(testInfo.outputPath('ffprobe.json'), JSON.stringify(probeOutput, null, 2));
+    const mp4 = readMp4Summary(fs.readFileSync(output));
+    expect([...mp4.tracks].sort()).toEqual(aacEncoder ? ['soun', 'vide'] : ['vide']);
+    expect(Math.abs(mp4.duration - timing.duration)).toBeLessThan(0.15);
+    fs.writeFileSync(testInfo.outputPath('mp4.json'), JSON.stringify(mp4, null, 2));
     fs.cpSync(workspaceDir, testInfo.outputPath('project'), { recursive: true });
     await testInfo.attach('Narrated launch video', { path: output, contentType: 'video/mp4' });
   } finally {
