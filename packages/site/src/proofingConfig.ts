@@ -2,6 +2,7 @@ import {
   createDocBlocksProofingProvider,
   createLocalProofingDictionary,
 } from '@bendyline/docblocks-react/proofing';
+import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 /**
  * Site proofing provider, pointed at the harper engine this build publishes
@@ -16,7 +17,7 @@ import {
  * document with checking effective — from the service-worker precache once
  * installation finishes, and straight from the network before that.
  */
-export const SITE_PROOFING_PROVIDER = createDocBlocksProofingProvider({
+export const SITE_PROOFING_PROVIDER: ProofingProvider = createDocBlocksProofingProvider({
   wasmUrl: `${import.meta.env.BASE_URL}harper/harper_wasm_bg.wasm`,
   dictionary: createLocalProofingDictionary(),
 });

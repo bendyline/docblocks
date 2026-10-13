@@ -2,6 +2,7 @@ import {
   createDocBlocksProofingProvider,
   createLocalProofingDictionary,
 } from '@bendyline/docblocks-react/proofing';
+import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 /**
  * Mobile proofing provider, pointed at the Harper engine this build bundles
@@ -15,7 +16,7 @@ import {
  * The first Markdown document with checking enabled loads the engine from
  * the packaged assets. It does not require a network or service worker.
  */
-export const SITE_PROOFING_PROVIDER = createDocBlocksProofingProvider({
+export const SITE_PROOFING_PROVIDER: ProofingProvider = createDocBlocksProofingProvider({
   wasmUrl: `${import.meta.env.BASE_URL}harper/harper_wasm_bg.wasm`,
   dictionary: createLocalProofingDictionary(),
 });

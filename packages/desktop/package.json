@@ -56,8 +56,8 @@
     "onnxruntime-node": "1.30.0"
   },
   "devDependencies": {
-    "@bendyline/docblocks": "2.6.2",
-    "@bendyline/docblocks-react": "2.6.2",
+    "@bendyline/docblocks": "2.7.0",
+    "@bendyline/docblocks-react": "2.7.0",
     "@bendyline/squisq": "2.11.19",
     "@bendyline/squisq-editor-react": "2.11.25",
     "@bendyline/squisq-formats": "2.6.20",
