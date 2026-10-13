@@ -55,11 +55,12 @@ export interface GezelConnectorOptions {
 
 /**
  * Knowledge catalogs in the hosted service need `@huggingface/transformers`, an
- * optional Gezel peer DocBlocks does not ship. Without it the service cannot
- * embed a query, so it finds no semantic matches, and by design it injects no
- * unranked keyword matches. Enabled catalogs would then add nothing to any
- * request, and the relevance model it offers could never load. A connected
- * Gezel app brings its own runtime and keeps its catalogs.
+ * optional Gezel peer that DocBlocks ships for exactly this. Should a build ever
+ * lose it, the service could not embed a query, so it would find no semantic
+ * matches, and by design it injects no unranked keyword matches. Enabled
+ * catalogs would then add nothing to any request, and the relevance model it
+ * offers could never load, so Settings says so instead. A connected Gezel app
+ * brings its own runtime and keeps its catalogs.
  */
 export const HOSTED_KNOWLEDGE_UNAVAILABLE =
   'Knowledge catalogs aren’t available with the AI built into DocBlocks yet. They work when DocBlocks is connected to the Gezel app.';

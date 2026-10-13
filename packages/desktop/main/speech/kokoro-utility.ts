@@ -5,10 +5,18 @@
  * inference costs a respawn, never the app. Main is the only peer: it sends
  * `KokoroRequest`s over `parentPort` and receives `KokoroReply`s.
  */
+import { availableParallelism } from 'node:os';
 import * as ort from 'onnxruntime-node';
-import { KokoroRuntime, type KokoroRequest, type OrtLike } from './kokoro-runtime.js';
+import {
+  KokoroRuntime,
+  kokoroIntraOpThreads,
+  type KokoroRequest,
+  type OrtLike,
+} from './kokoro-runtime.js';
 
-const runtime = new KokoroRuntime(ort as unknown as OrtLike);
+const runtime = new KokoroRuntime(ort as unknown as OrtLike, {
+  intraOpNumThreads: kokoroIntraOpThreads(availableParallelism()),
+});
 const port = process.parentPort;
 
 port.on('message', (event: { data: unknown }) => {

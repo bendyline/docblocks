@@ -44,10 +44,11 @@
   "dependencies": {
     "@bendyline/gezel-app-sdk": "1.1.4",
     "@bendyline/gezel-service": "1.2.4",
+    "@huggingface/transformers": "4.3.1",
     "chokidar": "4.0.3",
     "electron-updater": "6.8.9",
     "electron-window-state": "5.0.3",
-    "onnxruntime-node": "1.24.3"
+    "onnxruntime-node": "1.30.0"
   },
   "devDependencies": {
     "@bendyline/docblocks": "2.6.2",

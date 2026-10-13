@@ -14,7 +14,7 @@ This file is the distribution-level entry point for third-party software used by
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 353 locked components |
 | DocBlocks site distribution            | [packages/site/public/THIRD_PARTY_NOTICES.txt](packages/site/public/THIRD_PARTY_NOTICES.txt) | 217 locked components |
 | DocBlocks VS Code extension (VSIX)     | [packages/vscode/THIRD_PARTY_NOTICES.txt](packages/vscode/THIRD_PARTY_NOTICES.txt)           | 209 locked components |
-| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 603 locked components |
+| DocBlocks desktop distribution         | [packages/desktop/THIRD_PARTY_NOTICES.txt](packages/desktop/THIRD_PARTY_NOTICES.txt)         | 598 locked components |
 
 The public npm package notices are explicitly included by each package's `files` allowlist. The VSIX content check requires its notice. The site precaches its notice and component manifest. Electron Builder copies the desktop notice, Electron license, and Chromium notices into every desktop distribution, and the packaged-desktop smoke test verifies them.
 
@@ -40,8 +40,8 @@ The following upstream npm archives declare a license identifier but omit a pack
 - fastdom@1.0.12 (MIT); affected artifact: @bendyline/docblocks-cli npm package, @bendyline/docblocks-react npm package, DocBlocks Capacitor distribution, DocBlocks VS Code extension (VSIX), DocBlocks desktop distribution, DocBlocks site distribution; source: https://github.com/wilsonpage/fastdom.
 - https-proxy-agent@5.0.1 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/TooTallNate/node-https-proxy-agent.
 - lazy-val@1.0.5 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/develar/lazy-val.
-- onnxruntime-common@1.24.3 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/Microsoft/onnxruntime.
-- onnxruntime-node@1.24.3 (MIT); affected artifact: DocBlocks desktop distribution; source: https://www.npmjs.com/package/onnxruntime-node.
+- onnxruntime-common@1.30.0 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/Microsoft/onnxruntime.
+- onnxruntime-node@1.30.0 (MIT); affected artifact: DocBlocks desktop distribution; source: https://www.npmjs.com/package/onnxruntime-node.
 - sqlite-vec@0.1.9 (MIT OR Apache); affected artifact: DocBlocks desktop distribution; source: https://github.com/asg017/sqlite-vec.
 - standardwebhooks@1.1.1 (MIT); affected artifact: DocBlocks desktop distribution; source: https://github.com/standard-webhooks/standard-webhooks.
 - strictdom@1.0.1 (MIT); affected artifact: @bendyline/docblocks-cli npm package, @bendyline/docblocks-react npm package; source: https://github.com/wilsonpage/strictdom.

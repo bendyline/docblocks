@@ -30,14 +30,16 @@ const { copyFile, mkdir, readdir, rm } = require('node:fs/promises');
 const path = require('node:path');
 
 /**
- * Every runtime DLL a bundled binary imports. ONNX Runtime (narration) needs
- * msvcp140_1 and gezel-sd-server needs msvcp140_codecvt_ids; missing either
- * fails only on machines without the redistributable, which developers never
- * have. vcruntime140_1 exists only for some arches.
+ * Every runtime DLL a bundled binary imports. ONNX Runtime (narration and
+ * knowledge) needs msvcp140_1 and, since 1.30, msvcp140_atomic_wait;
+ * gezel-sd-server needs msvcp140_codecvt_ids. Missing any of them fails only on
+ * machines without the redistributable, which developers never have.
+ * vcruntime140_1 exists only for some arches.
  */
 const REQUIRED_DLLS = [
   'msvcp140.dll',
   'msvcp140_1.dll',
+  'msvcp140_atomic_wait.dll',
   'msvcp140_codecvt_ids.dll',
   'vcruntime140.dll',
 ];

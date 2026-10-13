@@ -39,6 +39,16 @@ files:
   - '!node_modules/onnxruntime-node/bin/napi-v6/!(${platform})/**'
   - '!node_modules/onnxruntime-node/bin/napi-v6/${platform}/!(${arch})/**'
   - '!node_modules/onnxruntime-node/bin/napi-v6/win32/*/{DirectML.dll,dxcompiler.dll,dxil.dll}'
+  # The 1.30.0 macOS binding loads @rpath/libonnxruntime.1.dylib; the package
+  # also carries a byte-identical libonnxruntime.1.30.0.dylib (42 MB) that
+  # nothing loads. check-electron-builder-config.ts fails if an excluded name is
+  # ever one the installed binding links against.
+  - '!node_modules/onnxruntime-node/bin/napi-v6/darwin/*/libonnxruntime.1.30.0.dylib'
+  # Gezel's knowledge embedder and relevance model load Transformers.js through
+  # its Node exports alone; its sources, types, and browser builds stay out.
+  # check-electron-builder-config.ts fails if an export it resolves is excluded.
+  - '!node_modules/@huggingface/transformers/{src,types}/**'
+  - '!node_modules/@huggingface/transformers/dist/!(transformers.node.cjs|transformers.node.mjs)'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.

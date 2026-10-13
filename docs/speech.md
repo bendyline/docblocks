@@ -10,7 +10,7 @@ asking a Gezel daemon:
 |                 | Engine                                                                                      | Model                                                                        | Runs in                                     |
 | --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------- |
 | Dictation (STT) | whisper.cpp `gezel-whisper-server`, from the Gezel native payload DocBlocks already bundles | `whisper-base.en` (recommended), `tiny.en`, `small.en`                       | a child process of main, on a loopback port |
-| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.24.3                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX-timestamped` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
+| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.30.0                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX-timestamped` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
 
 ## Host contract
 

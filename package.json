@@ -18,7 +18,7 @@
     "ffmpeg-static@5.2.0": true,
     "fsevents@2.3.2 || 2.3.3": true,
     "keytar@7.9.0": true,
-    "onnxruntime-node@1.24.3": false
+    "onnxruntime-node@1.30.0": false
   },
   "overrides": {
     "@rollup/plugin-terser": {
@@ -30,6 +30,8 @@
     "mocha": {
       "serialize-javascript": "7.0.5"
     },
+    "onnxruntime-web": "$onnxruntime-web",
+    "sharp": "$sharp",
     "tsup": {
       "bundle-require": {
         "esbuild": "0.28.1"
@@ -170,10 +172,12 @@
     "monaco-editor": "0.50.0",
     "multi-semantic-release": "3.1.0",
     "npm": "11.19.1",
+    "onnxruntime-web": "file:./vendor/transformers-compat/onnxruntime-web",
     "prettier": "3.8.1",
     "rimraf": "5.0.10",
     "semantic-release": "25.0.3",
     "semver": "7.8.0",
+    "sharp": "file:./vendor/transformers-compat/sharp",
     "tsup": "8.5.1",
     "tsx": "4.21.0",
     "typescript": "5.9.3",
