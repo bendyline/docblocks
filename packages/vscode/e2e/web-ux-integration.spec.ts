@@ -202,13 +202,10 @@ test.describe('VS Code web and UX integration', () => {
     await expect
       .poll(() => optionalRuntimeRequests.some((url) => /\/assets\/monaco-/u.test(url)))
       .toBe(true);
-    expect(optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url))).toBe(false);
-    expect(optionalRuntimeRequests.some((url) => /ts\.worker-/u.test(url))).toBe(false);
-
-    await editor.locator('textarea.inputarea').press('KeyA');
-    await expect
-      .poll(() => optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url)))
-      .toBe(true);
+    // Monaco snapshots contributions at editor creation, so completion UI
+    // must finish registration before Source is ready. It stays off Write's
+    // startup path, and Markdown still does not need TypeScript's worker.
+    expect(optionalRuntimeRequests.some((url) => /monacoSuggestions-/u.test(url))).toBe(true);
     expect(optionalRuntimeRequests.some((url) => /ts\.worker-/u.test(url))).toBe(false);
 
     await previewTab.click();

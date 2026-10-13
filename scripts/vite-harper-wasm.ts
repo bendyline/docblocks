@@ -92,6 +92,12 @@ export function harperWasmPlugin(): Plugin {
     name: 'docblocks-harper-wasm',
     enforce: 'pre',
 
+    config() {
+      // Linked Squisq can carry a different harper.js version. Its JavaScript
+      // glue must resolve from the same host package as the WASM copied below.
+      return { resolve: { dedupe: ['harper.js'] } };
+    },
+
     resolveId(source) {
       return source === HARPER_BINARY_SPECIFIER ? HARPER_BINARY_STUB_ID : null;
     },

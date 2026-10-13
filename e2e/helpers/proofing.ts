@@ -21,7 +21,15 @@ export async function openProofedWelcome(
       : page.locator('.monaco-editor textarea').first();
   await expect(editor).toBeVisible({ timeout: 30_000 });
   await editor.focus();
-  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+  // Monaco binds shortcuts to the emulated browser platform. Desktop Chrome
+  // advertises Windows even when the runner is on macOS; using the runner's
+  // modifier then leaves the caret above frontmatter instead of at the end.
+  const modifier =
+    view === 'Source'
+      ? await page.evaluate(() => (navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control'))
+      : process.platform === 'darwin'
+        ? 'Meta'
+        : 'Control';
   await page.keyboard.press(`${modifier}+Home`);
   // Source frontmatter must stay at the beginning of the document.
   if (view === 'Source') await page.keyboard.press(`${modifier}+End`);

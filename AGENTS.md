@@ -88,10 +88,10 @@ npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity
 
-# Gezel parallel dev — links desktop SDK, service, and core to ../gezel
+# Gezel parallel dev — links desktop SDK, inference, and core to ../gezel
 npm run link:gezel          # preserve registry copies and create local links
 npm run check:gezel-linked  # show actual paths and verify built entry points
-npm run build:gezel-linked  # rebuild SDK/service runtime dependencies under a read lease
+npm run build:gezel-linked  # rebuild SDK/inference runtime dependencies under a read lease
 npm run unlink:gezel        # restore the saved registry copies, without an install
 # npm run all/build refresh linked Squisq and Gezel before DocBlocks builds.
 # Desktop dev startup also rebuilds linked Gezel. Restart Electron to load it.
@@ -285,7 +285,7 @@ model homes. The main-stamped `--docblocks-ai` switch enables that bridge.
 running, or unwilling to connect DocBlocks (declined, expired, no reusable
 grant, connected apps off) all fall back to a private service under
 `~/.gezel/apps/docblocks/` — the person opted into AI inside DocBlocks, which
-is the consent this rests on. `@bendyline/gezel-service` is a pinned desktop
+is the consent this rests on. `@bendyline/gezel-inference` is a pinned desktop
 runtime dependency and the SDK starts it in the Electron main process; a
 separate Gezel connection is an optional provider switch, never a prerequisite
 for the editor actions. It uses Gezel's `mode: 'in-process', inferenceOnly:
@@ -293,7 +293,7 @@ true` profile and the service's direct Fetch transport: no child Node, loopback
 client connection, machine-service discovery, cloud-provider enumeration, or
 standalone background systems. A running standalone Gezel that fails for any
 other reason is reported, not hidden. The hosted service offers only on-device
-models. Packaged builds call `@bendyline/gezel-service/packaging` to stage the
+models. Packaged builds call `@bendyline/gezel-inference/packaging` to stage the
 installed service's pinned native release in `resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
 signatures after opt-in, and pass it as `host.nativeBinDir`. They use
 `distributionProfile: 'store'` so no runtime executable download can repair a

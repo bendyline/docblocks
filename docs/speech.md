@@ -46,7 +46,7 @@ show the requirement in Settings. Editing and export remain available.
 - `main/speech/kokoro-*.ts`: the utility process calls ONNX Runtime directly
   with Kokoro's three inputs. Text becomes phonemes through
   `@bendyline/gezel/kokoro` and the dictionaries inside the installed
-  `@bendyline/gezel-service`, so pronunciation matches Gezel exactly and
+  `@bendyline/gezel-inference`, so pronunciation matches Gezel exactly and
   eSpeak NG (GPL-3) is never involved. A stalled or crashed process is killed
   and respawned; an idle one is unloaded after five minutes.
 - `@bendyline/gezel/speech-models` pins every file to a Hugging Face commit, byte

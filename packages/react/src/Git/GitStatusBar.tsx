@@ -31,8 +31,8 @@ export function GitStatusBar() {
 
   const runItem = useCallback(
     (action: () => void) => {
-      // The item is going away; don't yank focus back to the trigger.
-      closeMenu(false);
+      // Give a newly opened dialog a return target that survives this menu.
+      closeMenu(true);
       action();
     },
     [closeMenu],

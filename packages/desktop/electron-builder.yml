@@ -25,14 +25,6 @@ files:
   # Chokidar 4 watches literal paths and does not need these packages either.
   - '!node_modules/{braces,fast-glob,micromatch}/**/*'
   - '!node_modules/**/node_modules/{braces,fast-glob,micromatch}/**/*'
-  # npm ci installs the runner's optional native variants, even when packaging
-  # another architecture. Replace these with the lockfile-pinned target fileset.
-  - '!node_modules/{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}/**/*'
-  - '!node_modules/**/node_modules/{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}/**/*'
-  - from: dist/native-modules/${os}-${arch}/node_modules
-    to: node_modules
-    filter:
-      - '**/*'
   # ONNX Runtime (narration) ships every platform's binaries in one package;
   # keep only the target's. On Windows the CPU backend never loads DirectML,
   # which onnxruntime.dll imports lazily, so its ~40 MB of DLLs stay out too.
@@ -58,7 +50,7 @@ extraResources:
   - from: dist/gezel-native/${os}-${arch}
     to: gezel-native
 
-# Stage the target architecture from the installed Gezel service's release
+# Stage the target architecture from the installed Gezel inference package's release
 # pins before copying resources. No executable download happens in the app.
 beforePack: scripts/stage-gezel-native.cjs
 afterPack: scripts/after-pack.cjs
@@ -94,12 +86,6 @@ electronFuses:
   # contain one and exits fatally at startup when this fuse is enabled.
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
-
-# Custom filesets do not receive the dependency collector's auto-unpack metadata.
-# Match the staged source paths, which are under appDir and map into the ASAR's
-# node_modules. Never use a broad **/node_modules glob across workspace symlinks.
-asarUnpack:
-  - 'dist/native-modules/${os}-${arch}/node_modules/**/*'
 
 # Auto-update configuration — electron-updater checks this repo for releases.
 # The release workflow uploads installers + latest.yml to GitHub Releases.

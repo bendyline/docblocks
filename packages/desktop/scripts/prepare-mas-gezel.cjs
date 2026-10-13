@@ -78,7 +78,7 @@ async function prepareMasNative({
   const previous = process.env.GEZEL_NATIVE_BIN_DIR;
   try {
     // The source-bundled per-file pins are checked before signatures change.
-    const verified = await service.reuseVerifiedElectronNativeBinaries({
+    const verified = await service.verifyNativeBinaries({
       candidates: [root],
       allowStandaloneMacPayload: true,
     });
@@ -197,7 +197,7 @@ exports.default = async function afterPack(context) {
     'Resources',
     'gezel-native',
   );
-  const pins = await import('@bendyline/gezel-service/native-release');
+  const pins = await import('@bendyline/gezel-inference/native-release');
   await nativeManifest(root, pins.NATIVE_ENGINE_RELEASE);
   const development = context.targets.some((target) => target.name === 'mas-dev');
   const { stdout } = await run(
@@ -219,7 +219,7 @@ exports.default = async function afterPack(context) {
   await prepareMasNative({
     root,
     appDir,
-    service: await import('@bendyline/gezel-service'),
+    service: await import('@bendyline/gezel-inference'),
     pins,
     identity: matches[0],
     sign: async (file, identity, entitlements) => {

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const serviceRequire = createRequire(require.resolve('@bendyline/gezel-service/package.json'));
+const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
 const { stageForTarget } = require('../scripts/stage-gezel-native.cjs');
 const { REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
 
@@ -17,7 +17,7 @@ describe('Gezel native packaging adapter', () => {
       path.join(root, 'package.json'),
       JSON.stringify({
         dependencies: {
-          '@bendyline/gezel-service': serviceRequire('./package.json').version,
+          '@bendyline/gezel-inference': serviceRequire('./package.json').version,
         },
       }),
     );
@@ -26,9 +26,8 @@ describe('Gezel native packaging adapter', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('hands the MAS OS and electron-builder destination to the service packager', async () => {
+  it('hands the MAS OS and electron-builder destination to the inference packager', async () => {
     const calls: unknown[] = [];
-    const dependencyCalls: unknown[] = [];
     const verificationCalls: unknown[] = [];
     await stageForTarget(
       {
@@ -37,9 +36,6 @@ describe('Gezel native packaging adapter', () => {
         arch: 3,
       },
       {
-        stageNativeDependencies: async (options: unknown) => {
-          dependencyCalls.push(options);
-        },
         stageElectronNative: async (options: unknown) => {
           calls.push(options);
         },
@@ -49,7 +45,6 @@ describe('Gezel native packaging adapter', () => {
         },
       },
     );
-    expect(dependencyCalls).to.deep.equal([{ appDir: root, platform: 'darwin', arch: 'arm64' }]);
     expect(verificationCalls).to.deep.equal([
       { directory: path.join(root, 'dist', 'gezel-native', 'mac-arm64'), platform: 'darwin' },
     ]);
@@ -63,10 +58,10 @@ describe('Gezel native packaging adapter', () => {
     ]);
   });
 
-  it('retains the exact service release gate before invoking the upstream packager', async () => {
+  it('retains the exact inference release gate before invoking the upstream packager', async () => {
     await writeFile(
       path.join(root, 'package.json'),
-      JSON.stringify({ dependencies: { '@bendyline/gezel-service': '0.0.0' } }),
+      JSON.stringify({ dependencies: { '@bendyline/gezel-inference': '0.0.0' } }),
     );
     let called = false;
     try {
@@ -90,7 +85,7 @@ describe('Gezel native packaging adapter', () => {
       path.join(root, 'package.json'),
       JSON.stringify({
         version,
-        dependencies: { '@bendyline/gezel-service': serviceRequire('./package.json').version },
+        dependencies: { '@bendyline/gezel-inference': serviceRequire('./package.json').version },
       }),
     );
     const calls: unknown[] = [];
@@ -101,7 +96,6 @@ describe('Gezel native packaging adapter', () => {
         arch: 1,
       },
       {
-        stageNativeDependencies: async () => {},
         stageElectronNative: async (options: unknown) => {
           calls.push(options);
         },
@@ -144,7 +138,6 @@ describe('Gezel native packaging adapter', () => {
         arch: 1,
       },
       {
-        stageNativeDependencies: async () => {},
         stageElectronNative: async () => {},
         vcRuntime: { env: { DOCBLOCKS_VCRUNTIME_DIR: crt }, verify: () => undefined },
       },

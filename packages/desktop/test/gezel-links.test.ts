@@ -89,7 +89,7 @@ describe('local Gezel links', () => {
   });
 
   it('validates every source before replacing any installed package', () => {
-    fs.rmSync(path.join(source, 'packages/service'), { recursive: true });
+    fs.rmSync(path.join(source, 'packages/inference'), { recursive: true });
     expect(() => linkGezel(root)).to.throw();
     for (const [, name] of GEZEL_PACKAGES) {
       expect(fs.lstatSync(installed(name)).isSymbolicLink()).to.equal(false);
@@ -133,7 +133,7 @@ describe('local Gezel links', () => {
   it('rejects a partly replaced link set but unlinks it without downgrading installed packages', () => {
     linkGezel(root);
     replaceWithRegistry('@bendyline/gezel-app-sdk');
-    fs.unlinkSync(installed('@bendyline/gezel-service'));
+    fs.unlinkSync(installed('@bendyline/gezel-inference'));
     expect(() => linkedGezelRoot(root)).to.throw('links are missing');
     unlinkGezel(root);
     expect(linkedGezelRoot(root)).to.equal(null);
@@ -147,14 +147,14 @@ describe('local Gezel links', () => {
 
   it('validates replacement packages before unlinking anything', () => {
     linkGezel(root);
-    replaceWithRegistry('@bendyline/gezel-service');
+    replaceWithRegistry('@bendyline/gezel-inference');
     write(
-      path.join(installed('@bendyline/gezel-service'), 'package.json'),
+      path.join(installed('@bendyline/gezel-inference'), 'package.json'),
       JSON.stringify({ name: 'unexpected' }),
     );
     expect(() => unlinkGezel(root)).to.throw('will not be overwritten');
     expect(fs.lstatSync(installed('@bendyline/gezel')).isSymbolicLink()).to.equal(true);
-    expect(fs.existsSync(saved('@bendyline/gezel-service'))).to.equal(true);
+    expect(fs.existsSync(saved('@bendyline/gezel-inference'))).to.equal(true);
   });
 
   it('refuses a partial or mixed-checkout link set', () => {
@@ -187,12 +187,12 @@ describe('local Gezel links', () => {
       '@bendyline/gezel-app-sdk',
       { '@bendyline/gezel-client': 'workspace:*' },
       {
-        devDependencies: { '@bendyline/gezel-service': 'workspace:*' },
-        peerDependencies: { '@bendyline/gezel-service': 'workspace:*' },
+        devDependencies: { '@bendyline/gezel-inference': 'workspace:*' },
+        peerDependencies: { '@bendyline/gezel-inference': 'workspace:*' },
       },
     );
     workspace('stdlib', '@bendyline/gezel-script-stdlib', {}, { scripts: {} });
-    workspace('service', '@bendyline/gezel-service', {
+    workspace('inference', '@bendyline/gezel-inference', {
       '@bendyline/gezel': 'workspace:*',
       '@bendyline/gezel-client': 'workspace:*',
       '@bendyline/gezel-script-stdlib': 'workspace:*',
@@ -203,15 +203,15 @@ describe('local Gezel links', () => {
       '@bendyline/gezel',
       '@bendyline/gezel-client',
       '@bendyline/gezel-app-sdk',
-      '@bendyline/gezel-service',
+      '@bendyline/gezel-inference',
     ]);
   });
 
   it('fails on a missing runtime dependency or runtime cycle', () => {
     workspace('core', '@bendyline/gezel', { missing: 'workspace:*' });
     expect(() => gezelBuildPackages(source)).to.throw('Missing Gezel workspace package');
-    workspace('core', '@bendyline/gezel', { '@bendyline/gezel-service': 'workspace:*' });
-    workspace('service', '@bendyline/gezel-service', { '@bendyline/gezel': 'workspace:*' });
+    workspace('core', '@bendyline/gezel', { '@bendyline/gezel-inference': 'workspace:*' });
+    workspace('inference', '@bendyline/gezel-inference', { '@bendyline/gezel': 'workspace:*' });
     expect(() => gezelBuildPackages(source)).to.throw('runtime dependency cycle');
   });
 

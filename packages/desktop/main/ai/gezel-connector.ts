@@ -323,7 +323,7 @@ export class GezelConnector implements AiConnector {
     return this.hostSdk;
   }
   private serviceModule(): Promise<HostServiceModule> {
-    this.service ??= (this.options.loadService?.() ?? import('@bendyline/gezel-service')).catch(
+    this.service ??= (this.options.loadService?.() ?? import('@bendyline/gezel-inference')).catch(
       (error: unknown) => {
         this.service = null;
         throw error;

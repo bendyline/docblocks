@@ -845,9 +845,7 @@ test.describe('Squisq Use mode menu theming', () => {
       accentProbe.style.color = 'var(--db-accent-hover)';
       const selectedIconProbe = document.createElement('span');
       selectedIconProbe.style.background = 'var(--db-accent-soft-25)';
-      const mutedProbe = document.createElement('span');
-      mutedProbe.style.color = 'var(--db-text-muted)';
-      probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe, mutedProbe);
+      probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe);
       document.body.appendChild(probe);
 
       const menuStyle = getComputedStyle(element);
@@ -879,7 +877,6 @@ test.describe('Squisq Use mode menu theming', () => {
         expectedSelectedText: getComputedStyle(selectedProbe).color,
         expectedAccent: getComputedStyle(accentProbe).color,
         expectedSelectedIconBackground: getComputedStyle(selectedIconProbe).backgroundColor,
-        expectedMuted: getComputedStyle(mutedProbe).color,
       };
       probe.remove();
       return result;
@@ -892,7 +889,7 @@ test.describe('Squisq Use mode menu theming', () => {
     expect(colors.selectedText).toBe(colors.expectedSelectedText);
     expect(colors.selectedIconBackground).toBe(colors.expectedSelectedIconBackground);
     expect(colors.selectedIconText).toBe(colors.expectedAccent);
-    expect(colors.summaryText).toBe(colors.expectedMuted);
+    expect(colors.summaryText).toBe(colors.expectedNormalText);
     expect(colors.checkText).toBe(colors.expectedAccent);
 
     const normalItem = menu.locator('.squisq-use-mode-menu-item').filter({ hasText: 'Video' });

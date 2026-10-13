@@ -295,7 +295,7 @@ export async function verifyMasNativePayload(root: string): Promise<{ reused: tr
   } finally {
     await handle.close();
   }
-  const pins = await import('@bendyline/gezel-service/native-release');
+  const pins = await import('@bendyline/gezel-inference/native-release');
   const value: unknown = JSON.parse(source);
   const manifest = parseMasNativeManifest(value, pins.NATIVE_ENGINE_RELEASE);
   const verifyStoreSeal = () =>

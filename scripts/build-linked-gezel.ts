@@ -73,8 +73,8 @@ export async function buildLinkedGezel(root = repoRoot): Promise<number> {
   return lease.withDependencyReadLease(
     source,
     async ({ leaseEnv, setChildPid }) => {
-      // Always rebuild the runtime closure. Gezel's service also copies Python,
-      // eval and other assets outside src/, so a source-only mtime check is unsafe.
+      // Always rebuild the runtime closure. Gezel's inference package copies Python,
+      // catalog and speech assets outside src/, so a source-only mtime check is unsafe.
       for (const pkg of gezelBuildPackages(source)) {
         process.stdout.write(`Linked Gezel: building ${pkg.name}\n`);
         const child = spawn(

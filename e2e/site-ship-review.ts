@@ -327,7 +327,7 @@ try {
       // Monaco may expose an offscreen textarea when Chromium uses EditContext.
       // Click the visible text surface and send ordinary user keystrokes.
       await page.locator('.monaco-editor .view-lines').click();
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press('ControlOrMeta+A');
       await page.keyboard.insertText(
         '# Ship review\n\nPersistence marker and **bold text**.\n\n## Checklist\n\n- First item\n- Second item\n\n| Item | Status |\n| --- | --- |\n| Export | Ready |\n\n```js\nconst answer = 42;\n```\n',
       );
@@ -336,6 +336,9 @@ try {
         'Persistence marker',
       );
       await expect(page.locator('[contenteditable="true"] strong')).toContainText('bold text');
+      await expect(page.locator('[contenteditable="true"]').first()).not.toContainText(
+        'Ship review persistence marker.',
+      );
       return capture(page, 'source-round-trip');
     });
     for (const [label, extension] of [
@@ -377,6 +380,7 @@ try {
       await input.fill('ship-review-renamed.md');
       await input.press('Enter');
       await expect(page.locator('.db-tree-row', { hasText: 'ship-review-renamed' })).toBeVisible();
+      await expect(page).toHaveURL(/ship-review-renamed\.md$/);
       await page.reload();
       await ready(page);
       await expect(page.locator('[contenteditable="true"]').first()).toContainText(

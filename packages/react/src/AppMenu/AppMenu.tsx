@@ -198,7 +198,8 @@ export function AppMenu({
 
   const handleAction = useCallback(
     (action: () => void) => {
-      closeMenu(false);
+      // The menu item unmounts before a dialog can capture its return target.
+      closeMenu(true);
       action();
     },
     [closeMenu],

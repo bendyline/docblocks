@@ -35,7 +35,7 @@ import { kokoroWordTimings } from '../main/speech/kokoro-timing.js';
 import { parseSpeechAudioChunk } from '@bendyline/docblocks/host';
 
 const require = createRequire(import.meta.url);
-const LEXICON_DIR = kokoroLexiconDir(require.resolve('@bendyline/gezel-service/package.json'));
+const LEXICON_DIR = kokoroLexiconDir(require.resolve('@bendyline/gezel-inference/package.json'));
 
 /** A fake ONNX Runtime: 100 samples of audio per input token. */
 function fakeOrt(

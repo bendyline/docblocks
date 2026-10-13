@@ -388,11 +388,11 @@ export function ExportToolbarControls({
 
   const handleOpenDialog = useCallback(() => {
     setFileShare(false);
-    setMenuOpen(false);
+    closeMenu(true);
     setExportError(null);
     setDialogOpen(true);
     void refreshDestination(dialogInitial);
-  }, [dialogInitial, refreshDestination]);
+  }, [closeMenu, dialogInitial, refreshDestination]);
 
   const handleCloseDialog = useCallback(() => {
     setDialogOpen(false);
@@ -400,9 +400,9 @@ export function ExportToolbarControls({
   }, []);
 
   const handleOpenShareDialog = useCallback(() => {
-    setMenuOpen(false);
+    closeMenu(true);
     setShareDialogOpen(true);
-  }, []);
+  }, [closeMenu]);
 
   const handleCloseShareDialog = useCallback(() => {
     setShareDialogOpen(false);
@@ -410,7 +410,7 @@ export function ExportToolbarControls({
 
   const handleOpenVideoModal = useCallback(
     async (outputFormat: 'mp4' | 'gif') => {
-      setMenuOpen(false);
+      closeMenu(true);
       setVideoOutputFormat(outputFormat);
       setVideoModalOpen(true);
       setVideoLoadError(null);
@@ -440,7 +440,7 @@ export function ExportToolbarControls({
         setVideoLoading(false);
       }
     },
-    [markdownSource, selectedFile, videoModules, workspaceContainer],
+    [closeMenu, markdownSource, selectedFile, videoModules, workspaceContainer],
   );
 
   const handleCloseVideoModal = useCallback(() => {
@@ -532,7 +532,7 @@ export function ExportToolbarControls({
 
   const handleQuickExport = useCallback(async () => {
     if (!lastOptions) return;
-    setMenuOpen(false);
+    closeMenu(true);
     setExporting(true);
     setExportError(null);
     try {
@@ -566,6 +566,7 @@ export function ExportToolbarControls({
       setExporting(false);
     }
   }, [
+    closeMenu,
     destinationAdapter,
     lastOptions,
     markdownSource,
@@ -600,6 +601,7 @@ export function ExportToolbarControls({
       {initialSharedMode && <SharedModeInitializer mode={initialSharedMode} />}
       {trigger === 'button' ? (
         <button
+          ref={triggerRef}
           type="button"
           className="squisq-toolbar-button db-toolbar-export-trigger"
           onClick={handleOpenDialog}
@@ -688,7 +690,7 @@ export function ExportToolbarControls({
                   className="db-toolbar-menu-item"
                   onClick={() => {
                     setFileShare(true);
-                    setMenuOpen(false);
+                    closeMenu(true);
                     setExportError(null);
                     setDialogOpen(true);
                   }}
@@ -724,7 +726,7 @@ export function ExportToolbarControls({
                       tabIndex={-1}
                       className="db-toolbar-menu-item"
                       onClick={() => {
-                        setMenuOpen(false);
+                        closeMenu(true);
                         setAudioDialogOpen(true);
                       }}
                     >

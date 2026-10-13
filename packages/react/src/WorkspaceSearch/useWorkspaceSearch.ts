@@ -36,6 +36,10 @@ export function useWorkspaceSearch(
   useEffect(() => {
     controllerRef.current?.abort();
     controllerRef.current = null;
+    if (refreshTimerRef.current !== null) {
+      clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
     if (!index || !text.trim()) {
       runRef.current = null;
       setState(EMPTY);
@@ -57,7 +61,9 @@ export function useWorkspaceSearch(
       );
     };
     runRef.current = run;
-    setState((current) => ({ ...current, searching: true }));
+    // A row's open request uses the current query and workspace. Keeping the
+    // previous result here lets it open an unrelated path during the debounce.
+    setState({ result: null, searching: true });
     const timer = setTimeout(run, QUERY_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [index, text, matchCase, wholeWord]);
@@ -73,6 +79,8 @@ export function useWorkspaceSearch(
   useEffect(
     () => () => {
       controllerRef.current?.abort();
+      controllerRef.current = null;
+      runRef.current = null;
       if (refreshTimerRef.current !== null) clearTimeout(refreshTimerRef.current);
     },
     [],

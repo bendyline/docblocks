@@ -100,7 +100,7 @@ function ChipRadioGroup<T extends string>({
 }) {
   return (
     <div className="db-export-chips" role="radiogroup" aria-label={name}>
-      {options.map((opt) => {
+      {options.map((opt, index) => {
         const active = opt.key === value;
         return (
           <button
@@ -108,8 +108,24 @@ function ChipRadioGroup<T extends string>({
             type="button"
             role="radio"
             aria-checked={active}
+            tabIndex={active ? 0 : -1}
             className={`db-export-chip${active ? ' db-export-chip--active' : ''}`}
             onClick={() => onChange(opt.key)}
+            onKeyDown={(event) => {
+              const delta =
+                event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                  ? 1
+                  : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                    ? -1
+                    : 0;
+              if (!delta) return;
+              event.preventDefault();
+              const next = (index + delta + options.length) % options.length;
+              onChange(options[next]!.key);
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+                [next]?.focus();
+            }}
             title={opt.title}
           >
             {opt.label}

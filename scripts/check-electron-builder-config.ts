@@ -190,43 +190,6 @@ function requireNativePlatformContract(): void {
 
 requireNativePlatformContract();
 
-function requireTargetNativeDependencies(): void {
-  if (!isRecord(config) || !Array.isArray(config.files)) {
-    failConfigPolicy('Desktop native dependency fileset is missing.');
-  }
-  const variants =
-    '{@napi-rs/canvas-*,@napi-rs/keyring-*,@resvg/resvg-js-*,@vscode/ripgrep-*,sqlite-vec-*}';
-  for (const prefix of ['node_modules/', 'node_modules/**/node_modules/']) {
-    if (!config.files.includes(`!${prefix}${variants}/**/*`)) {
-      failConfigPolicy(
-        'Desktop must exclude host-native optional packages before staging target variants.',
-      );
-    }
-  }
-  if (
-    !config.files.some(
-      (entry) =>
-        isRecord(entry) &&
-        entry.from === 'dist/native-modules/${os}-${arch}/node_modules' &&
-        entry.to === 'node_modules' &&
-        Array.isArray(entry.filter) &&
-        entry.filter.includes('**/*'),
-    ) ||
-    !Array.isArray(config.asarUnpack) ||
-    !config.asarUnpack.includes('dist/native-modules/${os}-${arch}/node_modules/**/*') ||
-    config.afterPack !== 'scripts/after-pack.cjs'
-  ) {
-    failConfigPolicy(
-      'Desktop must package, unpack, and verify the target native dependency fileset.',
-    );
-  }
-  process.stdout.write(
-    'electron-builder.yml: target native dependency staging and ASAR verification OK\n',
-  );
-}
-
-requireTargetNativeDependencies();
-
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
   targetName: string,
@@ -957,6 +920,27 @@ const requiredPackages = new Set([
     .map(packageNameFromSpecifier),
   ...Object.keys(gezelPeerRuntimes),
 ]);
+// Unpublished upstream previews are pinned together as direct file dependencies.
+// Permit these only when they are reachable from an actual main runtime import.
+const visitedRuntimePackages = new Set<string>();
+function includePreviewDependencies(name: string, from: string): void {
+  const directory = installedPackageDirectory(name, from);
+  if (visitedRuntimePackages.has(directory)) return;
+  visitedRuntimePackages.add(directory);
+  const manifest = readJsonRecord(path.join(directory, 'package.json'));
+  if (!isRecord(manifest.dependencies)) return;
+  for (const dependency of Object.keys(manifest.dependencies)) {
+    if (!dependency.startsWith('@bendyline/gezel') && dependency !== '@bendyline/gezk') continue;
+    const declared = desktopManifest.dependencies?.[dependency];
+    if (typeof declared === 'string' && declared.startsWith('file:vendor/'))
+      requiredPackages.add(dependency);
+    includePreviewDependencies(dependency, directory);
+  }
+}
+for (const dependency of [...requiredPackages]) {
+  if (dependency.startsWith('@bendyline/gezel'))
+    includePreviewDependencies(dependency, path.dirname(desktopManifestPath));
+}
 const undeclaredPackages = [...requiredPackages].filter(
   (dependency) => !declaredRuntimeDependencies.has(dependency),
 );

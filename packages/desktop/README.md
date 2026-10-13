@@ -25,7 +25,7 @@ Key main-process modules:
 
 Desktop packaging downloads the signed native archives from Gezel's releases
 into `resources/gezel-native/`. The `beforePack` hook calls the exact installed
-`@bendyline/gezel-service/packaging` helper. Gezel selects its pinned release and
+`@bendyline/gezel-inference/packaging` helper. Gezel selects its pinned release and
 all published backends for the target architecture, verifies downloads before
 extraction, and preserves the
 release's license files and existing code signatures. Verified archives are
@@ -42,11 +42,24 @@ preferences, encrypted token storage, editor prompts/transactions, and MAS seal
 verification. `withKnowledgeContext` receives the host's prompt/message limits;
 model locality comes from SDK metadata, never from an engine name.
 
-These APIs ship in the pinned Gezel App SDK `1.1.4` and service `1.2.4`.
-Use the local link workflow below for further sibling development. The
-connector reports a missing runtime if the required SDK export is absent.
-See Gezel's `docs/handboek/technical/docblocks-text-ai-with-gezel.md` for the
-request flow and code examples.
+DocBlocks uses `@bendyline/gezel-inference` for its private host. The full
+Gezel service consumes the same engines, model managers, native verification,
+knowledge workers and OpenAI routes; the implementation is owned upstream once.
+The inference package carries generated chat-model and knowledge-catalog data
+from the pinned Gilde release, without the product UI, Office integration,
+agent orchestration, MCP server or complete community catalog. `afterPack`
+checks that the full service did not return and that runtime assets remain.
+
+Until this upstream split is published, `vendor/` contains exact preview
+archives (`-docblocks.3`), with their source revision and SHA-256 pins in
+`vendor/provenance.json`. These are generated build outputs, not maintained
+copies of Gezel source. Refresh explicitly with
+`node packages/desktop/scripts/refresh-gezel.mjs ../gezel`, then run
+`npm install --install-strategy=nested` from the repository root and regenerate
+third-party notices. The nested placement keeps desktop previews together when
+mobile uses a different SDK preview. Normal `npm ci` uses the committed lockfile
+and needs no sibling checkout. Replace these file pins with exact published
+versions once Gezel releases the new package and SDK together.
 
 Kokoro narration uses Gezel core `1.2.4`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
@@ -55,22 +68,22 @@ and requires no new native
 engine build. See [speech timing](../../docs/speech.md#kokoro-export-and-model-updates).
 
 Inference fixes, including MLX's Python prompt builder, ship in
-`@bendyline/gezel-service`. Updating only `@bendyline/gezel-app-sdk` or the user's
+`@bendyline/gezel-inference`. Updating only `@bendyline/gezel-app-sdk` or the user's
 standalone Gezel does not update DocBlocks' private hosted service. To adopt an
-upstream fix, publish the corrected service, update the desktop's exact service
+upstream fix, publish the corrected inference package, update the desktop's exact runtime
 pin and lockfile (and any companion packages required by that release), rebuild,
 and restart DocBlocks. Do not patch the installed package's Python files.
-MLX's launcher loads the script from the service bundle when starting the
+MLX's launcher loads the script from the inference package when starting the
 engine; existing model weights can be reused.
 
 For local development against `../gezel`, run `npm run link:gezel` from the
-DocBlocks root. This links the desktop's SDK, service, and core contracts to that
+DocBlocks root. This links the desktop's SDK, inference, and core contracts to that
 checkout, preserving the installed packages for `npm run unlink:gezel`.
 `npm run check:gezel-linked` prints the actual package paths and checks their
 built entry points. Linking does not change release pins or the lockfile.
 
 `npm run all` (through `build`'s preflight), `npm run build`, and desktop dev
-startup rebuild linked Gezel's SDK/service runtime dependency graph in order,
+startup rebuild linked Gezel's SDK/inference runtime dependency graph in order,
 under Gezel's shared dependency-read lease. No dependencies are installed and
 registry-only checkouts continue to use their pinned packages, including after
 `npm install` replaces all local links. A leftover link marker does not require
@@ -309,21 +322,11 @@ does not impose their libc floor on the editor; its description states the featu
 requirement. See [OS qualification](../../docs/desktop-ai-native-release.md#os-qualification)
 before treating a new payload as release-qualified.
 
-Cross-packaging does not reuse npm's host-only optional native packages. The
-`beforePack` hook stages canvas, keyring, resvg, ripgrep, and sqlite-vec variants
-from the exact root lockfile into `dist/native-modules/<os>-<arch>/`. The pinned
-npm toolchain verifies each registry tarball's SHA-512 without running package
-scripts. The installed dependency tree stays unchanged. Electron-builder excludes
-the host variants, copies this target fileset into `app.asar`, and unpacks its
-native files. `scripts/after-pack.cjs` rejects missing variants, foreign platform
-packages, wrong PE/ELF/Mach-O architectures, and packed native bindings before
-signing; it then runs the existing MAS native preparation.
-
-Linux targets use glibc variants. sqlite-vec does not publish a Windows ARM64
-binary at the pinned version: that optional accelerator is omitted there, and
-Gezel's existing unavailable-vector-extension fallback applies. No x64 DLL is
-substituted. Changes to those package families or their support matrix must update
-the staging checks and pass a packaged hosted-AI smoke on the target hardware.
+The inference runtime no longer depends on canvas, keyring, resvg, ripgrep or
+sqlite-vec, so their platform variants and staging code are no longer part of
+DocBlocks. ONNX Runtime platform filtering, native engine pins, OS checks,
+Windows runtime coverage and MAS signature verification still run during
+packaging.
 
 ## Testing
 

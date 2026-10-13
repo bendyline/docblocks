@@ -4,7 +4,7 @@ import path from 'node:path';
 export const GEZEL_PACKAGES = [
   ['core', '@bendyline/gezel'],
   ['app-sdk', '@bendyline/gezel-app-sdk'],
-  ['service', '@bendyline/gezel-service'],
+  ['inference', '@bendyline/gezel-inference'],
 ] as const;
 
 export const repoRoot = path.resolve(import.meta.dirname, '..');

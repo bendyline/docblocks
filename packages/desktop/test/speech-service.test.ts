@@ -108,8 +108,9 @@ class FakeTts implements TtsEngine {
       },
     });
     if (input.text === 'slow') {
+      signal?.throwIfAborted();
       await new Promise((resolve, reject) => {
-        signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
       });
     }
     return {

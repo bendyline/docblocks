@@ -137,6 +137,21 @@ describe('git dropdown keyboard contract', () => {
         expect(document.activeElement).to.equal(all[all.length - 1]);
       });
 
+      it('enters an already open menu with either Arrow key', async () => {
+        const trigger = await renderMenu(scenario.component, scenario.props);
+        await act(async () => {
+          trigger.focus();
+          trigger.click();
+        });
+        await act(async () => press(trigger, 'ArrowDown'));
+        expect(document.activeElement).to.equal(items()[0]);
+        await act(async () => {
+          trigger.focus();
+          press(trigger, 'ArrowUp');
+        });
+        expect(document.activeElement).to.equal(items().at(-1));
+      });
+
       it('cycles items with the Arrow keys', async () => {
         const trigger = await renderMenu(scenario.component, scenario.props);
         await act(async () => {

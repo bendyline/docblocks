@@ -1,0 +1,42 @@
+{
+  "repository": "https://github.com/bendyline/gezel",
+  "baseCommit": "73934d86797a51ad8c42bc5d097284c1bd61fb9c",
+  "trackedChangesSha256": "f28bfdca98ed265c834c13af8e8e97ac3b3fa42cdfa5be956889ea840abd07f6",
+  "packages": {
+    "@bendyline/gezk": {
+      "version": "1.0.4-docblocks.3",
+      "file": "bendyline-gezk-1.0.4-docblocks.3.tgz",
+      "sha256": "43e59b3aee51958155b14300ab8e8b48c12f3cc7dc186843080822e3dd757f2f"
+    },
+    "@bendyline/gezel": {
+      "version": "1.2.4-docblocks.3",
+      "file": "bendyline-gezel-1.2.4-docblocks.3.tgz",
+      "sha256": "3111e1d8ee186cba6f6c00bb80720313c50f3ed5d5ffc2cd524c55579df937a5"
+    },
+    "@bendyline/gezel-client": {
+      "version": "1.2.4-docblocks.3",
+      "file": "bendyline-gezel-client-1.2.4-docblocks.3.tgz",
+      "sha256": "aec73c0364979657cca5e49384fa11894bf6c9fde9aa84ff95a8c8e704ca67fb"
+    },
+    "@bendyline/gezel-catalog": {
+      "version": "1.2.4-docblocks.3",
+      "file": "bendyline-gezel-catalog-1.2.4-docblocks.3.tgz",
+      "sha256": "6f9b2b4cd793c5b6ebbaeb7081c097cabc5657d30237a79d36f27b44d68659d6"
+    },
+    "@bendyline/gezel-knowledge": {
+      "version": "1.2.4-docblocks.3",
+      "file": "bendyline-gezel-knowledge-1.2.4-docblocks.3.tgz",
+      "sha256": "15f00c10c46fd447dfff60ebf14e24f30f489784c019e0d5a029ba35548499ec"
+    },
+    "@bendyline/gezel-inference": {
+      "version": "0.1.0-docblocks.3",
+      "file": "bendyline-gezel-inference-0.1.0-docblocks.3.tgz",
+      "sha256": "369dc949e97c858907d05518299bb27c64d8adcf067673d0acfa5579254bf447"
+    },
+    "@bendyline/gezel-app-sdk": {
+      "version": "1.1.4-docblocks.3",
+      "file": "bendyline-gezel-app-sdk-1.1.4-docblocks.3.tgz",
+      "sha256": "cf553a33e318566306ac749dcf63d8e1c53d45e7a31af2ae0b3a0e84eaf6ea12"
+    }
+  }
+}

@@ -334,7 +334,7 @@ function componentFromLockKey(lockKey: string): Component | null {
   ].flatMap((key) => [
     key,
     key.replace(
-      /^(packages\/desktop\/node_modules\/)(@bendyline\/gezel(?:-app-sdk|-service)?)(\/.*)?$/u,
+      /^(packages\/desktop\/node_modules\/)(@bendyline\/gezel(?:-app-sdk|-inference)?)(\/.*)?$/u,
       '$1.docblocks-gezel/$2$3',
     ),
   ]);

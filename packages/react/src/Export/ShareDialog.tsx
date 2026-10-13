@@ -7,6 +7,7 @@ import {
   sharedDocumentQrFilename,
 } from './shared-document.js';
 import { qrPngDataUrlToBlob, renderSharedDocumentQrPng } from './share-qr.js';
+import { Dialog } from '../components/Dialog.js';
 
 export interface ShareDialogProps {
   markdown: string;
@@ -109,14 +110,6 @@ export function ShareDialog({
 
   useEffect(() => setCopyStatus('idle'), [linkResult.url]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
   const copyLink = useCallback(async () => {
     if (!linkResult.url) return;
     try {
@@ -166,152 +159,13 @@ export function ShareDialog({
   const qrError = qrLinkResult.error ?? qrRenderError;
 
   return (
-    <div
-      className="db-dialog-overlay"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="db-dialog db-export-dialog db-share-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="db-share-dialog-title"
-      >
-        <div className="db-dialog-header">
-          <h2 className="db-dialog-title" id="db-share-dialog-title">
-            Share document
-          </h2>
-          <button className="db-dialog-close" type="button" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-        </div>
-
-        <div className="db-dialog-body">
-          <div className="db-share-warning" role="note">
-            The text and formatting of this document are embedded in the URL. Anyone with the link
-            can read the shared copy, so do not use it for secrets.
-          </div>
-          <p className="db-export-hint" role="note">
-            Images are excluded from share links. Image descriptions are kept when available. Your
-            original document is unchanged.
-          </p>
-
-          <div className="db-export-field">
-            <label className="db-export-label" htmlFor="db-share-mode">
-              Default mode (optional)
-            </label>
-            <select
-              id="db-share-mode"
-              className="db-export-select"
-              value={mode}
-              onChange={(event) => setMode(event.target.value as SharedDocumentMode | '')}
-            >
-              {MODES.map((option) => (
-                <option key={option.value || 'write'} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <span className="db-export-hint">
-              Without a default, the copied document opens in Write. Other choices open directly in
-              Use.
-            </span>
-          </div>
-
-          <div className="db-export-field">
-            <label className="db-export-label" htmlFor="db-share-link">
-              Share link
-            </label>
-            <textarea
-              ref={linkRef}
-              id="db-share-link"
-              className="db-share-link"
-              value={linkResult.url}
-              readOnly
-              rows={3}
-              spellCheck={false}
-              aria-describedby="db-share-link-status"
-              placeholder={linkResult.error ? '' : 'Creating link...'}
-            />
-            <span
-              id="db-share-link-status"
-              className={`db-export-hint${isLong ? ' db-share-length-warning' : ''}`}
-            >
-              {linkResult.error
-                ? linkResult.error
-                : linkResult.url
-                  ? isLong
-                    ? `${linkResult.url.length.toLocaleString()} characters. Links longer than 4,096 characters may be truncated by messaging or email tools.`
-                    : `${linkResult.url.length.toLocaleString()} characters.`
-                  : 'Creating a link with the shared text and formatting...'}
-            </span>
-          </div>
-
-          <section className="db-share-qr" aria-labelledby="db-share-qr-title">
-            <div className="db-share-qr-heading">
-              <div>
-                <h3 id="db-share-qr-title">QR code</h3>
-                <span className="db-export-hint">
-                  A self-contained docblocks.com link to the shared text. No document content is
-                  uploaded.
-                </span>
-              </div>
-              <div className="db-share-qr-actions">
-                <button
-                  className="db-export-btn db-export-btn--secondary"
-                  type="button"
-                  onClick={() => void copyQrImage()}
-                  disabled={!qrDataUrl}
-                >
-                  {qrCopyStatus === 'copied'
-                    ? 'Copied QR'
-                    : qrCopyStatus === 'failed'
-                      ? 'Copy unavailable'
-                      : 'Copy QR image'}
-                </button>
-                <button
-                  className="db-export-btn db-export-btn--secondary"
-                  type="button"
-                  onClick={saveQrImage}
-                  disabled={!qrDataUrl}
-                >
-                  Save QR PNG
-                </button>
-              </div>
-            </div>
-
-            {qrDataUrl ? (
-              <img
-                className="db-share-qr-image"
-                src={qrDataUrl}
-                alt="QR code for this shared DocBlocks document"
-              />
-            ) : (
-              <div
-                className={`db-share-qr-placeholder${qrError ? ' db-share-qr-placeholder--error' : ''}`}
-                role={qrError ? 'note' : 'status'}
-              >
-                {qrError ?? 'Rendering QR code...'}
-              </div>
-            )}
-
-            <span className="db-export-hint db-share-qr-status" aria-live="polite">
-              {qrCopyStatus === 'failed'
-                ? 'This browser could not copy the PNG. Save it instead.'
-                : qrDataUrl
-                  ? `${qrLinkResult.url.length.toLocaleString()} of ${SHARED_DOCUMENT_LIMITS.qrUrlCharacters.toLocaleString()} supported QR characters.`
-                  : ''}
-            </span>
-          </section>
-
-          <p className="db-share-temporary-note">
-            Opening the link creates a temporary workspace. Changes there do not alter this document
-            or the link.
-          </p>
-        </div>
-
-        <div className="db-export-footer">
+    <Dialog
+      title="Share document"
+      onClose={onClose}
+      className="db-export-dialog db-share-dialog"
+      footerClassName="db-export-footer"
+      footer={
+        <>
           <button
             className="db-export-btn db-export-btn--secondary"
             type="button"
@@ -331,8 +185,129 @@ export function ShareDialog({
                 ? 'Select and copy'
                 : 'Copy link'}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="db-share-warning" role="note">
+        The text and formatting of this document are embedded in the URL. Anyone with the link can
+        read the shared copy, so do not use it for secrets.
       </div>
-    </div>
+      <p className="db-export-hint" role="note">
+        Images are excluded from share links. Image descriptions are kept when available. Your
+        original document is unchanged.
+      </p>
+
+      <div className="db-export-field">
+        <label className="db-export-label" htmlFor="db-share-mode">
+          Default mode (optional)
+        </label>
+        <select
+          id="db-share-mode"
+          className="db-export-select"
+          value={mode}
+          onChange={(event) => setMode(event.target.value as SharedDocumentMode | '')}
+        >
+          {MODES.map((option) => (
+            <option key={option.value || 'write'} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="db-export-hint">
+          Without a default, the copied document opens in Write. Other choices open directly in Use.
+        </span>
+      </div>
+
+      <div className="db-export-field">
+        <label className="db-export-label" htmlFor="db-share-link">
+          Share link
+        </label>
+        <textarea
+          ref={linkRef}
+          id="db-share-link"
+          className="db-share-link"
+          value={linkResult.url}
+          readOnly
+          rows={3}
+          spellCheck={false}
+          aria-describedby="db-share-link-status"
+          placeholder={linkResult.error ? '' : 'Creating link...'}
+        />
+        <span
+          id="db-share-link-status"
+          className={`db-export-hint${isLong ? ' db-share-length-warning' : ''}`}
+        >
+          {linkResult.error
+            ? linkResult.error
+            : linkResult.url
+              ? isLong
+                ? `${linkResult.url.length.toLocaleString()} characters. Links longer than 4,096 characters may be truncated by messaging or email tools.`
+                : `${linkResult.url.length.toLocaleString()} characters.`
+              : 'Creating a link with the shared text and formatting...'}
+        </span>
+      </div>
+
+      <section className="db-share-qr" aria-labelledby="db-share-qr-title">
+        <div className="db-share-qr-heading">
+          <div>
+            <h3 id="db-share-qr-title">QR code</h3>
+            <span className="db-export-hint">
+              A self-contained docblocks.com link to the shared text. No document content is
+              uploaded.
+            </span>
+          </div>
+          <div className="db-share-qr-actions">
+            <button
+              className="db-export-btn db-export-btn--secondary"
+              type="button"
+              onClick={() => void copyQrImage()}
+              disabled={!qrDataUrl}
+            >
+              {qrCopyStatus === 'copied'
+                ? 'Copied QR'
+                : qrCopyStatus === 'failed'
+                  ? 'Copy unavailable'
+                  : 'Copy QR image'}
+            </button>
+            <button
+              className="db-export-btn db-export-btn--secondary"
+              type="button"
+              onClick={saveQrImage}
+              disabled={!qrDataUrl}
+            >
+              Save QR PNG
+            </button>
+          </div>
+        </div>
+
+        {qrDataUrl ? (
+          <img
+            className="db-share-qr-image"
+            src={qrDataUrl}
+            alt="QR code for this shared DocBlocks document"
+          />
+        ) : (
+          <div
+            className={`db-share-qr-placeholder${qrError ? ' db-share-qr-placeholder--error' : ''}`}
+            role={qrError ? 'note' : 'status'}
+          >
+            {qrError ?? 'Rendering QR code...'}
+          </div>
+        )}
+
+        <span className="db-export-hint db-share-qr-status" aria-live="polite">
+          {qrCopyStatus === 'failed'
+            ? 'This browser could not copy the PNG. Save it instead.'
+            : qrDataUrl
+              ? `${qrLinkResult.url.length.toLocaleString()} of ${SHARED_DOCUMENT_LIMITS.qrUrlCharacters.toLocaleString()} supported QR characters.`
+              : ''}
+        </span>
+      </section>
+
+      <p className="db-share-temporary-note">
+        Opening the link creates a temporary workspace. Changes there do not alter this document or
+        the link.
+      </p>
+    </Dialog>
   );
 }

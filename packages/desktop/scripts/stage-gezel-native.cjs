@@ -3,7 +3,6 @@ const { readFile } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const path = require('node:path');
 const { stageVcRuntime } = require('./stage-vc-runtime.cjs');
-const { stageNativeDependencies } = require('./native-dependencies.cjs');
 const { verifyNativePlatformRequirements } = require('./native-platform-requirements.cjs');
 const intelMacFinal = require('../intel-mac-final.json');
 
@@ -11,11 +10,30 @@ async function stageForTarget(context, overrides = {}) {
   const appDir = context.packager.info.appDir;
   const platform = context.electronPlatformName === 'mas' ? 'darwin' : context.electronPlatformName;
   const arch = require('builder-util').Arch[context.arch];
-  const serviceRequire = createRequire(require.resolve('@bendyline/gezel-service/package.json'));
+  const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
   const manifest = JSON.parse(await readFile(path.join(appDir, 'package.json'), 'utf8'));
   const installed = serviceRequire('./package.json');
-  if (manifest.dependencies['@bendyline/gezel-service'] !== installed.version) {
-    throw new Error("The installed Gezel service must match DocBlocks' exact dependency pin.");
+  const dependency = manifest.dependencies['@bendyline/gezel-inference'];
+  let expectedVersion = dependency;
+  if (dependency?.startsWith('file:vendor/')) {
+    const provenance = JSON.parse(
+      await readFile(path.join(appDir, 'vendor/provenance.json'), 'utf8'),
+    );
+    const pin = provenance.packages['@bendyline/gezel-inference'];
+    const archive = pin && (await readFile(path.join(appDir, 'vendor', pin.file)));
+    if (
+      !pin ||
+      dependency !== `file:vendor/${pin.file}` ||
+      require('node:crypto').createHash('sha256').update(archive).digest('hex') !== pin.sha256
+    ) {
+      throw new Error('The Gezel inference preview must match its recorded archive pin.');
+    }
+    expectedVersion = pin.version;
+  }
+  if (expectedVersion !== installed.version) {
+    throw new Error(
+      "The installed Gezel inference runtime must match DocBlocks' exact dependency pin.",
+    );
   }
   // Intel Macs stopped at intel-mac-final.json's version. Only that release
   // builds their final update, and it has no engines to stage: the pinned
@@ -26,10 +44,9 @@ async function stageForTarget(context, overrides = {}) {
       `Intel Macs are no longer supported; only DocBlocks ${intelMacFinal.version}, their final release, builds for darwin-x64.`,
     );
   }
-  await (overrides.stageNativeDependencies ?? stageNativeDependencies)({ appDir, platform, arch });
   const stage =
     overrides.stageElectronNative ??
-    require('@bendyline/gezel-service/packaging').stageElectronNative;
+    require('@bendyline/gezel-inference/packaging').stageElectronNative;
   const destination = path.join(
     appDir,
     'dist',
