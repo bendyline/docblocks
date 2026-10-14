@@ -1,6 +1,10 @@
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { exerciseDeferredMonaco, scanEditorControls } from './helpers/editor-regression.js';
+import {
+  exerciseDeferredMonaco,
+  MONACO_COLD_LOAD_TIMEOUT,
+  scanEditorControls,
+} from './helpers/editor-regression.js';
 
 for (const theme of ['Light', 'Dark']) {
   test(`integrated editor controls are accessible in ${theme}`, async ({ page }) => {
@@ -27,6 +31,9 @@ test('Monaco suggestions survive Source/Write transitions, rename, and reload', 
   await expect(page.locator('.db-tree-row', { hasText: 'monaco-renamed' })).toBeVisible();
   await expect(page).toHaveURL(/monaco-renamed\.md$/);
   await page.reload();
-  await expect(page.locator('.tiptap .monaco-editor')).toContainText('console.log(marker);');
+  // The reload discards the loaded Monaco, so this waits on a cold load again.
+  await expect(page.locator('.tiptap .monaco-editor')).toContainText('console.log(marker);', {
+    timeout: MONACO_COLD_LOAD_TIMEOUT,
+  });
   await exerciseDeferredMonaco(page);
 });

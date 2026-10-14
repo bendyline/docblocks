@@ -86,6 +86,17 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     reason: 'deliberate first-install cache failure in the PWA suite',
     match: /Failed to load resource: net::ERR_FAILED/u,
   },
+  {
+    // /desktop/ looks up the latest release from the GitHub API without a
+    // token. CI runners share IPs, so GitHub intermittently answers with its
+    // rate limit, and Chromium logs that before the page falls back to its
+    // generic download links. Stubbing the request instead needs routing,
+    // which disables the HTTP cache for the whole context and slowed Monaco's
+    // dev-server reload past its assertion timeout.
+    reason: 'GitHub API rate limit on the download page release lookup',
+    match: /^Failed to load resource: the server responded with a status of (?:403|429)\b/u,
+    location: /^https:\/\/api\.github\.com\/repos\/bendyline\/docblocks\/releases\?/u,
+  },
 ];
 
 function describeLocation(message: ConsoleMessage): string {

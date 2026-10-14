@@ -3,6 +3,7 @@ import {
   isAllowedRuntimeError,
   unexpectedRuntimeErrors,
   formatRuntimeErrors,
+  SHARED_ALLOWED_RUNTIME_ERRORS,
   type AllowedRuntimeError,
   type RuntimeError,
 } from '../../../e2e/helpers/console-guard.js';
@@ -72,6 +73,25 @@ describe('E2E runtime-error guard', () => {
     it('treats an allowance with no pattern as matching nothing', () => {
       const allowed = [{ reason: 'malformed' }] as unknown as AllowedRuntimeError[];
       expect(isAllowedRuntimeError(consoleError('anything at all'), allowed)).to.equal(false);
+    });
+  });
+
+  describe('shared allowances', () => {
+    const releases = 'https://api.github.com/repos/bendyline/docblocks/releases?per_page=100:0:0';
+
+    it('allow only a GitHub rate limit on the download page release lookup', () => {
+      // Exact CI text: Chromium leaves the status text empty there.
+      const allowed = (text: string, location = releases) =>
+        isAllowedRuntimeError(consoleError(text, location), SHARED_ALLOWED_RUNTIME_ERRORS);
+      const status = (code: string) =>
+        `Failed to load resource: the server responded with a status of ${code}`;
+      expect(allowed(status('403 ()'))).to.equal(true);
+      expect(allowed(status('429 (Too Many Requests)'))).to.equal(true);
+      expect(allowed(status('404 ()'))).to.equal(false);
+      // The same rate limit on any other resource is still a failure.
+      expect(
+        allowed(status('403 ()'), 'https://api.github.com/repos/bendyline/docblocks/issues:0:0'),
+      ).to.equal(false);
     });
   });
 

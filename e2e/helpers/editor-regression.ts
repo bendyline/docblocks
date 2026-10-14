@@ -48,11 +48,18 @@ export async function scanEditorControls(page: Page, electron = false): Promise<
   await expect(trigger).not.toBeFocused();
 }
 
+/**
+ * A page's first Monaco mount on the Vite dev server requests ~700-770
+ * unbundled monaco-editor modules. That measured 2-6 s after load on a fast
+ * Mac, so the default 5 s expect timeout made every cold wait a coin flip.
+ */
+export const MONACO_COLD_LOAD_TIMEOUT = 30_000;
+
 /** Initialize Markdown first, load suggestions, then mount another Monaco editor. */
 export async function exerciseDeferredMonaco(page: Page): Promise<void> {
   await page.getByRole('tab', { name: 'Source', exact: true }).click();
   const source = page.locator('[data-testid="raw-editor"] textarea.inputarea');
-  await expect(source).toBeVisible();
+  await expect(source).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   const modifier = await page.evaluate(() =>
     navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control',
   );
