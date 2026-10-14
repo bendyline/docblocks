@@ -260,16 +260,39 @@ describe('AI knowledge settings', () => {
       knowledge: {
         state: async () => ({
           ok: false,
-          error: { code: 'unsupported', message: 'Update Gezel to use knowledge.' },
+          error: { code: 'unknown', message: 'Gezel could not list catalogs.' },
         }),
         update: async () => ({ ok: true, value: null }),
       },
     });
     try {
       expect(container.querySelector('[role="alert"]')?.textContent).to.equal(
-        'Update Gezel to use knowledge.',
+        'Gezel could not list catalogs.',
       );
       expect(container.textContent).not.to.contain('No downloaded catalogs');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('explains a provider without catalogs instead of offering them', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const reason =
+      'Knowledge catalogs aren’t available with the AI built into DocBlocks yet. They work when DocBlocks is connected to the Gezel app.';
+    const { container, cleanup } = await render({
+      ...fake.api,
+      knowledge: {
+        state: async () => ({ ok: false, error: { code: 'unsupported', message: reason } }),
+        update: async () => ({ ok: true, value: null }),
+      },
+    });
+    try {
+      const section = container.querySelector('[aria-label="Knowledge catalogs"]');
+      expect(section?.textContent).to.contain(reason);
+      // Not an error, and no promise that passages reach requests.
+      expect(section?.querySelector('[role="alert"]')).to.equal(null);
+      expect(section?.textContent).not.to.contain('are included in each request');
+      expect(section?.querySelector('button')).to.equal(null);
     } finally {
       await cleanup();
     }
@@ -284,7 +307,7 @@ describe('AiSettingsControls', () => {
       const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
       expect(box?.checked).to.equal(false);
       expect(container.textContent).to.contain('Use AI features');
-      expect(container.textContent).to.contain('DocBlocks runs AI inside this app');
+      expect(container.textContent).to.contain('run entirely on this device — no account needed');
       expect(container.textContent).not.to.contain('Connecting your Gezel app is optional');
       expect(buttonLabels(container)).to.deep.equal([]);
       expect(container.querySelector('select')).to.equal(null);
@@ -298,9 +321,9 @@ describe('AiSettingsControls', () => {
     const { container, cleanup } = await render(fake.api);
     try {
       const box = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      expect(box?.closest('label')?.nextElementSibling?.textContent).to.contain(
-        'Connecting your Gezel app is optional',
-      );
+      const hint = box?.closest('label')?.nextElementSibling?.textContent;
+      expect(hint).to.contain('run entirely on this device — no account needed');
+      expect(hint).not.to.contain('Connecting your Gezel app');
       await act(async () => {
         box?.click();
       });
@@ -328,7 +351,8 @@ describe('AiSettingsControls', () => {
         });
       });
       await flush();
-      expect(container.textContent).to.contain('Running Gezel 1.1.2 inside DocBlocks');
+      expect(container.querySelector('[role="status"]')?.textContent).to.equal('');
+      expect(container.querySelector('select')).not.to.equal(null);
     } finally {
       await cleanup();
     }
@@ -345,7 +369,7 @@ describe('AiSettingsControls', () => {
       expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).to.equal(
         true,
       );
-      expect(container.textContent).to.contain('Running Gezel 1.1.2 inside DocBlocks');
+      expect(container.textContent).not.to.contain('inside DocBlocks, with the models');
       expect(buttonLabels(container)).to.deep.equal([]);
       expect(container.querySelector('select')).not.to.equal(null);
     } finally {
@@ -420,7 +444,22 @@ describe('AiSettingsControls', () => {
     }
   });
 
-  it('says when DocBlocks runs Gezel itself, and shows engine progress first', async () => {
+  it('asks for an on-device model when hosted AI has none', async () => {
+    const fake = fakeAi(
+      { ...READY, provider: { name: 'Gezel', version: '1.1.2', mode: 'hosted' }, model: null },
+      OPTED_IN,
+    );
+    const { container, cleanup } = await render(fake.api);
+    try {
+      expect(container.querySelector('[role="status"]')?.textContent).to.equal(
+        'Add an on-device model to start using AI.',
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('shows engine progress, then no status sentence once hosted AI has a model', async () => {
     const fake = fakeAi(
       {
         kind: 'connecting',
@@ -446,9 +485,7 @@ describe('AiSettingsControls', () => {
         });
       });
       await flush();
-      expect(container.querySelector('[role="status"]')?.textContent).to.equal(
-        'Running Gezel 1.1.2 inside DocBlocks, with the models already on this device.',
-      );
+      expect(container.querySelector('[role="status"]')?.textContent).to.equal('');
     } finally {
       await cleanup();
     }
@@ -460,7 +497,7 @@ describe('AiSettingsControls', () => {
     try {
       const select = container.querySelector<HTMLSelectElement>('select');
       expect(Array.from(select?.options ?? []).map((option) => option.textContent)).to.deep.equal([
-        "Gezel's default: Writer",
+        'Default: Writer',
         'Writer',
         'qwen3-4b · llama-cpp (on this device)',
       ]);

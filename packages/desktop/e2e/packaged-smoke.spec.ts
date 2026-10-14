@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { listPackage } from '@electron/asar';
+import { extractFile, listPackage } from '@electron/asar';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { excludedDesktopDependencies } from '../../../scripts/desktop-runtime-policy.js';
 import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
@@ -8,7 +8,7 @@ import { expect, test } from './packaged-fixtures.js';
 
 const EXPECTED_FUSES = [
   FUSE_STATE.disabled, // RunAsNode
-  FUSE_STATE.enabled, // EnableCookieEncryption
+  FUSE_STATE.disabled, // EnableCookieEncryption (off by design; see electron-builder.yml)
   FUSE_STATE.disabled, // EnableNodeOptionsEnvironmentVariable
   FUSE_STATE.disabled, // EnableNodeCliInspectArguments
   FUSE_STATE.enabled, // EnableEmbeddedAsarIntegrityValidation
@@ -31,6 +31,20 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
       shippedPaths.some((entry) => entry.replace(/\\/gu, '/').includes(`/node_modules/${name}/`)),
       name,
     ).toBe(false);
+  }
+  // Gezel's knowledge embedder loads Transformers.js over the
+  // vendor/transformers-compat stubs: no libvips, no browser ONNX Runtime.
+  const shippedFiles = shippedPaths.map((entry) => entry.replace(/\\/gu, '/'));
+  expect(shippedFiles).toContain(
+    '/node_modules/@huggingface/transformers/dist/transformers.node.mjs',
+  );
+  expect(shippedFiles.filter((entry) => entry.startsWith('/node_modules/@img/'))).toEqual([]);
+  for (const stub of ['sharp', 'onnxruntime-web']) {
+    const manifestPath = path.join('node_modules', stub, 'package.json');
+    const manifest = JSON.parse(
+      extractFile(packaged.artifact.appAsarPath, manifestPath).toString('utf8'),
+    ) as { docblocksCompatibilityStub?: unknown };
+    expect(manifest.docblocksCompatibilityStub, stub).toBe(true);
   }
   for (const legalResource of [
     'THIRD_PARTY_NOTICES.txt',
@@ -295,4 +309,13 @@ test('starts hosted AI from the packaged signed native payload', async ({ launch
           }
         : { kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } },
     );
+  if (process.platform === 'darwin') return;
+  // The hosted service finds the Transformers.js runtime it embeds catalog
+  // queries with, so knowledge catalogs are offered rather than refused.
+  const knowledge = await packaged.window.evaluate(async () => {
+    const host = Reflect.get(globalThis, 'docBlocksHost') as { ai?: DocBlocksHostAiAPI };
+    const result = await host.ai?.knowledge?.state();
+    return result?.ok ? { ok: true } : { ok: false, error: result?.error };
+  });
+  expect(knowledge).toEqual({ ok: true });
 });

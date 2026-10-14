@@ -2,17 +2,19 @@
  * Stage the Microsoft Visual C++ runtime DLLs for a Windows package.
  *
  * Every bundled native engine (`gezel-*-server.exe`, their ggml DLLs) and
- * ONNX Runtime import MSVCP140 / VCRUNTIME140(_1). Those ship in the Visual
- * C++ 2015-2022 Redistributable, which is not a Windows component, so on a
- * clean machine the loader refuses the engine before `main()`.
+ * ONNX Runtime import MSVCP140(_1, _CODECVT_IDS) / VCRUNTIME140(_1). Those ship
+ * in the Visual C++ 2015-2022 Redistributable, which is not a Windows
+ * component, so on a clean machine the loader refuses the engine before
+ * `main()`. `vc-runtime-coverage.cjs` fails packaging when a bundled binary
+ * imports a runtime DLL this script does not stage.
  *
  * Gezel installs the redistributable centrally from its NSIS installer. That
  * needs elevation, and DocBlocks deliberately installs per user with
  * `allowElevation: false`, so DocBlocks deploys the DLLs app-local instead —
  * a deployment Microsoft documents and licenses. They are staged into their
  * own `resources/vc-runtime` folder rather than beside the engines, because
- * the Gezel payload is verified file by file; main prepends the folder to
- * PATH for child processes. The loader searches system directories before
+ * the Gezel payload is verified file by file; main appends the folder to
+ * PATH for itself and child processes. The loader searches system directories before
  * PATH, so a serviced runtime already installed on the machine still wins.
  *
  * Source: the build host's Visual Studio redist folder, whose version matches
@@ -27,8 +29,20 @@ const { existsSync } = require('node:fs');
 const { copyFile, mkdir, readdir, rm } = require('node:fs/promises');
 const path = require('node:path');
 
-/** The two the engines cannot load without; `_1` exists only for some arches. */
-const REQUIRED_DLLS = ['msvcp140.dll', 'vcruntime140.dll'];
+/**
+ * Every runtime DLL a bundled binary imports. ONNX Runtime (narration and
+ * knowledge) needs msvcp140_1 and, since 1.30, msvcp140_atomic_wait;
+ * gezel-sd-server needs msvcp140_codecvt_ids. Missing any of them fails only on
+ * machines without the redistributable, which developers never have.
+ * vcruntime140_1 exists only for some arches.
+ */
+const REQUIRED_DLLS = [
+  'msvcp140.dll',
+  'msvcp140_1.dll',
+  'msvcp140_atomic_wait.dll',
+  'msvcp140_codecvt_ids.dll',
+  'vcruntime140.dll',
+];
 const OPTIONAL_DLLS = ['vcruntime140_1.dll'];
 
 function vswhereInstallPaths(env = process.env) {
@@ -144,3 +158,4 @@ async function stageVcRuntime({
 exports.stageVcRuntime = stageVcRuntime;
 exports.findCrtFolder = findCrtFolder;
 exports.REQUIRED_DLLS = REQUIRED_DLLS;
+exports.OPTIONAL_DLLS = OPTIONAL_DLLS;

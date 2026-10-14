@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+// Store builds (npm run mobile:store) supply the Play upload key through the
+// environment, never source files. Unsigned mobile:package releases and
+// Android Studio's signing wizard keep working without these variables.
+def releaseSigningNames = ['ANDROID_UPLOAD_KEYSTORE_PATH', 'ANDROID_UPLOAD_KEYSTORE_PASSWORD',
+    'ANDROID_UPLOAD_KEY_ALIAS', 'ANDROID_UPLOAD_KEY_PASSWORD']
+def releaseSigning = releaseSigningNames.collectEntries { [(it): System.getenv(it)] }
+def hasReleaseSigning = releaseSigning.values().every { it }
+if ((releaseSigning.values().any { it } || System.getenv('DOCBLOCKS_REQUIRE_RELEASE_SIGNING') == '1')
+        && !hasReleaseSigning) {
+    throw new GradleException('Missing release signing variables: '
+        + releaseSigningNames.findAll { !releaseSigning[it] }.join(', '))
+}
+
 android {
     namespace = "com.bendyline.docblocks.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -20,8 +33,19 @@ android {
         sourceSets.debug.java.srcDir "src/contractTest/java"
         sourceSets.debug.manifest.srcFile "src/contractTest/AndroidManifest.xml"
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseSigning.ANDROID_UPLOAD_KEYSTORE_PATH)
+                storePassword releaseSigning.ANDROID_UPLOAD_KEYSTORE_PASSWORD
+                keyAlias releaseSigning.ANDROID_UPLOAD_KEY_ALIAS
+                keyPassword releaseSigning.ANDROID_UPLOAD_KEY_PASSWORD
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

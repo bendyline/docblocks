@@ -10,7 +10,7 @@ asking a Gezel daemon:
 |                 | Engine                                                                                      | Model                                                                        | Runs in                                     |
 | --------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------- |
 | Dictation (STT) | whisper.cpp `gezel-whisper-server`, from the Gezel native payload DocBlocks already bundles | `whisper-base.en` (recommended), `tiny.en`, `small.en`                       | a child process of main, on a loopback port |
-| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.24.3                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX-timestamped` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
+| Narration (TTS) | Kokoro‑82M q8 on `onnxruntime-node` 1.30.0                                                  | `onnx-community/Kokoro-82M-v1.0-ONNX-timestamped` + Gezel's 8 curated voices | an Electron `utilityProcess`                |
 
 ## Host contract
 
@@ -23,9 +23,13 @@ keys and bounds on both sides of IPC.
 
 `transcribe` and `synthesize` are optional one by one and drive the
 `speechInput` and `speechOutput` capabilities. Main decides availability from
-**files alone** — the whisper binary for the platform, the ONNX Runtime binding,
-the macOS 14 floor ONNX Runtime declares — and stamps `--docblocks-speech=` on
-the renderer argv. It never loads ONNX Runtime to find out.
+**files and OS version metadata** — the whisper binary for the platform, the ONNX
+Runtime binding, and their OS floors — and stamps `--docblocks-speech=` on the
+renderer argv. It never launches an engine or loads ONNX Runtime to find out.
+Bundled dictation requires macOS 13.3 or Linux glibc 2.38; narration retains the
+macOS 14 floor ONNX Runtime declares. Unsupported or unidentifiable Unix versions
+disable dictation before engine resolution, model installation, or launch and
+show the requirement in Settings. Editing and export remain available.
 
 ## Desktop main
 
@@ -42,7 +46,7 @@ the renderer argv. It never loads ONNX Runtime to find out.
 - `main/speech/kokoro-*.ts`: the utility process calls ONNX Runtime directly
   with Kokoro's three inputs. Text becomes phonemes through
   `@bendyline/gezel/kokoro` and the dictionaries inside the installed
-  `@bendyline/gezel-service`, so pronunciation matches Gezel exactly and
+  `@bendyline/gezel-inference`, so pronunciation matches Gezel exactly and
   eSpeak NG (GPL-3) is never involved. A stalled or crashed process is killed
   and respawned; an idle one is unloaded after five minutes.
 - `@bendyline/gezel/speech-models` pins every file to a Hugging Face commit, byte
@@ -83,9 +87,9 @@ Settings labels owned shared references as **Shared speech storage** and
 retains **Remove**; a discovered installation offers use without a download.
 MAS and automation pass no shared cache or discovery roots and remain private.
 
-Gezel core and service `1.2.4` are pinned in the desktop manifest and lockfile.
-The published core provides `./speech-models`; sibling links remain available
-for local development.
+Gezel core `1.2.5` and inference `1.0.0` are pinned in the desktop manifest and
+lockfile. The published core provides `./speech-models`; sibling links remain
+available for local development.
 
 ### Kokoro export and model updates
 
@@ -116,7 +120,7 @@ Acoustic calibration and persisted timing-quality provenance remain follow-up
 work. The new shared frontend also corrects multi-digit ordinal expansion
 (`21st` becomes `twenty first`) and retains overlong words across model chunks.
 
-Gezel core `1.2.4` includes the `@bendyline/gezel/kokoro` source-mapping API
+Gezel core `1.2.5` includes the `@bendyline/gezel/kokoro` source-mapping API
 and is pinned in the desktop manifest and lockfile.
 The ONNX artifact is already published upstream; DocBlocks does
 not publish or patch its own model, and no new native binary is needed for this

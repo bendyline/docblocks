@@ -52,13 +52,15 @@ test('AI self-hosts without an installed Gezel, and the choice persists', async 
   const section = await openAiSettings(first.window);
   const optIn = section.getByRole('checkbox', { name: 'Use AI features' });
   await expect(optIn).not.toBeChecked();
-  await expect(section).toContainText('DocBlocks runs AI inside this app');
+  await expect(section).toContainText('run entirely on this device — no account needed');
   await optIn.check();
   await expect
     .poll(async () => (await readAi(first.window)).status, { timeout: 30_000 })
     .toMatchObject({ kind: 'ready', provider: { name: 'Gezel', mode: 'hosted' } });
-  // Knowledge catalogs can show a loading status alongside the connection status.
-  await expect(section.getByRole('status').filter({ hasText: 'inside DocBlocks' })).toBeVisible();
+  // Ready hosted AI shows its model picker; with a model on this device the
+  // status line is deliberately empty, so it is no longer the signal.
+  // getByLabel would also read the wrapped select's option text.
+  await expect(section.getByRole('combobox', { name: 'Model', exact: true })).toBeVisible();
   await expect(section.getByRole('button', { name: 'Connect Gezel app' })).toHaveCount(0);
   await first.close();
 

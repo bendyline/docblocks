@@ -1,4 +1,9 @@
 import path from 'node:path';
+import {
+  bundledNativeUnavailableReason,
+  nativePlatformVersions,
+  type NativePlatformVersions,
+} from '../native-platform.js';
 
 /** Main-authoritative paths only; never accept a renderer-supplied engine path. */
 export interface GezelNativeHost {
@@ -6,6 +11,7 @@ export interface GezelNativeHost {
   readonly distributionProfile: 'standard' | 'store';
   readonly allowStandaloneMacPayload: boolean;
   readonly canHost: boolean;
+  readonly unavailableReason?: string;
   /** MAS payloads are re-signed and authenticated by the enclosing store app. */
   readonly macAppStore?: boolean;
 }
@@ -17,8 +23,10 @@ export function resolveGezelNativeHost(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch,
   macAppStore = false,
+  versions: NativePlatformVersions = nativePlatformVersions(),
 ): GezelNativeHost {
   if (isPackaged) {
+    const unavailableReason = bundledNativeUnavailableReason(platform, versions);
     return {
       nativeBinDir: path.join(resourcesPath, 'gezel-native'),
       // All shipped builds use their bundled engines. Never repair a missing
@@ -26,7 +34,8 @@ export function resolveGezelNativeHost(
       distributionProfile: 'store',
       allowStandaloneMacPayload: false,
       // The pinned native release has no Intel Mac engine archives.
-      canHost: platform !== 'darwin' || arch === 'arm64',
+      canHost: !unavailableReason && (platform !== 'darwin' || arch === 'arm64'),
+      ...(unavailableReason ? { unavailableReason } : {}),
       ...(macAppStore ? { macAppStore: true } : {}),
     };
   }

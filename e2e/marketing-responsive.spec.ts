@@ -1,4 +1,5 @@
 import { expect, test } from './helpers/test.js';
+import AxeBuilder from '@axe-core/playwright';
 
 test.describe('marketing pages on a narrow viewport', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -51,5 +52,17 @@ test.describe('marketing pages on a narrow viewport', () => {
       390,
     );
     await page.screenshot({ path: testInfo.outputPath('docs-mobile.png'), fullPage: true });
+  });
+
+  test('makes overflowing CLI commands reachable by keyboard at 320px', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 700 });
+    await page.goto('/cli/');
+    const command = page.locator('.install-command').first();
+    await command.focus();
+    await expect(command).toBeFocused();
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    expect(violations).toEqual([]);
   });
 });

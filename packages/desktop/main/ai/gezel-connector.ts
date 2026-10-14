@@ -7,7 +7,7 @@ import type {
   HostServiceModule,
   ModelProgress,
 } from '@bendyline/gezel-app-sdk/host';
-import type { AiProgress } from '@bendyline/docblocks/host';
+import type { AiKnowledgeAction, AiProgress } from '@bendyline/docblocks/host';
 import { parseAiChatProgress } from '@bendyline/docblocks/host';
 import { AiHostError } from './ai-errors.js';
 import type {
@@ -49,6 +49,33 @@ export interface GezelConnectorOptions {
   readonly hostHome?: string;
   /** MAS cannot discover standalone Gezel or borrow its model homes. */
   readonly standalone?: boolean;
+  /** Test seam for {@link knowledgeRuntimeInstalled}. */
+  readonly knowledgeRuntime?: () => boolean;
+}
+
+/**
+ * Knowledge catalogs in the hosted service need `@huggingface/transformers`, an
+ * optional Gezel peer that DocBlocks ships for exactly this. Should a build ever
+ * lose it, the service could not embed a query, so it would find no semantic
+ * matches, and by design it injects no unranked keyword matches. Enabled
+ * catalogs would then add nothing to any request, and the relevance model it
+ * offers could never load, so Settings says so instead. A connected Gezel app
+ * brings its own runtime and keeps its catalogs.
+ */
+export const HOSTED_KNOWLEDGE_UNAVAILABLE =
+  'Knowledge catalogs aren’t available with the AI built into DocBlocks yet. They work when DocBlocks is connected to the Gezel app.';
+
+/** Whether the hosted service could load its query embedder; unresolvable means no. */
+export function knowledgeRuntimeInstalled(
+  resolve: (id: string) => string = (id) => require.resolve(id),
+): boolean {
+  try {
+    resolve('@huggingface/transformers');
+    return true;
+  } catch (error) {
+    // Present but without a CommonJS entry point still counts as installed.
+    return (error as { code?: unknown }).code === 'ERR_PACKAGE_PATH_NOT_EXPORTED';
+  }
 }
 
 function nonNegativeInteger(value: unknown): number | null {
@@ -84,14 +111,17 @@ async function streamFrom(
   app: GezelApp,
   request: ProviderChatRequest,
   signal: AbortSignal,
+  knowledge: boolean,
 ): Promise<AsyncIterable<ProviderChatChunk>> {
-  const messages = await withGezelKnowledge(
-    app,
-    request.messages,
-    signal,
-    request.contextWindow,
-    request.maxTokens,
-  );
+  const messages = knowledge
+    ? await withGezelKnowledge(
+        app,
+        request.messages,
+        signal,
+        request.contextWindow,
+        request.maxTokens,
+      )
+    : [...request.messages];
   // Preserve the evaluated writing policy until effective output budgets have their own A/B gate.
   const localEngine = /^(?:mlx|llama-cpp|ollama|ds4):/u.test(request.model);
   const maxTokens =
@@ -114,12 +144,20 @@ async function streamFrom(
   })();
 }
 
-function adaptConnection(connection: DesktopEmbeddingConnection): AiProviderConnection {
+function adaptConnection(
+  connection: DesktopEmbeddingConnection,
+  knowledgeUnavailable: string | null,
+): AiProviderConnection {
   return {
     mode: connection.mode,
     listModels: () => connection.models.list(),
-    knowledgeState: (signal) => gezelKnowledgeState(connection.app, signal),
-    updateKnowledge: (action, signal) => updateGezelKnowledge(connection.app, action, signal),
+    ...(knowledgeUnavailable
+      ? { knowledgeUnavailable }
+      : {
+          knowledgeState: (signal: AbortSignal) => gezelKnowledgeState(connection.app, signal),
+          updateKnowledge: (action: AiKnowledgeAction, signal: AbortSignal) =>
+            updateGezelKnowledge(connection.app, action, signal),
+        }),
     async prepare(model, onProgress) {
       await connection.models.prepare(model, {
         onProgress: (progress) => onProgress(modelProgress(progress)),
@@ -142,7 +180,7 @@ function adaptConnection(connection: DesktopEmbeddingConnection): AiProviderConn
             model?.unavailable_reason ?? 'That model is not available in DocBlocks.',
           );
       }
-      return streamFrom(connection.app, request, signal);
+      return streamFrom(connection.app, request, signal, knowledgeUnavailable === null);
     },
     revoke: () => connection.revoke(),
     close: () => connection.close(),
@@ -158,9 +196,11 @@ export class GezelConnector implements AiConnector {
 
   async detect(): Promise<AiDetection> {
     const canHost = this.canHost();
+    const unavailable = this.options.hostNative?.unavailableReason;
+    const host = { canHost, ...(unavailable ? { hostUnavailableReason: unavailable } : {}) };
     if (this.options.standalone === false)
-      return { installed: false, running: false, version: null, canHost };
-    if (this.options.endpoint) return { installed: true, running: true, version: null, canHost };
+      return { installed: false, running: false, version: null, ...host };
+    if (this.options.endpoint) return { installed: true, running: true, version: null, ...host };
     const result = await (
       await this.module()
     ).detectGezel(this.options.home ? { home: this.options.home } : undefined);
@@ -168,7 +208,7 @@ export class GezelConnector implements AiConnector {
       installed: result.installed,
       running: result.running,
       version: result.version ?? null,
-      canHost,
+      ...host,
     };
   }
 
@@ -204,7 +244,11 @@ export class GezelConnector implements AiConnector {
       },
       { interactive: options.interactive },
     );
-    return adaptConnection(connection);
+    const knowledgeRuntime = this.options.knowledgeRuntime ?? knowledgeRuntimeInstalled;
+    return adaptConnection(
+      connection,
+      connection.mode === 'hosted' && !knowledgeRuntime() ? HOSTED_KNOWLEDGE_UNAVAILABLE : null,
+    );
   }
 
   forget(): Promise<void> {
@@ -279,7 +323,7 @@ export class GezelConnector implements AiConnector {
     return this.hostSdk;
   }
   private serviceModule(): Promise<HostServiceModule> {
-    this.service ??= (this.options.loadService?.() ?? import('@bendyline/gezel-service')).catch(
+    this.service ??= (this.options.loadService?.() ?? import('@bendyline/gezel-inference')).catch(
       (error: unknown) => {
         this.service = null;
         throw error;

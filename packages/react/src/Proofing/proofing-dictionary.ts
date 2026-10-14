@@ -22,6 +22,18 @@ export interface ProofingDictionaryStore {
 
 const STORAGE_KEY = 'docblocks:proofingDictionary';
 
+/**
+ * Product names and technical abbreviations used by the app. These ship with
+ * every surface, independently of the user's saved additions.
+ */
+export const DOCBLOCKS_PROOFING_WORDS: readonly string[] = Object.freeze([
+  'DocBlocks',
+  'Squisq',
+  'DBK',
+  'CLI',
+  'MCP',
+]);
+
 function readWords(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);

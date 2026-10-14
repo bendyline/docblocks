@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const serviceRequire = createRequire(require.resolve('@bendyline/gezel-service/package.json'));
+const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
 const { stageForTarget } = require('../scripts/stage-gezel-native.cjs');
+const { REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
 
 describe('Gezel native packaging adapter', () => {
   let root: string;
@@ -16,7 +17,7 @@ describe('Gezel native packaging adapter', () => {
       path.join(root, 'package.json'),
       JSON.stringify({
         dependencies: {
-          '@bendyline/gezel-service': serviceRequire('./package.json').version,
+          '@bendyline/gezel-inference': serviceRequire('./package.json').version,
         },
       }),
     );
@@ -25,8 +26,9 @@ describe('Gezel native packaging adapter', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('hands the MAS OS and electron-builder destination to the service packager', async () => {
+  it('hands the MAS OS and electron-builder destination to the inference packager', async () => {
     const calls: unknown[] = [];
+    const verificationCalls: unknown[] = [];
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
@@ -37,8 +39,15 @@ describe('Gezel native packaging adapter', () => {
         stageElectronNative: async (options: unknown) => {
           calls.push(options);
         },
+        verifyNativePlatformRequirements: async (options: unknown) => {
+          expect(calls).to.have.length(1);
+          verificationCalls.push(options);
+        },
       },
     );
+    expect(verificationCalls).to.deep.equal([
+      { directory: path.join(root, 'dist', 'gezel-native', 'mac-arm64'), platform: 'darwin' },
+    ]);
     expect(calls).to.deep.equal([
       {
         platform: 'darwin',
@@ -49,10 +58,10 @@ describe('Gezel native packaging adapter', () => {
     ]);
   });
 
-  it('retains the exact service release gate before invoking the upstream packager', async () => {
+  it('retains the exact inference release gate before invoking the upstream packager', async () => {
     await writeFile(
       path.join(root, 'package.json'),
-      JSON.stringify({ dependencies: { '@bendyline/gezel-service': '0.0.0' } }),
+      JSON.stringify({ dependencies: { '@bendyline/gezel-inference': '0.0.0' } }),
     );
     let called = false;
     try {
@@ -71,11 +80,57 @@ describe('Gezel native packaging adapter', () => {
     expect(called).to.equal(false);
   });
 
+  async function stageIntelMac(version: string): Promise<unknown[]> {
+    await writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({
+        version,
+        dependencies: { '@bendyline/gezel-inference': serviceRequire('./package.json').version },
+      }),
+    );
+    const calls: unknown[] = [];
+    await stageForTarget(
+      {
+        packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
+        electronPlatformName: 'darwin',
+        arch: 1,
+      },
+      {
+        stageElectronNative: async (options: unknown) => {
+          calls.push(options);
+        },
+        verifyNativePlatformRequirements: async () => {},
+      },
+    );
+    return calls;
+  }
+
+  it('builds the final Intel Mac release without engines', async () => {
+    const calls = await stageIntelMac('2.7.1');
+    expect(calls).to.deep.equal([
+      {
+        platform: 'darwin',
+        arch: 'x64',
+        destination: path.join(root, 'dist', 'gezel-native', 'mac-x64'),
+        cache: path.join(root, 'dist', 'gezel-native-cache'),
+        allowUnavailable: true,
+      },
+    ]);
+  });
+
+  it('refuses every other Intel Mac build', async () => {
+    try {
+      await stageIntelMac('2.8.0');
+      expect.fail('Expected an Intel Mac build after the final release to fail');
+    } catch (error) {
+      expect((error as Error).message).to.contain('Intel Macs are no longer supported');
+    }
+  });
+
   it('stages the app-local Visual C++ runtime beside a Windows package', async () => {
     const crt = path.join(root, 'crt');
     await mkdir(crt);
-    for (const dll of ['msvcp140.dll', 'vcruntime140.dll'])
-      await writeFile(path.join(crt, dll), dll);
+    for (const dll of REQUIRED_DLLS) await writeFile(path.join(crt, dll), dll);
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'win' } },

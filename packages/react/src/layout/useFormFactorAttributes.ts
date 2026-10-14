@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { formFactorDataAttributes, type DbLayoutMode, type FormFactor } from './form-factor.js';
 
 /**
@@ -18,6 +18,21 @@ export function useFormFactorAttributes(
   layoutMode: DbLayoutMode,
   drawerOpen: boolean,
 ): void {
+  const published = useRef(new Map<HTMLElement, Set<string>>());
+
+  // Cleanup belongs to the hook lifetime, not each measured size. Removing
+  // every trait between resize events wakes editor observers even when the
+  // form-factor classification has not changed.
+  useEffect(() => {
+    const owned = published.current;
+    return () => {
+      for (const [target, names] of owned) {
+        for (const name of names) target.removeAttribute(name);
+      }
+      owned.clear();
+    };
+  }, []);
+
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
@@ -32,22 +47,16 @@ export function useFormFactorAttributes(
     const targets = [document.documentElement, rootRef.current].filter(
       (node): node is HTMLElement => node !== null,
     );
-    const names = Object.keys(attributes);
-
     for (const target of targets) {
+      const names = published.current.get(target) ?? new Set<string>();
+      published.current.set(target, names);
       for (const [name, value] of Object.entries(attributes)) {
+        names.add(name);
         if (target.getAttribute(name) !== value) target.setAttribute(name, value);
       }
       if (layoutMode !== 'single-pane' && target.hasAttribute('data-db-drawer')) {
         target.removeAttribute('data-db-drawer');
       }
     }
-
-    return () => {
-      for (const target of targets) {
-        for (const name of names) target.removeAttribute(name);
-        target.removeAttribute('data-db-drawer');
-      }
-    };
   }, [rootRef, formFactor, layoutMode, drawerOpen]);
 }

@@ -29,8 +29,9 @@ of a `@bendyline` package still observes the cooldown.
 
 `scripts/check-dependency-governance.ts` requires exactly this exemption.
 Changing it is a policy decision, not a configuration edit: change the checker,
-this document, and AGENTS.md in the same commit. Never exempt a third-party
-package.
+this document, and AGENTS.md in the same commit. Never add a third-party
+package to the exemption; a release that cannot wait uses a
+[recorded override](#recorded-cooldown-overrides) instead.
 
 The exclusion feature requires npm 11.17 or newer. The repository pins npm
 11.19.1 for contributor and CI commands. That release contains patched
@@ -54,6 +55,26 @@ If `npm audit fix` reports that a patched version is too new, leave the current
 pin in place until the seven-day window expires. Do not use
 `npm audit fix --force` as a cooldown bypass; `--force` can also introduce
 breaking dependency changes.
+
+### Recorded cooldown overrides
+
+A release owner may admit one third-party version early when a release cannot
+wait for its cooldown. The override is a command-line exclusion naming that
+package alone, so its own dependencies still cool down. Repeat the `@bendyline`
+scope on the command line, because a command-line list replaces the `.npmrc`
+one:
+
+```sh
+npm install <package>@<version> -w <workspace> --min-release-age-exclude='@bendyline/*' --min-release-age-exclude=<package>
+```
+
+`.npmrc` and the checker do not change. `npm ci` and later installs keep the
+locked version without consulting its age, so CI needs no exemption. Record
+every override here:
+
+| Package version                   | Published (UTC)  | Cooldown ended   | Reason                                                                                                                                                                   |
+| --------------------------------- | ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@huggingface/transformers@4.3.1` | 2026-10-06 15:54 | 2026-10-13 15:54 | Installed 2026-10-13 00:10 UTC for DocBlocks Desktop 2.7.1, whose built-in Gezel 1.2.4 needs it for knowledge catalogs. It shares the desktop's onnxruntime-node 1.30.0. |
 
 ## Vulnerability audit
 
@@ -107,6 +128,17 @@ transforms. DocBlocks' full build and test gates cover all of these consumers.
 Keep the overrides until every parent raises its own dependency range; these
 are development tools, so check with a plain `npm audit` that the vulnerable
 line did not return when removing one.
+
+Two root overrides replace packages instead of selecting versions. `sharp` and
+`onnxruntime-web` resolve to the private stubs in `vendor/transformers-compat`,
+which the root lists as `file:` devDependencies so that the `$sharp` and
+`$onnxruntime-web` overrides resolve from the repository root. A `file:`
+override on its own resolves against the dependent package and records a
+broken link in the lockfile. Transformers.js's Node build imports Sharp eagerly
+and inlines what it uses of ONNX Runtime Web, and the desktop app needs neither
+libvips nor 145 MB of browser WebAssembly. `npm run check:desktop-config` fails
+if either slot stops resolving to its stub; see
+[vendor/transformers-compat/README.md](../vendor/transformers-compat/README.md).
 
 ## Install-script policy
 

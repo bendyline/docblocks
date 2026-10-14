@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup';
+import { WEB_EXTENSION_CONDITIONS } from './web-extension-build';
 
 export default defineConfig([
   // Desktop (Node.js) extension host — CJS
@@ -20,12 +21,16 @@ export default defineConfig([
   },
   // Web extension host (vscode.dev) — browser-targeted CJS. The web extension
   // host loads `browser` entries as CommonJS inside its worker, so this is CJS
-  // like the desktop bundle; only the platform and NODE_ENV define differ.
+  // like the desktop bundle; only the platform, conditions, and NODE_ENV differ.
   {
     entry: { 'extension.web': 'src/extension.ts' },
     format: ['cjs'],
     sourcemap: false,
     platform: 'browser',
+    // That worker has no DOM; see web-extension-build.ts.
+    esbuildOptions(options) {
+      options.conditions = [...WEB_EXTENSION_CONDITIONS];
+    },
     external: ['vscode'],
     // Workspace catalogs render in the extension host, so the Squisq Markdown
     // and plain-HTML modules ship inside the bundle (the VSIX carries no

@@ -25,7 +25,7 @@ Key main-process modules:
 
 Desktop packaging downloads the signed native archives from Gezel's releases
 into `resources/gezel-native/`. The `beforePack` hook calls the exact installed
-`@bendyline/gezel-service/packaging` helper. Gezel selects its pinned release and
+`@bendyline/gezel-inference/packaging` helper. Gezel selects its pinned release and
 all published backends for the target architecture, verifies downloads before
 extraction, and preserves the
 release's license files and existing code signatures. Verified archives are
@@ -42,35 +42,44 @@ preferences, encrypted token storage, editor prompts/transactions, and MAS seal
 verification. `withKnowledgeContext` receives the host's prompt/message limits;
 model locality comes from SDK metadata, never from an engine name.
 
-These APIs ship in the pinned Gezel App SDK `1.1.4` and service `1.2.4`.
-Use the local link workflow below for further sibling development. The
-connector reports a missing runtime if the required SDK export is absent.
-See Gezel's `docs/handboek/technical/docblocks-text-ai-with-gezel.md` for the
-request flow and code examples.
+DocBlocks uses `@bendyline/gezel-inference` for its private host. The full
+Gezel service consumes the same engines, model managers, native verification,
+knowledge workers and OpenAI routes; the implementation is owned upstream once.
+The inference package carries generated chat-model and knowledge-catalog data
+from the pinned Gilde release, without the product UI, Office integration,
+agent orchestration, MCP server or complete community catalog. `afterPack`
+checks that the full service did not return and that runtime assets remain.
 
-Kokoro narration uses Gezel core `1.2.4`'s `planKokoroSpeech` export
+The desktop pins published releases exactly: `@bendyline/gezel-inference`
+`1.0.0` and `@bendyline/gezel-app-sdk` `1.1.5` at runtime, plus Gezel core
+`1.2.5` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.0`
+selects native release `0.1.49`. Mobile still uses its own unpublished
+`-docblocks.2` previews, so npm nests the desktop's copies where the two differ.
+
+Kokoro narration uses Gezel core `1.2.5`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
 timestamped ONNX model. The model pin itself uses an existing upstream artifact
 and requires no new native
 engine build. See [speech timing](../../docs/speech.md#kokoro-export-and-model-updates).
 
 Inference fixes, including MLX's Python prompt builder, ship in
-`@bendyline/gezel-service`. Updating only `@bendyline/gezel-app-sdk` or the user's
+`@bendyline/gezel-inference`. Updating only `@bendyline/gezel-app-sdk` or the user's
 standalone Gezel does not update DocBlocks' private hosted service. To adopt an
-upstream fix, publish the corrected service, update the desktop's exact service
+upstream fix, publish the corrected inference package, update the desktop's exact runtime
 pin and lockfile (and any companion packages required by that release), rebuild,
 and restart DocBlocks. Do not patch the installed package's Python files.
-MLX's launcher loads the script from the service bundle when starting the
+MLX's launcher loads the script from the inference package when starting the
 engine; existing model weights can be reused.
 
 For local development against `../gezel`, run `npm run link:gezel` from the
-DocBlocks root. This links the desktop's SDK, service, and core contracts to that
+DocBlocks root. This links the desktop's SDK, inference, and core contracts to that
 checkout, preserving the installed packages for `npm run unlink:gezel`.
 `npm run check:gezel-linked` prints the actual package paths and checks their
 built entry points. Linking does not change release pins or the lockfile.
 
 `npm run all` (through `build`'s preflight), `npm run build`, and desktop dev
-startup rebuild linked Gezel's SDK/service runtime dependency graph in order,
+startup rebuild linked Gezel's SDK/inference runtime dependency graph in order,
 under Gezel's shared dependency-read lease. No dependencies are installed and
 registry-only checkouts continue to use their pinned packages, including after
 `npm install` replaces all local links. A leftover link marker does not require
@@ -139,7 +148,8 @@ data downloads initiated by **Add model**. Development may use an absolute
 without requiring a notarized enclosing app. With no development override, Gezel
 may provision engines as before.
 
-macOS distributions support Apple Silicon only. Mac App Store builds include
+macOS distributions support Apple Silicon only; 2.7.1 is Intel Macs' final
+version (see [Intel Macs](#intel-macs)). Mac App Store builds include
 AI through a private service inside `userData/ai/gezel`, with standalone Gezel
 discovery and external model borrowing disabled. AI remains off until opt-in.
 The first MAS implementation offers Apple Intelligence through the bundled
@@ -268,6 +278,51 @@ normal signing and notarization configuration.
 Direct-download releases include Apple Silicon builds for macOS and x64 and
 arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
 for each architecture.
+
+### Intel Macs
+
+DocBlocks 2.7.1 is the final version for Intel Macs (`intel-mac-final.json`).
+The bundled AI and speech engines have no Intel builds. Also, electron-updater on
+an Intel Mac reports a failed download for any feed that has no Intel zip. So
+Intel support ends with one deliberate build rather than a dropped architecture:
+
+- The 2.7.1 release builds one extra x64 update zip, with no `.dmg` and no
+  blockmap. Every later `latest-mac.yml` adds an entry that points at it through
+  `../desktop-v2.7.1/`, so an Intel install on any earlier version still updates
+  to its final build. See `scripts/intel-mac-final-feed.ts` and the release
+  workflow step "Point Intel Macs at their final release".
+- On a real Intel Mac, that build never checks for updates. It explains this once
+  at first launch and again on **Help > Check for Updates**. Rosetta-translated
+  x64 builds on Apple silicon keep updating and move to arm64.
+- No other version builds for `darwin-x64`. Both `stage-gezel-native.cjs` and the
+  feed script refuse, and a test pins the version. Change it only to replace
+  Intel Macs' final build on purpose.
+- An Intel Mac updating from 2.6.2 or earlier shows the newest version number in
+  its update banner, because that banner is the old client's, and then lands on
+  2.7.1.
+
+The editor keeps its macOS 12 minimum. Optional bundled AI and dictation require
+**macOS 13.3 or later** or **Linux glibc 2.38 or later**, on both Linux
+architectures. Ubuntu 24.04 and Debian 13 meet that libc floor; Ubuntu 22.04 and
+Debian 12 do not. Narration has its separate macOS 14 minimum. On older systems,
+Settings explains why the affected features are unavailable; editing and export
+remain available. A compatible running standalone Gezel remains usable without
+starting DocBlocks' bundled service.
+
+`native-platform-policy.json` is shared by the runtime gates and packaging checks.
+Both staging and `afterPack` inspect every real binary in `gezel-native`, including
+shared libraries: Mach-O minimum OS load commands and ELF required symbol versions
+(not arbitrary strings or exported symbols). A higher requirement fails packaging.
+Because these engines are optional and gated before launch, the Debian package
+does not impose their libc floor on the editor; its description states the feature
+requirement. See [OS qualification](../../docs/desktop-ai-native-release.md#os-qualification)
+before treating a new payload as release-qualified.
+
+The inference runtime no longer depends on canvas, keyring, resvg, ripgrep or
+sqlite-vec, so their platform variants and staging code are no longer part of
+DocBlocks. ONNX Runtime platform filtering, native engine pins, OS checks,
+Windows runtime coverage and MAS signature verification still run during
+packaging.
 
 ## Testing
 

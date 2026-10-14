@@ -11,7 +11,7 @@ export async function openBlockTypePicker(page: Page): Promise<Locator> {
   const viewOptions = page.getByRole('button', { name: 'View options', exact: true });
   await viewOptions.click();
   const alwaysShow = page
-    .getByRole('radiogroup', { name: 'Show block tags' })
+    .getByRole('group', { name: 'Show block tags', exact: true })
     .getByRole('menuitemradio', { name: 'Always show', exact: true });
   await alwaysShow.click();
   await expect(alwaysShow).toHaveAttribute('aria-checked', 'true');

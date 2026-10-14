@@ -88,11 +88,11 @@
     "@bendyline/docblocks": "2.7.0",
     "@bendyline/squisq": "2.11.19",
     "@bendyline/squisq-calc": "2.11.2",
-    "@bendyline/squisq-editor-react": "2.11.23",
-    "@bendyline/squisq-formats": "2.6.19",
-    "@bendyline/squisq-react": "2.11.21",
+    "@bendyline/squisq-editor-react": "2.11.26",
+    "@bendyline/squisq-formats": "2.6.20",
+    "@bendyline/squisq-react": "2.11.24",
     "@bendyline/squisq-video": "2.3.23",
-    "@bendyline/squisq-video-react": "2.4.25",
+    "@bendyline/squisq-video-react": "2.4.28",
     "qrcode": "1.5.4"
   },
   "devDependencies": {

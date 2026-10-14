@@ -43,18 +43,17 @@ export function GitToolbarControl({ selectedFile }: GitToolbarControlProps) {
   const dirty = isFileDirty(git.status, selectedFile);
   const label = dirty ? 'Git actions (file modified)' : 'Git actions';
 
-  // Each of these replaces the menu with a dialog, so focus belongs there,
-  // not back on the trigger.
+  // The dialog captures this surviving trigger before taking focus itself.
   const openDiff = () => {
-    closeMenu(false);
+    closeMenu(true);
     git.openDialog({ kind: 'diff', path: selectedFile });
   };
   const openHistory = () => {
-    closeMenu(false);
+    closeMenu(true);
     git.openDialog({ kind: 'history', path: selectedFile });
   };
   const openOnRemote = () => {
-    closeMenu(false);
+    closeMenu(true);
     git.openOnRemote(selectedFile);
   };
 

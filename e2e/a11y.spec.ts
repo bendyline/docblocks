@@ -30,6 +30,50 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
  */
 const UPSTREAM_SELECTORS = ['[class*="squisq"]', '[data-squisq]', '.monaco-editor', '.cm-editor'];
 
+for (const theme of ['Light', 'Dark']) {
+  test(`host editor palette meets text contrast in ${theme} across every accent`, async ({
+    page,
+  }) => {
+    await openInitializedSite(page);
+    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Heading 2', exact: true })).toBeVisible();
+    for (const accent of ['Brown', 'Green', 'Blue', 'Purple', 'Maroon', 'Orange', 'Gray']) {
+      await page.getByRole('button', { name: 'DocBlocks', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });
+      await dialog.getByRole('radio', { name: theme, exact: true }).check();
+      // The visible swatch is a label over the native input. Exercise its
+      // keyboard path rather than trying to click through that label.
+      const accentRadio = dialog.getByRole('radio', { name: accent, exact: true });
+      await accentRadio.press('Space');
+      await expect(accentRadio).toBeChecked();
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      // Squisq owns the markup, but DocBlocks supplies these foreground and
+      // background colors; excluding the editor would hide host palette bugs.
+      const { violations } = await new AxeBuilder({ page })
+        .include('.squisq-toolbar')
+        .include('.squisq-status-bar')
+        .withRules(['color-contrast'])
+        .analyze();
+      expect(violations, `${theme} / ${accent}: ${formatViolations(violations)}`).toEqual([]);
+      await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
+      // Measure the settled menu, not the partially transparent entrance frame.
+      await page.locator('.squisq-use-mode-menu').evaluate(async (element) => {
+        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
+      });
+      const menuScan = await new AxeBuilder({ page })
+        .include('.squisq-use-mode-menu')
+        .withRules(['color-contrast'])
+        .analyze();
+      expect(
+        menuScan.violations,
+        `${theme} / ${accent} mode menu: ${formatViolations(menuScan.violations)}`,
+      ).toEqual([]);
+      await page.keyboard.press('Escape');
+    }
+  });
+}
+
 function buildScan(page: Page) {
   let builder = new AxeBuilder({ page }).withTags([...WCAG_TAGS]);
   for (const selector of UPSTREAM_SELECTORS) {
@@ -83,7 +127,13 @@ function formatViolationsMarkdown(state: string, violations: Violation[]): strin
 }
 
 async function scanAndReport(page: Page, info: TestInfo, state: string) {
-  const results = await buildScan(page).analyze();
+  // Export/Share render inside Squisq's toolbar slot. Excluding the editor
+  // ancestor also excludes those first-party dialogs, silently scanning none
+  // of their controls. Audit the open modal directly without upstream exclusions.
+  const builder = (await page.locator('.db-dialog').count())
+    ? new AxeBuilder({ page }).withTags([...WCAG_TAGS]).include('.db-dialog')
+    : buildScan(page);
+  const results = await builder.analyze();
   // info.project.outputDir is the project-wide output root (defaults to
   // ./test-results) — put the audit artifacts in a sibling subfolder.
   const outDir = join(info.project.outputDir, 'a11y-reports');
@@ -145,6 +195,16 @@ test.describe('a11y - application dialogs', () => {
       violations.length,
       `${violations.length} violation(s) in Export dialog:\n${formatViolations(violations)}`,
     ).toBe(0);
+  });
+
+  test('no WCAG A/AA violations in the Share dialog', async ({ page }, info) => {
+    await waitForShell(page);
+    await page.getByRole('button', { name: 'Export and share' }).click();
+    await page.getByRole('menuitem', { name: 'Share link with content embedded...' }).click();
+    await expect(page.getByRole('dialog', { name: 'Share document' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toBeEnabled();
+    const violations = await scanAndReport(page, info, 'share-dialog');
+    expect(violations, formatViolations(violations)).toEqual([]);
   });
 });
 

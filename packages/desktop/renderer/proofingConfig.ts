@@ -2,6 +2,7 @@ import {
   createDocBlocksProofingProvider,
   createLocalProofingDictionary,
 } from '@bendyline/docblocks-react/proofing';
+import type { ProofingProvider } from '@bendyline/squisq-editor-react';
 
 /**
  * Desktop proofing provider, pointed at the harper engine packaged beside the
@@ -18,7 +19,7 @@ import {
  * every document switch and a host-owned instance keeps the warm engine alive
  * across those remounts.
  */
-export const DESKTOP_PROOFING_PROVIDER = createDocBlocksProofingProvider({
+export const DESKTOP_PROOFING_PROVIDER: ProofingProvider = createDocBlocksProofingProvider({
   wasmUrl: `${import.meta.env.BASE_URL}harper/harper_wasm_bg.wasm`,
   dictionary: createLocalProofingDictionary(),
 });

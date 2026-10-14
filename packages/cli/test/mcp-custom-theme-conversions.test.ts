@@ -45,7 +45,7 @@ const BRAND = compileTheme({
   id: 'custom-agent-brand',
   name: 'Agent Brand',
   seedColors: {
-    primary: '#ff0088',
+    primary: '#b8005f',
     background: '#123456',
     text: '#abcdef',
   },
@@ -176,9 +176,13 @@ describe('MCP linked custom-theme and inferred-layout workflows', function () {
         expect(html).to.contain('123456');
         expect(html).to.contain('abcdef');
       } else {
+        // PDF prints on white paper: the readable primary carries through, while
+        // the pale screen text color falls back to Squisq's default ink.
         const operators = await pdfContentOperators(artifactBytes);
-        expect(operators).to.contain('1 0 0.5333333333333333 rg');
-        expect(operators).to.contain('0.6705882352941176 0.803921568627451 0.9372549019607843 rg');
+        expect(operators).to.contain('0.7215686274509804 0 0.37254901960784315 rg');
+        expect(operators).not.to.contain(
+          '0.6705882352941176 0.803921568627451 0.9372549019607843 rg',
+        );
       }
     }
   });

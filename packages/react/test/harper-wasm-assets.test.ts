@@ -2,7 +2,11 @@ import { expect } from 'chai';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { createServer } from 'vite';
 import {
+  harperWasmPlugin,
   HARPER_PUBLISHED_FILES,
   HARPER_WASM_FILE_NAME,
 } from '../../../scripts/vite-harper-wasm.js';
@@ -16,6 +20,44 @@ const harperDir = path.join(repoRoot, 'node_modules', 'harper.js');
  * engine at runtime, in the one place nobody is watching. Pin the set.
  */
 describe('harper engine assets', () => {
+  it('resolves linked importers to the host glue that matches the published WASM', async () => {
+    const sibling = await mkdtemp(path.join(tmpdir(), 'docblocks-linked-harper-'));
+    const otherPackage = path.join(sibling, 'node_modules', 'harper.js');
+    await mkdir(otherPackage, { recursive: true });
+    await writeFile(
+      path.join(otherPackage, 'package.json'),
+      JSON.stringify({
+        name: 'harper.js',
+        version: '0.0.0',
+        type: 'module',
+        exports: './incompatible.js',
+      }),
+    );
+    await writeFile(
+      path.join(otherPackage, 'incompatible.js'),
+      'export const incompatible = true;',
+    );
+    const server = await createServer({
+      root: repoRoot,
+      configFile: false,
+      plugins: [harperWasmPlugin()],
+      server: { middlewareMode: true },
+      optimizeDeps: { noDiscovery: true, include: [] },
+    });
+    try {
+      const resolved = await server.pluginContainer.resolveId(
+        'harper.js',
+        path.join(sibling, 'editor.js'),
+      );
+      expect(resolved?.id.replace(/\\/g, '/')).to.equal(
+        path.join(harperDir, 'dist', 'index.js').replace(/\\/g, '/'),
+      );
+    } finally {
+      await server.close();
+      await rm(sibling, { recursive: true, force: true });
+    }
+  });
+
   it('publishes both binaries and the license', () => {
     expect([...HARPER_PUBLISHED_FILES.keys()]).to.have.members([
       'harper_wasm_bg.wasm',

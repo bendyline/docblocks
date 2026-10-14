@@ -18,6 +18,16 @@ import { kokoroWordTimings } from './kokoro-timing.js';
 
 export const KOKORO_OUTPUT_SAMPLE_RATE = 24_000;
 
+/**
+ * Narration's ONNX Runtime threads: half the logical processors, at most four,
+ * as Gezel sizes its relevance model. ONNX Runtime's default of one thread per
+ * physical core made 1.30 about 15% slower than 1.24 on a busy 12-core
+ * machine; four threads made both faster and leave cores for the UI.
+ */
+export function kokoroIntraOpThreads(logicalProcessors: number): number {
+  return Math.max(1, Math.min(4, Math.floor(logicalProcessors / 2)));
+}
+
 export interface OrtTensorLike {
   readonly data: unknown;
 }
@@ -27,8 +37,14 @@ export interface OrtSessionLike {
   release?(): Promise<void>;
 }
 
+export interface OrtSessionOptions {
+  readonly intraOpNumThreads?: number;
+}
+
 export interface OrtLike {
-  readonly InferenceSession: { create(path: string): Promise<OrtSessionLike> };
+  readonly InferenceSession: {
+    create(path: string, options?: OrtSessionOptions): Promise<OrtSessionLike>;
+  };
   readonly Tensor: new (
     type: 'int64' | 'float32',
     data: BigInt64Array | Float32Array,
@@ -84,7 +100,10 @@ export class KokoroRuntime {
   private readonly cancelled = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly ort: OrtLike) {}
+  constructor(
+    private readonly ort: OrtLike,
+    private readonly sessionOptions: OrtSessionOptions = {},
+  ) {}
 
   handle(request: KokoroRequest, post: (reply: KokoroReply) => void): void {
     if (request.type === 'cancel') {
@@ -102,7 +121,7 @@ export class KokoroRuntime {
     if (this.session?.file === modelFile) return this.session.session;
     await this.session?.session.release?.();
     this.session = null;
-    const session = await this.ort.InferenceSession.create(modelFile);
+    const session = await this.ort.InferenceSession.create(modelFile, this.sessionOptions);
     this.session = { file: modelFile, session };
     return session;
   }

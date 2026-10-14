@@ -31,6 +31,16 @@ files:
   - '!node_modules/onnxruntime-node/bin/napi-v6/!(${platform})/**'
   - '!node_modules/onnxruntime-node/bin/napi-v6/${platform}/!(${arch})/**'
   - '!node_modules/onnxruntime-node/bin/napi-v6/win32/*/{DirectML.dll,dxcompiler.dll,dxil.dll}'
+  # The 1.30.0 macOS binding loads @rpath/libonnxruntime.1.dylib; the package
+  # also carries a byte-identical libonnxruntime.1.30.0.dylib (42 MB) that
+  # nothing loads. check-electron-builder-config.ts fails if an excluded name is
+  # ever one the installed binding links against.
+  - '!node_modules/onnxruntime-node/bin/napi-v6/darwin/*/libonnxruntime.1.30.0.dylib'
+  # Gezel's knowledge embedder and relevance model load Transformers.js through
+  # its Node exports alone; its sources, types, and browser builds stay out.
+  # check-electron-builder-config.ts fails if an export it resolves is excluded.
+  - '!node_modules/@huggingface/transformers/{src,types}/**'
+  - '!node_modules/@huggingface/transformers/dist/!(transformers.node.cjs|transformers.node.mjs)'
   - package.json
 
 # Legal materials that must remain directly readable beside app.asar.
@@ -40,10 +50,10 @@ extraResources:
   - from: dist/gezel-native/${os}-${arch}
     to: gezel-native
 
-# Stage the target architecture from the installed Gezel service's release
+# Stage the target architecture from the installed Gezel inference package's release
 # pins before copying resources. No executable download happens in the app.
 beforePack: scripts/stage-gezel-native.cjs
-afterPack: scripts/prepare-mas-gezel.cjs
+afterPack: scripts/after-pack.cjs
 
 # Electron's own license and Chromium notice are supplied by the exact Electron
 # archive that electron-builder extracts for this platform and architecture.
@@ -60,7 +70,13 @@ electronFuses:
   # signature here; signed release builds replace it immediately afterward.
   resetAdHocDarwinSignature: true
   runAsNode: false
-  enableCookieEncryption: true
+  # Cookie encryption keeps its key in the macOS Keychain / a Linux keyring, so
+  # any change of code signature (ad hoc local builds, Mac App Store beside
+  # Developer ID) prompts for the keychain password. DocBlocks keeps nothing in
+  # cookies, so leave it off; check:desktop-config fails if it is re-enabled.
+  # Turning it off after releases that had it on only drops embedded sites'
+  # cookies, which Chromium can no longer decrypt.
+  enableCookieEncryption: false
   enableNodeOptionsEnvironmentVariable: false
   enableNodeCliInspectArguments: false
   enableEmbeddedAsarIntegrityValidation: true
@@ -70,14 +86,6 @@ electronFuses:
   # contain one and exits fatally at startup when this fuse is enabled.
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
-
-# electron-builder auto-detects native modules with .node bindings and
-# unpacks them into app.asar.unpacked automatically. Adding an explicit
-# `asarUnpack` list here is only necessary for runtime resources that
-# the packager can't discover on its own.
-# Leave this block commented until that need arises — in a monorepo,
-# `**/node_modules/...` globs can match workspace symlinks and fail the
-# build with "must be under <app-dir>" errors.
 
 # Auto-update configuration — electron-updater checks this repo for releases.
 # The release workflow uploads installers + latest.yml to GitHub Releases.
@@ -144,6 +152,8 @@ appx:
 # when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are in the env
 # (CI only) — it also staples the ticket. No custom afterSign hook needed.
 mac:
+  # Editor baseline. Optional bundled AI/dictation is gated separately at 13.3.
+  minimumSystemVersion: '12.0'
   target:
     # dmg is the human-facing download; zip is what electron-updater installs
     # from on macOS (it cannot auto-install from a .dmg). latest-mac.yml points
@@ -255,7 +265,11 @@ linux:
   # workspace packages.
   maintainer: Bendyline <support@bendyline.com>
   synopsis: Markdown document editor
-  description: DocBlocks - a Markdown editor, converter, and publisher.
+  description: >-
+    DocBlocks - a Markdown editor, converter, and publisher.
+    Optional built-in AI and dictation require glibc 2.38 or later
+    (for example Ubuntu 24.04 or Debian 13); editing and export remain available
+    when those native features are unavailable.
 
 appImage:
   # electron-builder's AppImage target injects `--no-sandbox` into the embedded

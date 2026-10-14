@@ -14,6 +14,7 @@ import {
 } from '../main/speech/kokoro-frontend.js';
 import {
   KokoroRuntime,
+  kokoroIntraOpThreads,
   type KokoroReply,
   type KokoroRequest,
   type OrtLike,
@@ -34,11 +35,16 @@ import { kokoroWordTimings } from '../main/speech/kokoro-timing.js';
 import { parseSpeechAudioChunk } from '@bendyline/docblocks/host';
 
 const require = createRequire(import.meta.url);
-const LEXICON_DIR = kokoroLexiconDir(require.resolve('@bendyline/gezel-service/package.json'));
+const LEXICON_DIR = kokoroLexiconDir(require.resolve('@bendyline/gezel-inference/package.json'));
 
 /** A fake ONNX Runtime: 100 samples of audio per input token. */
 function fakeOrt(
-  options: { failLoad?: boolean; runs?: number[]; durations?: boolean } = {},
+  options: {
+    failLoad?: boolean;
+    runs?: number[];
+    durations?: boolean;
+    sessionOptions?: unknown[];
+  } = {},
 ): OrtLike {
   class Tensor {
     constructor(
@@ -50,7 +56,8 @@ function fakeOrt(
   return {
     Tensor,
     InferenceSession: {
-      async create() {
+      async create(_path, sessionOptions) {
+        options.sessionOptions?.push(sessionOptions);
         if (options.failLoad) throw new Error('bad model');
         return {
           async run(feeds: Record<string, unknown>) {
@@ -165,6 +172,16 @@ describe('KokoroRuntime', () => {
       expect(chunks[1].sampleRate).to.equal(24_000);
       expect(chunks[1].textStart).to.equal('One sentence. '.length);
     }
+  });
+
+  it('sizes ONNX Runtime threads like Gezel: half the processors, at most four', async () => {
+    expect([24, 8, 4, 2, 1].map(kokoroIntraOpThreads)).to.deep.equal([4, 4, 2, 1, 1]);
+    const sessionOptions: unknown[] = [];
+    await run(
+      new KokoroRuntime(fakeOrt({ sessionOptions }), { intraOpNumThreads: 3 }),
+      synth('Hi.'),
+    );
+    expect(sessionOptions).to.deep.equal([{ intraOpNumThreads: 3 }]);
   });
 
   it('serves requests one at a time and honours cancellation between utterances', async () => {

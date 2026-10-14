@@ -1,7 +1,7 @@
 # Desktop AI native release handoff
 
-The MAS integration is prepared. DocBlocks now pins published Gezel service
-`1.2.4`, which selects notarized native release `0.1.48`. The publication and
+The MAS integration is prepared. DocBlocks now pins published Gezel inference
+`1.0.0`, which selects notarized native release `0.1.49`. The publication and
 dependency update steps below describe the release process; signed MAS build
 and runtime qualification are still required. No prospective version or hash
 is trusted.
@@ -19,29 +19,31 @@ readiness. The first MAS release needs these published payloads:
   signed native bytes, with macOS notarization completed.
 
 Build/release these through Gezel's existing `build-native.yml` workflow. The
-prepared service change in `packages/service/src/http/routes/v1-models.ts` selects
+prepared change in `packages/inference/src/http/routes/v1-models.ts` selects
 llama.cpp catalog weights under the store profile and withholds Python-based MLX
-entries. Include that change in the service publication.
+entries. Include that change in the inference publication.
 
 After publishing the native release, run Gezel's existing pinning script with the
-actual version, then build and publish the updated service package:
+actual version, then build and publish the updated inference package:
 
 ```text
 node scripts/pin-native-release.mjs <native-version> --macos-notarized
 ```
 
-Review both generated service pins (`native-manifest.ts` and
+Review both generated inference pins (`native-manifest.ts` and
 `native-file-manifest.json`). They must include the Apple helper, UV and Metal
 engine, and the new release's complete hashes. Preserve the upstream Developer
 ID signatures; MAS transforms its own copy after provenance verification.
 
 ## Update DocBlocks and qualify MAS
 
-Once the new service is published, update its exact desktop dependency and the
-lockfile together, using the repository's dependency policy:
+Once the new inference package is published, update its exact desktop
+dependency, the matching App SDK and core pins, and the lockfile together, using
+the repository's dependency policy:
 
 ```text
-npm install --workspace docblocks-desktop --save-exact @bendyline/gezel-service@<service-version>
+npm install --workspace docblocks-desktop --save-exact @bendyline/gezel-inference@<inference-version> @bendyline/gezel-app-sdk@<sdk-version>
+npm install --workspace docblocks-desktop --save-exact --save-dev @bendyline/gezel@<core-version>
 npm run generate:notices
 npm run all
 npm run dist:mas --workspace docblocks-desktop
@@ -98,6 +100,49 @@ The desktop Gezel host remains the provider boundary. MLX can return to store
 builds after a frozen Python runtime is bundled and qualified separately.
 
 ## Preparation validation
+
+### OS qualification
+
+The editor's macOS minimum remains 12.0. Bundled AI and dictation have a separate
+macOS 13.3.0 / Linux glibc 2.38 floor, defined in
+`packages/desktop/native-platform-policy.json`. Runtime checks happen before
+loading or starting the bundled service or resolving Whisper; missing version
+metadata fails closed. A compatible running standalone Gezel can still serve AI.
+Narration independently requires macOS 14. These are feature requirements, so the
+DEB description communicates them without forcing `libc6 >= 2.38` on the editor.
+Snap/Flatpak checks use the runtime's libc, which may differ from the host's.
+
+[Ubuntu 24.04's libc6](https://packages.ubuntu.com/noble/libc6) and
+[Debian 13's libc6](https://packages.debian.org/trixie/libc6) exceed the native floor;
+[Debian 12's libc6](https://packages.debian.org/bookworm/libc6) does not. These
+package versions establish an ABI prerequisite, not successful app qualification.
+
+Before publishing a native update:
+
+1. Package both Linux architectures and macOS ARM64. Staging and `afterPack`
+   inspect all native executables and libraries, reject requirements above the
+   policy, and reject unparseable binary metadata. Do not lower the declared
+   requirement without rebuilding the entire native dependency chain upstream.
+2. On macOS 12 and a glibc 2.37-or-older Linux system, install the packaged app,
+   open/edit/save/export the welcome document, and opt into AI and dictation.
+   Confirm the OS explanation appears, no bundled engine/service starts, and
+   unavailable speech models cannot be downloaded or selected. Check both fresh
+   and previously enabled profiles. Repeat AI with a compatible running standalone
+   Gezel to confirm that connection still works.
+3. On macOS 13.3 and a glibc 2.38 system, exercise AI model installation and a real
+   streamed request, dictation model installation and real transcription, cancel,
+   restart, and renderer reload. Repeat on both Linux architectures. Qualify
+   narration separately on macOS 14. Also smoke Ubuntu 24.04 and Debian 13 before
+   advertising those distributions as tested.
+4. Retain OS/runtime versions, package hashes, logs and outcomes with the release.
+   Simulated boundary tests and static metadata scans do not replace these runs.
+
+The F3 remediation was developed on Windows: boundary regression tests and scans
+of the audited macOS/Linux payloads are available, but oldest-OS runtime
+qualification remains required. Earlier preparation results below do not establish
+compatibility with those minimum OS versions.
+
+### Earlier MAS preparation
 
 The repository's `npm run all` passed, including packaged desktop AI startup.
 After the final MAS layout changes, 115 targeted desktop AI tests, desktop

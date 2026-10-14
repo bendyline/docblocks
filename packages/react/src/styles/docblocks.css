@@ -2329,6 +2329,12 @@ body.db-resizing-sidebar * {
   line-height: 1.5;
 }
 
+/* A status line stays mounted while empty so later changes are announced, but
+   it should not leave a gap. */
+.db-settings-hint:empty {
+  margin: 0;
+}
+
 .db-settings-hint code {
   font-size: 11px;
   background: var(--db-bg-subtle);
@@ -3549,6 +3555,12 @@ body.db-resizing-sidebar * {
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* Squisq also assigns this token directly on its dark toolbar. Bind it at
+   that boundary so readable heading glyphs never inherit placeholder ink. */
+.db-shell[data-theme] .squisq-editor-shell .squisq-toolbar {
+  --squisq-toolbar-icon: var(--db-text-muted);
+}
+
 .db-shell[data-theme='dark'] .squisq-toolbar-view-tabs {
   background: var(--db-editor-canvas);
 }
@@ -4544,7 +4556,7 @@ html:has(.db-shell)
 }
 
 html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-summary {
-  color: var(--db-text-muted);
+  color: var(--db-text-secondary);
 }
 
 html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-check {
@@ -5276,15 +5288,14 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-status-bar {
+  --squisq-text-muted: var(--db-text-secondary);
   background: var(--db-accent-tint-strong);
   border-top-color: var(--db-border-strong);
 }
 
-/* Status bar "✓ OK" indicator — squisq paints this in saturated emerald
-   (#059669 light, #34d399 dark). Re-tone to the sage accent so the
-   status indicator harmonizes with the rest of the chrome. */
+/* The stronger accent keeps small status text readable on the tinted bar. */
 .db-shell .squisq-status-ok {
-  color: var(--db-accent);
+  color: var(--db-accent-hover);
 }
 
 .db-shell[data-theme='dark'] .squisq-status-ok {

@@ -88,10 +88,10 @@ npm run unlink:squisq       # restore registry versions
 npm run test:mcp:linked     # build sibling sources, link, verify provenance/API, test MCP
 npm run check:squisq-linked # require sibling links and verify MCP registry parity
 
-# Gezel parallel dev — links desktop SDK, service, and core to ../gezel
+# Gezel parallel dev — links desktop SDK, inference, and core to ../gezel
 npm run link:gezel          # preserve registry copies and create local links
 npm run check:gezel-linked  # show actual paths and verify built entry points
-npm run build:gezel-linked  # rebuild SDK/service runtime dependencies under a read lease
+npm run build:gezel-linked  # rebuild SDK/inference runtime dependencies under a read lease
 npm run unlink:gezel        # restore the saved registry copies, without an install
 # npm run all/build refresh linked Squisq and Gezel before DocBlocks builds.
 # Desktop dev startup also rebuilds linked Gezel. Restart Electron to load it.
@@ -251,7 +251,7 @@ leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
 inventory, never provider-name heuristics or a DocBlocks native-helper probe.
 Knowledge never blocks a request: missing SDK support,
 a failed retrieval, or a malformed answer sends the request without passages.
-The new Gezel SDK/service API must be published and pinned before shipping;
+The desktop pins the published Gezel inference package and App SDK exactly;
 see `packages/desktop/README.md`. Three rules
 are load-bearing and each has a test:
 
@@ -273,7 +273,10 @@ are load-bearing and each has a test:
 The SDK is ESM-only and the main bundle is CJS, so it stays external in tsup
 and is reached by dynamic `import()`; it must be a desktop **dependency** (not a
 devDependency) or electron-builder leaves it out of app.asar. The grant lives in
-a `safeStorage`-encrypted file under userData, never in `settings.json`. A Mac
+an owner-only file under userData, never in `settings.json`. DocBlocks never uses
+the OS credential store: no `safeStorage` (ESLint rejects it in main) and no
+cookie encryption (`check:desktop-config` rejects it), because a keychain item
+prompts for a password whenever the reading app's signature changes. A Mac
 App Store build exposes the same `host.ai` seam but uses a private service in
 `userData/ai/gezel`; it never discovers standalone Gezel or borrows external
 model homes. The main-stamped `--docblocks-ai` switch enables that bridge.
@@ -282,7 +285,7 @@ model homes. The main-stamped `--docblocks-ai` switch enables that bridge.
 running, or unwilling to connect DocBlocks (declined, expired, no reusable
 grant, connected apps off) all fall back to a private service under
 `~/.gezel/apps/docblocks/` — the person opted into AI inside DocBlocks, which
-is the consent this rests on. `@bendyline/gezel-service` is a pinned desktop
+is the consent this rests on. `@bendyline/gezel-inference` is a pinned desktop
 runtime dependency and the SDK starts it in the Electron main process; a
 separate Gezel connection is an optional provider switch, never a prerequisite
 for the editor actions. It uses Gezel's `mode: 'in-process', inferenceOnly:
@@ -290,7 +293,7 @@ true` profile and the service's direct Fetch transport: no child Node, loopback
 client connection, machine-service discovery, cloud-provider enumeration, or
 standalone background systems. A running standalone Gezel that fails for any
 other reason is reported, not hidden. The hosted service offers only on-device
-models. Packaged builds call `@bendyline/gezel-service/packaging` to stage the
+models. Packaged builds call `@bendyline/gezel-inference/packaging` to stage the
 installed service's pinned native release in `resources/gezel-native/`, verify its complete file set, SHA-256 hashes and
 signatures after opt-in, and pass it as `host.nativeBinDir`. They use
 `distributionProfile: 'store'` so no runtime executable download can repair a
@@ -305,6 +308,8 @@ local builds must match exactly. Native locations, signatures and inheritance
 remain verified in both cases.
 Development may use an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an
 engine with visible progress. macOS distributions support Apple Silicon only.
+2.7.1 is Intel Macs' final version: never add x64 Mac targets. Its x64 update
+zip stays in every `latest-mac.yml` (`packages/desktop/README.md`, "Intel Macs").
 MAS requires the new native release's Apple Foundation Models helper, UV and
 llama.cpp/Metal; the old native 0.1.46 pin cannot package it. Apple Intelligence
 readiness is visible, and unavailable system models cannot be selected. Store
@@ -509,7 +514,7 @@ Editor-internal behavior (caret, selection, formatting, toolbar, plugins) lives 
 - **Privileged work is budgeted.** Bound strings, arrays, files, decoded payloads, child-process output, execution time, concurrency, and recursive traversal. A fixed argv is still unsafe if it can run forever or return unbounded data.
 - **The canonical assurance gate is `npm run all`.** CI invokes it rather than copying its steps. It includes shipped-bundle budgets, desktop packaging configuration, packed public-package consumers, generated guidance freshness, all TypeScript surfaces, unit/integration tests, and every site, VS Code Web, source-desktop, and packaged-desktop E2E suite runnable on the current OS. Cross-platform CI jobs still cover desktop behavior and artifacts for the other operating systems.
 - **Conventional Commits.** commitlint runs in CI on pull requests **and on pushes to `main`** — the latter matters because multi-semantic-release derives every published version bump from those exact messages. There is **no local git hook**, so a malformed message is caught in CI, not at commit time.
-- **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; our own `@bendyline/*` packages (Squisq, Gezel, and their first-party siblings) are the only exception, and changing it is a policy change that must update the checker and `docs/dependency-governance.md` together. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
+- **Dependency changes cool down for seven days.** Keep registry dependencies exact-pinned and let `.npmrc` enforce `min-release-age=7`; our own `@bendyline/*` packages (Squisq, Gezel, and their first-party siblings) are the only exception, and changing it is a policy change that must update the checker and `docs/dependency-governance.md` together. A release owner can admit one third-party version early only with a command-line exclusion naming that package alone, recorded in that document's override table; never by editing `.npmrc`. Every install script must have an exact-version approval in root `package.json#allowScripts`, and `npm run check:dependency-governance` must agree with the complete cross-platform lockfile. Follow `docs/dependency-governance.md`; never blanket-approve scripts or use `npm audit fix --force` to bypass the policy.
 - **Git management is the user's job — never do it for them.** Do not create pull requests, create new branches, or create git worktrees. The user owns all branch, PR, and worktree management. Commit only when explicitly asked; otherwise leave the working tree and git state alone.
 
 ## Mobile host

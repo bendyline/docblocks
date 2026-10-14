@@ -135,20 +135,26 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
     }
   }
 
-  if (draftCreatorCount !== 1 || draftAssetUploadCount !== 2 || releaseTags.size !== 1) {
+  // One draft collects every store package: Microsoft Store, Mac App Store,
+  // Google Play, and App Store (iOS).
+  const storeBuilders = ['build-msix', 'build-mas', 'build-aab', 'build-ipa'];
+  if (
+    draftCreatorCount !== 1 ||
+    draftAssetUploadCount !== storeBuilders.length ||
+    releaseTags.size !== 1
+  ) {
     throw new Error(
-      `${relativePath}: expected one private draft creator and two uploads using the same tag`,
+      `${relativePath}: expected one private draft creator and ${storeBuilders.length} uploads using the same tag`,
     );
   }
 
   if (
     !draftCreatorJobs.has('create-draft-release') ||
-    !draftAssetUploadJobs.has('build-msix') ||
-    !draftAssetUploadJobs.has('build-mas')
+    storeBuilders.some((jobName) => !draftAssetUploadJobs.has(jobName))
   ) {
     throw new Error(`${relativePath}: store builders must attach to create-draft-release`);
   }
-  for (const jobName of ['create-draft-release', 'build-msix', 'build-mas']) {
+  for (const jobName of ['create-draft-release', ...storeBuilders]) {
     const job = parsed.jobs[jobName];
     if (!isRecord(job) || !isRecord(job.permissions) || job.permissions.contents !== 'write') {
       throw new Error(`${relativePath}: ${jobName} requires contents: write`);
@@ -706,7 +712,8 @@ async function main(): Promise<void> {
     '.github/workflows/visual.yml': ['test:e2e:visual', 'test:e2e:visual:update'],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],
-    '.github/workflows/store-release.yml': ['all'],
+    // The iOS store job runs the Swift suite that the Linux gate cannot.
+    '.github/workflows/store-release.yml': ['all', 'mobile:test:ios', 'mobile:store'],
     '.github/workflows/vscode-release.yml': ['all'],
   };
   for (const [workflow, requirements] of Object.entries(workflowRequirements)) {

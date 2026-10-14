@@ -66,6 +66,11 @@ function loadRenderer(): Promise<WorkspaceOutputsRenderer> {
         markdownDocToPlainHtml(document, { title, themeId }),
       importHtml: (html) => htmlToMarkdownDocSync(html),
     }),
+    (error: unknown) => {
+      // A failed load must not fail every later catalog run in this window.
+      defaultRenderer = null;
+      throw error;
+    },
   );
   return defaultRenderer;
 }

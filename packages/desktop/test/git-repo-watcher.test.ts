@@ -18,6 +18,10 @@ const WATCHER_WARMUP_MS = 1_000;
 const CHANGE_WINDOW_MS = 10_000;
 /** Window we hold open to prove NO change fires. */
 const QUIET_WINDOW_MS = 1_500;
+/** Silence that proves fixture-setup notifications have drained. */
+const SETTLE_QUIET_MS = 500;
+/** Upper bound on settling, so a watcher that never goes quiet fails instead of hanging. */
+const SETTLE_LIMIT_MS = 5_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,6 +77,18 @@ describe('desktop git repo watcher', function () {
       },
     });
     await delay(WATCHER_WARMUP_MS);
+
+    // The OS can deliver notifications for the seed commit above after the
+    // watch starts, and chokidar reports those as changes. Wait until the
+    // watcher has gone quiet, then count from zero so each test sees only
+    // the events its own actions cause.
+    const settleDeadline = Date.now() + SETTLE_LIMIT_MS;
+    let observed: number;
+    do {
+      observed = changeCount;
+      await delay(SETTLE_QUIET_MS);
+    } while (changeCount !== observed && Date.now() < settleDeadline);
+    changeCount = 0;
   });
 
   afterEach(async () => {

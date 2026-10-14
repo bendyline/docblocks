@@ -27,7 +27,12 @@ export const desktopTsupOptions = [
     // The renderer's DocBlocks/Squisq graph is already emitted by Vite. Bundle
     // the small slice of DocBlocks core used by main so electron-builder only
     // has to copy dependencies that are genuinely loaded at runtime.
-    noExternal: [/^@bendyline\/docblocks(?:\/|$)/u],
+    noExternal: [
+      /^@bendyline\/docblocks(?:\/|$)/u,
+      // Speech uses synchronous core helpers. Core is ESM-only too, so these
+      // small subpaths stay bundled and core remains a dev dependency.
+      /^@bendyline\/gezel(?:\/|$)/u,
+    ],
     // The Gezel app SDK ships ESM only (its exports have no `require`
     // condition), while this bundle is CJS. It must stay external and be
     // reached with a dynamic `import()`, which esbuild preserves for external
@@ -38,7 +43,7 @@ export const desktopTsupOptions = [
       'chokidar',
       'electron-window-state',
       '@bendyline/gezel-app-sdk',
-      '@bendyline/gezel-service',
+      '@bendyline/gezel-inference',
       // A native addon: unpacked from app.asar by electron-builder and loaded
       // only by the narration utility process.
       'onnxruntime-node',

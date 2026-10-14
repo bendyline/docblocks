@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { NATIVE_ENGINE_RELEASE } from '@bendyline/gezel-service/native-release';
+import { NATIVE_ENGINE_RELEASE } from '@bendyline/gezel-inference/native-release';
 
 import { expect, test } from './fixtures.js';
 import { installFakeSpeechModels, writeFakeMicrophoneWav } from './fake-speech.js';

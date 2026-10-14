@@ -74,15 +74,19 @@ export function useMenuKeyboard(open: boolean, setOpen: (open: boolean) => void)
     (event: ReactKeyboardEvent) => {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
-        pendingFocusRef.current = event.key === 'ArrowUp' ? 'last' : 'first';
-        setOpen(true);
+        if (open) {
+          focusItem(event.key === 'ArrowUp' ? items().length - 1 : 0);
+        } else {
+          pendingFocusRef.current = event.key === 'ArrowUp' ? 'last' : 'first';
+          setOpen(true);
+        }
         return;
       }
       if (event.key === 'Enter' || event.key === ' ') {
         if (!open) pendingFocusRef.current = 'first';
       }
     },
-    [open, setOpen],
+    [open, setOpen, focusItem, items],
   );
 
   const handleMenuKeyDown = useCallback(

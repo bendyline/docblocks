@@ -153,4 +153,43 @@ describe('WorkspaceSearchPanel', () => {
     expect(container.querySelectorAll('.db-search-line')).to.have.length(2);
     index.dispose();
   });
+
+  it('does not offer old matches while a changed query is debouncing', async () => {
+    const index = await analyzedIndex({ 'alpha.md': 'needle\n' });
+    try {
+      await render(index, []);
+      const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      await act(async () => typeInto(input, 'needle'));
+      await settle();
+      expect(container.querySelectorAll('.db-search-document')).to.have.length(1);
+
+      await act(async () => typeInto(input, 'something else'));
+      expect(container.querySelectorAll('.db-search-document')).to.have.length(0);
+      expect(container.querySelector('[role="status"]')?.textContent).to.equal('Searching…');
+      await settle();
+      expect(container.querySelector('[role="status"]')?.textContent).to.equal('No results.');
+    } finally {
+      index.dispose();
+    }
+  });
+
+  it('clears matches from the previous workspace before searching the new one', async () => {
+    const first = await analyzedIndex({ 'alpha.md': 'needle\n' });
+    const second = await analyzedIndex({ 'beta.md': 'needle\n' });
+    try {
+      await render(first, []);
+      const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      await act(async () => typeInto(input, 'needle'));
+      await settle();
+      expect(container.querySelectorAll('.db-search-document')).to.have.length(1);
+
+      await render(second, []);
+      expect(container.querySelectorAll('.db-search-document')).to.have.length(0);
+      await settle();
+      expect(container.querySelector('.db-search-document')?.textContent).to.include('beta');
+    } finally {
+      first.dispose();
+      second.dispose();
+    }
+  });
 });

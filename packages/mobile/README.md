@@ -70,7 +70,16 @@ npm run mobile:package -- ios 1
 npm run mobile:package -- android 1
 ```
 
-These commands rebuild, verify offline assets/fonts/notices, sync, and create **unsigned** Xcode archives or APK/AAB artifacts under a unique `reports/mobile-release/` directory. Verification compares every bundled web file's SHA-256 with the current Vite output, checks bridge configuration, privacy metadata, and test-code exclusion. Build numbers are explicit positive integers. The locked native dependency inventory and component notices ship in the payload. Store submission review remains a release gate; signing and upload are separate owner-controlled steps.
+These commands rebuild, verify offline assets/fonts/notices, sync, and create **unsigned** Xcode archives or APK/AAB artifacts under a unique `reports/mobile-release/` directory. Verification compares every bundled web file's SHA-256 with the current Vite output, checks bridge configuration, privacy metadata, and test-code exclusion. Build numbers are explicit positive integers. The locked native dependency inventory and component notices ship in the payload. Store submission review remains a release gate; upload is a separate owner-controlled step.
+
+Store-ready binaries come from the **Release Store Builds** workflow (`.github/workflows/store-release.yml`), alongside the Microsoft Store and Mac App Store packages. Choose `mobile`, `android`, `ios`, or `all`, and a `build_number` higher than any build already uploaded; it becomes the Android `versionCode` and iOS `CFBundleVersion`. The workflow attaches the files to a private draft GitHub Release and uploads nothing to a store. The required secrets are listed in the workflow header. The same command runs locally with those variables set (Android also accepts `ANDROID_UPLOAD_KEYSTORE_PATH` in place of the base64 keystore):
+
+```sh
+npm run mobile:store -- android 42   # Play app bundle signed with the upload key
+npm run mobile:store -- ios 42       # App Store Connect IPA and dSYMs
+```
+
+It runs the same build, check, and payload verification as `mobile:package`, and fails before building when a signing input is missing. Android verifies the bundle's upload-key signature with `jarsigner`. iOS accepts only an unexpired App Store Connect profile for `com.bendyline.docblocks.mobile` and the one Apple Distribution identity it authorizes. It signs only the App target's Release configuration, then checks the exported IPA's signature, embedded profile, and entitlements. It restores the Xcode project, keychain search list, and profiles afterwards. Output goes under `reports/mobile-store/`, with a JSON manifest of SHA-256 hashes.
 
 See [the implementation plan and qualification record](../../docs/mobile-plan.md) for device evidence and remaining physical-device/store qualification. Broad physical-device AI performance and store qualification remain open.
 

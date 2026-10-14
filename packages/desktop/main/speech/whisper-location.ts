@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { resolveGezelNativeHost } from '../ai/gezel-native-host.js';
+import type { NativePlatformVersions } from '../native-platform.js';
 
 interface WhisperLocationOptions {
   isPackaged: boolean;
@@ -11,6 +12,7 @@ interface WhisperLocationOptions {
   home: string;
   nativeRelease: string;
   macAppStore?: boolean;
+  versions?: NativePlatformVersions;
   exists?: (file: string) => boolean;
 }
 
@@ -24,6 +26,7 @@ export function findWhisperBinary(options: WhisperLocationOptions): string | nul
     platform,
     arch,
     options.macAppStore,
+    options.versions,
   );
   if (!native.canHost) return null;
   const exists = options.exists ?? existsSync;

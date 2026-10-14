@@ -1,31 +1,15 @@
 import { expect } from 'chai';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import {
-  EncryptedFileCredentialStore,
-  type CredentialEncryption,
-} from '../main/ai/ai-credentials.js';
+import { OwnerOnlyFileCredentialStore } from '../main/ai/ai-credentials.js';
 import {
   aiPreferencesFromSettings,
   aiSettingsFromPreferences,
   createSettingsAiPreferenceStore,
 } from '../main/ai/ai-preferences.js';
 import { parseSettings, type Settings } from '../main/settings-schema.js';
-
-/** Reversible stand-in for safeStorage: the file must never hold the token as-is. */
-function fakeEncryption(available = true): CredentialEncryption {
-  return {
-    isEncryptionAvailable: () => available,
-    encryptString: (plain) => Buffer.from(`sealed:${Buffer.from(plain).toString('base64')}`),
-    decryptString: (sealed) => {
-      const text = sealed.toString('utf8');
-      if (!text.startsWith('sealed:')) throw new Error('Cannot decrypt');
-      return Buffer.from(text.slice('sealed:'.length), 'base64').toString('utf8');
-    },
-  };
-}
 
 describe('desktop AI credential store', () => {
   let directory = '';
@@ -40,45 +24,43 @@ describe('desktop AI credential store', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it('round-trips an encrypted token across instances', async () => {
-    await new EncryptedFileCredentialStore(filePath, fakeEncryption()).save('gzt_abc123');
-    const onDisk = await readFile(filePath, 'utf8');
-    expect(onDisk).to.not.include('gzt_abc123');
-    expect(await new EncryptedFileCredentialStore(filePath, fakeEncryption()).load()).to.equal(
-      'gzt_abc123',
-    );
+  it('round-trips a token across instances in an owner-only file', async () => {
+    await new OwnerOnlyFileCredentialStore(filePath).save('gzt_abc123');
+    expect(await readFile(filePath, 'utf8')).to.equal('gzt_abc123');
+    expect(await new OwnerOnlyFileCredentialStore(filePath).load()).to.equal('gzt_abc123');
     if (process.platform !== 'win32') {
       expect((await stat(filePath)).mode & 0o777).to.equal(0o600);
+      expect((await stat(path.dirname(filePath))).mode & 0o777).to.equal(0o700);
     }
   });
 
-  it('keeps the token in memory only when encryption is unavailable', async () => {
-    const store = new EncryptedFileCredentialStore(filePath, fakeEncryption(false));
-    await store.save('gzt_abc123');
-    expect(await store.load()).to.equal('gzt_abc123');
-    let written = true;
-    await stat(filePath).catch(() => {
-      written = false;
-    });
-    expect(written).to.equal(false);
-    expect(await new EncryptedFileCredentialStore(filePath, fakeEncryption(false)).load()).to.equal(
-      null,
-    );
+  it('treats a missing, foreign, or legacy encrypted file as not connected', async () => {
+    expect(await new OwnerOnlyFileCredentialStore(filePath).load()).to.equal(null);
+
+    await new OwnerOnlyFileCredentialStore(filePath).save('gzt_abc123');
+    for (const contents of [
+      'written by something else',
+      // safeStorage ciphertext from earlier development builds: never decrypted.
+      Buffer.concat([Buffer.from('v10'), Buffer.from([0x00, 0x9f, 0xd2, 0x1b, 0x80, 0x7f])]),
+      Buffer.alloc(0),
+      'x'.repeat(64 * 1024 + 1),
+    ]) {
+      await writeFile(filePath, contents);
+      expect(await new OwnerOnlyFileCredentialStore(filePath).load()).to.equal(null);
+    }
   });
 
-  it('treats an unreadable or foreign file as not connected', async () => {
-    const store = new EncryptedFileCredentialStore(filePath, fakeEncryption());
+  it('replaces an unusable file on the next connection', async () => {
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await writeFile(filePath, Buffer.from([0x76, 0x31, 0x30, 0x00, 0xff]));
+    const store = new OwnerOnlyFileCredentialStore(filePath);
     expect(await store.load()).to.equal(null);
-
-    await new EncryptedFileCredentialStore(filePath, fakeEncryption()).save('gzt_abc123');
-    await writeFile(filePath, 'written by something else');
-    expect(await new EncryptedFileCredentialStore(filePath, fakeEncryption()).load()).to.equal(
-      null,
-    );
+    await store.save('gzt_fresh456');
+    expect(await new OwnerOnlyFileCredentialStore(filePath).load()).to.equal('gzt_fresh456');
   });
 
   it('refuses a malformed token and forgets on delete', async () => {
-    const store = new EncryptedFileCredentialStore(filePath, fakeEncryption());
+    const store = new OwnerOnlyFileCredentialStore(filePath);
     let refused = false;
     await store.save('has whitespace').catch(() => {
       refused = true;
@@ -88,9 +70,7 @@ describe('desktop AI credential store', () => {
     await store.save('gzt_abc123');
     await store.delete();
     expect(await store.load()).to.equal(null);
-    expect(await new EncryptedFileCredentialStore(filePath, fakeEncryption()).load()).to.equal(
-      null,
-    );
+    expect(await new OwnerOnlyFileCredentialStore(filePath).load()).to.equal(null);
   });
 });
 

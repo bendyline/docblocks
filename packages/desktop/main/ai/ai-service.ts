@@ -73,6 +73,8 @@ export interface AiDetection {
    * reason to stop.
    */
   readonly canHost: boolean;
+  /** A concrete OS/runtime explanation when the bundled provider cannot run. */
+  readonly hostUnavailableReason?: string;
 }
 
 export interface AiConnectOptions {
@@ -105,6 +107,8 @@ export interface ProviderChatChunk {
 export interface AiProviderConnection {
   knowledgeState?(signal: AbortSignal): Promise<unknown>;
   updateKnowledge?(action: AiKnowledgeAction, signal: AbortSignal): Promise<void>;
+  /** Why this connection offers no knowledge catalogs, in words for people. */
+  readonly knowledgeUnavailable?: string;
   readonly mode: AiProviderInfo['mode'];
   /** The version of the provider actually serving, when it differs from detection. */
   readonly version?: string | null;
@@ -227,6 +231,13 @@ function boundedCode(code: string): string | null {
 }
 
 /** Split text into wire-sized deltas without separating a surrogate pair. */
+function knowledgeUnsupported(connection: AiProviderConnection): AiHostError {
+  return new AiHostError(
+    'unsupported',
+    connection.knowledgeUnavailable ?? 'This AI provider does not support knowledge catalogs.',
+  );
+}
+
 function emitDeltas(text: string, emit: AiChatEmitter): void {
   const limit = AI_WIRE_LIMITS.deltaCharacters;
   let offset = 0;
@@ -414,11 +425,7 @@ export class AiService {
     const pending = this.knowledgeStateReads.get(owner);
     if (pending) return pending;
     const read = this.withKnowledge(owner, async (connection, signal) => {
-      if (!connection.knowledgeState)
-        throw new AiHostError(
-          'unsupported',
-          'This AI provider does not support knowledge catalogs.',
-        );
+      if (!connection.knowledgeState) throw knowledgeUnsupported(connection);
       const state = parseAiKnowledgeState(await connection.knowledgeState(signal));
       if (!state)
         throw new AiHostError('unknown', 'The AI provider returned invalid catalog information.');
@@ -430,11 +437,7 @@ export class AiService {
 
   async updateKnowledge(owner: string, action: AiKnowledgeAction): Promise<AiResult<null>> {
     return this.withKnowledge(owner, async (connection, signal) => {
-      if (!connection.updateKnowledge)
-        throw new AiHostError(
-          'unsupported',
-          'This AI provider does not support knowledge catalogs.',
-        );
+      if (!connection.updateKnowledge) throw knowledgeUnsupported(connection);
       await connection.updateKnowledge(action, signal);
       return null;
     });
@@ -708,6 +711,12 @@ export class AiService {
       return this.failAttempt(error, epoch);
     }
     if (stale()) return fail(aiError('cancelled'));
+    if (!detection.canHost && !detection.running && detection.hostUnavailableReason) {
+      return this.failAttempt(
+        new AiHostError('runtime-missing', detection.hostUnavailableReason),
+        epoch,
+      );
+    }
     // A provider this app can host itself makes the person's own install
     // optional; without one, their Gezel has to be there and running.
     if (!detection.installed && !detection.canHost) {

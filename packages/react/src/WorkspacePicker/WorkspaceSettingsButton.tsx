@@ -37,7 +37,7 @@ export function WorkspaceSettingsButton({
 
   const handleAction = useCallback(
     (action: () => void) => {
-      closeMenu(false);
+      closeMenu(true);
       action();
     },
     [closeMenu],

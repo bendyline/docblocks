@@ -1,0 +1,16 @@
+{
+  "name": "onnxruntime-web",
+  "version": "1.31.0-dev.20260914-8d85527a0",
+  "private": true,
+  "description": "DocBlocks' empty stand-in for ONNX Runtime Web, which Transformers.js's Node build inlines instead of importing.",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "exports": {
+    ".": {
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "docblocksCompatibilityStub": true
+}

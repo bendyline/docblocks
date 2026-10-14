@@ -80,7 +80,7 @@ describe('MAS native provenance, layout and signing', () => {
   async function prepare(tamper = false) {
     const original = await nativeManifest(root, release);
     const signed: Array<{ file: string; entitlements: string | null }> = [];
-    const service = await import('@bendyline/gezel-service');
+    const service = await import('@bendyline/gezel-inference');
     if (tamper) await writeFile(path.join(root, 'darwin-arm64', 'uv'), 'tampered');
     const operation = prepareMasNative({
       root,
@@ -88,9 +88,9 @@ describe('MAS native provenance, layout and signing', () => {
       pins: { NATIVE_ENGINE_RELEASE: release },
       identity: 'Apple Distribution: Bendyline',
       service: {
-        reuseVerifiedElectronNativeBinaries: async () => {
+        verifyNativeBinaries: async () => {
           expect(signed).to.have.length(0);
-          return service.reuseVerifiedElectronNativeBinaries({
+          return service.verifyNativeBinaries({
             candidates: [root],
             release,
             manifest: original,

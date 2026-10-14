@@ -36,6 +36,7 @@ import {
 } from './speech/speech-service.js';
 import { WhisperEngine } from './speech/whisper-engine.js';
 import { findWhisperBinary } from './speech/whisper-location.js';
+import { bundledNativeUnavailableReason, nativePlatformVersions } from './native-platform.js';
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
@@ -59,8 +60,11 @@ export async function resolveWhisperEngine(
       });
     }
   }
+  const versions = nativePlatformVersions();
+  const unavailable = bundledNativeUnavailableReason(process.platform, versions);
+  if (unavailable) return { unavailable };
   // This small, data-only module imports no service runtime and starts nothing.
-  const { NATIVE_ENGINE_RELEASE } = await import('@bendyline/gezel-service/native-release');
+  const { NATIVE_ENGINE_RELEASE } = await import('@bendyline/gezel-inference/native-release');
   const binary = findWhisperBinary({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -70,6 +74,7 @@ export async function resolveWhisperEngine(
     macAppStore: process.mas === true,
     home: app.getPath('home'),
     nativeRelease: NATIVE_ENGINE_RELEASE,
+    versions,
   });
   if (!binary) {
     return {
@@ -121,7 +126,7 @@ export function resolveKokoroEngine(
   let lexiconDir: string;
   try {
     binding = onnxRuntimeBinding(require.resolve('onnxruntime-node/package.json'));
-    lexiconDir = kokoroLexiconDir(require.resolve('@bendyline/gezel-service/package.json'));
+    lexiconDir = kokoroLexiconDir(require.resolve('@bendyline/gezel-inference/package.json'));
   } catch {
     return { unavailable: 'Narration is not included in this build of DocBlocks.' };
   }

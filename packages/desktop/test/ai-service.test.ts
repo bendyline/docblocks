@@ -234,6 +234,38 @@ function terminalEvents(events: readonly AiChatEvent[]): AiChatEvent[] {
 
 describe('AI catalog lifecycle', () => {
   afterEach(disposeLiveServices);
+  it('shows the native OS requirement before connecting or starting an absent provider', async () => {
+    const { service, connector } = createService(ENABLED);
+    const reason = 'Built-in AI and dictation need macOS 13.3 or later.';
+    connector.detection = {
+      installed: false,
+      running: false,
+      version: null,
+      canHost: false,
+      hostUnavailableReason: reason,
+    };
+    await service.start();
+    await settle();
+    const status = await service.getStatus();
+    expect(status.kind).to.equal('error');
+    if (status.kind === 'error') expect(status.error.message).to.equal(reason);
+    expect(connector.connectCalls).to.deep.equal([]);
+  });
+
+  it('can reuse an installed provider when only bundled native engines are unsupported', async () => {
+    const { service, connector } = createService(ENABLED);
+    connector.hasCredential = true;
+    connector.detection = {
+      installed: true,
+      running: true,
+      version: '1.1.2',
+      canHost: false,
+      hostUnavailableReason: 'Built-in AI needs a newer OS.',
+    };
+    await service.start();
+    await settle();
+    expect((await service.getStatus()).kind).to.equal('ready');
+  });
   const state = { catalogs: [], improvement: null };
   it('never contacts the provider while opted out', async () => {
     const { service, connector } = createService(DEFAULT_AI_PREFERENCES);

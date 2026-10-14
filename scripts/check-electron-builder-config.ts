@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import Ajv from 'ajv';
 import yaml from 'js-yaml';
 import { desktopDependencyExclusions } from './desktop-runtime-policy.js';
+import nativePlatformPolicy from '../packages/desktop/native-platform-policy.json';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -73,6 +74,23 @@ function requireValidUnsignedMacFuseSignature(): void {
 
 requireValidUnsignedMacFuseSignature();
 
+// DocBlocks must never make the OS credential store prompt. Cookie encryption
+// is the one Chromium feature that would read a keychain key on every launch.
+function requireNoKeychainCookieEncryption(): void {
+  if (!isRecord(config) || !isRecord(config.electronFuses)) {
+    failConfigPolicy('electron-builder.yml must configure Electron fuses.');
+  }
+  if (config.electronFuses.enableCookieEncryption !== false) {
+    failConfigPolicy(
+      'electron-builder.yml must set enableCookieEncryption: false; DocBlocks keeps nothing in cookies and must not use the keychain.',
+    );
+  }
+
+  process.stdout.write('electron-builder.yml: cookie encryption (keychain) off OK\n');
+}
+
+requireNoKeychainCookieEncryption();
+
 function requireLegalResources(): void {
   if (!isRecord(config) || !Array.isArray(config.extraResources)) {
     failConfigPolicy('electron-builder.yml must copy distribution legal notices.');
@@ -129,7 +147,7 @@ function requireBundledGezelEngines(): void {
     failConfigPolicy('Desktop signing must preserve the pinned Gezel native release signatures.');
   }
   if (
-    config.afterPack !== 'scripts/prepare-mas-gezel.cjs' ||
+    config.afterPack !== 'scripts/after-pack.cjs' ||
     !isRecord(config.mas) ||
     !Array.isArray(config.mas.signIgnore) ||
     !config.mas.signIgnore.includes('/Contents/Resources/gezel-native/') ||
@@ -153,6 +171,24 @@ function requireBundledGezelEngines(): void {
 }
 
 requireBundledGezelEngines();
+
+function requireNativePlatformContract(): void {
+  if (
+    !isRecord(config) ||
+    !isRecord(config.mac) ||
+    config.mac.minimumSystemVersion !== nativePlatformPolicy.macEditorMinimum ||
+    !isRecord(config.linux) ||
+    typeof config.linux.description !== 'string' ||
+    !config.linux.description.includes(`glibc ${nativePlatformPolicy.linuxNativeGlibcMinimum}`)
+  ) {
+    failConfigPolicy(
+      'Desktop package metadata must declare the editor baseline and optional native feature requirements.',
+    );
+  }
+  process.stdout.write('electron-builder.yml: native feature OS contract OK\n');
+}
+
+requireNativePlatformContract();
 
 function requireTargetArchitectures(
   platformName: 'win' | 'mac' | 'linux',
@@ -473,6 +509,142 @@ function requireMacPrivacyMetadata(): void {
 
 requireMacPrivacyMetadata();
 
+/** `@rpath/` libraries a thin 64-bit Mach-O image links against. */
+function machoRpathLibraries(file: string): string[] {
+  const bytes = readFileSync(file);
+  if (bytes.readUInt32LE(0) !== 0xfeedfacf) {
+    failConfigPolicy(`${file} is not a thin 64-bit Mach-O image; extend this check.`);
+  }
+  const libraries: string[] = [];
+  let offset = 32;
+  for (let index = bytes.readUInt32LE(16); index > 0; index -= 1) {
+    const command = bytes.readUInt32LE(offset);
+    // LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB
+    if (command === 0xc || command === 0x80000018) {
+      const start = offset + bytes.readUInt32LE(offset + 8);
+      const name = bytes.toString('utf8', start, bytes.indexOf(0, start));
+      if (name.startsWith('@rpath/')) libraries.push(name.slice('@rpath/'.length));
+    }
+    offset += bytes.readUInt32LE(offset + 4);
+  }
+  return libraries;
+}
+
+/**
+ * electron-builder.yml drops macOS ONNX Runtime libraries the binding never
+ * loads. Excluding one the installed binding does link (1.24.3 linked its
+ * versioned name) would leave narration unable to load.
+ */
+function requireLoadableOnnxRuntimeOnMac(): void {
+  const files = isRecord(config) && Array.isArray(config.files) ? config.files : [];
+  const excluded = files.flatMap((entry) => {
+    const match =
+      typeof entry === 'string'
+        ? /^!node_modules\/onnxruntime-node\/bin\/napi-v6\/darwin\/\*\/([^/*]+\.dylib)$/u.exec(
+            entry,
+          )
+        : null;
+    return match?.[1] ? [match[1]] : [];
+  });
+  const darwin = path.join(
+    path.dirname(require.resolve('onnxruntime-node/package.json')),
+    'bin',
+    'napi-v6',
+    'darwin',
+  );
+  for (const arch of readdirSync(darwin)) {
+    const directory = path.join(darwin, arch);
+    for (const library of machoRpathLibraries(path.join(directory, 'onnxruntime_binding.node'))) {
+      if (excluded.includes(library)) {
+        failConfigPolicy(
+          `electron-builder.yml excludes ${library}, which the darwin/${arch} ONNX Runtime binding loads.`,
+        );
+      }
+      if (!existsSync(path.join(directory, library))) {
+        failConfigPolicy(`The darwin/${arch} ONNX Runtime binding loads missing ${library}.`);
+      }
+    }
+  }
+  process.stdout.write('electron-builder.yml: macOS ONNX Runtime keeps every library it loads\n');
+}
+
+requireLoadableOnnxRuntimeOnMac();
+
+/** The directory Node loads `name` from when resolving it from `fromDirectory`. */
+function installedPackageDirectory(name: string, fromDirectory: string): string {
+  const lookup = createRequire(path.join(fromDirectory, 'package.json')).resolve.paths(name) ?? [];
+  const directory = lookup
+    .map((nodeModules) => path.join(nodeModules, name))
+    .find((candidate) => existsSync(path.join(candidate, 'package.json')));
+  if (!directory) {
+    failConfigPolicy(`${name} is not installed where ${fromDirectory} can load it.`);
+  }
+  return directory;
+}
+
+function readJsonRecord(file: string): UnknownRecord {
+  const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  if (!isRecord(value)) failConfigPolicy(`${file} is not a JSON object.`);
+  return value;
+}
+
+/**
+ * Gezel's knowledge embedder and relevance model import Transformers.js from
+ * the desktop app. electron-builder.yml keeps only its Node builds, so both
+ * Node exports must survive that exclusion. Its eager `sharp` import and its
+ * unused `onnxruntime-web` dependency must resolve to the stubs in
+ * vendor/transformers-compat, never to native libvips or 145 MB of browser
+ * WebAssembly builds.
+ */
+function requireTransformersRuntime(): void {
+  const files = isRecord(config) && Array.isArray(config.files) ? config.files : [];
+  const kept = files.flatMap((entry) => {
+    const match =
+      typeof entry === 'string'
+        ? /^!node_modules\/@huggingface\/transformers\/dist\/!\(([^)]+)\)$/u.exec(entry)
+        : null;
+    return match?.[1] ? match[1].split('|') : [];
+  });
+  const transformers = installedPackageDirectory(
+    '@huggingface/transformers',
+    path.dirname(desktopManifestPath),
+  );
+  const exportsNode = readJsonRecord(path.join(transformers, 'package.json')).exports;
+  const node = isRecord(exportsNode) ? exportsNode.node : undefined;
+  for (const condition of ['import', 'require']) {
+    const entry = isRecord(node) ? node[condition] : undefined;
+    const target = isRecord(entry) ? entry.default : undefined;
+    if (typeof target !== 'string' || !target.startsWith('./dist/')) {
+      failConfigPolicy(`@huggingface/transformers no longer exports a Node ${condition} build.`);
+    }
+    if (!kept.includes(target.slice('./dist/'.length))) {
+      failConfigPolicy(
+        `electron-builder.yml excludes ${target}, the Transformers.js Node ${condition} build Gezel loads.`,
+      );
+    }
+    if (!existsSync(path.join(transformers, target))) {
+      failConfigPolicy(
+        `@huggingface/transformers is missing its Node ${condition} build ${target}.`,
+      );
+    }
+  }
+  for (const name of ['sharp', 'onnxruntime-web']) {
+    const manifest = readJsonRecord(
+      path.join(installedPackageDirectory(name, transformers), 'package.json'),
+    );
+    if (manifest.docblocksCompatibilityStub !== true) {
+      failConfigPolicy(
+        `@huggingface/transformers resolves the real ${name}; it must load the stub in vendor/transformers-compat.`,
+      );
+    }
+  }
+  process.stdout.write(
+    'electron-builder.yml: Transformers.js ships its Node builds over the sharp and onnxruntime-web stubs\n',
+  );
+}
+
+requireTransformersRuntime();
+
 for (const [platformName, targetName] of [
   ['win', 'nsis'],
   ['mac', 'dmg'],
@@ -726,11 +898,28 @@ const mainRequires = new Set(
       ...collectRuntimeRequires(readFileSync(path.join(path.dirname(mainPath), file), 'utf8')),
     ]),
 );
-const requiredPackages = new Set(
-  [...mainRequires]
+// Optional peers a shipped Gezel package imports itself, so main never names
+// them. Each is allowed only while that package still declares the peer.
+const gezelPeerRuntimes: Readonly<Record<string, string>> = {
+  '@huggingface/transformers': '@bendyline/gezel-knowledge',
+};
+for (const [dependency, loader] of Object.entries(gezelPeerRuntimes)) {
+  const loaderManifest = readJsonRecord(
+    path.join(installedPackageDirectory(loader, path.dirname(desktopManifestPath)), 'package.json'),
+  );
+  const peers = loaderManifest.peerDependencies;
+  if (!isRecord(peers) || typeof peers[dependency] !== 'string') {
+    failConfigPolicy(
+      `${loader} no longer declares ${dependency} as a peer; remove it from the desktop dependencies or load it from main.`,
+    );
+  }
+}
+const requiredPackages = new Set([
+  ...[...mainRequires]
     .filter((specifier) => specifier !== 'electron' && !isBuiltin(specifier))
     .map(packageNameFromSpecifier),
-);
+  ...Object.keys(gezelPeerRuntimes),
+]);
 const undeclaredPackages = [...requiredPackages].filter(
   (dependency) => !declaredRuntimeDependencies.has(dependency),
 );
