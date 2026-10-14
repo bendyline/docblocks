@@ -27,7 +27,12 @@ interface RuntimeErrorFixtures {
   allowRuntimeErrors: (...allowances: readonly AllowedRuntimeError[]) => void;
   /** Auto fixture: installed for every test, asserted at teardown. */
   runtimeErrorGuard: void;
+  /** Auto fixture: answers the download page's GitHub releases request locally. */
+  githubReleasesStub: void;
 }
+
+const GITHUB_RELEASES_API =
+  /^https:\/\/api\.github\.com\/repos\/bendyline\/docblocks\/releases(?:\?|$)/u;
 
 export const test = base.extend<RuntimeErrorFixtures>({
   runtimeErrorAllowances: async ({ page: _page }, use) => {
@@ -52,6 +57,25 @@ export const test = base.extend<RuntimeErrorFixtures>({
       const unexpected = unexpectedRuntimeErrors(readErrors(), runtimeErrorAllowances);
       if (unexpected.length === 0) return;
       throw new Error(formatRuntimeErrors(unexpected));
+    },
+    { auto: true },
+  ],
+
+  // /desktop/ asks the GitHub API for the latest release. CI runners share IPs,
+  // so that unauthenticated request intermittently hits the rate limit (403),
+  // and Chromium logs the failed load as a console error the guard rejects.
+  // With no release the page falls back to its generic download links.
+  githubReleasesStub: [
+    async ({ context }, use) => {
+      await context.route(GITHUB_RELEASES_API, (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          headers: { 'access-control-allow-origin': '*' },
+          body: '[]',
+        }),
+      );
+      await use();
     },
     { auto: true },
   ],
