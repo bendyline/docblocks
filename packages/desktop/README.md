@@ -50,18 +50,14 @@ from the pinned Gilde release, without the product UI, Office integration,
 agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
-Until this upstream split is published, `vendor/` contains exact preview
-archives (`-docblocks.3`), with their source revision and SHA-256 pins in
-`vendor/provenance.json`. These are generated build outputs, not maintained
-copies of Gezel source. Refresh explicitly with
-`node packages/desktop/scripts/refresh-gezel.mjs ../gezel`, then run
-`npm install --install-strategy=nested` from the repository root and regenerate
-third-party notices. The nested placement keeps desktop previews together when
-mobile uses a different SDK preview. Normal `npm ci` uses the committed lockfile
-and needs no sibling checkout. Replace these file pins with exact published
-versions once Gezel releases the new package and SDK together.
+The desktop pins published releases exactly: `@bendyline/gezel-inference`
+`1.0.0` and `@bendyline/gezel-app-sdk` `1.1.5` at runtime, plus Gezel core
+`1.2.5` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.0`
+selects native release `0.1.49`. Mobile still uses its own unpublished
+`-docblocks.2` previews, so npm nests the desktop's copies where the two differ.
 
-Kokoro narration uses Gezel core `1.2.4`'s `planKokoroSpeech` export
+Kokoro narration uses Gezel core `1.2.5`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
 timestamped ONNX model. The model pin itself uses an existing upstream artifact
 and requires no new native

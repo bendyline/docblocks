@@ -1,12 +1,14 @@
 import { expect } from 'chai';
 
 import {
+  aiReviewReplyWasCutOff,
   applyAiReviewFinding,
   buildDraftRequest,
   buildDraftContinuation,
   buildReviewRequest,
   findUniqueExcerpt,
   parseAiReviewResponse,
+  parseTruncatedAiReviewResponse,
   sanitizeGeneratedMarkdown,
   type AiReviewFinding,
 } from '../src/Ai/ai-assistant.js';
@@ -79,6 +81,8 @@ describe('AI editor assistant', () => {
     const request = buildReviewRequest('# Title\n\nText.');
     expect(request.purpose).to.equal('review');
     expect(request.messages[0]?.content).to.contain('Return only a JSON array');
+    // Small enough to fit Apple's 1,024-token reply limit.
+    expect(request.messages[0]?.content).to.contain('at most 6 objects, most important first');
     expect(sanitizeGeneratedMarkdown('```markdown\n## Draft\n\nBody\n```')).to.equal(
       '## Draft\n\nBody',
     );
@@ -110,6 +114,36 @@ describe('AI editor assistant', () => {
       null,
     );
     expect(parseAiReviewResponse('not json')).to.equal(null);
+  });
+
+  it('keeps the findings a cut-off review finished and drops the unfinished one', () => {
+    const first = {
+      quote: 'a {brace} and a "quote" ] here',
+      replacement: 'clearer',
+      category: 'Clarity',
+      severity: 'suggestion',
+      message: 'Say it plainly.',
+      rationale: null,
+    };
+    const second = { ...first, quote: 'second', severity: 'warning' };
+    const complete = JSON.stringify([first, second]);
+    const cutOff = `${complete.slice(0, -1)}, {"quote": "third", "replacement": "unfin`;
+
+    expect(parseAiReviewResponse(cutOff)).to.equal(null);
+    expect(
+      parseTruncatedAiReviewResponse(cutOff)?.map((finding) => finding.originalText),
+    ).to.deep.equal(['a {brace} and a "quote" ] here', 'second']);
+    expect(parseTruncatedAiReviewResponse(complete)).to.have.length(2);
+    expect(parseTruncatedAiReviewResponse('```json\n[{"quote": "cut')).to.deep.equal([]);
+    // A finished finding with the wrong shape still rejects the review.
+    expect(
+      parseTruncatedAiReviewResponse(`[${JSON.stringify({ ...first, extra: true })}, {"quo`),
+    ).to.equal(null);
+    expect(parseTruncatedAiReviewResponse('no array here')).to.equal(null);
+    expect(aiReviewReplyWasCutOff(cutOff)).to.equal(true);
+    expect(aiReviewReplyWasCutOff(complete)).to.equal(false);
+    expect(aiReviewReplyWasCutOff(`${complete}\nThat is all.`)).to.equal(false);
+    expect(aiReviewReplyWasCutOff('not json')).to.equal(false);
   });
 
   it('applies a finding only when its reviewed excerpt still has one exact match', () => {

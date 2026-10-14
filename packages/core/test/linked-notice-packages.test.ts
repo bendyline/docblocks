@@ -79,8 +79,8 @@ describe('third-party notices for linked packages', () => {
     expect(linkedNoticePackages(root, [key]).size).to.equal(0);
   });
 
-  it('recognizes workspace-local links such as the desktop Gezel service', () => {
-    const desktopKey = 'packages/desktop/node_modules/@bendyline/gezel-service';
+  it('recognizes workspace-local links such as the desktop Gezel inference runtime', () => {
+    const desktopKey = 'packages/desktop/node_modules/@bendyline/gezel-inference';
     link(desktopKey);
     expect(linkedNoticePackages(root, [desktopKey]).has('cytoscape@3.34.0')).to.equal(true);
   });

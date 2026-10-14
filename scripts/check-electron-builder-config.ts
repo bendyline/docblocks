@@ -920,27 +920,6 @@ const requiredPackages = new Set([
     .map(packageNameFromSpecifier),
   ...Object.keys(gezelPeerRuntimes),
 ]);
-// Unpublished upstream previews are pinned together as direct file dependencies.
-// Permit these only when they are reachable from an actual main runtime import.
-const visitedRuntimePackages = new Set<string>();
-function includePreviewDependencies(name: string, from: string): void {
-  const directory = installedPackageDirectory(name, from);
-  if (visitedRuntimePackages.has(directory)) return;
-  visitedRuntimePackages.add(directory);
-  const manifest = readJsonRecord(path.join(directory, 'package.json'));
-  if (!isRecord(manifest.dependencies)) return;
-  for (const dependency of Object.keys(manifest.dependencies)) {
-    if (!dependency.startsWith('@bendyline/gezel') && dependency !== '@bendyline/gezk') continue;
-    const declared = desktopManifest.dependencies?.[dependency];
-    if (typeof declared === 'string' && declared.startsWith('file:vendor/'))
-      requiredPackages.add(dependency);
-    includePreviewDependencies(dependency, directory);
-  }
-}
-for (const dependency of [...requiredPackages]) {
-  if (dependency.startsWith('@bendyline/gezel'))
-    includePreviewDependencies(dependency, path.dirname(desktopManifestPath));
-}
 const undeclaredPackages = [...requiredPackages].filter(
   (dependency) => !declaredRuntimeDependencies.has(dependency),
 );

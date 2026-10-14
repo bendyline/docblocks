@@ -1,7 +1,7 @@
 # Desktop AI native release handoff
 
-The MAS integration is prepared. DocBlocks now pins published Gezel service
-`1.2.4`, which selects notarized native release `0.1.48`. The publication and
+The MAS integration is prepared. DocBlocks now pins published Gezel inference
+`1.0.0`, which selects notarized native release `0.1.49`. The publication and
 dependency update steps below describe the release process; signed MAS build
 and runtime qualification are still required. No prospective version or hash
 is trusted.
@@ -19,29 +19,31 @@ readiness. The first MAS release needs these published payloads:
   signed native bytes, with macOS notarization completed.
 
 Build/release these through Gezel's existing `build-native.yml` workflow. The
-prepared service change in `packages/service/src/http/routes/v1-models.ts` selects
+prepared change in `packages/inference/src/http/routes/v1-models.ts` selects
 llama.cpp catalog weights under the store profile and withholds Python-based MLX
-entries. Include that change in the service publication.
+entries. Include that change in the inference publication.
 
 After publishing the native release, run Gezel's existing pinning script with the
-actual version, then build and publish the updated service package:
+actual version, then build and publish the updated inference package:
 
 ```text
 node scripts/pin-native-release.mjs <native-version> --macos-notarized
 ```
 
-Review both generated service pins (`native-manifest.ts` and
+Review both generated inference pins (`native-manifest.ts` and
 `native-file-manifest.json`). They must include the Apple helper, UV and Metal
 engine, and the new release's complete hashes. Preserve the upstream Developer
 ID signatures; MAS transforms its own copy after provenance verification.
 
 ## Update DocBlocks and qualify MAS
 
-Once the new service is published, update its exact desktop dependency and the
-lockfile together, using the repository's dependency policy:
+Once the new inference package is published, update its exact desktop
+dependency, the matching App SDK and core pins, and the lockfile together, using
+the repository's dependency policy:
 
 ```text
-npm install --workspace docblocks-desktop --save-exact @bendyline/gezel-service@<service-version>
+npm install --workspace docblocks-desktop --save-exact @bendyline/gezel-inference@<inference-version> @bendyline/gezel-app-sdk@<sdk-version>
+npm install --workspace docblocks-desktop --save-exact --save-dev @bendyline/gezel@<core-version>
 npm run generate:notices
 npm run all
 npm run dist:mas --workspace docblocks-desktop

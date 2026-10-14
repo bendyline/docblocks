@@ -60,7 +60,7 @@ async function nativeManifest(root, release) {
     !platforms['darwin-arm64-metal']?.files['gezel-llama-server']
   ) {
     throw new Error(
-      'MAS requires a Gezel service pin whose native release includes gezel-apple-fm, uv and llama.cpp Metal. Publish and pin the new native release, then update the desktop Gezel service dependency.',
+      'MAS requires a Gezel inference pin whose native release includes gezel-apple-fm, uv and llama.cpp Metal. Publish and pin the new native release, then update the desktop Gezel inference dependency.',
     );
   }
   return { schemaVersion: 2, release, platforms };

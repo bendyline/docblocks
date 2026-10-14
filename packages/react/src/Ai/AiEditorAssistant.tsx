@@ -30,7 +30,9 @@ import {
   buildDraftRequest,
   buildReviewRequest,
   findUniqueExcerpt,
+  aiReviewReplyWasCutOff,
   parseAiReviewResponse,
+  parseTruncatedAiReviewResponse,
   sanitizeGeneratedMarkdown,
   type AiDraftMode,
   type AiReviewFinding,
@@ -629,6 +631,8 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   const [reviewedSource, setReviewedSource] = useState<string | null>(null);
   const [resolvedIds, setResolvedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  /** The reply stopped at the model's output limit, so findings may be missing. */
+  const [cutOff, setCutOff] = useState(false);
   const [applyErrorId, setApplyErrorId] = useState<string | null>(null);
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
@@ -642,6 +646,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   }, []);
 
   const runReview = useCallback(() => {
+    setCutOff(false);
     if (!markdownSource.trim()) {
       setFindings([]);
       setReviewedSource(markdownSource);
@@ -673,12 +678,26 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
         setPhase('error');
         return;
       }
-      const parsed = parseAiReviewResponse(event.completion.text);
-      if (!parsed) {
-        setError('The AI returned a review DocBlocks could not read. Try reviewing again.');
+      // A model with a small reply limit (Apple's on-device model stops at
+      // 1,024 tokens) can stop partway through a finding. Keep the ones it
+      // finished rather than discarding the whole review.
+      const truncated =
+        event.completion.finishReason === 'length' || aiReviewReplyWasCutOff(event.completion.text);
+      const parsed = truncated
+        ? parseTruncatedAiReviewResponse(event.completion.text)
+        : parseAiReviewResponse(event.completion.text);
+      if (!parsed || (truncated && parsed.length === 0)) {
+        // A cut-off reply comes out the same each time, so retrying is no help.
+        setError(
+          truncated
+            ? "The AI's reply was cut off before it finished a single finding. Try a shorter " +
+                'document, or choose a different model in AI settings.'
+            : 'The AI returned a review DocBlocks could not read. Try reviewing again.',
+        );
         setPhase('error');
         return;
       }
+      setCutOff(truncated);
       setFindings(parsed);
       setReviewedSource(source);
       setPhase('ready');
@@ -768,6 +787,13 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       {phase === 'error' && error && (
         <div className="db-ai-review-empty db-ai-error" role="alert">
           {error}
+        </div>
+      )}
+      {cutOff && phase === 'ready' && (
+        <div className="db-ai-review-stale" role="status">
+          The AI ran out of room after {findings.length}{' '}
+          {findings.length === 1 ? 'finding' : 'findings'}, so there may be more. After you apply
+          these, review again to look for others.
         </div>
       )}
       {documentChanged && phase === 'ready' && (

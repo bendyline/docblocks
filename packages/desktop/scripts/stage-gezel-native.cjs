@@ -13,24 +13,7 @@ async function stageForTarget(context, overrides = {}) {
   const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
   const manifest = JSON.parse(await readFile(path.join(appDir, 'package.json'), 'utf8'));
   const installed = serviceRequire('./package.json');
-  const dependency = manifest.dependencies['@bendyline/gezel-inference'];
-  let expectedVersion = dependency;
-  if (dependency?.startsWith('file:vendor/')) {
-    const provenance = JSON.parse(
-      await readFile(path.join(appDir, 'vendor/provenance.json'), 'utf8'),
-    );
-    const pin = provenance.packages['@bendyline/gezel-inference'];
-    const archive = pin && (await readFile(path.join(appDir, 'vendor', pin.file)));
-    if (
-      !pin ||
-      dependency !== `file:vendor/${pin.file}` ||
-      require('node:crypto').createHash('sha256').update(archive).digest('hex') !== pin.sha256
-    ) {
-      throw new Error('The Gezel inference preview must match its recorded archive pin.');
-    }
-    expectedVersion = pin.version;
-  }
-  if (expectedVersion !== installed.version) {
+  if (manifest.dependencies['@bendyline/gezel-inference'] !== installed.version) {
     throw new Error(
       "The installed Gezel inference runtime must match DocBlocks' exact dependency pin.",
     );

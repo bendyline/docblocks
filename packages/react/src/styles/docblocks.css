@@ -2329,6 +2329,12 @@ body.db-resizing-sidebar * {
   line-height: 1.5;
 }
 
+/* A status line stays mounted while empty so later changes are announced, but
+   it should not leave a gap. */
+.db-settings-hint:empty {
+  margin: 0;
+}
+
 .db-settings-hint code {
   font-size: 11px;
   background: var(--db-bg-subtle);

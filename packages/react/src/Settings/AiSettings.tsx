@@ -58,10 +58,9 @@ function statusSentence(status: AiStatus): string {
     case 'ready': {
       const version = status.provider.version ? ` ${status.provider.version}` : '';
       if (status.provider.mode === 'hosted') {
-        if (!status.model) {
-          return `Running ${status.provider.name}${version} inside DocBlocks. Add an on-device model to start using AI.`;
-        }
-        return `Running ${status.provider.name}${version} inside DocBlocks, with the models already on this device.`;
+        if (!status.model) return 'Add an on-device model to start using AI.';
+        // Ready with a model needs no sentence: the Model picker below says it.
+        return '';
       }
       return `Connected to ${status.provider.name}${version}.`;
     }
@@ -309,11 +308,8 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
         Use AI features
       </label>
       <p className="db-settings-hint">
-        DocBlocks runs AI inside this app when AI is on. Model downloads start only when you choose
-        to add one.
-        {providerInstalled
-          ? ' Connecting your Gezel app is optional and lets DocBlocks use that app instead.'
-          : ''}
+        DocBlocks can offer AI features that run entirely on this device — no account needed. Model
+        downloads start only when you choose to add one.
       </p>
 
       {enabled && (
@@ -350,9 +346,7 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                     </option>
                   ) : (
                     <option value="">
-                      {defaultModel
-                        ? `Gezel's default: ${modelLabel(defaultModel)}`
-                        : "Gezel's default"}
+                      {defaultModel ? `Default: ${modelLabel(defaultModel)}` : 'Default'}
                     </option>
                   )}
                   {preferences.model && !models.some((model) => model.id === preferences.model) && (

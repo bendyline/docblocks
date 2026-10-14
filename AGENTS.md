@@ -251,7 +251,7 @@ leaves ranking to the SDK. Model locality and Apple readiness come from Gezel
 inventory, never provider-name heuristics or a DocBlocks native-helper probe.
 Knowledge never blocks a request: missing SDK support,
 a failed retrieval, or a malformed answer sends the request without passages.
-The new Gezel SDK/service API must be published and pinned before shipping;
+The desktop pins the published Gezel inference package and App SDK exactly;
 see `packages/desktop/README.md`. Three rules
 are load-bearing and each has a test:
 

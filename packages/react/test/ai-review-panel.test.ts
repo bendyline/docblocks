@@ -168,6 +168,60 @@ describe('AiReviewPanel lifecycle', () => {
     }
   });
 
+  it('keeps the findings from a review cut off at the model output limit', async () => {
+    const fake = fakeAi();
+    const { container, cleanup } = await render(fake.api, false);
+    try {
+      const cutOff = `${REVIEW.slice(0, -1)}, {"quote": "document", "replacement": "unfin`;
+      await act(async () => fake.requests[0].emit(completion(cutOff, 'length')));
+      expect(container.textContent).to.contain('1 finding');
+      expect(container.textContent).to.contain('Use a more precise phrase.');
+      expect(container.textContent).to.contain('The AI ran out of room after 1 finding');
+      expect(container.querySelector('[role="alert"]')).to.equal(null);
+
+      await click(container, 'Review again');
+      await act(async () => fake.requests.at(-1)?.emit(completion(REVIEW)));
+      expect(container.textContent).not.to.contain('ran out of room');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('treats an unclosed review as cut off even when the host reports a normal stop', async () => {
+    const fake = fakeAi();
+    const { container, cleanup } = await render(fake.api, false);
+    try {
+      // Gezel 1.1.2 reported Apple's replies cut off at 1,024 tokens as `stop`.
+      const cutOff = `${REVIEW.slice(0, -1)}, {"quote": "document", "replacement": "unfin`;
+      await act(async () => fake.requests[0].emit(completion(cutOff, 'stop')));
+      expect(container.textContent).to.contain('Use a more precise phrase.');
+      expect(container.textContent).to.contain('The AI ran out of room after 1 finding');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('says a review was cut off, not unreadable, when no finding finished', async () => {
+    const fake = fakeAi();
+    const { container, cleanup } = await render(fake.api, false);
+    try {
+      await act(async () =>
+        fake.requests[0].emit(completion('[{"quote": "very unique", "repla', 'length')),
+      );
+      const alert = container.querySelector('[role="alert"]')?.textContent;
+      expect(alert).to.contain('cut off before it finished a single finding');
+      expect(alert).not.to.contain('Try reviewing again');
+
+      await click(container, 'Review again');
+      await act(async () => fake.requests.at(-1)?.emit(completion('{not json', 'stop')));
+      expect(container.querySelector('[role="alert"]')?.textContent).to.contain(
+        'could not read. Try reviewing again.',
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('stops, retries and cancels the live review when the panel closes', async () => {
     const fake = fakeAi();
     const { container, cleanup } = await render(fake.api, false);

@@ -29,8 +29,8 @@ export const desktopTsupOptions = [
     // has to copy dependencies that are genuinely loaded at runtime.
     noExternal: [
       /^@bendyline\/docblocks(?:\/|$)/u,
-      // Speech uses synchronous core helpers. Core is ESM-only too, so keep
-      // these small subpaths bundled when its preview becomes a dependency.
+      // Speech uses synchronous core helpers. Core is ESM-only too, so these
+      // small subpaths stay bundled and core remains a dev dependency.
       /^@bendyline\/gezel(?:\/|$)/u,
     ],
     // The Gezel app SDK ships ESM only (its exports have no `require`

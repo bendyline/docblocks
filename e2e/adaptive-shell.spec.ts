@@ -148,7 +148,14 @@ test.describe('adaptive shell on a phone', () => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await page.goto('/');
     await expect(page.locator('.db-shell')).toBeVisible();
-    await page.getByRole('button', { name: /Switch workspace/ }).click();
+    // First run seeds the default workspace after the shell mounts, and the
+    // picker loads its list asynchronously. Opened before then, the list
+    // arrives mid-click: the new row pushes New Workspace down between press
+    // and release, and the click lands on neither. The trigger names the
+    // workspace only once that list has loaded.
+    const picker = page.getByRole('button', { name: 'Switch workspace, current: My Documents' });
+    await expect(picker).toBeVisible({ timeout: 30_000 });
+    await picker.click();
     await page.getByRole('button', { name: 'New Workspace' }).click();
     await expect(page.getByLabel('Workspace name')).toBeVisible();
 
