@@ -89,6 +89,7 @@ describe('Gezel native packaging adapter', () => {
       }),
     );
     const calls: unknown[] = [];
+    // Run the real payload verifier: stubbing it hid the Intel release's empty payload.
     await stageForTarget(
       {
         packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
@@ -96,10 +97,15 @@ describe('Gezel native packaging adapter', () => {
         arch: 1,
       },
       {
-        stageElectronNative: async (options: unknown) => {
+        stageElectronNative: async (options: { destination: string }) => {
           calls.push(options);
+          // What the upstream packager leaves when no archives exist for the target.
+          await mkdir(options.destination, { recursive: true });
+          await writeFile(
+            path.join(options.destination, 'release.json'),
+            JSON.stringify({ archives: [] }),
+          );
         },
-        verifyNativePlatformRequirements: async () => {},
       },
     );
     return calls;

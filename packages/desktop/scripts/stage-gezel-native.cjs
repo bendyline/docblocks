@@ -47,6 +47,7 @@ async function stageForTarget(context, overrides = {}) {
   await (overrides.verifyNativePlatformRequirements ?? verifyNativePlatformRequirements)({
     directory: destination,
     platform,
+    ...(intelMac ? { allowEmpty: true } : {}),
   });
   if (platform === 'win32') {
     // This also serves DocBlocks' speech runtime, which is outside the text AI host.

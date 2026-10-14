@@ -21,6 +21,8 @@ exports.default = async (context) => {
   await verifyNativePlatformRequirements({
     directory: path.join(resources, 'gezel-native'),
     platform,
+    // beforePack admits darwin-x64 only for the final Intel release, staged without engines.
+    ...(platform === 'darwin' && arch === 'x64' ? { allowEmpty: true } : {}),
   });
   if (platform === 'win32') {
     const coverage = await verifyVcRuntimeCoverage({
