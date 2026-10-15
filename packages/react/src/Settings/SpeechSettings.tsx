@@ -32,6 +32,16 @@ function readinessSentence(readiness: SpeechReadiness, ready: string): string {
 
 const PREVIEW_TEXT = 'This is how I sound when I read your documents aloud.';
 
+/** The host could not answer at all; the controls it would have filled cannot be drawn. */
+function unreachable(cause: unknown): SpeechError {
+  const detail = cause instanceof Error ? cause.message : undefined;
+  return {
+    code: 'unknown',
+    message: 'DocBlocks could not check speech on this computer.',
+    ...(detail ? { detail } : {}),
+  };
+}
+
 export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) {
   const [status, setStatus] = useState<SpeechStatus | null>(null);
   const [catalog, setCatalog] = useState<SpeechCatalog | null>(null);
@@ -50,11 +60,15 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
   const speedId = useId();
 
   const refresh = useCallback(async () => {
-    const [nextStatus, nextCatalog] = await Promise.all([speech.status(), speech.catalog()]);
-    if (!mounted.current) return;
-    setStatus(nextStatus);
-    if (nextCatalog.ok) setCatalog(nextCatalog.value);
-    else setFailure(nextCatalog.error);
+    try {
+      const [nextStatus, nextCatalog] = await Promise.all([speech.status(), speech.catalog()]);
+      if (!mounted.current) return;
+      setStatus(nextStatus);
+      if (nextCatalog.ok) setCatalog(nextCatalog.value);
+      else setFailure(nextCatalog.error);
+    } catch (cause) {
+      if (mounted.current) setFailure(unreachable(cause));
+    }
   }, [speech]);
 
   const stopPreview = useCallback(() => {
@@ -74,9 +88,14 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
       });
     });
     void refresh();
-    void speech.getPreferences().then((initial) => {
-      if (mounted.current) setPreferences(initial);
-    });
+    void speech.getPreferences().then(
+      (initial) => {
+        if (mounted.current) setPreferences(initial);
+      },
+      (cause: unknown) => {
+        if (mounted.current) setFailure(unreachable(cause));
+      },
+    );
     return () => {
       mounted.current = false;
       installHandle.current?.cancel();
@@ -156,7 +175,19 @@ export function SpeechSettingsControls({ speech }: SpeechSettingsControlsProps) 
     });
   }, [speech, stopPreview]);
 
-  if (!status || !catalog || !preferences) return null;
+  if (!status || !catalog || !preferences) {
+    // Still loading draws nothing, but a section that cannot load says so
+    // rather than vanishing from Settings.
+    if (!failure) return null;
+    return (
+      <fieldset className="db-settings-fieldset">
+        <legend className="db-settings-legend">Speech</legend>
+        <p className="db-settings-hint db-settings-ai-error" role="alert">
+          {failure.message}
+        </p>
+      </fieldset>
+    );
+  }
 
   const sttModels = catalog.models.filter((model) => model.kind === 'stt');
   const ttsModel = catalog.models.find((model) => model.kind === 'tts') ?? null;

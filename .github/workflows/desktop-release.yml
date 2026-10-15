@@ -401,7 +401,8 @@ jobs:
               fi
               exit 1
             fi
-            xcrun stapler staple "$dmg"
+            # A dropped connection here would otherwise discard the notarization.
+            bash "$GITHUB_WORKSPACE/packages/desktop/scripts/stapler-retry.sh" staple "$dmg"
           done
 
       - name: Verify macOS signing (fail if unsigned)
@@ -414,12 +415,15 @@ jobs:
           cd packages/desktop/dist/artifacts
           shopt -s nullglob
 
+          # Retries only Apple's ticket service dropping the connection.
+          stapler_retry="$GITHUB_WORKSPACE/packages/desktop/scripts/stapler-retry.sh"
+
           apps=(*/DocBlocks.app)
           if [ ${#apps[@]} -eq 0 ]; then echo "No DocBlocks.app produced to verify" >&2; exit 1; fi
           for app in "${apps[@]}"; do
             echo "== $app"
             codesign --verify --deep --strict --verbose=2 "$app"
-            xcrun stapler validate "$app"
+            bash "$stapler_retry" validate "$app"
           done
 
           images=(*.dmg)
@@ -427,7 +431,7 @@ jobs:
           for dmg in "${images[@]}"; do
             echo "== $dmg"
             codesign --verify --strict --verbose=2 "$dmg"
-            xcrun stapler validate "$dmg"
+            bash "$stapler_retry" validate "$dmg"
             # Assess the way Gatekeeper does for a downloaded disk image.
             spctl --assess --type open --context context:primary-signature -vv "$dmg"
           done

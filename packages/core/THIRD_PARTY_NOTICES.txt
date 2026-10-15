@@ -14,7 +14,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/squisq | 2.11.19 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.11.20 | MIT | https://github.com/bendyline/squisq |
 | @types/debug | 4.1.12 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | @types/hast | 3.0.4 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | @types/katex | 0.16.8 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
@@ -132,7 +132,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 Package-local license, copying, and notice files are reproduced below. Where a published package omits its repository license, the reviewed aggregate or README identified in `Source files` supplies the retained material.
 
 ==============================================================================
-Components: @bendyline/squisq@2.11.19
+Components: @bendyline/squisq@2.11.20
 Source files: node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -158,31 +158,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: ngeohash@0.6.4
-Source files: node_modules/@bendyline/squisq/node_modules/ngeohash/LICENSE
-==============================================================================
-The MIT License (MIT)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-==============================================================================
-Components: @bendyline/squisq@2.11.19
+Components: @bendyline/squisq@2.11.20
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -213,7 +189,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.11.19
+Components: @bendyline/squisq@2.11.20
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq
@@ -1330,6 +1306,30 @@ Source files: node_modules/ms/license.md
 The MIT License (MIT)
 
 Copyright (c) 2020 Vercel, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Components: ngeohash@0.6.4
+Source files: node_modules/ngeohash/LICENSE
+==============================================================================
+The MIT License (MIT)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

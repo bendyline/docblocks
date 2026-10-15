@@ -14,20 +14,13 @@ export function useSpeechStatus(speech: DocBlocksHostSpeechAPI): SpeechStatus | 
         if (live) setStatus((current) => current ?? initial);
       },
       () => {
-        if (live)
-          setStatus(
-            (current) =>
-              current ?? {
-                stt: {
-                  state: 'unavailable',
-                  reason: 'Speech status is unavailable. Try opening Settings.',
-                },
-                tts: {
-                  state: 'unavailable',
-                  reason: 'Speech status is unavailable. Try opening Settings.',
-                },
-              },
-          );
+        // Settings cannot do more than report the same failure, so don't send
+        // people there to fix it.
+        const readiness = {
+          state: 'unavailable' as const,
+          reason: 'DocBlocks could not check speech on this computer.',
+        };
+        if (live) setStatus((current) => current ?? { stt: readiness, tts: readiness });
       },
     );
     return () => {

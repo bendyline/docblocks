@@ -110,13 +110,40 @@ describe('presentation AI refinement', () => {
     assert.equal(api.requests[0]!.maxTokens, 550);
     assert.ok(api.requests.every((request) => JSON.stringify(request).length < 4000));
   });
+  it('reports each slide as it resolves, before the next request starts', async () => {
+    const source = plan();
+    const api = fake((request, index) =>
+      index < 2
+        ? '{}'
+        : JSON.stringify({
+            ...(JSON.parse(request.messages.at(-1)!.content) as { current: object }).current,
+            headline: 'Share your ideas',
+          }),
+    );
+    const events: Array<[number, string | null, number]> = [];
+    const result = await refinePresentationPlan(api.ai, source, {
+      onBeat: (index, beat) => events.push([index, beat?.headline ?? null, api.requests.length]),
+    });
+    // The retained slide reports after its repair attempt; the accepted one
+    // reports with its wording while no further request has been sent.
+    assert.deepEqual(events, [
+      [0, null, 2],
+      [1, 'Share your ideas', 3],
+    ]);
+    assert.deepEqual(result.refined, [1]);
+  });
   it('cancels the in-flight request and never starts the next beat', async () => {
     const api = fake(() => '{}');
     const controller = new AbortController();
-    const pending = refinePresentationPlan(api.ai, plan(), { signal: controller.signal });
+    let reported = 0;
+    const pending = refinePresentationPlan(api.ai, plan(), {
+      signal: controller.signal,
+      onBeat: () => reported++,
+    });
     controller.abort();
     await assert.rejects(pending, { name: 'AbortError' });
     assert.equal(api.requests.length, 1);
     assert.equal(api.cancelled(), 1);
+    assert.equal(reported, 0);
   });
 });

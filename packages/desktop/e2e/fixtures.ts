@@ -11,6 +11,7 @@
 
 import {
   chromium,
+  expect,
   test as base,
   type Browser,
   type BrowserContext,
@@ -388,4 +389,14 @@ export const test = base.extend<DocBlocksFixtures>({
   },
 });
 
-export { expect } from '@playwright/test';
+/**
+ * Reload only once the open document is saved. The bytes can reach disk while
+ * the session still reports `saving`, and the shell's beforeunload guard stays
+ * armed until it settles. Electron vetoes that reload in main, which surfaces
+ * as "No dialog is showing" and a reload that never completes.
+ */
+export async function expectSavedBeforeReload(window: Page): Promise<void> {
+  await expect(window.locator('.db-shell')).toHaveAttribute('data-document-status', 'saved');
+}
+
+export { expect };

@@ -7,7 +7,7 @@ import type { Page } from '@playwright/test';
 import type { DocBlocksHostAPI } from '@bendyline/docblocks/host';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { test, expect } from './fixtures.js';
+import { test, expect, expectSavedBeforeReload } from './fixtures.js';
 import { readMp4Summary } from './mp4-summary.js';
 import { startFakeGezel, FAKE_GEZEL_CODE } from './fake-gezel.js';
 import { installFakeSpeechModels } from './fake-speech.js';
@@ -201,6 +201,22 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     // The scripted model repeats full-passage excerpts on the two split slides.
     // They fail grounding and must remain deterministic, without cached AI text.
     await expect(maker).toContainText('Kept automatic summaries for 2 slides');
+    // Accepted suggestions land in the slide list as they arrive and stay marked
+    // once the run ends and the footer returns to the Suggest button.
+    await expect(
+      maker
+        .getByRole('navigation', { name: 'Presentation slides' })
+        .locator('.db-presentation-beat-ai'),
+    ).toHaveCount(3);
+    await expect(maker.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+    await expect(maker.getByRole('button', { name: 'Suggest with AI' })).toBeEnabled();
+    // The preview followed each slide as it was suggested, so return to the
+    // opening slide before overriding its wording.
+    await maker
+      .getByRole('navigation', { name: 'Presentation slides' })
+      .getByRole('button')
+      .first()
+      .click();
     await maker.getByText('Customize slide wording (slides only)', { exact: true }).click();
     await maker
       .getByRole('textbox', { name: 'Slide headline', exact: true })
@@ -220,6 +236,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     expect(fs.readFileSync(file, 'utf8')).toContain('anchor=document');
     await window.keyboard.press('ControlOrMeta+Shift+Z');
     await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe(saved);
+    await expectSavedBeforeReload(window);
     await window.reload();
     await window.locator('.db-tree-row[data-path$="launch.md"]').click();
     await window.getByRole('button', { name: 'Choose Use mode' }).click();

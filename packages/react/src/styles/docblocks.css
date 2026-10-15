@@ -7419,6 +7419,42 @@ button.db-git-file-row:hover {
   color: var(--db-text-muted);
   overflow-wrap: anywhere;
 }
+.db-presentation-beat-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+/* Marks the slide a request is open for, then every slide with AI wording. */
+.db-presentation-beats small.db-presentation-beat-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--db-accent-soft-12);
+  color: var(--db-accent-deep);
+}
+.db-presentation-beat-ai .db-ai-spinner {
+  width: 10px;
+  height: 10px;
+  flex-basis: 10px;
+}
+/* While slides are being suggested, this takes the Suggest button's place in
+   the footer, with Stop beside it, so progress sits where the action started. */
+.db-presentation-progress {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  color: var(--db-text-secondary);
+  font: 600 12px/1.2 var(--db-ui-font);
+}
+.db-presentation-progress progress {
+  width: 120px;
+  height: 6px;
+  accent-color: var(--db-accent);
+}
 .db-presentation label.db-presentation-toggle {
   display: flex;
   flex-direction: row;
