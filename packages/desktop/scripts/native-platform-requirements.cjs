@@ -168,8 +168,7 @@ async function binaryMetadata(handle, platform) {
   return Buffer.concat(parts);
 }
 
-/** `allowEmpty` is only for the final Intel Mac release, which ships without engines. */
-async function verifyNativePlatformRequirements({ directory, platform, allowEmpty = false }) {
+async function verifyNativePlatformRequirements({ directory, platform }) {
   if (!['darwin', 'linux'].includes(platform)) return { binaries: [] };
   const baseline = platform === 'darwin' ? policy.macNativeMinimum : policy.linuxNativeGlibcMinimum;
   const binaries = [];
@@ -217,7 +216,7 @@ async function verifyNativePlatformRequirements({ directory, platform, allowEmpt
     }
   }
   await visit(directory);
-  if (!binaries.length && !allowEmpty)
+  if (!binaries.length)
     throw new Error(`No ${platform} binaries found in native payload ${directory}`);
   return { binaries };
 }

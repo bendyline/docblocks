@@ -115,17 +115,9 @@ describe('native payload OS contract', () => {
       binaries: [],
     });
   });
-  it('admits an empty payload only when asked, still checking any binaries present', async () => {
+  it('refuses a macOS payload that holds no engine binaries', async () => {
     await writeFile(path.join(directory, 'release.json'), '{"archives":[]}');
-    expect(
-      await verifyNativePlatformRequirements({ directory, platform: 'darwin', allowEmpty: true }),
-    ).to.deep.equal({ binaries: [] });
     await rejects(verifyNativePlatformRequirements({ directory, platform: 'darwin' }), /No darwin/);
-    await writeFile(path.join(directory, 'gezel-llama-server'), macho([99, 0, 0]));
-    await rejects(
-      verifyNativePlatformRequirements({ directory, platform: 'darwin', allowEmpty: true }),
-      /requires macOS 99\.0\.0/,
-    );
   });
   it('reads bounded metadata from a large library without reading its code or data', async () => {
     const library = path.join(directory, 'large-gpu-library.so');

@@ -307,58 +307,27 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
 
-      # Intel Macs stopped at packages/desktop/intel-mac-final.json's version.
-      # electron-updater on an Intel Mac fails on an Apple-silicon-only feed, so
-      # that release builds one x64 update zip (no .dmg: new Intel installs are
-      # not offered) and every later release points Intel Macs back at it. The
-      # zip ships without a blockmap; scripts/intel-mac-final-feed.ts explains
-      # why and rejects any other Intel entry.
+      # Intel Macs stopped at packages/desktop/intel-mac-final.json's version
+      # (2.7.1), which published one x64 update zip and no .dmg. electron-updater
+      # on an Intel Mac fails on an Apple-silicon-only feed, so every later
+      # release points Intel Macs back at that zip, copying its entry from the
+      # final release's published feed. Never delete or replace that release's
+      # x64 zip or latest-mac.yml. scripts/intel-mac-final-feed.ts explains why
+      # the zip has no blockmap and rejects any other Intel entry.
       - name: Point Intel Macs at their final release
         id: intel_mac
         working-directory: packages/desktop
         run: |
           final="$(node -p "require('./intel-mac-final.json').version")"
-          current="$(node -p "require('./package.json').version")"
           echo "final=$final" >> "$GITHUB_OUTPUT"
           intel_feed_dir="$RUNNER_TEMP/intel-mac-final"
           mkdir -p "$intel_feed_dir"
-
-          if [ "$current" = "$final" ]; then
-            ulimit -n 524288
-            mv dist/artifacts/latest-mac.yml "$RUNNER_TEMP/latest-mac.arm64.yml"
-            max_attempts=3
-            for attempt in $(seq 1 "$max_attempts"); do
-              log="$RUNNER_TEMP/electron-builder-intel-mac-$attempt.log"
-              set +e
-              npx --no-install electron-builder --mac zip --x64 --publish never 2>&1 | tee "$log"
-              status=${PIPESTATUS[0]}
-              set -e
-              if [ "$status" -eq 0 ]; then
-                break
-              fi
-              if ! grep -Fq 'A timestamp was expected but was not found.' "$log" || [ "$attempt" -eq "$max_attempts" ]; then
-                exit "$status"
-              fi
-              echo "::warning::Apple secure timestamping failed on attempt $attempt; retrying the Intel package."
-              rm -rf dist/artifacts/mac dist/artifacts/DocBlocks-"$final"-mac-x64.zip*
-              sleep $((attempt * 15))
-            done
-            mv dist/artifacts/latest-mac.yml "$intel_feed_dir/latest-mac.yml"
-            mv "$RUNNER_TEMP/latest-mac.arm64.yml" dist/artifacts/latest-mac.yml
-            rm -f "dist/artifacts/DocBlocks-$final-mac-x64.zip.blockmap"
-          else
-            gh release download "desktop-v$final" --repo "$GITHUB_REPOSITORY" \
-              --pattern latest-mac.yml --dir "$intel_feed_dir"
-          fi
-
+          gh release download "desktop-v$final" --repo "$GITHUB_REPOSITORY" \
+            --pattern latest-mac.yml --dir "$intel_feed_dir"
           npx --no-install tsx scripts/intel-mac-final-feed.ts \
             dist/artifacts/latest-mac.yml "$intel_feed_dir/latest-mac.yml"
         env:
           GH_TOKEN: ${{ github.token }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          UV_THREADPOOL_SIZE: 16
 
       # electron-builder signs the .dmg (dmg.sign) but never notarizes it — it
       # only notarizes the .app it packages. A signed-but-unticketed disk image

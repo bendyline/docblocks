@@ -18,13 +18,11 @@ async function stageForTarget(context, overrides = {}) {
       "The installed Gezel inference runtime must match DocBlocks' exact dependency pin.",
     );
   }
-  // Intel Macs stopped at intel-mac-final.json's version. Only that release
-  // builds their final update, and it has no engines to stage: the pinned
-  // native release has no Intel Mac archives.
-  const intelMac = platform === 'darwin' && arch === 'x64';
-  if (intelMac && manifest.version !== intelMacFinal.version) {
+  // Intel Macs stopped at intel-mac-final.json's version, which has shipped.
+  // Later releases only point Intel Macs back at it, so nothing builds darwin-x64.
+  if (platform === 'darwin' && arch === 'x64') {
     throw new Error(
-      `Intel Macs are no longer supported; only DocBlocks ${intelMacFinal.version}, their final release, builds for darwin-x64.`,
+      `Intel Macs are no longer supported; DocBlocks ${intelMacFinal.version} was their final release.`,
     );
   }
   const stage =
@@ -41,13 +39,11 @@ async function stageForTarget(context, overrides = {}) {
     arch,
     destination,
     cache: path.join(appDir, 'dist', 'gezel-native-cache'),
-    ...(intelMac ? { allowUnavailable: true } : {}),
     ...(overrides.fetchImpl ? { fetchImpl: overrides.fetchImpl } : {}),
   });
   await (overrides.verifyNativePlatformRequirements ?? verifyNativePlatformRequirements)({
     directory: destination,
     platform,
-    ...(intelMac ? { allowEmpty: true } : {}),
   });
   if (platform === 'win32') {
     // This also serves DocBlocks' speech runtime, which is outside the text AI host.

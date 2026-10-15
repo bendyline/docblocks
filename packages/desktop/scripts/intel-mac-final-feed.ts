@@ -3,23 +3,21 @@
  *
  * electron-updater on an Intel Mac discards every arm64 file in latest-mac.yml
  * and fails when nothing is left, so an Apple-silicon-only feed leaves older
- * Intel installs reporting an update error on every launch. Release CI builds
- * one x64 update zip, for the version in intel-mac-final.json, and this script
- * adds it to that release's feed and to every later one. The final build never
- * checks for updates again (main/intel-mac-final.ts).
+ * Intel installs reporting an update error on every launch. The release named
+ * by intel-mac-final.json published one x64 update zip, and this script copies
+ * its entry from that release's published feed into every later one. The final
+ * build never checks for updates again (main/intel-mac-final.ts).
  *
  * Later feeds name the zip by a path into the final release: the GitHub
  * provider resolves file names under the newest release tag, and
  * `../desktop-v<final>/` normalizes back to the final release's download path.
- * The zip ships without a blockmap. For such an entry electron-updater derives
- * identical "old" and "new" blockmap URLs, so a published blockmap could let it
- * rebuild the zip from an unrelated cached update; without one it always
- * downloads the zip whole and checks its SHA-512.
+ * The zip shipped without a blockmap and must never gain one. For such an entry
+ * electron-updater derives identical "old" and "new" blockmap URLs, so a
+ * published blockmap could let it rebuild the zip from an unrelated cached
+ * update; without one it always downloads the zip whole and checks its SHA-512.
  */
 
-import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
@@ -80,15 +78,14 @@ export function intelMacFinalFileName(policy: IntelMacFinalPolicy): string {
 }
 
 /** The feed URL for the final Intel zip, relative to the release being published. */
-export function intelMacFinalUrl(policy: IntelMacFinalPolicy, feedVersion: string): string {
-  const fileName = intelMacFinalFileName(policy);
-  return feedVersion === policy.version ? fileName : `../desktop-v${policy.version}/${fileName}`;
+export function intelMacFinalUrl(policy: IntelMacFinalPolicy): string {
+  return `../desktop-v${policy.version}/${intelMacFinalFileName(policy)}`;
 }
 
 /**
- * Return `feed` with the final Intel zip appended. `intelFeed` is the feed that
- * electron-builder wrote for that zip, or the final release's published feed.
- * Any other non-arm64 entry is rejected: Intel builds ended with the policy version.
+ * Return `feed` with the final Intel zip appended. `intelFeed` is the final
+ * release's published feed. Any other non-arm64 entry is rejected: Intel builds
+ * ended with the policy version.
  */
 export function withIntelMacFinal(
   feedValue: unknown,
@@ -109,7 +106,7 @@ export function withIntelMacFinal(
   if (!intelZip) throw new Error(`Final Intel Mac feed does not list ${fileName}.`);
 
   const entry: UpdaterFile = {
-    url: intelMacFinalUrl(policy, feed.version),
+    url: intelMacFinalUrl(policy),
     sha512: intelZip.sha512,
     size: intelZip.size,
   };
@@ -130,42 +127,6 @@ export function withIntelMacFinal(
   return { ...feed, files: [...files, entry] };
 }
 
-async function sha512Base64(filePath: string): Promise<string> {
-  const hash = createHash('sha512');
-  await new Promise<void>((resolve, reject) => {
-    const input = createReadStream(filePath);
-    input.on('data', (chunk: Buffer) => hash.update(chunk));
-    input.on('error', reject);
-    input.on('end', resolve);
-  });
-  return hash.digest('base64');
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await stat(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** In the final release itself, prove the zip beside the feed is the one it names. */
-async function verifyLocalIntelZip(
-  artifactsDirectory: string,
-  entry: UpdaterFile,
-  fileName: string,
-): Promise<void> {
-  const zipPath = path.join(artifactsDirectory, fileName);
-  const [info, sha512] = await Promise.all([stat(zipPath), sha512Base64(zipPath)]);
-  if (!info.isFile() || info.size !== entry.size || sha512 !== entry.sha512) {
-    throw new Error(`${fileName} does not match its feed entry.`);
-  }
-  if (await exists(zipPath + '.blockmap')) {
-    throw new Error(`${fileName}.blockmap must not be published; see intel-mac-final-feed.ts.`);
-  }
-}
-
 export async function addIntelMacFinalToFeed(
   feedPath: string,
   intelFeedPath: string,
@@ -178,9 +139,6 @@ export async function addIntelMacFinalToFeed(
   const merged = withIntelMacFinal(feedValue, intelFeedValue, policy);
   const entry = merged.files[merged.files.length - 1];
   if (!entry) throw new Error('latest-mac.yml lost its files.');
-  if (merged.version === policy.version) {
-    await verifyLocalIntelZip(path.dirname(feedPath), entry, intelMacFinalFileName(policy));
-  }
   await writeFile(
     feedPath,
     yaml.dump(merged, { lineWidth: -1, noRefs: true, sortKeys: false }),

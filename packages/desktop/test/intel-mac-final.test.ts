@@ -8,8 +8,8 @@ import {
 
 describe('Intel Mac end of support', () => {
   it('froze Intel Mac support at 2.7.1', () => {
-    // Raising this rebuilds Intel Macs and repoints their update feed. Do it only
-    // to replace their final build on purpose.
+    // Permanent: 2.7.1 shipped as Intel Macs' final build, and later feeds point
+    // at its x64 zip. Raising this would point Intel Macs at a release without one.
     expect(INTEL_MAC_FINAL_VERSION).to.equal('2.7.1');
   });
 
