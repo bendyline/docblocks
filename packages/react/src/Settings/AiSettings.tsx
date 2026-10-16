@@ -96,6 +96,18 @@ function formatDownloadSize(bytes: number | null): string | null {
   return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
 }
 
+/** "Qwen — 15 GB · Recommended", "Gemma — 6.3 GB · 88% match · may run slowly". */
+function downloadOptionLabel(model: AiModelDownloadInfo): string {
+  const size = formatDownloadSize(model.downloadBytes);
+  const rating = model.recommended
+    ? ' · Recommended'
+    : model.score === null
+      ? ''
+      : ` · ${model.score}% match`;
+  const slow = model.fit?.tier === 'tight' ? ` · ${model.fit.label}` : '';
+  return `${model.label}${size ? ` — ${size}` : ''}${rating}${slow}`;
+}
+
 export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [preferences, setPreferences] = useState<AiPreferences | null>(null);
@@ -405,23 +417,22 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                               disabled={installingModel}
                               onChange={(event) => setDownloadModelId(event.currentTarget.value)}
                             >
-                              {availableModels.map((model) => {
-                                const size = formatDownloadSize(model.downloadBytes);
-                                return (
-                                  <option key={model.id} value={model.id}>
-                                    {model.label}
-                                    {size ? ` — ${size}` : ''}
-                                  </option>
-                                );
-                              })}
+                              {availableModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {downloadOptionLabel(model)}
+                                </option>
+                              ))}
                             </select>
                           </label>
                           {selectedDownload && (
-                            <p className="db-settings-hint">
-                              Downloads and runs on this device
+                            <p className="db-settings-hint" title={selectedDownload.fit?.detail}>
+                              {selectedDownload.recommended
+                                ? 'Recommended for this device'
+                                : 'Downloads and runs on this device'}
                               {formatDownloadSize(selectedDownload.downloadBytes)
                                 ? ` · ${formatDownloadSize(selectedDownload.downloadBytes)}`
                                 : ''}
+                              {selectedDownload.fit ? ` · ${selectedDownload.fit.label}` : ''}
                             </p>
                           )}
                           <button

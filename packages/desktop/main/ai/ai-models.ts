@@ -9,7 +9,7 @@
  */
 
 import { AI_WIRE_LIMITS, HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
-import type { AiModelDownloadInfo, AiModelInfo } from '@bendyline/docblocks/host';
+import type { AiModelDownloadInfo, AiModelFit, AiModelInfo } from '@bendyline/docblocks/host';
 
 /** The fields DocBlocks reads from one provider listing entry. */
 export interface ProviderModelEntry {
@@ -23,12 +23,61 @@ export interface ProviderModelEntry {
   readonly unavailable_reason?: string;
   readonly locality?: 'on-device' | 'network' | 'unknown';
   readonly download_bytes?: number;
+  /**
+   * Gezel's rating of a downloadable model against this machine. Unknown
+   * until read: older Gezel builds send neither, and DocBlocks then keeps
+   * the provider's order and offers every entry.
+   */
+  readonly fit?: unknown;
+  readonly recommendation?: unknown;
+}
+
+function bound(text: string, limit: number): string {
+  const clean = text.replaceAll('\0', '').trim();
+  return clean.length <= limit ? clean : `${clean.slice(0, limit - 1)}…`;
 }
 
 function boundLabel(label: string): string {
-  const clean = label.replaceAll('\0', '').trim();
-  const limit = HOST_WIRE_LIMITS.labelCharacters;
-  return clean.length <= limit ? clean : `${clean.slice(0, limit - 1)}…`;
+  return bound(label, HOST_WIRE_LIMITS.labelCharacters);
+}
+
+const RUNNABLE_FIT_TIERS: ReadonlySet<unknown> = new Set(['fits', 'fits-offload', 'tight']);
+
+/**
+ * The provider's fit verdict: `too-big` when this machine cannot hold the
+ * model, null when the provider sent none this side can read.
+ */
+function fitOf(entry: ProviderModelEntry): AiModelFit | 'too-big' | null {
+  const fit = entry.fit;
+  if (typeof fit !== 'object' || fit === null) return null;
+  const { tier, label, detail } = fit as Record<string, unknown>;
+  if (tier === 'too-big') return 'too-big';
+  if (!RUNNABLE_FIT_TIERS.has(tier) || typeof label !== 'string' || typeof detail !== 'string') {
+    return null;
+  }
+  const shortLabel = boundLabel(label);
+  if (!shortLabel) return null;
+  return {
+    tier: tier as AiModelFit['tier'],
+    label: shortLabel,
+    detail: bound(detail, HOST_WIRE_LIMITS.messageCharacters),
+  };
+}
+
+function recommendationOf(entry: ProviderModelEntry): {
+  score: number | null;
+  recommended: boolean;
+} {
+  const value = entry.recommendation;
+  if (typeof value !== 'object' || value === null) return { score: null, recommended: false };
+  const { score, recommended } = value as Record<string, unknown>;
+  return {
+    score:
+      typeof score === 'number' && Number.isInteger(score) && score >= 0 && score <= 100
+        ? score
+        : null,
+    recommended: recommended === true,
+  };
 }
 
 function providerOf(entry: ProviderModelEntry): string | null {
@@ -105,7 +154,12 @@ export function toAiModelList(entries: readonly ProviderModelEntry[]): AiModelIn
   });
 }
 
-/** Keep the bounded, explicitly downloadable part of a provider listing. */
+/**
+ * Keep the bounded, explicitly downloadable part of a provider listing that
+ * can run on this device, best match first. A model the provider rates too
+ * big for this machine is dropped: offering it would be a download that
+ * never loads.
+ */
 export function toAiModelDownloadList(
   entries: readonly ProviderModelEntry[],
 ): AiModelDownloadInfo[] {
@@ -118,6 +172,8 @@ export function toAiModelDownloadList(
     }
     if (!isBoundedString(entry.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) continue;
     if (seen.has(entry.id)) continue;
+    const fit = fitOf(entry);
+    if (fit === 'too-big') continue;
     const label = boundLabel(labelFor(entry));
     if (!label) continue;
     const bytes = entry.download_bytes;
@@ -129,9 +185,14 @@ export function toAiModelDownloadList(
       downloadBytes:
         typeof bytes === 'number' && Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null,
       state: entry.availability,
+      fit,
+      ...recommendationOf(entry),
     });
   }
-  return models;
+  // Stable: unrated entries keep the provider's order.
+  return models.sort(
+    (a, b) => Number(b.recommended) - Number(a.recommended) || (b.score ?? -1) - (a.score ?? -1),
+  );
 }
 
 /** The user's preferred model when the provider still offers it, else the default. */

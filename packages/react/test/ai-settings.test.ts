@@ -546,6 +546,9 @@ describe('AiSettingsControls', () => {
       contextWindow: 32_768,
       downloadBytes: 2 * 1024 ** 3,
       state: 'download-required',
+      fit: null,
+      score: null,
+      recommended: false,
     };
     const installed: AiModelInfo = {
       id: downloadable.id,
@@ -598,6 +601,65 @@ describe('AiSettingsControls', () => {
         'Small Writer (on this device)',
       );
       expect(modelSelect?.value).to.equal('llama-cpp:small-writer');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('offers the recommended download first and rates the rest for this device', async () => {
+    const base = { contextWindow: 32_768, state: 'download-required' as const };
+    const recommended: AiModelDownloadInfo = {
+      ...base,
+      id: 'llama-cpp:qwen',
+      label: 'Qwen',
+      downloadBytes: 15 * 1024 ** 3,
+      fit: { tier: 'fits', label: 'fits in VRAM', detail: 'Runs fully on the GPU.' },
+      score: 100,
+      recommended: true,
+    };
+    const slow: AiModelDownloadInfo = {
+      ...base,
+      id: 'llama-cpp:qwen-q8',
+      label: 'Qwen Q8',
+      downloadBytes: 27 * 1024 ** 3,
+      fit: { tier: 'tight', label: 'may run slowly', detail: 'Pages from system RAM.' },
+      score: 40,
+      recommended: false,
+    };
+    const fake = fakeAi({ ...READY, model: null }, OPTED_IN, false);
+    fake.api.models = async () => ({ ok: true, value: [] });
+    fake.api.availableModels = async () => ({ ok: true, value: [recommended, slow] });
+    fake.api.installModel = () => ({ done: new Promise(() => undefined), cancel: () => undefined });
+
+    const { container, cleanup } = await render(fake.api);
+    try {
+      await act(async () => {
+        Array.from(container.querySelectorAll('button'))
+          .find((button) => button.textContent === 'Add model…')
+          ?.click();
+      });
+      await flush();
+      const select = container.querySelectorAll<HTMLSelectElement>('select')[1];
+      expect(Array.from(select?.options ?? []).map((option) => option.textContent)).to.deep.equal([
+        'Qwen — 15 GB · Recommended',
+        'Qwen Q8 — 27 GB · 40% match · may run slowly',
+      ]);
+      expect(select?.value).to.equal('llama-cpp:qwen');
+      expect(container.textContent).to.contain(
+        'Recommended for this device · 15 GB · fits in VRAM',
+      );
+
+      await act(async () => {
+        select!.value = 'llama-cpp:qwen-q8';
+        select!.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      const hint = Array.from(container.querySelectorAll('p')).find((p) =>
+        p.textContent?.startsWith('Downloads and runs on this device'),
+      );
+      expect(hint?.textContent).to.equal(
+        'Downloads and runs on this device · 27 GB · may run slowly',
+      );
+      expect(hint?.title).to.equal('Pages from system RAM.');
     } finally {
       await cleanup();
     }

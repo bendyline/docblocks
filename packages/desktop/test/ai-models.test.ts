@@ -138,9 +138,57 @@ describe('desktop AI model listing', () => {
         contextWindow: 32_768,
         downloadBytes: 4_000_000_000,
         state: 'download-required',
+        fit: null,
+        score: null,
+        recommended: false,
       },
     ]);
     expect(parseAiModelDownloadInfoList(downloadable)).to.deep.equal(downloadable);
+  });
+
+  it("offers only downloads that fit this device, in the provider's rating order", () => {
+    const download = (id: string, extra: Record<string, unknown> = {}) => ({
+      id: `llama-cpp:${id}`,
+      name: id,
+      owned_by: 'llama-cpp',
+      availability: 'download-required' as const,
+      ...extra,
+    });
+    const fits = { tier: 'fits', label: 'fits in VRAM', detail: 'Runs fully on the GPU.' };
+    const entries = [
+      download('huge', {
+        fit: { tier: 'too-big', label: 'may not fit', detail: 'Too big.' },
+        recommendation: { score: 0, recommended: false },
+      }),
+      download('slow', {
+        fit: { tier: 'tight', label: 'may run slowly', detail: 'Pages from RAM.' },
+        recommendation: { score: 40, recommended: false },
+      }),
+      download('good', { fit: fits, recommendation: { score: 88, recommended: false } }),
+      download('best', { fit: fits, recommendation: { score: 100, recommended: true } }),
+      // A malformed rating is ignored rather than trusted, and sorts after rated ones.
+      download('odd', { fit: { tier: 'huge' }, recommendation: { score: 'high' } }),
+    ];
+    const downloadable = toAiModelDownloadList(entries);
+    expect(downloadable.map((model) => model.label)).to.deep.equal(['best', 'good', 'slow', 'odd']);
+    expect(downloadable[0]).to.include({ score: 100, recommended: true });
+    expect(downloadable[0]?.fit).to.deep.equal(fits);
+    expect(downloadable[3]).to.include({ fit: null, score: null, recommended: false });
+    expect(parseAiModelDownloadInfoList(downloadable)).to.deep.equal(downloadable);
+  });
+
+  it('keeps the provider order when it rates nothing', () => {
+    const entries = ['b', 'a', 'c'].map((id) => ({
+      id: `llama-cpp:${id}`,
+      name: id,
+      owned_by: 'llama-cpp',
+      availability: 'download-required' as const,
+    }));
+    expect(toAiModelDownloadList(entries).map((model) => model.label)).to.deep.equal([
+      'b',
+      'a',
+      'c',
+    ]);
   });
 });
 

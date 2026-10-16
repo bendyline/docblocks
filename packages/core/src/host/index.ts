@@ -28,6 +28,7 @@ export type {
   AiImageRequest,
   AiImageResult,
   AiModelDownloadInfo,
+  AiModelFit,
   AiModelInfo,
   AiModelInstallEvent,
   AiModelInstallHandle,

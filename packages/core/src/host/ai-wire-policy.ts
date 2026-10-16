@@ -9,6 +9,7 @@ import type {
   AiError,
   AiErrorCode,
   AiModelDownloadInfo,
+  AiModelFit,
   AiModelInfo,
   AiModelInstallEvent,
   AiPreferences,
@@ -80,6 +81,7 @@ const ERROR_CODES: ReadonlySet<string> = new Set([
   'unknown',
 ]);
 const MODEL_DOWNLOAD_STATES: ReadonlySet<string> = new Set(['download-required', 'downloading']);
+const MODEL_FIT_TIERS: ReadonlySet<string> = new Set(['fits', 'fits-offload', 'tight']);
 
 type AiChatCompletionUsage = {
   readonly promptTokens: number;
@@ -215,11 +217,34 @@ export function parseAiModelInfoList(value: unknown): AiModelInfo[] | null {
   return models;
 }
 
+function parseAiModelFit(value: unknown): AiModelFit | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['tier', 'label', 'detail'])) return null;
+  if (typeof value.tier !== 'string' || !MODEL_FIT_TIERS.has(value.tier)) return null;
+  if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
+  if (!isBoundedString(value.detail, HOST_WIRE_LIMITS.messageCharacters)) return null;
+  return { tier: value.tier as AiModelFit['tier'], label: value.label, detail: value.detail };
+}
+
 export function parseAiModelDownloadInfo(value: unknown): AiModelDownloadInfo | null {
   if (!isRecord(value)) return null;
-  if (!hasExactKeys(value, ['id', 'label', 'contextWindow', 'downloadBytes', 'state'])) {
+  if (
+    !hasExactKeys(value, [
+      'id',
+      'label',
+      'contextWindow',
+      'downloadBytes',
+      'state',
+      'fit',
+      'score',
+      'recommended',
+    ])
+  ) {
     return null;
   }
+  const fit = value.fit === null ? null : parseAiModelFit(value.fit);
+  if (value.fit !== null && !fit) return null;
+  if (value.score !== null && !isNonNegativeInteger(value.score, 100)) return null;
+  if (typeof value.recommended !== 'boolean') return null;
   if (!isBoundedString(value.id, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
   if (!isBoundedString(value.label, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
   if (
@@ -242,6 +267,9 @@ export function parseAiModelDownloadInfo(value: unknown): AiModelDownloadInfo | 
     contextWindow: value.contextWindow as number | null,
     downloadBytes: value.downloadBytes as number | null,
     state: value.state as AiModelDownloadInfo['state'],
+    fit,
+    score: value.score as number | null,
+    recommended: value.recommended,
   };
 }
 
