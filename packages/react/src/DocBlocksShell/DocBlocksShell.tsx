@@ -102,7 +102,7 @@ import { filterVisibleFileEntries } from '../FileExplorer/entry-visibility.js';
 import { renameDraft, renamedFileName } from '../FileExplorer/file-names.js';
 import { WorkspacePicker } from '../WorkspacePicker/WorkspacePicker.js';
 import { WorkspaceSettingsButton } from '../WorkspacePicker/WorkspaceSettingsButton.js';
-import { SplitViewIcon } from '../icons.js';
+import { BackupIcon, SplitViewIcon } from '../icons.js';
 import { WorkspaceSettingsDialog } from '../WorkspacePicker/WorkspaceSettingsDialog.js';
 import { useWorkspaceSettings } from '../WorkspaceSettings/useWorkspaceSettings.js';
 import { useWorkspaceOutputs } from '../WorkspaceSettings/useWorkspaceOutputs.js';
@@ -155,6 +155,9 @@ const DocumentConflictDialog = lazy(() => import('./DocumentConflictDialog.js'))
 const GitUI = lazy(() => import('../Git/GitUI.js').then((m) => ({ default: m.GitUI })));
 const QuickOpenDialog = lazy(() =>
   import('../QuickOpen/QuickOpenDialog.js').then((m) => ({ default: m.QuickOpenDialog })),
+);
+const KeyboardShortcutsDialog = lazy(() =>
+  import('./KeyboardShortcutsDialog.js').then((m) => ({ default: m.KeyboardShortcutsDialog })),
 );
 const WorkspaceSearchPanel = lazy(() =>
   import('../WorkspaceSearch/WorkspaceSearchPanel.js').then((m) => ({
@@ -333,7 +336,8 @@ import {
 
 const DOCBLOCKS_VIDEO_EXPORT_PALETTE: Partial<VideoExportPalette> = Object.freeze({
   overlay: 'rgba(0, 0, 0, 0.72)',
-  surface: 'var(--db-bg)',
+  // A dialog floats over the chrome, so it takes the raised surface.
+  surface: 'var(--db-bg-raised)',
   control: 'var(--db-bg-subtle)',
   border: 'var(--db-border-strong)',
   text: 'var(--db-text)',
@@ -1521,6 +1525,8 @@ export function DocBlocksShell({
   const findShortcut = useMemo(findShortcutLabel, []);
   const searchShortcut = useMemo(() => shortcutLabel('workspace-search', isApplePlatform()), []);
   const [quickOpenOpen, setQuickOpenOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const openKeyboardShortcuts = useCallback(() => setShortcutsOpen(true), []);
   const [quickOpenFocusRequest, setQuickOpenFocusRequest] = useState(0);
   // The sidebar shows the file tree or workspace search; the search panel
   // mounts on first use and then stays mounted so it keeps its results.
@@ -3711,6 +3717,7 @@ export function DocBlocksShell({
         : {}),
       'new-document': () => void handleNewFile(),
       'new-folder': () => void handleNewFolder(),
+      shortcuts: openKeyboardShortcuts,
       'toggle-sidebar': () => {
         if (singlePane) {
           setMobileShowEditor((showingEditor) => !showingEditor);
@@ -3754,6 +3761,7 @@ export function DocBlocksShell({
       saveActiveDocument,
       handleNewFile,
       handleNewFolder,
+      openKeyboardShortcuts,
       singlePane,
       mobileShowEditor,
       sidebarPreference,
@@ -4977,7 +4985,7 @@ export function DocBlocksShell({
       await acknowledge({
         title: 'Persistent storage unavailable',
         message:
-          'This browser does not support persistent storage requests. Please back up browser docs frequently.',
+          'This browser does not support persistent storage requests. Use Back up all workspaces regularly.',
       });
       return;
     }
@@ -4997,20 +5005,20 @@ export function DocBlocksShell({
         await acknowledge({
           title: 'Storage will be kept for longer',
           message:
-            'This browser will try to keep DocBlocks data for longer. Please still back up browser docs frequently.',
+            'This browser will try to keep DocBlocks data for longer. Keep using Back up all workspaces regularly.',
         });
       } else {
         await acknowledge({
           title: 'Storage request declined',
           message:
-            'The browser did not grant permanent storage for DocBlocks. Please try again in a day or two. Meanwhile, please back up browser documents frequently.',
+            'The browser did not grant permanent storage for DocBlocks. Please try again in a day or two. Meanwhile, use Back up all workspaces regularly.',
         });
       }
     } catch {
       await acknowledge({
         title: 'Storage request failed',
         message:
-          'DocBlocks could not request persistent browser storage. Please back up browser docs frequently.',
+          'DocBlocks could not request persistent browser storage. Use Back up all workspaces regularly.',
       });
     }
   }, [acknowledge, showToast]);
@@ -5191,6 +5199,11 @@ export function DocBlocksShell({
             />
           </Suspense>
         )}
+        {shortcutsOpen && (
+          <Suspense fallback={null}>
+            <KeyboardShortcutsDialog onClose={() => setShortcutsOpen(false)} />
+          </Suspense>
+        )}
         {newDocumentDialogOpen && (
           <NewDocumentDialog
             initialFormat={defaultNewFileFormat}
@@ -5252,7 +5265,7 @@ export function DocBlocksShell({
             </span>
             <div className="db-storage-full-banner-actions">
               <button type="button" onClick={() => void handleDownloadAllWorkspaces()}>
-                Download all workspaces
+                Back up all workspaces
               </button>
               <button type="button" onClick={() => setStorageFull(false)}>
                 Dismiss
@@ -5309,6 +5322,8 @@ export function DocBlocksShell({
                   activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                 }
                 onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                // A phone layout has no keyboard to describe.
+                onShowKeyboardShortcuts={singlePane ? undefined : openKeyboardShortcuts}
                 onKeepBrowserData={
                   showBrowserStorageWarning && !browserStoragePersistent
                     ? handleKeepBrowserData
@@ -5470,16 +5485,19 @@ export function DocBlocksShell({
               </a>
               {showBrowserStorageWarning && (
                 <>
-                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                    &bull;
-                  </span>
+                  {/* The one backup action in view while the browser holds the
+                      documents. It shares the app menu's name, and is a real
+                      button at the footer's end rather than one more 11px
+                      link in the row. */}
                   <button
                     type="button"
                     className="db-shell-sidebar-footer-action"
                     onClick={() => void handleDownloadAllWorkspaces()}
-                    title="Browser documents can be removed automatically. Download all workspaces now."
+                    aria-label="Back up all workspaces"
+                    title="Browsers can clear site data. Download a backup of every workspace."
                   >
-                    Back up browser docs
+                    <BackupIcon />
+                    Back up
                   </button>
                 </>
               )}
@@ -5584,6 +5602,10 @@ export function DocBlocksShell({
                             onChange={handleEditorChange}
                             onLinkClick={handleEditorLinkClick}
                             colorScheme={resolvedTheme}
+                            // Documents that name no theme preview -- and so
+                            // export -- in the workspace's default theme.
+                            defaultThemeId={workspaceDefaultThemeId}
+                            defaultThemeLabel="Workspace default"
                             writeCanvasSettings={editorWriteCanvasSettings}
                             height="100%"
                             placeholder={editorPlaceholder}

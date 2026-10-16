@@ -2,6 +2,8 @@
  * Export option types and localStorage persistence for quick-export.
  */
 
+import { getThemeSummaries } from '@bendyline/squisq/schemas';
+
 export type ExportFormat = 'docx' | 'pdf' | 'pptx' | 'epub' | 'md' | 'html';
 
 /** Visual style for HTML export. */
@@ -82,11 +84,11 @@ export const DEFAULT_OPTIONS: ExportOptions = {
 };
 
 /**
- * Options that populate the export dialog. Layered: built-in defaults → the
- * user's last-chosen options → the workspace default theme → the document's
- * own theme (wins). "Set a theme, then export" therefore pre-selects that
- * theme instead of whatever was picked for an unrelated previous document,
- * and documents without a theme export in their folder's default.
+ * Options that populate the export dialog: the user's last-chosen options
+ * (else the built-in defaults) for format, page size and the rest, but always
+ * the theme the editor previews this document in -- its own theme, else the
+ * workspace default, else Standard. The last export's theme belonged to some
+ * other document; carrying it over made the export differ from the preview.
  */
 export function resolveExportDialogInitial(
   lastOptions: ExportOptions | null,
@@ -94,8 +96,25 @@ export function resolveExportDialogInitial(
   workspaceThemeId?: string | null,
 ): ExportOptions {
   const base = lastOptions ?? DEFAULT_OPTIONS;
-  const themeId = docThemeId || workspaceThemeId;
-  return themeId ? { ...base, themeId } : base;
+  return { ...base, themeId: docThemeId || workspaceThemeId || DEFAULT_OPTIONS.themeId };
+}
+
+/** A theme as the export dialog's Theme select lists it. */
+export interface ExportThemeSummary {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+/**
+ * The export dialog's theme choices: the document's own themes first (the one
+ * it previews in may be among them), then every built-in they do not shadow.
+ */
+export function exportThemeChoices(
+  documentThemes: readonly ExportThemeSummary[] = [],
+): ExportThemeSummary[] {
+  const ids = new Set(documentThemes.map((theme) => theme.id));
+  return [...documentThemes, ...getThemeSummaries().filter((theme) => !ids.has(theme.id))];
 }
 
 export function loadLastExportOptions(): ExportOptions | null {

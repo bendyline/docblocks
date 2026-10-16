@@ -3,7 +3,7 @@
 export type ThemePreference = 'auto' | 'light' | 'dark';
 
 export const ACCENT_COLORS = [
-  'brown',
+  'rust',
   'green',
   'blue',
   'purple',
@@ -70,14 +70,25 @@ export function saveThemePreference(value: ThemePreference): void {
   }
 }
 
+export const DEFAULT_ACCENT_COLOR: AccentColor = 'rust';
+
+/**
+ * Accent names that were renamed, mapped to what they are now. The default
+ * palette was called Brown until it became Rust; a choice saved under the old
+ * name keeps meaning the same palette.
+ */
+const LEGACY_ACCENT_COLORS: ReadonlyMap<string, AccentColor> = new Map([['brown', 'rust']]);
+
 export function loadAccentColor(): AccentColor {
   try {
     const raw = localStorage.getItem(ACCENT_STORAGE_KEY);
+    const renamed = raw === null ? undefined : LEGACY_ACCENT_COLORS.get(raw);
+    if (renamed) return renamed;
     if (ACCENT_COLORS.some((color) => color === raw)) return raw as AccentColor;
   } catch {
     // ignore unavailable storage
   }
-  return 'brown';
+  return DEFAULT_ACCENT_COLOR;
 }
 
 export function saveAccentColor(value: AccentColor): void {

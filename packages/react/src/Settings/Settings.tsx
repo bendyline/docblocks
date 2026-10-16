@@ -38,7 +38,7 @@ export type {
 export type { ProofingPreferences } from '../preferences/proofing.js';
 
 const ACCENT_LABELS: Record<AccentColor, string> = {
-  brown: 'Brown',
+  rust: 'Rust',
   green: 'Green',
   blue: 'Blue',
   purple: 'Purple',

@@ -54,7 +54,7 @@ export interface DocumentConflictDetailsMessage {
 }
 
 export const DOCBLOCKS_ACCENT_COLORS = [
-  'brown',
+  'rust',
   'green',
   'blue',
   'purple',
@@ -859,6 +859,16 @@ function parseVscodeProofingSettings(value: unknown): VscodeProofingSettings | n
 
 export function isDocBlocksAccentColor(value: unknown): value is DocBlocksAccentColor {
   return DOCBLOCKS_ACCENT_COLORS.some((color) => color === value);
+}
+
+/**
+ * Read a stored accent setting, accepting names that were since renamed: the
+ * default palette was `brown` before it became `rust`. Returns null for
+ * anything else, so callers keep choosing their own fallback.
+ */
+export function normalizeDocBlocksAccentColor(value: unknown): DocBlocksAccentColor | null {
+  if (value === 'brown') return 'rust';
+  return isDocBlocksAccentColor(value) ? value : null;
 }
 
 export function isDocBlocksWriteCanvasTextSize(value: unknown): value is number {

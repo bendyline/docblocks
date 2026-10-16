@@ -192,4 +192,71 @@ describe('AppMenu settings', () => {
       container.remove();
     }
   });
+
+  it('groups the safety actions and offers Help: shortcuts and documentation', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    let backups = 0;
+    let sheets = 0;
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(AppMenu, {
+            onDownloadAllWorkspaces: () => {
+              backups += 1;
+            },
+            onKeepBrowserData: async () => undefined,
+            onShowKeyboardShortcuts: () => {
+              sheets += 1;
+            },
+          }),
+        );
+      });
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+      });
+
+      const menu = container.querySelector('.db-app-menu-dropdown');
+      const entries = [...(menu?.children ?? [])].map((child) =>
+        child.classList.contains('db-app-menu-divider')
+          ? '---'
+          : (child.firstChild?.textContent ?? '').trim(),
+      );
+      expect(entries).to.deep.equal([
+        'Settings',
+        '---',
+        'Back up all workspaces',
+        'Protect data from browser cleanup',
+        '---',
+        'Keyboard shortcuts',
+        'Documentation',
+        'About',
+      ]);
+
+      const docs = menu?.querySelector<HTMLAnchorElement>('a[role="menuitem"]');
+      expect(docs?.getAttribute('href')).to.equal('https://docblocks.com/docs/');
+      expect(docs?.getAttribute('target')).to.equal('_blank');
+
+      const shortcuts = [...(menu?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find(
+        (button) => button.getAttribute('aria-keyshortcuts') === 'F1',
+      );
+      await act(async () => shortcuts?.click());
+      expect(sheets).to.equal(1);
+      expect(container.querySelector('.db-app-menu-dropdown')).to.equal(null);
+
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+      });
+      const backup = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent?.trim() === 'Back up all workspaces',
+      );
+      await act(async () => backup?.click());
+      expect(backups).to.equal(1);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
 });

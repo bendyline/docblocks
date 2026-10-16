@@ -61,7 +61,7 @@ function ogCard() {
       color:#231f18;font-family:'Hanken Grotesk',sans-serif;position:relative}
     img{position:absolute;left:72px;top:62px;height:298px}
     h1{position:absolute;left:76px;top:388px;margin:0;font-size:55px;font-weight:800;letter-spacing:.01em;line-height:1}
-    p{position:absolute;left:76px;top:470px;margin:0;font-size:29px;font-weight:500;line-height:1.5;color:#2a2419}
+    p{position:absolute;left:76px;top:470px;margin:0;font-size:29px;font-weight:500;line-height:1.5;color:#231f18}
   </style>
   <img src="${svg('../../public/_res/siteimages/docblocks.svg')}" alt="">
   <h1>YOUR MARKDOWN CAN DO ANYTHING</h1>

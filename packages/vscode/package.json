@@ -36,10 +36,10 @@
         },
         "docblocks.accentColor": {
           "type": "string",
-          "default": "brown",
+          "default": "rust",
           "scope": "window",
           "enum": [
-            "brown",
+            "rust",
             "green",
             "blue",
             "purple",
@@ -48,7 +48,7 @@
             "gray"
           ],
           "enumDescriptions": [
-            "Brown accent",
+            "Rust accent",
             "Green accent",
             "Blue accent",
             "Purple accent",
@@ -200,10 +200,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.11.20",
-    "@bendyline/squisq-editor-react": "2.11.27",
-    "@bendyline/squisq-formats": "2.6.21",
-    "@bendyline/squisq-react": "2.11.25",
+    "@bendyline/squisq": "2.12.0",
+    "@bendyline/squisq-editor-react": "2.12.1",
+    "@bendyline/squisq-formats": "2.7.1",
+    "@bendyline/squisq-react": "2.12.1",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"

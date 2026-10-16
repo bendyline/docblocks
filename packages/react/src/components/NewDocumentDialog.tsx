@@ -9,7 +9,11 @@
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from './Dialog.js';
-import { newFileName, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
+import {
+  newFileFormatHint,
+  newFileName,
+  type NewFileFormat,
+} from '../FileExplorer/new-file-formats.js';
 import { NewFileFormatOptions } from '../FileExplorer/NewFileFormatOptions.js';
 
 export interface NewDocumentChoice {
@@ -34,6 +38,8 @@ export function NewDocumentDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const nameId = useId();
   const formatId = useId();
+  const hintId = useId();
+  const hint = newFileFormatHint(format);
   const filename = newFileName(name, format);
   const cancel = useCallback(() => onSettle(null), [onSettle]);
   const submit = useCallback(() => {
@@ -93,11 +99,17 @@ export function NewDocumentDialog({
         <select
           id={formatId}
           className="db-git-form-input"
+          aria-describedby={hint ? hintId : undefined}
           value={format}
           onChange={(e) => setFormat(e.target.value as NewFileFormat)}
         >
           <NewFileFormatOptions />
         </select>
+        {hint && (
+          <p id={hintId} className="db-new-document-hint">
+            {hint}
+          </p>
+        )}
       </div>
     </Dialog>
   );

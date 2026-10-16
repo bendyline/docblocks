@@ -29,6 +29,24 @@ export function newFileName(name: string, format: NewFileFormat): string | null 
   return stem ? `${stem}${NEW_FILE_EXTENSIONS[format]}` : null;
 }
 
+const SAVED_AS: Record<Exclude<NewFileFormat, 'markdown'>, string> = {
+  docx: 'Word document',
+  xlsx: 'Excel workbook',
+  pdf: 'PDF',
+  'web-interactive': 'web page',
+  'web-static': 'web page',
+};
+
+/**
+ * The note under a type picker: every type but Markdown is still written in
+ * Markdown, and DocBlocks regenerates the visible file from it on each save.
+ * The type name alone suggested an editor for that format. Null for Markdown.
+ */
+export function newFileFormatHint(format: NewFileFormat): string | null {
+  if (format === 'markdown') return null;
+  return `You write in Markdown; each save updates the ${SAVED_AS[format]}.`;
+}
+
 /** The HTML output style a Web page format asks for; undefined for the rest. */
 export function newFileHtmlOutput(format: NewFileFormat): OutsideInHtmlOutput | undefined {
   if (format === 'web-static') return 'static';

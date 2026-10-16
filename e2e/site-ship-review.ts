@@ -305,7 +305,7 @@ try {
       'Custom layouts',
       'View options',
       'Document settings',
-      'Toggle Files panel',
+      'Attachments',
       'Choose Use mode',
     ]) {
       await step(`control-${name.replaceAll(' ', '-')}`, page, async () => {
@@ -316,7 +316,7 @@ try {
         await control.click();
         const detail = await capture(page, `control-${name.replaceAll(' ', '-')}`);
         await dismiss(page);
-        if (name === 'Toggle Files panel') await control.click();
+        if (name === 'Attachments') await control.click();
         return detail;
       });
     }
@@ -404,7 +404,7 @@ try {
     await step('workspace-backup', page, async () => {
       await page.locator('.db-ws-settings-btn').click();
       const pending = page.waitForEvent('download');
-      await page.getByRole('menuitem', { name: 'Download workspace', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Back up this workspace', exact: true }).click();
       const download = await pending;
       await download.saveAs(path.join(output, 'downloads', download.suggestedFilename()));
       return { name: download.suggestedFilename(), failure: await download.failure() };

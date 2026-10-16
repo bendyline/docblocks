@@ -3,7 +3,7 @@ import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import {
   DEFAULT_VSCODE_PROOFING_SETTINGS,
   DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS,
-  isDocBlocksAccentColor,
+  normalizeDocBlocksAccentColor,
   isDocBlocksWriteCanvasFontScheme,
   isDocBlocksWriteCanvasLineSpacing,
   isDocBlocksWriteCanvasTextSize,
@@ -1116,7 +1116,7 @@ function readVscodeEditorSettings(uri: vscode.Uri): VscodeEditorSettings {
   const grammar = configuration.get<unknown>('inlineGrammarChecking');
   return {
     autoSave: typeof autoSave === 'boolean' ? autoSave : false,
-    accentColor: isDocBlocksAccentColor(accentColor) ? accentColor : 'brown',
+    accentColor: normalizeDocBlocksAccentColor(accentColor) ?? 'rust',
     writeCanvasSettings: {
       textSize: isDocBlocksWriteCanvasTextSize(textSize)
         ? textSize

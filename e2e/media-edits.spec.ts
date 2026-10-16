@@ -54,13 +54,13 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await expect(row).toBeVisible({ timeout: 10_000 });
   await row.click();
 
-  // Upload the recording through the Files panel: it is stored in
-  // media-take_files/ and inserted at the cursor as a playable <audio>
-  // element (the form a recorder inserts).
+  // Upload the recording through the Attachments panel: it is stored in
+  // media-take_files/ and inserted at the cursor as an <audio> element (the
+  // form a recorder inserts). In a document with no body text yet, Squisq
+  // places leading media in the document tray, collapsed to a pill.
   const content = page.locator('.squisq-editor-content [contenteditable="true"]').first();
   await expect(content).toBeVisible({ timeout: 30_000 });
-  // Squisq renamed this toggle "Attachments"; accept either until the bump lands.
-  await page.getByRole('button', { name: /^(Toggle Files panel|Attachments)/ }).click();
+  await page.getByRole('button', { name: /^Attachments/ }).click();
   await page
     .locator('.squisq-media-bin input[type="file"]')
     .setInputFiles({ name: 'take.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes()) });
@@ -68,7 +68,13 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
     timeout: 20_000,
   });
 
-  const editButton = page.getByRole('button', { name: 'Edit audio' });
+  const tray = page.getByRole('region', { name: 'Document tray', exact: true });
+  const pill = tray.getByRole('button', { name: 'Audio: take.wav', exact: true });
+  await expect(pill).toHaveAttribute('aria-expanded', 'false', { timeout: 30_000 });
+  await pill.click();
+  await expect(pill).toHaveAttribute('aria-expanded', 'true');
+
+  const editButton = tray.getByRole('button', { name: 'Edit audio' });
   await expect(editButton).toBeVisible({ timeout: 30_000 });
   // ProseMirror merges edits less than 500 ms apart into one undo step; a
   // person cannot open the panel and apply that fast, so keep the insert and

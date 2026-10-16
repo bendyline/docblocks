@@ -4,14 +4,15 @@
 
 /* ── Theme Tokens ────────────────────────────────────────────── */
 
-/* DocBlocks palette — paper, ink, and one signal color.
+/* DocBlocks palette — paper, ink, and rust.
    The page is the one white sheet. Every chrome pane around it (sidebar,
    toolbar, status bar) shares the cream `--db-bg-subtle`, so nothing but
-   the document competes for attention. Ink is the accent: primary buttons
-   and active controls go near-black, like the marketing site's buttons,
-   and a selected row is a quiet tint marked by a 2px `--db-selected-rule`
-   instead of a filled slab. Rust (`--db-signal`) is kept for the focus
-   ring alone. Dark mode mirrors it: espresso panes, a light-ink accent.
+   the document competes for attention. Text is ink. The default accent
+   palette, Rust, paints primary buttons, active tabs and toggles in rust,
+   and a selected row is a quiet rust tint marked by a 2px
+   `--db-selected-rule` instead of a filled slab. The other accent palettes
+   (Green, Blue, …) follow the same model in their own hues. Dark mode
+   mirrors it: espresso panes, light ink, a lighter rust.
    Derived shades (`--db-accent-soft-*`, `--db-accent-tint-strong`,
    `--db-accent-deep`) are defined alongside so every place that needs a
    tinted background or a readable-on-tint text color pulls from the same
@@ -40,42 +41,42 @@
      DOCUMENT typography is never touched — a theme's fonts are content the
      author chose, not chrome. */
   --squisq-ux-font: var(--db-ui-font);
-  --db-bg: #ffffff;
+  --db-bg: #fffdf9;
   --db-bg-subtle: #f3eede;
   --db-bg-hover: #e9e2cb;
-  --db-bg-selected: #ddd4ba;
-  --db-bg-selected-hover: #d4caad;
-  --db-border: #d6cdb0;
-  --db-border-strong: #b5a985;
-  --db-text: #2a2419;
+  --db-bg-selected: #e5ccb6;
+  --db-bg-selected-hover: #e0c0a8;
+  --db-border: #ddd5c3;
+  --db-border-strong: #c7bca3;
+  --db-text: #231f18;
   --db-text-secondary: #3d3528;
-  --db-text-muted: #6b614a;
+  --db-text-muted: #6b6252;
   --db-text-placeholder: #766c54;
-  --db-accent: #2a2419;
-  --db-accent-hover: #15120d;
-  --db-text-on-accent: #f8f4ea;
-  --db-text-on-selected: #2a2419;
+  --db-accent: #a0461f;
+  --db-accent-hover: #8a3a1a;
+  --db-text-on-accent: #fffdf9;
+  --db-text-on-selected: #231f18;
   /* The 2px mark down the leading edge of a selected row. Selection is a
      tint, so this is what carries the state at a glance. */
-  --db-selected-rule: #2a2419;
-  /* Keyboard focus ring, in the signal rust. The accent is ink, so an
-     accent ring would read as one more border; rust is the color the chrome
-     uses for nothing else, so the ring is never mistaken for state. 4.4:1 on
-     the cream panes and 4.9:1 on white, clear of the 3:1 non-text minimum,
-     and it holds on the selected-row tint too. */
-  --db-signal: #b4532a;
-  --db-focus: #b4532a;
-  --db-accent-soft-08: rgba(42, 36, 25, 0.08);
-  --db-accent-soft-10: rgba(42, 36, 25, 0.1);
-  --db-accent-soft-12: rgba(42, 36, 25, 0.12);
-  --db-accent-soft-15: rgba(42, 36, 25, 0.15);
-  --db-accent-soft-25: rgba(42, 36, 25, 0.25);
-  --db-accent-tint-strong: #d8d0b5;
-  --db-accent-deep: #3d3220;
-  --db-editor-canvas: #ffffff;
+  --db-selected-rule: #a0461f;
+  /* Keyboard focus ring, in ink. The accent is rust and paints buttons and
+     the selected-row rule, so a rust ring would vanish against them; ink
+     holds at 14:1 on the cream panes. */
+  --db-focus: #231f18;
+  --db-accent-soft-08: rgba(160, 70, 31, 0.08);
+  --db-accent-soft-10: rgba(160, 70, 31, 0.1);
+  --db-accent-soft-12: rgba(160, 70, 31, 0.12);
+  --db-accent-soft-15: rgba(160, 70, 31, 0.15);
+  --db-accent-soft-25: rgba(160, 70, 31, 0.25);
+  --db-accent-tint-strong: #e8d2be;
+  --db-accent-deep: #7a3418;
+  --db-editor-canvas: #fffdf9;
+  /* Surfaces that float over the chrome: menus, dialogs, popovers. In light
+     mode they are the same warm-white sheet as the page. */
+  --db-bg-raised: var(--db-bg);
   --db-badge-bg: #f3eede;
   --db-badge-text: #3d3220;
-  --db-badge-text-hover: #2a2419;
+  --db-badge-text-hover: #231f18;
   /* The editor "desk": every chrome surface the page floats on — the
      outline pane, the inline-preview gutter, the Monaco line-number
      margin, and (via `--squisq-desk-bg`) the field behind the WYSIWYG
@@ -194,28 +195,31 @@
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
   --db-bg-hover: #3a3528;
-  --db-bg-selected: #3a3528;
-  --db-bg-selected-hover: #4d4636;
-  --db-border: #4d4636;
-  --db-border-strong: #6b6448;
-  --db-text: #e8e2d0;
+  --db-bg-selected: #433021;
+  --db-bg-selected-hover: #513625;
+  --db-border: #342e27;
+  --db-border-strong: #4a4238;
+  --db-text: #ece6d8;
   --db-text-secondary: #d4ccb0;
-  --db-text-muted: #a89a7c;
+  --db-text-muted: #a39885;
   --db-text-placeholder: #6b614a;
-  --db-accent: #e8e2d0;
-  --db-accent-hover: #fff8e8;
+  --db-accent: #e0835a;
+  --db-accent-hover: #eb9a76;
   --db-text-on-accent: #1a1812;
-  --db-text-on-selected: #e8e2d0;
-  --db-selected-rule: #e8e2d0;
-  --db-signal: #d9774a;
-  --db-focus: #d9774a;
-  --db-accent-soft-08: rgba(232, 226, 208, 0.08);
-  --db-accent-soft-10: rgba(232, 226, 208, 0.1);
-  --db-accent-soft-12: rgba(232, 226, 208, 0.12);
-  --db-accent-soft-15: rgba(232, 226, 208, 0.18);
-  --db-accent-soft-25: rgba(232, 226, 208, 0.28);
-  --db-accent-tint-strong: #3a382e;
-  --db-accent-deep: #e6dcc0;
+  --db-text-on-selected: #ece6d8;
+  --db-selected-rule: #e0835a;
+  --db-focus: #ece6d8;
+  /* Dark mode reverses that: a floating surface must sit LIGHTER than the
+     panes it opens over, or a menu reads as a hole in the chrome. Derived
+     from the palette's own steps, so every accent palette gets one. */
+  --db-bg-raised: color-mix(in srgb, var(--db-bg-subtle), var(--db-bg-hover) 40%);
+  --db-accent-soft-08: rgba(224, 131, 90, 0.08);
+  --db-accent-soft-10: rgba(224, 131, 90, 0.1);
+  --db-accent-soft-12: rgba(224, 131, 90, 0.12);
+  --db-accent-soft-15: rgba(224, 131, 90, 0.18);
+  --db-accent-soft-25: rgba(224, 131, 90, 0.28);
+  --db-accent-tint-strong: #533725;
+  --db-accent-deep: #f0c2aa;
   --db-editor-canvas: #16110b;
   --db-badge-bg: #3a2f1f;
   --db-badge-text: #fff4d6;
@@ -245,27 +249,30 @@
     --db-bg: #1a1812;
     --db-bg-subtle: #262219;
     --db-bg-hover: #3a3528;
-    --db-bg-selected: #3a3528;
-    --db-bg-selected-hover: #4d4636;
-    --db-border: #4d4636;
-    --db-border-strong: #6b6448;
-    --db-text: #e8e2d0;
+    --db-bg-selected: #433021;
+    --db-bg-selected-hover: #513625;
+    --db-border: #342e27;
+    --db-border-strong: #4a4238;
+    --db-text: #ece6d8;
     --db-text-secondary: #d4ccb0;
-    --db-text-muted: #a89a7c;
+    --db-text-muted: #a39885;
     --db-text-placeholder: #6b614a;
-    --db-accent: #e8e2d0;
-    --db-accent-hover: #fff8e8;
+    --db-accent: #e0835a;
+    --db-accent-hover: #eb9a76;
     --db-text-on-accent: #1a1812;
-    --db-text-on-selected: #e8e2d0;
-    --db-selected-rule: #e8e2d0;
-    --db-signal: #d9774a;
-    --db-focus: #d9774a;
-    --db-accent-soft-08: rgba(232, 226, 208, 0.08);
-    --db-accent-soft-12: rgba(232, 226, 208, 0.12);
-    --db-accent-soft-15: rgba(232, 226, 208, 0.18);
-    --db-accent-soft-25: rgba(232, 226, 208, 0.28);
-    --db-accent-tint-strong: #3a382e;
-    --db-accent-deep: #e6dcc0;
+    --db-text-on-selected: #ece6d8;
+    --db-selected-rule: #e0835a;
+    --db-focus: #ece6d8;
+    /* Dark mode reverses that: a floating surface must sit LIGHTER than the
+       panes it opens over, or a menu reads as a hole in the chrome. Derived
+       from the palette's own steps, so every accent palette gets one. */
+    --db-bg-raised: color-mix(in srgb, var(--db-bg-subtle), var(--db-bg-hover) 40%);
+    --db-accent-soft-08: rgba(224, 131, 90, 0.08);
+    --db-accent-soft-12: rgba(224, 131, 90, 0.12);
+    --db-accent-soft-15: rgba(224, 131, 90, 0.18);
+    --db-accent-soft-25: rgba(224, 131, 90, 0.28);
+    --db-accent-tint-strong: #533725;
+    --db-accent-deep: #f0c2aa;
     --db-input-border: #c8b48f;
     --db-danger: #f87171;
     --db-danger-bg: #1c1917;
@@ -473,7 +480,7 @@
   right: 4px;
   left: 4px;
   margin: 0;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
 }
 
 .db-explorer-btn {
@@ -723,6 +730,14 @@
   opacity: 0.65;
 }
 
+/* What a non-Markdown type means: written in Markdown, saved as that format. */
+.db-new-item-hint {
+  margin: 4px 8px 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 /* ── Tree ────────────────────────────────────────────────────── */
 
 .db-tree {
@@ -968,7 +983,7 @@
 .db-tree-context {
   position: fixed;
   z-index: 1000;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -1071,7 +1086,7 @@
   z-index: 60;
   min-width: calc(100% - 16px);
   max-width: min(320px, 90vw);
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -1350,7 +1365,7 @@
   left: 0;
   z-index: 70;
   min-width: 200px;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -1372,6 +1387,18 @@
 
 .db-app-menu-item:hover {
   background: var(--db-bg-hover);
+}
+
+.db-app-menu-item--with-shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.db-app-menu-shortcut {
+  color: var(--db-text-muted);
+  font-size: 12px;
 }
 
 .db-app-menu-item--danger {
@@ -1424,7 +1451,7 @@
   right: 0;
   z-index: 100;
   min-width: 200px;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 6px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -1797,8 +1824,7 @@ body.db-resizing-sidebar * {
   text-decoration: underline;
 }
 
-.db-shell-sidebar-footer-separator,
-.db-shell-sidebar-footer-action {
+.db-shell-sidebar-footer-separator {
   color: var(--db-text-muted);
 }
 
@@ -1807,20 +1833,37 @@ body.db-resizing-sidebar * {
   opacity: 0.65;
 }
 
+/* The backup action is the footer's one control that protects work, so it is a
+   bordered button with a 22px target (24px including the spacing around it)
+   rather than another 11px text link. */
 .db-shell-sidebar-footer-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  min-height: 22px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 999px;
+  background: var(--db-bg);
+  color: var(--db-text-secondary);
   font: inherit;
-  line-height: inherit;
-  text-decoration: underline;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
 }
 
 .db-shell-sidebar-footer-action:hover {
-  color: var(--db-text-secondary);
+  border-color: var(--db-accent);
+  color: var(--db-text);
+}
+
+.db-shell-sidebar-footer-action:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 1px;
 }
 
 .db-shell-empty {
@@ -1974,7 +2017,7 @@ body.db-resizing-sidebar * {
   position: static;
 }
 
-.db-shell--mobile .squisq-editor-shell .squisq-toolbar-overflow-menu {
+html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   right: auto !important;
   left: max(4px, env(safe-area-inset-left)) !important;
   max-width: calc(100vw - 8px);
@@ -2220,7 +2263,7 @@ body.db-resizing-sidebar * {
 
 .db-dialog {
   box-sizing: border-box;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 8px;
   box-shadow: 0 8px 32px var(--db-shadow);
@@ -2669,7 +2712,7 @@ body.db-resizing-sidebar * {
   border: 1px solid var(--db-border-strong);
   border-radius: 6px;
   outline: none;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   color: var(--db-text);
   box-shadow: 0 10px 28px var(--db-shadow);
 }
@@ -2941,8 +2984,8 @@ body.db-resizing-sidebar * {
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.18);
 }
 
-.db-settings-accent-swatch--brown {
-  background: #7d6948;
+.db-settings-accent-swatch--rust {
+  background: #a0461f;
 }
 
 .db-settings-accent-swatch--green {
@@ -3170,7 +3213,7 @@ body.db-resizing-sidebar * {
   margin-top: 4px;
   z-index: 70;
   min-width: 200px;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 4px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -3635,6 +3678,7 @@ body.db-resizing-sidebar * {
   --squisq-row-hover: var(--db-bg-hover);
   --squisq-hover-bg: var(--db-bg-hover);
   --squisq-panel-bg: var(--db-bg);
+  --squisq-surface-overlay: var(--db-bg-raised);
 
   /* The desk the editing page floats on — the WYSIWYG backing, the block
      card and its preview panel, the outline pane, the Monaco margin. */
@@ -3803,13 +3847,13 @@ body.db-resizing-sidebar * {
   --squisq-preview-accent: var(--db-border-strong);
   --squisq-preview-accent-muted: var(--db-border);
   --squisq-preview-gutter-bg: var(--db-gutter-bg);
-  --squisq-preview-card-bg: #ffffff;
+  --squisq-preview-card-bg: var(--db-bg);
   --squisq-preview-card-border: var(--db-border);
   --squisq-preview-card-shadow: 0 1px 2px rgba(40, 30, 15, 0.08);
   --squisq-preview-card-title: var(--db-accent-deep);
   --squisq-preview-card-svg-bg: var(--db-bg-subtle);
   --squisq-preview-dot-halo: var(--db-gutter-bg);
-  --squisq-preview-empty-bg: #ffffff;
+  --squisq-preview-empty-bg: var(--db-bg);
   --squisq-preview-empty-border: var(--db-border);
   --squisq-preview-empty-text: var(--db-accent-deep);
 }
@@ -4003,7 +4047,7 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-context-menu {
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow: 0 12px 28px var(--db-shadow);
 }
@@ -4135,38 +4179,15 @@ body.db-resizing-sidebar * {
   border-color: var(--db-border-strong);
 }
 
-/* ── Tooltips (portal): sans-serif + thematic chip ───────────── */
-/* Tooltips render via portal into document.body, OUTSIDE `.db-shell`
-   — so the `--db-accent-*` variables (scoped to `.db-shell`) don't
-   cascade into them. We reach the portaled element with
-   `html:has(.db-shell)` and emit explicit colors per theme; using
-   `var(--db-accent-…)` here drops to the squisq fallback (dark slate
-   bg + near-white text) because the vars never resolve. */
+/* ── Tooltips (portal): sans-serif + ink chip ───────────────── */
+/* Tooltips portal into document.body, outside `.db-shell`; the palette is
+   hoisted to the root, so the tokens resolve there. The chip inverts the
+   chrome: ink on cream in light mode, light ink on espresso in dark. */
 html:has(.db-shell) .squisq-tooltip {
   font-family: var(--db-ui-font);
   box-shadow: 0 2px 8px rgba(15, 30, 20, 0.35);
-  /* Default (light mode + system-light): dark espresso chip, cream
-     text — an inverted floating chip against the cream UI. */
-  background: #3d3220;
-  color: #f3eede;
-}
-
-html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
-  /* Dark mode: cream chip, dark text — an inverted floating chip
-     against the espresso UI. Contrast ratio ~12:1 between
-     `#e6dcc0` and `#1f1a10`. */
-  background: #e6dcc0;
-  color: #1f1a10;
-}
-
-@media (prefers-color-scheme: dark) {
-  /* Shell defaults to system theme when `data-theme` is unset —
-     mirror the dark-mode override so the tooltip stays readable
-     without an explicit user choice. */
-  html:has(.db-shell:not([data-theme='light'])) .squisq-tooltip {
-    background: #e6dcc0;
-    color: #1f1a10;
-  }
+  background: var(--db-text);
+  color: var(--db-bg-subtle);
 }
 
 /* ── Template picker accents (dark): indigo → thematic green ─── */
@@ -4186,59 +4207,60 @@ html:has(.db-shell[data-theme='dark']) .squisq-tooltip {
 
 /* The template gallery and file-tree context menu render into document.body
    via createPortal, so they live outside `.db-shell`. Hoist the same
-   brown/canvas tokens onto the html element (gated by the resolved shell
+   palette tokens onto the html element (gated by the resolved shell
    theme) so every portaled surface keeps the DocBlocks palette. */
 html:has(.db-shell[data-theme='dark']) {
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
   --db-bg-hover: #3a3528;
-  --db-border: #4d4636;
-  --db-border-strong: #6b6448;
-  --db-text: #e8e2d0;
+  --db-border: #342e27;
+  --db-border-strong: #4a4238;
+  --db-text: #ece6d8;
   --db-text-secondary: #d4ccb0;
-  --db-text-muted: #a89a7c;
+  --db-text-muted: #a39885;
   --db-danger: #f87171;
   --db-danger-bg: #1c1917;
   --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
-  --db-accent: #e8e2d0;
-  --db-accent-hover: #fff8e8;
+  --db-accent: #e0835a;
+  --db-accent-hover: #eb9a76;
   --db-text-on-accent: #1a1812;
-  --db-accent-soft-15: rgba(232, 226, 208, 0.18);
-  --db-accent-soft-25: rgba(232, 226, 208, 0.28);
-  --db-accent-tint-strong: #3a382e;
-  --db-accent-deep: #e6dcc0;
+  --db-accent-soft-15: rgba(224, 131, 90, 0.18);
+  --db-accent-soft-25: rgba(224, 131, 90, 0.28);
+  --db-accent-tint-strong: #533725;
+  --db-accent-deep: #f0c2aa;
   --db-gutter-bg: #16110b;
+  --db-bg-raised: color-mix(in srgb, var(--db-bg-subtle), var(--db-bg-hover) 40%);
 }
 
 html:has(.db-shell[data-theme='light']) {
-  --db-bg: #ffffff;
+  --db-bg: #fffdf9;
   --db-bg-subtle: #f3eede;
   --db-bg-hover: #e9e2cb;
-  --db-border: #d6cdb0;
-  --db-border-strong: #b5a985;
-  --db-text: #2a2419;
+  --db-border: #ddd5c3;
+  --db-border-strong: #c7bca3;
+  --db-text: #231f18;
   --db-text-secondary: #3d3528;
-  --db-text-muted: #6b614a;
+  --db-text-muted: #6b6252;
   --db-danger: #b22b1b;
   --db-danger-bg: #fdf0ee;
   --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
-  --db-accent: #2a2419;
-  --db-accent-hover: #15120d;
-  --db-text-on-accent: #f8f4ea;
-  --db-accent-soft-15: rgba(42, 36, 25, 0.15);
-  --db-accent-soft-25: rgba(42, 36, 25, 0.25);
-  --db-accent-tint-strong: #d8d0b5;
-  --db-accent-deep: #3d3220;
+  --db-accent: #a0461f;
+  --db-accent-hover: #8a3a1a;
+  --db-text-on-accent: #fffdf9;
+  --db-accent-soft-15: rgba(160, 70, 31, 0.15);
+  --db-accent-soft-25: rgba(160, 70, 31, 0.25);
+  --db-accent-tint-strong: #e8d2be;
+  --db-accent-deep: #7a3418;
   --db-gutter-bg: #efe8d4;
 }
 
-/* Accent variants keep Brown as the untouched default while recoloring the
+/* Accent variants keep Rust as the untouched default while recoloring the
    full chrome palette for either appearance. The same tokens are hoisted to
    `html` so Squisq portals and file-tree menus inherit the active variant. */
-.db-shell[data-theme='light']:not([data-accent='brown']),
-html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) {
+.db-shell[data-theme='light']:not([data-accent='rust']),
+html:has(.db-shell[data-theme='light']:not([data-accent='rust'])) {
   --db-accent-soft-08: rgb(var(--db-accent-rgb) / 8%);
   --db-accent-soft-10: rgb(var(--db-accent-rgb) / 10%);
   --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
@@ -4246,6 +4268,8 @@ html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) {
   --db-accent-soft-25: rgb(var(--db-accent-rgb) / 25%);
   --db-text-on-selected: var(--db-text);
   --db-selected-rule: var(--db-accent);
+  --db-bg: #ffffff;
+  --db-editor-canvas: #ffffff;
   --db-gallery-backdrop: rgba(30, 30, 30, 0.24);
   --db-gallery-panel-bg: var(--db-bg);
   --db-gallery-raised-bg: var(--db-bg);
@@ -4254,8 +4278,8 @@ html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) {
   --db-gallery-placeholder: var(--db-text-muted);
 }
 
-.db-shell[data-theme='dark']:not([data-accent='brown']),
-html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) {
+.db-shell[data-theme='dark']:not([data-accent='rust']),
+html:has(.db-shell[data-theme='dark']:not([data-accent='rust'])) {
   --db-accent-soft-08: rgb(var(--db-accent-rgb) / 8%);
   --db-accent-soft-10: rgb(var(--db-accent-rgb) / 10%);
   --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
@@ -4570,7 +4594,7 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
    above so its surface, states, icons, and text follow every DocBlocks theme
    and accent instead of falling back to Squisq's standalone blue/slate UI. */
 html:has(.db-shell) .squisq-use-mode-menu {
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow:
     0 12px 32px var(--db-shadow),
@@ -4681,7 +4705,7 @@ html:has(.db-shell)
    same menu surfaces as the rest of the shell. The selector also covers the
    nested Mermaid and code-snippet menus, which share this portal class. */
 html:has(.db-shell) .squisq-insert-menu {
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -4704,12 +4728,12 @@ html:has(.db-shell) .squisq-insert-menu .squisq-insert-menu-header--separated {
   border-top-color: var(--db-border);
 }
 
-html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) .squisq-tooltip {
+html:has(.db-shell[data-theme='light']:not([data-accent='rust'])) .squisq-tooltip {
   background: var(--db-accent-deep);
   color: var(--db-bg-subtle);
 }
 
-html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) .squisq-tooltip {
+html:has(.db-shell[data-theme='dark']:not([data-accent='rust'])) .squisq-tooltip {
   background: var(--db-accent-deep);
   color: var(--db-bg);
 }
@@ -4770,7 +4794,7 @@ html:has(.db-shell[data-theme='dark'])
 
 html:has(.db-shell[data-theme='light'])
   .squisq-template-gallery-dialog[data-theme='light']:has([data-squisq-template-gallery-portal]) {
-  --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(42, 36, 25, 0.24));
+  --squisq-template-gallery-backdrop: var(--db-gallery-backdrop, rgba(35, 31, 24, 0.24));
   --squisq-template-gallery-panel-bg: var(--db-gallery-panel-bg, #fffdf7);
   --squisq-template-gallery-panel-border: var(--db-border);
   --squisq-template-gallery-header-bg: var(--db-bg-subtle);
@@ -5380,48 +5404,49 @@ html:has(.db-shell[data-theme='dark'])
   border-left: 1px solid var(--db-border);
 }
 
-/* Toolbar overflow menu. Squisq intentionally ships a neutral slate
+/* Toolbar overflow menu. Squisq portals it onto <body> (2.12+), outside the
+   shell, so these rules reach it through `html:has(.db-shell)` like the
+   Insert and Use mode menus. Squisq intentionally ships a neutral slate
    palette; inside DocBlocks this popover should use the same surfaces,
    borders, text, and interaction colors as our other shell menus. The
    contextual template/transition controls need explicit treatment too,
    since they bring their own Squisq surfaces into the popover. */
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu {
-  background: var(--db-bg);
+html:has(.db-shell) .squisq-toolbar-overflow-menu {
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow: 0 4px 12px var(--db-shadow);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu--up {
+html:has(.db-shell) .squisq-toolbar-overflow-menu--up {
   box-shadow: 0 -4px 12px var(--db-shadow);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item {
+html:has(.db-shell) .squisq-toolbar-overflow-item {
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item:hover {
+html:has(.db-shell) .squisq-toolbar-overflow-item:hover {
   background: var(--db-bg-hover);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-heading {
+html:has(.db-shell) .squisq-toolbar-overflow-heading {
   color: var(--db-text-muted);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu > .squisq-toolbar-separator {
+html:has(.db-shell) .squisq-toolbar-overflow-menu > .squisq-toolbar-separator {
   background: var(--db-border);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger {
+html:has(.db-shell) .squisq-toolbar-overflow-item--danger {
   color: var(--db-danger);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-item--danger:hover {
+html:has(.db-shell) .squisq-toolbar-overflow-item--danger:hover {
   background: var(--db-danger-bg);
   color: var(--db-danger);
 }
 
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger) {
   background: var(--db-bg-subtle);
@@ -5429,16 +5454,14 @@ html:has(.db-shell[data-theme='dark'])
   color: var(--db-text-secondary);
 }
 
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger, .squisq-transition-picker-trigger):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
 
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger--open, .squisq-transition-picker-trigger--open) {
   background: var(--db-bg-hover);
@@ -5446,66 +5469,64 @@ html:has(.db-shell[data-theme='dark'])
   outline-color: var(--db-accent-soft-25);
 }
 
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger-label, .squisq-transition-picker-trigger-label),
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger-caret, .squisq-transition-picker-trigger svg) {
   color: var(--db-text-muted);
 }
 
-.db-shell
-  .squisq-editor-shell
+html:has(.db-shell)
   .squisq-toolbar-overflow-menu
   :is(.squisq-template-picker-trigger-value, .squisq-transition-picker-trigger-value) {
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-toolbar-overflow-menu .squisq-template-picker-trigger-thumb {
+html:has(.db-shell) .squisq-toolbar-overflow-menu .squisq-template-picker-trigger-thumb {
   background: var(--db-bg);
   border-color: var(--db-border);
 }
 
-/* View menu. Squisq's dark appearance otherwise replaces its generic
-   variables with a fixed slate-blue palette. Keep the popover and its
-   controls on the same host palette as the DocBlocks app and overflow
-   menus, including the native radio/checkbox selection color. */
-.db-shell .squisq-editor-shell .squisq-view-menu-popover {
-  background: var(--db-bg);
+/* View menu — portaled onto <body> like the overflow menu, so reached
+   through `html:has(.db-shell)`. Squisq's dark appearance otherwise
+   replaces its generic variables with a fixed slate-blue palette. Keep the
+   popover and its controls on the same host palette as the DocBlocks app
+   and overflow menus, including the native radio/checkbox selection color. */
+html:has(.db-shell) .squisq-view-menu-popover {
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow: 0 4px 12px var(--db-shadow);
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-view-menu-row:hover,
-.db-shell .squisq-editor-shell .squisq-view-menu-radio-row:hover {
+html:has(.db-shell) .squisq-view-menu-row:hover,
+html:has(.db-shell) .squisq-view-menu-radio-row:hover {
   background: var(--db-bg-hover);
 }
 
-.db-shell .squisq-editor-shell .squisq-view-menu-row--select:hover,
-.db-shell .squisq-editor-shell .squisq-view-menu-row--radios:hover {
+html:has(.db-shell) .squisq-view-menu-row--select:hover,
+html:has(.db-shell) .squisq-view-menu-row--radios:hover {
   background: transparent;
 }
 
-.db-shell .squisq-editor-shell .squisq-view-menu-row--select .squisq-view-menu-label,
-.db-shell .squisq-editor-shell .squisq-view-menu-row--radios > .squisq-view-menu-label {
+html:has(.db-shell) .squisq-view-menu-row--select .squisq-view-menu-label,
+html:has(.db-shell) .squisq-view-menu-row--radios > .squisq-view-menu-label {
   color: var(--db-text-muted);
 }
 
-.db-shell .squisq-editor-shell .squisq-view-menu-select {
+html:has(.db-shell) .squisq-view-menu-select {
   background: var(--db-bg-subtle);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-view-menu-separator {
+html:has(.db-shell) .squisq-view-menu-separator {
   background: var(--db-border);
 }
 
-.db-shell .squisq-editor-shell :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
+html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   accent-color: var(--db-accent);
 }
 
@@ -5589,7 +5610,7 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell[data-theme='dark'] .squisq-version-history-popover {
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border-color: var(--db-border);
   color: var(--db-text);
 }
@@ -5628,7 +5649,7 @@ html:has(.db-shell[data-theme='dark'])
   gap: 12px;
   max-width: min(640px, calc(100% - 32px));
   padding: 10px 10px 10px 16px;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border-strong);
   border-radius: 10px;
   box-shadow: 0 10px 32px var(--db-shadow);
@@ -6279,7 +6300,7 @@ html:has(.db-shell[data-theme='dark'])
   box-sizing: border-box;
   overflow-y: auto;
   border-left: 1px solid var(--db-border-strong);
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   color: var(--db-text-secondary);
   font: 13px/1.45 var(--db-ui-font);
 }
@@ -6302,7 +6323,7 @@ html:has(.db-shell[data-theme='dark'])
   gap: 12px;
   padding: 14px 14px 10px;
   border-bottom: 1px solid var(--db-border);
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
 }
 
 .db-ai-review-header h2 {
@@ -6725,7 +6746,7 @@ html:has(.db-shell[data-theme='dark'])
   left: 8px;
   right: 8px;
   z-index: 100;
-  background: var(--db-bg);
+  background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 6px;
   box-shadow: 0 4px 12px var(--db-shadow);
@@ -6932,6 +6953,91 @@ button.db-git-file-row:hover {
   align-items: center;
   gap: 10px 8px;
   margin: 10px 0;
+}
+
+.db-new-document-hint {
+  grid-column: 2;
+  margin: -4px 0 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ── Keyboard shortcut sheet ─────────────────────────────────── */
+
+/* Two columns of sections on a desktop screen, so the sheet reads at a
+   glance instead of scrolling; one column on narrow windows. */
+.db-dialog.db-shortcuts-dialog {
+  width: 780px;
+  max-height: min(calc(100dvh - 32px), 780px);
+}
+
+.db-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px 32px;
+  align-items: start;
+}
+
+.db-shortcuts:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 4px;
+}
+
+.db-shortcuts-heading {
+  margin: 0 0 6px;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-shortcuts-list {
+  margin: 0;
+}
+
+.db-shortcuts-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-shortcuts-action {
+  color: var(--db-text-secondary);
+  font-size: 13px;
+}
+
+.db-shortcuts-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.db-shortcuts-or {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-shortcuts-chord kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-left: 2px;
+  padding: 1px 5px;
+  border: 1px solid var(--db-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .db-git-form-error,

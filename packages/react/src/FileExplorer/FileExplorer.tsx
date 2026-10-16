@@ -45,7 +45,12 @@ import {
   type OutsideInRenderOptions,
 } from '../DocBlocksShell/outside-in.js';
 import { isSupportedImportFile } from '../DocBlocksShell/import-file-types.js';
-import { newFileHtmlOutput, newFileName, type NewFileFormat } from './new-file-formats.js';
+import {
+  newFileFormatHint,
+  newFileHtmlOutput,
+  newFileName,
+  type NewFileFormat,
+} from './new-file-formats.js';
 import { NewFileFormatOptions } from './NewFileFormatOptions.js';
 
 export type { FileExplorerSortMode } from './entry-sort.js';
@@ -54,6 +59,7 @@ export type { NewFileFormat } from './new-file-formats.js';
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
 /** Ties the new-item input to its error message for assistive tech. */
 const NEW_ITEM_ERROR_ID = 'db-new-item-error';
+const NEW_ITEM_HINT_ID = 'db-new-item-hint';
 
 export type FileTreeChange =
   | { type: 'create'; path: string; kind?: 'file' | 'directory' }
@@ -939,6 +945,7 @@ export function FileExplorer({
                 <select
                   className="db-new-item-format"
                   aria-label="New file type"
+                  aria-describedby={newFileFormatHint(newFileFormat) ? NEW_ITEM_HINT_ID : undefined}
                   value={newFileFormat}
                   disabled={newItemCreationPending}
                   onChange={(event) => {
@@ -958,6 +965,11 @@ export function FileExplorer({
               </button>
             )}
           </form>
+          {newItemType === 'file' && newFileFormatHint(newFileFormat) && (
+            <p id={NEW_ITEM_HINT_ID} className="db-new-item-hint">
+              {newFileFormatHint(newFileFormat)}
+            </p>
+          )}
           {newItemError && (
             <div id={NEW_ITEM_ERROR_ID} className="db-tree-error" role="alert">
               {newItemError}

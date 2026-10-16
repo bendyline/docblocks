@@ -70,10 +70,12 @@ export interface AppMenuProps {
   /** Opens the active workspace's own settings (`.docblocks/workspace.json`). */
   onOpenWorkspaceSettings?: () => void;
   /**
-   * Called when the user clicks "Download all workspaces". When omitted,
+   * Called when the user clicks "Back up all workspaces". When omitted,
    * the menu item is hidden.
    */
   onDownloadAllWorkspaces?: () => void | Promise<void>;
+  /** Opens the keyboard-shortcut sheet. When omitted, the menu item is hidden. */
+  onShowKeyboardShortcuts?: () => void;
   /**
    * Called when the user asks the browser to keep origin storage persistent.
    * When omitted, the menu item is hidden.
@@ -126,6 +128,9 @@ function formatBytes(bytes: number): string {
   return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
 }
 
+/** The same guide the sidebar footer's Docs link opens. */
+const DOCUMENTATION_URL = 'https://docblocks.com/docs/';
+
 const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> = Object.freeze({
   electron: 'https://docblocks.com/desktop/',
   capacitor: 'https://docblocks.com/web/',
@@ -137,7 +142,7 @@ export function AppMenu({
   logoDarkUrl,
   themePreference = 'auto',
   onThemeChange,
-  accentColor = 'brown',
+  accentColor = 'rust',
   onAccentColorChange,
   interfaceFont = 'system',
   onInterfaceFontChange,
@@ -149,6 +154,7 @@ export function AppMenu({
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
   onDownloadAllWorkspaces,
+  onShowKeyboardShortcuts,
   onKeepBrowserData,
   onInstallApp,
   getStorageEstimate,
@@ -295,6 +301,22 @@ export function AppMenu({
                 Install DocBlocks&hellip;
               </button>
             )}
+            {/* Keeping work safe is one group: the backup the footer and the
+                storage-full banner also offer, by the same name, then the
+                request that the browser keep its copy. */}
+            {(onDownloadAllWorkspaces || onKeepBrowserData) && (
+              <div className="db-app-menu-divider" />
+            )}
+            {onDownloadAllWorkspaces && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+              >
+                Back up all workspaces
+              </button>
+            )}
             {onKeepBrowserData && (
               <button
                 className="db-app-menu-item"
@@ -305,17 +327,32 @@ export function AppMenu({
                 Protect data from browser cleanup
               </button>
             )}
-            {onDownloadAllWorkspaces && (
+            <div className="db-app-menu-divider" />
+            {onShowKeyboardShortcuts && (
               <button
-                className="db-app-menu-item"
+                className="db-app-menu-item db-app-menu-item--with-shortcut"
                 role="menuitem"
                 tabIndex={-1}
-                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+                aria-keyshortcuts="F1"
+                onClick={() => handleAction(onShowKeyboardShortcuts)}
               >
-                Download all workspaces
+                Keyboard shortcuts
+                <span className="db-app-menu-shortcut" aria-hidden="true">
+                  F1
+                </span>
               </button>
             )}
-            <div className="db-app-menu-divider" />
+            <a
+              className="db-app-menu-item"
+              role="menuitem"
+              tabIndex={-1}
+              href={DOCUMENTATION_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => closeMenu(false)}
+            >
+              Documentation
+            </a>
             <button
               className="db-app-menu-item"
               role="menuitem"

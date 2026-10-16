@@ -59,7 +59,7 @@ export const WELCOME_DOCUMENT_CONTENT = [
   '- Open DocBlocks in your browser and start in a browser workspace. In supported browsers, you can also open a local folder.',
   '- Choose **Install DocBlocks…** in the app menu when offered. The installed web app keeps using the same browser storage.',
   '- Once the app has finished downloading for offline use, you can keep editing without a connection.',
-  '- Use **Download all workspaces** in the app menu to keep a backup before clearing browser data or moving to a new device.',
+  '- Use **Back up all workspaces** in the app menu to keep a backup before clearing browser data or moving to a new device.',
   '',
   '## Work inside VS Code {[content]}',
   '',

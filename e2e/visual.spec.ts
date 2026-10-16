@@ -33,8 +33,8 @@ async function seedAppearance(
   await page.addInitScript((seed) => {
     if (seed.theme) localStorage.setItem('docblocks:themePreference', seed.theme);
     if (seed.accent) localStorage.setItem('docblocks:accentColor', seed.accent);
-    // Pin the chrome to the bundled face. Under the default `system` stack the
-    // shell resolves `system-ui` to a different typeface on each platform, so
+    // Pin the chrome to the bundled face (also the default). Under the `system`
+    // stack the shell resolves `system-ui` to a different typeface on each platform, so
     // the same screenshot could never match across operating systems — and a
     // Linux baseline would render in whatever that runner resolves, which is a
     // font essentially no DocBlocks user has.
@@ -174,9 +174,9 @@ test.describe('portaled Squisq surfaces', () => {
     await expectStableScreenshot(page, menu, 'squisq-overflow-menu.png');
   });
 
-  test('insert menu with a brown accent', async ({ page }) => {
+  test('insert menu with the rust accent', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
-    await seedAppearance(page, { theme: 'dark', accent: 'brown' });
+    await seedAppearance(page, { theme: 'dark', accent: 'rust' });
     await openInitializedSite(page);
     await openEditor(page);
     await openInsertMenu(page);

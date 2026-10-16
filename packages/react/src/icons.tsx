@@ -9,6 +9,7 @@
 import {
   ArrowDownAZ,
   Clock,
+  Download,
   Ellipsis,
   FilePlus,
   Folder,
@@ -78,4 +79,8 @@ export function SearchIcon() {
 
 export function FilesIcon() {
   return <ShellIcon icon={FolderTree} />;
+}
+
+export function BackupIcon() {
+  return <ShellIcon icon={Download} />;
 }

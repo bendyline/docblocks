@@ -17,7 +17,11 @@ import {
   useMemo,
   type ComponentType,
 } from 'react';
-import { useEditorContext, usePreviewSettings } from '@bendyline/squisq-editor-react';
+import {
+  useEditorContext,
+  usePreviewSettings,
+  usePreviewSettingsOptional,
+} from '@bendyline/squisq-editor-react';
 import type { SharedDocumentMode } from '@bendyline/docblocks/share';
 import { readFrontmatterThemeId } from '@bendyline/squisq/markdown';
 import { getThemeSummaries } from '@bendyline/squisq/schemas';
@@ -287,9 +291,17 @@ export function ExportToolbarControls({
     [markdownDoc],
   );
 
+  // The theme the editor is previewing this document in, resolved by Squisq's
+  // one theme resolution point, is the theme an export starts on. Without
+  // preview settings the dialog falls back to the same document-then-
+  // workspace order itself.
+  const previewSettings = usePreviewSettingsOptional();
+  const previewThemeId = previewSettings?.activeThemeId;
+  const documentThemes = previewSettings?.customThemes;
+
   const dialogInitial = useMemo(
-    () => resolveExportDialogInitial(lastOptions, docThemeId, defaultThemeId),
-    [lastOptions, docThemeId, defaultThemeId],
+    () => resolveExportDialogInitial(lastOptions, previewThemeId ?? docThemeId, defaultThemeId),
+    [lastOptions, previewThemeId, docThemeId, defaultThemeId],
   );
 
   // Close menu on outside click
@@ -783,6 +795,7 @@ export function ExportToolbarControls({
         <Suspense fallback={null}>
           <ExportDialog
             initial={dialogInitial}
+            documentThemes={documentThemes}
             exporting={exporting}
             error={exportError}
             destination={
