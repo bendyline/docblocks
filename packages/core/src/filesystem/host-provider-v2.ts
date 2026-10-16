@@ -1,13 +1,13 @@
+// Import from the defining host modules, not the host barrel: the barrel
+// re-exports filesystem-v2.ts, which depends back on this package.
+import { maybeGetDocBlocksHost } from '../host/index.js';
 import {
-  HOST_WIRE_LIMITS,
   FILE_SYSTEM_TRANSFER_LIMITS as TRANSFER_LIMITS,
-  isBoundedBytePayload,
-  isBoundedString,
-  maybeGetDocBlocksHost,
   type DocBlocksHostFsV2API,
   type HostFileSystemV2Result,
   type HostFileSystemV2WatchMessage,
-} from '../host/index.js';
+} from '../host/filesystem-v2.js';
+import { HOST_WIRE_LIMITS, isBoundedBytePayload, isBoundedString } from '../host/wire-policy.js';
 import {
   FsError,
   deserializeFsError,

@@ -37,6 +37,13 @@ if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
   });
 }
 
+// happy-dom does not implement Document.compatMode. Report standards mode, as
+// every DocBlocks surface serves `<!doctype html>`; KaTeX otherwise warns at
+// import and replaces katex.render with a function that always throws.
+if (!('compatMode' in document)) {
+  Object.defineProperty(document, 'compatMode', { configurable: true, value: 'CSS1Compat' });
+}
+
 // A parallel ../squisq checkout is linked into this repository for local
 // development. Node resolves dependencies from a symlink's physical target,
 // which would give linked React packages ../squisq/node_modules/react instead
