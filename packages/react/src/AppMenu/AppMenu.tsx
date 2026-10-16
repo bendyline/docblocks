@@ -32,12 +32,18 @@ import { AiSettingsControls } from '../Settings/AiSettings.js';
 import { SpeechSettingsControls } from '../Settings/SpeechSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { displayBuildDate } from '../local-date.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
 export interface AppMenuProps {
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
+  /**
+   * The logo drawn for dark appearances. Without it, the light logo is
+   * inverted in dark mode, which suits only a flat black-on-transparent mark.
+   */
+  logoDarkUrl?: string;
   /** Current theme preference. */
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
@@ -64,10 +70,12 @@ export interface AppMenuProps {
   /** Opens the active workspace's own settings (`.docblocks/workspace.json`). */
   onOpenWorkspaceSettings?: () => void;
   /**
-   * Called when the user clicks "Download all workspaces". When omitted,
+   * Called when the user clicks "Back up all workspaces". When omitted,
    * the menu item is hidden.
    */
   onDownloadAllWorkspaces?: () => void | Promise<void>;
+  /** Opens the keyboard-shortcut sheet. When omitted, the menu item is hidden. */
+  onShowKeyboardShortcuts?: () => void;
   /**
    * Called when the user asks the browser to keep origin storage persistent.
    * When omitted, the menu item is hidden.
@@ -89,7 +97,10 @@ export interface AppMenuProps {
   storagePersistent?: boolean;
   /** Human-readable version/build and delivery surface shown in About. */
   appVersion?: string;
-  /** ISO build date shown in About. */
+  /**
+   * Build date shown in About: an ISO timestamp, shown as the viewer's local
+   * day, or a bare `YYYY-MM-DD`, shown as given.
+   */
   appBuildDate?: string;
   /**
    * The host's AI API. When present, Settings offers an AI section; when
@@ -117,6 +128,9 @@ function formatBytes(bytes: number): string {
   return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
 }
 
+/** The same guide the sidebar footer's Docs link opens. */
+const DOCUMENTATION_URL = 'https://docblocks.com/docs/';
+
 const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> = Object.freeze({
   electron: 'https://docblocks.com/desktop/',
   capacitor: 'https://docblocks.com/web/',
@@ -125,9 +139,10 @@ const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> =
 
 export function AppMenu({
   logoUrl,
+  logoDarkUrl,
   themePreference = 'auto',
   onThemeChange,
-  accentColor = 'brown',
+  accentColor = 'rust',
   onAccentColorChange,
   interfaceFont = 'system',
   onInterfaceFontChange,
@@ -139,6 +154,7 @@ export function AppMenu({
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
   onDownloadAllWorkspaces,
+  onShowKeyboardShortcuts,
   onKeepBrowserData,
   onInstallApp,
   getStorageEstimate,
@@ -233,13 +249,24 @@ export function AppMenu({
           aria-haspopup="menu"
         >
           {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="DocBlocks"
-              className="db-app-menu-logo"
-              width={1266}
-              height={544}
-            />
+            <>
+              <img
+                src={logoUrl}
+                alt="DocBlocks"
+                className={`db-app-menu-logo ${logoDarkUrl ? 'db-app-menu-logo--light' : 'db-app-menu-logo--invert'}`}
+                width={557}
+                height={242}
+              />
+              {logoDarkUrl && (
+                <img
+                  src={logoDarkUrl}
+                  alt="DocBlocks"
+                  className="db-app-menu-logo db-app-menu-logo--dark"
+                  width={557}
+                  height={242}
+                />
+              )}
+            </>
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
@@ -274,6 +301,22 @@ export function AppMenu({
                 Install DocBlocks&hellip;
               </button>
             )}
+            {/* Keeping work safe is one group: the backup the footer and the
+                storage-full banner also offer, by the same name, then the
+                request that the browser keep its copy. */}
+            {(onDownloadAllWorkspaces || onKeepBrowserData) && (
+              <div className="db-app-menu-divider" />
+            )}
+            {onDownloadAllWorkspaces && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+              >
+                Back up all workspaces
+              </button>
+            )}
             {onKeepBrowserData && (
               <button
                 className="db-app-menu-item"
@@ -284,17 +327,32 @@ export function AppMenu({
                 Protect data from browser cleanup
               </button>
             )}
-            {onDownloadAllWorkspaces && (
+            <div className="db-app-menu-divider" />
+            {onShowKeyboardShortcuts && (
               <button
-                className="db-app-menu-item"
+                className="db-app-menu-item db-app-menu-item--with-shortcut"
                 role="menuitem"
                 tabIndex={-1}
-                onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
+                aria-keyshortcuts="F1"
+                onClick={() => handleAction(onShowKeyboardShortcuts)}
               >
-                Download all workspaces
+                Keyboard shortcuts
+                <span className="db-app-menu-shortcut" aria-hidden="true">
+                  F1
+                </span>
               </button>
             )}
-            <div className="db-app-menu-divider" />
+            <a
+              className="db-app-menu-item"
+              role="menuitem"
+              tabIndex={-1}
+              href={DOCUMENTATION_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => closeMenu(false)}
+            >
+              Documentation
+            </a>
             <button
               className="db-app-menu-item"
               role="menuitem"
@@ -448,7 +506,7 @@ export function AppMenu({
           {appBuildDate && (
             <p className="db-about-version">
               <span>Build</span>
-              <time dateTime={appBuildDate}>{appBuildDate}</time>
+              <time dateTime={appBuildDate}>{displayBuildDate(appBuildDate)}</time>
             </p>
           )}
           <p>

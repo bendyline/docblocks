@@ -113,7 +113,7 @@ describe('FileExplorer new item failures', () => {
     ]);
   });
 
-  it('offers Markdown by default plus rendered document and Web page formats', async () => {
+  it('offers Markdown by default, then formats written in Markdown and saved as another', async () => {
     const newFile = container.querySelector<HTMLButtonElement>('[aria-label="New File"]');
     await act(async () => newFile?.click());
 
@@ -123,14 +123,23 @@ describe('FileExplorer new item failures', () => {
       'Markdown (.md)',
       'Word document (.docx)',
       'Excel workbook (.xlsx)',
-      'PDF document (.pdf)',
+      'PDF (.pdf)',
       'Web page — Interactive (.html)',
       'Web page — Static (.html)',
     ]);
     expect([...select!.querySelectorAll('optgroup')].map((group) => group.label)).to.deep.equal([
-      'Document',
-      'Web page',
+      'Written in Markdown, saved as',
     ]);
+    // Markdown needs no explanation; the others say how they are edited.
+    expect(container.querySelector('.db-new-item-hint')).to.equal(null);
+
+    await act(async () => {
+      select!.value = 'pdf';
+      select!.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const hint = container.querySelector('.db-new-item-hint');
+    expect(hint?.textContent).to.equal('You write in Markdown; each save updates the PDF.');
+    expect(select!.getAttribute('aria-describedby')).to.equal(hint?.id);
   });
 
   it('shows the native workspace button only when its host action is provided', async () => {

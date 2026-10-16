@@ -1,3 +1,5 @@
+import { localDateStamp } from '../local-date.js';
+
 const NEW_ISSUE_URL = 'https://github.com/bendyline/docblocks/issues/new';
 const VERSION_VALUE_LIMIT = 128;
 const USER_AGENT_VALUE_LIMIT = 512;
@@ -25,7 +27,7 @@ export function buildIssueReportUrl(environment: IssueReportEnvironment): string
     '',
     '## Environment',
     '',
-    `- Date: ${environment.reportedAt.toISOString().slice(0, 10)}`,
+    `- Date: ${localDateStamp(environment.reportedAt)}`,
     `- DocBlocks: ${normalizeEnvironmentValue(environment.version, 'unknown', VERSION_VALUE_LIMIT)}`,
     `- User agent: ${normalizeEnvironmentValue(
       environment.userAgent,

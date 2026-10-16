@@ -80,13 +80,16 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
   padding-block: 3px;
 }
 
+/* Tuned for the bundled `DocBlocks Fixed UI` face: the tabs sit on the band's
+   bottom edge, so this bottom padding is what centers their labels. The Use
+   mode chevron moves with it to stay on the label's baseline. */
 .db-desktop-root .db-shell .squisq-toolbar-view-tab {
   padding-top: 4px;
-  padding-bottom: 9px;
+  padding-bottom: 7px;
 }
 
 .db-desktop-root .db-shell .squisq-use-mode-trigger {
-  padding-bottom: 14px;
+  padding-bottom: 12px;
 }
 
 .db-desktop-root .squisq-toolbar-button[aria-label='Insert image'] {

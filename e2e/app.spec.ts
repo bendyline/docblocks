@@ -394,16 +394,17 @@ test.describe('DocBlocks App', () => {
     const buttons = toolbar.locator('.db-explorer-btn');
     await expect(buttons).toHaveCount(5); // Two sort controls, Search, +F and +D.
     await expect(
-      toolbar.getByRole('button', { name: 'Search workspace' }).locator('.fa-magnifying-glass'),
+      toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
     ).toBeVisible();
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
-    const newFileIcon = newFileButton.locator('.fa-file-circle-plus');
+    // Shell glyphs are Lucide outlines at one stroke weight (icons.tsx).
+    const newFileIcon = newFileButton.locator('svg.lucide-file-plus');
     await expect(newFileIcon).toBeVisible();
-    await expect(newFileIcon).toHaveCSS('font-family', /Font Awesome/);
-    await expect(newFolderButton.locator('.fa-folder-plus')).toBeVisible();
+    await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
+    await expect(newFolderButton.locator('svg.lucide-folder-plus')).toBeVisible();
 
-    await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
+    await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });
 
   test('shows support links in the footer', async ({ page }) => {
@@ -413,12 +414,18 @@ test.describe('DocBlocks App', () => {
     const docsLink = footer.getByRole('link', { name: 'Docs' });
     await expect(docsLink).toHaveAttribute('href', 'https://docblocks.com/docs/');
 
-    const backup = footer.getByRole('button', { name: 'Back up browser docs' });
+    // The same name as the app menu's backup action, drawn as a real button.
+    const backup = footer.getByRole('button', { name: 'Back up all workspaces' });
     await expect(backup).toBeVisible();
+    await expect(backup).toHaveText('Back up');
     expect(
       await backup.evaluate((element) => element.scrollWidth <= element.clientWidth),
       'the browser-document safety action should not be visually truncated',
     ).toBe(true);
+    const backupBox = await backup.boundingBox();
+    expect(backupBox?.height ?? 0, 'the backup action is a usable target').toBeGreaterThanOrEqual(
+      22,
+    );
 
     const termsLink = footer.getByRole('link', { name: 'Terms' });
     await expect(termsLink).toHaveAttribute('href', 'https://docblocks.com/terms/');
@@ -632,7 +639,7 @@ test.describe('Folder context menu theming', () => {
         background: getComputedStyle(element).backgroundColor,
         normalText: normalItem ? getComputedStyle(normalItem).color : '',
         dangerText: dangerItem ? getComputedStyle(dangerItem).color : '',
-        expectedBackground: resolveColor('--db-bg'),
+        expectedBackground: resolveColor('--db-bg-raised'),
         expectedNormalText: resolveColor('--db-text-secondary'),
         expectedDangerText: resolveColor('--db-danger'),
       };
@@ -709,7 +716,7 @@ test.describe('Squisq overflow menu theming', () => {
       probe.style.cssText = [
         'position:absolute',
         'visibility:hidden',
-        'background:var(--db-bg)',
+        'background:var(--db-bg-raised)',
         'border:1px solid var(--db-border)',
         'color:var(--db-text-secondary)',
       ].join(';');
@@ -742,10 +749,10 @@ test.describe('Squisq overflow menu theming', () => {
   }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
-      localStorage.setItem('docblocks:accentColor', 'brown');
+      localStorage.setItem('docblocks:accentColor', 'rust');
     });
     await openInitializedSite(page);
-    await expect(page.locator('.db-shell[data-theme="dark"][data-accent="brown"]')).toBeVisible({
+    await expect(page.locator('.db-shell[data-theme="dark"][data-accent="rust"]')).toBeVisible({
       timeout: 10_000,
     });
 
@@ -764,7 +771,7 @@ test.describe('Squisq overflow menu theming', () => {
       probe.style.cssText = [
         'position:absolute',
         'visibility:hidden',
-        'background:var(--db-bg)',
+        'background:var(--db-bg-raised)',
         'border:1px solid var(--db-border)',
         'color:var(--db-text-secondary)',
       ].join(';');
@@ -830,7 +837,7 @@ test.describe('Squisq Use mode menu theming', () => {
       probe.style.cssText = [
         'position:absolute',
         'visibility:hidden',
-        'background:var(--db-bg)',
+        'background:var(--db-bg-raised)',
         'border:1px solid var(--db-border)',
         'color:var(--db-text-secondary)',
       ].join(';');
@@ -904,7 +911,7 @@ test.describe('Simple diagram theming', () => {
   test('uses the active DocBlocks accent and scene surfaces', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
-      localStorage.setItem('docblocks:accentColor', 'brown');
+      localStorage.setItem('docblocks:accentColor', 'rust');
     });
     await openInitializedSite(page);
 
@@ -1060,7 +1067,7 @@ test.describe('Video export dialog theming', () => {
       probe.style.cssText = [
         'position:fixed',
         'visibility:hidden',
-        'background:var(--db-bg)',
+        'background:var(--db-bg-raised)',
         'color:var(--db-text)',
         'border:1px solid var(--db-border-strong)',
       ].join(';');
@@ -1246,7 +1253,7 @@ test.describe('Workspace picker', () => {
     const dropdown = page.locator('.db-workspace-dropdown');
     const newWorkspace = dropdown.getByRole('button', { name: 'New Workspace' });
     await expect(newWorkspace).toBeVisible();
-    await expect(newWorkspace.locator('.fa-folder-plus')).toBeVisible();
+    await expect(newWorkspace.locator('svg.lucide-folder-plus')).toBeVisible();
   });
 
   test('dropdown closes on outside click', async ({ page }) => {

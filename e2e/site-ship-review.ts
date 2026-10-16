@@ -133,6 +133,17 @@ async function ready(page: Page): Promise<void> {
   await page.locator('.db-shell').waitFor({ timeout: 60_000 });
   await page.locator('.squisq-status-item').first().waitFor({ timeout: 60_000 });
 }
+/**
+ * Let the browser deliver the selectionchange a click or caret key queued.
+ * ProseMirror reads the caret from that event, so a key pressed in the same
+ * millisecond acts on the previous selection: a speed no person reaches, and
+ * a split title no person would see.
+ */
+async function settleSelection(page: Page): Promise<void> {
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))),
+  );
+}
 async function createDocument(
   page: Page,
   name: string,
@@ -159,7 +170,9 @@ async function createDocument(
     // Preserve the heading seeded by the creation dialog. Use keyboard input
     // rather than replacing the contenteditable DOM of a structured document.
     await editor.click();
+    await settleSelection(page);
     await page.keyboard.press('Control+End');
+    await settleSelection(page);
     await page.keyboard.press('Enter');
     await page.keyboard.insertText(text);
   } else {
@@ -292,7 +305,7 @@ try {
       'Custom layouts',
       'View options',
       'Document settings',
-      'Toggle Files panel',
+      'Attachments',
       'Choose Use mode',
     ]) {
       await step(`control-${name.replaceAll(' ', '-')}`, page, async () => {
@@ -303,7 +316,7 @@ try {
         await control.click();
         const detail = await capture(page, `control-${name.replaceAll(' ', '-')}`);
         await dismiss(page);
-        if (name === 'Toggle Files panel') await control.click();
+        if (name === 'Attachments') await control.click();
         return detail;
       });
     }
@@ -391,7 +404,7 @@ try {
     await step('workspace-backup', page, async () => {
       await page.locator('.db-ws-settings-btn').click();
       const pending = page.waitForEvent('download');
-      await page.getByRole('menuitem', { name: 'Download workspace', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Back up this workspace', exact: true }).click();
       const download = await pending;
       await download.saveAs(path.join(output, 'downloads', download.suggestedFilename()));
       return { name: download.suggestedFilename(), failure: await download.failure() };
@@ -633,7 +646,12 @@ try {
         const download = await pending;
         const destination = path.join(output, 'downloads', `${profile.name}.md`);
         await download.saveAs(destination);
-        expect(await readFile(destination, 'utf8')).toContain('Mobile review text.');
+        // The heading seeded by the creation dialog must survive intact. A bare
+        // containment check passed while the typed text had split the heading
+        // into "# mobile-revi" and "# Mobile review text.ew".
+        expect(await readFile(destination, 'utf8')).toMatch(
+          /^# mobile-review\s*\n\s*\nMobile review text\.\s*$/,
+        );
         return { editor, dialog, download: download.suggestedFilename() };
       });
       await context.close();

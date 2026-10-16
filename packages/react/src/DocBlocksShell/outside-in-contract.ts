@@ -55,8 +55,29 @@ interface OutsideInEditingModule {
   ) => Promise<ConversionResult>;
 }
 
+/** The pdf.js worker URL the host supplied, and the one Squisq last received. */
+let pdfWorkerSrc: string | null = null;
+let configuredPdfWorkerSrc: string | null = null;
+
+/**
+ * Supply the pdf.js worker for PDF imports. pdf.js 4 parses nothing without
+ * a worker URL ("No GlobalWorkerOptions.workerSrc specified"), and only the
+ * host's bundler can produce one, so surfaces pass it as `pdfWorkerSrc`.
+ */
+export function setOutsideInPdfWorker(src: string | null | undefined): void {
+  pdfWorkerSrc = src ?? null;
+}
+
 async function loadOutsideInModule(): Promise<OutsideInEditingModule> {
-  return (await import('@bendyline/squisq-formats/outside-in')) as unknown as OutsideInEditingModule;
+  const outsideIn = await import('@bendyline/squisq-formats/outside-in');
+  // Configured here rather than at startup: every PDF import passes through
+  // this loader, and the PDF module is fetched only once a conversion needs it.
+  if (pdfWorkerSrc && pdfWorkerSrc !== configuredPdfWorkerSrc) {
+    const { configurePdfWorker } = await import('@bendyline/squisq-formats/pdf');
+    configurePdfWorker(pdfWorkerSrc);
+    configuredPdfWorkerSrc = pdfWorkerSrc;
+  }
+  return outsideIn as unknown as OutsideInEditingModule;
 }
 
 export interface OutsideInMetadata {

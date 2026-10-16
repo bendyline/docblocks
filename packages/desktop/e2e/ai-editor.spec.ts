@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 
-import { test, expect } from './fixtures.js';
+import { test, expect, expectSavedBeforeReload } from './fixtures.js';
 import {
   FAKE_COMPOSE_TEXT,
   FAKE_GEZEL_CODE,
@@ -447,6 +447,7 @@ test('AI rewriting preserves heading tags as metadata through replacement, reloa
       await editor.focus();
       await window.keyboard.press('ControlOrMeta+Shift+Z');
       await expect.poll(() => readDocument(file)).toContain('A **rewritten** answer.');
+      await expectSavedBeforeReload(window);
       await window.reload();
       await window.locator('.db-tree-row[data-path$="ai-review.md"]').click();
       await expect(

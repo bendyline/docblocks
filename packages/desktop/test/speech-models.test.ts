@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -376,6 +376,29 @@ describe('SpeechModelStore', () => {
     // Without a shared home (the MAS sandbox), it is never consulted.
     await writeFile(shared, WEIGHTS);
     expect(await store(undefined, null).locate('stt-test')).to.equal(null);
+  });
+
+  it('reports its own models when a shared folder cannot be entered', async function () {
+    if (process.platform === 'win32' || process.getuid?.() === 0) this.skip();
+    // The Gezel machine service keeps each engine's models in a folder only it may enter.
+    const engine = path.join(home, '.gezel', 'engines', 'whisper-cpp');
+    await mkdir(path.join(engine, 'models', 'stt-test'), { recursive: true });
+    await writeFile(path.join(engine, 'models', 'stt-test', 'weights.bin'), WEIGHTS);
+    const models = store(
+      fetchFor({ 'https://m.test/model.onnx': MODEL, 'https://m.test/a.bin': VOICE }).fetchImpl,
+      home,
+    );
+    await models.install('tts-test');
+    await chmod(engine, 0o000);
+    try {
+      expect((await models.list()).map((m) => [m.id, m.installed, m.source])).to.deep.equal([
+        ['stt-test', false, null],
+        ['tts-test', true, 'app'],
+      ]);
+      expect(await models.locate('stt-test')).to.equal(null);
+    } finally {
+      await chmod(engine, 0o755);
+    }
   });
 
   it('removes only this app’s copy', async () => {

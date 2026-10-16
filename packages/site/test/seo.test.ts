@@ -152,7 +152,7 @@ describe('site SEO surface', () => {
     expect(bootstrap).to.include("globalThis.localStorage.getItem('docblocks:themePreference')");
     expect(bootstrap).to.include("preference === 'light' || preference === 'dark'");
     expect(bootstrap).to.include("globalThis.localStorage.getItem('docblocks:accentColor')");
-    expect(bootstrap).to.include("'brown', 'green', 'blue', 'purple', 'maroon', 'orange', 'gray'");
+    expect(bootstrap).to.include("'rust', 'green', 'blue', 'purple', 'maroon', 'orange', 'gray'");
     expect(bootstrap).to.include(
       'globalThis.document.documentElement.dataset.dbAccent = accentColor',
     );
@@ -251,7 +251,7 @@ describe('site SEO surface', () => {
     expect(config).to.include("appType: 'mpa'");
     expect(config).to.include("strategies: 'injectManifest'");
     expect(config).to.include('SITE_PRECACHE_GLOB');
-    for (const extension of ['webmanifest', 'txt', 'xml', 'wasm']) {
+    for (const extension of ['webmanifest', 'txt', 'xml', 'wasm', 'mjs']) {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
     }
     expect(serviceWorker).to.include("createHandlerBoundToURL('index.html')");
@@ -303,7 +303,8 @@ describe('site SEO surface', () => {
   it('publishes customer quick-start, recovery, version, and support guidance', async () => {
     const html = await read('public/docs/index.html');
     expect(html).to.include('id="quick-start"');
-    expect(html).to.include('Backup browser docs frequently');
+    // The guide names the backup action exactly as the app menu and footer do.
+    expect(html).to.include('Back up all workspaces');
     expect(html).to.include('id="troubleshooting"');
     expect(html).to.include('A site page opens the editor');
     expect(html).to.include('About DocBlocks');

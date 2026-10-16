@@ -34,7 +34,13 @@
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="DocBlocks home">
-        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+        <picture>
+          <source
+            srcset="/_res/siteimages/docblocks-dark.svg"
+            media="(prefers-color-scheme: dark)"
+          />
+          <img src="/_res/siteimages/docblocks.svg" alt="DocBlocks" width="557" height="242" />
+        </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="/web/" aria-current="page">Web</a>
@@ -55,7 +61,7 @@
           <p class="lede">
             Open DocBlocks and start writing&mdash;no account, installer, or cloud workspace.
             Documents stay in browser storage or folders you explicitly grant, while visual editing,
-            Markdown source, Play views, and export remain close at hand.
+            Markdown source, previews, and export remain close at hand.
           </p>
           <div class="hero-actions">
             <a class="button" href="/">Open the web editor</a>
@@ -67,7 +73,7 @@
           <ul>
             <li>No account, installer, or server upload</li>
             <li>Browser-local workspaces and explicitly granted folders</li>
-            <li>Visual, source, Play, and export workflows</li>
+            <li>Visual writing, Markdown source, previews, and export</li>
             <li>Installable and available offline after the first visit</li>
           </ul>
         </aside>
@@ -77,7 +83,7 @@
         <figure class="product-preview-frame">
           <img
             src="/marketing/docblocks-editor.png"
-            alt="DocBlocks running in a browser with the file pane, visual editor, and toolbar visible"
+            alt="DocBlocks running in a browser with the file pane, visual editor, toolbar, and slide previews visible"
             width="1280"
             height="720"
             loading="eager"
@@ -104,8 +110,8 @@
           <article class="card">
             <h3>Start immediately</h3>
             <p>
-              Create a document at docblocks.com and move between visual writing, raw Markdown, Play
-              views, media, and export without registering an account.
+              Create a document at docblocks.com and move between visual writing, raw Markdown,
+              previews, media, and export without registering an account.
             </p>
           </article>
           <article class="card">
@@ -118,7 +124,8 @@
           <article class="card">
             <h3>Pin it like an app</h3>
             <p>
-              Open the DocBlocks dropdown and choose <strong>Install DocBlocks&hellip;</strong>
+              Open the app menu from the DocBlocks logo and choose
+              <strong>Install DocBlocks&hellip;</strong>
               when your browser offers it. Launch or pin the installed web app from your desktop,
               dock, or taskbar. It uses the same browser profile and workspaces; the separate
               desktop app opens files directly in your own folders.
@@ -144,7 +151,8 @@
             <h3>Browser storage is not a backup</h3>
             <p>
               A browser may clear site data under storage pressure or when you clear its profile.
-              Request persistent storage in Settings when available and download backups regularly.
+              Choose <strong>Protect data from browser cleanup</strong> in Settings when your
+              browser offers it, and download backups regularly.
             </p>
           </article>
           <article class="card">

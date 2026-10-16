@@ -177,4 +177,24 @@ describe('shell keyboard shortcuts', () => {
     expect(shortcutLabel('save', true)).to.equal('⌘S');
     expect(shortcutLabel('find', true)).to.equal('⌘F');
   });
+
+  it('opens the shortcut sheet from F1 anywhere and from ? outside text', () => {
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    document.body.append(editor);
+    try {
+      expect(matchShortcut(keyEvent({ key: 'F1', target: editor }), 'split-pane')).to.equal(
+        'shortcuts',
+      );
+      expect(matchShortcut(keyEvent({ key: '?', shiftKey: true }), 'split-pane')).to.equal(
+        'shortcuts',
+      );
+      // `?` is ordinary text while writing.
+      expect(
+        matchShortcut(keyEvent({ key: '?', shiftKey: true, target: editor }), 'split-pane'),
+      ).to.equal(null);
+    } finally {
+      editor.remove();
+    }
+  });
 });

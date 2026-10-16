@@ -104,6 +104,19 @@ export interface AiModelInfo {
   readonly unavailableReason?: string;
 }
 
+/**
+ * How a downloadable model fits this device's memory, as the provider judged
+ * it. A model too big to run here never crosses the wire: the host drops it.
+ */
+export interface AiModelFit {
+  /** `fits-offload` runs a Mixture-of-Experts model partly from system RAM. */
+  readonly tier: 'fits' | 'fits-offload' | 'tight';
+  /** A short phrase, such as "may run slowly". */
+  readonly label: string;
+  /** One sentence explaining the verdict. */
+  readonly detail: string;
+}
+
 /** A provider-catalog model that can be added to this device. */
 export interface AiModelDownloadInfo {
   readonly id: string;
@@ -112,6 +125,12 @@ export interface AiModelDownloadInfo {
   /** Expected weight download size, when the provider reports one. */
   readonly downloadBytes: number | null;
   readonly state: 'download-required' | 'downloading';
+  /** Null when the provider did not rate this device. */
+  readonly fit: AiModelFit | null;
+  /** How well the model suits this device, 0–100; null when unrated. */
+  readonly score: number | null;
+  /** The provider's one recommendation for this device. */
+  readonly recommended: boolean;
 }
 
 export type AiStatus =

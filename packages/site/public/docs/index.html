@@ -34,7 +34,13 @@
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="DocBlocks home">
-        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+        <picture>
+          <source
+            srcset="/_res/siteimages/docblocks-dark.svg"
+            media="(prefers-color-scheme: dark)"
+          />
+          <img src="/_res/siteimages/docblocks.svg" alt="DocBlocks" width="557" height="242" />
+        </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="/web/">Web</a>
@@ -199,10 +205,10 @@
             <h3>2. Keep a backup</h3>
             <p>
               Edits save automatically in web and desktop workspaces; check any save or conflict
-              message. Browser storage belongs to this browser profile. Follow the
-              <strong>Backup browser docs frequently</strong> reminder and use
-              <strong>Download all workspaces</strong> in the app menu. For native folders, use your
-              usual file backup tools.
+              message. Browser storage belongs to this browser profile. Use
+              <strong>Back up</strong> at the bottom of the file pane, or
+              <strong>Back up all workspaces</strong> in the app menu, regularly. For native
+              folders, use your usual file backup tools.
             </p>
           </article>
           <article class="card">
@@ -288,7 +294,7 @@
             <h3>A document will not save</h3>
             <p>
               Keep the tab open. Check the storage or conflict banner, free browser space when
-              requested, and choose a conflict branch explicitly. Download all workspaces before
+              requested, and choose a conflict branch explicitly. Back up all workspaces before
               clearing site data.
             </p>
           </article>

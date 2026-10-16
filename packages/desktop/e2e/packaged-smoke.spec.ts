@@ -260,9 +260,9 @@ test('grants capture only to the trusted renderer and exposes only working prese
   // exit affordance itself is still covered on macOS by the Fill canvas leg
   // above, which needs no native transition.
   if (process.platform !== 'darwin') {
+    // Choosing a destination presents there at once; there is no second click.
     await presentationOptions.click();
     await menu.getByRole('menuitemradio', { name: /Full screen/ }).click();
-    await packaged.window.getByRole('button', { name: 'Present: Full screen' }).click();
     await expect
       .poll(() => packaged.window.evaluate(() => document.fullscreenElement !== null))
       .toBe(true);

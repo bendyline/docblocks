@@ -14,6 +14,8 @@ import type {
 
 import { SpeechSettingsControls } from '../src/Settings/SpeechSettings.js';
 import { formatModelSize } from '../src/Speech/format.js';
+import { useSpeechStatus } from '../src/Speech/useSpeechStatus.js';
+import { renderHook } from './helpers/renderHook.js';
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 
@@ -251,5 +253,59 @@ describe('Speech settings', () => {
     } finally {
       await view.cleanup();
     }
+  });
+
+  describe('when the host cannot answer', () => {
+    const denied = () => Promise.reject(new Error('EACCES: permission denied'));
+    const cases: [string, (api: DocBlocksHostSpeechAPI) => DocBlocksHostSpeechAPI, string][] = [
+      [
+        'status',
+        (api) => ({ ...api, status: denied }),
+        'DocBlocks could not check speech on this computer.',
+      ],
+      [
+        'preferences',
+        (api) => ({ ...api, getPreferences: denied }),
+        'DocBlocks could not check speech on this computer.',
+      ],
+      [
+        'the catalog',
+        (api) => ({
+          ...api,
+          catalog: async () => ({
+            ok: false,
+            error: { code: 'unknown', message: 'Something went wrong with speech.' },
+          }),
+        }),
+        'Something went wrong with speech.',
+      ],
+    ];
+    for (const [name, broken, message] of cases) {
+      it(`keeps the Speech section and explains a failure to read ${name}`, async () => {
+        const view = await render(broken(fakeSpeech().api));
+        try {
+          expect(view.container.querySelector('legend')?.textContent).to.equal('Speech');
+          expect(view.container.querySelector('[role="alert"]')?.textContent).to.equal(message);
+          expect(view.container.textContent).to.not.contain('EACCES');
+          expect(button(view.container, 'Download')).to.equal(undefined);
+        } finally {
+          await view.cleanup();
+        }
+      });
+    }
+
+    it('does not send people to Settings from the toolbar status', async () => {
+      const api = { ...fakeSpeech().api, status: denied };
+      const hook = await renderHook(useSpeechStatus, api);
+      try {
+        await flush();
+        expect(hook.result.current?.tts).to.deep.equal({
+          state: 'unavailable',
+          reason: 'DocBlocks could not check speech on this computer.',
+        });
+      } finally {
+        await hook.unmount();
+      }
+    });
   });
 });

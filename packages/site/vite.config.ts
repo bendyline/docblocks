@@ -131,8 +131,8 @@ const docblocksPwa = (): Plugin[] =>
       orientation: 'any',
       // Chrome on Android only shows the rich install dialog when a `narrow`
       // screenshot exists — otherwise it falls back to the mini-infobar.
-      // Regenerate with a temporary Playwright spec that opens the welcome
-      // document at each size and screenshots it; sizes must match the files.
+      // Regenerate with `node packages/site/design/capture-screenshots.mjs`;
+      // sizes must match the files.
       screenshots: [
         {
           src: 'screenshots/narrow-editor.png',
@@ -202,7 +202,9 @@ export default defineConfig({
   base: process.env.VITE_BASE || '/',
   define: {
     __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
-    __DOCBLOCKS_BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    // The build instant; About shows it as the viewer's local day (a UTC day
+    // read as tomorrow for anyone west of Greenwich in the evening).
+    __DOCBLOCKS_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [
     stripBrokenSourcemapPragmas(),

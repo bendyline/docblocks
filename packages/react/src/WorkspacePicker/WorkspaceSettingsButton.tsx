@@ -87,7 +87,7 @@ export function WorkspaceSettingsButton({
             tabIndex={-1}
             onClick={() => handleAction(onDownload)}
           >
-            Download workspace
+            Back up this workspace
           </button>
           <div className="db-ws-settings-divider" />
           <button

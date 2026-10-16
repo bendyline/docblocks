@@ -80,56 +80,34 @@ describe('Gezel native packaging adapter', () => {
     expect(called).to.equal(false);
   });
 
-  async function stageIntelMac(version: string): Promise<unknown[]> {
-    await writeFile(
-      path.join(root, 'package.json'),
-      JSON.stringify({
-        version,
-        dependencies: { '@bendyline/gezel-inference': serviceRequire('./package.json').version },
-      }),
-    );
-    const calls: unknown[] = [];
-    // Run the real payload verifier: stubbing it hid the Intel release's empty payload.
-    await stageForTarget(
-      {
-        packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
-        electronPlatformName: 'darwin',
-        arch: 1,
-      },
-      {
-        stageElectronNative: async (options: { destination: string }) => {
-          calls.push(options);
-          // What the upstream packager leaves when no archives exist for the target.
-          await mkdir(options.destination, { recursive: true });
-          await writeFile(
-            path.join(options.destination, 'release.json'),
-            JSON.stringify({ archives: [] }),
-          );
-        },
-      },
-    );
-    return calls;
-  }
-
-  it('builds the final Intel Mac release without engines', async () => {
-    const calls = await stageIntelMac('2.7.1');
-    expect(calls).to.deep.equal([
-      {
-        platform: 'darwin',
-        arch: 'x64',
-        destination: path.join(root, 'dist', 'gezel-native', 'mac-x64'),
-        cache: path.join(root, 'dist', 'gezel-native-cache'),
-        allowUnavailable: true,
-      },
-    ]);
-  });
-
-  it('refuses every other Intel Mac build', async () => {
-    try {
-      await stageIntelMac('2.8.0');
-      expect.fail('Expected an Intel Mac build after the final release to fail');
-    } catch (error) {
-      expect((error as Error).message).to.contain('Intel Macs are no longer supported');
+  it('refuses every Intel Mac build, including the final version', async () => {
+    for (const version of ['2.7.1', '2.8.0']) {
+      await writeFile(
+        path.join(root, 'package.json'),
+        JSON.stringify({
+          version,
+          dependencies: { '@bendyline/gezel-inference': serviceRequire('./package.json').version },
+        }),
+      );
+      let staged = false;
+      try {
+        await stageForTarget(
+          {
+            packager: { info: { appDir: root }, platform: { buildConfigurationKey: 'mac' } },
+            electronPlatformName: 'darwin',
+            arch: 1,
+          },
+          {
+            stageElectronNative: async () => {
+              staged = true;
+            },
+          },
+        );
+        expect.fail(`Expected an Intel Mac build of ${version} to fail`);
+      } catch (error) {
+        expect((error as Error).message).to.contain('Intel Macs are no longer supported');
+      }
+      expect(staged).to.equal(false);
     }
   });
 

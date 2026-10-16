@@ -37,7 +37,7 @@ for (const theme of ['Light', 'Dark']) {
     await openInitializedSite(page);
     await page.getByRole('tab', { name: 'Write', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Heading 2', exact: true })).toBeVisible();
-    for (const accent of ['Brown', 'Green', 'Blue', 'Purple', 'Maroon', 'Orange', 'Gray']) {
+    for (const accent of ['Rust', 'Green', 'Blue', 'Purple', 'Maroon', 'Orange', 'Gray']) {
       await page.getByRole('button', { name: 'DocBlocks', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Settings', exact: true });

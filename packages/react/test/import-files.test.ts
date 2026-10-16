@@ -13,6 +13,10 @@ import { MemoryFileSystemProvider } from '@bendyline/docblocks/filesystem';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { markdownDocToXlsx } from '@bendyline/squisq-formats/xlsx';
 import { importDroppedFiles, summariseImport } from '../src/DocBlocksShell/import-files.js';
+import { setOutsideInPdfWorker } from '../src/DocBlocksShell/outside-in-contract.js';
+import { markdownDocToPdf } from '@bendyline/squisq-formats/pdf';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 
 function textFile(name: string, content: string): File {
   return new File([content], name, { type: 'text/markdown' });
@@ -290,6 +294,74 @@ describe('importDroppedFiles', () => {
       (await provider.readBinary('inventory_files/inventory_files/data/inventory.xlsx'))
         ?.byteLength,
     ).to.equal(workbook.byteLength);
+  });
+});
+
+describe('importDroppedFiles — PDFs', () => {
+  before(() => {
+    // The surfaces pass a bundler URL; under Node, pdf.js takes a file URL.
+    const require = createRequire(import.meta.url);
+    setOutsideInPdfWorker(
+      pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href,
+    );
+  });
+  after(() => setOutsideInPdfWorker(null));
+
+  it('imports a dropped PDF and keeps the original bytes intact', async () => {
+    // pdf.js transfers the bytes it parses to its worker, detaching them;
+    // the original PDF written after conversion came out empty and the whole
+    // import failed with "Cannot perform Construct on a detached ArrayBuffer".
+    const pdf = new Uint8Array(
+      await markdownDocToPdf(parseMarkdown(['# Notes', '', 'Keep this.'].join('\n'))),
+    );
+    const provider = makeProvider();
+    const result = await importDroppedFiles(
+      [new File([pdf], 'notes.pdf', { type: 'application/pdf' })],
+      provider,
+    );
+
+    expect(result.failed).to.deep.equal([]);
+    expect(result.imported[0]).to.deep.equal({
+      source: 'notes.pdf',
+      path: 'notes.pdf',
+      renamed: false,
+    });
+    expect((await provider.readBinary('notes.pdf'))?.byteLength).to.equal(pdf.byteLength);
+    expect(await provider.readFile('notes_files/notes.md')).to.contain('Keep this.');
+  });
+});
+
+describe('importDroppedFiles — failed outside-in imports', () => {
+  it('leave no companion folder behind to push the next import aside', async () => {
+    const provider = makeProvider();
+    const v2 = provider.v2!;
+    const writeFile = v2.writeFile.bind(v2);
+    let failTarget = true;
+    // Fail the last step -- writing the rendered file itself -- after the
+    // companion folder and its Markdown were already written.
+    v2.writeFile = (path, data, options) => {
+      if (failTarget && String(path).endsWith('deck.html') && options?.mode === 'upsert') {
+        return Promise.reject(new Error('Disk full'));
+      }
+      return writeFile(path, data, options);
+    };
+    const drop = () =>
+      importDroppedFiles(
+        [new File(['<h1>Deck</h1>'], 'deck.html', { type: 'text/html' })],
+        provider,
+      );
+
+    const failed = await drop();
+    expect(failed.failed).to.have.length(1);
+    expect(await provider.exists('deck_files')).to.equal(false);
+
+    failTarget = false;
+    const retried = await drop();
+    expect(retried.imported[0]).to.deep.equal({
+      source: 'deck.html',
+      path: 'deck.html',
+      renamed: false,
+    });
   });
 });
 

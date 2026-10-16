@@ -49,10 +49,21 @@ export function parsePresentationRefinement(
   if (beat.layout === 'image' && beat.imageSrc !== original.imageSrc) return null;
   return beat;
 }
+export interface RefinePresentationOptions {
+  signal?: AbortSignal;
+  /** `completed` slides have resolved and a request for the next one is about to start. */
+  onProgress?: (completed: number, total: number) => void;
+  /**
+   * One slide's outcome, as soon as it resolves and before the next request
+   * starts: the accepted beat, or null when the automatic version is kept.
+   * Lets a caller show suggestions while the remaining slides are still running.
+   */
+  onBeat?: (index: number, beat: PresentationBeat | null) => void;
+}
 export async function refinePresentationPlan(
   ai: Pick<DocBlocksHostAiAPI, 'chat'>,
   plan: PresentationPlan,
-  options: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void } = {},
+  options: RefinePresentationOptions = {},
 ): Promise<{ plan: PresentationPlan; retained: number; refined: number[] }> {
   const beats = [...plan.beats];
   let retained = 0;
@@ -65,6 +76,7 @@ export async function refinePresentationPlan(
     // word-bounded passages. Keep the baseline instead of overflowing a 4K model.
     if (passage.length > 2400) {
       retained++;
+      options.onBeat?.(index, null);
       continue;
     }
     let replacement: PresentationBeat | null = null;
@@ -108,6 +120,7 @@ export async function refinePresentationPlan(
       beats[index] = replacement;
       refined.push(index);
     } else retained++;
+    options.onBeat?.(index, replacement);
   }
   options.onProgress?.(plan.beats.length, plan.beats.length);
   return {

@@ -156,6 +156,10 @@ export function createMobileAi(options: MobileAiOptions) {
                     contextWindow: model.context_window ?? null,
                     downloadBytes: model.download_bytes ?? null,
                     state: model.availability,
+                    // The native listing carries no device rating.
+                    fit: null,
+                    score: null,
+                    recommended: false,
                   },
                 ]
               : [],

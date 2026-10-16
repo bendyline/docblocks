@@ -107,6 +107,57 @@ test.describe('adaptive shell on a phone', () => {
     expect(survived, 'the editor node was replaced across a drawer toggle').toBe('original');
   });
 
+  test('mounts one editor for a newly created document', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await page.goto('/');
+    const create = page.getByRole('button', { name: 'Create a document', exact: true });
+    await expect(create).toBeVisible({ timeout: 30_000 });
+
+    // Count every editor created from here on. A second mount replaced the
+    // editor the person was already tapping, so on a slow phone their first
+    // keystrokes landed at the top of the new document, splitting the title.
+    await page.evaluate(() => {
+      const probe = window as Window & { editorMounts?: number };
+      const seen = new WeakSet<Element>(document.querySelectorAll('.ProseMirror'));
+      probe.editorMounts = 0;
+      new MutationObserver(() => {
+        for (const editor of document.querySelectorAll('.ProseMirror')) {
+          if (seen.has(editor)) continue;
+          seen.add(editor);
+          probe.editorMounts = (probe.editorMounts ?? 0) + 1;
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
+    await create.click();
+    await page.getByRole('textbox', { name: 'Document name', exact: true }).fill('first-draft');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+
+    // Settled: the shell has adopted the new path, and the welcome document's
+    // editor is gone. Tiptap destroys a replaced editor on a deferred tick, so
+    // a second mount, had there been one, has happened by now.
+    // By path rather than role: the closed drawer is outside the accessibility
+    // tree on WebKit, and getByRole skips hidden elements.
+    await expect(
+      page.locator(
+        '.db-tree-row[data-path="first-draft.md"], .db-tree-row[data-path="/first-draft.md"]',
+      ),
+    ).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.ProseMirror')).toHaveCount(1);
+    // By accessible name: the heading's text also carries Squisq's inline
+    // block tag whenever the block is selected, as it is on WebKit here.
+    await expect(
+      page
+        .locator('.ProseMirror')
+        .getByRole('heading', { level: 1, name: 'first-draft', exact: true }),
+    ).toBeVisible();
+
+    const mounts = await page.evaluate(
+      () => (window as Window & { editorMounts?: number }).editorMounts,
+    );
+    expect(mounts, 'creating a document mounted a throwaway editor first').toBe(1);
+  });
+
   test('gives every shell control a reachable touch target', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await page.goto('/');

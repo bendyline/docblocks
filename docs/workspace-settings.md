@@ -84,15 +84,15 @@ the patch is applied to the newer file instead of overwriting it.
 | Setting                | Order                                                                                   |
 | ---------------------- | --------------------------------------------------------------------------------------- |
 | Document theme         | document frontmatter → `documents.defaultTheme` → standard                              |
-| Export dialog theme    | document frontmatter → workspace default → last-used export theme → standard            |
+| Export dialog theme    | the theme the editor previews: document frontmatter → workspace default → standard      |
 | Version history on/off | `versionHistory.enabled` → an older browser-local per-workspace choice → app preference |
 | Revisions kept         | `versionHistory.keep` → host default → 50                                               |
 
 The workspace theme is a fallback: a document's own theme always wins.
 Rendered outside-in pages (HTML, DOCX, PDF, …) pick up a changed default the
-next time each is saved. The editor's live preview follows the workspace
-theme once DocBlocks pins a Squisq release whose `EditorShell` accepts
-`defaultThemeId`.
+next time each is saved. The editor's live preview follows it too, and its
+Theme picker lists it as **Workspace default**; the export dialog starts on
+whatever theme the preview shows.
 
 Before workspace settings existed, the per-workspace version-history choice
 was stored in the browser. It is still honored, and the first Save of

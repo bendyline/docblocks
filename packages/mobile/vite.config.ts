@@ -41,7 +41,9 @@ export default defineConfig({
   publicDir: '../site/public',
   define: {
     __DOCBLOCKS_VERSION__: JSON.stringify(docblocksPackage.version),
-    __DOCBLOCKS_BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)),
+    // The build instant; About shows it as the viewer's local day (a UTC day
+    // read as tomorrow for anyone west of Greenwich in the evening).
+    __DOCBLOCKS_BUILD_DATE__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [
     {

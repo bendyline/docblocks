@@ -76,6 +76,10 @@ class FakeDaemon {
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : null;
     this.requests.push({ method, path: url.pathname, bearer, body });
 
+    // The SDK refuses a service that does not advertise its API generation.
+    if (method === 'GET' && url.pathname === '/api/health') {
+      return json(200, { apiCompat: { floor: 1, current: 1 } });
+    }
     if (method === 'POST' && url.pathname === '/v1/apps/register') {
       return json(200, {
         status: 'pending',
@@ -216,7 +220,7 @@ describe('Gezel connector against the app SDK', () => {
       connectorFor(daemon, credentials).connect({ interactive: false }),
     );
     expect(toAiError(error).code).to.equal('approval-required');
-    expect(daemon.paths()).to.deep.equal(['GET /v1/models']);
+    expect(daemon.paths()).to.deep.equal(['GET /api/health', 'GET /v1/models']);
     expect(credentials.token).to.equal('stale-token');
   });
 

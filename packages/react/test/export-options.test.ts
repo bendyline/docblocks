@@ -9,12 +9,14 @@ import { expect } from 'chai';
 import {
   DEFAULT_OPTIONS,
   FORMAT_EXTENSIONS,
+  exportThemeChoices,
   FORMAT_LABELS,
   loadLastExportOptions,
   saveExportOptions,
   type ExportFormat,
   type ExportOptions,
 } from '../src/Export/export-options.js';
+import { exporterThemeId } from '../src/Export/run-export.js';
 
 const ALL_FORMATS: ExportFormat[] = ['docx', 'pdf', 'pptx', 'epub', 'md', 'html'];
 const STORAGE_KEY = 'docblocks-export-options';
@@ -111,6 +113,39 @@ describe('export-options', () => {
       expect(restored!.pageSize).to.equal(DEFAULT_OPTIONS.pageSize);
       expect(restored!.htmlStyle).to.equal(DEFAULT_OPTIONS.htmlStyle);
       expect(restored!.includeLinkedDocs).to.equal(DEFAULT_OPTIONS.includeLinkedDocs);
+    });
+  });
+
+  describe('exportThemeChoices', () => {
+    it('lists the document themes first and lets them shadow a built-in id', () => {
+      const choices = exportThemeChoices([
+        { id: 'acme', name: 'Acme Brand' },
+        { id: 'warm-earth', name: 'Our Warm Earth' },
+      ]);
+      expect(choices.slice(0, 2).map((theme) => theme.name)).to.deep.equal([
+        'Acme Brand',
+        'Our Warm Earth',
+      ]);
+      expect(choices.filter((theme) => theme.id === 'warm-earth')).to.have.length(1);
+      expect(choices.some((theme) => theme.id === 'standard')).to.equal(true);
+    });
+  });
+
+  describe('exporterThemeId', () => {
+    it('passes a chosen theme through', () => {
+      expect(exporterThemeId('# Plain', 'documentary')).to.equal('documentary');
+    });
+
+    it('leaves Standard implicit for a document that names no theme', () => {
+      expect(exporterThemeId('# Plain', 'standard')).to.equal(undefined);
+      expect(exporterThemeId('---\ntitle: Notes\n---\n\n# Plain', 'standard')).to.equal(undefined);
+    });
+
+    it('makes Standard explicit when it overrides the document theme', () => {
+      // Exporters given no theme fall back to the frontmatter one, so an
+      // implicit Standard would silently export in Warm Earth.
+      const themed = '---\nsquisq-theme: warm-earth\n---\n\n# Themed';
+      expect(exporterThemeId(themed, 'standard')).to.equal('standard');
     });
   });
 });

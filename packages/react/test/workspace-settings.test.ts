@@ -246,14 +246,18 @@ describe('workspace catalog scheduler', () => {
 });
 
 describe('export dialog theme layering', () => {
-  it('prefers the document theme, then the workspace default, then the last-used theme', () => {
-    const last = { ...DEFAULT_OPTIONS, themeId: 'gezellig' };
+  it('starts on the theme the editor previews: document, then workspace default, then standard', () => {
+    const last = { ...DEFAULT_OPTIONS, format: 'docx' as const, themeId: 'gezellig' };
     expect(resolveExportDialogInitial(last, 'dusk', 'warm-earth').themeId).to.equal('dusk');
     expect(resolveExportDialogInitial(last, undefined, 'warm-earth').themeId).to.equal(
       'warm-earth',
     );
-    expect(resolveExportDialogInitial(last, null, undefined).themeId).to.equal('gezellig');
+    // The last export's theme belonged to another document; the preview of a
+    // theme-less document is Standard, so the export starts there too.
+    expect(resolveExportDialogInitial(last, null, undefined).themeId).to.equal('standard');
     expect(resolveExportDialogInitial(null, null).themeId).to.equal('standard');
+    // Everything else the user last chose still carries over.
+    expect(resolveExportDialogInitial(last, null, undefined).format).to.equal('docx');
   });
 });
 

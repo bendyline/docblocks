@@ -1,5 +1,7 @@
 (() => {
-  const accentColors = new Set(['brown', 'green', 'blue', 'purple', 'maroon', 'orange', 'gray']);
+  const accentColors = new Set(['rust', 'green', 'blue', 'purple', 'maroon', 'orange', 'gray']);
+  // The default palette was called Brown before it became Rust.
+  const legacyAccentColors = new Map([['brown', 'rust']]);
   let resolvedTheme = globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches
     ? 'dark'
     : 'light';
@@ -10,7 +12,8 @@
       resolvedTheme = preference;
     }
 
-    const accentColor = globalThis.localStorage.getItem('docblocks:accentColor');
+    const storedAccent = globalThis.localStorage.getItem('docblocks:accentColor');
+    const accentColor = legacyAccentColors.get(storedAccent) ?? storedAccent;
     if (accentColor && accentColors.has(accentColor)) {
       globalThis.document.documentElement.dataset.dbAccent = accentColor;
     }

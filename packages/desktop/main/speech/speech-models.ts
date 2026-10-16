@@ -137,9 +137,18 @@ export class SpeechModelStore {
     return true;
   }
 
+  /**
+   * Another app's copy is optional. One this app cannot inspect, such as a
+   * model in the Gezel service's private folders, is simply not available;
+   * it must never stop this app from reporting its own models.
+   */
   private async sharedInstalled(entry: SpeechModelEntry): Promise<boolean> {
-    for (const file of entry.files) if (!(await this.assets.find(entry, file))) return false;
-    return true;
+    try {
+      for (const file of entry.files) if (!(await this.assets.find(entry, file))) return false;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async sourceOf(entry: SpeechModelEntry): Promise<'app' | 'shared' | null> {

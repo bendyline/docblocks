@@ -84,7 +84,7 @@ Dropdown for switching between workspaces, creating new ones, and opening local 
 
 ### AppMenu
 
-Top-left brand menu with the app-wide **Settings** dialog (theme preference, global version-history default), optional "Download all workspaces," and the **About** dialog.
+Top-left brand menu with the app-wide **Settings** dialog (theme preference, global version-history default), optional "Back up all workspaces," a Help group (keyboard shortcuts, documentation), and the **About** dialog.
 
 ### ExportToolbarControls / ExportDialog
 

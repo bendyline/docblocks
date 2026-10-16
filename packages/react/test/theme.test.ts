@@ -12,9 +12,15 @@ describe('appearance preferences', () => {
     localStorage.clear();
   });
 
-  it('defaults to the system theme and brown accent', () => {
+  it('defaults to the system theme and rust accent', () => {
     expect(loadThemePreference()).to.equal('auto');
-    expect(loadAccentColor()).to.equal('brown');
+    expect(loadAccentColor()).to.equal('rust');
+  });
+
+  it('reads an accent saved under its former name', () => {
+    // The default palette was called Brown before it became Rust.
+    localStorage.setItem('docblocks:accentColor', 'brown');
+    expect(loadAccentColor()).to.equal('rust');
   });
 
   it('round-trips valid theme and accent preferences', () => {
@@ -27,7 +33,7 @@ describe('appearance preferences', () => {
 
   it('exposes all supported accent colors', () => {
     expect(ACCENT_COLORS).to.deep.equal([
-      'brown',
+      'rust',
       'green',
       'blue',
       'purple',
@@ -42,6 +48,9 @@ describe('appearance preferences', () => {
     localStorage.setItem('docblocks:accentColor', 'chartreuse');
 
     expect(loadThemePreference()).to.equal('auto');
-    expect(loadAccentColor()).to.equal('brown');
+    expect(loadAccentColor()).to.equal('rust');
+
+    localStorage.setItem('docblocks:accentColor', 'constructor');
+    expect(loadAccentColor()).to.equal('rust');
   });
 });

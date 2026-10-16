@@ -14,6 +14,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { AiChatProgress } from '@bendyline/docblocks/host';
+import { GEZEL_API_GENERATION, GEZEL_API_GENERATION_FLOOR } from '@bendyline/gezel';
 
 export const FAKE_GEZEL_TOKEN = 'fake-gezel-token';
 export const FAKE_GEZEL_CODE = '428-913';
@@ -264,7 +265,13 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
     void (async () => {
       const url = new URL(request.url ?? '/', 'http://127.0.0.1');
       if (request.method === 'GET' && url.pathname === '/api/health') {
-        sendJson(response, 200, { status: 'ok', version: '0.0.0-fake' });
+        // The SDK treats a daemon without this handshake as too old to use and
+        // hosts its own engine instead, so pairing would never start.
+        sendJson(response, 200, {
+          status: 'ok',
+          version: '0.0.0-fake',
+          apiCompat: { floor: GEZEL_API_GENERATION_FLOOR, current: GEZEL_API_GENERATION },
+        });
       } else if (request.method === 'POST' && url.pathname === '/v1/apps/register') {
         await readJson(request);
         registrations += 1;

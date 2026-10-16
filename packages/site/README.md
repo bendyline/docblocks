@@ -28,7 +28,7 @@ npm run preview -w docblocks-site
 
 ## What it does
 
-This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Editor / Markdown / Play views, and multi-format export including EPUB and MP4 video. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
+This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Write and Source views and Document, Page, Slideshow, and Video previews, and multi-format export including EPUB and MP4 video. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
 
 The editor remains the canonical, indexable experience at `/`. Lightweight product, format,
 documentation, privacy, and terms pages live under `public/`; `robots.txt`, `sitemap.xml`, the
@@ -48,7 +48,7 @@ The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configu
 
 ### Icons
 
-`public/icons/` (192/512/maskable-512/apple-touch) are generated from `public/_res/siteimages/docblk.webp` — regenerate with any canvas-based resize if the logo changes (content within the central ~80% for the maskable variant, solid background).
+`public/favicon.png`, `public/icons/` (192/512/maskable-512/apple-touch), `public/og.png` and the wordmarks in `public/_res/siteimages/` are generated from the hull-lettering source in [`design/brand/`](design/brand/README.md). Change the letterforms or colors there and regenerate; don't edit the PNGs.
 
 ### Theme fonts
 

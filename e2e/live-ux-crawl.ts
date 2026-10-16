@@ -523,7 +523,9 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
     await page.locator('.db-workspace-picker-btn').click();
     await page
       .locator('.db-workspace-dropdown')
-      .getByRole('button', { name: /My Documents/ })
+      // Exact: each workspace row also carries a "More actions" button whose
+      // accessible name includes the workspace name.
+      .getByRole('button', { name: 'My Documents', exact: true })
       .click();
     const welcomeRow = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
     await welcomeRow.waitFor({ state: 'visible', timeout: 10_000 });
@@ -709,7 +711,9 @@ async function crawlSeoBootstrap(browser: Browser, theme: 'light' | 'dark'): Pro
     theme,
     viewport: { width: 1440, height: 900 },
   });
-  await context.route('**/assets/*.js', (route) => route.abort());
+  // Production builds load the app from /assets/*.js; the Vite dev server
+  // loads /src/main.tsx instead. Block both so React never mounts on either.
+  await context.route(/\/(assets\/[^?]*\.js|src\/main\.tsx)(\?|$)/, (route) => route.abort());
 
   await step(`seo bootstrap (${theme})`, async () => {
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });

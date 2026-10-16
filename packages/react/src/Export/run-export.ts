@@ -7,7 +7,12 @@ import type {
   MarkdownBlockNode,
   MarkdownInlineNode,
 } from '@bendyline/squisq/markdown';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
+import {
+  parseFrontmatter,
+  parseMarkdown,
+  readFrontmatterThemeId,
+  splitFrontmatterBlock,
+} from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type {
@@ -87,6 +92,21 @@ async function saveExportBlob(
   downloadBlob(blob, filename);
 }
 
+/**
+ * The theme id handed to Squisq's exporters. Given none, they fall back to the
+ * document's own frontmatter theme, so Standard stays implicit only when the
+ * document names no theme of its own; choosing Standard over a themed
+ * document must say so, or the export silently keeps the document's theme.
+ */
+export function exporterThemeId(markdown: string, selectedThemeId: string): string | undefined {
+  if (selectedThemeId !== 'standard') return selectedThemeId;
+  const block = splitFrontmatterBlock(markdown).frontmatter;
+  const firstBreak = block ? block.indexOf('\n') : -1;
+  if (!block || firstBreak < 0) return undefined;
+  const yaml = block.slice(firstBreak + 1).replace(/\r?\n---(?:\r?\n)?$/, '');
+  return readFrontmatterThemeId(parseFrontmatter(yaml) ?? undefined) ? selectedThemeId : undefined;
+}
+
 /** Derive a filename from the selected file path and export format. */
 function buildFilename(selectedFile: string | null, format: ExportFormat): string {
   const base = selectedFile ? selectedFile.replace(/^\//, '').replace(/\.[^.]+$/, '') : 'document';
@@ -103,7 +123,7 @@ export async function runExport(
   converterOverrides: ExportConverterOverrides = {},
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
-  const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
+  const themeId = exporterThemeId(markdown, options.themeId);
 
   if (options.format === 'md') {
     await saveExportBlob(new Blob([markdown], { type: MIME_TYPES.md }), filename, saveBlob);
@@ -222,7 +242,7 @@ async function runHtmlExport(
   // recursive ZIP path doesn't care — squisq's bundle helpers handle
   // the inside-zip rename and the cross-doc link rewrite themselves.
   const singleHtmlFilename = options.entryAsIndex ? 'index.html' : htmlFilename;
-  const themeId = options.themeId !== 'standard' ? options.themeId : undefined;
+  const themeId = exporterThemeId(markdown, options.themeId);
 
   // Recursive HTML bundle: when the user opted in, ask squisq to walk
   // this doc's relative .md links and emit a ZIP with every reachable

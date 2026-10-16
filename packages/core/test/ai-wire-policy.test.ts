@@ -330,10 +330,20 @@ describe('AI model download wire values', () => {
     contextWindow: 32_768,
     downloadBytes: 4_000_000_000,
     state: 'download-required',
+    fit: null,
+    score: null,
+    recommended: false,
+  };
+  const rated = {
+    ...model,
+    fit: { tier: 'fits-offload', label: 'runs (expert offload)', detail: 'Experts stream.' },
+    score: 100,
+    recommended: true,
   };
 
   it('accepts a bounded catalog list and install events', () => {
     expect(parseAiModelDownloadInfoList([model])).to.deep.equal([model]);
+    expect(parseAiModelDownloadInfoList([rated])).to.deep.equal([rated]);
     expect(
       parseAiModelInstallEvent({
         kind: 'progress',
@@ -354,6 +364,16 @@ describe('AI model download wire values', () => {
       parseAiModelDownloadInfoList([{ ...model, downloadBytes: Number.MAX_SAFE_INTEGER + 1 }]),
     ).to.equal(null);
     expect(parseAiModelDownloadInfoList([{ ...model, downloadBytes: 0 }])).to.equal(null);
+    // The host drops a model too big for this device; it never crosses.
+    expect(
+      parseAiModelDownloadInfoList([{ ...rated, fit: { ...rated.fit, tier: 'too-big' } }]),
+    ).to.equal(null);
+    expect(parseAiModelDownloadInfoList([{ ...rated, fit: { tier: 'fits' } }])).to.equal(null);
+    expect(parseAiModelDownloadInfoList([{ ...rated, score: 101 }])).to.equal(null);
+    expect(parseAiModelDownloadInfoList([{ ...rated, score: 99.5 }])).to.equal(null);
+    expect(parseAiModelDownloadInfoList([{ ...rated, recommended: 'yes' }])).to.equal(null);
+    const { recommended: _omitted, ...withoutRecommended } = rated;
+    expect(parseAiModelDownloadInfoList([withoutRecommended])).to.equal(null);
     expect(
       parseAiModelInstallEvent({
         kind: 'progress',

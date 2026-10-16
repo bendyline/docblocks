@@ -26,9 +26,11 @@ from the draft; applying makes that reset durable.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
 or highlights. With an AI model connected, **Suggest with AI** proposes headlines,
-excerpts, and layouts one slide at a time. Only accepted AI results are stored;
-failed suggestions get one repair attempt, then retain the automatic version.
-Requests can be cancelled. AI never runs automatically while typing.
+excerpts, and layouts one slide at a time. Each accepted suggestion appears in the
+slide list and preview as soon as it arrives, marked **AI**; the footer shows which
+slide is being suggested, and **Stop** keeps everything suggested so far. Only
+accepted AI results are stored; failed suggestions get one repair attempt, then
+retain the automatic version. AI never runs automatically while typing.
 
 Saved wording is tied to its exact source passage (the whole section for a manual
 opening override). If “The sky is pink” changes to “The sky is blue,” the old AI or

@@ -40,6 +40,9 @@ export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'txt',
   'xml',
   'wasm',
+  // pdf.js ships its worker only as an ES module (`pdf.worker.min.mjs`);
+  // without it a PDF cannot be imported offline.
+  'mjs',
 ]);
 
 export const SITE_PRECACHE_GLOB = `**/*.{${SITE_PRECACHE_EXTENSIONS.join(',')}}`;

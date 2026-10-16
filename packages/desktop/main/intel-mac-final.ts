@@ -2,8 +2,8 @@
  * Intel Mac end of support.
  *
  * DocBlocks' bundled AI and speech engines have no Intel builds, so
- * `intel-mac-final.json` names the last version built for Intel Macs. Release
- * CI builds an x64 update only for that version and keeps every later
+ * `intel-mac-final.json` names the last version built for Intel Macs. That
+ * release published an x64 update, and release CI keeps every later
  * `latest-mac.yml` pointing Intel Macs back at it
  * (`scripts/intel-mac-final-feed.ts`). That build must never ask for another
  * update: newer feeds carry nothing an Intel Mac can install, and

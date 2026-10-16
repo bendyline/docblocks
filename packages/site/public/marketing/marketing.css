@@ -42,14 +42,14 @@
   color-scheme: light dark;
   --font-main: 'Hanken Grotesk', Inter, system-ui, sans-serif;
   --font-accent: 'PT Serif', Georgia, serif;
-  --ink: #262219;
+  --ink: #231f18;
   --muted: #665f54;
   --paper: #f3eede;
   --paper-bright: #fffdf7;
   --paper-deep: #e6dbc5;
-  --accent: #765033;
-  --accent-dark: #4d3424;
-  --border: rgba(38, 34, 25, 0.18);
+  --accent: #a0461f;
+  --accent-dark: #7a3418;
+  --border: rgba(35, 31, 24, 0.18);
   --shadow: 0 24px 70px rgba(66, 48, 29, 0.12);
 }
 
@@ -213,7 +213,7 @@ img {
 }
 
 .button--secondary:hover {
-  background: rgba(38, 34, 25, 0.07);
+  background: rgba(35, 31, 24, 0.07);
   color: var(--ink);
 }
 
@@ -762,13 +762,13 @@ h3 {
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #f3ecdd;
+    --ink: #ece6d8;
     --muted: #c6baa7;
     --paper: #171713;
     --paper-bright: #201f19;
     --paper-deep: #2d2a22;
-    --accent: #d3a06f;
-    --accent-dark: #edc59b;
+    --accent: #e0835a;
+    --accent-dark: #f0c2aa;
     --border: rgba(243, 236, 221, 0.17);
     --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
   }

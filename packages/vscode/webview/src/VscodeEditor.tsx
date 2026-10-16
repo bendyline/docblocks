@@ -76,7 +76,7 @@ const VscodeSettingsButton = lazy(() =>
 
 const DEFAULT_EDITOR_SETTINGS: VscodeEditorSettings = {
   autoSave: false,
-  accentColor: 'brown',
+  accentColor: 'rust',
   writeCanvasSettings: { ...DEFAULT_VSCODE_WRITE_CANVAS_SETTINGS },
   proofingSettings: { ...DEFAULT_VSCODE_PROOFING_SETTINGS },
 };

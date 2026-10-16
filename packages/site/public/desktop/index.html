@@ -34,7 +34,13 @@
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="DocBlocks home">
-        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+        <picture>
+          <source
+            srcset="/_res/siteimages/docblocks-dark.svg"
+            media="(prefers-color-scheme: dark)"
+          />
+          <img src="/_res/siteimages/docblocks.svg" alt="DocBlocks" width="557" height="242" />
+        </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="/web/">Web</a>
@@ -94,7 +100,7 @@
           <h2>Built for local work</h2>
           <ul>
             <li>Real folders and plain Markdown files</li>
-            <li>Visual, source, and presentation views</li>
+            <li>Visual writing, Markdown source, and previews</li>
             <li>Native menus, file opening, and updates</li>
             <li>Optional AI assistance, dictation, and read aloud</li>
           </ul>
@@ -105,7 +111,7 @@
         <figure class="product-preview-frame">
           <img
             src="/marketing/docblocks-editor.png"
-            alt="DocBlocks editing a Markdown document with the file pane, visual editor, and toolbar visible"
+            alt="DocBlocks editing a Markdown document with the file pane, visual editor, toolbar, and slide previews visible"
             width="1280"
             height="720"
             loading="eager"
@@ -222,8 +228,8 @@
           <article class="card">
             <h3>Write three ways</h3>
             <p>
-              Move between rich visual editing, raw Markdown source, and Play views for documents,
-              slideshows, pages, and video-oriented presentation.
+              Move between rich visual editing, raw Markdown source, and Document, Page, Slideshow,
+              and Video previews.
             </p>
           </article>
           <article class="card">

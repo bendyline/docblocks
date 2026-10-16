@@ -10,24 +10,24 @@ import {
 import { INTERFACE_FONT_ATTRIBUTE } from '../src/layout/useInterfaceFontAttribute.js';
 
 /**
- * The interface-font preference decides whether the shell chrome follows the
- * operating system or uses the bundled face.
+ * The interface-font preference decides whether the shell chrome uses the
+ * bundled face or follows the operating system.
  *
- * It matters twice over: it is a user-facing choice, and it is what makes one
- * set of visual-regression baselines comparable across operating systems at all
- * — under the system stack the same screenshot renders in a different typeface
- * on every platform.
+ * It matters twice over: it is a user-facing choice, and the bundled face is
+ * what makes one set of visual-regression baselines comparable across
+ * operating systems at all — under the system stack the same screenshot
+ * renders in a different typeface on every platform.
  */
 describe('interface font preference', () => {
   afterEach(() => {
     localStorage.clear();
   });
 
-  it('follows the operating system until someone chooses otherwise', () => {
-    // The default has to stay `system`: DocBlocks should look native out of the
-    // box, and the bundled face is never fetched while nothing references it.
-    expect(DEFAULT_INTERFACE_FONT).to.equal('system');
-    expect(loadInterfaceFont()).to.equal('system');
+  it('uses the bundled face until someone chooses otherwise', () => {
+    // The default is the bundled Hanken Grotesk face, so the app and
+    // docblocks.com share one typeface and every OS renders the same chrome.
+    expect(DEFAULT_INTERFACE_FONT).to.equal('fixed');
+    expect(loadInterfaceFont()).to.equal('fixed');
   });
 
   it('round-trips both choices', () => {
@@ -39,7 +39,7 @@ describe('interface font preference', () => {
 
   it('ignores a stored value it does not recognise', () => {
     localStorage.setItem('docblocks:interfaceFont', 'roboto-ultra');
-    expect(loadInterfaceFont()).to.equal('system');
+    expect(loadInterfaceFont()).to.equal('fixed');
   });
 
   it('reads the key the visual suite seeds', () => {
@@ -58,8 +58,8 @@ describe('interface font preference', () => {
       },
     });
     try {
-      expect(loadInterfaceFont()).to.equal('system');
-      expect(() => saveInterfaceFont('fixed')).to.not.throw();
+      expect(loadInterfaceFont()).to.equal('fixed');
+      expect(() => saveInterfaceFont('system')).to.not.throw();
     } finally {
       if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor);
     }
@@ -78,19 +78,27 @@ describe('interface font preference', () => {
       'utf8',
     );
 
-    it('declares the chrome typeface as one token', () => {
+    it('declares the chrome typeface as one token, defaulting to the bundled face', () => {
+      expect(stylesheet).to.match(/--db-ui-font:\s*'DocBlocks Fixed UI'/u);
+    });
+
+    it('swaps that token for the system stack under the root attribute', () => {
+      expect(stylesheet).to.contain("[data-db-interface-font='system']");
       expect(stylesheet).to.match(/--db-ui-font:\s*system-ui/u);
     });
 
-    it('swaps that token for the bundled face under the root attribute', () => {
-      expect(stylesheet).to.contain("[data-db-interface-font='fixed']");
-      expect(stylesheet).to.match(/--db-ui-font:\s*'DocBlocks Fixed UI'/u);
+    it('carries the chrome face into Squisq by default, not only in one mode', () => {
+      // Squisq portals its menus onto <body>; the bridge has to be bound on the
+      // root palette block or a menu keeps Squisq's own stack.
+      const rootBlock = stylesheet.slice(0, stylesheet.indexOf('/* ── Adaptive tokens'));
+      expect(rootBlock).to.contain('--squisq-ux-font: var(--db-ui-font);');
     });
 
     it('routes every chrome font declaration through the token', () => {
       // A new rule that names `system-ui` directly would keep following the OS
-      // even in fixed mode — invisible until a baseline disagreed across
-      // platforms. The two token declarations above are the only allowed uses.
+      // even with the bundled face selected — invisible until a baseline
+      // disagreed across platforms. The two token declarations above are the
+      // only allowed uses.
       // Comments mention the stack by name, so they are stripped first.
       const rules = stylesheet.replace(/\/\*[\s\S]*?\*\//gu, '');
       const systemUiUses = [...rules.matchAll(/system-ui/gu)].length;

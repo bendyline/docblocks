@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -13,10 +12,6 @@ import { addIntelMacFinalToFeed, withIntelMacFinal } from '../scripts/intel-mac-
 
 const policy = { version: '2.7.1' };
 const intelZip = 'DocBlocks-2.7.1-mac-x64.zip';
-
-function sha512(value: Buffer): string {
-  return createHash('sha512').update(value).digest('base64');
-}
 
 function feed(version: string, files: readonly Record<string, unknown>[]): Record<string, unknown> {
   return {
@@ -52,15 +47,6 @@ describe('Intel Mac final update feed', () => {
     ]);
     // Legacy single-file fields keep naming the Apple silicon zip.
     expect(merged.path).to.equal('DocBlocks-2.8.0-mac-arm64.zip');
-  });
-
-  it('names the zip locally in the final release itself', () => {
-    const arm64Only = feed('2.7.1', [
-      { url: 'DocBlocks-2.7.1-mac-arm64.zip', sha512: 'arm', size: 10 },
-    ]);
-    const x64Build = feed('2.7.1', [{ url: intelZip, sha512: 'intel', size: 20 }]);
-    const merged = withIntelMacFinal(arm64Only, x64Build, policy);
-    expect(filesOf(merged)[1]).to.deep.equal({ url: intelZip, sha512: 'intel', size: 20 });
   });
 
   it('is idempotent', () => {
@@ -136,67 +122,28 @@ describe('Intel Mac final update feed', () => {
     });
   });
 
-  describe('in the final release build', () => {
+  describe('as release CI runs it', () => {
     let directory: string;
-    let zip: Buffer;
 
     beforeEach(async () => {
       directory = await mkdtemp(path.join(tmpdir(), 'docblocks-intel-feed-'));
-      zip = Buffer.from('final intel build');
-      await writeFile(path.join(directory, intelZip), zip);
-      await writeFile(
-        path.join(directory, 'latest-mac.yml'),
-        yaml.dump(
-          feed('2.7.1', [{ url: 'DocBlocks-2.7.1-mac-arm64.zip', sha512: 'arm', size: 10 }]),
-        ),
-      );
-      await writeFile(
-        path.join(directory, 'intel.yml'),
-        yaml.dump(feed('2.7.1', [{ url: intelZip, sha512: sha512(zip), size: zip.length }])),
-      );
+      await writeFile(path.join(directory, 'latest-mac.yml'), yaml.dump(laterFeed));
+      await writeFile(path.join(directory, 'intel.yml'), yaml.dump(finalIntelFeed));
     });
 
     afterEach(async () => {
       await rm(directory, { recursive: true, force: true });
     });
 
-    it('verifies the local zip and writes the merged feed', async () => {
+    it("writes the final release's Intel entry into a later feed", async () => {
       const feedPath = path.join(directory, 'latest-mac.yml');
       const url = await addIntelMacFinalToFeed(feedPath, path.join(directory, 'intel.yml'), policy);
-      expect(url).to.equal(intelZip);
+      expect(url).to.equal(`../desktop-v2.7.1/${intelZip}`);
       const written = yaml.load(await readFile(feedPath, 'utf8')) as Record<string, unknown>;
-      expect(filesOf(written).map((file) => file.url)).to.deep.equal([
-        'DocBlocks-2.7.1-mac-arm64.zip',
-        intelZip,
+      expect(filesOf(written)).to.deep.equal([
+        { url: 'DocBlocks-2.8.0-mac-arm64.zip', sha512: 'arm', size: 11 },
+        { url: `../desktop-v2.7.1/${intelZip}`, sha512: 'intel', size: 20 },
       ]);
-    });
-
-    it('refuses a published Intel blockmap', async () => {
-      await writeFile(path.join(directory, `${intelZip}.blockmap`), 'blockmap');
-      try {
-        await addIntelMacFinalToFeed(
-          path.join(directory, 'latest-mac.yml'),
-          path.join(directory, 'intel.yml'),
-          policy,
-        );
-        expect.fail('Expected the blockmap to be refused');
-      } catch (error) {
-        expect((error as Error).message).to.contain('must not be published');
-      }
-    });
-
-    it('refuses a zip that differs from its feed entry', async () => {
-      await writeFile(path.join(directory, intelZip), 'something else');
-      try {
-        await addIntelMacFinalToFeed(
-          path.join(directory, 'latest-mac.yml'),
-          path.join(directory, 'intel.yml'),
-          policy,
-        );
-        expect.fail('Expected the mismatched zip to be refused');
-      } catch (error) {
-        expect((error as Error).message).to.contain('does not match its feed entry');
-      }
     });
   });
 });

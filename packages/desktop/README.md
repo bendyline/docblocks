@@ -51,13 +51,13 @@ agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
 The desktop pins published releases exactly: `@bendyline/gezel-inference`
-`1.0.0` and `@bendyline/gezel-app-sdk` `1.1.5` at runtime, plus Gezel core
-`1.2.5` as a dev dependency that tsup bundles into main. The inference package
-brings its matching client, catalog and knowledge packages. Inference `1.0.0`
+`1.0.1` and `@bendyline/gezel-app-sdk` `1.1.6` at runtime, plus Gezel core
+`1.2.6` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.1`
 selects native release `0.1.49`. Mobile still uses its own unpublished
 `-docblocks.2` previews, so npm nests the desktop's copies where the two differ.
 
-Kokoro narration uses Gezel core `1.2.5`'s `planKokoroSpeech` export
+Kokoro narration uses Gezel core `1.2.6`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
 timestamped ONNX model. The model pin itself uses an existing upstream artifact
 and requires no new native
@@ -281,22 +281,26 @@ for each architecture.
 
 ### Intel Macs
 
-DocBlocks 2.7.1 is the final version for Intel Macs (`intel-mac-final.json`).
-The bundled AI and speech engines have no Intel builds. Also, electron-updater on
-an Intel Mac reports a failed download for any feed that has no Intel zip. So
-Intel support ends with one deliberate build rather than a dropped architecture:
+DocBlocks 2.7.1, published 2026-10-15, was the final version for Intel Macs
+(`intel-mac-final.json`). The bundled AI and speech engines have no Intel builds.
+Also, electron-updater on an Intel Mac reports a failed download for any feed
+that has no Intel zip. So Intel support ended with one deliberate build rather
+than a dropped architecture:
 
-- The 2.7.1 release builds one extra x64 update zip, with no `.dmg` and no
+- The 2.7.1 release published one extra x64 update zip, with no `.dmg` and no
   blockmap. Every later `latest-mac.yml` adds an entry that points at it through
   `../desktop-v2.7.1/`, so an Intel install on any earlier version still updates
-  to its final build. See `scripts/intel-mac-final-feed.ts` and the release
-  workflow step "Point Intel Macs at their final release".
+  to its final build. The release workflow step "Point Intel Macs at their final
+  release" copies that entry from 2.7.1's published `latest-mac.yml` with
+  `scripts/intel-mac-final-feed.ts`. Never delete or replace the 2.7.1 release's
+  x64 zip or `latest-mac.yml`, and never publish a blockmap for the zip.
 - On a real Intel Mac, that build never checks for updates. It explains this once
   at first launch and again on **Help > Check for Updates**. Rosetta-translated
   x64 builds on Apple silicon keep updating and move to arm64.
-- No other version builds for `darwin-x64`. Both `stage-gezel-native.cjs` and the
-  feed script refuse, and a test pins the version. Change it only to replace
-  Intel Macs' final build on purpose.
+- Nothing builds for `darwin-x64` any more: `stage-gezel-native.cjs` refuses it,
+  the feed script rejects any other Intel entry, and a test pins the version. The
+  version is permanent; raising it would point Intel Macs at a release with no
+  Intel zip.
 - An Intel Mac updating from 2.6.2 or earlier shows the newest version number in
   its update banner, because that banner is the old client's, and then lands on
   2.7.1.

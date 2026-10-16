@@ -38,7 +38,7 @@ export type {
 export type { ProofingPreferences } from '../preferences/proofing.js';
 
 const ACCENT_LABELS: Record<AccentColor, string> = {
-  brown: 'Brown',
+  rust: 'Rust',
   green: 'Green',
   blue: 'Blue',
   purple: 'Purple',
@@ -136,21 +136,21 @@ export function InterfaceFontSettings({
           <input
             type="radio"
             name={name}
-            value="system"
-            checked={value !== 'fixed'}
-            onChange={() => onChange('system')}
+            value="fixed"
+            checked={value !== 'system'}
+            onChange={() => onChange('fixed')}
           />
-          System default
+          DocBlocks
         </label>
         <label className="db-settings-radio db-settings-radio--inline">
           <input
             type="radio"
             name={name}
-            value="fixed"
-            checked={value === 'fixed'}
-            onChange={() => onChange('fixed')}
+            value="system"
+            checked={value === 'system'}
+            onChange={() => onChange('system')}
           />
-          Bundled
+          System
         </label>
       </div>
     </fieldset>

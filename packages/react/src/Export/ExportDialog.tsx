@@ -3,15 +3,25 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { getThemeSummaries } from '@bendyline/squisq/schemas';
-import type { ExportFormat, ExportOptions, HtmlBundle, HtmlStyle } from './export-options.js';
-import { FORMAT_LABELS, saveExportOptions } from './export-options.js';
+import type {
+  ExportFormat,
+  ExportOptions,
+  ExportThemeSummary,
+  HtmlBundle,
+  HtmlStyle,
+} from './export-options.js';
+import { FORMAT_LABELS, exportThemeChoices, saveExportOptions } from './export-options.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 import { Dialog } from '../components/Dialog.js';
 
 export interface ExportDialogProps {
   /** Initial options (pre-populated from last export). */
   initial: ExportOptions;
+  /**
+   * Themes the document defines in its own frontmatter. Listed ahead of the
+   * built-ins so a document using one exports in the theme it previews in.
+   */
+  documentThemes?: readonly ExportThemeSummary[];
   /** Whether the export is currently running. */
   exporting: boolean;
   /**
@@ -138,6 +148,7 @@ function ChipRadioGroup<T extends string>({
 
 export function ExportDialog({
   initial,
+  documentThemes,
   exporting,
   error,
   destination,
@@ -156,7 +167,7 @@ export function ExportDialog({
   const [entryAsIndex, setEntryAsIndex] = useState<boolean>(initial.entryAsIndex);
   const [transforms, setTransforms] = useState<ExportSummaryOption[]>([]);
 
-  const themes = getThemeSummaries();
+  const themes = useMemo(() => exportThemeChoices(documentThemes), [documentThemes]);
 
   // Both HTML styles honor themes now: rendered HTML through the
   // SquisqPlayer's theme system, plain HTML through squisq's

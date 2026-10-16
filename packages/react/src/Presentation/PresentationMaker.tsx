@@ -1,5 +1,5 @@
 /** Design a live summarization. Persist intent and explicit wording, never generated slides. */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditorContext, usePreviewSettingsOptional } from '@bendyline/squisq-editor-react';
 import { BlockRenderer, MediaContext } from '@bendyline/squisq-react';
@@ -34,6 +34,40 @@ const LABELS = {
   steps: 'Steps diagram',
   image: 'Image',
 };
+type Sections = ReturnType<typeof presentationSections>;
+/** Where a suggestion run stands; `active` is the slide a request is open for. */
+interface SuggestionProgress {
+  done: number;
+  total: number;
+  active: { sourceStart: number; sourceEnd: number } | null;
+}
+function sectionAt(sections: Sections, offset: number) {
+  return sections.find((item) => offset >= item.sourceStart && offset < item.sourceEnd);
+}
+/** Store one accepted suggestion keyed to the exact passage it summarizes, so
+ * Squisq reapplies it only while that passage is unchanged. */
+function withSuggestion(
+  current: PresentationHints,
+  sections: Sections,
+  sourceText: string,
+  item: PresentationBeat,
+): PresentationHints {
+  const parent = sectionAt(sections, item.sourceStart);
+  if (!parent) return current;
+  const source = sourceText.slice(item.sourceStart, item.sourceEnd);
+  const existing = current.blocks.find((block) => block.blockId === parent.blockId);
+  const target: PresentationBlockHint = {
+    ...(existing ?? { blockId: parent.blockId }),
+    ai: [
+      ...(existing?.ai ?? []).filter((entry) => entry.source !== source),
+      { source, layout: item.layout, headline: item.headline, points: [...item.points] },
+    ].slice(-80),
+  };
+  return {
+    ...current,
+    blocks: [...current.blocks.filter((block) => block.blockId !== parent.blockId), target],
+  };
+}
 export function PresentationMaker({
   ai,
   onClose,
@@ -46,16 +80,19 @@ export function PresentationMaker({
 function AiRefineButton({
   ai,
   disabled,
+  buttonRef,
   onRefine,
 }: {
   ai: DocBlocksHostAiAPI;
   disabled: boolean;
+  buttonRef: RefObject<HTMLButtonElement>;
   onRefine: () => void;
 }) {
   const status = useAiStatus(ai);
   const ready = status?.kind === 'ready' && status.model !== null;
   return (
     <button
+      ref={buttonRef}
       type="button"
       disabled={disabled || !ready}
       title={
@@ -82,8 +119,12 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const [selectedSourceStart, setSelectedSourceStart] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
-  const [progress, setProgress] = useState<string | null>(null);
+  const [progress, setProgress] = useState<SuggestionProgress | null>(null);
   const controller = useRef<AbortController | null>(null);
+  /** Show each slide as it is suggested until the person picks one themselves. */
+  const follow = useRef(false);
+  const suggestButton = useRef<HTMLButtonElement>(null);
+  const stopButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     let disposed = false;
     const parsed = markdownToDoc(parseMarkdown(markdownSource));
@@ -102,6 +143,16 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       controller.current?.abort();
     };
   }, [markdownSource, workspaceContainer]);
+  const running = progress !== null;
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current === running) return;
+    wasRunning.current = running;
+    // The Suggest button leaves the footer for the run and Stop takes its
+    // place; keep keyboard focus with them instead of dropping it on the page.
+    if (document.activeElement === null || document.activeElement === document.body)
+      (running ? stopButton.current : suggestButton.current)?.focus();
+  }, [running]);
   const doc = loaded?.source === markdownSource ? loaded.doc : null;
   const generated = useMemo(() => {
     if (!doc) return null;
@@ -134,6 +185,18 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       };
     }
   }, [doc, plan, preview?.activeTheme]);
+  // Stored AI wording per section, keyed by the passage it summarizes. Squisq
+  // applies an entry only while its passage is unchanged, so this is also what
+  // marks a slide in the list as AI-suggested.
+  const aiEntries = useMemo(() => {
+    const entries = new Map<string, Map<string, PresentationBeat['layout']>>();
+    for (const block of hints.blocks)
+      entries.set(
+        block.blockId,
+        new Map((block.ai ?? []).map((entry) => [entry.source, entry.layout])),
+      );
+    return entries;
+  }, [hints]);
   // Layout changes can split or merge slides. Follow the source passage rather
   // than a slide number, which could now belong to a different section.
   const selectedIndex = Math.max(
@@ -143,9 +206,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     ) ?? -1,
   );
   const beat = plan?.beats[selectedIndex];
-  const section = sections.find(
-    (item) => beat && beat.sourceStart >= item.sourceStart && beat.sourceStart < item.sourceEnd,
-  );
+  const section = beat && sectionAt(sections, beat.sourceStart);
   const hint = hints.blocks.find((item) => item.blockId === section?.blockId);
   const visual = projection?.blocks.find((block) => block.id === beat?.id);
   const updateHint = (patch: Partial<PresentationBlockHint>) => {
@@ -167,55 +228,55 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     setHints(next);
   };
   const refine = async () => {
-    if (!ai || !plan || progress) return;
+    if (!ai || !plan || controller.current) return;
     const run = new AbortController();
     controller.current = run;
+    follow.current = true;
+    const total = plan.beats.length;
+    const outcome = { done: 0, refined: 0, retained: 0 };
     setError(null);
     setNotice('');
     try {
-      const result = await refinePresentationPlan(ai, plan, {
+      await refinePresentationPlan(ai, plan, {
         signal: run.signal,
-        onProgress: (done, total) =>
-          setProgress(`Suggesting slide ${Math.min(done + 1, total)} of ${total}…`),
-      });
-      if (!run.signal.aborted) {
-        setHints((current) => {
-          const blocks = current.blocks.map((item) => ({
-            ...item,
-            ai: item.ai ? [...item.ai] : undefined,
-          }));
-          for (const index of result.refined) {
-            const item = result.plan.beats[index]!;
-            const parent = sections.find(
-              (s) => item.sourceStart >= s.sourceStart && item.sourceStart < s.sourceEnd,
-            );
-            if (!parent) continue;
-            let target = blocks.find((b) => b.blockId === parent.blockId);
-            if (!target) {
-              target = { blockId: parent.blockId, ai: undefined };
-              blocks.push(target);
-            }
-            const source = plan.sourceText.slice(item.sourceStart, item.sourceEnd);
-            target.ai = [
-              ...(target.ai ?? []).filter((v) => v.source !== source),
-              {
-                source,
-                layout: item.layout,
-                headline: item.headline,
-                points: item.points,
-              },
-            ].slice(-80);
+        onProgress: (done) => {
+          outcome.done = done;
+          const next = plan.beats[done];
+          setProgress({
+            done,
+            total,
+            active: next ? { sourceStart: next.sourceStart, sourceEnd: next.sourceEnd } : null,
+          });
+          if (next && follow.current) setSelectedSourceStart(next.sourceStart);
+        },
+        // Each accepted slide reaches the list and preview as soon as it
+        // resolves, so stopping early keeps everything suggested so far.
+        onBeat: (_index, item) => {
+          if (!item) {
+            outcome.retained++;
+            return;
           }
-          return { ...current, blocks };
-        });
-        setNotice(
-          result.retained
-            ? `Kept automatic summaries for ${result.retained} slides because the AI suggestions could not be validated.`
-            : 'AI summaries are ready to review. They will be saved with their source passages.',
-        );
-      }
+          outcome.refined++;
+          setHints((current) => withSuggestion(current, sections, plan.sourceText, item));
+        },
+      });
+      setNotice(
+        outcome.retained
+          ? `Kept automatic summaries for ${outcome.retained} slides because the AI suggestions could not be validated.`
+          : 'AI summaries are ready to review. They will be saved with their source passages.',
+      );
     } catch (cause: unknown) {
       if (!run.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+      else if (controller.current === run)
+        setNotice(
+          `Stopped after ${outcome.done} of ${total} slides. ${
+            outcome.refined === 0
+              ? 'No slides changed.'
+              : outcome.refined === 1
+                ? 'The one AI suggestion is kept.'
+                : `The ${outcome.refined} AI suggestions are kept.`
+          }`,
+        );
     } finally {
       if (controller.current === run) {
         controller.current = null;
@@ -224,7 +285,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     }
   };
   const apply = () => {
-    if (!doc || !plan || progress) return;
+    if (!doc || !plan || running) return;
     try {
       const next = setFrontmatterValues(markdownSource, {
         [PRESENTATION_HINTS_KEY]: serializePresentationHints(hints),
@@ -248,27 +309,51 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       closeOnBackdrop={false}
       footer={
         <>
-          {progress ? (
-            <button type="button" onClick={() => controller.current?.abort()}>
-              Cancel suggestions
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setHints(defaultPresentationHints());
-                setSelectedSourceStart(0);
-                setError(null);
-                setNotice('');
-              }}
-            >
-              Reset design
-            </button>
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => {
+              setHints(defaultPresentationHints());
+              setSelectedSourceStart(0);
+              setError(null);
+              setNotice('');
+            }}
+          >
+            Reset design
+          </button>
+          {ai && !progress && (
+            <AiRefineButton
+              ai={ai}
+              buttonRef={suggestButton}
+              disabled={!plan}
+              onRefine={() => void refine()}
+            />
           )}
-          {ai && (
-            <AiRefineButton ai={ai} disabled={!plan || !!progress} onRefine={() => void refine()} />
+          {ai && progress && (
+            <>
+              <div className="db-presentation-progress" role="status">
+                <span className="db-ai-spinner" aria-hidden="true" />
+                <span>
+                  Suggesting slide {Math.min(progress.done + 1, progress.total)} of {progress.total}
+                  …
+                </span>
+                <progress
+                  max={progress.total}
+                  value={progress.done}
+                  aria-label="Slides suggested so far"
+                />
+              </div>
+              <button
+                ref={stopButton}
+                type="button"
+                title="Stop suggesting. Slides already suggested keep their new wording."
+                onClick={() => controller.current?.abort()}
+              >
+                Stop
+              </button>
+            </>
           )}
-          <button type="button" disabled={!plan || !!progress || !!error} onClick={apply}>
+          <button type="button" disabled={!plan || running || !!error} onClick={apply}>
             Use dynamic slides
           </button>
         </>
@@ -283,7 +368,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
           Summary density
           <select
             value={hints.density}
-            disabled={!!progress}
+            disabled={running}
             onChange={(event) =>
               setHints({ ...hints, density: event.target.value as PresentationHints['density'] })
             }
@@ -297,17 +382,16 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
           <input
             type="checkbox"
             checked={hints.inbetweens}
-            disabled={!!progress}
+            disabled={running}
             onChange={(event) => setHints({ ...hints, inbetweens: event.target.checked })}
           />{' '}
           Add supporting visual slides where useful
         </label>
       </div>
       <p role="status" aria-live="polite">
-        {progress ??
-          (plan && projection?.doc
-            ? `${plan.beats.length} slides · ${projection.doc.duration.toFixed(1)} seconds · ${doc?.presentationNarration ? 'Follows narration' : 'Estimated pacing — add narration to synchronize'}`
-            : 'Preparing dynamic slides…')}
+        {plan && projection?.doc
+          ? `${plan.beats.length} slides · ${projection.doc.duration.toFixed(1)} seconds · ${doc?.presentationNarration ? 'Follows narration' : 'Estimated pacing — add narration to synchronize'}`
+          : 'Preparing dynamic slides…'}
       </p>
       {(error || generated?.error || projection?.error) && (
         <p role="alert">{error ?? generated?.error ?? projection?.error}</p>
@@ -316,20 +400,49 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       {plan && beat && section && (
         <div className="db-presentation-workspace">
           <nav className="db-presentation-beats" aria-label="Presentation slides">
-            {plan.beats.map((item, index) => (
-              <button
-                type="button"
-                key={item.id}
-                aria-current={index === selectedIndex ? 'step' : undefined}
-                title={item.headline}
-                onClick={() => setSelectedSourceStart(item.sourceStart)}
-              >
-                <span className="db-presentation-beat-title">
-                  {index + 1}. {item.headline}
-                </span>
-                <small>{LABELS[item.layout]}</small>
-              </button>
-            ))}
+            {plan.beats.map((item, index) => {
+              const owner = sectionAt(sections, item.sourceStart);
+              const layout =
+                owner &&
+                aiEntries
+                  .get(owner.blockId)
+                  ?.get(plan.sourceText.slice(item.sourceStart, item.sourceEnd));
+              const suggested = layout !== undefined && (layout !== 'image' || !!item.imageSrc);
+              const active = progress?.active;
+              const pending =
+                !!active &&
+                active.sourceStart === item.sourceStart &&
+                active.sourceEnd === item.sourceEnd;
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  aria-current={index === selectedIndex ? 'step' : undefined}
+                  title={item.headline}
+                  onClick={() => {
+                    follow.current = false;
+                    setSelectedSourceStart(item.sourceStart);
+                  }}
+                >
+                  <span className="db-presentation-beat-title">
+                    {index + 1}. {item.headline}
+                  </span>
+                  <span className="db-presentation-beat-tags">
+                    <small>{LABELS[item.layout]}</small>
+                    {pending ? (
+                      <small className="db-presentation-beat-ai">
+                        <span className="db-ai-spinner" aria-hidden="true" />
+                        Suggesting…
+                      </small>
+                    ) : suggested ? (
+                      <small className="db-presentation-beat-ai">
+                        <span className="db-visually-hidden">Suggested by </span>AI
+                      </small>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
           </nav>
           <div className="db-presentation-detail">
             <div
@@ -354,7 +467,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                 Layout preference for this section
                 <select
                   value={hint?.layout ?? ''}
-                  disabled={!!progress}
+                  disabled={running}
                   onChange={(event) =>
                     updateHint({
                       layout: (event.target.value || undefined) as
@@ -377,7 +490,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                 Supporting slides for this section
                 <select
                   value={hint?.inbetweens === undefined ? '' : String(hint.inbetweens)}
-                  disabled={!!progress}
+                  disabled={running}
                   onChange={(event) =>
                     updateHint({
                       inbetweens:
@@ -411,7 +524,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                     key={beat.headline}
                     defaultValue={beat.headline}
                     maxLength={110}
-                    disabled={!!progress}
+                    disabled={running}
                     onBlur={(event) =>
                       updateHint({
                         wording: {
@@ -429,7 +542,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                     rows={3}
                     key={beat.points.join('\n')}
                     defaultValue={beat.points.join('\n')}
-                    disabled={!!progress}
+                    disabled={running}
                     onBlur={(event) =>
                       updateHint({
                         wording: {

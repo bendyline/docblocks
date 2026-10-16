@@ -20,7 +20,7 @@
     <meta property="og:title" content="DocBlocks for VS Code" />
     <meta
       property="og:description"
-      content="Rich Markdown editing, source control, Play views, and optional CLI plus MCP setup inside VS Code."
+      content="Rich Markdown editing, source control, previews, and optional CLI plus MCP setup inside VS Code."
     />
     <meta property="og:url" content="https://docblocks.com/vscode/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
@@ -34,7 +34,13 @@
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="DocBlocks home">
-        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+        <picture>
+          <source
+            srcset="/_res/siteimages/docblocks-dark.svg"
+            media="(prefers-color-scheme: dark)"
+          />
+          <img src="/_res/siteimages/docblocks.svg" alt="DocBlocks" width="557" height="242" />
+        </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="/web/">Web</a>
@@ -55,7 +61,7 @@
           <p class="lede">
             Open <code>.md</code> files as visual documents without leaving your workspace. VS Code
             keeps its file explorer, tabs, source control, and theme; DocBlocks supplies visual
-            writing, raw source, Play views, media, and export controls.
+            writing, raw source, previews, media, and export controls.
           </p>
           <div class="hero-actions">
             <a
