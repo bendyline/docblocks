@@ -1,3 +1,15 @@
+## docblocks-mobile [1.0.2](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.1...docblocks-mobile@1.0.2) (2026-10-16)
+
+### Bug Fixes
+
+* streaming AI suggestions for presentations ([#29](https://github.com/bendyline/docblocks/issues/29)) ([49a5e22](https://github.com/bendyline/docblocks/commit/49a5e22918db000769f485c7d47eb24bb7ba23de))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.2
+* **@bendyline/docblocks-react:** upgraded to 2.7.2
+
 ## docblocks-mobile [1.0.1](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.0...docblocks-mobile@1.0.1) (2026-10-14)
 
 ### Bug Fixes
