@@ -93,7 +93,11 @@ test('records document narration with tracked words and slides side by side', as
   expect(timing.blocks[2].endSec).toBe(timing.duration);
   await dialog.getByRole('button', { name: 'Save to document', exact: true }).click();
   await expect(dialog).toBeHidden();
-  await expect(editor.locator('video')).toHaveCount(1);
+  // Narration recorded before the body lands in Squisq's document tray, not inline.
+  const trayVideos = page
+    .getByRole('region', { name: 'Document tray' })
+    .getByRole('button', { name: /^Video: / });
+  await expect(trayVideos).toHaveCount(1);
 
   // The optional reading aid must preserve the entry's replace-take behavior.
   const replacement = await openNarration();
@@ -103,5 +107,5 @@ test('records document narration with tracked words and slides side by side', as
   await replacement.getByRole('button', { name: 'Stop', exact: true }).click();
   await replacement.getByRole('button', { name: 'Save to document', exact: true }).click();
   await expect(replacement).toBeHidden();
-  await expect(editor.locator('video')).toHaveCount(1);
+  await expect(trayVideos).toHaveCount(1);
 });

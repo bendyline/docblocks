@@ -28,7 +28,7 @@ npm run preview -w docblocks-site
 
 ## What it does
 
-This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Editor / Markdown / Play views, and multi-format export including EPUB and MP4 video. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
+This package is the live reference implementation of DocBlocks — the web surface. It mounts `<DocBlocksShell theme="auto">` from `@bendyline/docblocks-react` with the full editing experience: file explorer, workspace management, the Squisq editor with its Write and Source views and Document, Page, Slideshow, and Video previews, and multi-format export including EPUB and MP4 video. Documents persist in browser storage (IndexedDB) or in local folders granted via the File System Access API — no server, no account.
 
 The editor remains the canonical, indexable experience at `/`. Lightweight product, format,
 documentation, privacy, and terms pages live under `public/`; `robots.txt`, `sitemap.xml`, the

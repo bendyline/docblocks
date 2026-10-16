@@ -47,8 +47,8 @@
   --paper: #f3eede;
   --paper-bright: #fffdf7;
   --paper-deep: #e6dbc5;
-  --accent: #765033;
-  --accent-dark: #4d3424;
+  --accent: #a0461f;
+  --accent-dark: #7a3418;
   --border: rgba(35, 31, 24, 0.18);
   --shadow: 0 24px 70px rgba(66, 48, 29, 0.12);
 }
@@ -767,8 +767,8 @@ h3 {
     --paper: #171713;
     --paper-bright: #201f19;
     --paper-deep: #2d2a22;
-    --accent: #d3a06f;
-    --accent-dark: #edc59b;
+    --accent: #e0835a;
+    --accent-dark: #f0c2aa;
     --border: rgba(243, 236, 221, 0.17);
     --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
   }

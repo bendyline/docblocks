@@ -131,8 +131,8 @@ const docblocksPwa = (): Plugin[] =>
       orientation: 'any',
       // Chrome on Android only shows the rich install dialog when a `narrow`
       // screenshot exists — otherwise it falls back to the mini-infobar.
-      // Regenerate with a temporary Playwright spec that opens the welcome
-      // document at each size and screenshots it; sizes must match the files.
+      // Regenerate with `node packages/site/design/capture-screenshots.mjs`;
+      // sizes must match the files.
       screenshots: [
         {
           src: 'screenshots/narrow-editor.png',

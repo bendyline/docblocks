@@ -1000,6 +1000,9 @@ describe('desktop AI service: hosting', () => {
           contextWindow: 32_768,
           downloadBytes: 2 * 1024 ** 3,
           state: 'download-required',
+          fit: null,
+          score: null,
+          recommended: false,
         },
       ],
     });

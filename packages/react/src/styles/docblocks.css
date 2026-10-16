@@ -3838,10 +3838,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 /* ── Inline preview gutter ──────────────────────────────────── */
 /* Rebind squisq's `--squisq-preview-*` custom properties so the
-   gutter chrome (vertical bracket, diagonal connector + dots,
-   template label) draws as hairlines in the rule color rather than
-   in the accent, and the card surface tones harmonize with the rest
-   of docblocks. The preview-block renderer's own theme is unaffected —
+   gutter chrome (vertical bracket, diagonal connector + dots)
+   draws as hairlines in the rule color rather than in the accent,
+   and the card surface tones harmonize with the rest of docblocks. The preview-block renderer's own theme is unaffected —
    that's a document-level concern, not chrome. */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] {
   --squisq-preview-accent: var(--db-border-strong);
@@ -3871,6 +3870,14 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   --squisq-preview-empty-bg: var(--db-bg);
   --squisq-preview-empty-border: var(--db-border);
   --squisq-preview-empty-text: var(--db-text-muted);
+}
+
+/* Squisq colors the card's template label with the same
+   `--squisq-preview-accent` as the hairlines above, and a rule color is
+   too faint for text. Keep the label at the muted text tone so it meets
+   WCAG AA contrast on the card surface. */
+.db-shell .squisq-editor-shell .squisq-inline-preview-card-template {
+  color: var(--db-text-muted);
 }
 
 /* The extent bar shows a block's reach; at Squisq's 4px it read as a cable
