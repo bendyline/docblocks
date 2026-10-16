@@ -9,7 +9,16 @@ import { prepareHostLifecycle } from './host-lifecycle.js';
  * the center editor area (squisq EditorShell).
  */
 
-import { useState, useCallback, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  lazy,
+  Suspense,
+} from 'react';
 import type {
   CalcEngineFactory,
   EditorColorScheme,
@@ -248,6 +257,9 @@ import { providerEntryExists, removeProviderEntry, writeProviderText } from './p
 import { usePromptDialog } from '../components/usePromptDialog.js';
 import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
+import { EditorErrorBoundary } from './EditorErrorBoundary.js';
+import { localDateStamp } from '../local-date.js';
+import { setOutsideInPdfWorker } from './outside-in-contract.js';
 import { newFileHtmlOutput, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
 import {
   DEFAULT_NEW_FILE_FORMAT,
@@ -430,12 +442,20 @@ export interface DocBlocksShellProps {
   theme?: EditorColorScheme | 'auto';
   /** Optional logo image URL for the app menu. */
   logoUrl?: string;
+  /** The app-menu logo drawn for dark appearances (see AppMenu). */
+  logoDarkUrl?: string;
   /** Version and surface label included in prefilled issue reports, e.g. `1.1.2 web`. */
   issueReportVersion?: string;
   /** ISO build date shown in About, e.g. `2026-07-15`. */
   appBuildDate?: string;
   /** Self-hosted ffmpeg.wasm core. Supplying it enables Animated GIF export. */
   ffmpegWasm?: FfmpegWasmLoadConfig;
+  /**
+   * URL of the self-hosted pdf.js worker (`pdfjs-dist/legacy/build/
+   * pdf.worker.min.mjs`, the version Squisq's formats package pins).
+   * Importing a PDF fails without it.
+   */
+  pdfWorkerSrc?: string;
   /**
    * Optional spreadsheet calculation backend. DocBlocks surfaces normally
    * pass the lazy IronCalc factory from the `calculation` package subpath;
@@ -859,9 +879,11 @@ function CollapseSidebarGlyph() {
 export function DocBlocksShell({
   theme: hostTheme = 'auto',
   logoUrl,
+  logoDarkUrl,
   issueReportVersion,
   appBuildDate,
   ffmpegWasm,
+  pdfWorkerSrc,
   calcEngineFactory,
   proofing,
   proofingDefaultEnabled,
@@ -1625,7 +1647,28 @@ export function DocBlocksShell({
     [documentSnapshot.frozen, documentSnapshot.generation, documentSnapshot.targetKey],
   );
   const [editorPresentationEpoch, setEditorPresentationEpoch] = useState(0);
-  const editorKey = `${documentSnapshot.generation}:${editorPresentationEpoch}`;
+  // The session publishes a new generation through useSyncExternalStore, which
+  // React renders in a microtask -- a few microtasks before the navigation that
+  // caused it adopts the new path and view. Keying Squisq on that raw
+  // generation mounted a throwaway editor under the previous document's path,
+  // then a second one once the path caught up; a tap or keystroke landing on
+  // the first was lost and the caret restarted at the top of the document.
+  // Mirrored through ordinary state, the generation lands in the same render
+  // as the adoption, and the editor stays unmounted until the two agree.
+  const [editorGeneration, setEditorGeneration] = useState(documentSnapshot.generation);
+  useEffect(() => {
+    const sync = () => setEditorGeneration(documentSession.getSnapshot().generation);
+    const unsubscribe = documentSession.subscribe(sync);
+    sync();
+    return () => {
+      unsubscribe();
+    };
+  }, [documentSession]);
+  const editorGenerationSettled = editorGeneration === documentSnapshot.generation;
+  useEffect(() => {
+    setOutsideInPdfWorker(pdfWorkerSrc);
+  }, [pdfWorkerSrc]);
+  const editorKey = `${editorGeneration}:${editorPresentationEpoch}`;
   const editorPlaceholder = useMemo(() => {
     // Keep the selection scoped to the same generation that remounts Squisq.
     void editorKey;
@@ -1895,6 +1938,21 @@ export function DocBlocksShell({
    */
   const mediaContainerRef = useRef<ContentContainer | null>(null);
   const [mediaProvider, setMediaProvider] = useState<MediaProvider | null>(null);
+  /** The provider, file and outside-in layout `mediaProvider` was built for. */
+  const [mediaProviderScope, setMediaProviderScope] = useState<{
+    provider: FileSystemProvider;
+    file: string;
+    outsideIn: OutsideInLayout | null;
+  } | null>(null);
+  // `mediaProvider` is rebuilt by an effect, so for one render after a
+  // provider or file switch it still belongs to the previous one. An editor
+  // mounted then lists media through a provider the switch is disposing
+  // ("Filesystem provider is disposed" on opening a share link).
+  const mediaProviderCurrent =
+    mediaProviderScope !== null &&
+    mediaProviderScope.provider === provider &&
+    mediaProviderScope.file === selectedFile &&
+    mediaProviderScope.outsideIn === selectedOutsideIn;
   const [mediaEpoch, setMediaEpoch] = useState(0);
   /**
    * Per-document container scoped to `<basename>_files/`. This is what
@@ -2666,15 +2724,20 @@ export function DocBlocksShell({
   }, [showBrowserStorageWarning, browserStoragePersistent, documentSnapshot.status]);
 
   // Per-file media: for `notes.md` images live in `notes_files/` beside it.
-  // Rebuilds whenever the provider or selected file changes.
-  useEffect(() => {
+  // Rebuilds whenever the provider or selected file changes. A layout effect:
+  // the editor waits for a media provider built for the current file (see
+  // `mediaProviderCurrent`), and this lets it mount before paint instead of a
+  // frame later.
+  useLayoutEffect(() => {
     if (!provider || !selectedFile) {
       mediaContainerRef.current = null;
       versionsContainerRef.current = null;
       setMediaProvider(null);
+      setMediaProviderScope(null);
       setVersionsContainer(null);
       return;
     }
+    setMediaProviderScope({ provider, file: selectedFile, outsideIn: selectedOutsideIn });
     if (selectedOutsideIn) {
       const container = createOutsideInContentContainer(provider, selectedOutsideIn);
       const mp = createMediaProviderFromContainer(container);
@@ -4883,8 +4946,7 @@ export function DocBlocksShell({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const stamp = new Date().toISOString().slice(0, 10);
-      a.download = `docblocks-workspaces-${stamp}.zip`;
+      a.download = `docblocks-workspaces-${localDateStamp(new Date())}.zip`;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -5227,6 +5289,7 @@ export function DocBlocksShell({
             <div className="db-shell-sidebar-header">
               <AppMenu
                 logoUrl={logoUrl}
+                logoDarkUrl={logoDarkUrl}
                 themePreference={themePreference}
                 onThemeChange={handleThemeChange}
                 accentColor={accentColor}
@@ -5489,192 +5552,198 @@ export function DocBlocksShell({
                         </div>
                       }
                     >
-                      <EditorShell
-                        key={`${selectedFile}-${editorKey}`}
-                        initialMarkdown={editorContent}
-                        readOnly={
-                          selectedImage !== undefined ||
-                          selectedManagedOutput !== undefined ||
-                          (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                        }
-                        initialView={initialView}
-                        // At compact width the centred page column and its page
-                        // padding waste most of a 390px screen. Squisq already
-                        // exposes both switches; below 720px it is also auto-hiding
-                        // its outline and inline preview, so these agree with the
-                        // density it has already chosen for itself.
-                        fullWidth={formFactor.widthClass === 'compact'}
-                        thinMargins={formFactor.widthClass === 'compact'}
-                        defaultViewportPreset={defaultPreviewViewportPreset}
-                        articleId={selectedFile}
-                        // Outside-in documents navigate/export as their rendered
-                        // file, but Squisq edits the hidden Markdown companion.
-                        // Passing `report.csv` here classifies the editor as a
-                        // raw data/code surface and suppresses Write + data cards.
-                        fileName={selectedSourceFile ?? selectedFile}
-                        imageSrc={selectedImageUrl}
-                        imageAlt={basenameOf(selectedFile)}
-                        saveCoverImageOutput={saveRenderedImageOutput}
-                        saveDashboardImageOutput={saveRenderedImageOutput}
-                        onChange={handleEditorChange}
-                        onLinkClick={handleEditorLinkClick}
-                        colorScheme={resolvedTheme}
-                        writeCanvasSettings={editorWriteCanvasSettings}
-                        height="100%"
-                        placeholder={editorPlaceholder}
-                        outlineWidth={280}
-                        mediaProvider={mediaProvider}
-                        mediaEditRenders={mediaEditRenders}
-                        calcEngineFactory={calcEngineFactory}
-                        proofing={proofing}
-                        proofingDefaultEnabled={proofingDefaultEnabled}
-                        proofingSpellingEnabled={proofingPreferences.spelling}
-                        proofingGrammarEnabled={proofingPreferences.grammar}
-                        proofingIgnoreStore={effectiveProofingIgnoreStore}
-                        showCodeCopyButton={showCodeCopyButton}
-                        onCopyCode={onCopyCode}
-                        allowRecording={allowRecording}
-                        // Dictation uses the microphone, so it follows the same policy.
-                        speechInput={allowRecording ? speechInput : null}
-                        allowPresentationWindow={allowPresentationWindow}
-                        allowPresentationFullscreen={allowPresentationFullscreen}
-                        documentLinkProvider={documentLinkProvider}
-                        workspaceContainer={versionsContainer ?? undefined}
-                        allowVersioning={selectedImage === undefined && effectiveVersioning}
-                        viewPreferences={editorViewPreferences}
-                        onViewPreferencesChange={handleViewPreferencesChange}
-                        findMode={findMode}
-                        onFindModeChange={setFindMode}
-                        versionBasename={
-                          versionBasename ?? stripExtension(basenameOf(selectedFile))
-                        }
-                        versioningPrunePolicy={effectivePrunePolicy}
-                        versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                        onSaveVersion={onSaveVersion}
-                        statusBarSlotRight={statusBarSlotRight}
-                        sidePanelSlot={
-                          ai &&
-                          aiPanel &&
-                          selectedImage === undefined &&
-                          (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
-                            <Suspense fallback={null}>
-                              {aiPanel === 'review' ? (
-                                <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
-                              ) : (
-                                <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
-                              )}
-                            </Suspense>
-                          ) : undefined
-                        }
-                        toolbarSlotLeft={
-                          singlePane ? (
-                            <button
-                              className="db-mobile-back"
-                              onClick={() => setMobileShowEditor(false)}
-                              aria-label="Show file list"
-                            >
-                              <span className="db-mobile-files-icon">
-                                <FolderGlyph />
-                              </span>
-                            </button>
-                          ) : undefined
-                        }
-                        summarizationDesigner={
-                          selectedImage === undefined &&
-                          selectedManagedOutput === undefined &&
-                          (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
-                            ? (onClose) => (
+                      {editorGenerationSettled && mediaProviderCurrent && (
+                        <EditorErrorBoundary resetKey={`${selectedFile}-${editorKey}`}>
+                          <EditorShell
+                            key={`${selectedFile}-${editorKey}`}
+                            initialMarkdown={editorContent}
+                            readOnly={
+                              selectedImage !== undefined ||
+                              selectedManagedOutput !== undefined ||
+                              (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                            }
+                            initialView={initialView}
+                            // At compact width the centred page column and its page
+                            // padding waste most of a 390px screen. Squisq already
+                            // exposes both switches; below 720px it is also auto-hiding
+                            // its outline and inline preview, so these agree with the
+                            // density it has already chosen for itself.
+                            fullWidth={formFactor.widthClass === 'compact'}
+                            thinMargins={formFactor.widthClass === 'compact'}
+                            defaultViewportPreset={defaultPreviewViewportPreset}
+                            articleId={selectedFile}
+                            // Outside-in documents navigate/export as their rendered
+                            // file, but Squisq edits the hidden Markdown companion.
+                            // Passing `report.csv` here classifies the editor as a
+                            // raw data/code surface and suppresses Write + data cards.
+                            fileName={selectedSourceFile ?? selectedFile}
+                            imageSrc={selectedImageUrl}
+                            imageAlt={basenameOf(selectedFile)}
+                            saveCoverImageOutput={saveRenderedImageOutput}
+                            saveDashboardImageOutput={saveRenderedImageOutput}
+                            onChange={handleEditorChange}
+                            onLinkClick={handleEditorLinkClick}
+                            colorScheme={resolvedTheme}
+                            writeCanvasSettings={editorWriteCanvasSettings}
+                            height="100%"
+                            placeholder={editorPlaceholder}
+                            outlineWidth={280}
+                            mediaProvider={mediaProvider}
+                            mediaEditRenders={mediaEditRenders}
+                            calcEngineFactory={calcEngineFactory}
+                            proofing={proofing}
+                            proofingDefaultEnabled={proofingDefaultEnabled}
+                            proofingSpellingEnabled={proofingPreferences.spelling}
+                            proofingGrammarEnabled={proofingPreferences.grammar}
+                            proofingIgnoreStore={effectiveProofingIgnoreStore}
+                            showCodeCopyButton={showCodeCopyButton}
+                            onCopyCode={onCopyCode}
+                            allowRecording={allowRecording}
+                            // Dictation uses the microphone, so it follows the same policy.
+                            speechInput={allowRecording ? speechInput : null}
+                            allowPresentationWindow={allowPresentationWindow}
+                            allowPresentationFullscreen={allowPresentationFullscreen}
+                            documentLinkProvider={documentLinkProvider}
+                            workspaceContainer={versionsContainer ?? undefined}
+                            allowVersioning={selectedImage === undefined && effectiveVersioning}
+                            viewPreferences={editorViewPreferences}
+                            onViewPreferencesChange={handleViewPreferencesChange}
+                            findMode={findMode}
+                            onFindModeChange={setFindMode}
+                            versionBasename={
+                              versionBasename ?? stripExtension(basenameOf(selectedFile))
+                            }
+                            versioningPrunePolicy={effectivePrunePolicy}
+                            versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                            onSaveVersion={onSaveVersion}
+                            statusBarSlotRight={statusBarSlotRight}
+                            sidePanelSlot={
+                              ai &&
+                              aiPanel &&
+                              selectedImage === undefined &&
+                              (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
                                 <Suspense fallback={null}>
-                                  <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
+                                  {aiPanel === 'review' ? (
+                                    <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                  ) : (
+                                    <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
+                                  )}
                                 </Suspense>
-                              )
-                            : undefined
-                        }
-                        toolbarSlotRight={
-                          <>
-                            {canFind && (
-                              <FindButton
-                                active={findMode}
-                                onActiveChange={setFindMode}
-                                shortcutLabel={findShortcut}
-                              />
-                            )}
-                            {ai && (
-                              <Suspense fallback={null}>
-                                <AiToolbarControl
-                                  ai={ai}
-                                  readOnly={
-                                    selectedImage !== undefined ||
-                                    (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                                  }
-                                  openPanel={aiPanel}
-                                  onOpenPanel={setAiPanel}
-                                />
-                              </Suspense>
-                            )}
-                            {speech && (
-                              <Suspense fallback={null}>
-                                <TextFromNarration
-                                  speech={speech}
-                                  ai={ai ?? undefined}
-                                  allowRecording={allowRecording}
-                                  readOnly={
-                                    selectedImage !== undefined ||
-                                    selectedManagedOutput !== undefined ||
-                                    (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                                  }
-                                  onOpenSettings={openSettings}
-                                />
-                                {hostSupports('speechOutput') ? (
-                                  <SpeechToolbarControl
-                                    speech={speech}
-                                    onOpenSettings={openSettings}
-                                    readOnly={
-                                      selectedImage !== undefined ||
-                                      (selectedOutsideIn !== null &&
-                                        !selectedOutsideInEditingEnabled)
-                                    }
+                              ) : undefined
+                            }
+                            toolbarSlotLeft={
+                              singlePane ? (
+                                <button
+                                  className="db-mobile-back"
+                                  onClick={() => setMobileShowEditor(false)}
+                                  aria-label="Show file list"
+                                >
+                                  <span className="db-mobile-files-icon">
+                                    <FolderGlyph />
+                                  </span>
+                                </button>
+                              ) : undefined
+                            }
+                            summarizationDesigner={
+                              selectedImage === undefined &&
+                              selectedManagedOutput === undefined &&
+                              (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
+                                ? (onClose) => (
+                                    <Suspense fallback={null}>
+                                      <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
+                                    </Suspense>
+                                  )
+                                : undefined
+                            }
+                            toolbarSlotRight={
+                              <>
+                                {canFind && (
+                                  <FindButton
+                                    active={findMode}
+                                    onActiveChange={setFindMode}
+                                    shortcutLabel={findShortcut}
                                   />
-                                ) : (
-                                  <SpeechMenuBridge />
                                 )}
-                              </Suspense>
-                            )}
-                            {/* Restore split view -- offered only where the
+                                {ai && (
+                                  <Suspense fallback={null}>
+                                    <AiToolbarControl
+                                      ai={ai}
+                                      readOnly={
+                                        selectedImage !== undefined ||
+                                        (selectedOutsideIn !== null &&
+                                          !selectedOutsideInEditingEnabled)
+                                      }
+                                      openPanel={aiPanel}
+                                      onOpenPanel={setAiPanel}
+                                    />
+                                  </Suspense>
+                                )}
+                                {speech && (
+                                  <Suspense fallback={null}>
+                                    <TextFromNarration
+                                      speech={speech}
+                                      ai={ai ?? undefined}
+                                      allowRecording={allowRecording}
+                                      readOnly={
+                                        selectedImage !== undefined ||
+                                        selectedManagedOutput !== undefined ||
+                                        (selectedOutsideIn !== null &&
+                                          !selectedOutsideInEditingEnabled)
+                                      }
+                                      onOpenSettings={openSettings}
+                                    />
+                                    {hostSupports('speechOutput') ? (
+                                      <SpeechToolbarControl
+                                        speech={speech}
+                                        onOpenSettings={openSettings}
+                                        readOnly={
+                                          selectedImage !== undefined ||
+                                          (selectedOutsideIn !== null &&
+                                            !selectedOutsideInEditingEnabled)
+                                        }
+                                      />
+                                    ) : (
+                                      <SpeechMenuBridge />
+                                    )}
+                                  </Suspense>
+                                )}
+                                {/* Restore split view -- offered only where the
                           viewport can actually hold both panes. Pinning is
                           persisted, so an iPad user sets it once. */}
-                            {canRestoreSplitView && (
-                              <button
-                                className="db-restore-split"
-                                onClick={() => updateSidebarPreference('pinned')}
-                                aria-label="Restore split view"
-                                title="Restore split view"
-                              >
-                                <SplitViewIcon />
-                              </button>
-                            )}
-                            {git.repo && (
-                              <Suspense fallback={null}>
-                                <GitToolbarControl selectedFile={selectedFile} />
-                              </Suspense>
-                            )}
-                            <ExportToolbarControls
-                              selectedFile={selectedFile}
-                              mediaContainer={mediaContainerRef.current}
-                              workspaceContainer={versionsContainer}
-                              mediaProvider={mediaProvider}
-                              mediaEditRenders={mediaEditRenders}
-                              destinationAdapter={exportDestinationAdapter}
-                              colorScheme={resolvedTheme}
-                              videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
-                              ffmpegWasm={ffmpegWasm}
-                              initialSharedMode={initialSharedMode}
-                              defaultThemeId={workspaceDefaultThemeId}
-                              {...(speech ? { speech } : {})}
-                            />
-                          </>
-                        }
-                      />
+                                {canRestoreSplitView && (
+                                  <button
+                                    className="db-restore-split"
+                                    onClick={() => updateSidebarPreference('pinned')}
+                                    aria-label="Restore split view"
+                                    title="Restore split view"
+                                  >
+                                    <SplitViewIcon />
+                                  </button>
+                                )}
+                                {git.repo && (
+                                  <Suspense fallback={null}>
+                                    <GitToolbarControl selectedFile={selectedFile} />
+                                  </Suspense>
+                                )}
+                                <ExportToolbarControls
+                                  selectedFile={selectedFile}
+                                  mediaContainer={mediaContainerRef.current}
+                                  workspaceContainer={versionsContainer}
+                                  mediaProvider={mediaProvider}
+                                  mediaEditRenders={mediaEditRenders}
+                                  destinationAdapter={exportDestinationAdapter}
+                                  colorScheme={resolvedTheme}
+                                  videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
+                                  ffmpegWasm={ffmpegWasm}
+                                  initialSharedMode={initialSharedMode}
+                                  defaultThemeId={workspaceDefaultThemeId}
+                                  {...(speech ? { speech } : {})}
+                                />
+                              </>
+                            }
+                          />
+                        </EditorErrorBoundary>
+                      )}
                     </Suspense>
                   </GeneratedFileFrame>
                 )}
@@ -5682,7 +5751,7 @@ export function DocBlocksShell({
                   <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
                     <span className="db-welcome-gateway-text">
                       You&rsquo;re watching this welcome doc in <strong>Slideshow</strong>{' '}
-                      view&mdash; it&rsquo;s a regular markdown file, and so is everything
+                      view&mdash;it&rsquo;s a regular Markdown file, and so is everything
                       you&rsquo;ll write.
                     </span>
                     <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>

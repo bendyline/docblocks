@@ -34,7 +34,13 @@
     <a class="skip-link" href="#content">Skip to content</a>
     <header class="site-header">
       <a class="brand" href="/" aria-label="DocBlocks home">
-        <img src="/_res/siteimages/docblocks.webp" alt="DocBlocks" width="1266" height="544" />
+        <picture>
+          <source
+            srcset="/_res/siteimages/docblocks-dark.svg"
+            media="(prefers-color-scheme: dark)"
+          />
+          <img src="/_res/siteimages/docblocks.svg" alt="DocBlocks" width="557" height="242" />
+        </picture>
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="/web/" aria-current="page">Web</a>

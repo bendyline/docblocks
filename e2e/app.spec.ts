@@ -394,16 +394,17 @@ test.describe('DocBlocks App', () => {
     const buttons = toolbar.locator('.db-explorer-btn');
     await expect(buttons).toHaveCount(5); // Two sort controls, Search, +F and +D.
     await expect(
-      toolbar.getByRole('button', { name: 'Search workspace' }).locator('.fa-magnifying-glass'),
+      toolbar.getByRole('button', { name: 'Search workspace' }).locator('svg.lucide-search'),
     ).toBeVisible();
     const newFileButton = toolbar.getByRole('button', { name: 'New File' });
     const newFolderButton = toolbar.getByRole('button', { name: 'New Folder' });
-    const newFileIcon = newFileButton.locator('.fa-file-circle-plus');
+    // Shell glyphs are Lucide outlines at one stroke weight (icons.tsx).
+    const newFileIcon = newFileButton.locator('svg.lucide-file-plus');
     await expect(newFileIcon).toBeVisible();
-    await expect(newFileIcon).toHaveCSS('font-family', /Font Awesome/);
-    await expect(newFolderButton.locator('.fa-folder-plus')).toBeVisible();
+    await expect(newFileIcon).toHaveAttribute('stroke-width', '1.75');
+    await expect(newFolderButton.locator('svg.lucide-folder-plus')).toBeVisible();
 
-    await expect(page.locator('.db-ws-settings-btn .fa-gear')).toBeVisible();
+    await expect(page.locator('.db-ws-settings-btn svg.lucide-settings-2')).toBeVisible();
   });
 
   test('shows support links in the footer', async ({ page }) => {
@@ -1246,7 +1247,7 @@ test.describe('Workspace picker', () => {
     const dropdown = page.locator('.db-workspace-dropdown');
     const newWorkspace = dropdown.getByRole('button', { name: 'New Workspace' });
     await expect(newWorkspace).toBeVisible();
-    await expect(newWorkspace.locator('.fa-folder-plus')).toBeVisible();
+    await expect(newWorkspace.locator('svg.lucide-folder-plus')).toBeVisible();
   });
 
   test('dropdown closes on outside click', async ({ page }) => {

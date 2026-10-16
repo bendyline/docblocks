@@ -148,19 +148,56 @@ async function claimOutsideInTarget(
   throw new Error(`Too many documents are already named like “${desiredPath}”.`);
 }
 
+/**
+ * Every directory under `root` that holding `files` required, deepest first.
+ * Writes create parent directories implicitly, so a failed import must find
+ * them from the files it wrote.
+ */
+function directoriesUnder(files: readonly string[], root: string): string[] {
+  const directories = new Set<string>();
+  for (const file of files) {
+    if (!file.startsWith(`${root}/`)) continue;
+    for (let dir = file.slice(0, file.lastIndexOf('/')); dir.length >= root.length; ) {
+      directories.add(dir);
+      const slash = dir.lastIndexOf('/');
+      if (slash < 0) break;
+      dir = dir.slice(0, slash);
+    }
+  }
+  return [...directories].sort((a, b) => b.split('/').length - a.split('/').length);
+}
+
+/**
+ * Remove a directory only if it is empty. A failed import's companion folder
+ * was free when claimed, but another writer may have used it since.
+ */
+async function removeIfEmptyDirectory(provider: FileSystemProvider, path: string): Promise<void> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  if (!providerV2) return;
+  await providerV2
+    .remove(parseWorkspacePath(path), { recursive: false, missing: 'ignore' })
+    .catch(() => undefined);
+}
+
 async function importOutsideInFile(
   file: File,
   provider: FileSystemProvider,
 ): Promise<{ path: string; renamed: boolean }> {
   const claim = await claimOutsideInTarget(provider, file.name);
   const created: string[] = [claim.path];
+  const companionDirectory = resolveOutsideInLayout(claim.path)?.companionDirectory ?? null;
   try {
     const sourceBytes = await file.arrayBuffer();
     const layout = resolveOutsideInLayout(claim.path);
     if (!layout) throw new Error(`Outside-in editing does not support “${claim.path}”.`);
+    // The converter gets its own copy. pdf.js transfers the bytes it parses to
+    // its worker, which detaches the buffer, and these same bytes are written
+    // below as the original document: from the caller's buffer, that write
+    // failed with "Cannot perform Construct on a detached ArrayBuffer".
+    const conversionBytes = sourceBytes.slice(0);
     const imported = await (isOutsideInDataFormat(layout.format)
-      ? importOutsideInDataSidecar({ data: sourceBytes, targetPath: claim.path })
-      : importOutsideInDocument({ data: sourceBytes, targetPath: claim.path }));
+      ? importOutsideInDataSidecar({ data: conversionBytes, targetPath: claim.path })
+      : importOutsideInDocument({ data: conversionBytes, targetPath: claim.path }));
     for (const entry of await imported.container.listFiles()) {
       if (/\.md$/i.test(entry.path)) continue;
       const data = await imported.container.readFile(entry.path);
@@ -176,8 +213,16 @@ async function importOutsideInFile(
   } catch (error: unknown) {
     // Remove only entries this import created; never recursively remove an
     // entire companion directory that another writer could now own.
-    for (const path of created.reverse()) {
+    for (const path of [...created].reverse()) {
       await removeProviderEntry(provider, path).catch(() => undefined);
+    }
+    // The folders those writes created go too, when nothing else is in them:
+    // an empty `<name>_files/` left behind moved the next import of the same
+    // name aside to `<name> (2)` for no visible reason.
+    if (companionDirectory) {
+      for (const directory of directoriesUnder(created, companionDirectory)) {
+        await removeIfEmptyDirectory(provider, directory);
+      }
     }
     throw error;
   }

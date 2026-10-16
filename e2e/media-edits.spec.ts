@@ -59,7 +59,8 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   // element (the form a recorder inserts).
   const content = page.locator('.squisq-editor-content [contenteditable="true"]').first();
   await expect(content).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Toggle Files panel' }).click();
+  // Squisq renamed this toggle "Attachments"; accept either until the bump lands.
+  await page.getByRole('button', { name: /^(Toggle Files panel|Attachments)/ }).click();
   await page
     .locator('.squisq-media-bin input[type="file"]')
     .setInputFiles({ name: 'take.wav', mimeType: 'audio/wav', buffer: Buffer.from(wavBytes()) });

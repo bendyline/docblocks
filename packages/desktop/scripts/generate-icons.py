@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 """
-Generate Electron app icons from packages/site/public/_res/siteimages/docblk.webp.
+Generate Electron app icons from packages/site/design/brand/app-icon-glyph.png.
 
 Produces:
   resources/icon.png           — 1024×1024 master
   resources/icons/*.png        — Linux freedesktop icon-size set
   resources/icon.iconset/…     — intermediate macOS iconset (removed at end)
-  resources/icon.icns          — macOS (via iconutil)
+  resources/icon.icns          — macOS (via iconutil, or Pillow where it is missing)
   resources/icon.ico           — Windows multi-resolution
   installer/sidebar.bmp        — 164×314 24-bit BMP for the NSIS welcome sidebar
 
-The source is 642×542 (non-square) with transparent background — we centre it
-on a solid light-brown square plate (see BACKGROUND) with ~10% margin. The warm
-plate keeps the black wordmark legible against dark OS chrome (dock, taskbar,
-alt-tab thumbnails) where a transparent background left it invisible. The plate
-is a full square block everywhere except the macOS/iOS .icns, which gets a
-rounded squircle so it reads as native under the platform's own icon mask.
+The source is the hull-lettered D on a transparent background (rendered by
+packages/site/design/brand/render-brand.mjs). We centre it on the espresso
+plate (see BACKGROUND) — a single letter with its painted shade, legible from
+the 16px taskbar size up. The plate is a full square block everywhere except
+the macOS .icns, which gets a rounded squircle so it reads as native under the
+platform's own icon mask.
 
 Run from the docblocks repo root: python3 packages/desktop/scripts/generate-icons.py
-The macOS .icns step needs `iconutil` (macOS only); on Windows/Linux it is
-skipped automatically, leaving the existing icon.icns untouched. Pass
---linux-only to emit just the master PNG and the Linux hicolor set.
+The macOS .icns step uses `iconutil` on macOS and Pillow's ICNS writer
+elsewhere. Pass --linux-only to emit just the master PNG and the Linux hicolor
+set.
 """
 
 from __future__ import annotations
@@ -34,14 +34,13 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SOURCE = REPO_ROOT / "packages/site/public/_res/siteimages/docblk.webp"
+SOURCE = REPO_ROOT / "packages/site/design/brand/app-icon-glyph.png"
 RESOURCES = REPO_ROOT / "packages/desktop/resources"
 INSTALLER = REPO_ROOT / "packages/desktop/installer"
-MARGIN_RATIO = 0.10  # 10% margin around the glyph
-# Very light brown / warm beige plate behind the glyph. The source art is a
-# black-on-transparent wordmark that all but disappears against dark OS chrome
-# (Windows taskbar, macOS dark dock); a solid warm plate keeps it legible.
-BACKGROUND = (216, 208, 199, 255)
+MARGIN_RATIO = 0.19  # the D, shade included, fills the middle 62%
+# Espresso plate behind the paper-white D: the brand's dark, and legible on
+# light and dark OS chrome alike (dock, taskbar, alt-tab thumbnails).
+BACKGROUND = (35, 31, 24, 255)
 # Rounded-rect corner radius as a fraction of the icon size, applied ONLY to
 # the macOS/iOS squircle (see rounded=). Windows and Linux chrome expect a full
 # square, so the plate is a solid block there.
@@ -50,7 +49,7 @@ LINUX_ICON_SIZES = (16, 32, 48, 64, 128, 256, 512)
 
 
 def square_canvas(src: Image.Image, size: int, *, rounded: bool = False) -> Image.Image:
-    """Centre `src` on a light-brown square canvas of `size` pixels.
+    """Centre `src` on an espresso square canvas of `size` pixels.
 
     The plate is a solid square block by default (Windows/Linux). Pass
     ``rounded=True`` for the macOS/iOS squircle, which rounds the corners over a
@@ -100,13 +99,11 @@ def main(*, linux_only: bool = False) -> int:
     if linux_only:
         return 0
 
-    # 3) macOS .icns via iconutil. iconutil ships only with macOS, so on other
-    # platforms we skip this step (leaving any existing icon.icns in place) and
-    # let a maintainer regenerate it on a Mac. The Windows .ico and installer
-    # sidebar below do not depend on it.
+    # 3) macOS .icns. iconutil ships only with macOS; elsewhere Pillow writes
+    # the same container, so the icon set can be regenerated on any platform.
     icns_path = RESOURCES / "icon.icns"
     if shutil.which("iconutil") is None:
-        print(f"  skipped {icns_path.relative_to(REPO_ROOT)} (iconutil not found — run on macOS)")
+        _write_icns_with_pillow(src, icns_path)
     else:
         _write_icns(src, icns_path)
 
@@ -129,19 +126,20 @@ def main(*, linux_only: bool = False) -> int:
     INSTALLER.mkdir(parents=True, exist_ok=True)
     sidebar_path = INSTALLER / "sidebar.bmp"
     sidebar_w, sidebar_h = 164, 314
-    # Flatten onto solid white — NSIS doesn't honour transparency in this role.
-    sidebar_canvas = Image.new("RGB", (sidebar_w, sidebar_h), (255, 255, 255))
+    # Flatten onto the espresso plate — NSIS doesn't honour transparency in
+    # this role, and the paper-white D would vanish on white.
+    sidebar_canvas = Image.new("RGB", (sidebar_w, sidebar_h), BACKGROUND[:3])
     # Centre the glyph with generous top-and-bottom padding.
     scale = min(
-        (sidebar_w * 0.80) / src.width,
-        (sidebar_h * 0.55) / src.height,
+        (sidebar_w * 0.55) / src.width,
+        (sidebar_h * 0.40) / src.height,
     )
     nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
     resized = src.resize((nw, nh), Image.LANCZOS)
     offset = ((sidebar_w - nw) // 2, (sidebar_h - nh) // 3)
-    # Composite RGBA over white to flatten alpha properly.
+    # Composite RGBA over the plate to flatten alpha properly.
     flattened = Image.alpha_composite(
-        Image.new("RGBA", (nw, nh), (255, 255, 255, 255)), resized
+        Image.new("RGBA", (nw, nh), BACKGROUND), resized
     ).convert("RGB")
     sidebar_canvas.paste(flattened, offset)
     sidebar_canvas.save(sidebar_path, "BMP")
@@ -186,6 +184,18 @@ def _write_icns(src: Image.Image, icns_path: Path) -> None:
     )
     shutil.rmtree(iconset)
     print(f"  wrote {icns_path.relative_to(REPO_ROOT)}")
+
+
+def _write_icns_with_pillow(src: Image.Image, icns_path: Path) -> None:
+    """Write the .icns with Pillow where iconutil is unavailable."""
+    sizes = (16, 32, 64, 128, 256, 512)
+    base = square_canvas(src, 1024, rounded=True)
+    base.save(
+        icns_path,
+        format="ICNS",
+        append_images=[square_canvas(src, size, rounded=True) for size in sizes],
+    )
+    print(f"  wrote {icns_path.relative_to(REPO_ROOT)} (Pillow)")
 
 
 if __name__ == "__main__":

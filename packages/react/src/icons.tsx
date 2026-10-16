@@ -1,72 +1,81 @@
 /**
- * DocBlocks shell icons use the Font Awesome Free webfont bundled by
- * `@bendyline/squisq-editor-react/styles`. Controls provide the accessible
- * name, so the glyphs themselves stay decorative.
+ * DocBlocks shell icons: Lucide outlines, one family at one stroke weight, so
+ * the shell's glyphs match each other and Squisq's toolbar. Each glyph sizes
+ * from its control's `font-size`, as the webfont glyphs it replaced did, so the
+ * existing button rules keep working. Controls provide the accessible name, so
+ * the glyphs themselves stay decorative.
  */
 
-function FontAwesomeIcon({ icon }: { icon: string }) {
-  return <i className={icon} aria-hidden="true" />;
+import {
+  ArrowDownAZ,
+  Clock,
+  Ellipsis,
+  FilePlus,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  FolderTree,
+  PanelLeft,
+  Pin,
+  Search,
+  Settings2,
+  type LucideIcon,
+} from 'lucide-react';
+
+/** Slightly over 1em: Lucide draws inside a 2px margin on its 24px grid. */
+const ICON_SIZE = '1.15em';
+/** 1.75 on the 24px grid renders as a ~1px line at the shell's 13–16px sizes. */
+const STROKE_WIDTH = 1.75;
+
+function ShellIcon({ icon: Icon, size = ICON_SIZE }: { icon: LucideIcon; size?: string | number }) {
+  return <Icon size={size} strokeWidth={STROKE_WIDTH} aria-hidden="true" focusable="false" />;
 }
 
 export function NewFileIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-file-circle-plus" />;
+  return <ShellIcon icon={FilePlus} />;
 }
 
 export function NewFolderIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-folder-plus" />;
+  return <ShellIcon icon={FolderPlus} />;
 }
 
 export function OpenFolderIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-folder-open" />;
+  return <ShellIcon icon={FolderOpen} />;
 }
 
 export function SortByNameIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-arrow-down-a-z" />;
+  return <ShellIcon icon={ArrowDownAZ} />;
 }
 
 export function SortByLastModifiedIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-clock" />;
+  return <ShellIcon icon={Clock} />;
 }
 
 export function FolderIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-folder" />;
+  return <ShellIcon icon={Folder} />;
 }
 
 export function MoreIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-ellipsis" />;
+  return <ShellIcon icon={Ellipsis} />;
 }
 
 export function PinIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-thumbtack" />;
+  return <ShellIcon icon={Pin} />;
 }
 
+/** Sliders rather than a gear: this configures one workspace, not the app. */
 export function WorkspaceIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-gear" />;
+  return <ShellIcon icon={Settings2} />;
 }
 
 export function SplitViewIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="1.5" y="2.5" width="13" height="11" rx="1" />
-      <line x1="6" y1="2.5" x2="6" y2="13.5" />
-    </svg>
-  );
+  return <ShellIcon icon={PanelLeft} size={16} />;
 }
 
 export function SearchIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-magnifying-glass" />;
+  return <ShellIcon icon={Search} />;
 }
 
 export function FilesIcon() {
-  return <FontAwesomeIcon icon="fa-solid fa-folder-tree" />;
+  return <ShellIcon icon={FolderTree} />;
 }

@@ -48,7 +48,7 @@ The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configu
 
 ### Icons
 
-`public/icons/` (192/512/maskable-512/apple-touch) are generated from `public/_res/siteimages/docblk.webp` — regenerate with any canvas-based resize if the logo changes (content within the central ~80% for the maskable variant, solid background).
+`public/favicon.png`, `public/icons/` (192/512/maskable-512/apple-touch), `public/og.png` and the wordmarks in `public/_res/siteimages/` are generated from the hull-lettering source in [`design/brand/`](design/brand/README.md). Change the letterforms or colors there and regenerate; don't edit the PNGs.
 
 ### Theme fonts
 

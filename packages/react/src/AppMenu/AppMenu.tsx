@@ -32,12 +32,18 @@ import { AiSettingsControls } from '../Settings/AiSettings.js';
 import { SpeechSettingsControls } from '../Settings/SpeechSettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
+import { displayBuildDate } from '../local-date.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
 
 export interface AppMenuProps {
   /** Optional logo image URL to display instead of the text label. */
   logoUrl?: string;
+  /**
+   * The logo drawn for dark appearances. Without it, the light logo is
+   * inverted in dark mode, which suits only a flat black-on-transparent mark.
+   */
+  logoDarkUrl?: string;
   /** Current theme preference. */
   themePreference?: ThemePreference;
   /** Called when the user changes the theme preference. */
@@ -89,7 +95,10 @@ export interface AppMenuProps {
   storagePersistent?: boolean;
   /** Human-readable version/build and delivery surface shown in About. */
   appVersion?: string;
-  /** ISO build date shown in About. */
+  /**
+   * Build date shown in About: an ISO timestamp, shown as the viewer's local
+   * day, or a bare `YYYY-MM-DD`, shown as given.
+   */
   appBuildDate?: string;
   /**
    * The host's AI API. When present, Settings offers an AI section; when
@@ -125,6 +134,7 @@ const MORE_INFORMATION_URLS: Readonly<Record<HostSurfaceKind | 'web', string>> =
 
 export function AppMenu({
   logoUrl,
+  logoDarkUrl,
   themePreference = 'auto',
   onThemeChange,
   accentColor = 'brown',
@@ -233,13 +243,24 @@ export function AppMenu({
           aria-haspopup="menu"
         >
           {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt="DocBlocks"
-              className="db-app-menu-logo"
-              width={1266}
-              height={544}
-            />
+            <>
+              <img
+                src={logoUrl}
+                alt="DocBlocks"
+                className={`db-app-menu-logo ${logoDarkUrl ? 'db-app-menu-logo--light' : 'db-app-menu-logo--invert'}`}
+                width={557}
+                height={242}
+              />
+              {logoDarkUrl && (
+                <img
+                  src={logoDarkUrl}
+                  alt="DocBlocks"
+                  className="db-app-menu-logo db-app-menu-logo--dark"
+                  width={557}
+                  height={242}
+                />
+              )}
+            </>
           ) : (
             <span className="db-app-menu-label">docblocks</span>
           )}
@@ -448,7 +469,7 @@ export function AppMenu({
           {appBuildDate && (
             <p className="db-about-version">
               <span>Build</span>
-              <time dateTime={appBuildDate}>{appBuildDate}</time>
+              <time dateTime={appBuildDate}>{displayBuildDate(appBuildDate)}</time>
             </p>
           )}
           <p>

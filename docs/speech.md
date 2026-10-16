@@ -87,7 +87,7 @@ Settings labels owned shared references as **Shared speech storage** and
 retains **Remove**; a discovered installation offers use without a download.
 MAS and automation pass no shared cache or discovery roots and remain private.
 
-Gezel core `1.2.5` and inference `1.0.0` are pinned in the desktop manifest and
+Gezel core `1.2.6` and inference `1.0.1` are pinned in the desktop manifest and
 lockfile. The published core provides `./speech-models`; sibling links remain
 available for local development.
 
@@ -120,7 +120,7 @@ Acoustic calibration and persisted timing-quality provenance remain follow-up
 work. The new shared frontend also corrects multi-digit ordinal expansion
 (`21st` becomes `twenty first`) and retains overlong words across model chunks.
 
-Gezel core `1.2.5` includes the `@bendyline/gezel/kokoro` source-mapping API
+Gezel core `1.2.6` includes the `@bendyline/gezel/kokoro` source-mapping API
 and is pinned in the desktop manifest and lockfile.
 The ONNX artifact is already published upstream; DocBlocks does
 not publish or patch its own model, and no new native binary is needed for this

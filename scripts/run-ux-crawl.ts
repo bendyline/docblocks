@@ -11,6 +11,7 @@
  *   npm run ux:crawl -- reports/my-run    # choose the output directory
  *   npm run ux:crawl -- --no-build        # reuse packages/site/dist
  *   npm run ux:crawl -- --review          # functional, export, accessibility audit
+ *   npm run ux:crawl -- --affordances     # click every control; contact sheet
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl   # the live site
  *
  * The service worker only exists in a production build, which is the same
@@ -75,9 +76,15 @@ async function main(): Promise<void> {
   const passThrough = process.argv.slice(2);
   const skipBuild = passThrough.includes('--no-build');
   const review = passThrough.includes('--review');
-  const entry = review ? path.join(repoRoot, 'e2e', 'site-ship-review.ts') : crawlEntry;
+  const affordances = passThrough.includes('--affordances');
+  if (review && affordances) throw new Error('Choose one of --review or --affordances.');
+  const entry = review
+    ? path.join(repoRoot, 'e2e', 'site-ship-review.ts')
+    : affordances
+      ? path.join(repoRoot, 'e2e', 'site-affordance-crawl.ts')
+      : crawlEntry;
   const crawlArgs = passThrough.filter(
-    (argument) => !['--no-build', '--review'].includes(argument),
+    (argument) => !['--no-build', '--review', '--affordances'].includes(argument),
   );
 
   const externalBaseUrl = process.env.LIVE_UX_BASE_URL;

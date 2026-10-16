@@ -4,15 +4,18 @@
 
 /* ── Theme Tokens ────────────────────────────────────────────── */
 
-/* DocBlocks accent palette — warm brown on a canvas/parchment base.
-   Think paper on a wooden desk: the editor itself stays white (paper),
-   the chrome around it (sidebar, gutters, panes) reads as cream
-   canvas, and the accent picks up a saturated dark brown for CTAs.
-   Dark mode inverts the metaphor into espresso wood with light tan
-   highlights. Derived shades (`--db-accent-soft-*`,
-   `--db-accent-tint-strong`, `--db-accent-deep`) are defined alongside so every place that needs
-   a tinted background or a readable-on-tint text color pulls from the
-   same source of truth. */
+/* DocBlocks palette — paper, ink, and one signal color.
+   The page is the one white sheet. Every chrome pane around it (sidebar,
+   toolbar, status bar) shares the cream `--db-bg-subtle`, so nothing but
+   the document competes for attention. Ink is the accent: primary buttons
+   and active controls go near-black, like the marketing site's buttons,
+   and a selected row is a quiet tint marked by a 2px `--db-selected-rule`
+   instead of a filled slab. Rust (`--db-signal`) is kept for the focus
+   ring alone. Dark mode mirrors it: espresso panes, a light-ink accent.
+   Derived shades (`--db-accent-soft-*`, `--db-accent-tint-strong`,
+   `--db-accent-deep`) are defined alongside so every place that needs a
+   tinted background or a readable-on-tint text color pulls from the same
+   source of truth. */
 /* The palette binds on the document root as well as on the shell. Squisq
    mounts its menus, dialogs and flyouts in PORTALS on <body>, outside the
    shell — without a root binding they cannot see --db-*, which is why the
@@ -20,38 +23,53 @@
    follows whichever appearance the shell in the page resolved to. */
 :root,
 .db-shell {
-  /* Chrome typeface. `system-ui` first so DocBlocks looks native by default.
-     Settings > Appearance > Interface font swaps this for the bundled face
-     below; the visual-regression suite forces that, because under the system
-     stack the same screenshot renders in a different typeface on every OS. */
+  /* Chrome typeface: the bundled `DocBlocks Fixed UI` face, which is Hanken
+     Grotesk — the sans docblocks.com is set in — so the app and the site
+     read as one product and the chrome renders identically on every OS.
+     Settings > Appearance > Interface font > System swaps it for the
+     platform's own face (the block below). */
   --db-ui-font:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
-    sans-serif;
+    'DocBlocks Fixed UI', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  /* Metadata face: counts, timestamps, version strings, section labels. A
+     small mono sets what you read apart from what you act on. */
+  --db-meta-font: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  /* Squisq's chrome reads `--squisq-ux-font` with a `system-ui` fallback, the
+     same bridge shape as the `--squisq-*` color tokens further down. Binding
+     it carries the chrome face into the editor toolbar, menus and dialogs.
+     DOCUMENT typography is never touched — a theme's fonts are content the
+     author chose, not chrome. */
+  --squisq-ux-font: var(--db-ui-font);
   --db-bg: #ffffff;
   --db-bg-subtle: #f3eede;
   --db-bg-hover: #e9e2cb;
-  --db-bg-selected: #7d6948;
-  --db-bg-selected-hover: #5e4f37;
+  --db-bg-selected: #ddd4ba;
+  --db-bg-selected-hover: #d4caad;
   --db-border: #d6cdb0;
   --db-border-strong: #b5a985;
   --db-text: #2a2419;
   --db-text-secondary: #3d3528;
   --db-text-muted: #6b614a;
   --db-text-placeholder: #766c54;
-  --db-accent: #7d6948;
-  --db-accent-hover: #5e4f37;
-  --db-text-on-accent: #ffffff;
-  --db-text-on-selected: #ffffff;
-  /* Keyboard focus ring. Deliberately darker than --db-accent: the accent
-     is also the *selected row* fill, so an accent ring vanished against
-     it. Any surface that paints itself --db-bg-selected re-points this
-     token at a contrasting value (see .db-tree-row--selected). */
-  --db-focus: #3d3220;
-  --db-accent-soft-08: rgba(125, 105, 72, 0.08);
-  --db-accent-soft-10: rgba(125, 105, 72, 0.1);
-  --db-accent-soft-12: rgba(125, 105, 72, 0.12);
-  --db-accent-soft-15: rgba(125, 105, 72, 0.15);
-  --db-accent-soft-25: rgba(125, 105, 72, 0.25);
+  --db-accent: #2a2419;
+  --db-accent-hover: #15120d;
+  --db-text-on-accent: #f8f4ea;
+  --db-text-on-selected: #2a2419;
+  /* The 2px mark down the leading edge of a selected row. Selection is a
+     tint, so this is what carries the state at a glance. */
+  --db-selected-rule: #2a2419;
+  /* Keyboard focus ring, in the signal rust. The accent is ink, so an
+     accent ring would read as one more border; rust is the color the chrome
+     uses for nothing else, so the ring is never mistaken for state. 4.4:1 on
+     the cream panes and 4.9:1 on white, clear of the 3:1 non-text minimum,
+     and it holds on the selected-row tint too. */
+  --db-signal: #b4532a;
+  --db-focus: #b4532a;
+  --db-accent-soft-08: rgba(42, 36, 25, 0.08);
+  --db-accent-soft-10: rgba(42, 36, 25, 0.1);
+  --db-accent-soft-12: rgba(42, 36, 25, 0.12);
+  --db-accent-soft-15: rgba(42, 36, 25, 0.15);
+  --db-accent-soft-25: rgba(42, 36, 25, 0.25);
   --db-accent-tint-strong: #d8d0b5;
   --db-accent-deep: #3d3220;
   --db-editor-canvas: #ffffff;
@@ -144,26 +162,31 @@
   }
 }
 
-/* Interface font: fixed.
-   `DocBlocks Fixed UI` is the Roboto variable binary each surface already ships
-   for the document theme of that name, redeclared over the full 100-900 range
-   so the chrome's 400/500/600/650/700 weights render exactly rather than
-   snapping to the nearest static face. Bound on the root, not only the shell,
-   because Squisq portals its menus onto <body>. */
-:root[data-db-interface-font='fixed'],
-:root[data-db-interface-font='fixed'] .db-shell {
+/* Interface font: system.
+   `DocBlocks Fixed UI` (above) is the Hanken Grotesk variable binary each
+   surface already ships for the document theme of that name, redeclared over
+   the full 100-900 range so the chrome's 400/500/600/650/700 weights render
+   exactly. This block is the opt-out for anyone who wants DocBlocks to look
+   native: the platform UI face, and the platform mono for metadata, so the
+   chrome fetches nothing. Bound on the root, not only the shell, because
+   Squisq portals its menus onto <body>. */
+:root[data-db-interface-font='system'],
+:root[data-db-interface-font='system'] .db-shell {
   --db-ui-font:
-    'DocBlocks Fixed UI', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  /* Squisq's chrome reads `--squisq-ux-font` with a `system-ui` fallback, the
-     same bridge shape as the `--squisq-*` colour tokens further down. Setting
-     it here carries the fixed face into the editor toolbar, menus and dialogs,
-     which is most of what a shell screenshot actually contains.
-
-     Scoped to fixed mode on purpose: the token is left unset by default so
-     Squisq keeps its own chrome font, and DOCUMENT typography is never touched
-     — a theme's fonts are content the author chose, not chrome. */
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --db-meta-font: ui-monospace, SFMono-Regular, Consolas, monospace;
   --squisq-ux-font: var(--db-ui-font);
+}
+
+/* Form controls take the chrome face. Browsers give <button>, <input>,
+   <select> and <textarea> a UA font of their own (Arial in Chromium on
+   Windows), so every label inside a button — the view tabs, H1–H3, the
+   workspace picker — rendered in a second sans beside the chrome's.
+   Zero specificity, so any rule that names a font still wins; unscoped,
+   because Squisq portals its menus and dialogs onto <body>. */
+:where(button, input, select, textarea) {
+  font-family: inherit;
 }
 
 :root:has(.db-shell[data-theme='dark']),
@@ -179,16 +202,18 @@
   --db-text-secondary: #d4ccb0;
   --db-text-muted: #a89a7c;
   --db-text-placeholder: #6b614a;
-  --db-accent: #c8b48f;
-  --db-accent-hover: #dec79d;
+  --db-accent: #e8e2d0;
+  --db-accent-hover: #fff8e8;
   --db-text-on-accent: #1a1812;
   --db-text-on-selected: #e8e2d0;
-  --db-focus: #e8e2d0;
-  --db-accent-soft-08: rgba(200, 180, 143, 0.08);
-  --db-accent-soft-10: rgba(200, 180, 143, 0.1);
-  --db-accent-soft-12: rgba(200, 180, 143, 0.12);
-  --db-accent-soft-15: rgba(200, 180, 143, 0.18);
-  --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+  --db-selected-rule: #e8e2d0;
+  --db-signal: #d9774a;
+  --db-focus: #d9774a;
+  --db-accent-soft-08: rgba(232, 226, 208, 0.08);
+  --db-accent-soft-10: rgba(232, 226, 208, 0.1);
+  --db-accent-soft-12: rgba(232, 226, 208, 0.12);
+  --db-accent-soft-15: rgba(232, 226, 208, 0.18);
+  --db-accent-soft-25: rgba(232, 226, 208, 0.28);
   --db-accent-tint-strong: #3a382e;
   --db-accent-deep: #e6dcc0;
   --db-editor-canvas: #16110b;
@@ -228,15 +253,17 @@
     --db-text-secondary: #d4ccb0;
     --db-text-muted: #a89a7c;
     --db-text-placeholder: #6b614a;
-    --db-accent: #c8b48f;
-    --db-accent-hover: #dec79d;
+    --db-accent: #e8e2d0;
+    --db-accent-hover: #fff8e8;
     --db-text-on-accent: #1a1812;
     --db-text-on-selected: #e8e2d0;
-    --db-focus: #e8e2d0;
-    --db-accent-soft-08: rgba(200, 180, 143, 0.08);
-    --db-accent-soft-12: rgba(200, 180, 143, 0.12);
-    --db-accent-soft-15: rgba(200, 180, 143, 0.18);
-    --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+    --db-selected-rule: #e8e2d0;
+    --db-signal: #d9774a;
+    --db-focus: #d9774a;
+    --db-accent-soft-08: rgba(232, 226, 208, 0.08);
+    --db-accent-soft-12: rgba(232, 226, 208, 0.12);
+    --db-accent-soft-15: rgba(232, 226, 208, 0.18);
+    --db-accent-soft-25: rgba(232, 226, 208, 0.28);
     --db-accent-tint-strong: #3a382e;
     --db-accent-deep: #e6dcc0;
     --db-input-border: #c8b48f;
@@ -293,10 +320,11 @@
 }
 
 .db-explorer-title {
-  font-weight: 600;
-  font-size: 12px;
+  font-family: var(--db-meta-font);
+  font-weight: 500;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
   color: var(--db-text-muted);
 }
 
@@ -337,7 +365,7 @@
   padding: 8px 10px 5px;
 }
 
-.db-pinned-documents-title i {
+.db-pinned-documents-title svg {
   font-size: 10px;
 }
 
@@ -383,9 +411,9 @@
 .db-pinned-document-row--selected,
 .db-pinned-document-row--selected:hover,
 .db-pinned-document-row--selected:has(:focus-visible) {
-  --db-focus: #ffffff;
   background: var(--db-bg-selected);
   color: var(--db-text-on-selected);
+  box-shadow: inset 2px 0 0 var(--db-selected-rule);
 }
 
 .db-pinned-document-more {
@@ -793,14 +821,6 @@
   outline-offset: -2px;
 }
 
-/* A selected/drop-target row is filled with --db-bg-selected, which in
-   light mode *is* the accent brown — the default ring would disappear
-   into it. Re-point the token rather than duplicating the rule. */
-.db-tree-row--selected,
-.db-tree-row--drop-target {
-  --db-focus: #ffffff;
-}
-
 .db-tree-row--dragging {
   opacity: 0.45;
 }
@@ -816,6 +836,7 @@
 .db-tree-row--selected {
   background: var(--db-bg-selected);
   color: var(--db-text-on-selected);
+  box-shadow: inset 2px 0 0 var(--db-selected-rule);
 }
 
 .db-tree-row--selected:hover {
@@ -846,7 +867,8 @@
   margin-left: 8px;
   overflow: hidden;
   color: var(--db-text-secondary);
-  font-size: 11px;
+  font-family: var(--db-meta-font);
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   text-overflow: ellipsis;
@@ -1288,11 +1310,21 @@
   display: block;
 }
 
-/* The logo is black lettering on a pale extruded edge. On espresso the black
-   fill vanished and only the edges showed, so it read as a hollow outline.
-   Inverting makes the letters solid and sinks the edge into the background,
-   and the sepia warms them toward --db-text. */
-.db-shell[data-theme='dark'] .db-app-menu-logo {
+/* Hosts pass a light and a dark wordmark; the shell shows the one drawn for
+   its resolved appearance. The dark one is painted as on a hull (white faces,
+   black shade), which an inverted light logo can't reproduce. */
+.db-app-menu-logo--dark,
+.db-shell[data-theme='dark'] .db-app-menu-logo--light {
+  display: none;
+}
+
+.db-shell[data-theme='dark'] .db-app-menu-logo--dark {
+  display: block;
+}
+
+/* A host with only one logo gets it inverted in dark mode — fine for a flat
+   black-on-transparent mark, the case this fallback exists for. */
+.db-shell[data-theme='dark'] .db-app-menu-logo--invert {
   filter: invert(1) brightness(0.88) sepia(0.15);
 }
 
@@ -1517,6 +1549,9 @@
 
 .db-shell-sidebar {
   width: 260px;
+  /* The sidebar is chrome, so it shares the toolbar's paper; only the page
+     itself is white. */
+  background: var(--db-bg-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1539,7 +1574,7 @@
   inset-block: 0;
   inset-inline-start: 0;
   z-index: 30;
-  background: var(--db-bg);
+  background: var(--db-bg-subtle);
   width: var(--db-drawer-width);
   padding-inline-start: var(--db-safe-left);
   border-inline-end: 1px solid var(--db-border-strong);
@@ -1729,6 +1764,7 @@ body.db-resizing-sidebar * {
    box here so both chrome regions are 25px everywhere. */
 .db-shell .squisq-status-bar {
   line-height: 16px;
+  font-family: var(--db-meta-font);
 }
 
 .db-shell-sidebar-footer {
@@ -2297,7 +2333,7 @@ body.db-resizing-sidebar * {
 
 .db-about-version code {
   color: var(--db-text);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--db-meta-font);
   user-select: all;
 }
 
@@ -2314,10 +2350,11 @@ body.db-resizing-sidebar * {
 }
 
 .db-settings-legend {
-  font-size: 12px;
-  font-weight: 600;
+  font-family: var(--db-meta-font);
+  font-size: 11px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
   color: var(--db-text-muted);
   margin-bottom: 8px;
 }
@@ -3755,16 +3792,16 @@ body.db-resizing-sidebar * {
   background: var(--squisq-desk-bg);
 }
 
-/* ── Inline preview gutter: thematic green ──────────────────── */
+/* ── Inline preview gutter ──────────────────────────────────── */
 /* Rebind squisq's `--squisq-preview-*` custom properties so the
    gutter chrome (vertical bracket, diagonal connector + dots,
-   "FACTCARD" template label) reads as sage green instead of indigo,
-   and the card surface tones harmonize with the rest of docblocks.
-   The preview-block renderer's own theme is unaffected — that's a
-   document-level concern, not chrome. */
+   template label) draws as hairlines in the rule color rather than
+   in the accent, and the card surface tones harmonize with the rest
+   of docblocks. The preview-block renderer's own theme is unaffected —
+   that's a document-level concern, not chrome. */
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] {
-  --squisq-preview-accent: var(--db-accent);
-  --squisq-preview-accent-muted: var(--db-text-muted);
+  --squisq-preview-accent: var(--db-border-strong);
+  --squisq-preview-accent-muted: var(--db-border);
   --squisq-preview-gutter-bg: var(--db-gutter-bg);
   --squisq-preview-card-bg: #ffffff;
   --squisq-preview-card-border: var(--db-border);
@@ -3778,8 +3815,8 @@ body.db-resizing-sidebar * {
 }
 
 .db-shell[data-theme='dark'] .squisq-editor-shell[data-theme='dark'] {
-  --squisq-preview-accent: var(--db-accent-hover);
-  --squisq-preview-accent-muted: var(--db-text-muted);
+  --squisq-preview-accent: var(--db-border-strong);
+  --squisq-preview-accent-muted: var(--db-border);
   --squisq-preview-gutter-bg: var(--db-gutter-bg);
   --squisq-preview-card-bg: var(--db-bg);
   --squisq-preview-card-border: var(--db-border);
@@ -3790,6 +3827,16 @@ body.db-resizing-sidebar * {
   --squisq-preview-empty-bg: var(--db-bg);
   --squisq-preview-empty-border: var(--db-border);
   --squisq-preview-empty-text: var(--db-text-muted);
+}
+
+/* The extent bar shows a block's reach; at Squisq's 4px it read as a cable
+   running beside the page. Squisq has no width token for it. */
+.db-shell .squisq-editor-shell .squisq-inline-preview-extent {
+  width: 2px;
+}
+
+.db-shell .squisq-editor-shell .squisq-inline-preview-extent--untagged {
+  width: 1px;
 }
 
 /* ── Squisq dark-theme override ──────────────────────────────── */
@@ -4154,11 +4201,11 @@ html:has(.db-shell[data-theme='dark']) {
   --db-danger-bg: #1c1917;
   --db-text-on-danger: #1c1917;
   --db-shadow: rgba(0, 0, 0, 0.4);
-  --db-accent: #c8b48f;
-  --db-accent-hover: #dec79d;
+  --db-accent: #e8e2d0;
+  --db-accent-hover: #fff8e8;
   --db-text-on-accent: #1a1812;
-  --db-accent-soft-15: rgba(200, 180, 143, 0.18);
-  --db-accent-soft-25: rgba(200, 180, 143, 0.28);
+  --db-accent-soft-15: rgba(232, 226, 208, 0.18);
+  --db-accent-soft-25: rgba(232, 226, 208, 0.28);
   --db-accent-tint-strong: #3a382e;
   --db-accent-deep: #e6dcc0;
   --db-gutter-bg: #16110b;
@@ -4177,11 +4224,11 @@ html:has(.db-shell[data-theme='light']) {
   --db-danger-bg: #fdf0ee;
   --db-text-on-danger: #ffffff;
   --db-shadow: rgba(40, 30, 15, 0.12);
-  --db-accent: #7d6948;
-  --db-accent-hover: #5e4f37;
-  --db-text-on-accent: #ffffff;
-  --db-accent-soft-15: rgba(125, 105, 72, 0.15);
-  --db-accent-soft-25: rgba(125, 105, 72, 0.25);
+  --db-accent: #2a2419;
+  --db-accent-hover: #15120d;
+  --db-text-on-accent: #f8f4ea;
+  --db-accent-soft-15: rgba(42, 36, 25, 0.15);
+  --db-accent-soft-25: rgba(42, 36, 25, 0.25);
   --db-accent-tint-strong: #d8d0b5;
   --db-accent-deep: #3d3220;
   --db-gutter-bg: #efe8d4;
@@ -4197,6 +4244,8 @@ html:has(.db-shell[data-theme='light']:not([data-accent='brown'])) {
   --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
   --db-accent-soft-15: rgb(var(--db-accent-rgb) / 15%);
   --db-accent-soft-25: rgb(var(--db-accent-rgb) / 25%);
+  --db-text-on-selected: var(--db-text);
+  --db-selected-rule: var(--db-accent);
   --db-gallery-backdrop: rgba(30, 30, 30, 0.24);
   --db-gallery-panel-bg: var(--db-bg);
   --db-gallery-raised-bg: var(--db-bg);
@@ -4212,6 +4261,7 @@ html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) {
   --db-accent-soft-12: rgb(var(--db-accent-rgb) / 12%);
   --db-accent-soft-15: rgb(var(--db-accent-rgb) / 18%);
   --db-accent-soft-25: rgb(var(--db-accent-rgb) / 28%);
+  --db-selected-rule: var(--db-accent);
   --db-gallery-backdrop: rgba(0, 0, 0, 0.58);
   --db-gallery-panel-bg: var(--db-bg);
   --db-gallery-header-bg: var(--db-editor-canvas);
@@ -4225,8 +4275,8 @@ html:has(.db-shell[data-theme='dark']:not([data-accent='brown'])) {
 html:has(.db-shell[data-theme='light'][data-accent='green']) {
   --db-bg-subtle: #edf4ef;
   --db-bg-hover: #dfece3;
-  --db-bg-selected: #4f715d;
-  --db-bg-selected-hover: #3d5949;
+  --db-bg-selected: #cfe0d3;
+  --db-bg-selected-hover: #c2d6c7;
   --db-border: #c6d8cb;
   --db-border-strong: #98b3a1;
   --db-text: #202a23;
@@ -4274,8 +4324,8 @@ html:has(.db-shell[data-theme='dark'][data-accent='green']) {
 html:has(.db-shell[data-theme='light'][data-accent='blue']) {
   --db-bg-subtle: #eef2f7;
   --db-bg-hover: #e1e8f0;
-  --db-bg-selected: #526f91;
-  --db-bg-selected-hover: #3c5675;
+  --db-bg-selected: #d0dbe7;
+  --db-bg-selected-hover: #c3d0de;
   --db-border: #c7d1de;
   --db-border-strong: #99aabd;
   --db-text: #202733;
@@ -4323,8 +4373,8 @@ html:has(.db-shell[data-theme='dark'][data-accent='blue']) {
 html:has(.db-shell[data-theme='light'][data-accent='purple']) {
   --db-bg-subtle: #f3eff6;
   --db-bg-hover: #e9e1ef;
-  --db-bg-selected: #735b8c;
-  --db-bg-selected-hover: #59436f;
+  --db-bg-selected: #ddd0e4;
+  --db-bg-selected-hover: #d2c3db;
   --db-border: #d5c8dd;
   --db-border-strong: #b19cbe;
   --db-text: #29222e;
@@ -4372,8 +4422,8 @@ html:has(.db-shell[data-theme='dark'][data-accent='purple']) {
 html:has(.db-shell[data-theme='light'][data-accent='maroon']) {
   --db-bg-subtle: #f7eff2;
   --db-bg-hover: #eedfe5;
-  --db-bg-selected: #805365;
-  --db-bg-selected-hover: #643d4d;
+  --db-bg-selected: #e6d0d8;
+  --db-bg-selected-hover: #dcc3cd;
   --db-border: #dec8d0;
   --db-border-strong: #bd9ba8;
   --db-text: #2f2227;
@@ -4421,8 +4471,8 @@ html:has(.db-shell[data-theme='dark'][data-accent='maroon']) {
 html:has(.db-shell[data-theme='light'][data-accent='orange']) {
   --db-bg-subtle: #f8f1e9;
   --db-bg-hover: #f0e4d6;
-  --db-bg-selected: #8a5a32;
-  --db-bg-selected-hover: #6d4323;
+  --db-bg-selected: #ead8c5;
+  --db-bg-selected-hover: #e1cbb4;
   --db-border: #e0cfbc;
   --db-border-strong: #c2a282;
   --db-text: #30271f;
@@ -4470,8 +4520,8 @@ html:has(.db-shell[data-theme='dark'][data-accent='orange']) {
 html:has(.db-shell[data-theme='light'][data-accent='gray']) {
   --db-bg-subtle: #f2f2f2;
   --db-bg-hover: #e6e6e6;
-  --db-bg-selected: #676767;
-  --db-bg-selected-hover: #505050;
+  --db-bg-selected: #d8d8d8;
+  --db-bg-selected-hover: #cdcdcd;
   --db-border: #d1d1d1;
   --db-border-strong: #a8a8a8;
   --db-text: #252525;
@@ -5283,13 +5333,13 @@ html:has(.db-shell[data-theme='dark'])
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-toolbar-view-tabs {
-  background: var(--db-gutter-bg);
+  background: var(--db-bg-subtle);
   border-right-color: var(--db-border);
 }
 
 .db-shell[data-theme='light'] .squisq-editor-shell[data-theme='light'] .squisq-status-bar {
   --squisq-text-muted: var(--db-text-secondary);
-  background: var(--db-accent-tint-strong);
+  background: var(--db-bg-subtle);
   border-top-color: var(--db-border-strong);
 }
 

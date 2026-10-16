@@ -51,13 +51,13 @@ agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
 The desktop pins published releases exactly: `@bendyline/gezel-inference`
-`1.0.0` and `@bendyline/gezel-app-sdk` `1.1.5` at runtime, plus Gezel core
-`1.2.5` as a dev dependency that tsup bundles into main. The inference package
-brings its matching client, catalog and knowledge packages. Inference `1.0.0`
+`1.0.1` and `@bendyline/gezel-app-sdk` `1.1.6` at runtime, plus Gezel core
+`1.2.6` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.1`
 selects native release `0.1.49`. Mobile still uses its own unpublished
 `-docblocks.2` previews, so npm nests the desktop's copies where the two differ.
 
-Kokoro narration uses Gezel core `1.2.5`'s `planKokoroSpeech` export
+Kokoro narration uses Gezel core `1.2.6`'s `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
 timestamped ONNX model. The model pin itself uses an existing upstream artifact
 and requires no new native

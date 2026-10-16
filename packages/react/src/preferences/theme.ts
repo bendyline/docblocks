@@ -30,21 +30,23 @@ export const DB_CHROME_COLORS: Record<'light' | 'dark', string> = {
 /**
  * Which typeface the shell chrome uses.
  *
- * `system` resolves `system-ui`, so DocBlocks looks native on each platform —
- * the right default, and what almost everyone should keep. `fixed` pins the
- * chrome to the bundled `DocBlocks Fixed UI` face (the Roboto variable binary
- * already shipped for the document theme of that name) so the interface renders
- * identically everywhere.
+ * `fixed` — the default — pins the chrome to the bundled `DocBlocks Fixed UI`
+ * face: the Hanken Grotesk variable binary every surface already ships for
+ * documents set in it, and the sans docblocks.com uses. The app and the site
+ * then read as one product, and the interface renders identically on every
+ * OS — which is also what lets the visual-regression suite compare one set of
+ * baselines across platforms at all.
  *
- * Two things want that. A user working across machines gets typography that
- * does not shift between them. And the visual-regression suite gets a rendering
- * it can compare across operating systems at all: under `system` the same
- * screenshot differs on every platform, which is why those baselines are
- * otherwise captured on one OS and compared only there.
+ * `system` resolves `system-ui`, for anyone who would rather DocBlocks looked
+ * native on each platform; the chrome then fetches no font.
+ *
+ * The stored values kept their names when the default changed, so a saved
+ * `system` still opts out. A saved `fixed` now gets Hanken Grotesk; it used to
+ * get Roboto.
  */
 export type InterfaceFontPreference = 'system' | 'fixed';
 
-export const DEFAULT_INTERFACE_FONT: InterfaceFontPreference = 'system';
+export const DEFAULT_INTERFACE_FONT: InterfaceFontPreference = 'fixed';
 
 const THEME_STORAGE_KEY = 'docblocks:themePreference';
 const ACCENT_STORAGE_KEY = 'docblocks:accentColor';
