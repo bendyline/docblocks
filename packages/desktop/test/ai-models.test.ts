@@ -240,6 +240,68 @@ describe('desktop AI error mapping', () => {
     });
   });
 
+  it('gives an unrecognized failure a short clue, code first, and keeps the whole text as detail', () => {
+    const unknown = 'AI Services (Gezel) could not complete this request.';
+    const crash = sdk('engine_exited', 500);
+    crash.message = 'llama-server exited with code 3221225781 before it was ready';
+    const error = toAiError(crash);
+    expect(error.code).to.equal('unknown');
+    expect(error.message).to.equal(
+      `${unknown} (Details: engine_exited: llama-server exited with…)`,
+    );
+    expect(error.detail).to.equal(crash.message);
+
+    expect(toAiError(new Error('something\n  else')).message).to.equal(
+      `${unknown} (Details: something else)`,
+    );
+    expect(toAiError(Object.assign(new Error('HTTP 500'), { status: 500 })).message).to.equal(
+      `${unknown} (Details: HTTP 500)`,
+    );
+    const socket = new TypeError('fetch failed', {
+      cause: Object.assign(new Error('other side closed'), { code: 'UND_ERR_BODY_TIMEOUT' }),
+    });
+    expect(toAiError(socket).message).to.equal(
+      `${unknown} (Details: UND_ERR_BODY_TIMEOUT: fetch failed)`,
+    );
+    expect(toAiError({}).message).to.equal(unknown);
+  });
+
+  it("skips Gezel's catch-all provider_error so the clue is the engine's reason", () => {
+    const unknown = 'AI Services (Gezel) could not complete this request.';
+    // Before the stream: HTTP 500 carrying the capacity broker's sentence.
+    const memory = sdk('provider_error', 500);
+    memory.message = 'There is not enough memory to run this model right now.';
+    expect(toAiError(memory).message).to.equal(
+      `${unknown} (Details: There is not enough memory to run this…)`,
+    );
+    // Mid-stream: an SSE error frame, which arrives with a code but no status.
+    const crash = sdk('provider_error');
+    crash.message = 'child exited (code=3221225477 signal=none) before becoming ready';
+    expect(toAiError(crash).message).to.equal(
+      `${unknown} (Details: child exited (code=3221225477 signal=no…)`,
+    );
+    const bare = sdk('provider_error');
+    bare.message = '';
+    expect(toAiError(bare).message).to.equal(`${unknown} (Details: provider_error)`);
+  });
+
+  it("says what Gezel's named engine failures mean, and keeps a crash connected", () => {
+    const memory = toAiError(sdk('capacity_denied', 500));
+    expect(memory.code).to.equal('model-unavailable');
+    expect(memory.message).to.contain('enough free memory');
+    expect(memory.detail).to.equal('provider: capacity_denied');
+
+    // Mid-stream, so no status. Not provider-unavailable, which reconnects.
+    const crash = toAiError(sdk('engine_crashed'));
+    expect(crash.code).to.equal('unknown');
+    expect(crash.message).to.equal('The AI model stopped unexpectedly. Try again.');
+
+    expect(codeOf(sdk('engine_busy', 500))).to.equal('rate-limited');
+    expect(codeOf(sdk('engine_launch_failed'))).to.equal('runtime-missing');
+    expect(codeOf(sdk('context_length_exceeded', 400))).to.equal('budget-exceeded');
+    expect(codeOf(sdk('engine_not_ready', 500))).to.equal('model-unavailable');
+  });
+
   it('bounds and cleans text so the error always crosses the wire', () => {
     const error = aiError('unknown', 'a\0b', 'd'.repeat(5_000));
     expect(error.message).to.equal('ab');

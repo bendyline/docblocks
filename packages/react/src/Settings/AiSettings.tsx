@@ -43,7 +43,7 @@ function statusSentence(status: AiStatus): string {
     case 'connecting':
       switch (status.step) {
         case 'detecting':
-          return 'Looking for Gezel…';
+          return 'Looking to see if shared AI services (Gezel) are installed; we can use bundled services if they are not available.';
         case 'awaiting-approval':
           return 'Waiting for approval in Gezel…';
         case 'preparing-model':

@@ -506,7 +506,7 @@ export function AiDraftDialog({
       title={mode === 'compose' ? 'Add content with AI' : 'Rewrite with AI'}
       onClose={onClose}
       size="wide"
-      closeOnBackdrop={!running}
+      closeOnBackdrop={false}
       initialFocusRef={promptRef as RefObject<HTMLElement | null>}
       className="db-ai-draft-dialog"
       bodyClassName="db-ai-draft-body"
