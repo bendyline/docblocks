@@ -244,6 +244,45 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
 }
 
 /**
+ * Every job that runs the canonical gate keeps the E2E evidence of a failure.
+ *
+ * Release gates rerun CI's suites on code CI already passed, so a failure there
+ * is usually a timing race that will not reproduce on demand. A release once
+ * stopped on one with nothing but the log line to go on.
+ */
+async function requireCanonicalGateDiagnostics(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const gateIndex = job.steps.findIndex(
+      (step) =>
+        isRecord(step) && typeof step.run === 'string' && invokesWorkflowScript([step.run], 'all'),
+    );
+    if (gateIndex === -1) continue;
+    const uploadsDiagnostics = job.steps.slice(gateIndex + 1).some((step) => {
+      if (!isRecord(step) || typeof step.uses !== 'string' || !isRecord(step.with)) return false;
+      const uploadPath = step.with.path;
+      return (
+        step.uses.startsWith('actions/upload-artifact@') &&
+        typeof step.if === 'string' &&
+        /\b(?:failure|always)\(\)|!cancelled\(\)/u.test(step.if) &&
+        typeof uploadPath === 'string' &&
+        uploadPath.split(/\s+/u).includes('test-results/')
+      );
+    });
+    if (!uploadsDiagnostics) {
+      throw new Error(
+        `${relativePath}: ${jobName} runs npm run all but does not upload test-results/ when it fails`,
+      );
+    }
+  }
+}
+
+/**
  * Every OS in a job's matrix must have a step that actually runs on it.
  *
  * A step guarded by `if: runner.os == '…'` is skipped, not failed, on any other
@@ -588,6 +627,7 @@ async function main(): Promise<void> {
     'npm run coverage:critical',
     'npm test',
     'npm run mobile:test:available',
+    'npm run test:e2e:burn-in',
     'npm run test:e2e:all',
   ];
   if (rootPackage.scripts?.all !== 'tsx scripts/run-canonical-gate.ts') {
@@ -725,6 +765,11 @@ async function main(): Promise<void> {
     await requireGovernedNpmBeforeInstalls(workflow);
     await requireCanonicalGatePlaywrightBrowsers(workflow);
     await requireMatrixOsCoverage(workflow);
+    // The store workflow is private and may expose no downloadable artifact
+    // (requirePrivateStoreReleaseWorkflow); its gate output stays in the log.
+    if (workflow !== '.github/workflows/store-release.yml') {
+      await requireCanonicalGateDiagnostics(workflow);
+    }
   }
   const npmSetupAction = await readFile(
     path.join(repoRoot, '.github/actions/setup-npm/action.yml'),

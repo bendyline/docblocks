@@ -112,6 +112,12 @@ test.describe('adaptive shell on a phone', () => {
     await page.goto('/');
     const create = page.getByRole('button', { name: 'Create a document', exact: true });
     await expect(create).toBeVisible({ timeout: 30_000 });
+    // The first-run card renders in the same commit that adopts the welcome
+    // document, but that document's editor is lazy and can still be behind its
+    // Suspense fallback here. Snapshotted before it mounts, the probe below
+    // counts it as a mount of the new document: under load the welcome editor
+    // lands a few hundred milliseconds after the card and the count reads 2.
+    await expect(page.locator('.ProseMirror')).toHaveCount(1, { timeout: 30_000 });
 
     // Count every editor created from here on. A second mount replaced the
     // editor the person was already tapping, so on a slow phone their first

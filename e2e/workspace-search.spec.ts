@@ -14,8 +14,8 @@ test('Ctrl/Cmd+Shift+F finds saved text and opens the match beside the results',
   await page.keyboard.insertText('A Zebracorn lantern glows here.');
 
   // Move away so the next open is a real navigation, then search.
-  await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).click();
-  await expect(page).toHaveTitle(/aboutDocBlocks/u);
+  await page.locator('.db-tree-row', { hasText: 'Welcome' }).click();
+  await expect(page).toHaveTitle(/Welcome/u);
   await page.keyboard.press('ControlOrMeta+Shift+f');
 
   const input = page.getByRole('searchbox', { name: 'Search workspace' });

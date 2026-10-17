@@ -215,7 +215,7 @@ test.describe('a11y — quick-open and workspace search', () => {
     const dialog = page.getByRole('dialog', { name: 'Go to document' });
     await expect(dialog).toBeVisible();
     // The empty list leaves out the open document, the only one on a fresh site.
-    await dialog.getByRole('combobox', { name: 'Go to document' }).fill('about');
+    await dialog.getByRole('combobox', { name: 'Go to document' }).fill('welcome');
     await expect(dialog.getByRole('option').first()).toBeVisible();
 
     const violations = await scanAndReport(page, info, 'quick-open');

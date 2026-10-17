@@ -9,7 +9,8 @@ test('compares a recovered draft with the saved file and remembers the choice af
   const name = page.getByRole('textbox', { name: 'New file name' });
   await name.fill('recovery-comparison.md');
   await name.press('Enter');
-  const editor = page.locator('.ProseMirror[contenteditable="true"]').first();
+  // The welcome document's editor is in Write too until this one replaces it.
+  const editor = page.getByRole('textbox', { name: /^Edit \/?recovery-comparison\.md$/ });
   await expect(editor).toBeVisible();
   const savedText = 'Newer saved version from the debug app.';
   await editor.fill(savedText);

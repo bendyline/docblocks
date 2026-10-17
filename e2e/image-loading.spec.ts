@@ -14,7 +14,8 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   const name = page.getByRole('textbox', { name: 'New file name' });
   await name.fill('image-loading.md');
   await name.press('Enter');
-  const editor = page.locator('.ProseMirror[contenteditable="true"]');
+  // The welcome document's editor is in Write too until this one replaces it.
+  const editor = page.getByRole('textbox', { name: /^Edit \/?image-loading\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
 
   const drop = await editor.evaluateHandle((element) => {

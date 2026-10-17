@@ -42,9 +42,8 @@ async function seedAppearance(
   }, appearance);
 }
 
-/** Open the welcome document and wait for the editor to be interactive. */
+/** Wait for the welcome document's editor to be interactive. */
 async function openEditor(page: Page): Promise<void> {
-  await page.locator('.db-welcome-gateway-cta').click();
   await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({ timeout: 20_000 });
 }
 
@@ -63,7 +62,7 @@ test.describe('shell', () => {
 
   test('welcome gateway on first run', async ({ page }) => {
     await seedAppearance(page, { theme: 'dark' });
-    await openInitializedSite(page);
+    await openInitializedSite(page, { keepWelcome: true });
     const gateway = page.locator('.db-welcome-gateway');
     await expect(gateway).toBeVisible({ timeout: 20_000 });
     await expectStableScreenshot(page, gateway, 'welcome-gateway.png');
@@ -90,7 +89,7 @@ test.describe('shell', () => {
   test('file context menu portaled out of the shell', async ({ page }) => {
     await seedAppearance(page, { theme: 'dark' });
     await openInitializedSite(page);
-    const row = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).first();
+    const row = page.locator('.db-tree-row', { hasText: 'Welcome' }).first();
     await row.hover();
     await row.locator('.db-tree-more').click();
     const menu = page.locator('.db-tree-context');

@@ -10,6 +10,7 @@
  * caller handles that — see package.json test:e2e script).
  */
 
+import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,11 +20,22 @@ import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/contai
 import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
 
+/**
+ * A first launch opens behind the welcome screen, which covers the editor and
+ * its toolbar. Take the tour, as a person would, before using either.
+ */
+async function tourWelcome(window: Page): Promise<void> {
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 15_000 });
+  await window.getByRole('button', { name: 'Tour the welcome document' }).click();
+  await expect(gateway).toHaveCount(0);
+}
+
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   await expect(window.locator('.db-shell')).toBeVisible();
-  await expect(window).toHaveTitle('aboutDocBlocks - DocBlocks');
+  await expect(window).toHaveTitle('Welcome - DocBlocks');
 });
 
 test('loads supported hosted-video frames without rewriting their responses', async ({
@@ -59,6 +71,7 @@ test('supports hosted players and offers MP4 but not GIF export', async ({ launc
   // shipped feature needs SharedArrayBuffer, so the renderer stays unisolated.
   expect(await window.evaluate(() => globalThis.crossOriginIsolated)).toBe(false);
 
+  await tourWelcome(window);
   await window.getByRole('button', { name: 'Export and share' }).click();
 
   // The GPL-2.0 ffmpeg.wasm core is no longer packaged in the renderer, so no
@@ -327,25 +340,26 @@ test('workspace dropdown shows the full folder path', async ({ launchApp, worksp
   );
 });
 
-test('seeds aboutDocBlocks.md on first launch', async ({ launchApp, workspaceDir }) => {
+test('seeds Welcome.md on first launch', async ({ launchApp, workspaceDir }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
-  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  const welcome = path.join(workspaceDir, 'Welcome.md');
   // The shell seeds the welcome doc asynchronously. Poll the behavior this
   // test owns instead of coupling readiness to mutable rendered copy.
   await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
-  expect(fs.readFileSync(welcome, 'utf8')).toContain('# DocBlocks {[title');
+  expect(fs.readFileSync(welcome, 'utf8')).toContain('# Welcome to DocBlocks {[title');
 });
 
 test('export dialog exposes a remembered native target control', async ({ launchApp }) => {
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await tourWelcome(window);
   await window.locator('.db-toolbar-menu-trigger').click();
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
 
   const exportTarget = window.getByLabel('Export to');
   await expect(exportTarget).toBeVisible();
-  await expect(exportTarget).toHaveValue(/aboutDocBlocks\.pdf$/);
+  await expect(exportTarget).toHaveValue(/Welcome\.pdf$/);
   await expect(window.getByRole('button', { name: 'Choose export location' })).toBeVisible();
 });
 
@@ -358,6 +372,7 @@ test('exports exact Markdown bytes through the remembered native target', async 
   prepareRememberedExportTarget(userDataDir, workspaceDir, target);
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await tourWelcome(window);
 
   await window.locator('.db-toolbar-menu-trigger').click();
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
@@ -369,7 +384,7 @@ test('exports exact Markdown bytes through the remembered native target', async 
   await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
   const exported = fs.readFileSync(target, 'utf8');
   expect(exported.length).toBeGreaterThan(100);
-  expect(exported).toContain('# DocBlocks {[title');
+  expect(exported).toContain('# Welcome to DocBlocks {[title');
 });
 
 test('exports Word with the welcome diagram drawn as a picture, not ASCII art', async ({
@@ -381,6 +396,7 @@ test('exports Word with the welcome diagram drawn as a picture, not ASCII art', 
   prepareRememberedExportTarget(userDataDir, workspaceDir, target, 'docx');
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
+  await tourWelcome(window);
 
   await window.locator('.db-toolbar-menu-trigger').click();
   await window.getByRole('menuitem', { name: 'Export document...' }).click();
@@ -428,9 +444,7 @@ test('window close waits for the active document session to flush', async ({
   const { window } = await launchApp();
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
 
-  const gateway = window.locator('.db-welcome-gateway');
-  await expect(gateway).toBeVisible({ timeout: 15_000 });
-  await window.locator('.db-welcome-gateway-cta').click();
+  await tourWelcome(window);
   const editor = window.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 15_000 });
   const sentinel = `close-flush-${Date.now()}`;
@@ -446,7 +460,7 @@ test('window close waits for the active document session to flush', async ({
   const windowClosed = window.waitForEvent('close');
   await requestWindowClose(window);
   await windowClosed;
-  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  const welcome = path.join(workspaceDir, 'Welcome.md');
   expect(fs.readFileSync(welcome, 'utf8')).toContain(sentinel);
 });
 
@@ -631,7 +645,7 @@ function prepareRememberedExportTarget(
     string,
     { last: typeof access; byExtension: Record<string, typeof access> }
   > = {};
-  for (const selectedFile of ['aboutDocBlocks.md', '/aboutDocBlocks.md']) {
+  for (const selectedFile of ['Welcome.md', '/Welcome.md']) {
     const documentId = JSON.stringify([workspaceId, selectedFile]);
     const key = createHash('sha256').update(documentId).digest('hex');
     exportTargets[key] = { last: access, byExtension: { [extension]: access } };

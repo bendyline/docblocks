@@ -23,6 +23,7 @@ export const canonicalGateScripts = [
   'coverage:critical',
   'test',
   'mobile:test:available',
+  'test:e2e:burn-in',
   'test:e2e:all',
 ] as const;
 

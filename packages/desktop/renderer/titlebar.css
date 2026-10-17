@@ -219,10 +219,12 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
   -webkit-app-region: no-drag;
 }
 
-/* Folder and empty states do not render Squisq's toolbar. Preserve a top
-   drag strip in those states and keep folder content below it. */
+/* Folder and empty states do not render Squisq's toolbar, and the first-run
+   welcome screen covers it. Preserve a top drag strip in those states and
+   keep folder content below it. */
 .db-desktop-root .db-shell-empty::before,
-.db-desktop-root .db-folder-view::before {
+.db-desktop-root .db-folder-view::before,
+.db-desktop-root .db-welcome-gateway::before {
   content: '';
   position: absolute;
   top: 0;
@@ -236,4 +238,9 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
 .db-desktop-root .db-folder-view {
   box-sizing: border-box;
   padding-top: calc(24px + var(--db-desktop-titlebar-height));
+}
+
+/* Clear the native caption buttons at the top right. */
+.db-desktop-root .db-welcome-gateway-dismiss {
+  top: calc(var(--db-desktop-titlebar-height) + 8px);
 }

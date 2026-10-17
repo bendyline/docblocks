@@ -37,6 +37,11 @@ export interface WorkspacePickerProps {
   onRemoveWorkspace?: (descriptor: WorkspaceDescriptor) => void;
   /** Forces a list refresh after an external workspace-registry mutation. */
   refreshKey?: number;
+  /**
+   * The host is still opening its first workspace. Shown as loading rather
+   * than "No workspace", which read as an error on every first visit.
+   */
+  loading?: boolean;
   /** Optional className. */
   className?: string;
 }
@@ -114,6 +119,7 @@ export function WorkspacePicker({
   onCloneRepository,
   onRemoveWorkspace,
   refreshKey,
+  loading = false,
   className,
 }: WorkspacePickerProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceDescriptor[]>([]);
@@ -304,7 +310,7 @@ export function WorkspacePicker({
   }, [newWorkspaceName, newWorkspacePending, onSelect, refresh, workspaces]);
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
-  const activeWorkspaceName = activeWs?.name ?? 'No workspace';
+  const activeWorkspaceName = activeWs?.name ?? (loading ? 'Loading…' : 'No workspace');
 
   return (
     <div ref={pickerRef} className={`db-workspace-picker ${className ?? ''}`}>

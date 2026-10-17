@@ -38,6 +38,11 @@ const BASE_URL = (process.env.LIVE_UX_BASE_URL ?? DEFAULT_BASE_URL).replace(/\/$
 const STAMP = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
 const OUT_DIR = process.argv[2] ?? path.join('reports', `ux-crawl-${STAMP}`);
 const READY_TIMEOUT = 60_000;
+/**
+ * The starter document's row. It was `aboutDocBlocks.md` through 2.7 and is
+ * `Welcome.md` after; match both so the drivers still review either build.
+ */
+const WELCOME_ROW_TEXT = /\b(?:Welcome|aboutDocBlocks)\b/;
 
 interface ShotEntry {
   file: string;
@@ -190,10 +195,10 @@ async function waitForAppReady(page: Page): Promise<void> {
   await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page.locator('.db-explorer-toolbar').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page
-    .locator('.db-tree-row', { hasText: 'aboutDocBlocks' })
+    .locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT })
     .waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page.waitForFunction(
-    () => /aboutdocblocks\.md$/i.test(decodeURIComponent(window.location.hash)),
+    () => /(?:welcome|aboutdocblocks)\.md$/i.test(decodeURIComponent(window.location.hash)),
     undefined,
     { timeout: READY_TIMEOUT },
   );
@@ -275,7 +280,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       .locator('.db-welcome-gateway')
       .waitFor({ state: 'visible', timeout: 15_000 })
       .catch(() => say('  (welcome gateway did not appear)'));
-    await shoot(page, 'app-first-run-gateway-dark', 'First visit: welcome gateway over Play view');
+    await shoot(page, 'app-first-run-gateway-dark', 'First visit: the welcome screen');
   });
 
   await step('service worker state', async () => {
@@ -290,7 +295,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
     });
   });
 
-  await step('editor after Start writing (dark)', async () => {
+  await step('editor after the welcome tour (dark)', async () => {
     await page.locator('.db-welcome-gateway-cta').click();
     await page
       .locator('[contenteditable="true"]')
@@ -373,7 +378,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('tree context menu (dark)', async () => {
-    const row = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
+    const row = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
     await row.hover();
     await row.locator('.db-tree-more').click();
     await page.locator('.db-tree-context').waitFor({ state: 'visible', timeout: 5_000 });
@@ -414,7 +419,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('source view (dark)', async () => {
-    await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).click();
+    await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
     await page
       .locator('[role="tab"][data-view="raw"]')
       .waitFor({ state: 'visible', timeout: 20_000 });
@@ -527,12 +532,12 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       // accessible name includes the workspace name.
       .getByRole('button', { name: 'My Documents', exact: true })
       .click();
-    const welcomeRow = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
+    const welcomeRow = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
     await welcomeRow.waitFor({ state: 'visible', timeout: 10_000 });
     // waitForAppReady expects the welcome document to be the one open.
     await welcomeRow.click();
     await page.waitForFunction(
-      () => /aboutdocblocks\.md$/i.test(decodeURIComponent(window.location.hash)),
+      () => /(?:welcome|aboutdocblocks)\.md$/i.test(decodeURIComponent(window.location.hash)),
       undefined,
       { timeout: 10_000 },
     );
@@ -607,7 +612,7 @@ async function crawlAppDesktopLight(browser: Browser): Promise<void> {
   });
 
   await step('tree context menu (light)', async () => {
-    const row = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
+    const row = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
     await row.hover();
     await row.locator('.db-tree-more').click();
     await page.locator('.db-tree-context').waitFor({ state: 'visible', timeout: 5_000 });
@@ -649,7 +654,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
     if (await tour.isVisible().catch(() => false)) {
       await tour.tap();
     } else {
-      await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).tap();
+      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).tap();
     }
     await page.locator('.squisq-toolbar').waitFor({ state: 'visible', timeout: 30_000 });
     await shoot(
@@ -673,7 +678,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
       await showFiles.waitFor({ state: 'visible', timeout: 5_000 });
       await showFiles.click();
       await shoot(page, 'mobile-file-list-dark', 'Mobile file list open');
-      await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).tap();
+      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).tap();
       await page
         .getByRole('button', { name: 'Export and share' })
         .waitFor({ state: 'visible', timeout: 20_000 });
@@ -732,10 +737,25 @@ async function crawlSeoBootstrap(browser: Browser, theme: 'light' | 'dark'): Pro
   await context.close();
 }
 
+/**
+ * Fonts, plus the download grid /desktop/ fills from the GitHub releases API
+ * after `load`. Capturing at `load` alone photographed "Finding the latest
+ * installers…" where every download button belongs. Both the grid and the
+ * fallback paths remove the placeholder, so its absence means the page settled.
+ */
+async function settleMarketingPage(page: Page): Promise<void> {
+  await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await page
+    .locator('[data-dl-loading]')
+    .waitFor({ state: 'detached', timeout: 25_000 })
+    .catch(() => undefined);
+}
+
 async function crawlMarketingPages(browser: Browser): Promise<void> {
   currentPhase = 'marketing-desktop';
   say('Phase: marketing pages (desktop)');
   const routes: Array<{ slug: string; name: string }> = [
+    { slug: '/web/', name: 'web' },
     { slug: '/desktop/', name: 'desktop' },
     { slug: '/vscode/', name: 'vscode' },
     { slug: '/cli/', name: 'cli' },
@@ -753,7 +773,7 @@ async function crawlMarketingPages(browser: Browser): Promise<void> {
   for (const route of routes) {
     await step(`marketing ${route.name} (light)`, async () => {
       await page.goto(`${BASE_URL}${route.slug}`, { waitUntil: 'load' });
-      await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await settleMarketingPage(page);
       await shoot(page, `page-${route.name}-light`, `${route.slug} full page, light`, {
         fullPage: true,
       });
@@ -771,10 +791,10 @@ async function crawlMarketingPages(browser: Browser): Promise<void> {
     theme: 'dark',
     viewport: { width: 1440, height: 900 },
   });
-  for (const route of routes.slice(0, 2).concat(routes.filter((r) => r.name === 'docs'))) {
+  for (const route of routes.filter((r) => ['web', 'desktop', 'vscode', 'docs'].includes(r.name))) {
     await step(`marketing ${route.name} (dark)`, async () => {
       await dark.page.goto(`${BASE_URL}${route.slug}`, { waitUntil: 'load' });
-      await dark.page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await settleMarketingPage(dark.page);
       await shoot(dark.page, `page-${route.name}-dark`, `${route.slug} full page, dark`, {
         fullPage: true,
       });
@@ -792,7 +812,7 @@ async function crawlMarketingPages(browser: Browser): Promise<void> {
   for (const route of routes) {
     await step(`marketing ${route.name} (mobile)`, async () => {
       await mobile.page.goto(`${BASE_URL}${route.slug}`, { waitUntil: 'load' });
-      await mobile.page.evaluate(() => document.fonts.ready.then(() => undefined));
+      await settleMarketingPage(mobile.page);
       await shoot(mobile.page, `mobile-page-${route.name}`, `${route.slug} full page, mobile`, {
         fullPage: true,
       });

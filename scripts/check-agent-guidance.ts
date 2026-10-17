@@ -60,6 +60,7 @@ function generatedBlock(skills: readonly string[]): string {
     '- Individual desktop packaged-artifact smoke: `npm run test:e2e:desktop:packaged`.',
     '- Individual VS Code Web E2E: `npm run test:e2e:vscode`.',
     '- Individual VS Code desktop extension-host E2E: `npm run test:e2e:vscode:desktop`.',
+    '- Changed-test burn-in: `npm run test:e2e:burn-in` (included in `npm run all`) repeats every site E2E test the branch added or edited, in parallel, to surface timing races a single pass misses; it is a no-op on CI builds that are not pull requests.',
     '',
     'Tracked repository skills:',
     '',

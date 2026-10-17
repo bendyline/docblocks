@@ -100,6 +100,7 @@
     "test:mcp:linked": "npm run build:squisq-linked && npm run link:squisq && npm run check:squisq-linked && npm run test:squisq-linked:mcp-contracts && npm run test:mcp:linked:docblocks-contracts && npm run test:mcp",
     "test:e2e": "playwright test",
     "test:e2e:offline": "playwright test --config playwright.offline.config.ts",
+    "test:e2e:burn-in": "tsx scripts/run-e2e-burn-in.ts",
     "test:e2e:all": "npm run test:e2e && npm run test:e2e:browsers && npm run test:e2e:offline && npm run test:e2e:vscode && npm run test:e2e:vscode:desktop && npm run test:e2e:desktop && npm run test:e2e:desktop:packaged",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
     "test:e2e:visual": "tsx scripts/run-visual-tests.ts",

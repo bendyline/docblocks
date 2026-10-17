@@ -158,9 +158,12 @@ export default defineConfig({
     // CI builds upstream packages as a separate step before e2e runs, so we
     // can skip the build here and start the dev server directly. Locally the
     // build keeps things self-contained so `npm run test:e2e` just works.
-    command: process.env.CI
-      ? 'npm run dev -w docblocks-site -- --strictPort'
-      : 'npm run build && npm run dev -w docblocks-site -- --strictPort',
+    // The burn-in (scripts/run-e2e-burn-in.ts) runs after the gate's own build
+    // and sets DOCBLOCKS_E2E_PREBUILT to skip a second one.
+    command:
+      process.env.CI || process.env.DOCBLOCKS_E2E_PREBUILT
+        ? 'npm run dev -w docblocks-site -- --strictPort'
+        : 'npm run build && npm run dev -w docblocks-site -- --strictPort',
     url: 'http://localhost:5220',
     reuseExistingServer: !process.env.CI,
     // Locally the command builds every package first, which alone takes close

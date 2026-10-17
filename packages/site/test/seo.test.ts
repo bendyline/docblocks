@@ -137,7 +137,7 @@ describe('site SEO surface', () => {
     );
     expect(html).to.include('class="db-seo-bootstrap-toolbar-spacer"');
     expect(html).to.include('<path d="M8 10.5V1.75" />');
-    expect(html).to.include('The site is fully loading.');
+    expect(html).to.include('Still loading&hellip;');
     expect(html).to.include('href="https://github.com/bendyline/docblocks/issues/new"');
 
     const jsonLdText = html.match(

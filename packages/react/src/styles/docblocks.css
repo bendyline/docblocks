@@ -5640,62 +5640,137 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
    already autosaved on every keystroke; this just confirms it
    so muscle-memory savers feel at ease. */
 
-/* ── Welcome gateway ─────────────────────────────────────────── */
-/* One-time first-run callout floated over the welcome doc's Play
-   view. Names the mode the user landed in and offers a one-click
-   path into the editor. Dismissed forever via localStorage. */
+/* ── Welcome screen ─────────────────────────────────────────── */
+/* First visit on a two-pane layout: covers the editor area -- the welcome
+   document mounts, inert, beneath it -- with what DocBlocks is and two
+   choices. Dismissed for good via localStorage. Phones keep their card in
+   the file pane (`.db-mobile-first-run`). The class names predate this
+   screen; they were a toast over a slideshow. */
+
+.db-shell-editor-content {
+  display: contents;
+}
 
 .db-welcome-gateway {
   position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   z-index: 60;
   display: flex;
   align-items: center;
-  gap: 12px;
-  max-width: min(640px, calc(100% - 32px));
-  padding: 10px 10px 10px 16px;
-  background: var(--db-bg-raised);
-  border: 1px solid var(--db-border-strong);
-  border-radius: 10px;
-  box-shadow: 0 10px 32px var(--db-shadow);
+  justify-content: center;
+  overflow-y: auto;
+  padding: calc(var(--db-safe-top) + 40px) 40px 40px;
+  background:
+    radial-gradient(circle at 88% 8%, var(--db-accent-soft-12), transparent 42%), var(--db-bg);
   color: var(--db-text);
-  font-size: 13px;
-  line-height: 1.45;
-  animation: db-welcome-gateway-in 0.4s ease-out;
+  container-type: inline-size;
 }
 
-.db-welcome-gateway-cta {
-  flex-shrink: 0;
-  padding: 6px 14px;
-  font-size: 13px;
+.db-welcome-gateway-body {
+  display: grid;
+  width: min(1040px, 100%);
+  margin: auto 0;
+  gap: 36px;
+  align-items: center;
+}
+
+@container (min-width: 980px) {
+  .db-welcome-gateway-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+  }
+}
+
+.db-welcome-gateway-eyebrow {
+  margin: 0 0 12px;
+  color: var(--db-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-welcome-gateway h1 {
+  margin: 0;
+  color: var(--db-text);
+  font-family: 'PT Serif', Georgia, 'Times New Roman', serif;
+  font-size: clamp(30px, 4.4cqi, 46px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.db-welcome-gateway-copy > p:not(.db-welcome-gateway-eyebrow) {
+  max-width: 34em;
+  margin: 16px 0 0;
+  color: var(--db-text-secondary);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.db-welcome-gateway-copy > .db-welcome-gateway-note {
+  margin-top: 8px;
+  color: var(--db-text-muted);
+  font-size: 14px;
+}
+
+.db-welcome-gateway-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.db-welcome-gateway-actions button {
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 8px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: 15px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.db-welcome-gateway-actions button:hover {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+.db-welcome-gateway-actions .db-welcome-gateway-primary {
+  border-color: var(--db-accent);
   background: var(--db-accent);
   color: var(--db-text-on-accent);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.db-welcome-gateway-cta:hover {
+.db-welcome-gateway-actions .db-welcome-gateway-primary:hover {
+  border-color: var(--db-accent-hover);
   background: var(--db-accent-hover);
 }
 
+.db-welcome-gateway-actions button:focus-visible,
+.db-welcome-gateway-dismiss:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
 .db-welcome-gateway-dismiss {
-  flex-shrink: 0;
+  position: absolute;
+  top: calc(var(--db-safe-top) + 12px);
+  right: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  font-size: 16px;
-  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: var(--db-text-muted);
-  border: none;
-  border-radius: 6px;
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -5704,12 +5779,239 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   color: var(--db-text);
 }
 
-@keyframes db-welcome-gateway-in {
-  from {
-    transform: translate(-50%, 8px);
+/* One Markdown file becoming a PDF page, a slide and a video frame on a 9 s
+   loop. The frames share one stage and take turns; each label lights with
+   its frame. The page and slide colors are fixed: they depict output, which
+   looks the same whatever theme the app is in. */
+.db-welcome-loop {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) auto minmax(0, 1.1fr);
+  align-items: center;
+  gap: 14px 16px;
+}
+
+.db-welcome-loop-source {
+  padding: 14px 16px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 10px;
+  background: var(--db-bg-subtle);
+  box-shadow: 0 10px 28px var(--db-shadow);
+}
+
+.db-welcome-loop-file {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--db-text-muted);
+  font: 600 11px/1 var(--db-meta-font);
+  letter-spacing: 0.04em;
+}
+
+.db-welcome-loop-source code {
+  display: block;
+  overflow: hidden;
+  color: var(--db-text-secondary);
+  font: 12px/1.65 var(--db-meta-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.db-welcome-loop-mark {
+  color: var(--db-accent);
+}
+
+.db-welcome-loop-arrow {
+  color: var(--db-accent);
+  font-size: 24px;
+  animation: db-welcome-loop-nudge 3s ease-in-out infinite;
+}
+
+.db-welcome-loop-stage {
+  position: relative;
+  aspect-ratio: 4 / 3;
+}
+
+.db-welcome-loop-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: auto;
+  padding: 18px;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 14px 34px var(--db-shadow);
+  font-family: 'PT Serif', Georgia, 'Times New Roman', serif;
+  opacity: 0;
+  animation: db-welcome-loop-frame 9s ease-in-out infinite both;
+}
+
+.db-welcome-loop-frame strong {
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.db-welcome-loop-frame span {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.db-welcome-loop-frame em {
+  margin-top: 4px;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.db-welcome-loop-frame--page {
+  width: 74%;
+  border: 1px solid #e3dccb;
+  background: #fffdf8;
+  color: #2b241c;
+}
+
+.db-welcome-loop-frame--slide,
+.db-welcome-loop-frame--video {
+  height: 75%;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 20%, #5a3322, #24170f 72%);
+  color: #f6ecdc;
+}
+
+.db-welcome-loop-frame--slide {
+  align-items: center;
+  text-align: center;
+  animation-delay: 3s;
+}
+
+.db-welcome-loop-frame--slide strong {
+  font-size: 21px;
+}
+
+.db-welcome-loop-frame--video {
+  justify-content: flex-start;
+  animation-delay: 6s;
+}
+
+.db-welcome-loop-play {
+  position: absolute;
+  bottom: 11px;
+  left: 14px;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.db-welcome-loop-progress {
+  position: absolute;
+  right: 14px;
+  bottom: 15px;
+  left: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(246, 236, 220, 0.25);
+}
+
+.db-welcome-loop-progress::after {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  border-radius: inherit;
+  background: #e7a36d;
+  content: '';
+  animation: db-welcome-loop-progress 9s linear infinite both;
+  animation-delay: 6s;
+}
+
+.db-welcome-loop-labels {
+  display: flex;
+  grid-column: 3;
+  justify-content: center;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  color: var(--db-text-muted);
+  font: 600 11px/1 var(--db-meta-font);
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.db-welcome-loop-labels li {
+  animation: db-welcome-loop-label 9s ease-in-out infinite both;
+}
+
+.db-welcome-loop-labels li:nth-child(2) {
+  animation-delay: 3s;
+}
+
+.db-welcome-loop-labels li:nth-child(3) {
+  animation-delay: 6s;
+}
+
+@keyframes db-welcome-loop-frame {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
   }
-  to {
-    transform: translate(-50%, 0);
+  4%,
+  28% {
+    opacity: 1;
+    transform: none;
+  }
+  32%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+@keyframes db-welcome-loop-label {
+  0%,
+  32%,
+  100% {
+    color: var(--db-text-muted);
+  }
+  4%,
+  28% {
+    color: var(--db-accent);
+  }
+}
+
+@keyframes db-welcome-loop-progress {
+  0% {
+    width: 0;
+  }
+  33%,
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes db-welcome-loop-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Without motion, hold on the page: the labels still name all three. */
+  .db-welcome-loop-arrow,
+  .db-welcome-loop-labels li {
+    animation: none;
+  }
+
+  .db-welcome-loop-frame--page {
+    opacity: 1;
+    animation: none;
+  }
+
+  .db-welcome-loop-frame--slide,
+  .db-welcome-loop-frame--video {
+    display: none;
   }
 }
 
@@ -7209,7 +7511,6 @@ button.db-git-file-row:hover {
     transition: none;
   }
 
-  .db-welcome-gateway,
   .db-save-toast {
     animation: none;
   }
@@ -7412,10 +7713,12 @@ button.db-git-file-row:hover {
     -webkit-app-region: no-drag;
   }
 
-  /* Folder and empty states do not render Squisq's toolbar. Preserve a top
-     drag strip in those states and keep folder content below it. */
+  /* Folder and empty states do not render Squisq's toolbar, and the first-run
+     welcome screen covers it. Preserve a top drag strip in those states and
+     keep folder content below it. */
   .db-shell .db-shell-empty::before,
-  .db-shell .db-folder-view::before {
+  .db-shell .db-folder-view::before,
+  .db-shell .db-welcome-gateway::before {
     content: '';
     position: absolute;
     top: 0;
@@ -7429,6 +7732,11 @@ button.db-git-file-row:hover {
   .db-shell .db-folder-view {
     box-sizing: border-box;
     padding-top: calc(24px + var(--db-wco-titlebar-height));
+  }
+
+  /* Clear the caption buttons at the top right. */
+  .db-shell .db-welcome-gateway-dismiss {
+    top: calc(var(--db-wco-titlebar-height) + 8px);
   }
 }
 

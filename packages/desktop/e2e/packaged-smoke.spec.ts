@@ -103,9 +103,9 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   await expect(packaged.window.locator('.db-welcome-gateway')).toBeVisible({
     timeout: 15_000,
   });
-  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  const welcome = path.join(workspaceDir, 'Welcome.md');
   await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
-  expect(fs.readFileSync(welcome, 'utf8')).toContain('# DocBlocks {[title');
+  expect(fs.readFileSync(welcome, 'utf8')).toContain('# Welcome to DocBlocks {[title');
 });
 
 test('grants capture only to the trusted renderer and exposes only working presentation targets', async ({

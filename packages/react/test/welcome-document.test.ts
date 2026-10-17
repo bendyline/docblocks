@@ -6,16 +6,14 @@ import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { MarkdownRenderer } from '@bendyline/squisq-react';
 import {
   isAppDefaultWorkspace,
+  isWelcomeDocumentPath,
   WELCOME_DOCUMENT_CONTENT,
+  WELCOME_DOCUMENT_PATH,
 } from '../src/DocBlocksShell/welcome-document.js';
 
 const MARKETING_URLS = [
-  'https://docblocks.com/web/',
   'https://docblocks.com/desktop/',
-  'https://docblocks.com/docs/#mobile-preview',
   'https://docblocks.com/vscode/',
-  'https://docblocks.com/cli/',
-  'https://docblocks.com/formats/',
   'https://docblocks.com/docs/',
 ] as const;
 
@@ -37,15 +35,9 @@ describe('welcome document', () => {
 
     const blocks = flattenBlocks(result.doc.blocks);
     const templates = new Set(blocks.map((block) => block.template));
-    expect(templates).to.include.members([
-      'title',
-      'factCard',
-      'diagram',
-      'content',
-      'list',
-      'twoColumn',
-      'quote',
-    ]);
+    expect(templates).to.include.members(['title', 'factCard', 'diagram', 'content', 'list']);
+    // Short enough to read as a deck: the title plus a handful of sections.
+    expect(blocks.length).to.be.at.most(7);
 
     const diagram = blocks.find((block) => block.template === 'diagram');
     const nodes = diagram?.templateData?.nodes as Array<{ label?: string }> | undefined;
@@ -53,10 +45,10 @@ describe('welcome document', () => {
       | Array<{ source?: string; target?: string }>
       | undefined;
     expect(nodes?.map((node) => node.label)).to.deep.equal([
-      'Markdown',
-      'Pages',
-      'Documents',
-      'Slideshows',
+      'Your document',
+      'PDF',
+      'Word',
+      'Slides',
       'Video',
     ]);
     expect(edges).to.have.length(4);
@@ -85,6 +77,17 @@ describe('welcome document', () => {
       await act(async () => root.unmount());
       container.remove();
     }
+  });
+});
+
+describe('welcome document name', () => {
+  it('recognizes the current name and the names it shipped under before', () => {
+    expect(isWelcomeDocumentPath(WELCOME_DOCUMENT_PATH)).to.equal(true);
+    expect(isWelcomeDocumentPath('welcome.md')).to.equal(true);
+    expect(isWelcomeDocumentPath('/aboutDocBlocks.md')).to.equal(true);
+    expect(isWelcomeDocumentPath('aboutDocblocks.md')).to.equal(true);
+    expect(isWelcomeDocumentPath('/notes/Welcome.md')).to.equal(false);
+    expect(isWelcomeDocumentPath('/Welcome back.md')).to.equal(false);
   });
 });
 
