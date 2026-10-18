@@ -145,7 +145,7 @@ describe('study aid pipeline', () => {
     expect(outcome.status).to.equal('ready');
     if (outcome.status !== 'ready') return;
     expect(fake.requests).to.have.length(1);
-    expect(fake.requests[0]).to.include({ purpose: 'write', model: 'model-id' });
+    expect(fake.requests[0]).to.include({ purpose: 'study', model: 'model-id' });
     expect(systemOf(fake.requests[0])).to.contain('You summarize documents');
     expect(outcome.markdown).to.contain('# Summary: Plants\n\nPlants make food from light.');
     expect(outcome.count).to.equal(null);
@@ -221,14 +221,58 @@ describe('study aid pipeline', () => {
     );
   });
 
-  it('asks for fewer items when a reply is cut off before finishing one', async () => {
+  it('gives a reply cut off before finishing one item twice the room, when there is room', async () => {
     const fake = scriptedAi((_request, index) =>
       index === 0 ? { text: '[{"question": "Which', finishReason: 'length' } : QUIZ_REPLY,
     );
     const outcome = await run(fake.api, 'quiz');
     expect(outcome.status).to.equal('ready');
-    expect(systemOf(fake.requests[0])).to.contain('Write 3 questions');
-    expect(systemOf(fake.requests[1])).to.contain('Write one question');
+    expect(fake.requests[0]?.maxTokens).to.equal(studyBudget(32_768).itemTokens);
+    expect(fake.requests[1]?.maxTokens).to.equal(studyBudget(32_768).itemTokens * 2);
+    expect(systemOf(fake.requests[1])).to.contain('Write 3 questions');
+  });
+
+  it('asks for fewer items instead when a small context window has no room to spare', async () => {
+    const fake = scriptedAi((_request, index) =>
+      index === 0 ? { text: '[{"question": "Which', finishReason: 'length' } : QUIZ_REPLY,
+    );
+    const outcome = await run(fake.api, 'quiz', { source: LONG_DOCUMENT, contextWindow: 4_096 });
+    expect(outcome.status).to.equal('ready');
+    expect(systemOf(fake.requests[0])).to.contain('Write 4 questions');
+    expect(systemOf(fake.requests[1])).to.contain('Write 2 questions');
+    expect(fake.requests[1]?.maxTokens).to.equal(studyBudget(4_096).itemTokens);
+  });
+
+  it('says why nothing could be used', async () => {
+    const cutOff = scriptedAi(() => ({ text: '[{"question": "Which', finishReason: 'length' }));
+    expect(await run(cutOff.api, 'quiz')).to.deep.equal({
+      status: 'failed',
+      message:
+        "The model's questions could not be used (1 reply ran out of room before finishing a " +
+        'question). Try again.',
+    });
+    const unsupported = scriptedAi(() =>
+      JSON.stringify([
+        { question: 'Who won the cup?', correct: 'Jupiter', wrong: ['Mars', 'Venus'], why: '' },
+        { question: 'Who lost the cup?', correct: 'Saturn', wrong: ['Mars', 'Venus'], why: '' },
+      ]),
+    );
+    expect(await run(unsupported.api, 'quiz')).to.deep.equal({
+      status: 'failed',
+      message:
+        "The model's questions could not be used (2 questions used facts the document does " +
+        'not state). Try again.',
+    });
+  });
+
+  it('reports progress in questions written, never in calls made', async () => {
+    const fake = scriptedAi(() => QUIZ_REPLY);
+    const stages: StudyStage[] = [];
+    await run(fake.api, 'quiz', { source: LONG_DOCUMENT, contextWindow: 4_096, stages });
+    const items = stages.filter((stage) => stage.kind === 'items');
+    expect(items[0]).to.deep.equal({ kind: 'items', written: 0, planned: 10 });
+    expect(items.length).to.be.greaterThan(1);
+    expect(items.every((stage) => stage.kind === 'items' && stage.planned === 10)).to.equal(true);
   });
 
   it('makes a flashcard deck of basic cards', async () => {

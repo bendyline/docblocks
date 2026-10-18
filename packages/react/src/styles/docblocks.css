@@ -5706,7 +5706,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   margin-top: 28px;
 }
 
-.db-welcome-gateway-actions button {
+.db-welcome-gateway-actions button,
+.db-welcome-gateway-actions a {
   min-height: 44px;
   padding: 10px 20px;
   border: 1px solid var(--db-border-strong);
@@ -5719,7 +5720,17 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   cursor: pointer;
 }
 
-.db-welcome-gateway-actions button:hover {
+/* The apps link wears the button treatment; this centers its label the way a
+   button's is and drops the underline. */
+.db-welcome-gateway-actions a {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.db-welcome-gateway-actions button:hover,
+.db-welcome-gateway-actions a:hover {
   border-color: var(--db-accent);
   background: var(--db-bg-hover);
 }
@@ -5736,6 +5747,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 }
 
 .db-welcome-gateway-actions button:focus-visible,
+.db-welcome-gateway-actions a:focus-visible,
 .db-welcome-gateway-dismiss:focus-visible {
   outline: 2px solid var(--db-focus);
   outline-offset: 2px;
@@ -6937,14 +6949,15 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   overflow: auto;
 }
 
-/* Squisq's deck fills the pane it is given and scrolls its own card, so the
-   frame takes the height the dialog has left and hands all of it over. The
-   body scrolls instead when a short window cannot fit the deck's minimum. */
+/* Squisq's compact deck fills the pane it is given and scrolls its own card,
+   so the frame takes the height the dialog has left and hands all of it
+   over. The minimum is what the deck's toolbar and a few card lines need;
+   the body scrolls instead only when a short window cannot fit even that. */
 .db-ai-study-deck {
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
-  min-height: min(440px, 70dvh);
+  min-height: min(280px, 50dvh);
   overflow: hidden;
 }
 
@@ -6952,7 +6965,11 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   flex: 1 1 auto;
   height: auto;
   min-height: 0;
-  padding: 16px clamp(14px, 3vw, 28px);
+}
+
+/* The deck dialog spends its height on the deck. */
+.db-ai-study-dialog.db-dialog--full .db-ai-study-body {
+  padding-block: 12px;
 }
 
 .db-ai-study-meta {

@@ -174,9 +174,11 @@ export interface AiChatMessage {
  * What the request is for.
  *
  * This exists so the host can apply different budgets to a person waiting on a
- * draft and a background review pass. It is never sent to the model.
+ * draft and a background review pass. It is never sent to the model. Only
+ * `write` may spend its output budget reasoning; `study` (summaries, quizzes
+ * and flashcards, made in many small calls with explicit caps) never does.
  */
-export type AiChatPurpose = 'write' | 'review' | 'illustrate' | 'chat';
+export type AiChatPurpose = 'write' | 'review' | 'illustrate' | 'study' | 'chat';
 
 export interface AiChatRequest {
   readonly messages: readonly AiChatMessage[];

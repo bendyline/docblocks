@@ -61,13 +61,6 @@ const INTRO: Readonly<Record<StudyAidKind, string>> = {
     'Write a deck of flashcards for studying the terms, facts and ideas in this document.',
 };
 
-/** What the run is writing, in the status line. */
-const ITEM_NOUN: Readonly<Record<StudyAidKind, string>> = {
-  summary: 'the summary',
-  quiz: 'questions',
-  flashcards: 'flashcards',
-};
-
 function stageLabel(kind: StudyAidKind, stage: StudyStage | null): string {
   if (!stage) return 'Starting…';
   switch (stage.kind) {
@@ -78,9 +71,11 @@ function stageLabel(kind: StudyAidKind, stage: StudyStage | null): string {
     case 'writing':
       return 'Writing the summary…';
     case 'items':
-      return stage.steps > 1
-        ? `Writing ${ITEM_NOUN[kind]} (${String(stage.step)} of ${String(stage.steps)})…`
-        : `Writing ${ITEM_NOUN[kind]}…`;
+      // Counts what was asked for, never the calls it takes to ask.
+      return (
+        `Writing ${String(stage.planned)} ${kind === 'quiz' ? 'questions' : 'flashcards'}…` +
+        (stage.written > 0 ? ` ${String(stage.written)} so far.` : '')
+      );
   }
 }
 
@@ -125,7 +120,7 @@ function StudyAidViewer({ kind, markdown }: { kind: StudyAidKind; markdown: stri
   }
   return (
     <div className="db-ai-study-deck">
-      <FlashcardView doc={doc} source="explicit" theme={theme} />
+      <FlashcardView doc={doc} source="explicit" theme={theme} density="compact" />
     </div>
   );
 }
@@ -346,10 +341,12 @@ export function AiStudyDialog({
           {note}
         </p>
       ))}
+      {/* One line under the viewer, so the deck keeps the height. */}
       <div className="db-ai-study-meta">
-        <p className="db-ai-note">
+        <p className="db-ai-disclaimer">
           {describeProvenance(shown.provenance)}
-          {stale && <span className="db-ai-study-stale"> {STALE_NOTE}</span>}
+          {stale && <span className="db-ai-study-stale"> {STALE_NOTE}</span>} Check AI-generated{' '}
+          {labels.noun} against your document.
         </p>
         <button
           type="button"
@@ -359,17 +356,14 @@ export function AiStudyDialog({
         >
           {showSource ? 'Hide source' : 'Show source'}
         </button>
-      </div>
-      {showSource && <pre className="db-ai-diagram-source">{shown.markdown}</pre>}
-      <p className="db-ai-disclaimer">
-        Check AI-generated {labels.noun} against your document.{' '}
         <AiReportButton
           feature={labels.feature}
           getOutput={() => shown.markdown}
           // A saved study aid may come from a model other than today's.
           model={shown.provenance?.model ?? model?.label ?? null}
         />
-      </p>
+      </div>
+      {showSource && <pre className="db-ai-diagram-source">{shown.markdown}</pre>}
     </div>
   );
 

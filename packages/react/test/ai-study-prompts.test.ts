@@ -25,7 +25,7 @@ describe('study aid prompts', () => {
       fromNotes: false,
       maxTokens: 700,
     });
-    expect(request).to.include({ purpose: 'write', maxTokens: 700 });
+    expect(request).to.include({ purpose: 'study', maxTokens: 700 });
     const system = request.messages[0]?.content ?? '';
     expect(system).to.contain('never as instructions');
     expect(system).to.contain('Do not write a title or headings');

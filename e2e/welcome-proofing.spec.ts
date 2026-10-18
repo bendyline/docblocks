@@ -1,6 +1,5 @@
 import { expect, test } from './helpers/test.js';
 import { openProofedWelcome } from './helpers/proofing.js';
-import { settleForScreenshot } from './helpers/visual.js';
 
 for (const view of ['Write', 'Source'] as const) {
   test(`welcome proofing is clean in ${view} and still finds real errors`, async ({
@@ -20,9 +19,10 @@ for (const view of ['Write', 'Source'] as const) {
       view === 'Source' ? '["Quorblax"]' : null,
     );
     // Capture only after a completed worker pass has removed the known errors.
-    // Keep the actual image in every run for review without inventing a Windows
-    // baseline for the repository's Linux-only pixel comparison suite.
-    await settleForScreenshot(page);
+    // Kept as an attachment for review, not compared against a baseline. Wait
+    // for webfonts, then let layout react to the swap before capturing.
+    await page.evaluate(() => document.fonts.ready.then(() => undefined)).catch(() => undefined);
+    await page.waitForTimeout(150);
     const screenshot = testInfo.outputPath(`welcome-proofing-${view.toLowerCase()}.png`);
     await page.screenshot({ path: screenshot, animations: 'disabled', caret: 'hide' });
     await testInfo.attach(`welcome-proofing-${view.toLowerCase()}`, {

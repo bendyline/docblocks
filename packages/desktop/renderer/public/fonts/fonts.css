@@ -1109,9 +1109,8 @@
  * The shell chrome's default face. It is Hanken Grotesk, the sans docblocks.com
  * is set in, so the app and the site read as one product; and because it is
  * bundled rather than resolved from `system-ui`, the chrome renders the same
- * typeface on every operating system, which is what lets one set of
- * visual-regression baselines compare across platforms. Settings › Appearance
- * › Interface font › System opts out to the platform face.
+ * typeface on every operating system. Settings › Appearance › Interface font
+ * › System opts out to the platform face.
  *
  * It reuses the Hanken Grotesk binary already shipped for documents set in
  * it: that file is a VARIABLE font spanning 100–900, so the single

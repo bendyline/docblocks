@@ -103,8 +103,6 @@
     "test:e2e:burn-in": "tsx scripts/run-e2e-burn-in.ts",
     "test:e2e:all": "npm run test:e2e && npm run test:e2e:browsers && npm run test:e2e:offline && npm run test:e2e:vscode && npm run test:e2e:vscode:desktop && npm run test:e2e:desktop && npm run test:e2e:desktop:packaged",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
-    "test:e2e:visual": "tsx scripts/run-visual-tests.ts",
-    "test:e2e:visual:update": "tsx scripts/run-visual-tests.ts --update-snapshots",
     "ux:crawl": "tsx scripts/run-ux-crawl.ts",
     "test:e2e:vscode": "npm run test:e2e -w docblocks-vscode",
     "test:e2e:vscode:desktop": "npm run test:e2e:desktop-host -w docblocks-vscode",

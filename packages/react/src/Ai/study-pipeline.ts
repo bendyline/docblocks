@@ -63,7 +63,8 @@ export type StudyStage =
   | { readonly kind: 'notes'; readonly part: number; readonly parts: number }
   | { readonly kind: 'condensing' }
   | { readonly kind: 'writing' }
-  | { readonly kind: 'items'; readonly step: number; readonly steps: number };
+  /** Questions or cards: `written` so far of the `planned` asked for. */
+  | { readonly kind: 'items'; readonly written: number; readonly planned: number };
 
 export type StudyOutcome =
   | {
@@ -300,6 +301,8 @@ async function summarize(run: Run, chunks: readonly StudyChunk[]): Promise<strin
 interface ItemKind<T> {
   /** Plural noun for messages: "questions", "flashcards". */
   readonly noun: string;
+  /** Singular: "question", "flashcard". */
+  readonly one: string;
   build(options: {
     title: string;
     material: string;
@@ -317,6 +320,7 @@ interface ItemKind<T> {
 
 const QUIZ: ItemKind<QuizItem> = {
   noun: 'questions',
+  one: 'question',
   build: buildQuizRequest,
   read: readQuizItem,
   label: (item) => item.question,
@@ -328,6 +332,7 @@ const QUIZ: ItemKind<QuizItem> = {
 
 const FLASHCARDS: ItemKind<FlashcardItem> = {
   noun: 'flashcards',
+  one: 'flashcard',
   build: buildFlashcardRequest,
   read: readFlashcardItem,
   label: (item) => item.front,
@@ -338,8 +343,16 @@ const FLASHCARDS: ItemKind<FlashcardItem> = {
 
 type ItemsResult<T> =
   | { readonly kind: 'items'; readonly items: readonly T[] }
-  | { readonly kind: 'unusable' }
+  /** `cutOff` when the last reply stopped at its length limit before one item. */
+  | { readonly kind: 'unusable'; readonly cutOff: boolean }
   | { readonly kind: 'stopped'; readonly outcome: StudyOutcome };
+
+/** Tokens a request's messages take, at the budget's deliberately low 3 characters a token. */
+function promptTokens(request: AiChatRequest): number {
+  return Math.ceil(request.messages.reduce((sum, message) => sum + message.content.length, 0) / 3);
+}
+
+const RETRY_SAFETY_TOKENS = 150;
 
 /** One call for `count` items from `chunk`, repaired or retried at most once. */
 async function requestItems<T>(
@@ -350,32 +363,77 @@ async function requestItems<T>(
   avoid: readonly string[],
 ): Promise<ItemsResult<T>> {
   const { budget } = run.options;
-  const request = spec.build({
-    title: run.title,
-    material: chunk.text,
-    count,
-    avoid,
-    maxTokens: budget.itemTokens,
-  });
+  const build = (items: number) =>
+    spec.build({
+      title: run.title,
+      material: chunk.text,
+      count: items,
+      avoid,
+      maxTokens: budget.itemTokens,
+    });
+  const request = build(count);
   const outcome = await run.call(request);
   if (outcome.kind !== 'ok') return { kind: 'stopped', outcome: interrupted(outcome) };
   const reading = readItems(outcome.text, spec.read);
   if (reading.ok) return { kind: 'items', items: reading.items };
-  // Cut off before finishing one item: ask for fewer rather than more room,
-  // which a small context window cannot spare. Otherwise name the problem.
-  const retry = outcome.truncated
-    ? spec.build({
-        title: run.title,
-        material: chunk.text,
-        count: Math.max(1, Math.floor(count / 2)),
-        avoid,
-        maxTokens: budget.itemTokens,
-      })
-    : buildRepairRequest(request, outcome.text, reading.problem, 'array');
+  // Cut off before finishing one item, as a model that reasons despite the
+  // `study` purpose can be: retry with twice the room where the context
+  // window has it, else ask for fewer. Otherwise name the problem.
+  const wider = budget.itemTokens * 2;
+  const roomy = budget.contextTokens - promptTokens(request) - RETRY_SAFETY_TOKENS >= wider;
+  const retry = !outcome.truncated
+    ? buildRepairRequest(request, outcome.text, reading.problem, 'array')
+    : roomy
+      ? { ...request, maxTokens: wider }
+      : build(Math.max(1, Math.floor(count / 2)));
   const second = await run.call(retry);
   if (second.kind !== 'ok') return { kind: 'stopped', outcome: interrupted(second) };
   const again = readItems(second.text, spec.read);
-  return again.ok ? { kind: 'items', items: again.items } : { kind: 'unusable' };
+  return again.ok
+    ? { kind: 'items', items: again.items }
+    : { kind: 'unusable', cutOff: second.truncated };
+}
+
+interface Rejections {
+  /** Replies that stopped at their length limit before finishing one item. */
+  cutOff: number;
+  /** Replies with no usable JSON, and items that did not compile to a card. */
+  unreadable: number;
+  /** Items whose answer the passage does not support. */
+  unsupported: number;
+  repeated: number;
+}
+
+/** "1 reply", "3 replies". */
+function count(value: number, one: string, many: string): string {
+  return `${String(value)} ${value === 1 ? one : many}`;
+}
+
+/** Why nothing could be used, specific enough to act on: " (2 replies …; 3 …)". */
+function rejectionDetail(
+  spec: Pick<ItemKind<unknown>, 'noun' | 'one'>,
+  rejected: Rejections,
+): string {
+  const reasons: string[] = [];
+  if (rejected.cutOff > 0) {
+    reasons.push(
+      `${count(rejected.cutOff, 'reply', 'replies')} ran out of room before finishing a ${spec.one}`,
+    );
+  }
+  if (rejected.unreadable > 0) {
+    reasons.push(
+      `${count(rejected.unreadable, 'reply or item was', 'replies or items were')} not in the expected form`,
+    );
+  }
+  if (rejected.unsupported > 0) {
+    reasons.push(
+      `${count(rejected.unsupported, spec.one, spec.noun)} used facts the document does not state`,
+    );
+  }
+  if (rejected.repeated > 0) {
+    reasons.push(`${count(rejected.repeated, spec.one, spec.noun)} repeated another`);
+  }
+  return reasons.length > 0 ? ` (${reasons.join('; ')})` : '';
 }
 
 /**
@@ -401,14 +459,16 @@ async function writeItems<T>(
     }
   }
 
+  const planned = calls.reduce((sum, call) => sum + call.count, 0);
   const cards: string[] = [];
   const seen = new Set<string>();
   const asked = new Map<number, string[]>();
+  const rejected: Rejections = { cutOff: 0, unreadable: 0, unsupported: 0, repeated: 0 };
   let unusable = 0;
-  for (const [index, { chunk, count }] of calls.entries()) {
-    onStage?.({ kind: 'items', step: index + 1, steps: calls.length });
+  for (const { chunk, count: wanted } of calls) {
+    onStage?.({ kind: 'items', written: cards.length, planned });
     const avoid = asked.get(chunk.index) ?? [];
-    const result = await requestItems(run, spec, chunk, count, avoid);
+    const result = await requestItems(run, spec, chunk, wanted, avoid);
     if (result.kind === 'stopped') {
       if (result.outcome.status === 'cancelled' || cards.length === 0) return result.outcome;
       run.notes.push(
@@ -418,15 +478,27 @@ async function writeItems<T>(
     }
     if (result.kind === 'unusable') {
       unusable++;
+      if (result.cutOff) rejected.cutOff++;
+      else rejected.unreadable++;
       continue;
     }
     let kept = 0;
     for (const item of result.items) {
-      if (kept >= count) break;
+      if (kept >= wanted) break;
       const key = itemKey(spec.label(item));
-      if (!key || seen.has(key) || !spec.grounded(item, chunk.text)) continue;
+      if (!key || seen.has(key)) {
+        rejected.repeated++;
+        continue;
+      }
+      if (!spec.grounded(item, chunk.text)) {
+        rejected.unsupported++;
+        continue;
+      }
       const card = spec.render(item, cards.length + 1);
-      if (!card || !spec.valid(card)) continue;
+      if (!card || !spec.valid(card)) {
+        rejected.unreadable++;
+        continue;
+      }
       seen.add(key);
       avoid.push(spec.label(item));
       cards.push(card);
@@ -435,7 +507,9 @@ async function writeItems<T>(
     asked.set(chunk.index, avoid);
   }
   if (cards.length === 0) {
-    return failed(`The model's ${spec.noun} could not be used. Try again.`);
+    return failed(
+      `The model's ${spec.noun} could not be used${rejectionDetail(spec, rejected)}. Try again.`,
+    );
   }
   if (unusable > 0) {
     run.notes.push(`Some parts of the document could not be turned into ${spec.noun}.`);

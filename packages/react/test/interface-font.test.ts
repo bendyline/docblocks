@@ -13,10 +13,9 @@ import { INTERFACE_FONT_ATTRIBUTE } from '../src/layout/useInterfaceFontAttribut
  * The interface-font preference decides whether the shell chrome uses the
  * bundled face or follows the operating system.
  *
- * It matters twice over: it is a user-facing choice, and the bundled face is
- * what makes one set of visual-regression baselines comparable across
- * operating systems at all — under the system stack the same screenshot
- * renders in a different typeface on every platform.
+ * It is a user-facing choice: the bundled face renders the same chrome on every
+ * operating system, while the system stack resolves a different typeface on
+ * each platform.
  */
 describe('interface font preference', () => {
   afterEach(() => {
@@ -42,7 +41,7 @@ describe('interface font preference', () => {
     expect(loadInterfaceFont()).to.equal('fixed');
   });
 
-  it('reads the key the visual suite seeds', () => {
+  it('reads the key the E2E specs seed', () => {
     // The E2E specs set this key directly through addInitScript, before any
     // application code runs, so the name is part of that contract.
     localStorage.setItem('docblocks:interfaceFont', 'fixed');

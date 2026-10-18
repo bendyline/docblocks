@@ -34,8 +34,7 @@ export const DB_CHROME_COLORS: Record<'light' | 'dark', string> = {
  * face: the Hanken Grotesk variable binary every surface already ships for
  * documents set in it, and the sans docblocks.com uses. The app and the site
  * then read as one product, and the interface renders identically on every
- * OS — which is also what lets the visual-regression suite compare one set of
- * baselines across platforms at all.
+ * OS.
  *
  * `system` resolves `system-ui`, for anyone who would rather DocBlocks looked
  * native on each platform; the chrome then fetches no font.

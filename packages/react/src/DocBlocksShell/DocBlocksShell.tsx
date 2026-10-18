@@ -1711,6 +1711,14 @@ export function DocBlocksShell({
   const welcomeScreenShown = showWelcomeGateway && !singlePane;
   const welcomeCoveredRef = useRef<HTMLDivElement>(null);
   useInert(welcomeCoveredRef, welcomeScreenShown);
+  /** Hide the welcome gateway and never show it again. Safe to call from
+   *  paths where it may not be showing -- only persists when it was. */
+  const closeWelcomeGateway = useCallback(() => {
+    setShowWelcomeGateway((showing) => {
+      if (showing) markWelcomeGatewayDismissed();
+      return false;
+    });
+  }, []);
   const [aiPanel, setAiPanel] = useState<AiPanel | null>(null);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
@@ -2132,6 +2140,10 @@ export function DocBlocksShell({
             options.navigationRequestId,
             options.sharedMode ?? null,
           )) !== null;
+        // A file the OS launched, or a shared link, can land after first-run
+        // startup has already put the welcome screen up. That screen belongs
+        // over the welcome document, never over the file the person opened.
+        if (opened) closeWelcomeGateway();
         return opened;
       } finally {
         if (!opened && getTransientWorkspace(options.id)?.provider === options.provider) {
@@ -2139,7 +2151,7 @@ export function DocBlocksShell({
         }
       }
     },
-    [openFromIds],
+    [openFromIds, closeWelcomeGateway],
   );
 
   const openSharedDocument = useCallback(
@@ -2260,15 +2272,6 @@ export function DocBlocksShell({
   startupOpenSharedDocumentRef.current = openSharedDocument;
   const startupSeedWelcomeFileRef = useRef(seedWelcomeFile);
   startupSeedWelcomeFileRef.current = seedWelcomeFile;
-
-  /** Hide the welcome gateway and never show it again. Safe to call from
-   *  paths where it may not be showing -- only persists when it was. */
-  const closeWelcomeGateway = useCallback(() => {
-    setShowWelcomeGateway((showing) => {
-      if (showing) markWelcomeGatewayDismissed();
-      return false;
-    });
-  }, []);
 
   /**
    * First-run "Tour": reveal the welcome document. It is already open in
@@ -4764,6 +4767,8 @@ export function DocBlocksShell({
                   if (!opened && requestId === navigationRequestRef.current) {
                     throw new Error('The requested workspace file is no longer available.');
                   }
+                  // Same as a transient open: uncover the requested document.
+                  if (opened) closeWelcomeGateway();
                   return opened;
                 },
               );
@@ -4779,7 +4784,7 @@ export function DocBlocksShell({
         );
       });
     });
-  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast]);
+  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast, closeWelcomeGateway]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -5881,6 +5886,7 @@ export function DocBlocksShell({
                 onCreateDocument={handleNewFile}
                 onTour={handleTourWelcome}
                 onDismiss={handleTourWelcome}
+                offerApps={hostEnvironment === null}
               />
             )}
           </main>

@@ -119,8 +119,7 @@ export interface InterfaceFontSettingsProps {
  * The default follows the operating system, which is what almost everyone
  * should keep. The bundled option exists for two reasons worth stating in the
  * UI: identical typography across machines, and a rendering that is the same
- * everywhere — which is what lets the visual-regression suite compare one set
- * of baselines across operating systems at all.
+ * on every operating system.
  */
 export function InterfaceFontSettings({
   value,

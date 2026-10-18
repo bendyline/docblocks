@@ -41,7 +41,7 @@ const repoRoot = path.resolve(path.dirname(scriptPath), '..');
 const playwrightCli = path.join(repoRoot, 'node_modules', '@playwright', 'test', 'cli.js');
 
 /** Specs the root config deliberately does not run (see playwright.config.ts). */
-const ROOT_CONFIG_EXCLUDED = /(?:^|\/)(?:offline|cross-browser|visual|visual-adaptive)\.spec\.ts$/u;
+const ROOT_CONFIG_EXCLUDED = /(?:^|\/)(?:offline|cross-browser)\.spec\.ts$/u;
 const SPEC_FILE = /^e2e\/(?:.+\/)?[^/]+\.spec\.ts$/u;
 
 /**

@@ -12,6 +12,9 @@ export const WELCOME_SUMMARY =
 /** The trust line, kept apart so the compact phone card can reuse it. */
 export const WELCOME_PRIVACY_NOTE = 'No account, and your documents stay on this device.';
 
+/** Where the browser build sends visitors who want a native app. */
+const DOCBLOCKS_APPS_URL = 'https://docblocks.com/desktop/';
+
 export interface WelcomeScreenProps {
   /** Opens the New Document dialog. */
   onCreateDocument: () => void;
@@ -19,6 +22,11 @@ export interface WelcomeScreenProps {
   onTour: () => void;
   /** Closes the screen for good without choosing either. */
   onDismiss: () => void;
+  /**
+   * Adds a link to the native apps. Only the browser build sets it: a visitor
+   * already running a native app has nothing to go and get.
+   */
+  offerApps?: boolean;
 }
 
 /**
@@ -30,7 +38,12 @@ export interface WelcomeScreenProps {
  * The class names predate this screen (it replaced a toast) and are what the
  * suites and the shell's other entry points look for.
  */
-export function WelcomeScreen({ onCreateDocument, onTour, onDismiss }: WelcomeScreenProps) {
+export function WelcomeScreen({
+  onCreateDocument,
+  onTour,
+  onDismiss,
+  offerApps = false,
+}: WelcomeScreenProps) {
   return (
     <section className="db-welcome-gateway" aria-labelledby="db-welcome-gateway-title">
       <button
@@ -55,6 +68,18 @@ export function WelcomeScreen({ onCreateDocument, onTour, onDismiss }: WelcomeSc
             <button type="button" className="db-welcome-gateway-cta" onClick={onTour}>
               Tour the welcome document
             </button>
+            {/* A link, not a button: it navigates, and a new tab leaves the
+                visitor's open document where it was. */}
+            {offerApps && (
+              <a
+                className="db-welcome-gateway-apps"
+                href={DOCBLOCKS_APPS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Check out the DocBlocks apps
+              </a>
+            )}
           </div>
         </div>
         <WelcomeLoop />

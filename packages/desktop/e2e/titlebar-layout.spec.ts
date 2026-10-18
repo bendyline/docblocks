@@ -1,9 +1,10 @@
-import { expect, test } from './fixtures.js';
+import { expect, test, tourWelcome } from './fixtures.js';
 
 test('keeps toolbar controls outside the native caption button area', async ({ launchApp }) => {
   const { window } = await launchApp();
   const toolbar = window.locator('.squisq-toolbar');
   await expect(toolbar).toBeVisible({ timeout: 30_000 });
+  await tourWelcome(window);
   await window.evaluate(() => globalThis.resizeTo(972, 600));
   await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThan(1_000);
   await expect(window.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
@@ -81,6 +82,7 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
   const { window } = await launchApp();
   const toolbar = window.locator('.squisq-toolbar');
   await expect(toolbar).toBeVisible({ timeout: 30_000 });
+  await tourWelcome(window);
   await toolbar.getByRole('tab', { name: 'Write' }).click();
 
   const resizer = window.getByRole('separator', { name: 'Resize sidebar' });

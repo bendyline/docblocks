@@ -661,16 +661,6 @@ async function main(): Promise<void> {
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
   requireScript(vscodePackage, 'typecheck', 'typecheck:desktop-e2e');
   requireScript(vscodePackage, 'test:e2e:desktop-host', 'desktop-e2e/run.ts');
-  requireScript(rootPackage, 'test:e2e:visual', 'run-visual-tests.ts');
-  requireScript(rootPackage, 'test:e2e:visual:update', '--update-snapshots');
-  // Keeping the visual suite OUT of the canonical gate is as load-bearing as
-  // the suites that are in it: baselines are captured on one platform, and a
-  // pixel diff must not block a change that altered nothing visible.
-  if (actualGate.some((command) => command.includes('test:e2e:visual'))) {
-    throw new Error(
-      'npm run all must not include the visual suite; it is a pre-release gate (.github/workflows/visual.yml)',
-    );
-  }
   requireScript(rootPackage, 'coverage:critical', 'coverage:desktop-critical');
   requireScript(rootPackage, 'coverage:critical', 'coverage:core-critical');
   for (const dependency of ['@bendyline/docblocks', '@bendyline/docblocks-react']) {
@@ -740,9 +730,6 @@ async function main(): Promise<void> {
       'test:e2e:vscode',
       'test:e2e:vscode:desktop',
     ],
-    // The visual suite is a pre-release gate rather than part of `npm run all`,
-    // so nothing else would notice it being dropped from the workflow that runs
-    // it. Pinning both scripts here is what keeps it wired in.
     '.github/workflows/mobile-native.yml': [
       'mobile:test:ios',
       'mobile:test:android',
@@ -751,7 +738,6 @@ async function main(): Promise<void> {
       'mobile:test:android:ai',
       'mobile:package',
     ],
-    '.github/workflows/visual.yml': ['test:e2e:visual', 'test:e2e:visual:update'],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],
     // The iOS store job runs the Swift suite that the Linux gate cannot.

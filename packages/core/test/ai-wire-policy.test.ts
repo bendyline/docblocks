@@ -55,7 +55,7 @@ describe('parseAiChatRequest', () => {
   });
 
   it('accepts every declared purpose', () => {
-    for (const purpose of ['write', 'review', 'illustrate', 'chat'] as const) {
+    for (const purpose of ['write', 'review', 'illustrate', 'study', 'chat'] as const) {
       expect(parseAiChatRequest({ ...VALID_REQUEST, purpose })?.purpose).to.equal(purpose);
     }
   });

@@ -185,9 +185,11 @@ describe('AiStudyDialog', () => {
     expect(saved).to.contain('docblocks-generated: quiz');
     expect(saved).to.contain('### Which gas do plants take in?');
     expect(dialog()?.querySelector('[aria-label="Answer choices"]')).not.to.equal(null);
+    // The dialog is the deck's whole page, so it asks for the compact deck.
+    expect(dialog()?.querySelector('.squisq-flashcards--compact')).not.to.equal(null);
     expect(dialog()?.textContent).to.contain('Report output');
     expect(button('Regenerate quiz')).not.to.equal(undefined);
-    expect(ai.requests[0]?.purpose).to.equal('write');
+    expect(ai.requests[0]?.purpose).to.equal('study');
   });
 
   it('offers the saved summary, and shows it without calling the model', async () => {

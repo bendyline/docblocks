@@ -139,6 +139,13 @@ describe('AppMenu settings', () => {
         text: 'Support',
         href: 'https://github.com/bendyline/docblocks/issues',
       });
+      expect(container.textContent).to.contain(
+        'See our free desktop apps at docblocks.com/desktop',
+      );
+      expect(links).to.deep.include({
+        text: 'docblocks.com/desktop',
+        href: 'https://docblocks.com/desktop/',
+      });
     } finally {
       await act(async () => root.unmount());
       container.remove();
@@ -181,6 +188,8 @@ describe('AppMenu settings', () => {
         container.querySelectorAll<HTMLAnchorElement>('a'),
       ).find((link) => link.textContent?.trim() === 'More information...');
       expect(moreInformationLink?.href).to.equal('https://docblocks.com/desktop/');
+      // Desktop users already have the app; the web-only pitch stays out.
+      expect(container.textContent).not.to.contain('See our free desktop apps');
     } finally {
       delete hostGlobal.docBlocksHost;
       await act(async () => root.unmount());

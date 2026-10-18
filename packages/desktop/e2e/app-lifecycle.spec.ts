@@ -10,8 +10,7 @@
  * caller handles that — see package.json test:e2e script).
  */
 
-import type { Page } from '@playwright/test';
-import { test, expect } from './fixtures.js';
+import { test, expect, tourWelcome } from './fixtures.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -19,17 +18,6 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import { deriveWorkspaceId } from '../main/workspace-id.js';
-
-/**
- * A first launch opens behind the welcome screen, which covers the editor and
- * its toolbar. Take the tour, as a person would, before using either.
- */
-async function tourWelcome(window: Page): Promise<void> {
-  const gateway = window.locator('.db-welcome-gateway');
-  await expect(gateway).toBeVisible({ timeout: 15_000 });
-  await window.getByRole('button', { name: 'Tour the welcome document' }).click();
-  await expect(gateway).toHaveCount(0);
-}
 
 test('boots and renders the shell', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -86,6 +74,7 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   const { window } = await launchApp();
   const toolbar = window.locator('.squisq-toolbar');
   await expect(toolbar).toBeVisible({ timeout: 30_000 });
+  await tourWelcome(window);
 
   const chrome = await toolbar.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -417,7 +406,7 @@ test('exports Word with the welcome diagram drawn as a picture, not ASCII art', 
   const documentXml = new TextDecoder().decode(
     (await getPartBinary(pkg, 'word/document.xml')) ?? new ArrayBuffer(0),
   );
-  expect(documentXml).toContain('One source, four ways to publish');
+  expect(documentXml).toContain('One document, many ways to share it');
   expect(documentXml).not.toMatch(/[┌┐└┘│─]/u);
 });
 
@@ -473,6 +462,9 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
   const { close, window } = await launchApp([externalFile]);
   const editor = window.locator('[contenteditable="true"]').first();
   await expect(editor).toContainText('Loose origin', { timeout: 30_000 });
+  // First-run startup may raise the welcome screen before the OS request
+  // lands; the opened file must still end up uncovered.
+  await expect(window.locator('.db-welcome-gateway')).toHaveCount(0);
 
   const sentinel = `loose-close-${Date.now()}`;
   await editor.click();
