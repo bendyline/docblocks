@@ -119,9 +119,8 @@ describe('AppMenu settings', () => {
       );
       await act(async () => aboutButton?.click());
 
-      expect(container.querySelector('.db-about-beta')?.textContent).to.equal(
-        "Beta Software. We're still working through initial hiccups and issues. Please bear with us, make sure you keep backups, and open issues where you find them. Thanks!",
-      );
+      // App Review rejects apps that label themselves beta (guideline 2.2).
+      expect(container.textContent).not.to.match(/\bbeta\b/i);
       expect(container.querySelector('.db-about-version')?.textContent).to.contain('2.1.0 web');
       expect(container.querySelector('time')?.textContent).to.equal('2026-07-15');
       const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).map((link) => ({
@@ -139,10 +138,6 @@ describe('AppMenu settings', () => {
       expect(links).to.deep.include({
         text: 'Support',
         href: 'https://github.com/bendyline/docblocks/issues',
-      });
-      expect(links).to.deep.include({
-        text: 'open issues',
-        href: 'https://github.com/bendyline/docblocks/issues/new',
       });
     } finally {
       await act(async () => root.unmount());

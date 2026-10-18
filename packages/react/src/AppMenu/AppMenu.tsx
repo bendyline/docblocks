@@ -485,18 +485,6 @@ export function AppMenu({
             <strong>DocBlocks</strong> is a local-first Markdown document editor. Your files stay
             under your control.
           </p>
-          <aside className="db-about-beta">
-            <strong>Beta Software.</strong> We&apos;re still working through initial hiccups and
-            issues. Please bear with us, make sure you keep backups, and{' '}
-            <a
-              href="https://github.com/bendyline/docblocks/issues/new"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              open issues
-            </a>{' '}
-            where you find them. Thanks!
-          </aside>
           {appVersion && (
             <p className="db-about-version">
               <span>Version</span>

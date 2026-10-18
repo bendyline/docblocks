@@ -1,4 +1,5 @@
 import { expect, test } from './helpers/test.js';
+import { MONACO_COLD_LOAD_TIMEOUT } from './helpers/editor-regression.js';
 import { openInitializedSite } from './helpers/site.js';
 
 test('shows image upload progress, embeds durable media, and replaces broken image glyphs', async ({
@@ -73,7 +74,11 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   // The source contains a portable durable reference, and no upload marker.
   await page.locator('[data-view="raw"]').click();
   const lines = page.locator('.monaco-editor .view-lines');
-  await expect(lines).toContainText('image-loading_files/dropped-photo.png');
+  // Source shows a busy plain textarea until this page's first Monaco mount
+  // finishes loading, which routinely outlasts the default expect timeout.
+  await expect(lines).toContainText('image-loading_files/dropped-photo.png', {
+    timeout: MONACO_COLD_LOAD_TIMEOUT,
+  });
   await expect(lines).not.toContainText('data:image');
   const source = page.locator('.monaco-editor textarea');
   // Monaco chooses shortcuts from the browser's user agent. ControlOrMeta

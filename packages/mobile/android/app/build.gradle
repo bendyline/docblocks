@@ -72,6 +72,12 @@ dependencies {
     implementation project(':capacitor-cordova-android-plugins')
 }
 
+// Gemini Nano (ML Kit GenAI Prompt) stays out of DocBlocks builds: its terms bar
+// apps likely to be used by people under 18, and the SDK reports usage metrics
+// to Google. Gezel's runtime catches the missing classes and reports that
+// provider unavailable; the mobile host hides it (src/ai/index.ts).
+configurations.configureEach { exclude group: 'com.google.mlkit' }
+
 apply from: 'capacitor.build.gradle'
 
 try {

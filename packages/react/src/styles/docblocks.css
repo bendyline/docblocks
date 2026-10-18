@@ -2341,21 +2341,6 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   gap: 6px 16px;
 }
 
-.db-about-beta {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--db-accent);
-  border-radius: 6px;
-  background: var(--db-accent-soft-08);
-  color: var(--db-text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.db-about-beta strong {
-  color: var(--db-accent-deep);
-}
-
 .db-about-version {
   display: flex;
   align-items: center;
@@ -6846,6 +6831,22 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Report AI output: the flag beside each AI disclaimer and its dialog. */
+.db-ai-report-button {
+  white-space: nowrap;
+}
+
+.db-ai-report-intro {
+  margin: 0 0 14px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-ai-report-dialog .db-settings-fieldset {
+  margin-bottom: 14px;
 }
 
 @media (prefers-reduced-motion: reduce) {

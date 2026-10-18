@@ -20,6 +20,7 @@ import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import { AiDiagramDialog } from './AiDiagrams.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
+import { AiReportButton } from './AiOutputReport.js';
 import { draftCapacityNotice } from './draft-capacity.js';
 import {
   AI_INSTRUCTION_CHARACTERS,
@@ -607,7 +608,19 @@ export function AiDraftDialog({
               onChange={(event) => setDraft(event.currentTarget.value)}
             />
           </label>
-          <p className="db-ai-disclaimer">Review and edit AI-generated content before adding it.</p>
+          <p className="db-ai-disclaimer">
+            Review and edit AI-generated content before adding it.
+            {!running && (
+              <>
+                {' '}
+                <AiReportButton
+                  feature={mode === 'compose' ? 'Add content' : 'Rewrite selection'}
+                  getOutput={() => generatedDraftRef.current}
+                  model={model?.label ?? null}
+                />
+              </>
+            )}
+          </p>
         </>
       )}
     </Dialog>
@@ -624,6 +637,21 @@ export function AiDraftDialog({
 
 type ReviewPhase = 'idle' | 'running' | 'ready' | 'error';
 
+/** The review as the reporter saw it: each finding and its suggested text. */
+function formatReviewFindings(findings: readonly AiReviewFinding[]): string {
+  return findings
+    .map((finding) =>
+      [
+        `${finding.severity} · ${finding.category}: ${finding.message}`,
+        finding.rationale,
+        finding.replacement !== null ? `Suggested: ${finding.replacement}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    )
+    .join('\n\n');
+}
+
 export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   const { markdownSource, replaceAll } = useEditorContext();
   const [phase, setPhase] = useState<ReviewPhase>('idle');
@@ -634,6 +662,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   /** The reply stopped at the model's output limit, so findings may be missing. */
   const [cutOff, setCutOff] = useState(false);
   const [applyErrorId, setApplyErrorId] = useState<string | null>(null);
+  const [reviewModel, setReviewModel] = useState<string | null>(null);
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
   const startedRef = useRef(false);
@@ -698,6 +727,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
         return;
       }
       setCutOff(truncated);
+      setReviewModel(event.completion.model || null);
       setFindings(parsed);
       setReviewedSource(source);
       setPhase('ready');
@@ -860,7 +890,19 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
           );
         })}
       </ol>
-      <p className="db-ai-review-disclaimer">AI suggestions can be wrong. Review each change.</p>
+      <p className="db-ai-review-disclaimer">
+        AI suggestions can be wrong. Review each change.
+        {phase === 'ready' && findings.length > 0 && (
+          <>
+            {' '}
+            <AiReportButton
+              feature="Review document"
+              getOutput={() => formatReviewFindings(findings)}
+              model={reviewModel}
+            />
+          </>
+        )}
+      </p>
     </aside>
   );
 }

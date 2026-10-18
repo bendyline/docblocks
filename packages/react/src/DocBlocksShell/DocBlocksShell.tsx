@@ -262,6 +262,7 @@ import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
+import { openExternalUrl } from '../external-url.js';
 import { setOutsideInPdfWorker } from './outside-in-contract.js';
 import { newFileHtmlOutput, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
 import {
@@ -4150,24 +4151,12 @@ export function DocBlocksShell({
       if (target.kind === 'fragment') return false;
 
       if (target.kind === 'external') {
-        const shell = maybeGetDocBlocksHost()?.shell;
-        if (hostSupports('externalNavigation') && shell?.openExternal) {
-          void shell.openExternal(target.url).catch((error: unknown) => {
-            showToast(
-              'error',
-              error instanceof Error ? error.message : 'Could not open the external link.',
-            );
-          });
-        } else if (typeof window !== 'undefined') {
-          try {
-            window.open(target.url, '_blank', 'noopener,noreferrer');
-          } catch (error: unknown) {
-            showToast(
-              'error',
-              error instanceof Error ? error.message : 'Could not open the external link.',
-            );
-          }
-        }
+        void openExternalUrl(target.url).catch((error: unknown) => {
+          showToast(
+            'error',
+            error instanceof Error ? error.message : 'Could not open the external link.',
+          );
+        });
         return true;
       }
 

@@ -247,3 +247,43 @@ describe('AiReviewPanel lifecycle', () => {
     expect(fake.requests[1].cancelled).to.equal(true);
   });
 });
+
+describe('AiReviewPanel output report', () => {
+  it('reports the review from inside the app, including the response only when asked', async () => {
+    const fake = fakeAi();
+    const { container, cleanup } = await render(fake.api, false);
+    const opened: string[] = [];
+    const open = window.open;
+    window.open = ((url?: string | URL) => {
+      opened.push(String(url));
+      return null;
+    }) as typeof window.open;
+    try {
+      expect(container.textContent).not.to.contain('Report output');
+      await act(async () => fake.requests[0].emit(completion(REVIEW)));
+      await click(container, 'Report output');
+      const dialog = document.body.querySelector('[role="dialog"]');
+      expect(dialog?.textContent).to.contain('Report AI output');
+      expect(dialog?.textContent).to.contain('GitHub issues are public');
+      await click(document.body, 'Open report');
+      const withoutResponse = new URL(opened[0]).searchParams.get('body') ?? '';
+      expect(withoutResponse).to.contain('- Feature: Review document');
+      expect(withoutResponse).to.contain('- Model: test-model');
+      expect(withoutResponse).not.to.contain('Use a more precise phrase.');
+      expect(document.body.querySelector('[role="dialog"]')).to.equal(null);
+
+      await click(container, 'Report output');
+      const include = document.body.querySelector<HTMLInputElement>(
+        '[role="dialog"] input[type="checkbox"]',
+      );
+      await act(async () => include?.click());
+      await click(document.body, 'Open report');
+      const withResponse = new URL(opened[1]).searchParams.get('body') ?? '';
+      expect(withResponse).to.contain('suggestion · Clarity: Use a more precise phrase.');
+      expect(withResponse).to.contain('Suggested: distinctive');
+    } finally {
+      window.open = open;
+      await cleanup();
+    }
+  });
+});

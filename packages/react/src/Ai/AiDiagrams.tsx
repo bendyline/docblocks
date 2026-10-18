@@ -22,6 +22,7 @@ import { LinearDocView } from '@bendyline/squisq-react/page';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
+import { AiReportButton } from './AiOutputReport.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import type { CompiledDiagram } from './diagram-compile.js';
 import { clip } from './diagram-sanitize.js';
@@ -314,7 +315,19 @@ export function AiDiagramDialog({
           {error}
         </p>
       )}
-      <p className="db-ai-disclaimer">Review AI-generated diagrams before adding them.</p>
+      <p className="db-ai-disclaimer">
+        Review AI-generated diagrams before adding them.
+        {ready && !running && (
+          <>
+            {' '}
+            <AiReportButton
+              feature="Insert diagram"
+              getOutput={() => ready.compiled.render(2, new Set())}
+              model={status?.kind === 'ready' ? (status.model?.label ?? null) : null}
+            />
+          </>
+        )}
+      </p>
     </Dialog>
   );
 
@@ -532,6 +545,9 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
 
   const busy = phase === 'planning' || phase === 'drawing' || regenerating !== null;
   const visible = suggestions.filter((item) => !item.dismissed);
+  const drawn = visible.flatMap((item) =>
+    item.outcome?.status === 'ready' ? [item.outcome.compiled] : [],
+  );
   const insertable = visible.filter(
     (item) =>
       !item.inserted &&
@@ -736,6 +752,16 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
       )}
       <p className="db-ai-review-disclaimer">
         AI diagrams can be wrong. Check each one before inserting it.
+        {drawn.length > 0 && !busy && (
+          <>
+            {' '}
+            <AiReportButton
+              feature="Illustrate document"
+              getOutput={() => drawn.map((compiled) => compiled.render(2, new Set())).join('\n\n')}
+              model={status?.kind === 'ready' ? (status.model?.label ?? null) : null}
+            />
+          </>
+        )}
       </p>
     </aside>
   );

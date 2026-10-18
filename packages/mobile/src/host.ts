@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { installMobileAi } from './ai';
+import { routeExternalLinks } from './external-links';
 import {
   encodeMobileBytes,
   MOBILE_STORAGE_LIMITS,
@@ -52,6 +53,11 @@ export async function installMobileHost(): Promise<void> {
     })().finally(() => {
       draining = undefined;
     }));
+  const openExternal = async (value: string) => {
+    const url = parseExternalHttpUrl(value);
+    if (!url) throw new TypeError('Invalid external URL.');
+    await native.openExternal({ url });
+  };
   const host: DocBlocksHostAPI = {
     env: info.env,
     ...(mobileAi ? { ai: mobileAi.ai } : {}),
@@ -77,13 +83,7 @@ export async function installMobileHost(): Promise<void> {
       },
       unregister: (id) => native.forgetFolder({ workspaceId: id }),
     },
-    shell: {
-      openExternal: async (value) => {
-        const url = parseExternalHttpUrl(value);
-        if (!url) throw new TypeError('Invalid external URL.');
-        await native.openExternal({ url });
-      },
-    },
+    shell: { openExternal },
     clipboard: { writeText: (text) => native.writeText({ text }) },
     exports: {
       save: async (_documentId, filename, _grantId, data) => {
@@ -127,6 +127,7 @@ export async function installMobileHost(): Promise<void> {
     },
   };
   (globalThis as typeof globalThis & { docBlocksHost: DocBlocksHostAPI }).docBlocksHost = host;
+  routeExternalLinks(openExternal);
   window.addEventListener('pagehide', () => mobileAi?.suspend());
   mobileAi?.resume();
   window.addEventListener('docblocksIncoming', () => {
