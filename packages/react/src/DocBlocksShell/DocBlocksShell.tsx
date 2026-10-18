@@ -3740,16 +3740,24 @@ export function DocBlocksShell({
       'new-folder': () => void handleNewFolder(),
       shortcuts: openKeyboardShortcuts,
       'toggle-sidebar': () => {
+        // A collapsed split view runs single-pane, so restore it before the
+        // drawer branch below; otherwise the key could never dock it again.
+        if (canRestoreSplitView) {
+          updateSidebarPreference('pinned');
+          return;
+        }
         if (singlePane) {
           setMobileShowEditor((showingEditor) => !showingEditor);
           return;
         }
-        // Split view: collapse to the drawer, and back again.
-        updateSidebarPreference(sidebarPreference === 'collapsed' ? 'pinned' : 'collapsed');
+        // Collapse as the resizer does: single-pane, showing the document.
+        updateSidebarPreference('collapsed');
+        setMobileShowEditor(true);
       },
       'focus-files': () => {
         // Reveal the tree first — focusing a hidden pane would do nothing.
         if (singlePane) setMobileShowEditor(false);
+        setSidebarView('files');
         window.requestAnimationFrame(() => {
           const tree = document.querySelector<HTMLElement>('.db-tree');
           // The tree uses a roving tabindex, so prefer the row it considers
@@ -3785,7 +3793,7 @@ export function DocBlocksShell({
       openKeyboardShortcuts,
       singlePane,
       mobileShowEditor,
-      sidebarPreference,
+      canRestoreSplitView,
       updateSidebarPreference,
     ],
   );

@@ -6537,6 +6537,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:not(.db-dialog-close),
 .db-ai-draft-dialog .db-dialog-footer button,
+.db-ai-study-dialog .db-dialog-footer button,
+.db-ai-study-saved button,
 .db-ai-draft-start button,
 .db-ai-review-panel button {
   min-height: var(--db-target-min);
@@ -6551,6 +6553,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration .db-dialog-footer button:last-child,
 .db-ai-draft-dialog .db-dialog-footer button:last-child,
+.db-ai-study-dialog .db-dialog-footer button:last-child,
 .db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
 .db-ai-review-actions button {
@@ -6561,6 +6564,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:not(.db-dialog-close):hover:not(:disabled),
 .db-ai-draft-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-study-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-study-saved button:hover,
 .db-ai-draft-start button:hover,
 .db-ai-review-panel button:hover:not(:disabled) {
   border-color: var(--db-accent-hover);
@@ -6571,6 +6576,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-text-from-narration button:focus-visible,
 .db-text-from-narration textarea:focus-visible,
 .db-ai-draft-dialog .db-dialog-footer button:focus-visible,
+.db-ai-study-dialog .db-dialog-footer button:focus-visible,
+.db-ai-study-saved button:focus-visible,
 .db-ai-draft-start button:focus-visible,
 .db-ai-review-panel button:focus-visible {
   outline: 2px solid var(--db-focus);
@@ -6579,6 +6586,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:disabled,
 .db-ai-draft-dialog .db-dialog-footer button:disabled,
+.db-ai-study-dialog .db-dialog-footer button:disabled,
 .db-ai-review-panel button:disabled {
   opacity: 0.5;
   cursor: default;
@@ -6847,6 +6855,112 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-report-dialog .db-settings-fieldset {
   margin-bottom: 14px;
+}
+
+/* Study aids: Summarize document, Create quiz, Create flashcards. */
+.db-ai-study-dialog .db-dialog-header,
+.db-ai-study-dialog .db-dialog-footer {
+  flex-shrink: 0;
+}
+
+.db-ai-study-dialog .db-ai-study-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.db-ai-study-start,
+.db-ai-study-result,
+.db-ai-study-running {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.db-ai-study-start p,
+.db-ai-study-result p,
+.db-ai-study-running p {
+  margin: 0;
+}
+
+/* In the full-height deck dialog the result fills the body, and the deck
+   takes whatever the notes and disclaimer leave. */
+.db-ai-study-result {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.db-ai-study-intro,
+.db-ai-study-stage,
+.db-ai-study-saved-title {
+  color: var(--db-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-ai-study-stage,
+.db-ai-study-saved-title {
+  font-weight: 600;
+}
+
+.db-ai-study-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-study-saved-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.db-ai-study-stale {
+  color: var(--db-accent-deep);
+  font-size: 12px;
+}
+
+.db-ai-study-summary,
+.db-ai-study-deck {
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-study-summary {
+  max-height: min(52dvh, 460px);
+  overflow: auto;
+}
+
+/* Squisq's deck fills the pane it is given and scrolls its own card, so the
+   frame takes the height the dialog has left and hands all of it over. The
+   body scrolls instead when a short window cannot fit the deck's minimum. */
+.db-ai-study-deck {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: min(440px, 70dvh);
+  overflow: hidden;
+}
+
+.db-ai-study-deck > .squisq-flashcards {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  padding: 16px clamp(14px, 3vw, 28px);
+}
+
+.db-ai-study-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {

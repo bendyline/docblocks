@@ -423,6 +423,10 @@ One call returns at most 20 items. Use `startIndex` to paginate. For Office and
 PDF inputs these items are reconstructed content sections, not a guarantee of
 native pagination or layout. A single video thumbnail does not verify every scene,
 motion, or loop behavior. Report those limits rather than claiming full visual QA.
+The preview player draws ` ```svg `, timeline, tree, and chart pictures, and a
+dashed "Couldn't render this SVG" placeholder for a fence it rejects. It omits
+Mermaid: a Mermaid fence previews as a "not included in the light standalone
+player" placeholder.
 
 Diagnostics are stable records with code, severity, stage, optional format and
 location, occurrence count, remediation, and retryability. A result publishes at
@@ -435,6 +439,20 @@ when a complete-body template does not materialize all of its body text.
 stray delimiters (for example `{[comparisonBar unit="%"}]}`) that the parser would
 otherwise survive silently. `redundant-slide-separator` reports thematic breaks
 removed immediately before PPTX slide-heading boundaries.
+
+`inspect_document` also checks SVG pictures against Squisq's SVG-island sanitizer.
+`svg-fence-not-rendered` is an error for a ` ```svg ` fence the sanitizer rejects
+(empty, not exactly one `<svg>` root, too large, too deep, or unparseable): it would
+show as code, or as a placeholder on slides. `svg-content-removed` warns that a fence
+draws without content the sanitizer removed and names it with counts, for example
+`<script> ×1, onclick ×2`. `svg-missing-title` is the SVG counterpart of
+`missing-alt-text`: a warning for islands with neither a `<title>` nor a root
+`aria-label`. `raw-svg-html-dropped` warns about raw `<svg>` HTML blocks or inline
+tags, which the Markdown sanitizer removes. Locations are lines of the normalized
+Markdown, fences nested in lists, quotes, and containers are included, and one
+inspection sanitizes at most 1,000 fences (`svg-analysis-truncated` counts the rest).
+Mermaid syntax is not validated, because the only installed Mermaid parser needs a
+browser DOM.
 
 ## Themes, templates, and layouts
 
@@ -500,6 +518,37 @@ media as well as the source, and do not infer full content survival from the fir
 frame. Short before/after bullets are usually more readable than dense tables at
 video dimensions.
 
+### Pictures
+
+Picture guidance ships at three sizes: the `pictures` section of
+`docblocks://authoring-guide` (format choice, SVG rules with the live Squisq limits, a
+worked example, export behavior, and checks); one compact `get_authoring_context`
+workflow entry plus a target note for PPTX, DOCX, EPUB, and PDF; and one sentence in
+the server instructions and the presentation and document prompts.
+
+- Choose ` ```mermaid ` for flows, sequences, states, hierarchies, and gantt
+  charts; ` ```timeline ` for dated events; ` ```tree ` for outlines and
+  file trees; a Markdown table under a chart-template heading such as
+  `## Revenue {[barChart]}` for numbers; and ` ```svg ` for bespoke
+  illustrations, icons, and annotated figures. Use a sidecar
+  `![alt](assets/name.svg)` only for large or reused artwork, carried by a bundle
+  source or `create_document_bundle`.
+- Never write raw `<svg>` HTML: the Markdown sanitizer silently drops it. An
+  ` ```xml ` fence shows SVG source as code.
+- An SVG fence holds one `<svg>` root with a `viewBox` and a `<title>` (its alt
+  text), uses `currentColor` for strokes and text instead of hard-coded black or
+  white, sets `font-family="sans-serif"`, avoids script, `foreignObject`, event
+  handlers, external references, `@import`, and web fonts, and stays well under
+  Squisq's `SVG_ISLAND_LIMITS`.
+
+The Node converters have no diagram renderer. `convert_document` embeds
+` ```svg ` as vector art in DOCX, PPTX, EPUB, and HTML, and PPTX draws timelines,
+trees, and charts as native shapes. Mermaid exports as source text in DOCX, PPTX,
+EPUB, and PDF; timeline and tree fences do too in DOCX, EPUB, and PDF; and semantic
+PDF prints every picture fence as source. Rendered-fidelity PDF uses the preview
+player, so it draws every picture except Mermaid. The guidance states these limits
+per target instead of promising pictures an export cannot draw.
+
 The binary inference boundary is intentionally narrower than `DocumentSource`:
 
 - `infer_theme_from_file` accepts only file/artifact DOCX, PPTX, or XLSX sources;
@@ -520,12 +569,12 @@ creation time, and expiry. Artifacts are immutable and scoped to the current ser
 
 The server exposes:
 
-| Resource                      | Content                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------- |
-| `docblocks://formats`         | Current linked-registry capability catalog.                                         |
-| `docblocks://authoring-guide` | Current formats, fidelities, themes, transforms, templates, and preferred workflow. |
-| `docblocks://artifacts/{id}`  | UTF-8 for text MIME types or base64 for bounded binary artifacts.                   |
-| `docblocks://reports/{id}`    | JSON conversion report for a conversion-backed artifact.                            |
+| Resource                      | Content                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| `docblocks://formats`         | Current linked-registry capability catalog.                                                   |
+| `docblocks://authoring-guide` | Current formats, fidelities, themes, transforms, templates, pictures, and preferred workflow. |
+| `docblocks://artifacts/{id}`  | UTF-8 for text MIME types or base64 for bounded binary artifacts.                             |
+| `docblocks://reports/{id}`    | JSON conversion report for a conversion-backed artifact.                                      |
 
 Artifact-producing tool results also include MCP resource links. Resource reads are
 capped separately from artifact creation; use `save_artifact` for a result larger
@@ -689,7 +738,9 @@ Style, theme, and template completion is prefix-based, capped at 100 values, and
 comes directly from linked Squisq. Prompt output tells the agent to infer a semantic
 direction, choose automatically, and avoid presenting raw combinations to the user;
 exact prompt arguments remain available for callers that already know the desired
-IDs. Prompts do not create artifacts by themselves. `topic` is limited to 10,000
+IDs. The presentation and document prompts add one picture sentence for their target,
+such as that PPTX exports Mermaid as source text or that semantic PDF prints picture
+fences as source. Prompts do not create artifacts by themselves. `topic` is limited to 10,000
 characters and style/theme/template IDs to 256 characters.
 
 ## How linked Squisq is used

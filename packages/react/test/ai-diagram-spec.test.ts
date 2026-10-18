@@ -205,4 +205,73 @@ describe('parseDiagramSpec', () => {
       expect(result.ok, kind).to.equal(true);
     }
   });
+
+  it('reads Venn diagrams, which need something shared', () => {
+    const result = parseDiagramSpec(
+      'venn',
+      JSON.stringify({
+        sets: [{ label: 'Design', items: ['Mockups'] }, { name: 'Engineering' }, 'Research', 'Ops'],
+        overlap: ['Prototypes'],
+      }),
+    );
+    expect(result.ok && result.spec).to.deep.equal({
+      kind: 'venn',
+      sets: [
+        { label: 'Design', items: ['Mockups'] },
+        { label: 'Engineering', items: [] },
+        { label: 'Research', items: [] },
+      ],
+      shared: ['Prototypes'],
+    });
+    expect(result.ok && result.notes).to.deep.equal(['Kept the first 3 sets of 4.']);
+    const unshared = parseDiagramSpec('venn', '{"sets":["A","B"],"shared":[]}');
+    expect(unshared.ok ? '' : unshared.problem).to.contain('"shared"');
+  });
+
+  it('reads a matrix only with all four quadrants, in order', () => {
+    const quadrants = ['Quick wins', 'Big bets', 'Fill-ins', 'Money pits'].map((label) => ({
+      label,
+      items: ['one', 'two', 'three', 'four'],
+    }));
+    const result = parseDiagramSpec(
+      'matrix',
+      JSON.stringify({ x: 'Effort', yAxis: { label: 'Impact' }, quadrants }),
+    );
+    expect(result.ok && result.spec.kind === 'matrix' && result.spec).to.deep.include({
+      xAxis: 'Effort',
+      yAxis: 'Impact',
+    });
+    if (!result.ok || result.spec.kind !== 'matrix') return;
+    expect(result.spec.quadrants.map((quadrant) => quadrant.label)).to.deep.equal([
+      'Quick wins',
+      'Big bets',
+      'Fill-ins',
+      'Money pits',
+    ]);
+    expect(result.spec.quadrants[0]?.items).to.have.length(3);
+    const three = parseDiagramSpec('matrix', JSON.stringify({ quadrants: quadrants.slice(0, 3) }));
+    expect(three.ok ? '' : three.problem).to.contain('at least 4 quadrants');
+  });
+
+  it('reads funnels and pyramids', () => {
+    const funnel = parseDiagramSpec(
+      'funnel',
+      '{"stages":[{"label":"Visitors","value":10000},{"label":"Sign-ups","count":"1,200"},"Customers"]}',
+    );
+    expect(funnel.ok && funnel.spec).to.deep.equal({
+      kind: 'funnel',
+      stages: [
+        { label: 'Visitors', value: '10000' },
+        { label: 'Sign-ups', value: '1,200' },
+        { label: 'Customers', value: '' },
+      ],
+    });
+    const pyramid = parseDiagramSpec('pyramid', '{"layers":["Purpose","Strategy","Operations"]}');
+    expect(pyramid.ok && pyramid.spec).to.deep.equal({
+      kind: 'pyramid',
+      levels: ['Purpose', 'Strategy', 'Operations'],
+    });
+    const short = parseDiagramSpec('pyramid', '{"levels":["Top","Base"]}');
+    expect(short.ok ? '' : short.problem).to.contain('at least 3 levels');
+  });
 });

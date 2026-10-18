@@ -3,3 +3,8 @@
 # with core.autocrlf=true) makes the browser block the script and fails
 # packages/site/test/seo.test.ts.
 packages/site/public/desktop/index.html text eol=lf
+
+# Xcode writes project files with LF, and store-signing.mjs edits the App
+# Release configuration with LF-anchored patterns. A CRLF checkout matches no
+# configuration and fails packages/mobile/test/store-signing.test.ts.
+*.pbxproj text eol=lf

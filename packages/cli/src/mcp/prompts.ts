@@ -2,6 +2,7 @@ import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { MCP_DASHBOARD_RESOLUTION_IDS, MCP_DASHBOARD_STYLE_IDS } from './conversion-service.js';
+import { PRESENTATION_PICTURE_HINT, documentPictureHint } from './picture-guidance.js';
 import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
@@ -198,7 +199,7 @@ function presentationPrompt(
 
 1. For durable output, call list_roots before drafting. If no returned root is write-enabled, stop and explain that the MCP server must restart with --allow-write; do not use a shell or CLI converter.
 2. ${selectionHint} ${MOTION_SELECTION_GUIDANCE} Call get_authoring_context only when the linked theme and Summarize descriptions would materially improve the choice.
-3. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; headings alone create the boundaries, so do not add \`---\` between them unless a visible horizontal rule is intended. Unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint}
+3. Author plain Markdown. One level-one heading (\`#\`) creates each deliberate slide boundary; headings alone create the boundaries, so do not add \`---\` between them unless a visible horizontal rule is intended. Unstructured text is also accepted. Squisq annotations are optional layout hints.${templateHint} ${PRESENTATION_PICTURE_HINT}
 4. Pass the Markdown directly to convert_document with a pptx target${themeHint}${styleHint}. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
 5. Use inspect_document or preview_document only when the user explicitly asks for document analysis or visual evidence.
 6. Call save_artifact only when a durable file is required.`;
@@ -259,7 +260,7 @@ function documentPrompt(
   return `Create a document about: ${topic}
 
 1. For durable output, call list_roots before drafting and stop if no root is write-enabled; do not use a shell or CLI converter.
-2. Author plain Markdown. Squisq annotations are optional layout hints.${templateHint} Call get_authoring_context only when exact annotation examples or theme details would help.
+2. Author plain Markdown. Squisq annotations are optional layout hints.${templateHint} ${documentPictureHint(target)} Call get_authoring_context only when exact annotation examples or theme details would help.
 3. Pass the Markdown directly to convert_document with a ${target} target${themeHint}. Use a bundle source only when assets must travel with the document. No validation, inspection, or preview is required.
 4. Use inspect_document or preview_document only when the user explicitly asks for document analysis or visual evidence.
 5. Call save_artifact only when a durable file is required.`;

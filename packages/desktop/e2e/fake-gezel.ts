@@ -22,6 +22,7 @@ export const FAKE_GEZEL_MODEL = 'mlx:fake-writer-q4';
 export const FAKE_COMPOSE_TEXT = 'This closing paragraph was drafted by the fake Gezel.';
 export const FAKE_REWRITE_TEXT = 'The fake Gezel rewrote this sentence.';
 export const FAKE_REVIEW_SUFFIX = ' (reviewed)';
+export const FAKE_SUMMARY_OVERVIEW = 'The fake Gezel summarized this document.';
 
 interface ChatMessage {
   readonly role: string;
@@ -166,8 +167,53 @@ function scriptedDiagram(messages: readonly ChatMessage[]): string {
   return JSON.stringify({ direction: 'LR', nodes, edges });
 }
 
+/** The sentences of a study-aid passage, without its section headings. */
+function passageSentences(messages: readonly ChatMessage[]): string[] {
+  const user = messages.find((message) => message.role === 'user')?.content ?? '';
+  const passage = /<passage>\n([\s\S]*?)\n<\/passage>/u.exec(user)?.[1] ?? '';
+  return passage
+    .split('\n')
+    .filter((line) => !line.startsWith('## '))
+    .join(' ')
+    .split(/(?<=[.!?])\s+/u)
+    .filter((sentence) => sentence.trim().length > 20);
+}
+
+/** Questions answered by the passage's own words, so every answer is grounded. */
+function scriptedQuiz(messages: readonly ChatMessage[]): string {
+  return JSON.stringify(
+    passageSentences(messages)
+      .slice(0, 3)
+      .map((sentence, index) => ({
+        question: `Which statement does the document make, number ${String(index + 1)}?`,
+        correct: words(sentence, 6),
+        wrong: ['A printed manual', 'A video tutorial', 'A spreadsheet export'],
+        why: sentence,
+      })),
+  );
+}
+
+function scriptedFlashcards(messages: readonly ChatMessage[]): string {
+  return JSON.stringify(
+    passageSentences(messages)
+      .slice(0, 4)
+      .map((sentence) => ({
+        front: `What does the document say about ${words(sentence, 2)}?`,
+        back: sentence,
+      })),
+  );
+}
+
 function scriptedAnswer(messages: readonly ChatMessage[]): string {
   const system = messages.find((message) => message.role === 'system')?.content ?? '';
+  if (system.includes('You summarize documents')) {
+    return `${FAKE_SUMMARY_OVERVIEW}\n\n- It compares wiki tools.\n- It favours plain Markdown files.`;
+  }
+  if (system.includes('You take notes') || system.includes('You condense notes')) {
+    return '- A note from the fake Gezel.';
+  }
+  if (system.includes('multiple-choice quiz questions')) return scriptedQuiz(messages);
+  if (system.includes('study flashcards')) return scriptedFlashcards(messages);
   if (system.includes('You edit a narrated presentation')) {
     const input = JSON.parse(messages.at(-1)?.content ?? '{}') as {
       position: string;

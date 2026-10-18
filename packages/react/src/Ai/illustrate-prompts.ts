@@ -27,7 +27,7 @@ export interface PromptBudget {
 
 /** Characters per token, deliberately low so prompts never overrun the window. */
 const CHARACTERS_PER_TOKEN = 3;
-const SYSTEM_TOKENS = 350;
+const SYSTEM_TOKENS = 420;
 const SAFETY_TOKENS = 150;
 const SMALL_CONTEXT = 16_384;
 export const REALIZE_PASSAGE_CHARACTERS = 2_400;
@@ -53,7 +53,9 @@ const KIND_GUIDE =
   'flow (a process with choices), steps (3 to 6 steps in order), cycle (3 to 6 stages that repeat), ' +
   'sequence (messages between 2 to 6 people or systems), timeline (2 to 10 dated events), ' +
   'hierarchy (a whole and its parts), chart (numbers that compare or change), ' +
-  'comparison (2 or 3 options side by side), stats (2 to 4 headline numbers)';
+  'comparison (2 or 3 options side by side), stats (2 to 4 headline numbers), ' +
+  'venn (2 or 3 groups and what they share), matrix (items placed on two scales in 4 quadrants), ' +
+  'funnel (3 to 6 stages that narrow), pyramid (3 to 6 levels that build on each other)';
 
 /** The planning call: pick passages a picture would help, and a kind for each. */
 export function buildPlanRequest(options: {
@@ -129,18 +131,30 @@ const KIND_ALIASES: Readonly<Record<string, DiagramKind>> = {
   numbers: 'stats',
   metrics: 'stats',
   kpi: 'stats',
+  overlap: 'venn',
+  intersection: 'venn',
+  quadrant: 'matrix',
+  quadrants: 'matrix',
+  grid: 'matrix',
+  conversion: 'funnel',
+  layers: 'pyramid',
+  tiers: 'pyramid',
 };
 
+/** The first word of `value` that names a kind: `Steps`, `bar chart`, `2x2 matrix`. */
 function kindFrom(value: unknown): DiagramKind | null {
   if (typeof value !== 'string') return null;
-  const word =
-    value
-      .toLowerCase()
-      .replace(/[^a-z]/gu, ' ')
-      .trim()
-      .split(/\s+/u)[0] ?? '';
-  if (isDiagramKind(word)) return word;
-  return KIND_ALIASES[word] ?? null;
+  const words = value
+    .toLowerCase()
+    .replace(/[^a-z]/gu, ' ')
+    .trim()
+    .split(/\s+/u);
+  for (const word of words) {
+    if (isDiagramKind(word)) return word;
+    const alias = KIND_ALIASES[word];
+    if (alias) return alias;
+  }
+  return null;
 }
 
 /**
@@ -241,6 +255,33 @@ const KIND_PROMPTS: Readonly<Record<DiagramKind, KindPrompt>> = {
       '{"stats":[{"value":"42%","label":"of users return weekly"},{"value":"3x","label":"faster setup"}]}',
     rules: '2 to 4 numbers, each written exactly as in the passage, with a short label.',
   },
+  venn: {
+    example:
+      '{"sets":[{"label":"Design","items":["Mockups"]},{"label":"Engineering","items":["APIs"]}],' +
+      '"shared":["Prototypes"]}',
+    rules:
+      '2 or 3 sets. "items" belong to that set alone (at most 4 each); "shared" lists 1 to 3 ' +
+      'things every set has in common.',
+  },
+  matrix: {
+    example:
+      '{"xAxis":"Effort","yAxis":"Impact","quadrants":[{"label":"Quick wins","items":["Fix signup copy"]},' +
+      '{"label":"Big bets","items":[]},{"label":"Fill-ins","items":[]},{"label":"Money pits","items":[]}]}',
+    rules:
+      'Exactly 4 quadrants in this order: top left, top right, bottom left, bottom right. ' +
+      'The x axis grows to the right and the y axis grows upward. At most 3 short items per quadrant.',
+  },
+  funnel: {
+    example:
+      '{"stages":[{"label":"Visitors","value":"10,000"},{"label":"Sign-ups","value":"1,200"},' +
+      '{"label":"Customers","value":"300"}]}',
+    rules:
+      '3 to 6 stages from widest to narrowest. "value" is optional and copied exactly from the passage.',
+  },
+  pyramid: {
+    example: '{"levels":["Purpose","Strategy","Operations"]}',
+    rules: '3 to 6 levels, from the top of the pyramid down to its base.',
+  },
 };
 
 /** One call that writes the spec for a single diagram. */
@@ -290,6 +331,7 @@ export function buildRepairRequest(
   base: AiChatRequest,
   previousReply: string,
   problem: string,
+  shape: 'object' | 'array' = 'object',
 ): AiChatRequest {
   return {
     ...base,
@@ -298,7 +340,7 @@ export function buildRepairRequest(
       { role: 'assistant', content: clip(previousReply.trim() || '(empty)', 1_200) },
       {
         role: 'user',
-        content: `That JSON could not be used: ${clip(problem, 240)} Return the corrected JSON object only.`,
+        content: `That JSON could not be used: ${clip(problem, 240)} Return the corrected JSON ${shape} only.`,
       },
     ],
   };
@@ -307,6 +349,10 @@ export function buildRepairRequest(
 const INFER_RULES: readonly (readonly [RegExp, DiagramKind])[] = [
   [/\b(timeline|history|roadmap|milestones?|chronolog\w*|over the years)\b/u, 'timeline'],
   [/\b(sequence|request|response|handshake|messages?|protocol|api call)\b/u, 'sequence'],
+  [/\b(funnel|conversion|drop-?offs?)\b/u, 'funnel'],
+  [/\b(venn|overlap\w*|in common|intersection)\b/u, 'venn'],
+  [/\b(2x2|2 by 2|two[- ]by[- ]two|quadrants?|matrix)\b/u, 'matrix'],
+  [/\b(pyramid|tiers?|layers of)\b/u, 'pyramid'],
   [/\b(pie|percent\w*|share|growth|revenue|chart|graph|trend|statistics)\b/u, 'chart'],
   [/\b(key (numbers|figures|stats)|headline numbers|kpis?|metrics)\b/u, 'stats'],
   [/\b(compare|comparison|versus|vs\.?|pros|cons|options|trade-?offs?)\b/u, 'comparison'],

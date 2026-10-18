@@ -1,4 +1,6 @@
 import { expect } from 'chai';
+import { MemoryContentContainer } from '@bendyline/squisq/storage';
+import type { ContentContainer } from '@bendyline/squisq/storage';
 import { getPartBinary, openPackage } from '@bendyline/squisq-formats/ooxml';
 import type { DiagramRasterizer, ExportDiagram } from '@bendyline/squisq-formats/diagrams';
 
@@ -40,16 +42,31 @@ const SOURCE = [
   '',
 ].join('\n');
 
+/** A small, valid SVG: what an island fence or an attached .svg holds. */
+const SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="120" height="60">' +
+  '<rect width="120" height="60" fill="#c33"/></svg>';
+
+const SVG_ISLAND_SOURCE = ['# Logo', '', '```svg', SVG, '```', '', 'After the logo.', ''].join(
+  '\n',
+);
+
+const SVG_ATTACHMENT_SOURCE = ['# Logo', '', '![Company logo](logo.svg)', '', 'After.', ''].join(
+  '\n',
+);
+
 async function exportAs(
   format: 'docx' | 'pdf' | 'epub' | 'pptx',
   diagramRenderer: DiagramRasterizer,
+  source = SOURCE,
+  mediaContainer: ContentContainer | null = null,
 ): Promise<ArrayBuffer> {
   const saved: Blob[] = [];
   await runExport(
-    SOURCE,
+    source,
     '/release.md',
     { ...DEFAULT_OPTIONS, format },
-    null,
+    mediaContainer,
     (blob) => {
       saved.push(blob);
     },
@@ -124,5 +141,87 @@ describe('diagram pictures in exports', () => {
     const xml = await documentXml(pkg);
     expect(xml).to.contain('flowchart LR');
     expect(await getPartBinary(pkg, 'word/media/image1.png')).to.equal(null);
+  });
+});
+
+/**
+ * Whether one of the package's `folder` PNGs is the stand-in renderer's
+ * picture, rather than the stand-in an exporter generates on its own.
+ */
+async function storesRendererPng(bytes: ArrayBuffer, folder: string): Promise<boolean> {
+  const pkg = await openPackage(bytes);
+  const pattern = new RegExp(`${folder}/[^/\\s"]+?\\.png`, 'gu');
+  for (const name of new Set(zipNames(bytes).match(pattern) ?? [])) {
+    const part = await getPartBinary(pkg, name);
+    const data = part ? new Uint8Array(part) : null;
+    if (data && data.length === PNG.length && data.every((byte, i) => byte === PNG[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** A container holding `logo.svg`, as an attached SVG image. */
+async function logoContainer(): Promise<ContentContainer> {
+  const container = new MemoryContentContainer();
+  await container.writeFile('logo.svg', new TextEncoder().encode(SVG));
+  return container;
+}
+
+describe('SVG pictures in exports', () => {
+  it('Word keeps an SVG island as vector art and stores its picture as the fallback', async () => {
+    const { render, seen } = recordingRenderer();
+    const bytes = await exportAs('docx', render, SVG_ISLAND_SOURCE);
+    // Asked once, for the fallback only; the island is not swapped for a picture.
+    expect(seen.map((diagram) => diagram.kind)).to.deep.equal(['svg']);
+    expect(zipNames(bytes)).to.match(/word\/media\/[^/\s"]+\.svg/u);
+    expect(await storesRendererPng(bytes, 'word/media')).to.equal(true);
+    const xml = await documentXml(await openPackage(bytes));
+    expect(xml).not.to.contain('viewBox');
+    expect(xml).to.contain('After the logo.');
+  });
+
+  it('PDF draws an SVG island as its picture', async () => {
+    const { render, seen } = recordingRenderer();
+    const text = zipNames(await exportAs('pdf', render, SVG_ISLAND_SOURCE));
+    expect(seen.map((diagram) => diagram.kind)).to.deep.equal(['svg']);
+    expect(text.match(/\/Subtype\s*\/Image/gu)?.length ?? 0).to.be.at.least(1);
+  });
+
+  it('PowerPoint stores the picture beside an SVG island', async () => {
+    const { render, seen } = recordingRenderer();
+    const bytes = await exportAs('pptx', render, SVG_ISLAND_SOURCE);
+    expect(seen.map((diagram) => diagram.kind)).to.deep.equal(['svg']);
+    expect(await storesRendererPng(bytes, 'ppt/media')).to.equal(true);
+  });
+
+  it('PDF swaps an attached SVG for its picture', async () => {
+    const { render, seen } = recordingRenderer();
+    const text = zipNames(
+      await exportAs('pdf', render, SVG_ATTACHMENT_SOURCE, await logoContainer()),
+    );
+    expect(seen).to.have.length(1);
+    expect(seen[0]?.kind).to.equal('svg');
+    expect(seen[0]?.source).to.equal(SVG);
+    expect(text.match(/\/Subtype\s*\/Image/gu)?.length ?? 0).to.be.at.least(1);
+  });
+
+  it('Word stores a picture of an attached SVG as its fallback', async () => {
+    const { render, seen } = recordingRenderer();
+    const bytes = await exportAs('docx', render, SVG_ATTACHMENT_SOURCE, await logoContainer());
+    expect(seen.map((diagram) => diagram.source)).to.deep.equal([SVG]);
+    expect(zipNames(bytes)).to.match(/word\/media\/[^/\s"]+\.svg/u);
+    expect(await storesRendererPng(bytes, 'word/media')).to.equal(true);
+  });
+
+  it('still exports an SVG island when drawing it fails', async () => {
+    const bytes = await exportAs(
+      'pdf',
+      async () => {
+        throw new Error('no canvas');
+      },
+      SVG_ISLAND_SOURCE,
+    );
+    expect(bytes.byteLength).to.be.greaterThan(0);
   });
 });

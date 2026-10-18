@@ -20,7 +20,11 @@ export type DiagramKind =
   | 'hierarchy'
   | 'chart'
   | 'comparison'
-  | 'stats';
+  | 'stats'
+  | 'venn'
+  | 'matrix'
+  | 'funnel'
+  | 'pyramid';
 
 export const DIAGRAM_KINDS: readonly DiagramKind[] = [
   'flow',
@@ -32,6 +36,10 @@ export const DIAGRAM_KINDS: readonly DiagramKind[] = [
   'chart',
   'comparison',
   'stats',
+  'venn',
+  'matrix',
+  'funnel',
+  'pyramid',
 ];
 
 export const DIAGRAM_KIND_LABELS: Readonly<Record<DiagramKind, string>> = {
@@ -44,6 +52,10 @@ export const DIAGRAM_KIND_LABELS: Readonly<Record<DiagramKind, string>> = {
   chart: 'Chart',
   comparison: 'Comparison',
   stats: 'Key numbers',
+  venn: 'Venn diagram',
+  matrix: '2×2 matrix',
+  funnel: 'Funnel',
+  pyramid: 'Pyramid',
 };
 
 export type FlowShape = 'step' | 'decision' | 'start' | 'end';
@@ -111,6 +123,36 @@ export interface StatsSpec {
   readonly stats: readonly { readonly value: string; readonly label: string }[];
 }
 
+export interface VennSpec {
+  readonly kind: 'venn';
+  /** Each set's label and the items that belong to it alone. */
+  readonly sets: readonly { readonly label: string; readonly items: readonly string[] }[];
+  /** Items every set shares, drawn where all the circles overlap. */
+  readonly shared: readonly string[];
+}
+
+export interface MatrixSpec {
+  readonly kind: 'matrix';
+  /** Grows to the right; '' for none. */
+  readonly xAxis: string;
+  /** Grows upward; '' for none. */
+  readonly yAxis: string;
+  /** Exactly four: top left, top right, bottom left, bottom right. */
+  readonly quadrants: readonly { readonly label: string; readonly items: readonly string[] }[];
+}
+
+export interface FunnelSpec {
+  readonly kind: 'funnel';
+  /** Widest first; `value` is '' when the passage gives none. */
+  readonly stages: readonly { readonly label: string; readonly value: string }[];
+}
+
+export interface PyramidSpec {
+  readonly kind: 'pyramid';
+  /** Top level first. */
+  readonly levels: readonly string[];
+}
+
 export type DiagramSpec =
   | FlowSpec
   | StepsSpec
@@ -120,7 +162,11 @@ export type DiagramSpec =
   | HierarchySpec
   | ChartSpec
   | ComparisonSpec
-  | StatsSpec;
+  | StatsSpec
+  | VennSpec
+  | MatrixSpec
+  | FunnelSpec
+  | PyramidSpec;
 
 /** Counts and lengths each kind is held to. Labels beyond a length are clipped. */
 export const DIAGRAM_LIMITS = {
@@ -143,6 +189,13 @@ export const DIAGRAM_LIMITS = {
   columnPoints: { min: 1, max: 5 },
   stats: { min: 2, max: 4 },
   statValue: 12,
+  vennSets: { min: 2, max: 3 },
+  vennItems: 4,
+  vennShared: { min: 1, max: 3 },
+  quadrants: 4,
+  quadrantItems: 3,
+  funnelStages: { min: 3, max: 6 },
+  pyramidLevels: { min: 3, max: 6 },
 } as const;
 
 export type DiagramSpecParse =
@@ -434,6 +487,70 @@ function parseStats(record: Rec, notes: Notes): DiagramSpec | string {
   return { kind: 'stats', stats: kept };
 }
 
+function parseVenn(record: Rec, notes: Notes): DiagramSpec | string {
+  const L = DIAGRAM_LIMITS;
+  const sets = list(field(record, 'sets', 'circles', 'groups'))
+    .map((raw) => ({
+      label: labelOf(raw, 24),
+      items: isRecord(raw)
+        ? labelList(list(field(raw, 'items', 'only', 'points')), 28).slice(0, L.vennItems)
+        : [],
+    }))
+    .filter((set) => set.label);
+  const kept = notes.trim(sets, L.vennSets.max, 'sets');
+  if (kept.length < L.vennSets.min) return tooFew(kept.length, L.vennSets.min, 'sets');
+  const shared = notes.trim(
+    labelList(list(field(record, 'shared', 'overlap', 'common', 'intersection', 'both')), 28),
+    L.vennShared.max,
+    'shared items',
+  );
+  if (shared.length < L.vennShared.min) {
+    return 'It needs at least 1 "shared" item that every set has in common.';
+  }
+  return { kind: 'venn', sets: kept, shared };
+}
+
+function parseMatrix(record: Rec, notes: Notes): DiagramSpec | string {
+  const L = DIAGRAM_LIMITS;
+  const quadrants = list(field(record, 'quadrants', 'cells', 'boxes'))
+    .map((raw) => ({
+      label: labelOf(raw, 28),
+      items: isRecord(raw)
+        ? labelList(list(field(raw, 'items', 'points', 'examples')), 40).slice(0, L.quadrantItems)
+        : [],
+    }))
+    .filter((quadrant) => quadrant.label);
+  const kept = notes.trim(quadrants, L.quadrants, 'quadrants');
+  if (kept.length < L.quadrants) return tooFew(kept.length, L.quadrants, 'quadrants');
+  return {
+    kind: 'matrix',
+    xAxis: labelOf(field(record, 'xAxis', 'x', 'horizontal', 'x_axis'), 24),
+    yAxis: labelOf(field(record, 'yAxis', 'y', 'vertical', 'y_axis'), 24),
+    quadrants: kept,
+  };
+}
+
+function parseFunnel(record: Rec, notes: Notes): DiagramSpec | string {
+  const L = DIAGRAM_LIMITS;
+  const stages = list(field(record, 'stages', 'steps', 'levels'))
+    .map((raw) => ({
+      label: labelOf(raw, 28),
+      value: isRecord(raw) ? text(field(raw, 'value', 'count', 'number'), L.statValue) : '',
+    }))
+    .filter((stage) => stage.label);
+  const kept = notes.trim(stages, L.funnelStages.max, 'stages');
+  if (kept.length < L.funnelStages.min) return tooFew(kept.length, L.funnelStages.min, 'stages');
+  return { kind: 'funnel', stages: kept };
+}
+
+function parsePyramid(record: Rec, notes: Notes): DiagramSpec | string {
+  const L = DIAGRAM_LIMITS;
+  const levels = labelList(list(field(record, 'levels', 'layers', 'tiers')), 32);
+  const kept = notes.trim(levels, L.pyramidLevels.max, 'levels');
+  if (kept.length < L.pyramidLevels.min) return tooFew(kept.length, L.pyramidLevels.min, 'levels');
+  return { kind: 'pyramid', levels: kept };
+}
+
 const PARSERS: Readonly<Record<DiagramKind, (record: Rec, notes: Notes) => DiagramSpec | string>> =
   {
     flow: parseFlow,
@@ -445,6 +562,10 @@ const PARSERS: Readonly<Record<DiagramKind, (record: Rec, notes: Notes) => Diagr
     chart: parseChart,
     comparison: parseComparison,
     stats: parseStats,
+    venn: parseVenn,
+    matrix: parseMatrix,
+    funnel: parseFunnel,
+    pyramid: parsePyramid,
   };
 
 /** Parse a model reply as the spec for `kind`. */

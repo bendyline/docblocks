@@ -686,6 +686,8 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
   requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
+  // Only the smoke package may carry the automation stamp (main/automation-hooks.ts).
+  requireScript(desktopPackage, 'dist:dir', '-c.extraMetadata.docblocksAutomationHooks=true');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:x64');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:arm64');
   requireScript(rootPackage, 'check:linux-launchers', '-w docblocks-desktop');

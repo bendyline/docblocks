@@ -11,6 +11,7 @@ import {
   parseAsciiTimeline,
   validateMarkdownSource,
 } from '@bendyline/squisq/doc';
+import { parseSvgIsland, type SvgIslandDiagnostic } from '@bendyline/squisq/markdown';
 import type { CompiledDiagram } from './diagram-compile.js';
 
 /** Checks Mermaid source; the editor's `validateMermaidSource` in production. */
@@ -35,6 +36,30 @@ const BLOCKING_CODES = new Set([
   'layout-image-missing-src',
 ]);
 
+/** What the island sanitizer removed, as `script ×1, onclick ×2`. */
+export function describeSvgRemovals(diagnostics: readonly SvgIslandDiagnostic[]): string {
+  return diagnostics
+    .map((diagnostic) => `${diagnostic.name} ×${String(diagnostic.count)}`)
+    .join(', ');
+}
+
+/**
+ * Whether SVG renders exactly as written: Squisq's island sanitizer accepts it
+ * and removes nothing. Anything it would strip means the picture would not
+ * show what was previewed.
+ */
+export function validateSvgPicture(svg: string): DiagramValidation {
+  const parsed = parseSvgIsland(svg);
+  if (!parsed.ok) return { ok: false, message: parsed.message };
+  if (parsed.diagnostics.length > 0) {
+    return {
+      ok: false,
+      message: `The picture uses markup that is removed when shown: ${describeSvgRemovals(parsed.diagnostics)}.`,
+    };
+  }
+  return { ok: true };
+}
+
 function fenceBody(markdown: string): string {
   const firstLine = markdown.indexOf('\n');
   const close = markdown.lastIndexOf('\n```');
@@ -51,6 +76,7 @@ export async function validateCompiledDiagram(
     return result.ok ? { ok: true } : { ok: false, message: result.message };
   }
   const markdown = compiled.render(2, new Set());
+  if (compiled.family === 'svg') return validateSvgPicture(fenceBody(markdown));
   if (compiled.family === 'timeline') {
     const body = fenceBody(markdown);
     if (!detectAsciiTimeline(body, { explicit: true }).isTimeline) {

@@ -60,12 +60,20 @@ describe('VS Code webview proofing wiring', () => {
     expect(html).to.match(/script-src[^;]*'wasm-unsafe-eval'/u);
   });
 
-  it('lets the engine worker fetch the binaries same-origin', () => {
-    // The WASM is fetched from inside harper's blob worker, which inherits
-    // this document's policy. Under `default-src 'none'` that fetch needs an
-    // explicit connect-src or it is blocked.
+  it('lets the page fetch the binary and the engine worker read its blob copy', () => {
+    // The page downloads the WASM from the webview resource origin, then hands
+    // harper's blob worker — which inherits this document's policy — a blob:
+    // URL. Under `default-src 'none'` both reads need an explicit connect-src.
     expect(html).to.match(/connect-src vscode-webview:\/\/stub[ ;]/u);
+    expect(html).to.match(/connect-src[^;]*\bblob:/u);
     expect(html).to.match(/worker-src[^;]*blob:/u);
+  });
+
+  it('never gives the engine worker a webview resource URL', () => {
+    // Desktop hosts answer a worker's webview-resource fetch with a 30 s
+    // `408 Request Timeout`, which leaves proofing stuck on "Proofing…".
+    expect(webviewProofingSource).to.include('wasmUrl: await engine.resolve()');
+    expect(webviewProofingSource).not.to.match(/createDocBlocksProofingProvider\(\{\s*wasmUrl,/u);
   });
 
   it('degrades to no proofing when the host stamps no location', () => {

@@ -40,9 +40,10 @@ export function getEditorHtml(webview: vscode.Webview, extensionUri: vscode.Uri)
   const distUri = vscode.Uri.joinPath(extensionUri, 'dist', 'webview');
   const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'index.js'));
   const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'index.css'));
-  // harper derives its slim sibling from this file name, so both binaries are
-  // published side by side under dist/webview/harper/ and only the full one is
-  // named here. The VSIX carries them; nothing is downloaded at runtime.
+  // Only the full binary is named here. The webview fetches it from the page
+  // and hands the engine a blob: copy, because the engine's worker cannot
+  // fetch webview resources on current desktop hosts (see the webview's
+  // proofingEngineSource.ts). The VSIX carries it; nothing comes from the network.
   const harperWasmUri = webview.asWebviewUri(
     vscode.Uri.joinPath(distUri, 'harper', 'harper_wasm_bg.wasm'),
   );

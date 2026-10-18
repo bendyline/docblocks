@@ -14,8 +14,9 @@ The source is the hull-lettered D on a transparent background (rendered by
 packages/site/design/brand/render-brand.mjs). We centre it on the espresso
 plate (see BACKGROUND) — a single letter with its painted shade, legible from
 the 16px taskbar size up. The plate is a full square block everywhere except
-the macOS .icns, which gets a rounded squircle so it reads as native under the
-platform's own icon mask.
+the macOS .icns. macOS draws a third-party icon exactly as supplied, so that
+plate is a rounded body inset on Apple's icon grid; a full-bleed plate renders
+noticeably larger than its neighbours in the Dock and Launchpad.
 
 Run from the docblocks repo root: python3 packages/desktop/scripts/generate-icons.py
 The macOS .icns step uses `iconutil` on macOS and Pillow's ICNS writer
@@ -41,10 +42,15 @@ MARGIN_RATIO = 0.19  # the D, shade included, fills the middle 62%
 # Espresso plate behind the paper-white D: the brand's dark, and legible on
 # light and dark OS chrome alike (dock, taskbar, alt-tab thumbnails).
 BACKGROUND = (35, 31, 24, 255)
-# Rounded-rect corner radius as a fraction of the icon size, applied ONLY to
-# the macOS/iOS squircle (see rounded=). Windows and Linux chrome expect a full
-# square, so the plate is a solid block there.
-CORNER_RADIUS_RATIO = 0.18
+# Apple's macOS icon grid, applied ONLY to the .icns (see rounded=): a 1024px
+# canvas holds an 824px body with a 185.4px corner radius, leaving a transparent
+# margin on every side. Windows and Linux chrome expect a full square, so the
+# plate is a solid block there.
+MACOS_BODY_RATIO = 824 / 1024
+MACOS_CORNER_RATIO = 185.4 / 824
+# The plate is drawn this many times larger and downsampled, so its rounded
+# corners are antialiased at every icns size.
+MACOS_SUPERSAMPLE = 4
 LINUX_ICON_SIZES = (16, 32, 48, 64, 128, 256, 512)
 
 
@@ -52,18 +58,26 @@ def square_canvas(src: Image.Image, size: int, *, rounded: bool = False) -> Imag
     """Centre `src` on an espresso square canvas of `size` pixels.
 
     The plate is a solid square block by default (Windows/Linux). Pass
-    ``rounded=True`` for the macOS/iOS squircle, which rounds the corners over a
-    transparent margin so the OS mask reads as native.
+    ``rounded=True`` for the macOS icon: a rounded body inset on Apple's icon
+    grid over a transparent margin, with the D sized to that body.
     """
     if rounded:
-        canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        radius = int(size * CORNER_RADIUS_RATIO)
-        ImageDraw.Draw(canvas).rounded_rectangle(
-            (0, 0, size - 1, size - 1), radius=radius, fill=BACKGROUND
+        inset = round(size * (1 - MACOS_BODY_RATIO) / 2)
+        body = size - 2 * inset
+        ss = MACOS_SUPERSAMPLE
+        plate = Image.new("RGBA", (size * ss, size * ss), (0, 0, 0, 0))
+        ImageDraw.Draw(plate).rounded_rectangle(
+            (inset * ss, inset * ss, (inset + body) * ss - 1, (inset + body) * ss - 1),
+            radius=round(body * MACOS_CORNER_RATIO * ss),
+            fill=BACKGROUND,
         )
+        # BOX averages each ss×ss block exactly; LANCZOS would ring a faint
+        # halo past the plate edge into the transparent margin.
+        canvas = plate.resize((size, size), Image.BOX)
     else:
+        body = size
         canvas = Image.new("RGBA", (size, size), BACKGROUND)
-    inner = int(size * (1 - 2 * MARGIN_RATIO))
+    inner = int(body * (1 - 2 * MARGIN_RATIO))
     scale = min(inner / src.width, inner / src.height)
     nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
     resized = src.resize((nw, nh), Image.LANCZOS)

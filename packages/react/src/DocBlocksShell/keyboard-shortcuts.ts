@@ -45,6 +45,11 @@ export interface ShortcutBinding {
   readonly label: string;
   /** Fires even while the caret is in a text field. */
   readonly whileTyping?: boolean;
+  /**
+   * Fires while the caret is in the document editor (Squisq's surface or
+   * Monaco), though not in other text fields such as a dialog's name box.
+   */
+  readonly whileEditing?: boolean;
   /** What the key does, as the shortcut sheet lists it. Unlisted when absent. */
   readonly action?: string;
   /**
@@ -94,19 +99,25 @@ export const SHELL_SHORTCUTS: readonly ShortcutBinding[] = Object.freeze([
     whileTyping: true,
     action: 'Show or hide the file pane',
   },
+  // Leaving a text field for the files is the point of this key — the search
+  // box included, which Ctrl+Shift+F has just focused. It only moves focus.
   {
     id: 'focus-files',
     key: 'e',
     accel: true,
     shift: true,
     label: 'Ctrl+Shift+E',
+    whileTyping: true,
     action: 'Move focus to the files',
   },
+  // Starting another document is most often done from inside one. A dialog's
+  // own name box keeps these keys, so a second prompt can't stack.
   {
     id: 'new-document',
     key: 'n',
     accel: true,
     label: 'Ctrl+N',
+    whileEditing: true,
     action: 'New document',
     browserReserved: true,
   },
@@ -116,6 +127,7 @@ export const SHELL_SHORTCUTS: readonly ShortcutBinding[] = Object.freeze([
     accel: true,
     shift: true,
     label: 'Ctrl+Shift+N',
+    whileEditing: true,
     action: 'New folder',
     browserReserved: true,
   },
@@ -143,10 +155,14 @@ export const SHELL_SHORTCUTS: readonly ShortcutBinding[] = Object.freeze([
  */
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
+  if (isDocumentEditorTarget(target)) return true;
   const tag = target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  return target.closest('.monaco-editor') !== null;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+/** True inside the document editor itself: Squisq's WYSIWYG surface or Monaco. */
+function isDocumentEditorTarget(target: HTMLElement): boolean {
+  return target.isContentEditable || target.closest('.monaco-editor') !== null;
 }
 
 /**
@@ -171,7 +187,12 @@ function bindingMatches(binding: ShortcutBinding, event: KeyboardEvent): boolean
   if (binding.accel !== accel) return false;
   if ((binding.shift ?? false) !== event.shiftKey) return false;
   if (binding.key !== key) return false;
-  return binding.whileTyping === true || !isTypingTarget(event.target);
+  if (binding.whileTyping === true || !isTypingTarget(event.target)) return true;
+  return (
+    binding.whileEditing === true &&
+    event.target instanceof HTMLElement &&
+    isDocumentEditorTarget(event.target)
+  );
 }
 
 /**

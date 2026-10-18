@@ -65,6 +65,11 @@ import {
   registerWindowLifecycleIpc,
 } from './window-lifecycle.js';
 import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
+import {
+  automationPrivilegesAllowed,
+  automationRequested,
+  readAppManifest,
+} from './automation-hooks.js';
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { vcRuntimePath } from './vc-runtime-path.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
@@ -89,7 +94,14 @@ const DEV_SERVER_URL = DESKTOP_DEVELOPMENT_SERVER_URL;
 const TITLE_BAR_HEIGHT = 42;
 const AI_DISPOSE_TIMEOUT_MS = 2_000;
 const isDev = isDevelopmentRuntime(app.isPackaged, process.env.NODE_ENV);
-const isAutomation = Boolean(process.env.DOCBLOCKS_E2E_DEFAULT_ROOT);
+const isAutomation = automationRequested(process.env);
+// Skipping the screen-capture picker and allowing the permission-probe window
+// also need a build made for automation; see automation-hooks.ts.
+const automationPrivileges = automationPrivilegesAllowed({
+  requested: isAutomation,
+  isPackaged: app.isPackaged,
+  manifest: isAutomation && app.isPackaged ? readAppManifest(app.getAppPath()) : null,
+});
 
 // Chromium otherwise auto-detects GNOME Keyring/KWallet and can show an unlock
 // prompt at startup. DocBlocks never uses an OS credential store on any
@@ -194,12 +206,17 @@ app.on('open-url', (event, url) => {
 });
 
 // Register docblocks:// as a deep-link protocol handler (also declared in electron-builder.yml).
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('docblocks', process.execPath, [path.resolve(process.argv[1])]);
+// Automated runs skip it: a test copy must not take over the user's link handler.
+if (!isAutomation) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('docblocks', process.execPath, [
+        path.resolve(process.argv[1]),
+      ]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient('docblocks');
   }
-} else {
-  app.setAsDefaultProtocolClient('docblocks');
 }
 
 // Privileged schemes must be registered before app.ready.
@@ -367,7 +384,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   // A popup never inherits renderer authority. Only canonical HTTP(S) URLs may
   // leave the app, and they always open in the user's default browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isAutomation) {
+    if (automationPrivileges) {
       try {
         const candidate = new URL(url);
         if (
@@ -382,7 +399,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
         ) {
           // Packaged permission tests need a genuine second WebContents to
           // prove that a canonical URL without main-window ownership is still
-          // denied. This exact route is unreachable outside automation.
+          // denied. This exact route is unreachable outside automation builds.
           return { action: 'allow' };
         }
       } catch {
@@ -537,7 +554,8 @@ async function bootstrap(): Promise<void> {
       // Automation cannot operate the native picker menu, which a headless
       // session dismisses at once. Choose a screen, as the policy did before
       // the picker existed, so the packaged smoke still proves the grant.
-      if (isAutomation) {
+      // Release packages always show the picker.
+      if (automationPrivileges) {
         return Promise.resolve(sources.find((source) => source.id.startsWith('screen:')) ?? null);
       }
       const window = BrowserWindow.fromWebContents(owner);

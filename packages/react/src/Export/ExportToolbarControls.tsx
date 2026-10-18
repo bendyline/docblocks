@@ -271,6 +271,9 @@ export function ExportToolbarControls({
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // What a finished export lost (e.g. characters PDF had to replace), shown
+  // once the file is saved so a degraded export never passes silently.
+  const [exportNotice, setExportNotice] = useState<readonly string[] | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const [quickDestination, setQuickDestination] = useState<ResolvedQuickDestination | null>(null);
   const [quickDestinationPending, setQuickDestinationPending] = useState(false);
@@ -498,6 +501,7 @@ export function ExportToolbarControls({
     async (opts: ExportOptions) => {
       setExporting(true);
       setExportError(null);
+      setExportNotice(null);
       try {
         let exportTarget = destinationTarget;
         if (!fileShare && destinationAdapter?.pickBeforeSave) {
@@ -507,7 +511,7 @@ export function ExportToolbarControls({
           setDestinationTarget(exportTarget);
         }
         const { runExport } = await loadRunExportModule();
-        await runExport(
+        const result = await runExport(
           markdownSource,
           selectedFile,
           opts,
@@ -524,6 +528,7 @@ export function ExportToolbarControls({
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
         setDialogOpen(false);
+        if (result.warnings.length > 0) setExportNotice(result.warnings);
       } catch (caught: unknown) {
         if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
       } finally {
@@ -547,6 +552,7 @@ export function ExportToolbarControls({
     closeMenu(true);
     setExporting(true);
     setExportError(null);
+    setExportNotice(null);
     try {
       saveExportOptions(lastOptions);
       let quickTarget: ExportDestinationTarget | null = null;
@@ -561,7 +567,7 @@ export function ExportToolbarControls({
         }
       }
       const { runExport } = await loadRunExportModule();
-      await runExport(
+      const result = await runExport(
         markdownSource,
         selectedFile,
         lastOptions,
@@ -570,6 +576,7 @@ export function ExportToolbarControls({
           ? async (blob, filename) => saveToDestination(blob, filename, quickTarget)
           : saveBlob,
       );
+      if (result.warnings.length > 0) setExportNotice(result.warnings);
     } catch (caught: unknown) {
       // No dialog is open on this path, so the failure gets its own —
       // same shape as the video-export load failure below.
@@ -591,6 +598,10 @@ export function ExportToolbarControls({
 
   const handleDismissExportError = useCallback(() => {
     setExportError(null);
+  }, []);
+
+  const handleDismissExportNotice = useCallback(() => {
+    setExportNotice(null);
   }, []);
 
   // Finished video takes the same fresh-pick host flow as rendered images.
@@ -848,6 +859,31 @@ export function ExportToolbarControls({
           <p className="db-export-error" role="alert">
             {exportError}
           </p>
+        </Dialog>
+      )}
+
+      {/* The file was saved, but not everything made it in. */}
+      {exportNotice && !dialogOpen && !exportError && (
+        <Dialog
+          title="Export Document"
+          onClose={handleDismissExportNotice}
+          footer={
+            <button
+              type="button"
+              className="db-export-btn db-export-btn--secondary"
+              onClick={handleDismissExportNotice}
+            >
+              Close
+            </button>
+          }
+        >
+          <div role="status">
+            <p>The file was saved, but not everything in the document could be included.</p>
+            {exportNotice.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+            <p>Export to Word, HTML or EPUB to keep every character.</p>
+          </div>
         </Dialog>
       )}
 

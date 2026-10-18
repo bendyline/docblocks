@@ -102,6 +102,53 @@ describe('shell keyboard shortcuts', () => {
     ).to.equal(null);
   });
 
+  it('reaches the file and new-document keys from inside the document editor', () => {
+    const editable = document.createElement('div');
+    Object.defineProperty(editable, 'isContentEditable', { value: true });
+    const monaco = document.createElement('div');
+    monaco.className = 'monaco-editor';
+    const monacoInput = document.createElement('textarea');
+    monaco.append(monacoInput);
+    for (const target of [editable, monacoInput]) {
+      expect(
+        matchShortcut(keyEvent({ key: 'n', ctrlKey: true, target }), 'split-pane'),
+        `${target.tagName} Ctrl+N`,
+      ).to.equal('new-document');
+      expect(
+        matchShortcut(keyEvent({ key: 'N', ctrlKey: true, shiftKey: true, target }), 'split-pane'),
+        `${target.tagName} Ctrl+Shift+N`,
+      ).to.equal('new-folder');
+      expect(
+        matchShortcut(keyEvent({ key: 'E', ctrlKey: true, shiftKey: true, target }), 'split-pane'),
+        `${target.tagName} Ctrl+Shift+E`,
+      ).to.equal('focus-files');
+    }
+  });
+
+  it('leaves the new-document keys to a dialog name box, so prompts cannot stack', () => {
+    const nameBox = document.createElement('input');
+    expect(
+      matchShortcut(keyEvent({ key: 'n', ctrlKey: true, target: nameBox }), 'split-pane'),
+    ).to.equal(null);
+    expect(
+      matchShortcut(
+        keyEvent({ key: 'n', ctrlKey: true, shiftKey: true, target: nameBox }),
+        'split-pane',
+      ),
+    ).to.equal(null);
+  });
+
+  it('moves to the files from any text field, the workspace search box included', () => {
+    const searchBox = document.createElement('input');
+    searchBox.type = 'search';
+    expect(
+      matchShortcut(
+        keyEvent({ key: 'E', ctrlKey: true, shiftKey: true, target: searchBox }),
+        'split-pane',
+      ),
+    ).to.equal('focus-files');
+  });
+
   describe('isTypingTarget', () => {
     it('recognises inputs, textareas, selects and contenteditable', () => {
       for (const tag of ['input', 'textarea', 'select']) {

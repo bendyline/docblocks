@@ -93,6 +93,51 @@ describe('E2E runtime-error guard', () => {
         allowed(status('403 ()'), 'https://api.github.com/repos/bendyline/docblocks/issues:0:0'),
       ).to.equal(false);
     });
+
+    it("allow only harper's page-side WASM start trap on WebKit", () => {
+      // Shape of WebKit's report as Playwright relays it: message, then frames.
+      const trap = (variable: string, frames: readonly string[]) =>
+        [
+          'Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed ' +
+            `(evaluating '${variable}.__wbindgen_start()')`,
+          ...frames.map((frame) => `    at ${frame}`),
+        ].join('\n');
+      const deps = 'http://localhost:5220/node_modules/.vite/deps';
+      const allowed = (text: string) =>
+        isAllowedRuntimeError(
+          { kind: 'pageerror', text, location: '(uncaught)' },
+          SHARED_ALLOWED_RUNTIME_ERRORS,
+        );
+
+      expect(
+        allowed(
+          trap('wasm', [
+            `wasm-function[4941] (${deps}/harper__js.js?v=1a2b3c4d:2805:24)`,
+            `__wbg_finalize_init (${deps}/harper__js.js?v=1a2b3c4d:2805:24)`,
+          ]),
+        ),
+      ).to.equal(true);
+      expect(
+        allowed(
+          trap('wasm$1', [`__wbg_finalize_init$1 (${deps}/harper__js.js?v=1a2b3c4d:1366:26)`]),
+        ),
+      ).to.equal(true);
+      // IronCalc's glue reports the identical text; only the frame tells them apart.
+      expect(
+        allowed(
+          trap('wasm', [`__wbg_finalize_init (${deps}/@ironcalc_wasm.js?v=1a2b3c4d:1940:5)`]),
+        ),
+      ).to.equal(false);
+      // Without a stack there is nothing to say whose start function trapped.
+      expect(allowed(trap('wasm', []))).to.equal(false);
+      // A trap while linting is not the setup failure, even inside harper.
+      expect(
+        allowed(
+          'Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed\n' +
+            `    at lint (${deps}/harper__js.js?v=1a2b3c4d:900:3)`,
+        ),
+      ).to.equal(false);
+    });
   });
 
   describe('filtering a run', () => {

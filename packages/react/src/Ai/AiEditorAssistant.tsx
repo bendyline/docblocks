@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   useEditorContext,
@@ -34,10 +43,18 @@ import {
   aiReviewReplyWasCutOff,
   parseAiReviewResponse,
   parseTruncatedAiReviewResponse,
+  reviewDocumentCharacters,
   sanitizeGeneratedMarkdown,
+  withoutPictureFindings,
   type AiDraftMode,
   type AiReviewFinding,
 } from './ai-assistant.js';
+import { STUDY_AID_KINDS, STUDY_AID_LABELS, type StudyAidKind } from './study-aids.js';
+
+// The study viewers and pipeline load only when one of their dialogs opens.
+const AiStudyDialog = lazy(() =>
+  import('./AiStudyDialog.js').then((module) => ({ default: module.AiStudyDialog })),
+);
 
 /** The AI side panels; at most one is open at a time. */
 export type AiPanel = 'review' | 'illustrate';
@@ -63,18 +80,21 @@ export function AiToolbarControl({
   const {
     activeView,
     editorMode,
+    fileName,
     getSelection,
     insertBlockAfterCursor,
     layoutMode,
     markdownSource,
     replaceSelection,
     selectionVersion,
+    workspaceContainer,
   } = useEditorContext();
   const status = useAiStatus(ai);
   const [menuOpen, setMenuOpen] = useState(false);
   const [draftMode, setDraftMode] = useState<AiDraftMode | null>(null);
   const [capturedSelection, setCapturedSelection] = useState<EditorSelectionInfo | null>(null);
   const [diagramSelection, setDiagramSelection] = useState<EditorSelectionInfo | null>(null);
+  const [studyKind, setStudyKind] = useState<StudyAidKind | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(menuOpen, setMenuOpen);
@@ -92,6 +112,11 @@ export function AiToolbarControl({
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [menuOpen]);
+
+  // The shell builds a new sidecar container for each document. A study
+  // dialog belongs to the document it opened on, so switching documents
+  // closes it, which cancels a run before it could save into the wrong one.
+  useEffect(() => setStudyKind(null), [workspaceContainer]);
 
   const ready = status?.kind === 'ready' && status.model !== null;
   const openDiagram = () => {
@@ -124,6 +149,10 @@ export function AiToolbarControl({
   }
 
   const editableSelection = !readOnly && ready ? selection : null;
+  // Study aids leave the document alone but save beside it, so they need
+  // the sidecar and a writable document, not a selection.
+  const canStudy =
+    ready && !readOnly && workspaceContainer !== null && markdownSource.trim().length > 0;
   const canCompose = editableSelection?.empty === true;
   const canRewrite =
     editableSelection?.empty === false &&
@@ -229,6 +258,23 @@ export function AiToolbarControl({
             >
               Insert diagram…
             </button>
+            <div className="db-toolbar-menu-divider" role="separator" />
+            {STUDY_AID_KINDS.map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="db-toolbar-menu-item"
+                disabled={!canStudy}
+                onClick={() => {
+                  closeMenu(false);
+                  setStudyKind(kind);
+                }}
+              >
+                {STUDY_AID_LABELS[kind].menu}
+              </button>
+            ))}
             {ready && !selection && (
               <div className="db-ai-toolbar-status">Switch to Write or Source to edit with AI.</div>
             )}
@@ -265,6 +311,19 @@ export function AiToolbarControl({
           insertBlockAfterCursor={insertBlockAfterCursor}
           onClose={() => setDiagramSelection(null)}
         />
+      )}
+      {studyKind && workspaceContainer && (
+        <Suspense fallback={null}>
+          <AiStudyDialog
+            key={studyKind}
+            ai={ai}
+            kind={studyKind}
+            documentSource={markdownSource}
+            documentName={(fileName ?? '').split('/').pop() || 'Untitled.md'}
+            container={workspaceContainer}
+            onClose={() => setStudyKind(null)}
+          />
+        </Suspense>
       )}
     </>
   );
@@ -400,7 +459,7 @@ export function AiDraftDialog({
         generatedDraftRef.current =
           prefix || !finished
             ? prefix + event.completion.text
-            : sanitizeGeneratedMarkdown(event.completion.text);
+            : sanitizeGeneratedMarkdown(event.completion.text, documentSource);
         setDraft(generatedDraftRef.current);
         setIncomplete(!finished && Boolean(generatedDraftRef.current.trim()));
         if (event.completion.finishReason === 'cancelled') {
@@ -421,7 +480,7 @@ export function AiDraftDialog({
       });
       handleRef.current = handle;
     },
-    [ai],
+    [ai, documentSource],
   );
 
   const generate = useCallback(async () => {
@@ -451,7 +510,7 @@ export function AiDraftDialog({
 
   const apply = useCallback(async () => {
     if (running) return;
-    const replacement = sanitizeGeneratedMarkdown(draft ?? '');
+    const replacement = sanitizeGeneratedMarkdown(draft ?? '', documentSource);
     if (!replacement) return;
     if (incomplete) {
       const previousRequest = requestRef.current;
@@ -492,6 +551,7 @@ export function AiDraftDialog({
   }, [
     capturedSelection,
     selectedMarkdown,
+    documentSource,
     draft,
     getSelection,
     mode,
@@ -684,7 +744,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       setPhase('ready');
       return;
     }
-    if (markdownSource.length > AI_REVIEW_DOCUMENT_CHARACTERS) {
+    if (reviewDocumentCharacters(markdownSource) > AI_REVIEW_DOCUMENT_CHARACTERS) {
       setError('This document is too long for one AI review pass. Review a shorter document.');
       setPhase('error');
       return;
@@ -728,7 +788,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       }
       setCutOff(truncated);
       setReviewModel(event.completion.model || null);
-      setFindings(parsed);
+      setFindings(withoutPictureFindings(parsed, source));
       setReviewedSource(source);
       setPhase('ready');
     });

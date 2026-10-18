@@ -322,11 +322,14 @@ model and shows progress while Gezel installs it.
 document" and "Insert diagram" (`packages/react/src/Ai/AiDiagrams.tsx`) ask
 the model for a small JSON spec per diagram (`illustrate-prompts.ts`) and
 compile it deterministically (`diagram-compile.ts`) into a Mermaid fence, a
-Squisq `timeline` fence, or a `{[drawing]}` / `{[layout]}` block whose geometry
-is computed. Every label passes `diagram-sanitize.ts`; chart numbers, timeline
-dates and most labels must appear in the source passage
+Squisq `timeline` fence, a `{[drawing]}` / `{[layout]}` block whose geometry
+is computed, or — for the shapes neither can draw (Venn, 2×2 matrix, funnel,
+pyramid) — an `svg` fence drawn by `diagram-svg.ts` in `currentColor` only, so
+it follows the theme. Every label passes `diagram-sanitize.ts`; chart and funnel
+numbers, timeline dates and most labels must appear in the source passage
 (`diagram-grounding.ts`); compiled output is validated before it is offered
-(`diagram-validate.ts`). Calls run one at a time — the mobile host allows a
+(`diagram-validate.ts`; SVG must pass Squisq's island sanitizer with nothing
+removed). Calls run one at a time — the mobile host allows a
 single operation and releases it only after `done` — carry
 `purpose: 'illustrate'`, and are budgeted for a 4,096-token context. Inserts go
 through Squisq's `applySourceEdits` / `insertBlockAfterCursor`, so each insert
@@ -334,6 +337,41 @@ and "Insert all" is one undo step, and a heading block lands at its section's
 end at a depth that cannot capture the text after it. `npm run
 eval:ai-diagrams` measures the pipeline against a real model (not part of
 `npm run all`).
+
+The one exception is **Illustration** in Insert diagram (`illustration.ts`):
+the model writes the SVG itself, so it is offered only when the model's context
+window is at least 16K. The reply must parse as one Squisq SVG island; a
+cut-off reply gets one retry with more room and a problem gets one repair;
+numbers drawn from selected text must appear in it; markup the sanitizer
+strips is inserted sanitized, with a note. Illustrate never offers it — small
+local models cannot draw reliably. `eval:ai-diagrams -- --illustrations`
+measures it.
+
+**SVG source never reaches a writing prompt.** Compose, Rewrite and Review
+(`ai-assistant.ts`) replace each `svg` fence in the document context with a
+one-line `[SVG picture: …]` stand-in (`ai-pictures.ts`), since one picture can
+fill a small model's context; a Rewrite selection is still sent as written.
+Review findings that quote a stand-in or land inside a picture are dropped.
+Generated Markdown is normalized so SVG the model wrote renders: a raw `<svg>`
+block (which the sanitizer drops) is fenced as `svg`, and an `xml`/`html` fence
+holding one SVG document is retagged — never text copied verbatim from the
+document, so an author's `xml` fence stays code.
+
+**Study aids are saved beside the document, never into it.** Summarize
+document, Create quiz and Create flashcards (`AiStudyDialog.tsx`) write
+`<stem>_files/ai/{summary,quiz,flashcards}.md` through the editor's
+`workspaceContainer`, which the shell roots at the sidecar. They sit under
+`ai/`, not the sidecar root, because an outside-in companion finds its own
+Markdown as the first `*.md` there. Each file carries flat `docblocks-*`
+frontmatter — source name, SHA-256 of the source body, time, model — so the
+dialog can say when the document has changed since, and is written only after
+a run succeeds. A summary is model-written Markdown; quizzes and flashcards
+follow the diagram rule: the model returns a JSON array (`study-prompts.ts`)
+and `study-compile.ts` compiles Squisq `{study=…}` heading cards, sanitizing
+every label and keeping only cards `materializeFlashcards` reads back as
+exactly the card meant. Long documents are read in parts sized by
+`studyBudget` (`study-sections.ts`), one call at a time, and a multi-part
+summary is written from notes on each part.
 
 ### Speech runs natively behind `host.speech`
 
@@ -570,7 +608,7 @@ isolated iOS/Android `.tests` app and require an explicit arm64 device ID.
 - **Playwright covers source and shipped surfaces.** Root (`playwright.config.ts`) drives the site, `packages/desktop/e2e/playwright.config.ts` launches source Electron, the packaged desktop config boots the electron-builder artifact, and `packages/vscode/e2e/playwright.config.ts` uses VS Code for Web on port 3100.
 - **`packages/react` unit tests use happy-dom + a custom `renderHook` helper.** See `packages/react/test/helpers/renderHook.ts` — it's a ~50-line wrapper around React's `act` and `createRoot`, deliberately chosen over `@testing-library/react` to keep deps small. Mocha registers happy-dom globally via `packages/react/test/setup.ts` (loaded by root `.mocharc.yml`). Active-document persistence is tested through `DocumentSession`; do not reintroduce an independent autosave hook.
 - **Theme fonts are served from `packages/site/public/fonts/`** (46 woff2), not from `packages/react` — that package bundles no fonts at all. Squisq's `fontStacks` expect the host page to supply the `@font-face`s; regenerate upstream via squisq's `download-fonts.ps1`. The desktop renderer (`packages/desktop/renderer/public/fonts/`) and the VS Code webview (`packages/vscode/webview/src/fonts/`, generated by `npm run generate:webview-fonts`) carry the same families — a family missing from one surface renders in a fallback face there and nowhere else, silently, so `npm run check:site-fonts` fails on any disagreement with Squisq's `AVAILABLE_FONT_STACKS`. Verify any addition is actually referenced before adding.
-- **Document exports draw diagrams as pictures.** Word, EPUB, PDF and PowerPoint cannot render Mermaid or Squisq diagrams, so `runExport` (`packages/react/src/Export/run-export.ts`) first runs Squisq's `rasterizeDiagrams` with the browser renderer from `@bendyline/squisq-react/diagram-pictures`: Mermaid, ASCII diagram/timeline/tree fences, and drawing/layout/diagram blocks become PNG images (PowerPoint keeps drawings and timelines as native shapes and pictures only Mermaid). The renderer paints plain SVG to a canvas — Mermaid with SVG-text labels, never `<foreignObject>`, which some browsers refuse to read back — and uses system fonts, since a picture cannot load web fonts. A diagram that cannot be drawn stays as source; the export never fails on it. Tests pass a stand-in `diagramRenderer` because happy-dom has no canvas. The CLI and MCP converters run in Node without a renderer and still export diagram source.
+- **Document exports draw diagrams as pictures.** Word, EPUB, PDF and PowerPoint cannot render Mermaid or Squisq diagrams, so `runExport` (`packages/react/src/Export/run-export.ts`) first runs Squisq's `rasterizeDiagrams` with the browser renderer from `@bendyline/squisq-react/diagram-pictures`: Mermaid, ASCII diagram/timeline/tree fences, and drawing/layout/diagram blocks become PNG images (PowerPoint keeps drawings and timelines as native shapes and pictures only Mermaid). SVG islands (`svg` fences) and attached `.svg` images are the exception: Word and PowerPoint embed them as vector art and take their pictures only as the PNG fallback stored beside it (`svgIslandFallbacks` / `diagramImages`), while PDF, which has no vector picture, gets the PNG in their place. The renderer paints plain SVG to a canvas — Mermaid with SVG-text labels, never `<foreignObject>`, which some browsers refuse to read back — and uses system fonts, since a picture cannot load web fonts. A diagram that cannot be drawn stays as source; the export never fails on it. Tests pass a stand-in `diagramRenderer` because happy-dom has no canvas. The CLI and MCP converters run in Node without a renderer and still export diagram source.
 - **Proofing ships the engine, it never downloads one.** Grammar and spellcheck are Squisq's `proofing` capability backed by harper.js (Apache-2.0, no CDN fallback). `scripts/vite-harper-wasm.ts` publishes **both** binaries — the engine derives `harper_wasm_slim_bg.wasm` from the full one's URL and loads the pair — plus the license, under `harper/` on the site, in `app.asar`, and in the VSIX. Each surface passes a module-scope provider from `@bendyline/docblocks-react/proofing` (a factory would be disposed on every document switch and pay the cold WASM setup again). `script-src` needs `'wasm-unsafe-eval'` or compilation is refused and the status sticks on "Proofing…"; the VS Code webview also needs `connect-src`, because the fetch happens inside a blob worker under `default-src 'none'`. That webview reads the engine URL from a `<meta>` tag the host stamps with `asWebviewUri` — a bundle-relative URL resolves against whichever chunk it landed in. Dismissed findings and the app-wide dictionary are **host-persisted, never written into the document** — a file through git carries neither. Site and desktop keep both in browser-local storage (ignores keyed by workspace + path, like `last-state`); the VS Code webview has no durable storage, so `proofStateBridge.ts` puts the dictionary in `globalState` (a personal vocabulary spans workspaces) and ignores in `workspaceState` (their keys are workspace-relative paths). Neither VS Code message names a document: the panel owns one, so the host derives the key from its own URI. Wiring `onDictionaryWord` is what makes Squisq offer "Add to dictionary" at all (`hasAppDictionary`), and the dictionary must be in hand _before_ the provider is built — seeding words afterwards calls `addWords`, which forces the engine to load. Which squiggles appear is a user preference in Settings — "Show inline spell checking" / "Show inline grammar checking", the latter English-only — carried to Squisq as `proofingSpellingEnabled` / `proofingGrammarEnabled`. They are app-level, so they live outside the per-doc `squisq-proofing` frontmatter stack: `packages/react/src/preferences/proofing.ts` (localStorage) on site and desktop, `docblocks.inlineSpellChecking` / `docblocks.inlineGrammarChecking` in VS Code. Turning **both** off is what turns the feature off — the engine is never fetched — so a host that wants no checking at all can simply leave both unchecked rather than dropping the capability.
 - **Linking Squisq silently invalidates Vite's dependency cache.** Vite trusts `node_modules/.vite/deps` while the root lockfile and config hash are unchanged, and `link:squisq` / `unlink:squisq` / `npm install` change neither — yet they move where nested deps resolve (the registry `@bendyline/squisq-formats` carries its own `@xmldom/xmldom`; the linked one uses `..\squisq\node_modules`), so the next re-optimization fails with ENOENT and the renderer never loads. `scripts/vite-squisq-dep-cache.ts` stamps each surface's cache with the link state (plus the sibling lockfile) and clears it on change. Every Vite config that runs a dev server must keep calling `squisqAwareViteCacheDir` and pinning `cacheDir` to its result.
 
