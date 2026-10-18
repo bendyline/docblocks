@@ -64,7 +64,11 @@ import {
   prepareWindowsForExit,
   registerWindowLifecycleIpc,
 } from './window-lifecycle.js';
-import { developmentUserDataPath, isDevelopmentRuntime } from './development-runtime.js';
+import {
+  developmentProfileOverride,
+  developmentUserDataPath,
+  isDevelopmentRuntime,
+} from './development-runtime.js';
 import {
   automationPrivilegesAllowed,
   automationRequested,
@@ -119,8 +123,18 @@ if (vcRuntime !== null) process.env.PATH = vcRuntime;
 // Development must not share Chromium storage, settings, window state, or the
 // single-instance lock with an installed DocBlocks build. Honour an explicit
 // command-line profile so automation and one-off debugging can remain isolated.
+// `npm run app:new` names a throwaway profile instead, which also holds the
+// Documents folder (and so the development workspace) for a true first run.
+const throwawayProfile = isDev ? developmentProfileOverride(process.env) : null;
+if (throwawayProfile) {
+  fs.mkdirSync(throwawayProfile.documents, { recursive: true });
+  app.setPath('documents', throwawayProfile.documents);
+}
 if (isDev && !app.commandLine.hasSwitch('user-data-dir')) {
-  app.setPath('userData', developmentUserDataPath(app.getPath('appData')));
+  app.setPath(
+    'userData',
+    throwawayProfile?.userData ?? developmentUserDataPath(app.getPath('appData')),
+  );
 }
 
 // Some headless/virtualized Windows environments cannot start Chromium's GPU

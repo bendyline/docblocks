@@ -144,6 +144,8 @@ npm run package:vscode
 # Run a surface
 npm run dev            # site, preferring http://localhost:5220 and falling forward when busy
 npm run app            # Rebuild stale linked Squisq + shared packages, then launch Electron + Vite on port 5221
+npm run app:new        # Same as app, against a throwaway profile and Documents folder (first-run testing)
+npm run site:new       # Rebuild like `npm run site`, then open the site in a browser with a throwaway profile
 npm run dev:desktop    # Launch Electron + Vite without rebuilding shared packages
 # VS Code: open packages/vscode in VS Code and press F5
 

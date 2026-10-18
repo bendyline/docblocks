@@ -42,6 +42,8 @@ npm run build:core          # one package (also :react, :cli, :vscode, :desktop)
 # Dev
 npm run dev                 # site workspace, preferring http://localhost:5220 (expects upstream builds)
 npm run site                # build core + react, then start the site
+npm run site:new            # same, in a browser with a throwaway profile (first-run testing)
+npm run app:new             # like `npm run app`, with throwaway userData + Documents
 npm run dev:desktop         # Electron + Vite concurrently on 5221
 # VS Code extension: open packages/vscode in VS Code and hit F5
 
