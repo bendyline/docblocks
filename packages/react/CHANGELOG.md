@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.7.3](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.2...@bendyline/docblocks-react@2.7.3) (2026-10-19)
+
+### Bug Fixes
+
+* Update onboarding experience, bump Gezel/Squisq pins ([#30](https://github.com/bendyline/docblocks/issues/30)) ([9e8f1f6](https://github.com/bendyline/docblocks/commit/9e8f1f68d0ce5568505dbc581a0458c7dc799596))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.3
+
 ## @bendyline/docblocks-react [2.7.2](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.1...@bendyline/docblocks-react@2.7.2) (2026-10-16)
 
 ### Bug Fixes
