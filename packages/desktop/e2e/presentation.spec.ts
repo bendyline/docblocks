@@ -31,7 +31,7 @@ Start with a few bullet points. DocBlocks helps you turn them into a structured 
 
 ## Make every point clear
 
-First write your story. Then turn the key points into slides. Finally review the words and layouts before you share.
+Slides come from the words you already wrote. First write your story. Then turn the key points into slides. Finally review the words and layouts before you share.
 
 ## Keep the story and the voice together
 
@@ -198,16 +198,16 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     ).toHaveCount(5);
     await maker.screenshot({ path: testInfo.outputPath('automatic-presentation.png') });
     await maker.getByRole('button', { name: 'Suggest with AI' }).click();
-    // The scripted model repeats full-passage excerpts on the two split slides.
-    // They fail grounding and must remain deterministic, without cached AI text.
-    await expect(maker).toContainText('Kept automatic summaries for 2 slides');
+    // The scripted model keeps each slide's own points, so the introduction and
+    // its steps diagram are grounded in their halves of the passage.
+    await expect(maker).toContainText('AI summaries are ready to review.');
     // Accepted suggestions land in the slide list as they arrive and stay marked
     // once the run ends and the footer returns to the Suggest button.
     await expect(
       maker
         .getByRole('navigation', { name: 'Presentation slides' })
         .locator('.db-presentation-beat-ai'),
-    ).toHaveCount(3);
+    ).toHaveCount(5);
     await expect(maker.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
     await expect(maker.getByRole('button', { name: 'Suggest with AI' })).toBeEnabled();
     // The preview followed each slide as it was suggested, so return to the
@@ -253,14 +253,14 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     await maker
       .getByRole('navigation', { name: 'Presentation slides' })
       .getByRole('button')
-      .nth(1)
+      .nth(2)
       .click();
     await maker.screenshot({ path: testInfo.outputPath('steps-presentation.png') });
     await window.keyboard.press('Escape');
     const parsed = markdownToDoc(parseMarkdown(saved));
     const hints = parsePresentationHints(parsed.frontmatter?.[PRESENTATION_HINTS_KEY])!;
     expect(hints.inbetweens).toBe(true);
-    expect(hints.blocks.flatMap((block) => block.ai ?? [])).toHaveLength(3);
+    expect(hints.blocks.flatMap((block) => block.ai ?? [])).toHaveLength(5);
     expect(parsed.frontmatter?.['squisq-presentation']).toBeUndefined();
     expect(parsed.frontmatter?.['squisq-transform']).toBe('dynamic-slides');
     const plan = createPresentationPlan(parsed, hints);
@@ -378,7 +378,7 @@ test('keeps the full source section selected when layouts split and merge slides
 }) => {
   const features =
     'Rich Markdown Editing -- Write in a visual editor or switch to raw markdown source anytime. ' +
-    'Use section annotations to change the visualization for blocks of content.';
+    'First draft the section in the visual editor. Then refine it as raw markdown.';
   const source = `# Introduction\n\nA short opening.\n\n## Features\n\n${features}\n\n## Finish\n\nYour text remains editable.\n`;
   const file = path.join(workspaceDir, 'layouts.md');
   fs.writeFileSync(file, source);
@@ -397,7 +397,8 @@ test('keeps the full source section selected when layouts split and merge slides
   await expect(slides.getByRole('button')).toHaveCount(3);
   await expect(original).toHaveText(`Features\n${features}`);
 
-  await layout.selectOption('comparison');
+  // Steps split the introduction from the diagram of the ordered sentences.
+  await layout.selectOption('steps');
   await expect(slides.getByRole('button')).toHaveCount(4);
   await expect(original).toHaveText(`Features\n${features}`);
   await slides.getByRole('button').nth(2).click();

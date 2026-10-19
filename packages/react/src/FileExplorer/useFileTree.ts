@@ -18,6 +18,12 @@ import {
 } from '@bendyline/docblocks/filesystem';
 
 const DIRECTORY_NOT_FOUND_RETRY_DELAYS_MS = Object.freeze([40, 120] as const);
+/**
+ * Background re-reads after a retryable listing failure, or a listing with
+ * files the provider could not read (a sync client briefly holding them).
+ * Manual Retry stays available once these are spent.
+ */
+const AUTO_RETRY_DELAYS_MS = Object.freeze([1_000, 4_000, 15_000] as const);
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
@@ -54,9 +60,18 @@ function sameEntry(left: FileSystemEntry, right: FileSystemEntry): boolean {
   if (left.kind !== right.kind || left.name !== right.name || left.path !== right.path)
     return false;
   if (left.kind === 'file' && right.kind === 'file') {
-    return left.lastModified === right.lastModified;
+    // A file can become readable again without its metadata changing.
+    return (
+      left.lastModified === right.lastModified &&
+      left.readIssue?.code === right.readIssue?.code &&
+      left.readIssue?.message === right.readIssue?.message
+    );
   }
   return true;
+}
+
+function hasUnreadableFile(entries: readonly FileSystemEntry[]): boolean {
+  return entries.some((entry) => entry.kind === 'file' && entry.readIssue !== undefined);
 }
 
 /**
@@ -93,6 +108,7 @@ async function readProviderDirectory(
       name: entry.name,
       path: entry.path,
       ...(entry.kind === 'file' ? { lastModified: entry.lastModified } : {}),
+      ...(entry.kind === 'file' && entry.readIssue ? { readIssue: entry.readIssue } : {}),
     }));
   };
 
@@ -140,6 +156,12 @@ function readIssue(caught: unknown, directoryPath: string): FileTreeReadIssue {
     message: error.message,
     retryable: error.retryable || error.code === 'not-found',
   });
+}
+
+interface AutoRetryState {
+  /** Background re-reads scheduled so far in this directory's current run. */
+  attempts: number;
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface FileTreeState {
@@ -209,70 +231,126 @@ export function useFileTree(
   providerRef.current = provider;
   const directoryRequestSequenceRef = useRef(0);
   const directoryRequestsRef = useRef<Map<string, number>>(new Map());
+  const autoRetriesRef = useRef<Map<string, AutoRetryState>>(new Map());
+  const autoRetryLoadRef = useRef<(directoryPath: string) => Promise<void>>(async () => undefined);
 
   const reportRootIssue = useCallback((caught: unknown) => {
     setRootIssue(readIssue(caught, ''));
   }, []);
 
-  const loadRoot = useCallback(async (showLoading = true) => {
-    const sourceProvider = providerRef.current;
-    if (!sourceProvider) {
-      setEntries([]);
-      setLoading(false);
-      return;
-    }
-    const requestId = ++directoryRequestSequenceRef.current;
-    directoryRequestsRef.current.set('', requestId);
-    const isCurrent = () =>
-      providerRef.current === sourceProvider && directoryRequestsRef.current.get('') === requestId;
-    if (showLoading) setLoading(true);
-    try {
-      const root = await readProviderDirectory(sourceProvider, '');
-      if (!isCurrent()) return;
-      setEntries((current) => reconcileEntries(current, root));
-      setRootIssue(null);
-    } catch (caught: unknown) {
-      if (isCurrent()) setRootIssue(readIssue(caught, ''));
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
+  const cancelAutoRetry = useCallback((directoryPath: string) => {
+    const state = autoRetriesRef.current.get(directoryPath);
+    if (state?.timer) clearTimeout(state.timer);
+    autoRetriesRef.current.delete(directoryPath);
   }, []);
 
-  const loadChildren = useCallback(async (dirPath: string) => {
-    const sourceProvider = providerRef.current;
-    if (!sourceProvider) return;
-    const canonical = normalisePath(dirPath);
-    const requestId = ++directoryRequestSequenceRef.current;
-    directoryRequestsRef.current.set(canonical, requestId);
-    const isCurrent = () =>
-      providerRef.current === sourceProvider &&
-      directoryRequestsRef.current.get(canonical) === requestId;
-    try {
-      const children = await readProviderDirectory(sourceProvider, dirPath);
-      if (!isCurrent()) return;
-      setChildEntries((prev) => {
-        const current = prev.get(canonical) ?? [];
-        const reconciled = reconcileEntries(current, children);
-        if (prev.has(canonical) && reconciled === current) return prev;
-        const next = new Map(prev);
-        next.set(canonical, reconciled);
-        return next;
-      });
-      setChildIssues((prev) => {
-        if (!prev.has(canonical)) return prev;
-        const next = new Map(prev);
-        next.delete(canonical);
-        return next;
-      });
-    } catch (caught: unknown) {
-      if (!isCurrent()) return;
-      setChildIssues((prev) => {
-        const next = new Map(prev);
-        next.set(canonical, readIssue(caught, dirPath));
-        return next;
-      });
+  const cancelAllAutoRetries = useCallback(() => {
+    for (const state of autoRetriesRef.current.values()) {
+      if (state.timer) clearTimeout(state.timer);
     }
+    autoRetriesRef.current.clear();
   }, []);
+
+  /**
+   * Schedule the next background re-read while a directory still needs one.
+   * Only timer-driven reads advance the backoff, so watcher-driven reloads in
+   * between cannot spend it; a healthy read or a manual retry resets the run.
+   */
+  const settleAutoRetry = useCallback(
+    (directoryPath: string, needsRetry: boolean) => {
+      if (!needsRetry) {
+        cancelAutoRetry(directoryPath);
+        return;
+      }
+      const current = autoRetriesRef.current.get(directoryPath);
+      if (current?.timer) return;
+      const attempts = current?.attempts ?? 0;
+      const delay = AUTO_RETRY_DELAYS_MS[attempts];
+      if (delay === undefined) return;
+      const next: AutoRetryState = { attempts: attempts + 1, timer: null };
+      next.timer = setTimeout(() => {
+        next.timer = null;
+        void autoRetryLoadRef.current(directoryPath);
+      }, delay);
+      autoRetriesRef.current.set(directoryPath, next);
+    },
+    [cancelAutoRetry],
+  );
+
+  const loadRoot = useCallback(
+    async (showLoading = true) => {
+      const sourceProvider = providerRef.current;
+      if (!sourceProvider) {
+        setEntries([]);
+        setLoading(false);
+        return;
+      }
+      const requestId = ++directoryRequestSequenceRef.current;
+      directoryRequestsRef.current.set('', requestId);
+      const isCurrent = () =>
+        providerRef.current === sourceProvider &&
+        directoryRequestsRef.current.get('') === requestId;
+      if (showLoading) setLoading(true);
+      try {
+        const root = await readProviderDirectory(sourceProvider, '');
+        if (!isCurrent()) return;
+        setEntries((current) => reconcileEntries(current, root));
+        setRootIssue(null);
+        settleAutoRetry('', hasUnreadableFile(root));
+      } catch (caught: unknown) {
+        if (isCurrent()) {
+          const issue = readIssue(caught, '');
+          setRootIssue(issue);
+          settleAutoRetry('', issue.retryable);
+        }
+      } finally {
+        if (isCurrent()) setLoading(false);
+      }
+    },
+    [settleAutoRetry],
+  );
+
+  const loadChildren = useCallback(
+    async (dirPath: string) => {
+      const sourceProvider = providerRef.current;
+      if (!sourceProvider) return;
+      const canonical = normalisePath(dirPath);
+      const requestId = ++directoryRequestSequenceRef.current;
+      directoryRequestsRef.current.set(canonical, requestId);
+      const isCurrent = () =>
+        providerRef.current === sourceProvider &&
+        directoryRequestsRef.current.get(canonical) === requestId;
+      try {
+        const children = await readProviderDirectory(sourceProvider, dirPath);
+        if (!isCurrent()) return;
+        setChildEntries((prev) => {
+          const current = prev.get(canonical) ?? [];
+          const reconciled = reconcileEntries(current, children);
+          if (prev.has(canonical) && reconciled === current) return prev;
+          const next = new Map(prev);
+          next.set(canonical, reconciled);
+          return next;
+        });
+        setChildIssues((prev) => {
+          if (!prev.has(canonical)) return prev;
+          const next = new Map(prev);
+          next.delete(canonical);
+          return next;
+        });
+        settleAutoRetry(canonical, hasUnreadableFile(children));
+      } catch (caught: unknown) {
+        if (!isCurrent()) return;
+        const issue = readIssue(caught, dirPath);
+        setChildIssues((prev) => {
+          const next = new Map(prev);
+          next.set(canonical, issue);
+          return next;
+        });
+        settleAutoRetry(canonical, issue.retryable);
+      }
+    },
+    [settleAutoRetry],
+  );
 
   // Load root on provider change
   useEffect(() => {
@@ -284,8 +362,10 @@ export function useFileTree(
     setSelectedKind(null);
     setRootIssue(null);
     directoryRequestsRef.current.clear();
+    cancelAllAutoRetries();
     void loadRoot();
-  }, [provider, loadRoot]);
+    return cancelAllAutoRetries;
+  }, [provider, loadRoot, cancelAllAutoRetries]);
 
   const toggleExpand = useCallback(
     (path: string) => {
@@ -341,10 +421,13 @@ export function useFileTree(
 
   const retryDirectory = useCallback(
     async (path: string) => {
-      if (normalisePath(path) === '') await loadRoot();
+      const canonical = normalisePath(path);
+      // A manual retry starts a fresh background run should it fail too.
+      cancelAutoRetry(canonical);
+      if (canonical === '') await loadRoot();
       else await loadChildren(path);
     },
-    [loadRoot, loadChildren],
+    [loadRoot, loadChildren, cancelAutoRetry],
   );
 
   const refreshRef = useRef(refresh);
@@ -357,6 +440,7 @@ export function useFileTree(
     },
     [loadChildren, loadRoot],
   );
+  autoRetryLoadRef.current = refreshDirectory;
 
   // IndexedDB and File System Access cannot watch their backing stores. The
   // shell advances this key after the active DocumentSession acknowledges a
@@ -580,12 +664,13 @@ export function useFileTree(
       setExpanded(nextExpanded);
       setChildEntries(new Map());
       setChildIssues(new Map());
+      cancelAllAutoRetries();
       await loadRoot();
       for (const dirPath of nextExpanded) {
         await loadChildren(dirPath);
       }
     },
-    [selectedPath, entries, childEntries, expanded, loadRoot, loadChildren],
+    [selectedPath, entries, childEntries, expanded, loadRoot, loadChildren, cancelAllAutoRetries],
   );
 
   // Merge root entries with child entries for a flat tree representation

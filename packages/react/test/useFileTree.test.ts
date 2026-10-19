@@ -111,6 +111,8 @@ function makeProvider(initial: InMemoryTree): MemoryProvider {
 
 const SETTLE = 30;
 const RETRY_SETTLE = 220;
+/** Past the first background re-read (1s) after a temporary failure. */
+const AUTO_RETRY_SETTLE = 1_100;
 
 describe('useFileTree', () => {
   it('starts empty with a null provider', async () => {
@@ -782,6 +784,65 @@ describe('useFileTree', () => {
     expect(
       handle.result.current.childEntries.get('docs')?.map((entry) => entry.name),
     ).to.deep.equal(['guide.md']);
+    await handle.unmount();
+  });
+
+  it('keeps listed read issues and re-reads the folder until the file is readable', async () => {
+    const locked: FileSystemEntry = {
+      ...file('Bendyline.md'),
+      readIssue: { code: 'io', message: 'UNKNOWN: unknown error, read' },
+    };
+    const provider = makeProvider({ '': [locked, file('notes.md')] });
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+    const listed = handle.result.current.entries.find((entry) => entry.name === 'Bendyline.md');
+    expect(listed?.kind === 'file' && listed.readIssue?.code).to.equal('io');
+    expect(handle.result.current.rootIssue).to.equal(null);
+
+    // The sync client lets go without changing the file's metadata.
+    provider.tree[''] = [file('Bendyline.md'), file('notes.md')];
+    await advanceTime(AUTO_RETRY_SETTLE);
+
+    const recovered = handle.result.current.entries.find((entry) => entry.name === 'Bendyline.md');
+    expect(recovered).to.not.have.property('readIssue');
+    expect(provider.readDirCalls.filter((path) => path === '')).to.have.length(2);
+    await handle.unmount();
+  });
+
+  it('retries a temporary root failure in the background', async () => {
+    const provider = makeProvider({ '': [file('recovered.md')] });
+    const normalRead = provider.readDirectory.bind(provider);
+    let attempts = 0;
+    provider.readDirectory = async (path: string) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new FsError('io', 'UNKNOWN: unknown error, read', {
+          operation: 'list',
+          path: 'recovered.md',
+        });
+      }
+      return normalRead(path);
+    };
+    const handle = await renderHook(
+      (p: { provider: FileSystemProvider | null }) => useFileTree(p.provider),
+      { provider: provider as FileSystemProvider },
+    );
+    await advanceTime(SETTLE);
+    expect(handle.result.current.rootIssue).to.deep.include({
+      directoryPath: '',
+      path: 'recovered.md',
+      retryable: true,
+    });
+
+    await advanceTime(AUTO_RETRY_SETTLE);
+    expect(attempts).to.equal(2);
+    expect(handle.result.current.rootIssue).to.equal(null);
+    expect(handle.result.current.entries.map((entry) => entry.name)).to.deep.equal([
+      'recovered.md',
+    ]);
     await handle.unmount();
   });
 

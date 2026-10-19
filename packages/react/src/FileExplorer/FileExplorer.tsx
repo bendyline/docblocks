@@ -9,11 +9,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
+  tryParseWorkspacePath,
   type FileSystemProvider,
   type FileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from '@bendyline/docblocks/filesystem';
-import { useFileTree } from './useFileTree.js';
+import { useFileTree, type FileTreeReadIssue } from './useFileTree.js';
 import {
   FileTreeNode,
   type FileTreeNodeAction,
@@ -83,6 +84,14 @@ export interface WorkspaceMoveDestination {
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
+}
+
+/** Name the exact failing entry when it is not the directory being listed. */
+function readIssueText(issue: FileTreeReadIssue): string {
+  const failingPath = tryParseWorkspacePath(issue.path);
+  return failingPath && failingPath !== issue.directoryPath
+    ? `${failingPath}: ${issue.message}`
+    : issue.message;
 }
 
 function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {
@@ -699,7 +708,7 @@ export function FileExplorer({
                   role="alert"
                   data-directory-path={childIssue.directoryPath}
                 >
-                  <span>{childIssue.message}</span>{' '}
+                  <span>{readIssueText(childIssue)}</span>{' '}
                   <button
                     type="button"
                     className="db-tree-error-retry"
@@ -996,7 +1005,7 @@ export function FileExplorer({
           role="alert"
           data-directory-path={tree.rootIssue.directoryPath}
         >
-          <span>{tree.rootIssue.message}</span>{' '}
+          <span>{readIssueText(tree.rootIssue)}</span>{' '}
           <button
             type="button"
             className="db-tree-error-retry"

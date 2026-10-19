@@ -163,7 +163,11 @@ The v2 invariants are load-bearing:
 - Missing `stat`/`readFile` returns `null`. Permission, quota, wrong-kind,
   conflict, corruption, and I/O failures are typed `FsError`s and must never be
   translated to absence or success. IPC sends serialized errors and rehydrates
-  them in the renderer.
+  them in the renderer. The one bounded exception is browsing: a listing or
+  watch observation that cannot read a file (a sync client holding it, an ACL)
+  keeps the entry with an explicit `readIssue` and a metadata-only version
+  instead of failing the whole directory. Content reads and mutation
+  preconditions still throw.
 - Callers branch on `capabilities`, never concrete provider classes, for
   atomicity, conditional-write strength, watch support, case behavior,
   symlinks, and durability.

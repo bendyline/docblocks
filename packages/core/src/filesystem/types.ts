@@ -8,7 +8,7 @@
 
 // ── Entry types ────────────────────────────────────────────────────
 
-import type { FileSystemProviderV2 } from './v2.js';
+import type { FileSystemEntryReadIssue, FileSystemProviderV2 } from './v2.js';
 
 export interface FileEntry {
   kind: 'file';
@@ -16,6 +16,8 @@ export interface FileEntry {
   path: string;
   /** ISO-8601 timestamp when the provider can supply file metadata while listing. */
   lastModified?: string;
+  /** Set when the provider listed the file but could not read it at the time. */
+  readIssue?: FileSystemEntryReadIssue;
 }
 
 export interface FolderEntry {

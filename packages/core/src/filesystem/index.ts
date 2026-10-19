@@ -44,6 +44,7 @@ export type {
   FileSystemAtomicity,
   FileSystemCaseSensitivity,
   FileSystemDurability,
+  FileSystemEntryReadIssue,
   FileSystemEntrySnapshot,
   FileSystemFileSnapshot,
   FileSystemDirectorySnapshot,

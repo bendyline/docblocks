@@ -89,6 +89,73 @@ describe('presentation AI refinement', () => {
         null,
       );
   });
+  it('accepts condensed points from the passage and drops points that echo the headline', () => {
+    const source = plan();
+    const beat = parsePresentationRefinement(
+      JSON.stringify({
+        layout: 'statement',
+        headline: 'Keep your words',
+        points: ['Keep all your words', 'Writing a few points'],
+      }),
+      source,
+      0,
+    );
+    assert.ok(beat);
+    assert.deepEqual(beat.points, ['Writing a few points']);
+    // A headline over a point that merely continues it is the slide to replace.
+    assert.equal(
+      parsePresentationRefinement(
+        JSON.stringify({
+          layout: 'statement',
+          headline: 'Write points and keep words',
+          points: ['Write a few points. Keep your words.'],
+        }),
+        source,
+        0,
+      ),
+      null,
+    );
+    // A list that is left with one point after dropping echoes is not a list.
+    assert.equal(
+      parsePresentationRefinement(
+        JSON.stringify({
+          layout: 'list',
+          headline: 'Keep your words',
+          points: ['Keep your words', 'Write a few points.'],
+        }),
+        source,
+        0,
+      ),
+      null,
+    );
+  });
+  it('keeps an image slide’s picture and lets the model word only its caption', () => {
+    const sourceText = 'Gallery\nA calm lake at dawn. Mist rises over the water.';
+    const pictured = {
+      version: 1 as const,
+      sourceText,
+      origin: 'automatic' as const,
+      beats: [
+        {
+          id: 'beat-1',
+          sourceStart: 0,
+          sourceEnd: sourceText.length,
+          layout: 'image' as const,
+          headline: 'Gallery',
+          points: [],
+          imageSrc: 'images/lake.png',
+        },
+      ],
+    };
+    const beat = parsePresentationRefinement(
+      JSON.stringify({ layout: 'statement', headline: 'Mist over a calm lake', points: [] }),
+      pictured,
+      0,
+    );
+    assert.equal(beat?.layout, 'image');
+    assert.equal(beat?.imageSrc, 'images/lake.png');
+    assert.equal(beat?.headline, 'Mist over a calm lake');
+  });
   it('runs serial bounded requests and retains the baseline after one failed repair', async () => {
     const source = plan();
     const api = fake((request, index) =>

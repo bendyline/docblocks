@@ -15,14 +15,14 @@ This notice is included in the published npm tarball. Transitive packages instal
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
 | @antfu/install-pkg | 2.1.0 | MIT | https://github.com/antfu-collective/install-pkg |
-| @bendyline/squisq | 2.12.3 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.12.4 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-editor-react | 2.12.5 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-formats | 2.7.3 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-grid-react | 2.11.26 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-react | 2.12.4 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video | 2.4.3 | MIT | https://github.com/bendyline/squisq |
-| @bendyline/squisq-video-react | 2.5.4 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-editor-react | 2.12.6 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-formats | 2.7.4 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-grid-react | 2.11.27 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-react | 2.12.5 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video | 2.4.4 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq-video-react | 2.5.5 | MIT | https://github.com/bendyline/squisq |
 | @braintree/sanitize-url | 7.1.2 | MIT | https://github.com/braintree/sanitize-url |
 | @chevrotain/types | 11.1.2 | Apache-2.0 | https://github.com/Chevrotain/chevrotain |
 | @ffmpeg/core | 0.12.10 | GPL-2.0-or-later | https://github.com/ffmpegwasm/ffmpeg.wasm |
@@ -437,7 +437,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-editor-react@2.12.5, @bendyline/squisq-formats@2.7.3, @bendyline/squisq-grid-react@2.11.26, @bendyline/squisq-react@2.12.4, @bendyline/squisq-video-react@2.5.4, @bendyline/squisq-video@2.4.3, @bendyline/squisq@2.12.3
+Components: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-editor-react@2.12.6, @bendyline/squisq-formats@2.7.4, @bendyline/squisq-grid-react@2.11.27, @bendyline/squisq-react@2.12.5, @bendyline/squisq-video-react@2.5.5, @bendyline/squisq-video@2.4.4, @bendyline/squisq@2.12.4
 Source files: node_modules/@bendyline/squisq-calc/LICENSE, node_modules/@bendyline/squisq-editor-react/LICENSE, node_modules/@bendyline/squisq-formats/LICENSE, node_modules/@bendyline/squisq-grid-react/LICENSE, node_modules/@bendyline/squisq-react/LICENSE, node_modules/@bendyline/squisq-video-react/LICENSE, node_modules/@bendyline/squisq-video/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -637,7 +637,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.12.5
+Components: @bendyline/squisq-editor-react@2.12.6
 Source files: node_modules/@bendyline/squisq-editor-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-editor-react
@@ -686,7 +686,7 @@ Exact third-party license texts for the bundled adapter, loader, state helper,
 and Font Awesome assets are shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-editor-react@2.12.5, @tiptap/core@2.27.3, @tiptap/extension-blockquote@2.27.3, @tiptap/extension-bold@2.27.3, @tiptap/extension-bubble-menu@2.27.3, @tiptap/extension-bullet-list@2.27.3, @tiptap/extension-code-block@2.27.3, @tiptap/extension-code@2.27.3, @tiptap/extension-document@2.27.3, @tiptap/extension-dropcursor@2.27.3, @tiptap/extension-floating-menu@2.27.3, @tiptap/extension-gapcursor@2.27.3, @tiptap/extension-hard-break@2.27.3, @tiptap/extension-heading@2.27.3, @tiptap/extension-history@2.27.3, @tiptap/extension-horizontal-rule@2.27.3, @tiptap/extension-image@2.27.3, @tiptap/extension-italic@2.27.3, @tiptap/extension-link@2.27.3, @tiptap/extension-list-item@2.27.3, @tiptap/extension-mention@2.27.3, @tiptap/extension-ordered-list@2.27.3, @tiptap/extension-paragraph@2.27.3, @tiptap/extension-placeholder@2.27.3, @tiptap/extension-strike@2.27.3, @tiptap/extension-table-cell@2.27.3, @tiptap/extension-table-header@2.27.3, @tiptap/extension-table-row@2.27.3, @tiptap/extension-table@2.27.3, @tiptap/extension-task-item@2.27.3, @tiptap/extension-task-list@2.27.3, @tiptap/extension-text-style@2.27.3, @tiptap/extension-text@2.27.3, @tiptap/pm@2.27.3, @tiptap/react@2.27.3, @tiptap/starter-kit@2.27.3, @tiptap/suggestion@2.27.3
+Components: @bendyline/squisq-editor-react@2.12.6, @tiptap/core@2.27.3, @tiptap/extension-blockquote@2.27.3, @tiptap/extension-bold@2.27.3, @tiptap/extension-bubble-menu@2.27.3, @tiptap/extension-bullet-list@2.27.3, @tiptap/extension-code-block@2.27.3, @tiptap/extension-code@2.27.3, @tiptap/extension-document@2.27.3, @tiptap/extension-dropcursor@2.27.3, @tiptap/extension-floating-menu@2.27.3, @tiptap/extension-gapcursor@2.27.3, @tiptap/extension-hard-break@2.27.3, @tiptap/extension-heading@2.27.3, @tiptap/extension-history@2.27.3, @tiptap/extension-horizontal-rule@2.27.3, @tiptap/extension-image@2.27.3, @tiptap/extension-italic@2.27.3, @tiptap/extension-link@2.27.3, @tiptap/extension-list-item@2.27.3, @tiptap/extension-mention@2.27.3, @tiptap/extension-ordered-list@2.27.3, @tiptap/extension-paragraph@2.27.3, @tiptap/extension-placeholder@2.27.3, @tiptap/extension-strike@2.27.3, @tiptap/extension-table-cell@2.27.3, @tiptap/extension-table-header@2.27.3, @tiptap/extension-table-row@2.27.3, @tiptap/extension-table@2.27.3, @tiptap/extension-task-item@2.27.3, @tiptap/extension-task-list@2.27.3, @tiptap/extension-text-style@2.27.3, @tiptap/extension-text@2.27.3, @tiptap/pm@2.27.3, @tiptap/react@2.27.3, @tiptap/starter-kit@2.27.3, @tiptap/suggestion@2.27.3
 Source files: node_modules/@bendyline/squisq-editor-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-editor-react
@@ -1627,7 +1627,7 @@ The above copyright notice and this permission notice shall be included in all c
 **THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.**
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.7.3
+Components: @bendyline/squisq-formats@2.7.4
 Source files: node_modules/@bendyline/squisq-formats/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-formats
@@ -1653,7 +1653,7 @@ texts for these dependencies are included in their respective npm
 distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-formats@2.7.3
+Components: @bendyline/squisq-formats@2.7.4
 Source files: node_modules/@bendyline/squisq-formats/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-formats
@@ -2027,7 +2027,7 @@ given a different name.
 $Id$
 
 ==============================================================================
-Components: @bendyline/squisq-grid-react@2.11.26
+Components: @bendyline/squisq-grid-react@2.11.27
 Source files: node_modules/@bendyline/squisq-grid-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-grid-react
@@ -2048,7 +2048,7 @@ Copyright and complete license texts for these dependencies are included in
 their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-grid-react@2.11.26
+Components: @bendyline/squisq-grid-react@2.11.27
 Source files: node_modules/@bendyline/squisq-grid-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-grid-react
@@ -2060,7 +2060,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.4
+Components: @bendyline/squisq-react@2.12.5
 Source files: node_modules/@bendyline/squisq-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-react
@@ -2085,7 +2085,7 @@ third-party license texts for the complete standalone bundle graph are shipped
 in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-react@2.12.4
+Components: @bendyline/squisq-react@2.12.5
 Source files: node_modules/@bendyline/squisq-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-react
@@ -6572,7 +6572,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.4
+Components: @bendyline/squisq-video-react@2.5.5
 Source files: node_modules/@bendyline/squisq-video-react/COPYING.GPL-2.0.txt
 ==============================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -6915,7 +6915,7 @@ library.  If this is what you want to do, use the GNU Lesser General
 Public License instead of this License.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.4
+Components: @bendyline/squisq-video-react@2.5.5
 Source files: node_modules/@bendyline/squisq-video-react/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video-react
@@ -6971,7 +6971,7 @@ at the version listed above and from https://github.com/Vanilagy/mediabunny.
 The complete MPL-2.0 text is shipped in THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq-video-react@2.5.4, @ffmpeg/core@0.12.10, @ffmpeg/ffmpeg@0.12.15, @ffmpeg/types@0.12.4, @ffmpeg/util@0.12.2
+Components: @bendyline/squisq-video-react@2.5.5, @ffmpeg/core@0.12.10, @ffmpeg/ffmpeg@0.12.15, @ffmpeg/types@0.12.4, @ffmpeg/util@0.12.2
 Source files: node_modules/@bendyline/squisq-video-react/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video-react
@@ -7413,7 +7413,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.3
+Components: @bendyline/squisq-video@2.4.4
 Source files: node_modules/@bendyline/squisq-video/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq-video
@@ -7438,7 +7438,7 @@ Copyright and complete license texts for the listed dependencies are included
 in their respective npm distributions and source repositories.
 
 ==============================================================================
-Components: @bendyline/squisq-video@2.4.3
+Components: @bendyline/squisq-video@2.4.4
 Source files: node_modules/@bendyline/squisq-video/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq-video
@@ -7450,7 +7450,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.12.3
+Components: @bendyline/squisq@2.12.4
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -7481,7 +7481,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.12.3
+Components: @bendyline/squisq@2.12.4
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq

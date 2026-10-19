@@ -68,6 +68,10 @@ const FS_ERROR_CODES: ReadonlySet<string> = new Set<FsErrorCode>([
   'io',
 ]);
 
+export function isFsErrorCode(value: unknown): value is FsErrorCode {
+  return typeof value === 'string' && FS_ERROR_CODES.has(value);
+}
+
 const FS_OPERATIONS: ReadonlySet<string> = new Set<FsOperation>([
   'parse-path',
   'read',
@@ -174,8 +178,7 @@ export function isSerializedFsError(value: unknown): value is SerializedFsError 
   const candidate = value as Partial<Record<keyof SerializedFsError, unknown>>;
   return (
     candidate.name === 'FsError' &&
-    typeof candidate.code === 'string' &&
-    FS_ERROR_CODES.has(candidate.code) &&
+    isFsErrorCode(candidate.code) &&
     typeof candidate.message === 'string' &&
     (candidate.operation === null ||
       (typeof candidate.operation === 'string' && FS_OPERATIONS.has(candidate.operation))) &&

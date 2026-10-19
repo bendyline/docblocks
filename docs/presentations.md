@@ -14,10 +14,17 @@ and the selection follows the source passage rather than its slide number.
 
 Choose a summary density, a preferred layout per section, and whether to add
 supporting visual slides (on by default). A section can override the document-wide preference
-with **Allow** or **Do not add**. Supporting slides explain ordered steps,
-comparisons, or existing images when a passage has enough text. They share that
-passage's narration interval; they do not add spoken filler or extend the take.
-Layout preferences apply where the source has enough material for that layout.
+with **Allow** or **Do not add**. A supporting slide is added only when it shows
+something different from the slide before it: an introduction followed by a
+diagram of the sentences that open with First / Then / Next / Finally, or the
+opening sentences of a passage followed by the document image that illustrates
+it. They share that passage's narration interval; they do not add spoken filler
+or extend the take. Layout preferences apply where the source has enough
+material for that layout.
+
+Automatic slides are titled with their section heading and show the section's
+own sentences beneath it, so a slide never repeats its title as its body. Each
+document image appears once, on a slide from the section that contains it.
 
 **Use dynamic slides** saves the preferences and selects the Dynamic slides
 summarization mode in one undoable edit. It also disables the redundant automatic
@@ -26,7 +33,7 @@ from the draft; applying makes that reset durable.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
 or highlights. With an AI model connected, **Suggest with AI** proposes headlines,
-excerpts, and layouts one slide at a time. Each accepted suggestion appears in the
+condensed points, and layouts one slide at a time. Each accepted suggestion appears in the
 slide list and preview as soon as it arrives, marked **AI**; the footer shows which
 slide is being suggested, and **Stop** keeps everything suggested so far. Only
 accepted AI results are stored; failed suggestions get one repair attempt, then
@@ -37,9 +44,12 @@ opening override). If “The sky is pink” changes to “The sky is blue,” th
 customized wording stops applying and a fresh automatic summary is used. An
 unrelated section edit can retain matching AI summaries. Changing density or the
 supporting-slide design can change passage boundaries and therefore which AI
-summaries still match. AI headlines may paraphrase and need editorial review;
-body points must be exact source excerpts. Models cannot supply timing, source
-offsets, or invented image paths.
+summaries still match. AI headlines may paraphrase and need editorial review.
+Body points may condense the passage, but their numbers and most of their
+distinctive words must come from it, and a point that restates the headline is
+dropped; a suggestion whose every point does so is rejected. Models cannot
+supply timing, source offsets, or invented image paths, and an image slide keeps
+its picture.
 
 Narration is a recording, so changing the spoken text still requires **Speech →
 Generate narration…** again. Retaking the same text automatically re-resolves the
@@ -124,5 +134,6 @@ Verified locally on October 9, 2026 against linked Squisq:
 
 The current real-audio project, screenshots, timeline, and desktop MP4 are under
 `reports/launch-presentation/dynamic-real/`; `launch-cli.mp4` there is the separate
-CLI render. The harness uses scripted AI: two deliberately ungrounded responses
-are rejected, and only the three accepted AI summaries are cached.
+CLI render. The harness uses scripted AI that keeps each slide's own points, so
+all five suggestions are accepted and cached; rejection of ungrounded and
+headline-echoing suggestions is covered by `packages/react/test/presentation-ai.test.ts`.

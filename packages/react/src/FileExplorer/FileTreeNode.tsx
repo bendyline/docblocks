@@ -137,6 +137,11 @@ export function FileTreeNode({
 }: FileTreeNodeProps) {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(entry.name);
+  const readIssue = entry.kind === 'file' ? entry.readIssue : undefined;
+  const rowStatus = [
+    badge?.label,
+    readIssue ? `could not be read: ${readIssue.message}` : undefined,
+  ].filter((part): part is string => part !== undefined);
   const [showContext, setShowContext] = useState(false);
   const [contextPos, setContextPos] = useState({ x: 0, y: 0 });
   /** Failure from this row's own async actions (delete/rename). */
@@ -457,7 +462,7 @@ export function FileTreeNode({
         data-path={entry.path}
         aria-expanded={isDir ? expanded : undefined}
         aria-selected={selected}
-        aria-label={badge ? `${entry.name}, ${badge.label}` : undefined}
+        aria-label={rowStatus.length > 0 ? `${entry.name}, ${rowStatus.join(', ')}` : undefined}
         // The intermediate .db-tree-node wrapper means nesting alone does
         // not convey depth to assistive tech — state it outright.
         aria-level={depth + 1}
@@ -520,6 +525,15 @@ export function FileTreeNode({
             {badge && (
               <span className={`db-git-badge db-git-badge--${badge.kind}`} aria-hidden="true">
                 {badge.glyph}
+              </span>
+            )}
+            {readIssue && (
+              <span
+                className="db-tree-read-issue"
+                title={`Could not read this file: ${readIssue.message}`}
+                aria-hidden="true"
+              >
+                !
               </span>
             )}
             {entry.kind === 'file' && entry.lastModified && (
