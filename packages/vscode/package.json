@@ -203,7 +203,7 @@
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
     "@bendyline/squisq": "2.12.3",
-    "@bendyline/squisq-editor-react": "2.12.4",
+    "@bendyline/squisq-editor-react": "2.12.5",
     "@bendyline/squisq-formats": "2.7.3",
     "@bendyline/squisq-react": "2.12.4",
     "@ironcalc/wasm": "0.8.4",
