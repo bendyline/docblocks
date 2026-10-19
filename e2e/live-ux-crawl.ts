@@ -195,7 +195,7 @@ async function waitForAppReady(page: Page): Promise<void> {
   await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page.locator('.db-explorer-toolbar').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page
-    .locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT })
+    .getByRole('treeitem', { name: WELCOME_ROW_TEXT })
     .waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page.waitForFunction(
     () => /(?:welcome|aboutdocblocks)\.md$/i.test(decodeURIComponent(window.location.hash)),
@@ -378,7 +378,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('tree context menu (dark)', async () => {
-    const row = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
+    const row = page.getByRole('treeitem', { name: WELCOME_ROW_TEXT });
     await row.hover();
     await row.locator('.db-tree-more').click();
     await page.locator('.db-tree-context').waitFor({ state: 'visible', timeout: 5_000 });
@@ -419,7 +419,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
   });
 
   await step('source view (dark)', async () => {
-    await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
+    await page.getByRole('treeitem', { name: WELCOME_ROW_TEXT }).click();
     await page
       .locator('[role="tab"][data-view="raw"]')
       .waitFor({ state: 'visible', timeout: 20_000 });
@@ -532,7 +532,7 @@ async function crawlAppDesktopDark(browser: Browser): Promise<void> {
       // accessible name includes the workspace name.
       .getByRole('button', { name: 'My Documents', exact: true })
       .click();
-    const welcomeRow = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
+    const welcomeRow = page.getByRole('treeitem', { name: WELCOME_ROW_TEXT });
     await welcomeRow.waitFor({ state: 'visible', timeout: 10_000 });
     // waitForAppReady expects the welcome document to be the one open.
     await welcomeRow.click();
@@ -612,7 +612,7 @@ async function crawlAppDesktopLight(browser: Browser): Promise<void> {
   });
 
   await step('tree context menu (light)', async () => {
-    const row = page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT });
+    const row = page.getByRole('treeitem', { name: WELCOME_ROW_TEXT });
     await row.hover();
     await row.locator('.db-tree-more').click();
     await page.locator('.db-tree-context').waitFor({ state: 'visible', timeout: 5_000 });
@@ -654,7 +654,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
     if (await tour.isVisible().catch(() => false)) {
       await tour.tap();
     } else {
-      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).tap();
+      await page.getByRole('treeitem', { name: WELCOME_ROW_TEXT }).tap();
     }
     await page.locator('.squisq-toolbar').waitFor({ state: 'visible', timeout: 30_000 });
     await shoot(
@@ -678,7 +678,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
       await showFiles.waitFor({ state: 'visible', timeout: 5_000 });
       await showFiles.click();
       await shoot(page, 'mobile-file-list-dark', 'Mobile file list open');
-      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).tap();
+      await page.getByRole('treeitem', { name: WELCOME_ROW_TEXT }).tap();
       await page
         .getByRole('button', { name: 'Export and share' })
         .waitFor({ state: 'visible', timeout: 20_000 });

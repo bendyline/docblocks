@@ -158,6 +158,7 @@ interface Surface {
 
 const actions: ActionRecord[] = [];
 const scenarios: ScenarioRecord[] = [];
+const surfaceFailures: Array<{ name: string; error: string }> = [];
 let shotCounter = 0;
 let current: ActionEvents = emptyEvents();
 
@@ -188,7 +189,13 @@ async function persist(): Promise<void> {
   await writeFile(
     path.join(OUT_DIR, 'actions.json'),
     JSON.stringify(
-      { baseUrl: BASE_URL, recordedAt: new Date().toISOString(), actions, scenarios },
+      {
+        baseUrl: BASE_URL,
+        recordedAt: new Date().toISOString(),
+        actions,
+        scenarios,
+        surfaceFailures,
+      },
       null,
       2,
     ),
@@ -282,6 +289,10 @@ async function openContext(
     hasTouch: surface.mobile ?? false,
     deviceScaleFactor: 1,
     acceptDownloads: true,
+    // Offline installation is audited by site-ship-review.ts. This crawler
+    // creates many disposable profiles; avoid precaching the entire app on
+    // every reset and competing with the interactions being measured.
+    serviceWorkers: 'block',
     locale: 'en-US',
     permissions: ['clipboard-read', 'clipboard-write'],
   });
@@ -324,6 +335,7 @@ async function stampControls(
   return page.evaluate(
     ({ roots, attribute }) => {
       const seen = new Map<string, number>();
+      const visited = new Set<HTMLElement>();
       const results: Array<{
         key: string;
         label: string;
@@ -335,6 +347,8 @@ async function stampControls(
       for (const root of roots) {
         for (const container of Array.from(document.querySelectorAll(root))) {
           for (const element of Array.from(container.querySelectorAll<HTMLElement>(selector))) {
+            if (visited.has(element)) continue;
+            visited.add(element);
             if (element.closest('.ProseMirror, .monaco-editor')) continue;
             const box = element.getBoundingClientRect();
             if (box.width < 2 || box.height < 2) continue;
@@ -344,8 +358,9 @@ async function stampControls(
             const label = (
               element.getAttribute('aria-label') ??
               element.getAttribute('title') ??
-              element.innerText ??
-              ''
+              (element.innerText?.trim() ||
+                element.querySelector('img[alt]')?.getAttribute('alt') ||
+                '')
             )
               .replace(/\s+/g, ' ')
               .trim()
@@ -532,104 +547,120 @@ async function crawlSurface(browser: Browser, surface: Surface): Promise<void> {
     homeUrl = page.url();
   };
 
-  await reset();
-  const baseline = await shoot(page, `${surface.name}-baseline`);
-  actions.push({
-    id: actions.length + 1,
-    surface: surface.name,
-    path: ['(baseline)'],
-    screenshot: baseline,
-    urlBefore: page.url(),
-    urlAfter: page.url(),
-    opened: [],
-    events: emptyEvents(),
-    verdict: 'no-visible-effect',
-    ms: 0,
-  });
-  const controls = await stampControls(page, surface.roots, attribute);
-  say(`  ${controls.length} controls`);
-  await writeFile(
-    path.join(OUT_DIR, `${surface.name}.controls.json`),
-    JSON.stringify(controls, null, 2),
-  );
-
-  for (const control of controls) {
-    if (SKIP_CONTROL.test(control.label)) continue;
-    if (control.key.startsWith('a|')) continue; // links are checked by the links scenario
-    if (control.disabled) {
-      actions.push({
-        id: actions.length + 1,
-        surface: surface.name,
-        path: [control.label],
-        screenshot: null,
-        urlBefore: page.url(),
-        urlAfter: page.url(),
-        opened: [],
-        title: control.title,
-        disabled: true,
-        events: emptyEvents(),
-        verdict: 'no-visible-effect',
-        ms: 0,
-      });
-      continue;
-    }
-    // Every control starts from the surface's own state.
-    if (!(await dismiss(page)) || page.url() !== homeUrl) {
-      await reset();
-    }
-    await stampControls(page, surface.roots, attribute);
-    const target = stamped(page, attribute, control.key);
-    if (!(await target.isVisible().catch(() => false))) {
-      await reset();
-      await stampControls(page, surface.roots, attribute);
-    }
-    const result = await record(
-      page,
-      surface.name,
-      [control.label],
-      async () => {
-        await stamped(page, attribute, control.key).click({ timeout: 5_000 });
-      },
-      { title: control.title },
-    );
-    if (result.verdict === 'changed-view' || result.verdict === 'navigated') {
-      await reset();
-      continue;
-    }
-    if (result.verdict !== 'opened-overlay') continue;
-    const items = await menuItemLabels(page);
-    if (items.length === 0) continue;
-    result.menuItems = items;
-    await persist();
-    const indexed = items.map((label, index) => ({ label, index }));
-    const ordered = [
-      ...indexed.filter((item) => !DESTRUCTIVE.test(item.label)),
-      ...indexed.filter((item) => DESTRUCTIVE.test(item.label)),
-    ].slice(0, MAX_MENU_ITEMS);
-    for (const { label: item, index } of ordered) {
-      const destructive = DESTRUCTIVE.test(item);
-      if (destructive) await reset(true);
-      else if (!(await dismiss(page)) || page.url() !== homeUrl) await reset();
-      await stampControls(page, surface.roots, attribute);
-      const itemResult = await record(page, surface.name, [control.label, item], async () => {
-        await stamped(page, attribute, control.key).click({ timeout: 5_000 });
-        await page.waitForTimeout(300);
-        await clickMenuItem(page, index);
-      });
-      // An item that changed the view (an inline rename box, a different
-      // mode) would otherwise hide the opener from the next item.
-      if (destructive) await reset(true);
-      else if (itemResult.verdict === 'changed-view') await reset();
-    }
+  try {
     await reset();
+    const baseline = await shoot(page, `${surface.name}-baseline`);
+    actions.push({
+      id: actions.length + 1,
+      surface: surface.name,
+      path: ['(baseline)'],
+      screenshot: baseline,
+      urlBefore: page.url(),
+      urlAfter: page.url(),
+      opened: [],
+      events: emptyEvents(),
+      verdict: 'no-visible-effect',
+      ms: 0,
+    });
+    const controls = await stampControls(page, surface.roots, attribute);
+    say(`  ${controls.length} controls`);
+    await writeFile(
+      path.join(OUT_DIR, `${surface.name}.controls.json`),
+      JSON.stringify(controls, null, 2),
+    );
+
+    for (const control of controls) {
+      if (SKIP_CONTROL.test(control.label)) continue;
+      if (control.key.startsWith('a|')) continue; // links are checked by the links scenario
+      if (control.disabled) {
+        actions.push({
+          id: actions.length + 1,
+          surface: surface.name,
+          path: [control.label],
+          screenshot: null,
+          urlBefore: page.url(),
+          urlAfter: page.url(),
+          opened: [],
+          title: control.title,
+          disabled: true,
+          events: emptyEvents(),
+          verdict: 'no-visible-effect',
+          ms: 0,
+        });
+        continue;
+      }
+      // Every control starts from the surface's own state.
+      // Welcome choices persist their dismissal. Reload alone cannot restore
+      // this surface after its first action; each choice needs a fresh profile.
+      if (surface.name === 'desktop-welcome') await reset(true);
+      if (!(await dismiss(page)) || page.url() !== homeUrl) {
+        await reset();
+      }
+      await stampControls(page, surface.roots, attribute);
+      const target = stamped(page, attribute, control.key);
+      if (!(await target.isVisible().catch(() => false))) {
+        await reset();
+        await stampControls(page, surface.roots, attribute);
+      }
+      const result = await record(
+        page,
+        surface.name,
+        [control.label],
+        async () => {
+          await stamped(page, attribute, control.key).click({ timeout: 5_000 });
+        },
+        { title: control.title },
+      );
+      if (result.verdict === 'changed-view' || result.verdict === 'navigated') {
+        await reset();
+        continue;
+      }
+      if (result.verdict !== 'opened-overlay') continue;
+      const items = await menuItemLabels(page);
+      if (items.length === 0) continue;
+      result.menuItems = items;
+      await persist();
+      const indexed = items.map((label, index) => ({ label, index }));
+      const ordered = [
+        ...indexed.filter((item) => !DESTRUCTIVE.test(item.label)),
+        ...indexed.filter((item) => DESTRUCTIVE.test(item.label)),
+      ].slice(0, MAX_MENU_ITEMS);
+      for (const { label: item, index } of ordered) {
+        const destructive = DESTRUCTIVE.test(item);
+        if (destructive) await reset(true);
+        else if (!(await dismiss(page)) || page.url() !== homeUrl) await reset();
+        await stampControls(page, surface.roots, attribute);
+        // Escape also closes the phone's file drawer. Restore the surface
+        // before reopening a menu whose trigger is no longer visible.
+        if (
+          !(await stamped(page, attribute, control.key)
+            .isVisible()
+            .catch(() => false))
+        ) {
+          await reset();
+          await stampControls(page, surface.roots, attribute);
+        }
+        const itemResult = await record(page, surface.name, [control.label, item], async () => {
+          await stamped(page, attribute, control.key).click({ timeout: 5_000 });
+          await page.waitForTimeout(300);
+          await clickMenuItem(page, index);
+        });
+        // An item that changed the view (an inline rename box, a different
+        // mode) would otherwise hide the opener from the next item.
+        if (destructive) await reset(true);
+        else if (itemResult.verdict === 'changed-view') await reset();
+      }
+      await reset();
+    }
+  } finally {
+    await context.close();
   }
-  await context.close();
 }
 
 async function startWriting(page: Page): Promise<void> {
   const cta = page.locator('.db-welcome-gateway-cta');
   if (await cta.isVisible().catch(() => false)) await cta.click();
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await page.getByRole('tab', { name: 'Write', exact: true }).click({ timeout: READY_TIMEOUT });
   await page.locator('.ProseMirror').first().waitFor({ state: 'visible', timeout: 30_000 });
 }
 
@@ -682,7 +713,9 @@ const SURFACES: Surface[] = [
     viewport: { width: 1440, height: 900 },
     prepare: async (page) => {
       await startWriting(page);
-      await page.getByRole('tab', { name: 'Source', exact: true }).click();
+      await page
+        .getByRole('tab', { name: 'Source', exact: true })
+        .click({ timeout: MONACO_COLD_LOAD_TIMEOUT });
       await page.locator('.monaco-editor').first().waitFor({ state: 'visible', timeout: 30_000 });
     },
     roots: ['[role="toolbar"]'],
@@ -703,7 +736,12 @@ const SURFACES: Surface[] = [
     name: 'phone-files',
     viewport: { width: 390, height: 844 },
     mobile: true,
-    prepare: async () => undefined,
+    prepare: async (page) => {
+      const tour = page.getByRole('button', { name: 'Tour the welcome document' });
+      if (await tour.isVisible().catch(() => false)) await tour.click();
+      const showFiles = page.getByRole('button', { name: 'Show file list', exact: true });
+      if (await showFiles.isVisible().catch(() => false)) await showFiles.click();
+    },
     roots: ['aside, [role="complementary"]'],
   },
 ];
@@ -991,7 +1029,7 @@ figure img,.grid img{width:100%}figure.error{border-color:#c00}figure.no-visible
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}.grid a{font-size:11px;color:#555}
 </style><h1>Affordance crawl — ${escapeHtml(BASE_URL)}</h1><p>${actions.length} actions, ${
       actions.filter((a) => a.verdict === 'error').length
-    } errors, ${actions.filter((a) => a.verdict === 'no-visible-effect').length} with no visible effect.</p>${scenarioRows}<h2>Actions</h2>${rows}`,
+    } errors, ${actions.filter((a) => a.verdict === 'no-visible-effect').length} with no visible effect; ${surfaceFailures.length} aborted surfaces.</p>${surfaceFailures.map((failure) => `<section><h2>${escapeHtml(failure.name)} — aborted</h2><pre>${escapeHtml(failure.error)}</pre></section>`).join('')}${scenarioRows}<h2>Actions</h2>${rows}`,
   );
 }
 
@@ -1011,6 +1049,7 @@ async function main(): Promise<void> {
       try {
         await crawlSurface(browser, surface);
       } catch (error) {
+        surfaceFailures.push({ name: surface.name, error: String(error) });
         say(`  ! surface ${surface.name} aborted: ${String(error).split('\n')[0]}`);
       }
     }
@@ -1022,6 +1061,13 @@ async function main(): Promise<void> {
   const errors = actions.filter((action) => action.verdict === 'error').length;
   say(`Done: ${actions.length} actions (${errors} errors), ${scenarios.length} scenarios.`);
   say(`Contact sheet: ${path.join(OUT_DIR, 'index.html')}`);
+  if (
+    errors > 0 ||
+    surfaceFailures.length > 0 ||
+    scenarios.some((entry) => entry.status === 'failed')
+  ) {
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error) => {

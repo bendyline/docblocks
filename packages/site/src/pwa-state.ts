@@ -42,6 +42,10 @@ export class PwaStateStore {
     });
   }
 
+  public markInstallStarted(): void {
+    this.setState({ installFailed: false });
+  }
+
   private setState(patch: Partial<PwaState>): void {
     const next = { ...this.state, ...patch };
     if (

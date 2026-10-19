@@ -89,6 +89,7 @@ export const DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES = [
   'hanken-lora',
   'dm-serif-dm-sans',
   'inter',
+  'inconsolata',
 ] as const;
 
 export type DocBlocksWriteCanvasFontScheme = (typeof DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES)[number];

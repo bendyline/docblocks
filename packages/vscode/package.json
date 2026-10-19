@@ -89,7 +89,8 @@
             "playfair-pt-serif",
             "hanken-lora",
             "dm-serif-dm-sans",
-            "inter"
+            "inter",
+            "inconsolata"
           ],
           "enumDescriptions": [
             "Inherit from theme",
@@ -101,7 +102,8 @@
             "Playfair Display headings, PT Serif body",
             "Hanken Grotesk headings, Lora body",
             "DM Serif Display headings, DM Sans body",
-            "Inter"
+            "Inter",
+            "Inconsolata"
           ],
           "description": "Default font scheme for the DocBlocks Write canvas. Applies only when no theme font override is active."
         },

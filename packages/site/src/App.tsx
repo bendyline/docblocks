@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { DocBlocksShell } from '@bendyline/docblocks-react';
-import { applyPwaUpdate, getPwaState, subscribePwa } from './pwa';
+import { applyPwaUpdate, getPwaState, retryOfflineSetup, subscribePwa } from './pwa';
 import { SITE_CALC_ENGINE_FACTORY } from './calculationConfig';
 import { SITE_PROOFING_PROVIDER } from './proofingConfig';
 // pdf.js parses PDFs only with a worker, and only the bundler can give its URL.
@@ -27,13 +27,22 @@ export function App() {
         offlineReady={pwa.offlineReady}
         statusBarSlotRight={
           pwa.installFailed ? (
-            <span
+            <button
+              type="button"
               className="squisq-status-item db-pwa-offline-unavailable"
-              role="status"
-              aria-live="polite"
-              title="Offline mode is currently unavailable. Online editing is unaffected."
+              onClick={() => void retryOfflineSetup()}
+              aria-label="Offline unavailable. Retry offline setup"
+              title="Offline mode is unavailable. Click to retry; online editing is unaffected."
             >
               Offline unavailable
+            </button>
+          ) : import.meta.env.PROD && !pwa.offlineReady ? (
+            <span
+              className="squisq-status-item"
+              role="status"
+              title="Downloading the full app so every feature works offline. Editing is available now."
+            >
+              Preparing offline…
             </span>
           ) : undefined
         }

@@ -249,9 +249,16 @@ async function exportDocument(
       themeId,
       pageSize: options.pageSize,
       images,
-      // Replaced characters are reported to the user, not just the console.
+      // Check fidelity before any download or destination write occurs.
       onWarning: (message) => warnings.push(message),
     });
+    if (warnings.length > 0) {
+      throw new Error(
+        'PDF was not saved because its fonts cannot preserve all of this document’s text. ' +
+          'Export as Word, HTML, or EPUB to keep every character. ' +
+          warnings.join(' '),
+      );
+    }
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;
   }

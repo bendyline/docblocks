@@ -1,13 +1,32 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { readdirSync, readFileSync } from 'node:fs';
 import { thirdPartyComponentManifestPlugin } from '../../../scripts/vite-third-party-manifest.js';
 import { harperWasmPlugin } from '../../../scripts/vite-harper-wasm.js';
 import { ironCalcWasmPlugin } from '../../../scripts/vite-ironcalc-wasm.js';
 
 export default defineConfig({
   base: './',
-  plugins: [harperWasmPlugin(), ironCalcWasmPlugin(), thirdPartyComponentManifestPlugin(), react()],
+  plugins: [
+    harperWasmPlugin(),
+    ironCalcWasmPlugin(),
+    thirdPartyComponentManifestPlugin(),
+    react(),
+    {
+      name: 'docblocks-font-licenses',
+      generateBundle() {
+        const licensesDir = path.resolve(__dirname, '../../site/public/fonts/licenses');
+        for (const filename of readdirSync(licensesDir)) {
+          this.emitFile({
+            type: 'asset',
+            fileName: `fonts/licenses/${filename}`,
+            source: readFileSync(path.join(licensesDir, filename), 'utf8'),
+          });
+        }
+      },
+    },
+  ],
   root: path.resolve(__dirname),
   build: {
     outDir: path.resolve(__dirname, '../dist/webview'),

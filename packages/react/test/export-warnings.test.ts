@@ -4,9 +4,8 @@ import { DEFAULT_OPTIONS } from '../src/Export/export-options.js';
 import { runExport } from '../src/Export/run-export.js';
 
 /**
- * PDF export can only draw what its standard fonts encode; everything else is
- * replaced. That loss used to reach only the console, so `runExport` now
- * returns it for the export UI to show.
+ * A converter's substitution warning must prevent both browser downloads and
+ * destination writes. Other formats remain available with the original text.
  */
 async function exportAs(markdown: string, format: 'pdf' | 'docx') {
   const saved: Blob[] = [];
@@ -29,14 +28,32 @@ describe('export warnings', function () {
   // The first export loads the PDF converter cold.
   this.timeout(30_000);
 
-  it('reports the characters a PDF had to replace', async () => {
-    const result = await exportAs('# Notes\n\nПривет мир — 你好世界\n', 'pdf');
-    expect(result.warnings).to.have.length(1);
-    expect(result.warnings[0]).to.match(/replaced \d+ character/u);
+  it('refuses a lossy Japanese PDF before saving anything', async () => {
+    const saved: Blob[] = [];
+    let failure: unknown;
+    try {
+      await runExport(
+        '# Notes\n\n日本語のテキスト\n',
+        '/notes.md',
+        { ...DEFAULT_OPTIONS, format: 'pdf' },
+        null,
+        (blob) => {
+          saved.push(blob);
+        },
+        { diagramRenderer: async () => null },
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).to.be.instanceOf(Error);
+    expect((failure as Error).message)
+      .to.include('PDF was not saved')
+      .and.include('Word, HTML, or EPUB');
+    expect(saved).to.have.length(0);
   });
 
   it('reports nothing when the PDF kept every character', async () => {
-    const result = await exportAs('# Notes\n\nPlain “quoted” text — with an em dash.\n', 'pdf');
+    const result = await exportAs('# Notes\n\nZażółć — Ελληνικά — Привет мир.\n', 'pdf');
     expect(result.warnings).to.deep.equal([]);
   });
 

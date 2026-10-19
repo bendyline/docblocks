@@ -52,7 +52,9 @@ The site ships as an installable Progressive Web App (`vite-plugin-pwa`, configu
 
 ### Theme fonts
 
-`public/fonts/` (fonts.css + 46 unique woff2 payloads, latin + latin-ext subsets) is derived from squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Several upstream weight filenames contain byte-identical variable-font payloads; DocBlocks keeps one payload and points those weight declarations at it. After regenerating upstream with squisq's `download-fonts.ps1`, deduplicate the copied files before committing; `npm run check:site-fonts` enforces this. Licenses live in `public/fonts/licenses/`.
+`public/fonts/` (fonts.css + 48 unique woff2 payloads, latin + latin-ext subsets) is derived from squisq's `packages/site/public/fonts` — squisq's `fontStacks` expect the host page to provide these `@font-face`s. Several upstream weight filenames contain byte-identical variable-font payloads; DocBlocks keeps one payload and points those weight declarations at it. After regenerating upstream with squisq's `download-fonts.ps1`, deduplicate the copied files before committing; `npm run check:site-fonts` enforces this. Licenses live in `public/fonts/licenses/`.
+
+DocBlocks also bundles [Inconsolata](https://fonts.google.com/specimen/Inconsolata) for interface metadata and the Write-canvas font picker. Its Google Fonts v37 Latin and Latin Extended WOFF2 files cover weights 200–900; keep their `@font-face` rules when refreshing the upstream fonts. Copy font assets, styles and licenses to the desktop renderer, then run `npm run generate:webview-fonts` for VS Code. Mobile uses the site's public assets directly.
 
 ## Deployment
 

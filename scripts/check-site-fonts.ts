@@ -121,13 +121,13 @@ for (const { surface, source, fontDir } of SURFACE_STYLESHEETS) {
 }
 
 /**
- * The chrome's deterministic alternative to `system-ui`. Not a Squisq stack, so
- * it is required explicitly: regenerating fonts.css upstream would otherwise
- * drop it from a surface silently, and the chrome would fall back per OS.
+ * The chrome's sans and metadata faces. These are not Squisq stacks, so they
+ * are required explicitly: regenerating fonts.css upstream would otherwise
+ * drop them from a surface silently, and the chrome would fall back per OS.
  */
-const FIXED_UI_FAMILY = 'DocBlocks Fixed UI';
+const CHROME_FAMILIES = ['DocBlocks Fixed UI', 'Inconsolata'] as const;
 
-const required = [...requiredFamilies(AVAILABLE_FONT_STACKS), FIXED_UI_FAMILY].sort();
+const required = [...requiredFamilies(AVAILABLE_FONT_STACKS), ...CHROME_FAMILIES].sort();
 const parityViolations = fontParityViolations(required, surfaces, FONT_EXEMPTIONS);
 if (parityViolations.length > 0) {
   throw new Error(

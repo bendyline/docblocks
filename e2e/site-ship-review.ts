@@ -245,6 +245,9 @@ async function saveExport(page: Page, label: string, fileName: string): Promise<
   await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
   const destination = path.join(output, 'downloads', fileName);
   await (await pending).saveAs(destination);
+  // Export stays open after downloading. Close it before the next independent
+  // scenario so a fidelity assertion cannot leave a blocking modal behind.
+  await dismiss(page);
   return destination;
 }
 /**
@@ -413,8 +416,10 @@ try {
     }
     await step('create-and-edit', page, async () => {
       await createDocument(page, 'ship-review', 'Ship review persistence marker.');
-      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
-      await expect(page.locator('.ProseMirror')).toContainText('Write in plain Markdown');
+      await page.getByRole('treeitem', { name: WELCOME_ROW_TEXT }).click();
+      await expect(page.locator('.ProseMirror')).toContainText(
+        /Welcome to DocBlocks|Write in plain Markdown/,
+      );
       await page.locator('.db-tree-row', { hasText: 'ship-review' }).click();
       await expect(page.locator('[contenteditable="true"]').first()).toContainText(
         'Ship review persistence marker.',
@@ -761,8 +766,10 @@ try {
           await ready(page);
           await page.locator('.db-welcome-gateway-cta').click();
           await createDocument(page, 'browser-review', 'Browser persistence check');
-          await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
-          await expect(page.locator('.ProseMirror')).toContainText('Write in plain Markdown');
+          await page.getByRole('treeitem', { name: WELCOME_ROW_TEXT }).click();
+          await expect(page.locator('.ProseMirror')).toContainText(
+            /Welcome to DocBlocks|Write in plain Markdown/,
+          );
           await page.locator('.db-tree-row', { hasText: 'browser-review' }).click();
           await expect(page.locator('.ProseMirror')).toContainText('Browser persistence check');
           await page.reload();
@@ -776,7 +783,12 @@ try {
     }
   }
   if (phases.includes('fidelity')) {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 1000 },
+      // Installation is measured separately; do not let speculative precaching
+      // compete with the editor responsiveness and export fidelity checks.
+      serviceWorkers: 'block',
+    });
     const page = await context.newPage();
     watch(page);
     try {
@@ -800,7 +812,6 @@ try {
         for (const [label, extension] of [
           ['Markdown', 'md'],
           ['Word', 'docx'],
-          ['PDF', 'pdf'],
         ]) {
           const text = compact(
             await readBack(await saveExport(page, label, `unicode-review.${extension}`)),
@@ -809,16 +820,43 @@ try {
             ([, sample]) => !text.includes(compact(sample)),
           ).map(([script]) => script);
         }
+        await exportDialog(page);
+        const dialog = page.getByRole('dialog', { name: 'Export Document' });
+        await dialog.getByRole('radio', { name: 'PDF', exact: true }).click();
+        const pdfOutcome = Promise.race([
+          page.waitForEvent('download', { timeout: 60_000 }).then((download) => ({ download })),
+          dialog
+            .getByRole('alert')
+            .filter({ hasText: 'PDF was not saved' })
+            .waitFor({ timeout: 60_000 })
+            .then(() => ({ blocked: true as const })),
+        ]);
+        await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
+        const outcome = await pdfOutcome;
+        const pdfBlocked = 'blocked' in outcome;
+        if ('download' in outcome) {
+          const file = path.join(output, 'downloads', 'unicode-review.pdf');
+          await outcome.download.saveAs(file);
+          const text = compact(await readBack(file));
+          missing.PDF = UNICODE_SAMPLES.filter(([, sample]) => !text.includes(compact(sample))).map(
+            ([script]) => script,
+          );
+        }
         await capture(page, 'unicode-export', false);
+        await writeFile(
+          path.join(output, 'unicode-export-detail.json'),
+          JSON.stringify({ missing, pdfBlocked }, null, 2),
+        );
         expect(missing, 'scripts lost per export format').toEqual({
           Markdown: [],
           Word: [],
-          PDF: [],
+          ...(pdfBlocked ? {} : { PDF: [] }),
         });
-        return { missing };
+        await dismiss(page);
+        return { missing, pdfBlocked };
       });
-      // GFM table cells hold inline content only. The editor must not accept a
-      // block it will flatten on save ("Task 1Task 2Task 3").
+      // Rich cells use sanitized HTML within GFM rows. Their task structure
+      // must survive view changes as well as the visible text.
       await step('table-cell-list', page, async () => {
         await createDocument(page, 'table-review', 'Before the table');
         const editor = page.locator('.ProseMirror');
@@ -830,10 +868,18 @@ try {
         await page.getByRole('button', { name: 'Insert' }).click();
         await page.getByRole('menuitem', { name: 'Task List' }).click();
         const before = await editor.locator('th, td').first().innerText();
+        await page.screenshot({ path: path.join(output, 'table-cell-list-before.png') });
         const markdown = await readSource(page);
         await page.getByRole('tab', { name: 'Write', exact: true }).click();
         const after = await editor.locator('th, td').first().innerText();
+        expect(
+          await editor.locator('th, td').first().locator('input[type="checkbox"]').count(),
+        ).toBe(3);
         await capture(page, 'table-cell-list', false);
+        await writeFile(
+          path.join(output, 'table-cell-list-detail.json'),
+          JSON.stringify({ before, after, markdown }, null, 2),
+        );
         expect(markdown).not.toMatch(/Task 1\s*Task 2/);
         return { before, after, markdown: markdown.slice(0, 400) };
       });
@@ -865,6 +911,10 @@ try {
         samples.sort((a, b) => a - b);
         const typing = { medianMs: samples[10], p95Ms: samples[19] };
         const status = await page.locator('.squisq-status-item').allInnerTexts();
+        await writeFile(
+          path.join(output, 'long-document-typing-detail.json'),
+          JSON.stringify({ typing, status, samples, sections: LONG_DOCUMENT_SECTIONS }, null, 2),
+        );
         expect(typing.medianMs, 'median keystroke-to-frame').toBeLessThan(TYPING_BUDGET_MS);
         return { typing, status };
       });

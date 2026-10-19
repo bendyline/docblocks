@@ -286,7 +286,7 @@ describe('site SEO surface', () => {
     expect(serviceWorker).to.include("serviceWorker.importScripts('pwa-route-migration.js')");
     expect(serviceWorker).to.include("type: 'SKIP_WAITING'");
     expect(serviceWorker).to.include('ServiceWorkerRuntime).skipWaiting()');
-    expect(serviceWorker).not.to.include('clients.claim()');
+    expect(serviceWorker).to.include('if (firstInstallation) await serviceWorker.clients.claim()');
     expect(migration).to.include('root-only-navigation-v1');
     expect(migration).to.include('self.skipWaiting()');
     expect(migration).to.include('self.clients.claim()');

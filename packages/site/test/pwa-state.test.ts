@@ -2,6 +2,15 @@ import { expect } from 'chai';
 import { PwaStateStore } from '../src/pwa-state.js';
 
 describe('site PWA lifecycle state', () => {
+  it('clears a failed setup for a retry, but reports ready only after completion', () => {
+    const store = new PwaStateStore();
+    store.markInstallFailed();
+    store.markInstallStarted();
+    expect(store.getSnapshot().installFailed).to.equal(false);
+    expect(store.getSnapshot().offlineReady).to.equal(false);
+    store.markOfflineReady();
+    expect(store.getSnapshot().offlineReady).to.equal(true);
+  });
   it('keeps a failed first install distinct from offline readiness', () => {
     const store = new PwaStateStore();
     store.markInstallFailed();
