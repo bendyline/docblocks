@@ -28,7 +28,8 @@ test('records document narration with tracked words and slides side by side', as
   const name = page.getByRole('textbox', { name: 'New file name' });
   await name.fill('narration-slides.md');
   await name.press('Enter');
-  const editor = page.locator('.ProseMirror[contenteditable="true"]');
+  // The welcome document's editor is in Write too until this one replaces it.
+  const editor = page.getByRole('textbox', { name: /^Edit \/?narration-slides\.md$/ });
   await expect(editor).toBeVisible();
   await editor.click();
   await page.keyboard.press('ControlOrMeta+Shift+2');

@@ -8,7 +8,8 @@ test('Ctrl/Cmd+Shift+F finds saved text and opens the match beside the results',
   await page.getByRole('button', { name: 'New File', exact: true }).click();
   await page.getByRole('textbox', { name: 'New file name' }).fill('search-target.md');
   await page.getByRole('textbox', { name: 'New file name' }).press('Enter');
-  const editor = page.locator('.ProseMirror[contenteditable="true"]');
+  // The welcome document's editor is in Write too until this one replaces it.
+  const editor = page.getByRole('textbox', { name: /^Edit \/?search-target\.md$/ });
   await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();
   await page.keyboard.insertText('A Zebracorn lantern glows here.');
