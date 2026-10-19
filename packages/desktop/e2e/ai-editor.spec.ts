@@ -724,7 +724,7 @@ test('Study aids are saved beside the document, shown in a viewer, and offered a
       await footerButton(cards, 'Generate flashcards').click();
       const cardDeck = cards.getByRole('region', { name: 'Flashcards' });
       await expect(cardDeck).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
-      await cardDeck.getByRole('button', { name: 'Reveal answer' }).click();
+      await cardDeck.getByRole('button', { name: 'Reveal', exact: true }).click();
       await expect(cardDeck.getByRole('region', { name: 'Answer' })).toBeVisible();
       await expect.poll(() => fs.existsSync(path.join(sidecar, 'flashcards.md'))).toBe(true);
       await test.info().attach('Flashcards viewer', {

@@ -284,7 +284,7 @@ describe('KokoroEngine', () => {
   it('kills a stalled process, fails the request, and respawns for the next', async () => {
     let behaviour: 'stall' | 'ok' = 'stall';
     const channels: FakeChannel[] = [];
-    const engine = new KokoroEngine({
+    const options = {
       lexiconDir: LEXICON_DIR,
       loadTimeoutMs: 50,
       fork: () => {
@@ -292,7 +292,8 @@ describe('KokoroEngine', () => {
         channels.push(channel);
         return channel;
       },
-    });
+    };
+    const engine = new KokoroEngine(options);
     let error: unknown;
     await engine
       .synthesize(input(), () => undefined)
@@ -302,6 +303,10 @@ describe('KokoroEngine', () => {
     expect((error as KokoroEngineError).code).to.equal('timeout');
     expect(channels[0]?.killed).to.equal(true);
     behaviour = 'ok';
+    // The respawn's fresh runtime reads and unzips the real lexicon before its
+    // first chunk, which takes about as long as the stall's budget; a healthy
+    // load must not race it.
+    options.loadTimeoutMs = 10_000;
     expect((await engine.synthesize(input('Again.'), () => undefined)).chunks).to.equal(1);
     expect(FakeChannel.spawned).to.equal(2);
   });
