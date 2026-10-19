@@ -25,4 +25,4 @@ export type {
 } from './dashboard-image-save.js';
 export { createImageSaveOutput } from './image-save.js';
 export type { ImageSaveAdapter, ImageSaveOutput } from './image-save.js';
-export type { ExportBlobSaver, ExportConverterOverrides } from './run-export.js';
+export type { ExportBlobSaver, ExportConverterOverrides, ExportResult } from './run-export.js';

@@ -344,7 +344,16 @@ Both directories are removed after each test. Those tests cover boot, first-laun
 workspace bootstrap, persistence across relaunch, and the IPC path-traversal
 guard. Automation also exits when its final window closes on macOS and uses a
 forced process fallback after a bounded graceful shutdown, so a failed launch
-cannot leave a headless Electron process or Playwright worker behind.
+cannot leave a headless Electron process or Playwright worker behind. An
+automated run never registers the `docblocks://` handler, so a test copy cannot
+take it over from the installed app.
+
+Two hooks relax a security prompt — the screen-capture picker auto-selects a
+screen, and the packaged permission-probe window may open. They apply only to
+unpackaged builds and to `dist:dir` packages, which stamp
+`docblocksAutomationHooks` into app.asar's package.json
+(`main/automation-hooks.ts`). A release package keeps both prompts whatever its
+environment says; its packaged smoke run skips the capture-grant test.
 
 The packaged smoke uses `e2e/playwright.packaged.config.ts`. It resolves the
 current platform's electron-builder `--dir` output, verifies `app.asar` and the

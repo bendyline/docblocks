@@ -6,13 +6,13 @@ import { expect, test } from './helpers/test.js';
  * The starter document belongs to the app's own default workspace only.
  * Startup used to write it into *any* empty workspace it restored with no
  * file selected — including a folder the user had just created or opened —
- * so a reload right after creating a workspace left an `aboutDocBlocks.md`
+ * so a reload right after creating a workspace left a `Welcome.md`
  * behind in it.
  */
 
 function welcomeRow(page: Page) {
   return page.locator(
-    '.db-tree-row[data-path="aboutDocBlocks.md"], .db-tree-row[data-path="/aboutDocBlocks.md"]',
+    '.db-tree-row[data-path="Welcome.md"], .db-tree-row[data-path="/Welcome.md"]',
   );
 }
 
@@ -36,5 +36,5 @@ test('seeds the starter document only into the default workspace', async ({ page
   // Startup seeding ran after the workspace mounted; give it time to (not) write.
   await page.waitForTimeout(1_500);
   await expect(welcomeRow(page)).toHaveCount(0);
-  expect(decodeURIComponent(new URL(page.url()).hash)).not.toMatch(/aboutDocBlocks/i);
+  expect(decodeURIComponent(new URL(page.url()).hash)).not.toMatch(/Welcome\.md/i);
 });

@@ -1,5 +1,9 @@
 import { expect } from 'chai';
-import { buildIssueReportUrl } from '../src/DocBlocksShell/issue-report.js';
+import {
+  AI_REPORT_OUTPUT_CHARACTERS,
+  buildAiOutputReportUrl,
+  buildIssueReportUrl,
+} from '../src/DocBlocksShell/issue-report.js';
 
 describe('issue report link', () => {
   it('prefills an editable GitHub issue with bounded environment metadata', () => {
@@ -53,5 +57,54 @@ describe('issue report link', () => {
       }),
     );
     expect(url.searchParams.get('body')).to.include('- Date: 2026-10-15');
+  });
+});
+
+describe('AI output report link', () => {
+  const base = {
+    feature: 'Rewrite selection',
+    reason: 'harmful' as const,
+    model: 'Qwen 3.5 0.8B',
+    details: '',
+    output: null,
+    reportedAt: new Date(2026, 9, 17),
+    version: '2.7.2 iOS',
+    userAgent: 'Test Browser',
+  };
+
+  it('prefills the reason, feature and model, and leaves the response out by default', () => {
+    const url = new URL(buildAiOutputReportUrl(base));
+    const body = url.searchParams.get('body') ?? '';
+
+    expect(url.pathname).to.equal('/bendyline/docblocks/issues/new');
+    expect(url.searchParams.get('title')).to.equal('AI output report: Offensive or harmful');
+    expect(body).to.include('- Feature: Rewrite selection');
+    expect(body).to.include('- Model: Qwen 3.5 0.8B');
+    expect(body).to.include('<!-- What was wrong with the response? -->');
+    expect(body).to.not.include('## AI response');
+    expect(body).to.include('- DocBlocks: 2.7.2 iOS');
+  });
+
+  it('bounds an included response and fences it so its backticks cannot escape', () => {
+    const output = `Text with \`\`\`\` fences ${'y'.repeat(3_000)}`;
+    const body =
+      new URL(
+        buildAiOutputReportUrl({ ...base, details: ' Rude reply ', output }),
+      ).searchParams.get('body') ?? '';
+
+    expect(body).to.include('## Details\n\nRude reply\n');
+    expect(body).to.include(
+      `\`\`\`\`\`text\n${output.slice(0, AI_REPORT_OUTPUT_CHARACTERS)}\n\`\`\`\`\`\n`,
+    );
+    expect(body).to.not.include('y'.repeat(AI_REPORT_OUTPUT_CHARACTERS));
+  });
+
+  it('names an unknown model rather than leaving the line blank', () => {
+    const body =
+      new URL(buildAiOutputReportUrl({ ...base, model: null, reason: 'other' })).searchParams.get(
+        'body',
+      ) ?? '';
+    expect(body).to.include('- Reason: Something else');
+    expect(body).to.include('- Model: unknown');
   });
 });

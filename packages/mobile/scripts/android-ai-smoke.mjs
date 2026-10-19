@@ -45,24 +45,24 @@ try {
   await expect(toggle).not.toBeChecked();
   await toggle.check();
   await expect(page.getByRole('button', { name: 'Add model…' })).toBeVisible();
-  const system = await page.evaluate(async () => {
+  // ML Kit is excluded from the build; the runtime must survive its missing classes.
+  const runtime = await page.evaluate(() =>
+    window.Capacitor.nativePromise('GezelRuntime', 'providers', {}),
+  );
+  const mlkit = runtime.providers.find((provider) => provider.id === 'android-mlkit');
+  assert.equal(mlkit?.availability, 'unavailable', JSON.stringify(runtime));
+  const listed = await page.evaluate(async () => {
     const result = await window.docBlocksHost.ai.models();
     if (!result.ok) throw new Error(result.error.message);
-    return result.value.find((model) => model.id === 'android-mlkit:android-mlkit');
+    return result.value.map((model) => model.id);
   });
-  assert.ok(system, 'ML Kit must remain discoverable even on unsupported devices.');
-  const systemOption = page
-    .getByRole('combobox', { name: 'Model', exact: true })
-    .locator('option[value="android-mlkit:android-mlkit"]');
-  await expect(systemOption).toHaveText(/Gemini Nano \(Android ML Kit\)/);
-  await expect(systemOption).toHaveJSProperty('disabled', system.availability !== 'available');
-  if (system.availability !== 'available') {
-    await expect(
-      page.getByText(`Gemini Nano (Android ML Kit): ${system.unavailableReason}`, { exact: true }),
-    ).toBeVisible();
-  }
+  assert.ok(!listed.some((id) => id.startsWith('android-mlkit:')), JSON.stringify(listed));
+  await expect(page.locator('option[value^="android-mlkit:"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Add model…' }).click();
   await expect(page.getByLabel('Model to download')).toBeVisible();
+  await expect(
+    page.getByLabel('Model to download').locator('option', { hasText: 'Gemini' }),
+  ).toHaveCount(0);
   if (downloadModel) {
     await page.getByRole('button', { name: 'Download model', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Download model', exact: true })).toBeEnabled({
@@ -111,7 +111,8 @@ try {
     assert.doesNotMatch(reply.result.value.text, /<\/?think>/);
     process.stdout.write(`On-device rewrite: ${reply.result.value.text}\n`);
   } else assert.match(reply.result.value.text, /^a+$/);
-  assert.equal(reply.events.filter((event) => event.kind !== 'delta').length, 1);
+  // Progress events stream alongside deltas; each request settles exactly once.
+  assert.equal(reply.events.filter((event) => ['done', 'error'].includes(event.kind)).length, 1);
   mkdirSync(path.join(root, 'reports/mobile-native'), { recursive: true });
   await toggle.scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(root, 'reports/mobile-native/android-ai-settings.png') });

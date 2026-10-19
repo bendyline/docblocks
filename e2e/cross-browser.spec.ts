@@ -17,6 +17,6 @@ test('boots the editor and exports Markdown', async ({ page }) => {
   const downloadPath = await download.path();
   if (!downloadPath) throw new Error('Cross-browser export did not produce a file');
 
-  expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');
-  expect(await readFile(downloadPath, 'utf8')).toContain('# DocBlocks {[title');
+  expect(download.suggestedFilename()).toBe('Welcome.md');
+  expect(await readFile(downloadPath, 'utf8')).toContain('# Welcome to DocBlocks {[title');
 });

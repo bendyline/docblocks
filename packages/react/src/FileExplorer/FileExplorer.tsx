@@ -126,6 +126,11 @@ function isInternalDrag(dataTransfer: DataTransfer): boolean {
 export interface FileExplorerProps {
   /** The filesystem to display. */
   provider: FileSystemProvider | null;
+  /**
+   * The host is still opening the workspace `provider` will become. Shows
+   * the loading state instead of "No files yet" before anything was read.
+   */
+  loading?: boolean;
   /** Changes after a non-watch provider has durably updated file metadata. */
   metadataRefreshKey?: string | number | null;
   /** Active document to select and reveal by expanding all ancestor folders. */
@@ -191,6 +196,7 @@ export interface FileExplorerProps {
 
 export function FileExplorer({
   provider,
+  loading = false,
   metadataRefreshKey,
   activeFilePath,
   sortMode,
@@ -1004,7 +1010,7 @@ export function FileExplorer({
       {/* Tree — role="tree" only when there are real treeitem children; the
           loading/empty states get a status role so axe doesn't flag the
           tree as missing required children. */}
-      {tree.loading ? (
+      {tree.loading || loading ? (
         <div className="db-tree" role="status" aria-live="polite">
           <div className="db-tree-loading">Loading...</div>
         </div>

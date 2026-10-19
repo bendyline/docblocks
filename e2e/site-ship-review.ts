@@ -6,20 +6,65 @@
  *   $env:LIVE_UX_BASE_URL='https://docblocks.com'
  *   npx tsx e2e/site-ship-review.ts reports/site-review
  *
- * Optional SHIP_REVIEW_PHASES=pages,app,sharing,video,mobile,browsers; defaults to all six.
+ * Optional SHIP_REVIEW_PHASES=pages,app,sharing,video,mobile,browsers,fidelity,firstvisit;
+ * defaults to all eight. `fidelity` reads exports back and times typing in a long
+ * document; `firstvisit` measures what a fresh profile downloads before it works offline.
  * Run the existing ux:crawl as well for the wider shell screenshot inventory. This is an audit,
  * not a release gate: inspect results.json, including failed steps and axe's
  * incomplete checks, and review the screenshots before reaching a verdict.
  */
 import { chromium, firefox, webkit, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { docxToMarkdownDoc } from '@bendyline/squisq-formats/docx';
+import { pdfToMarkdownDoc } from '@bendyline/squisq-formats/pdf';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const base = (process.env.LIVE_UX_BASE_URL ?? 'http://127.0.0.1:5240').replace(/\/$/, '');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const output = path.resolve(process.argv[2] ?? `reports/site-review-${stamp}`);
-const supportedPhases = ['pages', 'app', 'sharing', 'video', 'mobile', 'browsers'];
+const supportedPhases = [
+  'pages',
+  'app',
+  'sharing',
+  'video',
+  'mobile',
+  'browsers',
+  'fidelity',
+  'firstvisit',
+];
+/**
+ * A deployed origin precaches ~36 MB compressed before the service worker
+ * claims the page: 81 s and 175 s in two runs on 2026-10-16. The former 30 s
+ * wait only ever held against a local preview.
+ */
+const SERVICE_WORKER_TIMEOUT = 300_000;
+/**
+ * One sample per script outside Windows-1252, plus Latin-1 as the control the
+ * standard PDF fonts can already encode. Right-to-left scripts and emoji are
+ * left out on purpose: PDF text extraction may reorder or drop them even from
+ * a correct file, which would turn a fixed exporter into a failure.
+ */
+const UNICODE_SAMPLES: ReadonlyArray<readonly [string, string]> = [
+  ['Latin-1', 'Café naïve résumé'],
+  ['Polish', 'zażółć gęślą jaźń'],
+  ['Greek', 'γειά σου κόσμε'],
+  ['Cyrillic', 'привет мир'],
+  ['CJK', '日本語のテキスト'],
+  ['Symbols', '→ ≤ π'],
+];
+const LONG_DOCUMENT_SECTIONS = 400;
+/**
+ * The starter document's row. It was `aboutDocBlocks.md` through 2.7 and is
+ * `Welcome.md` after; match both so the drivers still review either build.
+ */
+const WELCOME_ROW_TEXT = /\b(?:Welcome|aboutDocBlocks)\b/;
+/**
+ * Keystroke-to-frame, median. The harness itself adds ~33 ms on a six-block
+ * document, so this leaves ~70 ms for the editor, inside the 100 ms people
+ * stop perceiving as instant.
+ */
+const TYPING_BUDGET_MS = 100;
 const phases = (process.env.SHIP_REVIEW_PHASES ?? supportedPhases.join(','))
   .split(',')
   .map((name) => name.trim());
@@ -190,6 +235,52 @@ async function exportDialog(page: Page): Promise<void> {
   await page.getByRole('menuitem', { name: 'Export document...' }).click();
   await page.getByRole('dialog', { name: 'Export Document' }).waitFor();
 }
+/** Export with the dialog's defaults and return the saved file's path. */
+async function saveExport(page: Page, label: string, fileName: string): Promise<string> {
+  await dismiss(page);
+  await exportDialog(page);
+  const dialog = page.getByRole('dialog', { name: 'Export Document' });
+  await dialog.getByRole('radio', { name: label, exact: true }).click();
+  const pending = page.waitForEvent('download', { timeout: 60_000 });
+  await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
+  const destination = path.join(output, 'downloads', fileName);
+  await (await pending).saveAs(destination);
+  return destination;
+}
+/**
+ * Replace the active document through Source view. Monaco may expose an
+ * offscreen textarea when Chromium uses EditContext, so click the visible text
+ * surface and send ordinary user keystrokes.
+ */
+async function replaceSource(page: Page, markdown: string): Promise<void> {
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await page.locator('.monaco-editor .view-lines').click({ timeout: 45_000 });
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText(markdown);
+}
+/** Source view's text. Monaco renders spaces as NBSP. */
+async function readSource(page: Page): Promise<string> {
+  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  const lines = page.locator('.monaco-editor .view-lines').first();
+  await lines.waitFor({ state: 'visible', timeout: 45_000 });
+  return (await lines.innerText()).replace(/\u00a0/g, ' ');
+}
+/** Concatenated text of a parsed Markdown tree, in document order. */
+function plainText(node: unknown): string {
+  if (!node || typeof node !== 'object') return '';
+  const record = node as { value?: unknown; children?: unknown };
+  const own = typeof record.value === 'string' ? record.value : '';
+  const children = Array.isArray(record.children) ? record.children.map(plainText).join('') : '';
+  return own + children;
+}
+async function readBack(file: string): Promise<string> {
+  const bytes = await readFile(file);
+  if (file.endsWith('.pdf')) return plainText(await pdfToMarkdownDoc(new Uint8Array(bytes)));
+  if (file.endsWith('.docx')) {
+    return plainText(await docxToMarkdownDoc(new Blob([new Uint8Array(bytes)])));
+  }
+  return bytes.toString('utf8');
+}
 
 await mkdir(output, { recursive: true });
 await mkdir(path.join(output, 'downloads'), { recursive: true });
@@ -322,7 +413,7 @@ try {
     }
     await step('create-and-edit', page, async () => {
       await createDocument(page, 'ship-review', 'Ship review persistence marker.');
-      await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).click();
+      await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
       await expect(page.locator('.ProseMirror')).toContainText('Write in plain Markdown');
       await page.locator('.db-tree-row', { hasText: 'ship-review' }).click();
       await expect(page.locator('[contenteditable="true"]').first()).toContainText(
@@ -336,12 +427,8 @@ try {
       return capture(page, 'persisted-document');
     });
     await step('source-round-trip', page, async () => {
-      await page.getByRole('tab', { name: 'Source', exact: true }).click();
-      // Monaco may expose an offscreen textarea when Chromium uses EditContext.
-      // Click the visible text surface and send ordinary user keystrokes.
-      await page.locator('.monaco-editor .view-lines').click();
-      await page.keyboard.press('ControlOrMeta+A');
-      await page.keyboard.insertText(
+      await replaceSource(
+        page,
         '# Ship review\n\nPersistence marker and **bold text**.\n\n## Checklist\n\n- First item\n- Second item\n\n| Item | Status |\n| --- | --- |\n| Export | Ready |\n\n```js\nconst answer = 42;\n```\n',
       );
       await page.getByRole('tab', { name: 'Write', exact: true }).click();
@@ -444,7 +531,7 @@ try {
       await page.waitForFunction(
         () => !!navigator.serviceWorker?.controller,
         {},
-        { timeout: 30_000 },
+        { timeout: SERVICE_WORKER_TIMEOUT },
       );
       await context.setOffline(true);
       try {
@@ -674,7 +761,7 @@ try {
           await ready(page);
           await page.locator('.db-welcome-gateway-cta').click();
           await createDocument(page, 'browser-review', 'Browser persistence check');
-          await page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' }).click();
+          await page.locator('.db-tree-row', { hasText: WELCOME_ROW_TEXT }).click();
           await expect(page.locator('.ProseMirror')).toContainText('Write in plain Markdown');
           await page.locator('.db-tree-row', { hasText: 'browser-review' }).click();
           await expect(page.locator('.ProseMirror')).toContainText('Browser persistence check');
@@ -686,6 +773,158 @@ try {
       } finally {
         await engineBrowser.close();
       }
+    }
+  }
+  if (phases.includes('fidelity')) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const page = await context.newPage();
+    watch(page);
+    try {
+      await page.goto(base);
+      await ready(page);
+      await page.locator('.db-welcome-gateway-cta').click();
+      // Every exporter must carry each script through, or say that it cannot.
+      // A silent "?" in a PDF is the failure this step exists to catch.
+      await step('unicode-export', page, async () => {
+        await createDocument(page, 'unicode-review', 'Unicode export check.');
+        await replaceSource(
+          page,
+          `# Unicode review\n\n${UNICODE_SAMPLES.map(([script, text]) => `${script}: ${text}`).join('\n\n')}\n`,
+        );
+        await page.getByRole('tab', { name: 'Write', exact: true }).click();
+        await expect(page.locator('.ProseMirror')).toContainText(UNICODE_SAMPLES[1][1]);
+        // PDF import can read short aligned lines back as a table and drop the
+        // spaces between words, so compare with all whitespace removed.
+        const compact = (value: string) => value.replace(/\s+/g, '');
+        const missing: Record<string, string[]> = {};
+        for (const [label, extension] of [
+          ['Markdown', 'md'],
+          ['Word', 'docx'],
+          ['PDF', 'pdf'],
+        ]) {
+          const text = compact(
+            await readBack(await saveExport(page, label, `unicode-review.${extension}`)),
+          );
+          missing[label] = UNICODE_SAMPLES.filter(
+            ([, sample]) => !text.includes(compact(sample)),
+          ).map(([script]) => script);
+        }
+        await capture(page, 'unicode-export', false);
+        expect(missing, 'scripts lost per export format').toEqual({
+          Markdown: [],
+          Word: [],
+          PDF: [],
+        });
+        return { missing };
+      });
+      // GFM table cells hold inline content only. The editor must not accept a
+      // block it will flatten on save ("Task 1Task 2Task 3").
+      await step('table-cell-list', page, async () => {
+        await createDocument(page, 'table-review', 'Before the table');
+        const editor = page.locator('.ProseMirror');
+        await editor.getByText('Before the table').click();
+        await page.keyboard.press('End');
+        await page.getByRole('button', { name: 'Insert' }).click();
+        await page.getByRole('menuitem', { name: 'Table' }).click();
+        await editor.locator('th, td').first().click();
+        await page.getByRole('button', { name: 'Insert' }).click();
+        await page.getByRole('menuitem', { name: 'Task List' }).click();
+        const before = await editor.locator('th, td').first().innerText();
+        const markdown = await readSource(page);
+        await page.getByRole('tab', { name: 'Write', exact: true }).click();
+        const after = await editor.locator('th, td').first().innerText();
+        await capture(page, 'table-cell-list', false);
+        expect(markdown).not.toMatch(/Task 1\s*Task 2/);
+        return { before, after, markdown: markdown.slice(0, 400) };
+      });
+      await step('long-document-typing', page, async () => {
+        await createDocument(page, 'long-review', 'Long document check.');
+        const sections = Array.from(
+          { length: LONG_DOCUMENT_SECTIONS },
+          (_, index) =>
+            `## Section ${index + 1}\n\nParagraph ${index + 1} has **bold**, _italic_, and \`code\`. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.\n\n- First item\n- Second item`,
+        );
+        await replaceSource(page, `# Long review\n\n${sections.join('\n\n')}\n`);
+        await page.getByRole('tab', { name: 'Write', exact: true }).click();
+        await page
+          .locator('.ProseMirror h2')
+          .nth(LONG_DOCUMENT_SECTIONS - 1)
+          .waitFor({ timeout: 60_000 });
+        await page.locator('.ProseMirror h1').first().click();
+        await page.keyboard.press('End');
+        await settleSelection(page);
+        const samples: number[] = [];
+        for (let index = 0; index < 21; index++) {
+          const started = Date.now();
+          await page.keyboard.type('x');
+          await page.evaluate(
+            () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+          );
+          samples.push(Date.now() - started);
+        }
+        samples.sort((a, b) => a - b);
+        const typing = { medianMs: samples[10], p95Ms: samples[19] };
+        const status = await page.locator('.squisq-status-item').allInnerTexts();
+        expect(typing.medianMs, 'median keystroke-to-frame').toBeLessThan(TYPING_BUDGET_MS);
+        return { typing, status };
+      });
+    } finally {
+      await context.close();
+    }
+  }
+  if (phases.includes('firstvisit')) {
+    // A measurement, not an assertion: what a fresh profile downloads, and how
+    // long until the service worker controls the page and offline reload works.
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const page = await context.newPage();
+    watch(page);
+    const network = await context.newCDPSession(page);
+    await network.send('Network.enable');
+    const responses = new Map<string, string>();
+    let pageBytes = 0;
+    network.on('Network.responseReceived', (event) => {
+      responses.set(event.requestId, event.response.url);
+    });
+    network.on('Network.loadingFinished', (event) => {
+      pageBytes += event.encodedDataLength;
+    });
+    const megabytes = (bytes: number) => Math.round(bytes / 1e5) / 10;
+    try {
+      await step('first-visit-cost', page, async () => {
+        const started = Date.now();
+        await page.goto(base);
+        await ready(page);
+        const readyMs = Date.now() - started;
+        const bytesAtReady = pageBytes;
+        await page.waitForFunction(
+          () => !!navigator.serviceWorker?.controller,
+          {},
+          { timeout: SERVICE_WORKER_TIMEOUT },
+        );
+        const controlledMs = Date.now() - started;
+        const storageBytes = await page.evaluate(
+          async () => (await navigator.storage.estimate()).usage ?? 0,
+        );
+        const precached = await page.evaluate(async () => {
+          let count = 0;
+          for (const name of await caches.keys()) {
+            count += (await (await caches.open(name)).keys()).length;
+          }
+          return count;
+        });
+        return {
+          readyMs,
+          controlledMs,
+          pageMBAtReady: megabytes(bytesAtReady),
+          pageMBAtControl: megabytes(pageBytes),
+          storageMB: megabytes(storageBytes),
+          precachedEntries: precached,
+          proofingFetchesByPage: [...responses.values()].filter((url) => url.includes('/harper/'))
+            .length,
+        };
+      });
+    } finally {
+      await context.close();
     }
   }
 } finally {

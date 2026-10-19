@@ -28,6 +28,10 @@ export interface MobileAiOptions {
 }
 const defaults: AiPreferences = { enabled: false, model: null, reviewMode: 'explicit' };
 const provider = { name: 'Gezel', version: '0.1.0', mode: 'hosted' as const };
+// The Android build excludes ML Kit (android/app/build.gradle). Gezel still
+// reports its provider, as unavailable, so DocBlocks never offers it.
+const excludedProviders = new Set(['android-mlkit']);
+const offered = (id: string) => !excludedProviders.has(id.split(':')[0]);
 
 export function createMobileAi(options: MobileAiOptions) {
   let preferences = parseAiPreferences(options.readPreferences()) ?? defaults;
@@ -68,7 +72,7 @@ export function createMobileAi(options: MobileAiOptions) {
       });
   };
   async function refresh() {
-    const models = await embedding.models.list();
+    const models = (await embedding.models.list()).filter((model) => offered(model.id));
     descriptors = models;
     choices = modelChoices(models, preferences.model);
     ready();
@@ -174,6 +178,11 @@ export function createMobileAi(options: MobileAiOptions) {
       const done = (async (): Promise<AiResult<AiModelInfo>> => {
         try {
           reserve(controller);
+          if (!offered(id))
+            throw new MobileAiError(
+              'model-unavailable',
+              'This model is not available in DocBlocks.',
+            );
           const installed = await embedding.models.prepare(id, {
             allowDownload: true,
             signal: controller.signal,

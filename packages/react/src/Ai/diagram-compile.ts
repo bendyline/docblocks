@@ -5,7 +5,9 @@
  * text goes through the label sanitizer, and drawing and layout geometry is
  * computed. Mermaid kinds become a ```mermaid fence with an accessible title
  * and description; timelines a Squisq ```timeline fence; steps and cycles a
- * `{[drawing]}`; comparisons and key numbers a `{[layout]}`.
+ * `{[drawing]}`; comparisons and key numbers a `{[layout]}`; and the shapes
+ * neither can draw — Venn diagrams, 2×2 matrices, funnels, pyramids — a
+ * ```svg picture (see `diagram-svg.ts`).
  */
 
 import { renderAsciiTimeline, type AsciiTimeline } from '@bendyline/squisq/doc';
@@ -17,18 +19,26 @@ import type {
   DiagramKind,
   DiagramSpec,
   FlowSpec,
+  FunnelSpec,
   HierarchySpec,
+  MatrixSpec,
+  PyramidSpec,
   SequenceSpec,
   StatsSpec,
   StepsSpec,
   TimelineSpec,
+  VennSpec,
 } from './diagram-spec.js';
 import { DIAGRAM_KIND_LABELS } from './diagram-spec.js';
+import { funnelSvg, matrixSvg, pyramidSvg, vennSvg } from './diagram-svg.js';
 
-export type DiagramFamily = 'mermaid' | 'timeline' | 'drawing' | 'layout';
+export type DiagramFamily = 'mermaid' | 'timeline' | 'drawing' | 'layout' | 'svg';
+
+/** A spec-compiled diagram kind, or an illustration the model drew as SVG itself. */
+export type PictureKind = DiagramKind | 'illustration';
 
 export interface CompiledDiagram {
-  readonly kind: DiagramKind;
+  readonly kind: PictureKind;
   readonly family: DiagramFamily;
   /**
    * Fences go straight after their passage. Drawings and layouts are heading
@@ -80,6 +90,22 @@ export function compileDiagram(spec: DiagramSpec, options: { title: string }): C
       return layout(spec.kind, title, statsSummary(spec), (depth, ids) =>
         statsLayout(spec, title, depth, ids),
       );
+    case 'venn': {
+      const summary = vennSummary(spec);
+      return svgPicture(spec.kind, title, summary, vennSvg(spec, title, summary));
+    }
+    case 'matrix': {
+      const summary = matrixSummary(spec);
+      return svgPicture(spec.kind, title, summary, matrixSvg(spec, title, summary));
+    }
+    case 'funnel': {
+      const summary = funnelSummary(spec);
+      return svgPicture(spec.kind, title, summary, funnelSvg(spec, title, summary));
+    }
+    case 'pyramid': {
+      const summary = pyramidSummary(spec);
+      return svgPicture(spec.kind, title, summary, pyramidSvg(spec, title, summary));
+    }
   }
 }
 
@@ -87,6 +113,27 @@ export function compileDiagram(spec: DiagramSpec, options: { title: string }): C
 
 function fence(lang: string, body: string): string {
   return `\`\`\`${lang}\n${body}\n\`\`\``;
+}
+
+/** A ```svg picture. `svg` must already be safe markup: compiled, or sanitized. */
+export function svgPicture(
+  kind: PictureKind,
+  title: string,
+  summary: string,
+  svg: string,
+): CompiledDiagram {
+  // A run of backticks inside the markup would close a three-backtick fence.
+  const longest = Math.max(0, ...[...svg.matchAll(/`+/gu)].map((match) => match[0].length));
+  const ticks = '`'.repeat(Math.max(3, longest + 1));
+  return {
+    kind,
+    family: 'svg',
+    placement: 'afterBlock',
+    title,
+    summary,
+    mermaidSource: null,
+    render: () => `${ticks}svg\n${svg}\n${ticks}`,
+  };
 }
 
 function mermaid(
@@ -565,4 +612,45 @@ function comparisonSummary(spec: ComparisonSpec): string {
 
 function statsSummary(spec: StatsSpec): string {
   return sentence(`Key numbers: ${spec.stats.map((s) => `${s.value} ${s.label}`).join('; ')}.`);
+}
+
+function vennSummary(spec: VennSpec): string {
+  const only = spec.sets
+    .filter((set) => set.items.length > 0)
+    .map((set) => `${set.label} only: ${set.items.join(', ')}`)
+    .join('. ');
+  return sentence(
+    `Venn diagram of ${spec.sets.map((set) => set.label).join(' and ')}. ` +
+      `${only ? `${only}. ` : ''}Shared by all: ${spec.shared.join(', ')}.`,
+  );
+}
+
+const QUADRANT_NAMES = ['Top left', 'Top right', 'Bottom left', 'Bottom right'];
+
+function matrixSummary(spec: MatrixSpec): string {
+  const axes =
+    spec.xAxis && spec.yAxis
+      ? ` of ${spec.xAxis} (left to right) against ${spec.yAxis} (bottom to top)`
+      : '';
+  const cells = spec.quadrants
+    .map(
+      (quadrant, index) =>
+        `${QUADRANT_NAMES[index] ?? ''}, ${quadrant.label}` +
+        `${quadrant.items.length ? `: ${quadrant.items.join(', ')}` : ''}`,
+    )
+    .join('; ');
+  return sentence(`2 by 2 matrix${axes}. ${cells}.`);
+}
+
+function funnelSummary(spec: FunnelSpec): string {
+  const stages = spec.stages
+    .map((stage) => (stage.value ? `${stage.label} ${stage.value}` : stage.label))
+    .join(', ');
+  return sentence(`Funnel of ${String(spec.stages.length)} stages, widest first: ${stages}.`);
+}
+
+function pyramidSummary(spec: PyramidSpec): string {
+  return sentence(
+    `Pyramid of ${String(spec.levels.length)} levels from top to base: ${spec.levels.join(', ')}.`,
+  );
 }

@@ -8,14 +8,17 @@ import type {
   MarkdownInlineNode,
 } from '@bendyline/squisq/markdown';
 import {
+  isSvgImageSource,
   parseFrontmatter,
   parseMarkdown,
   readFrontmatterThemeId,
   splitFrontmatterBlock,
+  svgSourceFromBytes,
 } from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type {
+  DiagramPicture,
   DiagramRasterizer,
   ExportDiagramKind,
   RasterizedDiagrams,
@@ -36,29 +39,77 @@ export interface ExportConverterOverrides {
   diagramRenderer?: DiagramRasterizer;
 }
 
+/** The host's diagram renderer, or Squisq's browser one. */
+async function diagramRendererFor(overrides: ExportConverterOverrides): Promise<DiagramRasterizer> {
+  if (overrides.diagramRenderer) return overrides.diagramRenderer;
+  const module = await import('@bendyline/squisq-react/diagram-pictures');
+  return module.createDiagramPictureRenderer();
+}
+
 /**
  * Pictures of the document's diagrams — Mermaid, timelines, ASCII diagrams,
  * file trees, drawings and layouts — which Word, EPUB, PDF and PowerPoint
  * cannot draw themselves, so without these they export as source text. A
  * diagram that cannot be drawn stays as source; the export never fails on it.
+ *
+ * SVG islands are pictured only on request (`'svg'`, or `'all'` for PDF):
+ * Word and PowerPoint embed them as vector art and use the pictures only as
+ * the PNG fallback stored beside it.
  */
 async function pictureDiagrams(
   doc: MarkdownDocument,
   overrides: ExportConverterOverrides,
-  kinds?: readonly ExportDiagramKind[],
+  kinds?: readonly ExportDiagramKind[] | 'all',
 ): Promise<RasterizedDiagrams> {
   try {
-    const [{ rasterizeDiagrams }, render] = await Promise.all([
+    const [{ rasterizeDiagrams, EXPORT_DIAGRAM_KINDS }, render] = await Promise.all([
       import('@bendyline/squisq-formats/diagrams'),
-      overrides.diagramRenderer ??
-        import('@bendyline/squisq-react/diagram-pictures').then(
-          (module): DiagramRasterizer => module.createDiagramPictureRenderer(),
-        ),
+      diagramRendererFor(overrides),
     ]);
-    return await rasterizeDiagrams(doc, render, { kinds, urlPrefix: 'docblocks-diagram' });
+    return await rasterizeDiagrams(doc, render, {
+      kinds: kinds === 'all' ? EXPORT_DIAGRAM_KINDS : kinds,
+      urlPrefix: 'docblocks-diagram',
+    });
   } catch {
-    return { markdownDoc: doc, images: new Map(), mermaid: new Map() };
+    return { markdownDoc: doc, images: new Map(), mermaid: new Map(), svg: new Map() };
   }
+}
+
+/**
+ * PNG pictures of the SVG files among a document's images, keyed by each
+ * file's trimmed text — the key Word's `svgIslandFallbacks` and PowerPoint's
+ * `diagramImages` look a fallback up by. A file that is not a usable SVG, or
+ * cannot be drawn, is left out and keeps its vector art or alt text.
+ */
+async function pictureSvgAttachments(
+  attachments: Iterable<readonly [string, ArrayBuffer | Uint8Array]>,
+  overrides: ExportConverterOverrides,
+): Promise<Map<string, DiagramPicture>> {
+  const pictures = new Map<string, DiagramPicture>();
+  const sources = new Set<string>();
+  for (const [url, data] of attachments) {
+    if (isSvgImageSource(url)) sources.add(svgSourceFromBytes(data).trim());
+  }
+  if (sources.size === 0) return pictures;
+  try {
+    const render = await diagramRendererFor(overrides);
+    for (const source of sources) {
+      // One SVG that cannot be drawn must not cost the others theirs.
+      const diagram = { kind: 'svg', markdown: '', source, template: '', alt: '' } as const;
+      const picture = await render(diagram).catch(() => null);
+      if (picture && picture.width > 0 && picture.height > 0) pictures.set(source, picture);
+    }
+  } catch {
+    // No renderer: every SVG keeps its vector art or alt text.
+  }
+  return pictures;
+}
+
+/** The `data` of each entry in an image map, for `pictureSvgAttachments`. */
+function imageBytes(
+  images: ReadonlyMap<string, { data: ArrayBuffer | Uint8Array }>,
+): [string, ArrayBuffer | Uint8Array][] {
+  return [...images].map(([url, image]) => [url, image.data]);
 }
 
 const MIME_TYPES: Record<ExportFormat, string> = {
@@ -113,6 +164,15 @@ function buildFilename(selectedFile: string | null, format: ExportFormat): strin
   return base + FORMAT_EXTENSIONS[format];
 }
 
+/** What an export reports beyond the saved file. */
+export interface ExportResult {
+  /**
+   * What the user should know about the file that was saved, such as
+   * characters PDF export had to replace. Empty when nothing was lost.
+   */
+  readonly warnings: readonly string[];
+}
+
 /** Run the export and trigger a download. */
 export async function runExport(
   markdown: string,
@@ -121,6 +181,28 @@ export async function runExport(
   mediaContainer?: ContentContainer | null,
   saveBlob?: ExportBlobSaver,
   converterOverrides: ExportConverterOverrides = {},
+): Promise<ExportResult> {
+  const warnings: string[] = [];
+  await exportDocument(
+    markdown,
+    selectedFile,
+    options,
+    mediaContainer,
+    saveBlob,
+    converterOverrides,
+    warnings,
+  );
+  return { warnings };
+}
+
+async function exportDocument(
+  markdown: string,
+  selectedFile: string | null,
+  options: ExportOptions,
+  mediaContainer: ContentContainer | null | undefined,
+  saveBlob: ExportBlobSaver | undefined,
+  converterOverrides: ExportConverterOverrides,
+  warnings: string[],
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
   const themeId = exporterThemeId(markdown, options.themeId);
@@ -140,26 +222,35 @@ export async function runExport(
   if (options.format === 'docx') {
     const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
     const pictured = await pictureDiagrams(doc, converterOverrides);
-    const images = new Map([
-      ...(mediaContainer ? await resolveImages(doc, mediaContainer) : []),
-      ...pictured.images,
-    ]);
-    const buf = await markdownDocToDocx(pictured.markdownDoc, { themeId, images });
+    // SVG islands and attached SVGs go in as vector art; their pictures are
+    // only the PNG fallback Word stores beside it for older readers.
+    const { svg } = await pictureDiagrams(doc, converterOverrides, ['svg']);
+    const attachments = await resolveImages(doc, mediaContainer);
+    const svgAttachments = await pictureSvgAttachments(imageBytes(attachments), converterOverrides);
+    const images = new Map([...attachments, ...pictured.images]);
+    const buf = await markdownDocToDocx(pictured.markdownDoc, {
+      themeId,
+      images,
+      svgIslandFallbacks: new Map([...svg, ...svgAttachments]),
+    });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.docx }), filename, saveBlob);
     return;
   }
 
   if (options.format === 'pdf') {
     const { markdownDocToPdf } = await import('@bendyline/squisq-formats/pdf');
-    const pictured = await pictureDiagrams(doc, converterOverrides);
-    const images = new Map([
-      ...(mediaContainer ? await resolveImages(doc, mediaContainer) : []),
-      ...pictured.images,
-    ]);
+    // PDF has no vector picture of its own: SVG islands are pictured too,
+    // and each attached SVG is swapped for its PNG.
+    const pictured = await pictureDiagrams(doc, converterOverrides, 'all');
+    const attachments = await resolveImages(doc, mediaContainer);
+    const svgPictures = await pictureSvgAttachments(imageBytes(attachments), converterOverrides);
+    const images = new Map([...withSvgPictures(attachments, svgPictures), ...pictured.images]);
     const buf = await markdownDocToPdf(pictured.markdownDoc, {
       themeId,
       pageSize: options.pageSize,
       images,
+      // Replaced characters are reported to the user, not just the console.
+      onWarning: (message) => warnings.push(message),
     });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;
@@ -201,9 +292,15 @@ export async function runExport(
     }
     const images = mediaContainer ? await resolveImageData(doc, mediaContainer) : undefined;
     // Drawings, timelines and ASCII diagrams become native slide shapes;
-    // only Mermaid needs a picture.
-    const { mermaid } = await pictureDiagrams(doc, converterOverrides, ['mermaid']);
-    const buf = await docToPptx(enrichedDoc, { themeId, images, diagramImages: mermaid });
+    // Mermaid needs a picture, and an SVG island's or attached SVG's picture
+    // is the PNG fallback stored beside its vector art.
+    const { mermaid, svg } = await pictureDiagrams(doc, converterOverrides, ['mermaid', 'svg']);
+    const svgAttachments = await pictureSvgAttachments(images ?? [], converterOverrides);
+    const buf = await docToPptx(enrichedDoc, {
+      themeId,
+      images,
+      diagramImages: new Map([...mermaid, ...svg, ...svgAttachments]),
+    });
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pptx }), filename, saveBlob);
     return;
   }
@@ -430,13 +527,25 @@ function collectMarkdownImageUrls(doc: MarkdownDocument): string[] {
   return Array.from(new Set(urls));
 }
 
-/** Resolve image URLs (markdown → docx) to binary data from a ContentContainer. */
+/** An image's bytes in the shape the DOCX and PDF exporters take. */
+interface ExportImage {
+  data: ArrayBuffer | Uint8Array;
+  contentType: string;
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Resolve image URLs (markdown → docx, pdf) to binary data from a
+ * ContentContainer. Empty when there is no container to read from.
+ */
 async function resolveImages(
   doc: MarkdownDocument,
-  container: ContentContainer,
-): Promise<Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>> {
+  container: ContentContainer | null | undefined,
+): Promise<Map<string, ExportImage>> {
+  const map = new Map<string, ExportImage>();
+  if (!container) return map;
   const urls = collectMarkdownImageUrls(doc);
-  const map = new Map<string, { data: ArrayBuffer | Uint8Array; contentType: string }>();
 
   for (const url of urls) {
     if (map.has(url)) continue;
@@ -449,6 +558,34 @@ async function resolveImages(
   }
 
   return map;
+}
+
+/**
+ * Images for PDF, which draws PNG and JPEG only: an SVG with a picture goes
+ * in as that PNG; one without still prints its alt text.
+ */
+function withSvgPictures(
+  images: ReadonlyMap<string, ExportImage>,
+  pictures: ReadonlyMap<string, DiagramPicture>,
+): Map<string, ExportImage> {
+  const result = new Map<string, ExportImage>();
+  for (const [url, image] of images) {
+    const picture = isSvgImageSource(url)
+      ? pictures.get(svgSourceFromBytes(image.data).trim())
+      : undefined;
+    result.set(
+      url,
+      picture
+        ? {
+            data: picture.data,
+            contentType: 'image/png',
+            width: picture.width,
+            height: picture.height,
+          }
+        : image,
+    );
+  }
+  return result;
 }
 
 /** Resolve the raw image payload shape consumed by EPUB export. */

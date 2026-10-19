@@ -175,8 +175,8 @@ export function AppMenu({
   // Genuinely an identity question, not a capability one: each surface has its
   // own product page. Kept as an exhaustive record so a new surface has to
   // choose a page rather than silently inheriting the web one.
-  const moreInformationUrl =
-    MORE_INFORMATION_URLS[getHostEnvironment()?.surface ?? 'web'] ?? MORE_INFORMATION_URLS.web;
+  const surface = getHostEnvironment()?.surface ?? 'web';
+  const moreInformationUrl = MORE_INFORMATION_URLS[surface] ?? MORE_INFORMATION_URLS.web;
   const containerRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(isOpen, setIsOpen);
@@ -485,18 +485,6 @@ export function AppMenu({
             <strong>DocBlocks</strong> is a local-first Markdown document editor. Your files stay
             under your control.
           </p>
-          <aside className="db-about-beta">
-            <strong>Beta Software.</strong> We&apos;re still working through initial hiccups and
-            issues. Please bear with us, make sure you keep backups, and{' '}
-            <a
-              href="https://github.com/bendyline/docblocks/issues/new"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              open issues
-            </a>{' '}
-            where you find them. Thanks!
-          </aside>
           {appVersion && (
             <p className="db-about-version">
               <span>Version</span>
@@ -520,6 +508,17 @@ export function AppMenu({
             </a>
             .
           </p>
+          {/* Only the browser build points at the desktop apps; desktop and
+              mobile users are already running a native app. */}
+          {surface === 'web' && (
+            <p>
+              See our free desktop apps at{' '}
+              <a href={MORE_INFORMATION_URLS.electron} target="_blank" rel="noopener noreferrer">
+                docblocks.com/desktop
+              </a>
+              .
+            </p>
+          )}
           <p className="db-dialog-links">
             <a href={moreInformationUrl} target="_blank" rel="noopener noreferrer">
               More information...

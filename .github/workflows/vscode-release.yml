@@ -53,6 +53,26 @@ jobs:
       - name: Run canonical quality gate
         run: xvfb-run -a npm run all
 
+      # A release gate runs the same suites as CI on identical code, so what it
+      # catches is usually a timing race CI happened to miss. Without these the
+      # only evidence is a log line, and a race rarely reproduces on demand.
+      - name: Upload E2E diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: quality-gate-playwright-diagnostics
+          path: |
+            playwright-report/
+            playwright-report-offline/
+            playwright-report-cross-browser/
+            test-results/
+            packages/vscode/playwright-report/
+            packages/vscode/test-results/
+            packages/desktop/playwright-report/
+            packages/desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
   release:
     name: Package and Release VSIX
     needs: quality

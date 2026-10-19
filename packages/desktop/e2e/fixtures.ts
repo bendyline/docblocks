@@ -399,4 +399,15 @@ export async function expectSavedBeforeReload(window: Page): Promise<void> {
   await expect(window.locator('.db-shell')).toHaveAttribute('data-document-status', 'saved');
 }
 
+/**
+ * A first launch opens behind the welcome screen, which covers the editor and
+ * its toolbar. Take the tour, as a person would, before using either.
+ */
+export async function tourWelcome(window: Page): Promise<void> {
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 30_000 });
+  await window.getByRole('button', { name: 'Tour the welcome document' }).click();
+  await expect(gateway).toHaveCount(0);
+}
+
 export { expect };

@@ -14,10 +14,14 @@ async function openWelcomeDocument(page: Page) {
   await page.goto('/');
   await expect(page.locator('.db-shell')).toBeVisible();
 
+  // Phones offer the tour from a card in the file pane; wider layouts from a
+  // welcome screen over the editor, decided before the editor mounts.
   const tour = page.getByRole('button', { name: 'Tour the welcome document' });
-  if (await tour.isVisible().catch(() => false)) await tour.click();
+  const toolbar = page.locator('.squisq-toolbar');
+  await expect(tour.or(toolbar).first()).toBeVisible({ timeout: 20_000 });
+  if (await tour.isVisible()) await tour.click();
 
-  await expect(page.locator('.squisq-toolbar')).toBeVisible({ timeout: 20_000 });
+  await expect(toolbar).toBeVisible({ timeout: 20_000 });
   await page.getByRole('tab', { name: 'Write' }).click();
   await expect(page.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
 }

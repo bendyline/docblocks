@@ -85,6 +85,16 @@ describe('segmentPassages', () => {
     expect(texts.some((text) => text.startsWith('The browser sends'))).to.equal(false);
   });
 
+  it('treats an SVG picture after a passage as an existing diagram', () => {
+    const passage =
+      'The browser sends credentials to the server, which checks them and returns a token to the browser.';
+    const svg = '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+    expect(segmentPassages(`${passage}\n\n\`\`\`svg\n${svg}\n\`\`\`\n`)).to.deep.equal([]);
+    expect(segmentPassages(`${passage}\n\n\`\`\` SVG\n${svg}\n\`\`\`\n`)).to.deep.equal([]);
+    // Shown as code, it is not a picture.
+    expect(segmentPassages(`${passage}\n\n\`\`\`xml\n${svg}\n\`\`\`\n`)).to.have.length(1);
+  });
+
   it('skips sections laid out by a template', () => {
     const source =
       '## Slide {[statHighlight]}\n\n' +
@@ -216,7 +226,14 @@ describe('prompts', () => {
     });
     const small = promptBudget(4_096);
     // System prompt + passages + reply fit the window at three characters a token.
-    expect(350 + small.passageCharacters / 3 + small.planTokens).to.be.at.most(4_096);
+    expect(420 + small.passageCharacters / 3 + small.planTokens).to.be.at.most(4_096);
+    const request = buildPlanRequest({
+      title: 'Launch plan',
+      shortlist: shortlistPassages(segmentPassages(DOC), 10_000),
+      budget: small,
+    });
+    // The planning prompt itself stays inside the tokens set aside for it.
+    expect((request.messages[0]?.content.length ?? 0) / 4).to.be.at.most(420);
   });
 
   it('frames the document as content and asks for numbered picks', () => {
@@ -250,6 +267,16 @@ describe('prompts', () => {
     expect(parsePlanResponse('I could not decide.', shortlist, 5)).to.equal(null);
   });
 
+  it('reads the picture kinds by name or alias', () => {
+    const shortlist = shortlistPassages(segmentPassages(DOC), 10_000);
+    const picks = parsePlanResponse(
+      '[{"passage":"P1","kind":"2x2 matrix"},{"passage":"P3","kind":"Venn diagram"}]',
+      shortlist,
+      5,
+    );
+    expect(picks?.map((pick) => pick.kind)).to.deep.equal(['matrix', 'venn']);
+  });
+
   it('shows one example of the exact JSON for the kind', () => {
     const request = buildRealizeRequest({
       kind: 'timeline',
@@ -268,6 +295,10 @@ describe('prompts', () => {
       inferKind('', 'The browser sends a request and the server returns a response.'),
     ).to.equal('sequence');
     expect(inferKind('show it', 'Nothing in particular.')).to.equal('flow');
+    expect(inferKind('what the two teams have in common', '')).to.equal('venn');
+    expect(inferKind('a 2x2 of effort and impact', '')).to.equal('matrix');
+    expect(inferKind('', 'Conversion drops at every stage of signup.')).to.equal('funnel');
+    expect(inferKind('the pyramid of needs', '')).to.equal('pyramid');
   });
 });
 

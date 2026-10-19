@@ -13,6 +13,11 @@ import type {
 import { DOCBLOCKS_MCP_WIRE_VERSION, MCP_WIRE_LIMITS } from '@bendyline/docblocks/mcp';
 import type { DocDiagnostic } from '@bendyline/squisq/schemas';
 import type { TemplateAuthoringMetadata } from '@bendyline/squisq/doc';
+import type {
+  SVG_ISLAND_LIMITS,
+  SvgIslandDiagnostic,
+  SvgIslandFailureReason,
+} from '@bendyline/squisq/markdown';
 import type { PreparedDocument } from './document-service.js';
 import { DocumentService, throwIfAborted } from './document-service.js';
 import { boundWireText, toWireIdentifier } from './output-bounds.js';
@@ -25,6 +30,13 @@ export const MCP_MAX_PUBLISHED_DIAGNOSTICS = 500;
 const MAX_DIAGNOSTICS = MCP_MAX_PUBLISHED_DIAGNOSTICS;
 const FORMAT_PATTERN = /^[a-z0-9][a-z0-9.+_-]{0,63}$/u;
 const CANCELLATION_YIELD_INTERVAL = 256;
+/** Bound on ```svg fences one inspection sanitizes; each may hold up to 512 KiB. */
+const MAX_SVG_FENCES_ANALYZED = 1_000;
+/** Removed-content entries named in one `svg-content-removed` message. */
+const MAX_LISTED_SVG_REMOVALS = 12;
+/** Fence lines named in the aggregated `svg-missing-title` message. */
+const MAX_LISTED_SVG_LINES = 10;
+const MAX_SVG_REMOVAL_NAME_CHARACTERS = 64;
 
 export async function inspectPreparedDocument(
   _documents: DocumentService,
@@ -84,6 +96,12 @@ export async function inspectPreparedDocument(
     ),
     ...missingAltTextDiagnostics(prepared.markdownDoc, prepared.sourceFormat),
     ...(await authoringDiagnostics(prepared, 'inspect', prepared.sourceFormat, signal)),
+    ...(await svgPictureDiagnostics(
+      prepared.markdownDoc,
+      'inspect',
+      prepared.sourceFormat,
+      signal,
+    )),
   ];
   let wordCount = 0;
   for (let index = 0; index < analyzed.length; index += 1) {
@@ -835,6 +853,251 @@ function missingAltTextDiagnostics(
       location: null,
     },
   ];
+}
+
+type SourceLocation = Extract<McpDiagnostic['location'], { kind: 'source' }>;
+
+/**
+ * Find SVG pictures that will not appear as authored. Squisq draws a ```svg
+ * fence only after its sanitizer accepts it: a rejected fence shows as code
+ * (or a placeholder on slides), and an accepted one may have lost content or
+ * lack an accessible name. Raw `<svg>` HTML is dropped by the Markdown
+ * sanitizer. The whole parsed tree is walked, so fences nested in lists,
+ * quotes, and container blocks are found too.
+ */
+export async function svgPictureDiagnostics(
+  markdownDoc: PreparedDocument['markdownDoc'],
+  stage: DiagnosticStage,
+  format: string,
+  signal?: AbortSignal,
+): Promise<McpDiagnostic[]> {
+  throwIfAborted(signal);
+  const { SVG_ISLAND_LIMITS, isSvgIslandLang, parseSvgIsland } =
+    await import('@bendyline/squisq/markdown');
+  const diagnostics: McpDiagnostic[] = [];
+  const untitled: Array<SourceLocation | null> = [];
+  let fenceCount = 0;
+  const pending: unknown[] = [markdownDoc];
+  let visited = 0;
+  while (pending.length > 0) {
+    const checkpoint = cancellationCheckpoint(signal, visited);
+    if (checkpoint) await checkpoint;
+    visited += 1;
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') continue;
+    const candidate = node as {
+      type?: unknown;
+      lang?: unknown;
+      value?: unknown;
+      htmlChildren?: unknown;
+      children?: unknown;
+      position?: unknown;
+    };
+    if (
+      candidate.type === 'code' &&
+      typeof candidate.value === 'string' &&
+      isSvgIslandLang(typeof candidate.lang === 'string' ? candidate.lang : null)
+    ) {
+      fenceCount += 1;
+      if (fenceCount > MAX_SVG_FENCES_ANALYZED) continue;
+      const location = sourceLocation(candidate.position);
+      const result = parseSvgIsland(candidate.value);
+      if (!result.ok) {
+        diagnostics.push(
+          svgFenceNotRenderedDiagnostic(result, location, stage, format, SVG_ISLAND_LIMITS),
+        );
+        continue;
+      }
+      if (result.diagnostics.length > 0) {
+        diagnostics.push(svgContentRemovedDiagnostic(result.diagnostics, location, stage, format));
+      }
+      if (result.island.title === undefined) untitled.push(location);
+      continue;
+    }
+    if (candidate.type === 'htmlBlock' || candidate.type === 'htmlInline') {
+      const svgCount = countSvgElements(candidate.htmlChildren);
+      if (svgCount > 0) {
+        diagnostics.push(
+          rawSvgHtmlDiagnostic(svgCount, sourceLocation(candidate.position), stage, format),
+        );
+      }
+    }
+    if (Array.isArray(candidate.children)) {
+      for (let index = candidate.children.length - 1; index >= 0; index -= 1) {
+        pending.push(candidate.children[index]);
+      }
+    }
+  }
+  if (untitled.length > 0) {
+    diagnostics.push(svgMissingTitleDiagnostic(untitled, stage, format));
+  }
+  if (fenceCount > MAX_SVG_FENCES_ANALYZED) {
+    diagnostics.push({
+      code: 'svg-analysis-truncated',
+      severity: 'info',
+      stage,
+      format,
+      count: fenceCount - MAX_SVG_FENCES_ANALYZED,
+      message: `SVG diagnostics analyzed the first ${MAX_SVG_FENCES_ANALYZED} of ${fenceCount} \`\`\`svg fences.`,
+      remediation: 'Split the document before requesting exhaustive SVG picture diagnostics.',
+      retryable: false,
+      location: null,
+    });
+  }
+  return diagnostics;
+}
+
+function svgFenceLabel(location: SourceLocation | null): string {
+  return location ? `The \`\`\`svg fence at line ${location.line}` : 'A ```svg fence';
+}
+
+function svgFenceNotRenderedDiagnostic(
+  result: { reason: SvgIslandFailureReason; message: string },
+  location: SourceLocation | null,
+  stage: DiagnosticStage,
+  format: string,
+  limits: typeof SVG_ISLAND_LIMITS,
+): McpDiagnostic {
+  const sourceKiB = Math.floor(limits.maxSourceBytes / 1024);
+  const remediation = {
+    empty: 'Put one complete <svg>…</svg> element in the fence, or delete the fence.',
+    'not-svg':
+      'Keep exactly one <svg> root element in the fence and nothing beside it. To show SVG source as code instead, use an ```xml fence.',
+    'too-large': `Simplify the picture and remove circular <use> references: a fence must stay under ${sourceKiB} KiB of source, ${limits.maxElements} elements, and ${limits.maxExpandedElements} elements after <use> expansion.`,
+    'too-deep': `Flatten nested groups: a fence may nest elements at most ${limits.maxDepth} levels deep.`,
+    parse: 'Repair the markup so the fence holds one well-formed <svg> element.',
+  }[result.reason];
+  return {
+    code: 'svg-fence-not-rendered',
+    severity: 'error',
+    stage,
+    format,
+    count: 1,
+    message: `${svgFenceLabel(location)} cannot be drawn (${result.reason}): ${result.message} It shows as code, or as a placeholder on slides, instead of a picture.`,
+    remediation,
+    retryable: false,
+    location,
+  };
+}
+
+function svgContentRemovedDiagnostic(
+  removals: readonly SvgIslandDiagnostic[],
+  location: SourceLocation | null,
+  stage: DiagnosticStage,
+  format: string,
+): McpDiagnostic {
+  const listed = removals.slice(0, MAX_LISTED_SVG_REMOVALS).map(({ kind, name, count }) => {
+    const bounded = name.slice(0, MAX_SVG_REMOVAL_NAME_CHARACTERS);
+    return `${kind === 'element' ? `<${bounded}>` : bounded} ×${count}`;
+  });
+  const omitted = removals.length - listed.length;
+  const occurrences = removals.reduce(
+    (sum, removal) => safeDiagnosticCountSum(sum, removal.count),
+    0,
+  );
+  return {
+    code: 'svg-content-removed',
+    severity: 'warning',
+    stage,
+    format,
+    count: Math.max(1, occurrences),
+    message: `${svgFenceLabel(location)} draws, but the sanitizer removed ${listed.join(', ')}${
+      omitted > 0 ? `, and ${omitted} more` : ''
+    }.`,
+    remediation:
+      'Delete the removed content or replace it with what renders: inline shapes and text, #id and url(#id) references, base64 PNG, JPEG, GIF, or WebP <image> data, and system fonts. Scripts, event handlers, foreignObject, external links or images, @import, and @font-face never render.',
+    retryable: false,
+    location,
+  };
+}
+
+function svgMissingTitleDiagnostic(
+  locations: readonly (SourceLocation | null)[],
+  stage: DiagnosticStage,
+  format: string,
+): McpDiagnostic {
+  const lines = locations
+    .filter((location): location is SourceLocation => location !== null)
+    .map(({ line }) => line);
+  const listedLines =
+    lines.length === 0
+      ? ''
+      : ` (line${lines.length === 1 ? '' : 's'} ${lines.slice(0, MAX_LISTED_SVG_LINES).join(', ')}${
+          lines.length > MAX_LISTED_SVG_LINES ? ', …' : ''
+        })`;
+  return {
+    code: 'svg-missing-title',
+    severity: 'warning',
+    stage,
+    format,
+    count: locations.length,
+    message:
+      locations.length === 1
+        ? `One \`\`\`svg fence has no accessible name${listedLines}.`
+        : `${locations.length} \`\`\`svg fences have no accessible name${listedLines}.`,
+    remediation:
+      'Add a concise <title> as the first child of each <svg> root, or an aria-label on the root; it becomes the alternative text.',
+    retryable: false,
+    location: locations.length === 1 ? (locations[0] ?? null) : null,
+  };
+}
+
+function rawSvgHtmlDiagnostic(
+  count: number,
+  location: SourceLocation | null,
+  stage: DiagnosticStage,
+  format: string,
+): McpDiagnostic {
+  return {
+    code: 'raw-svg-html-dropped',
+    severity: 'warning',
+    stage,
+    format,
+    count,
+    message: `${location ? `Raw <svg> HTML at line ${location.line}` : 'Raw <svg> HTML'} is removed by the Markdown sanitizer, so it never shows as a picture.`,
+    remediation:
+      'Wrap the markup in a ```svg fence to draw it as a picture, or in an ```xml fence to show it as code.',
+    retryable: false,
+    location,
+  };
+}
+
+/** Count `<svg>` elements in a parsed HTML sub-tree (comments and attribute text excluded). */
+function countSvgElements(htmlChildren: unknown): number {
+  let count = 0;
+  const pending: unknown[] = Array.isArray(htmlChildren) ? [...htmlChildren] : [];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') continue;
+    const element = node as { type?: unknown; tagName?: unknown; children?: unknown };
+    if (element.type !== 'htmlElement') continue;
+    if (typeof element.tagName === 'string' && element.tagName.toLowerCase() === 'svg') {
+      count += 1;
+      continue;
+    }
+    if (Array.isArray(element.children)) {
+      for (const child of element.children) pending.push(child);
+    }
+  }
+  return count;
+}
+
+function sourceLocation(position: unknown): SourceLocation | null {
+  if (!position || typeof position !== 'object') return null;
+  const start = (position as { start?: unknown }).start;
+  if (!start || typeof start !== 'object') return null;
+  const { line, column } = start as { line?: unknown; column?: unknown };
+  if (
+    typeof line !== 'number' ||
+    typeof column !== 'number' ||
+    !Number.isSafeInteger(line) ||
+    !Number.isSafeInteger(column) ||
+    line < 1 ||
+    column < 1
+  ) {
+    return null;
+  }
+  return { kind: 'source', line, column };
 }
 
 export function boundDiagnostics(

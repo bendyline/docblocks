@@ -55,6 +55,22 @@
       }
     ]
   },
+  "signup-funnel.md": {
+    "expect": [
+      {
+        "marker": "48,000 people visited",
+        "kinds": ["funnel", "chart"]
+      }
+    ]
+  },
+  "shared-skills.md": {
+    "expect": [
+      {
+        "marker": "Designers own the research",
+        "kinds": ["venn", "comparison"]
+      }
+    ]
+  },
   "opinion-essay.md": {
     "expect": [],
     "negative": true

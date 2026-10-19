@@ -17,6 +17,13 @@
  * The base URL is any OpenAI-compatible endpoint (llama-server, mlx_vlm,
  * a Gezel daemon with a token in DOCBLOCKS_EVAL_AI_TOKEN). `--context` forces
  * the prompt budget a model with that context window would get.
+ *
+ * `--illustrations` evaluates "Illustration" instead: each prompt in the
+ * corpus's illustrations.json is drawn as SVG by the model, and the report
+ * gives how many became usable pictures, on the first try or after a retry,
+ * which needed markup stripped, and which used fixed colors. The pictures are
+ * written beside the report for judging by eye. The context window defaults
+ * to 32K, since the kind is only offered from 16K.
  */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -149,6 +156,10 @@ async function main(): Promise<void> {
   const context = option('context') ? Number(option('context')) : null;
   const label = option('label') ?? `run-${new Date().toISOString().replace(/[:.]/gu, '-')}`;
   const only = option('only');
+  if (process.argv.includes('--illustrations')) {
+    await evaluateIllustrations({ baseUrl, models, context: context ?? 32_768, label });
+    return;
+  }
 
   // Imported after the DOM is registered: Mermaid reads it at load time.
   const { validateMermaidSource } = await import('@bendyline/squisq-editor-react');
@@ -284,6 +295,89 @@ async function main(): Promise<void> {
     fs.writeFileSync(
       path.join(outDir, `${model.replace(/[^\w.-]+/gu, '_')}.json`),
       `${JSON.stringify(records, null, 2)}\n`,
+    );
+  }
+  fs.writeFileSync(path.join(outDir, 'summary.md'), `${summary.join('\n')}\n`);
+  console.warn(`\nReport: ${path.relative(root, path.join(outDir, 'summary.md'))}`);
+}
+
+interface IllustrationPrompt {
+  readonly description: string;
+  readonly material?: string;
+}
+
+async function evaluateIllustrations(options: {
+  baseUrl: string;
+  models: readonly string[];
+  context: number;
+  label: string;
+}): Promise<void> {
+  const { realizeIllustration } = await import('../packages/react/src/Ai/illustration.js');
+  const prompts = JSON.parse(
+    fs.readFileSync(path.join(corpusDir, 'illustrations.json'), 'utf8'),
+  ) as IllustrationPrompt[];
+  const outDir = path.join(root, 'reports/ai-diagram-evals', options.label);
+  fs.mkdirSync(outDir, { recursive: true });
+  const summary: string[] = [
+    `# AI illustration eval: ${options.label}`,
+    '',
+    `Endpoint: ${options.baseUrl}; context window: ${String(options.context)}`,
+    '',
+  ];
+  for (const model of options.models) {
+    const rows: string[] = [];
+    let ready = 0;
+    let firstTry = 0;
+    let stripped = 0;
+    let fixedColors = 0;
+    let seconds = 0;
+    for (const [index, prompt] of prompts.entries()) {
+      const log: AiChatRequest[] = [];
+      const ai = endpointChat(options.baseUrl, model, process.env.DOCBLOCKS_EVAL_AI_TOKEN, log);
+      const started = Date.now();
+      const outcome = await realizeIllustration({
+        ai,
+        material: prompt.material ?? '',
+        description: prompt.description,
+        title: prompt.description.slice(0, 60),
+        ground: Boolean(prompt.material),
+        contextWindow: options.context,
+      });
+      const elapsed = Math.round((Date.now() - started) / 100) / 10;
+      seconds += elapsed;
+      const notes = outcome.status === 'ready' ? outcome.notes : [];
+      if (outcome.status === 'ready') {
+        ready += 1;
+        if (log.length === 1) firstTry += 1;
+        if (notes.some((note) => note.startsWith('Removed markup'))) stripped += 1;
+        if (notes.some((note) => note.includes('fixed colors'))) fixedColors += 1;
+        const markdown = outcome.compiled.render(2, new Set());
+        const svg = markdown.slice(markdown.indexOf('\n') + 1, markdown.lastIndexOf('\n'));
+        fs.writeFileSync(
+          path.join(outDir, `${model.replace(/[^\w.-]+/gu, '_')}-${String(index + 1)}.svg`),
+          svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"'),
+        );
+      }
+      const status = outcome.status === 'failed' ? `failed: ${outcome.message}` : outcome.status;
+      rows.push(
+        `| ${prompt.description.slice(0, 50)} | ${status}${notes.length ? ` (${notes.join(' ')})` : ''} | ` +
+          `${String(log.length)} | ${String(elapsed)}s |`,
+      );
+      console.warn(
+        `${model} illustration ${String(index + 1)}: ${status} calls=${String(log.length)}`,
+      );
+    }
+    summary.push(
+      `## ${model}`,
+      '',
+      `- Usable pictures: ${String(ready)}/${String(prompts.length)}; first try: ${String(firstTry)}`,
+      `- Needed markup stripped: ${String(stripped)}; fixed colors: ${String(fixedColors)}`,
+      `- Total time: ${String(Math.round(seconds))}s`,
+      '',
+      '| Prompt | Outcome | Calls | Time |',
+      '| --- | --- | --- | --- |',
+      ...rows,
+      '',
     );
   }
   fs.writeFileSync(path.join(outDir, 'summary.md'), `${summary.join('\n')}\n`);

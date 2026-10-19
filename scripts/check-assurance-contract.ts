@@ -244,6 +244,45 @@ async function requireCanonicalGatePlaywrightBrowsers(relativePath: string): Pro
 }
 
 /**
+ * Every job that runs the canonical gate keeps the E2E evidence of a failure.
+ *
+ * Release gates rerun CI's suites on code CI already passed, so a failure there
+ * is usually a timing race that will not reproduce on demand. A release once
+ * stopped on one with nothing but the log line to go on.
+ */
+async function requireCanonicalGateDiagnostics(relativePath: string): Promise<void> {
+  const parsed: unknown = yaml.load(await readFile(path.join(repoRoot, relativePath), 'utf8'));
+  if (!isRecord(parsed) || !isRecord(parsed.jobs)) {
+    throw new Error(`${relativePath}: workflow has no jobs map`);
+  }
+
+  for (const [jobName, job] of Object.entries(parsed.jobs)) {
+    if (!isRecord(job) || !Array.isArray(job.steps)) continue;
+    const gateIndex = job.steps.findIndex(
+      (step) =>
+        isRecord(step) && typeof step.run === 'string' && invokesWorkflowScript([step.run], 'all'),
+    );
+    if (gateIndex === -1) continue;
+    const uploadsDiagnostics = job.steps.slice(gateIndex + 1).some((step) => {
+      if (!isRecord(step) || typeof step.uses !== 'string' || !isRecord(step.with)) return false;
+      const uploadPath = step.with.path;
+      return (
+        step.uses.startsWith('actions/upload-artifact@') &&
+        typeof step.if === 'string' &&
+        /\b(?:failure|always)\(\)|!cancelled\(\)/u.test(step.if) &&
+        typeof uploadPath === 'string' &&
+        uploadPath.split(/\s+/u).includes('test-results/')
+      );
+    });
+    if (!uploadsDiagnostics) {
+      throw new Error(
+        `${relativePath}: ${jobName} runs npm run all but does not upload test-results/ when it fails`,
+      );
+    }
+  }
+}
+
+/**
  * Every OS in a job's matrix must have a step that actually runs on it.
  *
  * A step guarded by `if: runner.os == '…'` is skipped, not failed, on any other
@@ -588,6 +627,7 @@ async function main(): Promise<void> {
     'npm run coverage:critical',
     'npm test',
     'npm run mobile:test:available',
+    'npm run test:e2e:burn-in',
     'npm run test:e2e:all',
   ];
   if (rootPackage.scripts?.all !== 'tsx scripts/run-canonical-gate.ts') {
@@ -621,16 +661,6 @@ async function main(): Promise<void> {
   requireScript(vscodePackage, 'typecheck', 'typecheck:webview');
   requireScript(vscodePackage, 'typecheck', 'typecheck:desktop-e2e');
   requireScript(vscodePackage, 'test:e2e:desktop-host', 'desktop-e2e/run.ts');
-  requireScript(rootPackage, 'test:e2e:visual', 'run-visual-tests.ts');
-  requireScript(rootPackage, 'test:e2e:visual:update', '--update-snapshots');
-  // Keeping the visual suite OUT of the canonical gate is as load-bearing as
-  // the suites that are in it: baselines are captured on one platform, and a
-  // pixel diff must not block a change that altered nothing visible.
-  if (actualGate.some((command) => command.includes('test:e2e:visual'))) {
-    throw new Error(
-      'npm run all must not include the visual suite; it is a pre-release gate (.github/workflows/visual.yml)',
-    );
-  }
   requireScript(rootPackage, 'coverage:critical', 'coverage:desktop-critical');
   requireScript(rootPackage, 'coverage:critical', 'coverage:core-critical');
   for (const dependency of ['@bendyline/docblocks', '@bendyline/docblocks-react']) {
@@ -646,6 +676,8 @@ async function main(): Promise<void> {
   requireScript(desktopPackage, 'test:e2e:packaged', 'dist:dir');
   requireScript(desktopPackage, 'test:e2e:packaged:only', 'playwright.packaged.config.ts');
   requireScript(desktopPackage, 'dist:dir', '-c.mac.hardenedRuntime=false');
+  // Only the smoke package may carry the automation stamp (main/automation-hooks.ts).
+  requireScript(desktopPackage, 'dist:dir', '-c.extraMetadata.docblocksAutomationHooks=true');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:x64');
   requireScript(desktopPackage, 'dist:linux', 'npm run package:linux:arm64');
   requireScript(rootPackage, 'check:linux-launchers', '-w docblocks-desktop');
@@ -698,9 +730,6 @@ async function main(): Promise<void> {
       'test:e2e:vscode',
       'test:e2e:vscode:desktop',
     ],
-    // The visual suite is a pre-release gate rather than part of `npm run all`,
-    // so nothing else would notice it being dropped from the workflow that runs
-    // it. Pinning both scripts here is what keeps it wired in.
     '.github/workflows/mobile-native.yml': [
       'mobile:test:ios',
       'mobile:test:android',
@@ -709,7 +738,6 @@ async function main(): Promise<void> {
       'mobile:test:android:ai',
       'mobile:package',
     ],
-    '.github/workflows/visual.yml': ['test:e2e:visual', 'test:e2e:visual:update'],
     '.github/workflows/publish.yml': ['all'],
     '.github/workflows/desktop-release.yml': ['all'],
     // The iOS store job runs the Swift suite that the Linux gate cannot.
@@ -725,6 +753,11 @@ async function main(): Promise<void> {
     await requireGovernedNpmBeforeInstalls(workflow);
     await requireCanonicalGatePlaywrightBrowsers(workflow);
     await requireMatrixOsCoverage(workflow);
+    // The store workflow is private and may expose no downloadable artifact
+    // (requirePrivateStoreReleaseWorkflow); its gate output stays in the log.
+    if (workflow !== '.github/workflows/store-release.yml') {
+      await requireCanonicalGateDiagnostics(workflow);
+    }
   }
   const npmSetupAction = await readFile(
     path.join(repoRoot, '.github/actions/setup-npm/action.yml'),

@@ -312,7 +312,7 @@ describe('Gezel connector against the app SDK', () => {
     });
   });
 
-  for (const purpose of ['write', 'chat', 'review', 'illustrate'] as const) {
+  for (const purpose of ['write', 'chat', 'review', 'illustrate', 'study'] as const) {
     it(`uses the expected reasoning policy for ${purpose} through the real SDK`, async () => {
       const daemon = new FakeDaemon();
       daemon.validToken = 'kept-token';

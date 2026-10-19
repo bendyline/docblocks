@@ -22,7 +22,7 @@ test('Monaco suggestions survive Source/Write transitions, rename, and reload', 
   page,
 }) => {
   await openInitializedSite(page);
-  const row = page.locator('.db-tree-row', { hasText: 'aboutDocBlocks' });
+  const row = page.locator('.db-tree-row', { hasText: 'Welcome' });
   await exerciseDeferredMonaco(page);
   await row.press('F2');
   const rename = page.locator('.db-tree-rename-input');

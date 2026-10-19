@@ -131,76 +131,13 @@ MIT (Gezel, llama.cpp and ggml); Android NDK notices below
 com.bendyline.gezel:gezel-runtime:0.1.48
 MIT (Gezel, llama.cpp and ggml); Android NDK notices below
 
-com.google.android.datatransport:transport-api:2.2.1
-Apache-2.0
-
-com.google.android.datatransport:transport-backend-cct:2.3.3
-Apache-2.0
-
-com.google.android.datatransport:transport-runtime:2.2.6
-Apache-2.0
-
-com.google.android.gms:play-services-base:18.5.0
-Android SDK License — https://developer.android.com/studio/terms.html
-
-com.google.android.gms:play-services-basement:18.9.0
-Android SDK License — https://developer.android.com/studio/terms.html
-
-com.google.android.gms:play-services-tasks:18.2.0
-Android SDK License — https://developer.android.com/studio/terms.html
-
-com.google.code.findbugs:jsr305:3.0.2
-Apache-2.0
-
-com.google.errorprone:error_prone_annotations:2.18.0
-Apache-2.0
-
-com.google.firebase:firebase-annotations:16.0.0
-Apache-2.0
-
-com.google.firebase:firebase-components:16.1.0
-Apache-2.0
-
-com.google.firebase:firebase-encoders-json:17.1.0
-Apache-2.0
-
-com.google.firebase:firebase-encoders:16.1.0
-Apache-2.0
-
-com.google.guava:failureaccess:1.0.1
-Apache-2.0
-
-com.google.guava:guava:32.0.0-jre
-Apache-2.0
-
-com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava
-Apache-2.0
-
-com.google.j2objc:j2objc-annotations:2.8
-Apache-2.0
-
-com.google.mlkit:common:18.11.0
-ML Kit Terms of Service — https://developers.google.com/ml-kit/terms
-
-com.google.mlkit:genai-common:1.0.0-beta4
-ML Kit Terms of Service — https://developers.google.com/ml-kit/terms
-
-com.google.mlkit:genai-prompt:1.0.0-beta4
-ML Kit Terms of Service — https://developers.google.com/ml-kit/terms
-
-com.google.mlkit:genai-schema:1.0.0-alpha1
-Android SDK License — https://developer.android.com/studio/terms.html
-
-javax.inject:javax.inject:1
+com.google.guava:listenablefuture:1.0
 Apache-2.0
 
 org.apache.cordova:framework:14.0.1
 Apache-2.0
 
-org.checkerframework:checker-qual:3.33.0
-MIT
-
-org.jetbrains.kotlin:kotlin-stdlib:2.3.21
+org.jetbrains.kotlin:kotlin-stdlib:2.2.20
 Apache-2.0
 
 org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0
@@ -215,20 +152,11 @@ Apache-2.0
 org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0
 Apache-2.0
 
-org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.11.0
-Apache-2.0
-
-org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.11.0
-Apache-2.0
-
 org.jetbrains:annotations:23.0.0
 Apache-2.0
 
 org.jspecify:jspecify:1.0.0
 Apache-2.0
-
-org.reactivestreams:reactive-streams:1.0.3
-CC0 — https://creativecommons.org/publicdomain/zero/1.0/
 
 
                                  Apache License

@@ -111,6 +111,14 @@ function labelsOf(spec: DiagramSpec): string[] {
       return [...spec.labels];
     case 'stats':
       return spec.stats.map((stat) => stat.label);
+    case 'venn':
+      return [...spec.sets.flatMap((set) => [set.label, ...set.items]), ...spec.shared];
+    case 'matrix':
+      return spec.quadrants.flatMap((quadrant) => [quadrant.label, ...quadrant.items]);
+    case 'funnel':
+      return spec.stages.map((stage) => stage.label);
+    case 'pyramid':
+      return [...spec.levels];
   }
 }
 
@@ -147,18 +155,18 @@ export function checkGrounding(spec: DiagramSpec, passage: string): GroundingRes
       );
     }
   }
-  if (spec.kind === 'stats') {
+  if (spec.kind === 'stats' || spec.kind === 'funnel') {
     const lowerPassage = passage.toLowerCase();
-    const missing = spec.stats.filter((stat) => {
-      const numbers = extractNumbers(stat.value);
-      return numbers.length > 0
-        ? !numbers.some(has)
-        : !lowerPassage.includes(stat.value.toLowerCase());
+    const values =
+      spec.kind === 'stats'
+        ? spec.stats.map((stat) => stat.value)
+        : spec.stages.map((stage) => stage.value).filter(Boolean);
+    const missing = values.filter((value) => {
+      const numbers = extractNumbers(value);
+      return numbers.length > 0 ? !numbers.some(has) : !lowerPassage.includes(value.toLowerCase());
     });
     if (missing.length > 0) {
-      problems.push(
-        `These numbers are not in the passage: ${missing.map((stat) => stat.value).join(', ')}.`,
-      );
+      problems.push(`These numbers are not in the passage: ${missing.join(', ')}.`);
     }
   }
   if (spec.kind === 'timeline') {

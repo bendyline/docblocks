@@ -1,0 +1,9 @@
+[
+  { "description": "The water cycle: evaporation, condensation, precipitation and collection" },
+  { "description": "A laptop connected to a cloud server, with an arrow labelled sync" },
+  { "description": "The three layers of a web app: interface, services and database, stacked" },
+  {
+    "description": "How a package travels from the warehouse to the customer",
+    "material": "Orders are picked in the warehouse, packed and labelled, then handed to the carrier. The carrier sorts parcels at a regional hub and a driver delivers them, usually within two days."
+  }
+]

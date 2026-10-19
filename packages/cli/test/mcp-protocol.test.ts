@@ -433,7 +433,7 @@ describe('MCP protocol surface', function () {
       workflow?: unknown[];
       templates?: Array<{ id?: unknown; bodyPolicy?: unknown; annotationExample?: unknown }>;
     };
-    expect(authoringPayload.version).to.equal(10);
+    expect(authoringPayload.version).to.equal(11);
     expect(authoringPayload.markdownAnnotation).to.equal('# Heading {[templateId key="value"]}');
     expect(authoringPayload.standaloneWarning).to.include('heading-less block');
     expect(

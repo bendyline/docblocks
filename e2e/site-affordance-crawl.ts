@@ -41,6 +41,12 @@ const STAMP = new Date().toISOString().replace(/[:.]/g, '-');
 const OUT_DIR = path.resolve(process.argv[2] ?? `reports/affordances-${STAMP}`);
 const READY_TIMEOUT = 90_000;
 const SETTLE_MS = 700;
+/**
+ * Each caret attempt opens a fresh context, so Source view pays Monaco's cold
+ * load every time. Against the deployed site that took longer than the 8 s
+ * default and failed every attempt before the caret was ever checked.
+ */
+const MONACO_COLD_LOAD_TIMEOUT = 45_000;
 /** Upper bound on items opened from one menu, so a long list cannot stall the run. */
 const MAX_MENU_ITEMS = 30;
 
@@ -87,6 +93,7 @@ const OVERLAY_SELECTOR = [
   '.db-ws-settings-dropdown',
   '.db-workspace-dropdown',
   '.db-app-menu-dropdown',
+  '.db-quick-open',
   '[data-squisq-video-export-modal]',
 ].join(', ');
 
@@ -245,6 +252,23 @@ async function waitForShell(page: Page): Promise<void> {
     .first()
     .waitFor({ state: 'visible', timeout: READY_TIMEOUT });
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+}
+
+/**
+ * The active document's Markdown as Source view shows it. Desktop swaps in
+ * Monaco once it loads; phones keep the plain textarea fallback, so waiting
+ * for Monaco there never ends.
+ */
+async function readSourceView(page: Page): Promise<string> {
+  const raw = page.locator('[data-testid="raw-editor"]').first();
+  await raw.waitFor({ state: 'visible', timeout: MONACO_COLD_LOAD_TIMEOUT });
+  const monaco = page.locator('.monaco-editor .view-lines').first();
+  if (await raw.evaluate((element) => element.tagName !== 'TEXTAREA')) {
+    await monaco.waitFor({ state: 'visible', timeout: MONACO_COLD_LOAD_TIMEOUT });
+    // Monaco renders spaces as NBSP; normalise before comparing.
+    return (await monaco.innerText()).replace(/\u00a0/g, ' ');
+  }
+  return raw.inputValue();
 }
 
 async function openContext(
@@ -609,6 +633,22 @@ async function startWriting(page: Page): Promise<void> {
   await page.locator('.ProseMirror').first().waitFor({ state: 'visible', timeout: 30_000 });
 }
 
+/**
+ * The welcome document in Slideshow. Builds through 2.7 opened it there behind
+ * a toast; later builds open it in Write behind a welcome screen.
+ */
+async function openSlideshow(page: Page): Promise<void> {
+  const counter = page.getByRole('button', { name: /Choose slide, current/ });
+  if (await counter.isVisible().catch(() => false)) return;
+  const cta = page.locator('.db-welcome-gateway-cta');
+  if (await cta.isVisible().catch(() => false)) await cta.click();
+  await page
+    .getByRole('tab', { name: /Slideshow/ })
+    .first()
+    .click();
+  await counter.waitFor({ state: 'visible', timeout: 30_000 });
+}
+
 const DESKTOP_ROOTS = [
   'aside, [role="complementary"]',
   '[role="toolbar"]',
@@ -619,9 +659,16 @@ const DESKTOP_ROOTS = [
 
 const SURFACES: Surface[] = [
   {
-    name: 'desktop-slideshow',
+    // The first-run screen itself: its two choices and its close button.
+    name: 'desktop-welcome',
     viewport: { width: 1440, height: 900 },
     prepare: async () => undefined,
+    roots: ['.db-welcome-gateway'],
+  },
+  {
+    name: 'desktop-slideshow',
+    viewport: { width: 1440, height: 900 },
+    prepare: openSlideshow,
     roots: DESKTOP_ROOTS,
   },
   {
@@ -694,8 +741,7 @@ async function slidesScenario(browser: Browser): Promise<void> {
       try {
         await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
         await waitForShell(page);
-        const dismissTip = page.getByRole('button', { name: 'Dismiss welcome tip' });
-        if (await dismissTip.isVisible().catch(() => false)) await dismissTip.click();
+        await openSlideshow(page);
         const counter = page.getByRole('button', { name: /Choose slide, current/ });
         const total = Number((await counter.innerText()).split('/')[1]?.trim() ?? '0');
         const next = page.getByRole('button', { name: 'Next slide' });
@@ -778,11 +824,7 @@ async function caretScenario(browser: Browser): Promise<void> {
           await page.keyboard.type('Typed straight after creating the document.', { delay: 15 });
           await page.waitForTimeout(800);
           await page.getByRole('tab', { name: 'Source', exact: true }).click();
-          await page.locator('.monaco-editor').first().waitFor({ state: 'visible' });
-          // Monaco renders spaces as NBSP; normalise before comparing.
-          const markdown = (
-            await page.locator('.monaco-editor .view-lines').first().innerText()
-          ).replace(/\u00a0/g, ' ');
+          const markdown = await readSourceView(page);
           const ok =
             markdown.includes('Typed straight after creating the document.') &&
             !/caret-\d[^\n]*Typed/.test(markdown);

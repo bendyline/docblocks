@@ -7,6 +7,10 @@
  * contract means by "never truncate a provider's own explanation into this":
  * a daemon message is not a user message, and cutting one down to fit is how
  * a half-sentence ends up in a dialog.
+ *
+ * The one exception is a failure nothing here recognizes. Its sentence alone
+ * says nothing a person could report, so it carries a short, labeled clue —
+ * the provider's code when there is one — while `detail` keeps the whole text.
  */
 
 import { HOST_WIRE_LIMITS } from '@bendyline/docblocks/host';
@@ -44,7 +48,7 @@ const USER_MESSAGES: Record<AiErrorCode, string> = {
   'rate-limited': 'Gezel is busy. Try again in a moment.',
   timeout: 'Gezel stopped responding.',
   cancelled: 'The request was cancelled.',
-  unknown: 'Gezel could not complete the request.',
+  unknown: 'AI Services (Gezel) could not complete this request.',
 };
 
 /** Provider codes whose meaning is exact. Anything absent falls back to status. */
@@ -84,6 +88,31 @@ const PROVIDER_CODES: ReadonlyMap<string, AiErrorCode> = new Map([
   ['reranker_required', 'model-unavailable'],
   ['reranker_unavailable', 'model-unavailable'],
   ['knowledge_unavailable', 'unsupported'],
+  // Gezel's on-device engine failures. Before Gezel named them, every one
+  // arrived as `provider_error`. A crash is deliberately not
+  // provider-unavailable: that would tear down a connection that still works.
+  ['capacity_denied', 'model-unavailable'],
+  ['engine_busy', 'rate-limited'],
+  ['engine_launch_failed', 'runtime-missing'],
+  ['engine_crashed', 'unknown'],
+  ['context_length_exceeded', 'budget-exceeded'],
+  ['engine_not_ready', 'model-unavailable'],
+]);
+
+/** Provider codes that say more than their category's sentence does. */
+const PROVIDER_SENTENCES: ReadonlyMap<string, string> = new Map([
+  [
+    'capacity_denied',
+    'This computer does not have enough free memory to run this model. Close other apps, or choose a smaller model in Settings.',
+  ],
+  ['engine_busy', 'The AI model is busy with another request. Try again in a moment.'],
+  ['engine_launch_failed', 'The on-device AI engine could not start on this computer.'],
+  ['engine_crashed', 'The AI model stopped unexpectedly. Try again.'],
+  [
+    'context_length_exceeded',
+    'This is more text than the selected model can read at once. Select less text, or choose a model that can read more.',
+  ],
+  ['engine_not_ready', 'The on-device AI engine is still getting ready. Try again in a moment.'],
 ]);
 
 /** Module-resolution failures: the SDK is not present in this build. */
@@ -102,6 +131,12 @@ const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
   'UND_ERR_SOCKET',
   'UND_ERR_CONNECT_TIMEOUT',
 ]);
+
+/** How much of an unrecognized failure the dialog shows: enough to quote, not to read. */
+const DIAGNOSTIC_CHARACTERS = 40;
+
+/** Catch-all provider codes, which say less than the message they carry. */
+const GENERIC_PROVIDER_CODES: ReadonlySet<string> = new Set(['provider_error', 'internal_error']);
 
 function bounded(text: string): string {
   const clean = text.replaceAll('\0', '');
@@ -162,6 +197,29 @@ function codeFor(error: unknown): AiErrorCode {
   return 'unknown';
 }
 
+/**
+ * A short clue for a failure `codeFor` could not classify: the provider's (or
+ * the socket's) code first, since that is exact, then as much of its message
+ * as fits — unless the code is a catch-all, when the message is the clue.
+ */
+function diagnosticFor(error: unknown): string | null {
+  const cause =
+    typeof error === 'object' && error !== null ? (error as { cause?: unknown }).cause : undefined;
+  const status = readNumber(error, 'status');
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const text = raw.replaceAll('\0', '').replace(/\s+/gu, ' ').trim();
+  let label = readString(error, 'code') ?? readString(cause, 'code');
+  if (label === undefined && status !== undefined) label = `HTTP ${status}`;
+  // Gezel wraps every engine failure (out of memory, crash, startup timeout)
+  // as `provider_error`; the reason is in the message, so give it the room.
+  if (label && text && GENERIC_PROVIDER_CODES.has(label)) label = undefined;
+  const clue = label && !text.startsWith(label) ? [label, text].filter(Boolean).join(': ') : text;
+  if (!clue) return null;
+  return clue.length <= DIAGNOSTIC_CHARACTERS
+    ? clue
+    : `${clue.slice(0, DIAGNOSTIC_CHARACTERS - 1).trimEnd()}…`;
+}
+
 /** Translate anything thrown by the provider, the SDK, or this host. */
 export function toAiError(error: unknown): AiError {
   const code = codeFor(error);
@@ -179,5 +237,12 @@ export function toAiError(error: unknown): AiError {
     );
   }
   const detail = error instanceof Error ? error.message : undefined;
+  const sentence = PROVIDER_SENTENCES.get(readString(error, 'code') ?? '');
+  if (sentence) return aiError(code, sentence, detail);
+  if (code === 'unknown') {
+    const clue = diagnosticFor(error);
+    const message = clue ? `${USER_MESSAGES.unknown} (Details: ${clue})` : USER_MESSAGES.unknown;
+    return aiError(code, message, detail);
+  }
   return aiError(code, USER_MESSAGES[code], detail);
 }

@@ -24,6 +24,7 @@ import {
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { Dialog } from '../components/Dialog.js';
 import { useAiStatus, unavailableSentence } from '../Ai/ai-status.js';
+import { AiReportButton } from '../Ai/AiOutputReport.js';
 import { refinePresentationPlan } from './presentation-ai.js';
 
 const LABELS = {
@@ -76,6 +77,23 @@ export function PresentationMaker({
   onClose: () => void;
 }) {
   return createPortal(<PresentationDialog ai={ai} onClose={onClose} />, document.body);
+}
+/** Flag the AI slide wording held in the current design. */
+function AiSuggestionReport({ ai, hints }: { ai: DocBlocksHostAiAPI; hints: PresentationHints }) {
+  const status = useAiStatus(ai);
+  const suggestions = hints.blocks.flatMap((block) => block.ai ?? []);
+  if (suggestions.length === 0) return null;
+  return (
+    <AiReportButton
+      feature="Suggest slides"
+      getOutput={() =>
+        suggestions
+          .map((entry) => [entry.headline, ...entry.points.map((point) => `- ${point}`)].join('\n'))
+          .join('\n\n')
+      }
+      model={status?.kind === 'ready' ? (status.model?.label ?? null) : null}
+    />
+  );
 }
 function AiRefineButton({
   ai,
@@ -396,7 +414,17 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       {(error || generated?.error || projection?.error) && (
         <p role="alert">{error ?? generated?.error ?? projection?.error}</p>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p role="status">
+          {notice}
+          {ai && !running && (
+            <>
+              {' '}
+              <AiSuggestionReport ai={ai} hints={hints} />
+            </>
+          )}
+        </p>
+      )}
       {plan && beat && section && (
         <div className="db-presentation-workspace">
           <nav className="db-presentation-beats" aria-label="Presentation slides">

@@ -123,7 +123,7 @@ for (const { surface, source, fontDir } of SURFACE_STYLESHEETS) {
 /**
  * The chrome's deterministic alternative to `system-ui`. Not a Squisq stack, so
  * it is required explicitly: regenerating fonts.css upstream would otherwise
- * drop it from a surface and only the visual suite would notice, one OS later.
+ * drop it from a surface silently, and the chrome would fall back per OS.
  */
 const FIXED_UI_FAMILY = 'DocBlocks Fixed UI';
 

@@ -16,7 +16,7 @@ export type JsonExtraction =
 const MAX_CANDIDATES = 8;
 
 /** Remove `<think>…</think>`-style reasoning a model emitted before its answer. */
-function stripReasoning(text: string): string {
+export function stripReasoning(text: string): string {
   return text.replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/giu, '').trim();
 }
 
@@ -59,6 +59,57 @@ function parseLenient(candidate: string): { ok: true; value: unknown } | null {
     }
   }
   return null;
+}
+
+/** Index of the brace closing the object that opens at `start`, or null if it never closes. */
+function objectEnd(text: string, start: number): number | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+    } else if (char === '{' || char === '[') {
+      depth += 1;
+    } else if (char === '}' || char === ']') {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return null;
+}
+
+/**
+ * The objects a JSON array finished before the reply stopped. A reply cut off
+ * at the model's output limit never closes its array, so `JSON.parse` rejects
+ * all of it; reading object by object keeps every one that was completed.
+ * `closed` says whether the array was closed after them.
+ */
+export function completeLeadingObjects(
+  response: string,
+): { values: unknown[]; closed: boolean } | null {
+  const start = response.indexOf('[');
+  if (start < 0) return null;
+  const values: unknown[] = [];
+  let index = start + 1;
+  for (;;) {
+    while (/[\s,]/u.test(response.charAt(index))) index += 1;
+    // `]` closes the array; anything else is the unfinished tail.
+    if (response.charAt(index) !== '{') return { values, closed: response.charAt(index) === ']' };
+    const end = objectEnd(response, index);
+    if (end === null) return { values, closed: false };
+    try {
+      values.push(JSON.parse(response.slice(index, end + 1)));
+    } catch {
+      return null;
+    }
+    index = end + 1;
+  }
 }
 
 /** Extract the first complete JSON object or array of the requested shape. */

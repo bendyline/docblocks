@@ -155,10 +155,6 @@ test.describe('DocBlocks App', () => {
   });
 
   test('shows the document pane when the sidebar is dragged closed', async ({ page }) => {
-    const gateway = page.locator('.db-welcome-gateway');
-    await expect(gateway).toBeVisible({ timeout: 10_000 });
-    await page.locator('.db-welcome-gateway-cta').click();
-
     const editor = page.locator('[contenteditable="true"]').first();
     await expect(editor).toBeVisible({ timeout: 10_000 });
 
@@ -374,7 +370,7 @@ test.describe('DocBlocks App', () => {
     await dialog.getByRole('button', { name: 'Save MD to Downloads', exact: true }).click();
     const download = await downloadPromise;
 
-    expect(download.suggestedFilename()).toBe('aboutDocBlocks.md');
+    expect(download.suggestedFilename()).toBe('Welcome.md');
     const downloadPath = await download.path();
     if (!downloadPath) throw new Error('Browser export did not produce a downloadable file');
     const bytes = await import('node:fs/promises').then((fs) => fs.readFile(downloadPath));
@@ -652,24 +648,58 @@ test.describe('Folder context menu theming', () => {
 });
 
 test.describe('Welcome gateway', () => {
-  test('first run shows the gateway and Start writing opens the editor', async ({ page }) => {
-    await openInitializedSite(page);
+  test('first run explains the product and the tour opens the welcome document in Write', async ({
+    page,
+  }) => {
+    await openInitializedSite(page, { keepWelcome: true });
 
-    // Fresh storage → the welcome doc auto-opens in Play view with the gateway
+    // Fresh storage → the welcome screen covers the editor, which has already
+    // opened the welcome document in Write underneath it.
+    const gateway = page.locator('.db-welcome-gateway');
+    await expect(gateway).toBeVisible({ timeout: 10_000 });
+    await expect(gateway.getByRole('heading', { level: 1 })).toHaveText(
+      'The Markdown editor that turns one file into anything.',
+    );
+    await expect(page.locator('.db-shell-editor-content')).toHaveAttribute('inert', '');
+
+    await page.getByRole('button', { name: 'Tour the welcome document' }).click();
+    await expect(gateway).not.toBeVisible();
+
+    // The same document is now editable, and the tour put the caret in it.
+    const editor = page.locator('[contenteditable="true"]').first();
+    await expect(editor).toBeFocused({ timeout: 10_000 });
+    await expect(page.getByRole('tab', { name: 'Write', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await expect(editor).toContainText('Welcome to DocBlocks');
+  });
+
+  test('first run offers to create a document and stays up if that is cancelled', async ({
+    page,
+  }) => {
+    await openInitializedSite(page, { keepWelcome: true });
     const gateway = page.locator('.db-welcome-gateway');
     await expect(gateway).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('.db-welcome-gateway-cta').click();
-    await expect(gateway).not.toBeVisible();
+    await gateway.getByRole('button', { name: 'Create a document' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New document' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(gateway).toBeVisible();
 
-    // The same document is now editable
-    await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
-      timeout: 10_000,
-    });
+    await gateway.getByRole('button', { name: 'Create a document' }).click();
+    await dialog.getByRole('textbox', { name: 'Document name' }).fill('first-draft');
+    await dialog.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(gateway).not.toBeVisible();
+    await expect(page.locator('.db-tree-row', { hasText: 'first-draft' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
   });
 
   test('dismissal persists across reload', async ({ page }) => {
-    await openInitializedSite(page);
+    await openInitializedSite(page, { keepWelcome: true });
 
     const gateway = page.locator('.db-welcome-gateway');
     await expect(gateway).toBeVisible({ timeout: 10_000 });
@@ -695,7 +725,6 @@ test.describe('Squisq overflow menu theming', () => {
     await openInitializedSite(page);
     await expect(page.locator('.db-shell[data-theme="dark"]')).toBeVisible({ timeout: 10_000 });
 
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -756,7 +785,6 @@ test.describe('Squisq overflow menu theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -823,7 +851,6 @@ test.describe('Squisq Use mode menu theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -915,9 +942,8 @@ test.describe('Simple diagram theming', () => {
     });
     await openInitializedSite(page);
 
-    // The seeded welcome document already contains an editable Scene. Enter
-    // Write once, then use it without racing Monaco's lazy Source-view mount.
-    await page.locator('.db-welcome-gateway-cta').click();
+    // The seeded welcome document already contains an editable Scene and opens
+    // in Write, so use it without racing Monaco's lazy Source-view mount.
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -1042,7 +1068,6 @@ test.describe('Video export dialog theming', () => {
     await expect(page.locator('.db-shell[data-theme="dark"][data-accent="green"]')).toBeVisible({
       timeout: 10_000,
     });
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -1130,7 +1155,6 @@ test.describe('Squisq block type picker theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });
@@ -1179,7 +1203,6 @@ test.describe('Squisq custom layout theming', () => {
       timeout: 10_000,
     });
 
-    await page.locator('.db-welcome-gateway-cta').click();
     await expect(page.locator('[contenteditable="true"]').first()).toBeVisible({
       timeout: 10_000,
     });

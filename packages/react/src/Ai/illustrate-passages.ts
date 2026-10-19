@@ -13,7 +13,7 @@
  */
 
 import { extractPlainText, parseMarkdown, type MarkdownNode } from '@bendyline/squisq/markdown';
-import { isContainerTemplate } from '@bendyline/squisq/doc';
+import { isContainerTemplate, isPictureFence } from '@bendyline/squisq/doc';
 import {
   applySourceEditsToText,
   blockInsertionPoint,
@@ -62,16 +62,17 @@ export interface Passage {
 
 const MIN_PARAGRAPH_CHARACTERS = 80;
 const OUTLINE_PASSAGE_CHARACTERS = 240;
-const VISUAL_FENCES = new Set(['mermaid', 'timeline', 'tree', 'diagram']);
+/** Squisq's ASCII art fences; Mermaid and SVG are covered by `isPictureFence`. */
+const ASCII_VISUAL_FENCES = new Set(['timeline', 'tree', 'diagram']);
 
 const SEQUENCE_CUES =
   /\b(first|then|next|after|afterwards|finally|step|stage|before|once|followed by|subsequently)\b/giu;
 const ACTOR_CUES =
   /\b(sends?|requests?|responds?|replies|returns?|calls?|forwards?|receives?|notifies|queries|asks|confirms)\b/giu;
 const CONTRAST_CUES =
-  /\b(vs\.?|versus|compared|whereas|unlike|while|pros|cons|advantages?|disadvantages?|trade-?offs?|instead)\b/giu;
+  /\b(vs\.?|versus|compared|whereas|unlike|while|pros|cons|advantages?|disadvantages?|trade-?offs?|instead|in common|overlaps?)\b/giu;
 const PART_CUES =
-  /\b(consists? of|composed of|made up of|includes?|comprises?|types of|kinds of|categories|components|divided into|parts)\b/giu;
+  /\b(consists? of|composed of|made up of|includes?|comprises?|types of|kinds of|categories|components|divided into|parts|layers|tiers|quadrants?)\b/giu;
 const DATE_CUES =
   /\b(1\d{3}|2\d{3})\b|\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\s+\d{4}\b|\bq[1-4]\s+\d{4}\b/giu;
 const NUMBER_CUES = /(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?\s?(%|k|m|bn|million|billion)?(?![\w])/giu;
@@ -126,7 +127,9 @@ function scoreOf(hints: PassageHints): number {
 /** True for a block that is already a picture: a visual fence, an image, or embedded media. */
 function isVisual(node: MarkdownNode | undefined): boolean {
   if (!node) return false;
-  if (node.type === 'code') return VISUAL_FENCES.has((node.lang ?? '').toLowerCase());
+  if (node.type === 'code') {
+    return isPictureFence(node) || ASCII_VISUAL_FENCES.has((node.lang ?? '').trim().toLowerCase());
+  }
   if (node.type === 'htmlBlock') return /<(img|video|svg|figure)\b/iu.test(node.rawHtml);
   if (node.type === 'paragraph') {
     return (

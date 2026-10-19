@@ -25,6 +25,9 @@ createRoot(document.getElementById('root')!).render(
       // Native listings re-read every file beneath each folder, so index
       // only once quick-open, search, or the link picker asks for it.
       workspaceIndex="on-demand"
+      // Microphone, camera, and screen recording are not qualified on native
+      // WebViews, and the app declares no capture permissions for them.
+      allowRecording={false}
     />
   </StrictMode>,
 );

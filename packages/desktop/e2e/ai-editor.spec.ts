@@ -3,8 +3,8 @@
  * the person's installed Gezel: pairing with a typed code, then Add content,
  * Rewrite selection and Review document, each landing in the saved file and
  * each removed again by a single undo; Stop, which must close the stream at
- * the provider; and AI diagrams — Illustrate document and Diagram this… —
- * inserted as one undo step.
+ * the provider; AI diagrams — Illustrate document and Diagram this… —
+ * inserted as one undo step; and study aids, saved beside the document.
  *
  * Set DOCBLOCKS_E2E_AI_UPSTREAM (an OpenAI-compatible base URL) and
  * DOCBLOCKS_E2E_AI_UPSTREAM_MODEL to answer with a real model instead of the
@@ -22,6 +22,7 @@ import {
   FAKE_GEZEL_CODE,
   FAKE_GEZEL_MODEL,
   FAKE_GEZEL_TOKEN,
+  FAKE_SUMMARY_OVERVIEW,
   startFakeGezel,
   type FakeGezel,
   type FakeGezelOptions,
@@ -646,6 +647,95 @@ test('Diagram this… draws the selected text and inserts it after it, one undo 
 
       await undo(window, editor);
       await expect.poll(() => diagramCount(file)).toBe(0);
+    },
+  );
+});
+
+test('Study aids are saved beside the document, shown in a viewer, and offered again', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(upstream ? 600_000 : 180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    upstream ? { upstream } : {},
+    async ({ window, file, fake }) => {
+      const sidecar = path.join(path.dirname(file), 'ai-review_files', 'ai');
+      const footerButton = (dialog: Locator, name: string) =>
+        dialog.locator('.db-dialog-footer').getByRole('button', { name, exact: true });
+
+      // A summary: generated, saved in the sidecar, shown as a page.
+      await openAiMenuItem(window, 'Summarize document…');
+      const summary = window.getByRole('dialog', { name: 'Summarize with AI' });
+      await footerButton(summary, 'Generate summary').click();
+      await expect(summary.locator('.db-ai-study-summary')).toBeVisible({
+        timeout: ANSWER_TIMEOUT_MS,
+      });
+      if (!upstream) {
+        await expect(summary.locator('.db-ai-study-summary')).toContainText(FAKE_SUMMARY_OVERVIEW);
+      }
+      await expect.poll(() => fs.existsSync(path.join(sidecar, 'summary.md'))).toBe(true);
+      const savedSummary = fs.readFileSync(path.join(sidecar, 'summary.md'), 'utf8');
+      expect(savedSummary).toContain('docblocks-generated: summary');
+      expect(savedSummary).toContain('docblocks-source: ai-review.md');
+      await test.info().attach('Summary viewer', {
+        body: await summary.screenshot({ path: test.info().outputPath('summary-viewer.png') }),
+        contentType: 'image/png',
+      });
+      await footerButton(summary, 'Close').click();
+      await expect(summary).toBeHidden();
+
+      // A quiz: a study deck whose answers can be chosen.
+      await openAiMenuItem(window, 'Create quiz…');
+      const quiz = window.getByRole('dialog', { name: 'Create a quiz with AI' });
+      await footerButton(quiz, 'Generate quiz').click();
+      const deck = quiz.getByRole('region', { name: 'Flashcards' });
+      await expect(deck).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
+      await deck.getByRole('group', { name: 'Answer choices' }).getByRole('button').first().click();
+      await expect(deck.getByRole('region', { name: 'Explanation' })).toBeVisible();
+      await expect.poll(() => fs.existsSync(path.join(sidecar, 'quiz.md'))).toBe(true);
+      await test.info().attach('Quiz viewer', {
+        body: await quiz.screenshot({ path: test.info().outputPath('quiz-viewer.png') }),
+        contentType: 'image/png',
+      });
+      await footerButton(quiz, 'Close').click();
+      await expect(quiz).toBeHidden();
+
+      // Opening it again offers the saved quiz without asking the model.
+      const calls = fake.chats.length;
+      await openAiMenuItem(window, 'Create quiz…');
+      await expect(quiz.getByText('Saved quiz', { exact: true })).toBeVisible();
+      await test.info().attach('Saved quiz offered', {
+        body: await quiz.screenshot({ path: test.info().outputPath('saved-quiz.png') }),
+        contentType: 'image/png',
+      });
+      await quiz.getByRole('button', { name: 'View quiz' }).click();
+      await expect(quiz.getByRole('region', { name: 'Flashcards' })).toBeVisible();
+      expect(fake.chats.length).toBe(calls);
+      await footerButton(quiz, 'Close').click();
+      await expect(quiz).toBeHidden();
+
+      // Flashcards: basic cards whose answers are revealed.
+      await openAiMenuItem(window, 'Create flashcards…');
+      const cards = window.getByRole('dialog', { name: 'Create flashcards with AI' });
+      await footerButton(cards, 'Generate flashcards').click();
+      const cardDeck = cards.getByRole('region', { name: 'Flashcards' });
+      await expect(cardDeck).toBeVisible({ timeout: ANSWER_TIMEOUT_MS });
+      await cardDeck.getByRole('button', { name: 'Reveal', exact: true }).click();
+      await expect(cardDeck.getByRole('region', { name: 'Answer' })).toBeVisible();
+      await expect.poll(() => fs.existsSync(path.join(sidecar, 'flashcards.md'))).toBe(true);
+      await test.info().attach('Flashcards viewer', {
+        body: await cards.screenshot({ path: test.info().outputPath('flashcards-viewer.png') }),
+        contentType: 'image/png',
+      });
+      await footerButton(cards, 'Close').click();
+
+      // Study aids never touch the document itself.
+      expect(readDocument(file)).toContain('DocBlocks stood out');
+      if (!upstream) expect(readDocument(file)).not.toContain(FAKE_SUMMARY_OVERVIEW);
     },
   );
 });

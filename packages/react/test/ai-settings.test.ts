@@ -338,7 +338,9 @@ describe('AiSettingsControls', () => {
           progress: null,
         });
       });
-      expect(container.textContent).to.contain('Looking for Gezel');
+      expect(container.textContent).to.contain(
+        'Looking to see if shared AI services (Gezel) are installed',
+      );
       expect(container.querySelector('.db-settings-ai-code')).to.equal(null);
       expect(
         container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled,

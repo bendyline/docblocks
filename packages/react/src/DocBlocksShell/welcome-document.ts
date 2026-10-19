@@ -1,7 +1,23 @@
 import { DEFAULT_WORKSPACE_ID } from '@bendyline/docblocks/workspace';
 
 /** The starter document created for the app's own empty default workspace. */
-export const WELCOME_DOCUMENT_PATH = '/aboutDocBlocks.md';
+export const WELCOME_DOCUMENT_PATH = '/Welcome.md';
+
+/**
+ * Names the starter document has shipped under, lowercased. Workspaces seeded
+ * before a rename keep their copy, and a lone copy under any of these names is
+ * still opened as the welcome document.
+ */
+const WELCOME_DOCUMENT_NAMES: ReadonlySet<string> = new Set([
+  'welcome.md',
+  // Seeded as `aboutDocBlocks.md` through 2.7 (`aboutDocblocks.md` before that).
+  'aboutdocblocks.md',
+]);
+
+/** Whether `path` names the starter document, under its current or a former name. */
+export function isWelcomeDocumentPath(path: string): boolean {
+  return WELCOME_DOCUMENT_NAMES.has(path.replace(/^\//, '').toLowerCase());
+}
 
 /**
  * Whether a workspace is the app's own default — the only place the starter
@@ -20,8 +36,11 @@ export function isAppDefaultWorkspace(
 }
 
 /**
- * Keep annotations attached to headings: each heading becomes a deliberate
- * presentation block while the Markdown remains readable as ordinary prose.
+ * The first document a new user reads, in Write, and the deck they see when
+ * they press Slideshow. Written for someone who has never heard of Markdown:
+ * it names only controls they can see, and every section is short enough to
+ * be a readable slide. Annotations stay attached to headings, so each heading
+ * becomes a deliberate presentation block while the source reads as prose.
  */
 export const WELCOME_DOCUMENT_CONTENT = [
   '---',
@@ -29,119 +48,50 @@ export const WELCOME_DOCUMENT_CONTENT = [
   'squisq-cover-slide: false',
   '---',
   '',
-  '# DocBlocks {[title subtitle="Local-first writing for pages, documents, slideshows, and video"]}',
+  '# Welcome to DocBlocks {[title subtitle="Write once. Share it as a document, a deck, or a video."]}',
   '',
-  'Write in plain Markdown. Shape it visually. Keep it portable.',
+  'This is an ordinary document, so go ahead and change it. Click anywhere and type; DocBlocks saves as you go.',
   '',
-  '## A document editor that never asks you to stop owning the document {[factCard]}',
+  '## Write the way you already do {[list]}',
   '',
-  'DocBlocks pairs a friendly visual writing surface with the durable source format you already know. There is no account to create, no proprietary document to rescue later, and no requirement to send your work to a hosted editor.',
+  '- Type to add text, and use the toolbar for headings, lists, and bold or italic text.',
+  '- Choose **Insert** in the toolbar to add a table, a checklist, a chart, a diagram, or a picture.',
+  '- Choose **Source** to see the Markdown text behind this page. Both views edit the same document.',
   '',
-  '## Start with three small moves {[list]}',
-  '',
-  '1. Choose **New file** in the file pane and give your document a name, such as `my-first-document.md`. On a small screen, open the file pane first.',
-  '2. Add a heading and a few sentences in **Write**, then switch to **Source** to see the Markdown behind them. Both views edit the same document.',
-  '3. Try a Document, Page, Slideshow, or Video preview, then open **Export and share** to make a PDF, Word document, or another supported file.',
-  '',
-  '## Choose your DocBlocks app {[twoColumn header="The same Markdown, wherever you work" left="Web|Start in a browser, with no account. Install the web app when your browser offers it." right="Desktop|Download for macOS (Apple silicon), Windows, or Linux. Work directly in your folders."]}',
-  '',
-  'Choose the **Web app** to start writing in your browser, or **Desktop** for everyday work in local folders on macOS (Apple silicon), Windows, and Linux. Use **VS Code** for documents beside your code, and the **CLI and MCP server** for automation. The links at the end of this guide lead to downloads and setup instructions.',
-  '',
-  '## Get started on desktop {[list]}',
-  '',
-  '- Download the installer for your computer from the **Desktop app** link at the end of this guide. macOS builds support Apple silicon.',
-  '- Launch DocBlocks and choose **Open a folder** to work in a folder you own. Your Markdown and media stay in that folder.',
-  '- Open an existing document or create a new file. Edits save automatically; check any save or conflict message before closing.',
-  '- Use the same Write, Source, preview, and export workflow as the web app, with native menus and file opening.',
-  '',
-  '## Use the web app on this device {[list]}',
-  '',
-  '- Open DocBlocks in your browser and start in a browser workspace. In supported browsers, you can also open a local folder.',
-  '- Choose **Install DocBlocks…** in the app menu when offered. The installed web app keeps using the same browser storage.',
-  '- Once the app has finished downloading for offline use, you can keep editing without a connection.',
-  '- Use **Back up all workspaces** in the app menu to keep a backup before clearing browser data or moving to a new device.',
-  '',
-  '## Work inside VS Code {[content]}',
-  '',
-  'Install the DocBlocks extension, then open a `.md` file in your project. If it opens as plain text, right-click it and choose **Open in DocBlocks**. VS Code supplies the file explorer, tabs, saving, and source control; DocBlocks supplies the visual editor, Markdown source, previews, and export. Follow the extension guide below to get started.',
-  '',
-  '## On a phone or tablet {[content]}',
-  '',
-  'Use the web app on your phone or tablet today. Native apps for iPhone, iPad, and Android are in preview, with store distribution pending. Preview builds offer an **On this device** workspace, picked folders, and system sharing. Keep an exported copy of important work: uninstalling a native app removes its private device workspace.',
-  '',
-  '## Automate with the CLI and MCP {[twoColumn header="For repeatable document work" left="CLI|Install @bendyline/docblocks-cli with npm, then run docblocks --help. Build, preview, and convert files from your terminal." right="MCP|Connect the local server to an agent. Convert and preview documents, then deliberately save the resulting artifacts."]}',
-  '',
-  'With a supported version of `Node.js` installed, run `npm install -g @bendyline/docblocks-cli`, then `docblocks --help`. The CLI builds, previews, and converts files from your terminal. Its local MCP server gives agents document tools with explicitly allowed file access. Follow the CLI and MCP guide below for requirements and configuration.',
-  '',
-  '## One source, four ways to publish {[diagram]}',
+  '## One document, many ways to share it {[diagram]}',
   '',
   '```diagram',
-  '+------------+',
-  '|  Markdown  |',
-  '+-----+------+',
-  '      |',
-  '  +---+------+------------+-----------+',
-  '  |          |            |           |',
-  '  v          v            v           v',
-  '+-------+ +---------+ +------------+ +-------+',
-  '| Pages | |Documents| | Slideshows | | Video |',
-  '+-------+ +---------+ +------------+ +-------+',
+  '              +-----------------+',
+  '              |  Your document  |',
+  '              +--------+--------+',
+  '                       |',
+  '    +-----------+------+-----+------------+',
+  '    |           |            |            |',
+  '    v           v            v            v',
+  '+-------+  +--------+  +----------+  +---------+',
+  '|  PDF  |  |  Word  |  |  Slides  |  |  Video  |',
+  '+-------+  +--------+  +----------+  +---------+',
   '```',
   '',
-  '## Write visually, then look under the hood whenever you like {[content]}',
+  '## Present it or send it {[content]}',
   '',
-  'Use the rich editor for headings, lists, tables, links, images, media, and everyday formatting. Switch to raw Markdown for exact control. Add themes, transform styles, and squiggly-square section annotations when a passage deserves its own visual treatment. The readable `.md` source stays at the center of the workflow.',
+  'Each heading starts a new slide, so this document is already a slideshow. Choose **Slideshow** at the top to see it, or **Export** to save it as a PDF, a Word document, a PowerPoint deck, an e-book, a web page, or a video.',
   '',
-  '## Preview the finished idea before you export it {[list]}',
+  '## Your documents stay yours {[factCard]}',
   '',
-  '- **Document** — Read the work as a polished, continuous document.',
-  '- **Page** — See how it behaves as a web page.',
-  '- **Slideshow** — Step through headings as designed presentation blocks.',
-  '- **Video** — Rehearse timing, motion, narration, and media in a player-ready view.',
+  'There is no account to create. Your documents stay on this device as plain text files that other apps can open too. Choose **Back up** at the bottom of the file list to keep a copy somewhere safe.',
   '',
-  '## Try the optional desktop tools {[list]}',
+  '## Make your own {[list]}',
   '',
-  '- **AI assistance** can help rewrite, review, and illustrate a document. In **Settings → AI assistance**, turn on **Use AI features** and choose an available model. AI is off by default; model downloads start only when you request them.',
-  '- **Dictation and read aloud** run on your computer. Where available, open **Settings → Speech** to download a dictation model or narration voices, then use the microphone or read-aloud controls.',
-  '- These tools depend on the app, device, and installed models. Writing, previewing, and exporting work without setting them up.',
+  '1. Choose **New File** above the file list and give it a name.',
+  '2. Write a heading and a few sentences.',
+  '3. Choose **Slideshow** to present it, or **Export** to share it.',
   '',
-  '## The quiet conveniences are there, too {[list]}',
+  '## Go further {[list]}',
   '',
-  '- **Workspaces and file navigation** keep related documents organized without hiding their source.',
-  '- **Automatic saving** protects the active revision while still surfacing conflicts or save errors.',
-  '- **Optional version history** keeps plain sibling revisions when you want a trail of changes.',
-  '- **Copy-by-link sharing** puts a Markdown copy in a link that opens straight into a Document, Page, Slideshow, or Video view.',
-  '- **Offline-ready, local-first storage** keeps browser work on this device and native work inside folders you choose.',
-  '',
-  '## Export without rebuilding the document {[list]}',
-  '',
-  '- Create **Word documents and PDFs** for review, printing, and sharing with a fixed page layout.',
-  '- Create **PowerPoint decks** from the same annotated sections you preview as a slideshow.',
-  '- Publish **HTML pages, packaged HTML, and EPUB e-books**.',
-  '- Keep portable **Markdown or DBK bundles** with their media assets.',
-  '- Use the linked CLI registry for **spreadsheets, MP4 video, animated GIF, batch conversion, and more**.',
-  '',
-  '## Local-first is concrete, not decorative {[quote]}',
-  '',
-  '> Your browser workspace stays on this device. Native folders are opened only when you choose them. Your Markdown remains useful in DocBlocks, Git, a terminal, another editor, or an AI-assisted workflow.',
-  '',
-  '## Agents get document tools, not a blank check {[factCard]}',
-  '',
-  'The local MCP server converts plain text or Markdown directly and can optionally inspect, preview, or compare documents. Results remain temporary session artifacts until they are deliberately saved, and filesystem access begins with explicit roots rather than assumed authority.',
-  '',
-  '## Take your documents to another app {[content]}',
-  '',
-  'DocBlocks does not automatically sync workspaces between apps or devices. Open the same folder in Desktop or VS Code, or export Markdown and its media to move your work. A DBK bundle keeps documents and media together for another DocBlocks app. A share link contains a snapshot; later edits do not update that copy.',
-  '',
-  '## Explore DocBlocks {[list]}',
-  '',
-  '- [Desktop app](https://docblocks.com/desktop/) — downloads and first steps for macOS (Apple silicon), Windows, and Linux.',
-  '- [Web app](https://docblocks.com/web/) — browser storage, installation, and offline use.',
-  '- [Mobile preview](https://docblocks.com/docs/#mobile-preview) — iPhone, iPad, and Android status and build guide.',
-  '- [VS Code extension](https://docblocks.com/vscode/) — rich Markdown editing inside a workspace.',
-  '- [CLI and MCP server](https://docblocks.com/cli/) — conversion, rendering, and agent workflows.',
-  '- [Supported formats](https://docblocks.com/formats/) — current import and export directions.',
-  '- [Documentation](https://docblocks.com/docs/) — compare the apps and follow the getting-started guides.',
+  '- [Get the desktop app](https://docblocks.com/desktop/) to work in folders on your computer.',
+  '- [Add DocBlocks to VS Code](https://docblocks.com/vscode/) to edit documents beside your code.',
+  '- [Read the guides](https://docblocks.com/docs/) for everything else.',
   // End with a newline, as the Write view saves every document. Without it,
   // merely opening the welcome document in Write rewrote the file.
   '',

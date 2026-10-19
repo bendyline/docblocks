@@ -2341,21 +2341,6 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   gap: 6px 16px;
 }
 
-.db-about-beta {
-  margin-bottom: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--db-accent);
-  border-radius: 6px;
-  background: var(--db-accent-soft-08);
-  color: var(--db-text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.db-about-beta strong {
-  color: var(--db-accent-deep);
-}
-
 .db-about-version {
   display: flex;
   align-items: center;
@@ -5640,62 +5625,149 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
    already autosaved on every keystroke; this just confirms it
    so muscle-memory savers feel at ease. */
 
-/* ── Welcome gateway ─────────────────────────────────────────── */
-/* One-time first-run callout floated over the welcome doc's Play
-   view. Names the mode the user landed in and offers a one-click
-   path into the editor. Dismissed forever via localStorage. */
+/* ── Welcome screen ─────────────────────────────────────────── */
+/* First visit on a two-pane layout: covers the editor area -- the welcome
+   document mounts, inert, beneath it -- with what DocBlocks is and two
+   choices. Dismissed for good via localStorage. Phones keep their card in
+   the file pane (`.db-mobile-first-run`). The class names predate this
+   screen; they were a toast over a slideshow. */
+
+.db-shell-editor-content {
+  display: contents;
+}
 
 .db-welcome-gateway {
   position: absolute;
-  bottom: 56px;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
   z-index: 60;
   display: flex;
   align-items: center;
-  gap: 12px;
-  max-width: min(640px, calc(100% - 32px));
-  padding: 10px 10px 10px 16px;
-  background: var(--db-bg-raised);
-  border: 1px solid var(--db-border-strong);
-  border-radius: 10px;
-  box-shadow: 0 10px 32px var(--db-shadow);
+  justify-content: center;
+  overflow-y: auto;
+  padding: calc(var(--db-safe-top) + 40px) 40px 40px;
+  background:
+    radial-gradient(circle at 88% 8%, var(--db-accent-soft-12), transparent 42%), var(--db-bg);
   color: var(--db-text);
-  font-size: 13px;
-  line-height: 1.45;
-  animation: db-welcome-gateway-in 0.4s ease-out;
+  container-type: inline-size;
 }
 
-.db-welcome-gateway-cta {
-  flex-shrink: 0;
-  padding: 6px 14px;
-  font-size: 13px;
+.db-welcome-gateway-body {
+  display: grid;
+  width: min(1040px, 100%);
+  margin: auto 0;
+  gap: 36px;
+  align-items: center;
+}
+
+@container (min-width: 980px) {
+  .db-welcome-gateway-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+  }
+}
+
+.db-welcome-gateway-eyebrow {
+  margin: 0 0 12px;
+  color: var(--db-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.db-welcome-gateway h1 {
+  margin: 0;
+  color: var(--db-text);
+  font-family: 'PT Serif', Georgia, 'Times New Roman', serif;
+  font-size: clamp(30px, 4.4cqi, 46px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.db-welcome-gateway-copy > p:not(.db-welcome-gateway-eyebrow) {
+  max-width: 34em;
+  margin: 16px 0 0;
+  color: var(--db-text-secondary);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.db-welcome-gateway-copy > .db-welcome-gateway-note {
+  margin-top: 8px;
+  color: var(--db-text-muted);
+  font-size: 14px;
+}
+
+.db-welcome-gateway-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.db-welcome-gateway-actions button,
+.db-welcome-gateway-actions a {
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 8px;
+  background: var(--db-bg);
+  color: var(--db-text);
+  font: inherit;
+  font-size: 15px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+/* The apps link wears the button treatment; this centers its label the way a
+   button's is and drops the underline. */
+.db-welcome-gateway-actions a {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.db-welcome-gateway-actions button:hover,
+.db-welcome-gateway-actions a:hover {
+  border-color: var(--db-accent);
+  background: var(--db-bg-hover);
+}
+
+.db-welcome-gateway-actions .db-welcome-gateway-primary {
+  border-color: var(--db-accent);
   background: var(--db-accent);
   color: var(--db-text-on-accent);
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
 }
 
-.db-welcome-gateway-cta:hover {
+.db-welcome-gateway-actions .db-welcome-gateway-primary:hover {
+  border-color: var(--db-accent-hover);
   background: var(--db-accent-hover);
 }
 
+.db-welcome-gateway-actions button:focus-visible,
+.db-welcome-gateway-actions a:focus-visible,
+.db-welcome-gateway-dismiss:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
 .db-welcome-gateway-dismiss {
-  flex-shrink: 0;
+  position: absolute;
+  top: calc(var(--db-safe-top) + 12px);
+  right: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  font-size: 16px;
-  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
   color: var(--db-text-muted);
-  border: none;
-  border-radius: 6px;
+  font-size: 20px;
+  line-height: 1;
   cursor: pointer;
 }
 
@@ -5704,12 +5776,239 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   color: var(--db-text);
 }
 
-@keyframes db-welcome-gateway-in {
-  from {
-    transform: translate(-50%, 8px);
+/* One Markdown file becoming a PDF page, a slide and a video frame on a 9 s
+   loop. The frames share one stage and take turns; each label lights with
+   its frame. The page and slide colors are fixed: they depict output, which
+   looks the same whatever theme the app is in. */
+.db-welcome-loop {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) auto minmax(0, 1.1fr);
+  align-items: center;
+  gap: 14px 16px;
+}
+
+.db-welcome-loop-source {
+  padding: 14px 16px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 10px;
+  background: var(--db-bg-subtle);
+  box-shadow: 0 10px 28px var(--db-shadow);
+}
+
+.db-welcome-loop-file {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--db-text-muted);
+  font: 600 11px/1 var(--db-meta-font);
+  letter-spacing: 0.04em;
+}
+
+.db-welcome-loop-source code {
+  display: block;
+  overflow: hidden;
+  color: var(--db-text-secondary);
+  font: 12px/1.65 var(--db-meta-font);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.db-welcome-loop-mark {
+  color: var(--db-accent);
+}
+
+.db-welcome-loop-arrow {
+  color: var(--db-accent);
+  font-size: 24px;
+  animation: db-welcome-loop-nudge 3s ease-in-out infinite;
+}
+
+.db-welcome-loop-stage {
+  position: relative;
+  aspect-ratio: 4 / 3;
+}
+
+.db-welcome-loop-frame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: auto;
+  padding: 18px;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: 0 14px 34px var(--db-shadow);
+  font-family: 'PT Serif', Georgia, 'Times New Roman', serif;
+  opacity: 0;
+  animation: db-welcome-loop-frame 9s ease-in-out infinite both;
+}
+
+.db-welcome-loop-frame strong {
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.db-welcome-loop-frame span {
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.db-welcome-loop-frame em {
+  margin-top: 4px;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.db-welcome-loop-frame--page {
+  width: 74%;
+  border: 1px solid #e3dccb;
+  background: #fffdf8;
+  color: #2b241c;
+}
+
+.db-welcome-loop-frame--slide,
+.db-welcome-loop-frame--video {
+  height: 75%;
+  justify-content: center;
+  background: radial-gradient(circle at 30% 20%, #5a3322, #24170f 72%);
+  color: #f6ecdc;
+}
+
+.db-welcome-loop-frame--slide {
+  align-items: center;
+  text-align: center;
+  animation-delay: 3s;
+}
+
+.db-welcome-loop-frame--slide strong {
+  font-size: 21px;
+}
+
+.db-welcome-loop-frame--video {
+  justify-content: flex-start;
+  animation-delay: 6s;
+}
+
+.db-welcome-loop-play {
+  position: absolute;
+  bottom: 11px;
+  left: 14px;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.db-welcome-loop-progress {
+  position: absolute;
+  right: 14px;
+  bottom: 15px;
+  left: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(246, 236, 220, 0.25);
+}
+
+.db-welcome-loop-progress::after {
+  position: absolute;
+  inset: 0;
+  width: 0;
+  border-radius: inherit;
+  background: #e7a36d;
+  content: '';
+  animation: db-welcome-loop-progress 9s linear infinite both;
+  animation-delay: 6s;
+}
+
+.db-welcome-loop-labels {
+  display: flex;
+  grid-column: 3;
+  justify-content: center;
+  gap: 20px;
+  margin: 0;
+  padding: 0;
+  color: var(--db-text-muted);
+  font: 600 11px/1 var(--db-meta-font);
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.db-welcome-loop-labels li {
+  animation: db-welcome-loop-label 9s ease-in-out infinite both;
+}
+
+.db-welcome-loop-labels li:nth-child(2) {
+  animation-delay: 3s;
+}
+
+.db-welcome-loop-labels li:nth-child(3) {
+  animation-delay: 6s;
+}
+
+@keyframes db-welcome-loop-frame {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
   }
-  to {
-    transform: translate(-50%, 0);
+  4%,
+  28% {
+    opacity: 1;
+    transform: none;
+  }
+  32%,
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+@keyframes db-welcome-loop-label {
+  0%,
+  32%,
+  100% {
+    color: var(--db-text-muted);
+  }
+  4%,
+  28% {
+    color: var(--db-accent);
+  }
+}
+
+@keyframes db-welcome-loop-progress {
+  0% {
+    width: 0;
+  }
+  33%,
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes db-welcome-loop-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Without motion, hold on the page: the labels still name all three. */
+  .db-welcome-loop-arrow,
+  .db-welcome-loop-labels li {
+    animation: none;
+  }
+
+  .db-welcome-loop-frame--page {
+    opacity: 1;
+    animation: none;
+  }
+
+  .db-welcome-loop-frame--slide,
+  .db-welcome-loop-frame--video {
+    display: none;
   }
 }
 
@@ -6250,6 +6549,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:not(.db-dialog-close),
 .db-ai-draft-dialog .db-dialog-footer button,
+.db-ai-study-dialog .db-dialog-footer button,
+.db-ai-study-saved button,
 .db-ai-draft-start button,
 .db-ai-review-panel button {
   min-height: var(--db-target-min);
@@ -6264,6 +6565,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration .db-dialog-footer button:last-child,
 .db-ai-draft-dialog .db-dialog-footer button:last-child,
+.db-ai-study-dialog .db-dialog-footer button:last-child,
 .db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
 .db-ai-review-actions button {
@@ -6274,6 +6576,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:not(.db-dialog-close):hover:not(:disabled),
 .db-ai-draft-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-study-dialog .db-dialog-footer button:hover:not(:disabled),
+.db-ai-study-saved button:hover,
 .db-ai-draft-start button:hover,
 .db-ai-review-panel button:hover:not(:disabled) {
   border-color: var(--db-accent-hover);
@@ -6284,6 +6588,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-text-from-narration button:focus-visible,
 .db-text-from-narration textarea:focus-visible,
 .db-ai-draft-dialog .db-dialog-footer button:focus-visible,
+.db-ai-study-dialog .db-dialog-footer button:focus-visible,
+.db-ai-study-saved button:focus-visible,
 .db-ai-draft-start button:focus-visible,
 .db-ai-review-panel button:focus-visible {
   outline: 2px solid var(--db-focus);
@@ -6292,6 +6598,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-text-from-narration button:disabled,
 .db-ai-draft-dialog .db-dialog-footer button:disabled,
+.db-ai-study-dialog .db-dialog-footer button:disabled,
 .db-ai-review-panel button:disabled {
   opacity: 0.5;
   cursor: default;
@@ -6544,6 +6851,133 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* Report AI output: the flag beside each AI disclaimer and its dialog. */
+.db-ai-report-button {
+  white-space: nowrap;
+}
+
+.db-ai-report-intro {
+  margin: 0 0 14px;
+  color: var(--db-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-ai-report-dialog .db-settings-fieldset {
+  margin-bottom: 14px;
+}
+
+/* Study aids: Summarize document, Create quiz, Create flashcards. */
+.db-ai-study-dialog .db-dialog-header,
+.db-ai-study-dialog .db-dialog-footer {
+  flex-shrink: 0;
+}
+
+.db-ai-study-dialog .db-ai-study-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.db-ai-study-start,
+.db-ai-study-result,
+.db-ai-study-running {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.db-ai-study-start p,
+.db-ai-study-result p,
+.db-ai-study-running p {
+  margin: 0;
+}
+
+/* In the full-height deck dialog the result fills the body, and the deck
+   takes whatever the notes and disclaimer leave. */
+.db-ai-study-result {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.db-ai-study-intro,
+.db-ai-study-stage,
+.db-ai-study-saved-title {
+  color: var(--db-text);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.db-ai-study-stage,
+.db-ai-study-saved-title {
+  font-weight: 600;
+}
+
+.db-ai-study-saved {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-study-saved-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.db-ai-study-stale {
+  color: var(--db-accent-deep);
+  font-size: 12px;
+}
+
+.db-ai-study-summary,
+.db-ai-study-deck {
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+}
+
+.db-ai-study-summary {
+  max-height: min(52dvh, 460px);
+  overflow: auto;
+}
+
+/* Squisq's compact deck fills the pane it is given and scrolls its own card,
+   so the frame takes the height the dialog has left and hands all of it
+   over. The minimum is what the deck's toolbar and a few card lines need;
+   the body scrolls instead only when a short window cannot fit even that. */
+.db-ai-study-deck {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: min(280px, 50dvh);
+  overflow: hidden;
+}
+
+.db-ai-study-deck > .squisq-flashcards {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+
+/* The deck dialog spends its height on the deck. */
+.db-ai-study-dialog.db-dialog--full .db-ai-study-body {
+  padding-block: 12px;
+}
+
+.db-ai-study-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7209,7 +7643,6 @@ button.db-git-file-row:hover {
     transition: none;
   }
 
-  .db-welcome-gateway,
   .db-save-toast {
     animation: none;
   }
@@ -7412,10 +7845,12 @@ button.db-git-file-row:hover {
     -webkit-app-region: no-drag;
   }
 
-  /* Folder and empty states do not render Squisq's toolbar. Preserve a top
-     drag strip in those states and keep folder content below it. */
+  /* Folder and empty states do not render Squisq's toolbar, and the first-run
+     welcome screen covers it. Preserve a top drag strip in those states and
+     keep folder content below it. */
   .db-shell .db-shell-empty::before,
-  .db-shell .db-folder-view::before {
+  .db-shell .db-folder-view::before,
+  .db-shell .db-welcome-gateway::before {
     content: '';
     position: absolute;
     top: 0;
@@ -7429,6 +7864,11 @@ button.db-git-file-row:hover {
   .db-shell .db-folder-view {
     box-sizing: border-box;
     padding-top: calc(24px + var(--db-wco-titlebar-height));
+  }
+
+  /* Clear the caption buttons at the top right. */
+  .db-shell .db-welcome-gateway-dismiss {
+    top: calc(var(--db-wco-titlebar-height) + 8px);
   }
 }
 

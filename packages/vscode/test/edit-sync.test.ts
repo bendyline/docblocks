@@ -14,6 +14,17 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// A fixed sleep cannot prove an autosave happened: when a loaded event loop
+// stalls past it, the sleep and the autosave timer expire together and the
+// sleep resolves before the commit's own await. Poll for the outcome instead.
+async function waitFor(predicate: () => boolean, label: string, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}.`);
+    await wait(5);
+  }
+}
+
 class FakeDocumentAdapter implements HostDocumentAdapter {
   public readonly key = 'file:///workspace/readme.md';
   public content = 'initial';
@@ -118,7 +129,7 @@ describe('VS Code edit sync', () => {
 
     expect(sync.acceptEdit(editEnvelope(sync, 1, 'first')).accepted).to.equal(true);
     expect(sync.acceptEdit(editEnvelope(sync, 2, 'latest')).accepted).to.equal(true);
-    await wait(30);
+    await waitFor(() => sync.getSnapshot().session.status === 'saved', 'the autosave');
 
     expect(adapter.commits).to.deep.equal(['latest']);
     expect(adapter.content).to.equal('latest');
@@ -164,7 +175,7 @@ describe('VS Code edit sync', () => {
 
     expect(sync.acceptEdit(editEnvelope(sync, 2, 'automatic')).accepted).to.equal(true);
     sync.setAutoSaveEnabled(true);
-    await wait(20);
+    await waitFor(() => sync.getSnapshot().session.status === 'saved', 'the enabled autosave');
     expect(adapter.commits).to.deep.equal(['manual', 'automatic']);
     sync.dispose();
   });

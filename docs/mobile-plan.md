@@ -27,6 +27,10 @@ The reported Qwen 3.5 2B review failure exposed a Gezel budget mismatch: invento
 
 The verified fix is installed in the regular **DocBlocks 2.6.2, build 4** app and was launched successfully on the connected iPhone. The update preserved the app's private documents and downloaded models. Android Debug also builds with the same final SDK and renderer.
 
+**Store-readiness follow-up — October 17, 2026**
+
+Android no longer ships Gemini Nano. ML Kit's GenAI terms bar apps likely to be used by people under 18 and prohibit production use of Preview services, and the SDK reports usage metrics to Google. The app's Gradle build excludes `com.google.mlkit`, which also drops Play Services, Firebase encoders, Guava and Google's datatransport from the release graph; the mobile host hides the provider Gezel still reports as unavailable. On an arm64 API 35 emulator the native fixture tests, Settings opt-in and synthetic engine streaming passed with ML Kit absent. The same pass added in-app reporting for AI output (App Store 1.2, Google Play's AI-Generated Content policy), removed the About dialog's beta notice (App Store 2.2), turned recording off on native WebViews, declared iOS camera, microphone and photo-library-add purposes for the system picker and share sheet, and routed external `target="_blank"` links through `host.shell.openExternal`.
+
 **Earlier qualification — October 4, 2026**
 
 **Implemented and verified so far**

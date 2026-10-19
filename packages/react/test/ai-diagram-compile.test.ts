@@ -5,7 +5,7 @@ import {
   renderAsciiTimeline,
   validateMarkdownSource,
 } from '@bendyline/squisq/doc';
-import { parseMarkdown } from '@bendyline/squisq/markdown';
+import { parseMarkdown, parseSvgIsland } from '@bendyline/squisq/markdown';
 import { validateMermaidSource } from '@bendyline/squisq-editor-react';
 
 import { compileDiagram, mermaidNumber, timelinePoint } from '../src/Ai/diagram-compile.js';
@@ -105,7 +105,49 @@ const SPECS: readonly DiagramSpec[] = [
       { value: '3x', label: 'faster setup' },
     ],
   },
+  {
+    kind: 'venn',
+    sets: [
+      { label: 'Design', items: ['Mockups', 'User research'] },
+      { label: 'Engineering', items: ['APIs'] },
+    ],
+    shared: ['Prototypes'],
+  },
+  {
+    kind: 'venn',
+    sets: [
+      { label: 'Sales', items: ['Leads'] },
+      { label: 'Marketing', items: [] },
+      { label: 'Product', items: ['Roadmap'] },
+    ],
+    shared: ['Customer insight'],
+  },
+  {
+    kind: 'matrix',
+    xAxis: 'Effort',
+    yAxis: 'Impact',
+    quadrants: [
+      { label: 'Quick wins', items: ['Fix signup copy'] },
+      { label: 'Big bets', items: [] },
+      { label: 'Fill-ins', items: [] },
+      { label: 'Money pits', items: ['Custom reporting engine for enterprise'] },
+    ],
+  },
+  {
+    kind: 'funnel',
+    stages: [
+      { label: 'Visitors', value: '10,000' },
+      { label: 'Sign-ups', value: '1,200' },
+      { label: 'Customers', value: '' },
+    ],
+  },
+  { kind: 'pyramid', levels: ['Self-actualization', 'Esteem', 'Belonging', 'Safety'] },
 ];
+
+/** The SVG inside a compiled ```svg fence. */
+function svgBody(markdown: string): string {
+  return markdown.slice(markdown.indexOf('\n') + 1, markdown.lastIndexOf('\n'));
+}
 
 describe('compileDiagram', () => {
   // The first Mermaid validation pays the parser's one-time cold import, which
@@ -121,7 +163,9 @@ describe('compileDiagram', () => {
         ? ` (${spec.type})`
         : spec.kind === 'steps'
           ? ` (${String(spec.steps.length)})`
-          : '';
+          : spec.kind === 'venn'
+            ? ` (${String(spec.sets.length)} sets)`
+            : '';
     it(`compiles a ${spec.kind}${variant} that renders cleanly`, async () => {
       const compiled = compileDiagram(spec, { title: `About ${spec.kind}` });
       expect(await validateCompiledDiagram(compiled, validateMermaidSource)).to.deep.equal({
@@ -158,7 +202,71 @@ describe('compileDiagram', () => {
       cycle: 'sectionEnd',
       comparison: 'sectionEnd',
       stats: 'sectionEnd',
+      venn: 'afterBlock',
+      matrix: 'afterBlock',
+      funnel: 'afterBlock',
+      pyramid: 'afterBlock',
     });
+  });
+
+  it('draws Venn diagrams, matrices, funnels and pyramids as themeable SVG pictures', () => {
+    for (const spec of SPECS.filter((item) =>
+      ['venn', 'matrix', 'funnel', 'pyramid'].includes(item.kind),
+    )) {
+      const compiled = compileDiagram(spec, { title: 'Picture' });
+      expect(compiled.family).to.equal('svg');
+      const markdown = compiled.render(2, new Set());
+      expect(markdown.startsWith('```svg\n<svg ')).to.equal(true);
+      const parsed = parseSvgIsland(svgBody(markdown));
+      expect(parsed.ok && parsed.diagnostics, markdown).to.deep.equal([]);
+      // The text alternative is the picture's accessible name (which Squisq caps).
+      const name = parsed.ok ? (parsed.island.title ?? '') : '';
+      expect(name.length).to.be.greaterThan(20);
+      expect(`Picture. ${compiled.summary}`.startsWith(name), name).to.equal(true);
+      // Drawn only in currentColor, so it follows the theme.
+      expect(markdown).not.to.match(/#[0-9a-f]{3,8}\b|\brgb\(|\b(black|white)\b/iu);
+    }
+  });
+
+  it('never lets model text break out of SVG markup', () => {
+    const hostile: DiagramSpec = {
+      kind: 'venn',
+      sets: [
+        { label: '</text><script>alert(1)</script>', items: ['a & b', '"><foreignObject>'] },
+        { label: 'x" onload="alert(1)', items: ['```\n# Heading'] },
+      ],
+      shared: ['<![CDATA[ ]]>'],
+    };
+    const compiled = compileDiagram(hostile, { title: '<title>evil</title>' });
+    const markdown = compiled.render(2, new Set());
+    const parsed = parseSvgIsland(svgBody(markdown));
+    expect(parsed.ok && parsed.diagnostics, markdown).to.deep.equal([]);
+    expect(markdown).not.to.contain('<script').and.not.to.contain('<foreignObject');
+    // Model text lands only as escaped text or an escaped attribute value.
+    expect(markdown).not.to.match(/\sonload="/u);
+    expect(markdown.split('\n').filter((line) => line.startsWith('```'))).to.have.length(2);
+    expect(markdown).to.contain('a &amp; b');
+  });
+
+  it('wraps long labels and shrinks them to fit instead of clipping words', () => {
+    const compiled = compileDiagram(
+      { kind: 'pyramid', levels: ['Self-actualization', 'Esteem', 'Safety'] },
+      { title: '' },
+    );
+    expect(compiled.render(2, new Set())).to.contain('>Self-actualization</tspan>');
+  });
+
+  it('leaves the axes off a matrix that names none', () => {
+    const markdown = compileDiagram(
+      {
+        kind: 'matrix',
+        xAxis: '',
+        yAxis: '',
+        quadrants: ['A', 'B', 'C', 'D'].map((label) => ({ label, items: [] })),
+      },
+      { title: '' },
+    ).render(2, new Set());
+    expect(markdown).not.to.contain('<line').and.not.to.contain('<marker');
   });
 
   it('never lets model text break out of the generated syntax', async () => {
@@ -268,6 +376,20 @@ describe('checkGrounding', () => {
     const result = checkGrounding(chart, passage);
     expect(result.ok).to.equal(false);
     expect(result.problems[0]).to.contain('2.4');
+  });
+
+  it('holds funnel values to the passage, and allows stages with none', () => {
+    const funnel = (values: string[]): DiagramSpec => ({
+      kind: 'funnel',
+      stages: ['Revenue', 'Buyers', 'Berlin'].map((label, index) => ({
+        label,
+        value: values[index] ?? '',
+      })),
+    });
+    expect(checkGrounding(funnel(['$1.2M', '45%', '']), passage).ok).to.equal(true);
+    const invented = checkGrounding(funnel(['$1.2M', '60%', '']), passage);
+    expect(invented.ok).to.equal(false);
+    expect(invented.problems[0]).to.contain('60%');
   });
 
   it('names invented dates and accepts copied ones', () => {

@@ -78,13 +78,24 @@ async function waitForMountedShell(page: Page, failures: BootFailure[]): Promise
   }
 }
 
+export interface OpenInitializedSiteOptions {
+  /**
+   * Leave the first-run welcome screen up. By default it is dismissed through
+   * its tour, as most tests exercise the editor it covers.
+   */
+  keepWelcome?: boolean;
+}
+
 /**
  * Open a fresh site context and wait for the asynchronous first-run workspace
  * transaction to finish. Shell/toolbars render before IndexedDB creation,
  * welcome-file seeding, hash navigation, and the lazy editor have completed;
  * tests that acted at that earlier point raced the initialization effect.
  */
-export async function openInitializedSite(page: Page): Promise<void> {
+export async function openInitializedSite(
+  page: Page,
+  { keepWelcome = false }: OpenInitializedSiteOptions = {},
+): Promise<void> {
   const bootFailures = watchBootFailures(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
 
@@ -94,7 +105,7 @@ export async function openInitializedSite(page: Page): Promise<void> {
   });
 
   const welcomeRow = page.locator(
-    '.db-tree-row[data-path="aboutDocBlocks.md"], .db-tree-row[data-path="/aboutDocBlocks.md"]',
+    '.db-tree-row[data-path="Welcome.md"], .db-tree-row[data-path="/Welcome.md"]',
   );
   const startupError = page.locator('.db-save-toast--error');
   await expect(welcomeRow.or(startupError)).toBeVisible({ timeout: SITE_STARTUP_TIMEOUT_MS });
@@ -106,12 +117,26 @@ export async function openInitializedSite(page: Page): Promise<void> {
     .poll(() => decodeURIComponent(new URL(page.url()).hash), {
       timeout: SITE_STARTUP_TIMEOUT_MS,
     })
-    .toMatch(/\/aboutDocBlocks\.md$/i);
+    .toMatch(/\/Welcome\.md$/i);
 
   // The status item proves the selected document's lazy Squisq shell has
-  // finished mounting. The welcome gateway is intentionally transient and
-  // can disappear before this assertion on a warm dev server.
+  // finished mounting.
   await expect(page.locator('.squisq-status-item').first()).toBeVisible({
     timeout: SITE_STARTUP_TIMEOUT_MS,
   });
+  if (!keepWelcome) await takeWelcomeTour(page);
+}
+
+/**
+ * Dismiss the two-pane first-run welcome screen through its tour, leaving the
+ * welcome document open in Write. The screen is decided in the same commit
+ * that adopts the welcome document, so by the time the editor has mounted it
+ * is either up or never coming. Phones show a card in the file pane instead,
+ * which this leaves alone.
+ */
+export async function takeWelcomeTour(page: Page): Promise<void> {
+  const welcome = page.locator('.db-welcome-gateway');
+  if (!(await welcome.isVisible())) return;
+  await welcome.getByRole('button', { name: 'Tour the welcome document' }).click();
+  await expect(welcome).toHaveCount(0);
 }

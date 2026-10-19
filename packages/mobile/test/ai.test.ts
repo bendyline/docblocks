@@ -174,7 +174,6 @@ describe('mobile AI through the Gezel App SDK', () => {
 
   for (const [providerId, label] of [
     ['apple-foundation-models', 'Apple Foundation Models'],
-    ['android-mlkit', 'Gemini Nano (Android ML Kit)'],
   ] as const) {
     it(`lists and explicitly routes ${providerId} alongside downloaded models`, async () => {
       const f = fixture();
@@ -239,35 +238,30 @@ describe('mobile AI through the Gezel App SDK', () => {
     });
   }
 
-  it('prepares ML Kit only by explicit request and makes it selectable afterward', async () => {
-    const f = fixture({ enabled: true });
-    const system: MobileProvider = {
-      ...f.providers[0],
-      id: 'android-mlkit',
-      availability: 'download-required',
-    };
-    f.providers.push(system);
-    let prepared = false;
-    f.runtime.prepareProvider = async (input) => {
-      assert.equal(input.providerId, 'android-mlkit');
-      prepared = true;
-      system.availability = 'available';
-    };
-    const models = await f.ai.models();
-    assert.ok(models.ok);
-    if (models.ok) assert.equal(models.value[1].availability, 'download-required');
-    const available = await f.ai.availableModels!();
-    assert.ok(available.ok);
-    if (available.ok) assert.equal(available.value[0].label, 'Gemini Nano (Android ML Kit)');
-    assert.equal(prepared, false);
-    const result = await f.ai.installModel!('android-mlkit:android-mlkit').done;
-    assert.ok(result.ok, JSON.stringify(result));
-    if (result.ok) {
-      assert.equal(result.value.id, 'android-mlkit:android-mlkit');
-      assert.equal(result.value.availability, 'available');
-    }
-    assert.equal(prepared, true);
-  });
+  for (const availability of ['available', 'download-required', 'unavailable'] as const) {
+    it(`never offers, prepares or routes to ML Kit (${availability})`, async () => {
+      const modelId = 'android-mlkit:android-mlkit';
+      const f = fixture({ enabled: true, model: modelId });
+      f.providers.push({ ...f.providers[0], id: 'android-mlkit', availability });
+      const models = await f.ai.models();
+      assert.ok(models.ok);
+      if (models.ok)
+        assert.deepEqual(
+          models.value.map((m) => m.id),
+          ['llama-cpp:fixture'],
+        );
+      const available = await f.ai.availableModels!();
+      assert.ok(available.ok);
+      if (available.ok) assert.ok(!available.value.some((m) => m.id === modelId));
+      const installed = await f.ai.installModel!(modelId).done;
+      assert.ok(!installed.ok);
+      if (!installed.ok) assert.equal(installed.error.code, 'model-unavailable');
+      const result = await f.ai.chat(request, () => {}).done;
+      assert.ok(!result.ok);
+      if (!result.ok) assert.equal(result.error.code, 'model-unavailable');
+      assert.ok(!f.calls.includes('generate'));
+    });
+  }
 
   it('starts nothing when opted out, including status, model queries and rejected requests', async () => {
     const f = fixture();

@@ -20,7 +20,7 @@ export function App() {
         calcEngineFactory={SITE_CALC_ENGINE_FACTORY}
         pdfWorkerSrc={pdfWorkerUrl}
         proofing={SITE_PROOFING_PROVIDER}
-        homeDocumentPath="/aboutDocBlocks.md"
+        homeDocumentPath="/Welcome.md"
         homeDocumentTitle="DocBlocks — Local-First Markdown Editor"
         updateAvailable={pwa.updateAvailable}
         onApplyUpdate={applyPwaUpdate}

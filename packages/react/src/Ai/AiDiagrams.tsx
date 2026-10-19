@@ -22,8 +22,9 @@ import { LinearDocView } from '@bendyline/squisq-react/page';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
+import { AiReportButton } from './AiOutputReport.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
-import type { CompiledDiagram } from './diagram-compile.js';
+import type { CompiledDiagram, PictureKind } from './diagram-compile.js';
 import { clip } from './diagram-sanitize.js';
 import { DIAGRAM_KINDS, DIAGRAM_KIND_LABELS, type DiagramKind } from './diagram-spec.js';
 import {
@@ -40,6 +41,7 @@ import {
   type DiagramOutcome,
   type IllustrationRun,
 } from './illustrate-pipeline.js';
+import { canDrawIllustrations, realizeIllustration, type PictureOutcome } from './illustration.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   inferKind,
@@ -48,7 +50,15 @@ import {
 } from './illustrate-prompts.js';
 
 /** Kinds whose links between boxes cannot be checked against the text. */
-const LINKED_KINDS: ReadonlySet<DiagramKind> = new Set(['flow', 'sequence', 'hierarchy']);
+const LINKED_KINDS: ReadonlySet<PictureKind> = new Set(['flow', 'sequence', 'hierarchy']);
+
+/** What the person should check that DocBlocks cannot. */
+function checkNote(kind: PictureKind): string | null {
+  if (LINKED_KINDS.has(kind)) return 'Check the links between boxes before inserting.';
+  if (kind === 'matrix') return 'Check that each quadrant is in the right corner before inserting.';
+  if (kind === 'illustration') return 'Check the picture against your text before inserting.';
+  return null;
+}
 
 function contextWindowOf(status: ReturnType<typeof useAiStatus>): number | null {
   return status?.kind === 'ready' ? (status.model?.contextWindow ?? null) : null;
@@ -106,11 +116,13 @@ export function AiDiagramDialog({
   onClose,
 }: AiDiagramDialogProps) {
   const status = useAiStatus(ai);
+  const contextWindow = contextWindowOf(status);
+  const drawsIllustrations = canDrawIllustrations(contextWindow);
   const material = capturedSelection.text.trim();
   const [description, setDescription] = useState('');
-  const [kindChoice, setKindChoice] = useState<'auto' | DiagramKind>('auto');
+  const [kindChoice, setKindChoice] = useState<'auto' | PictureKind>('auto');
   const [running, setRunning] = useState(false);
-  const [outcome, setOutcome] = useState<DiagramOutcome | null>(null);
+  const [outcome, setOutcome] = useState<PictureOutcome | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -126,7 +138,9 @@ export function AiDiagramDialog({
   );
 
   const autoKind = inferKind(description, material);
-  const kind = kindChoice === 'auto' ? autoKind : kindChoice;
+  // A model switched to a smaller one in settings can no longer draw.
+  const choice = kindChoice === 'illustration' && !drawsIllustrations ? 'auto' : kindChoice;
+  const kind: PictureKind = choice === 'auto' ? autoKind : choice;
   const ready = outcome?.status === 'ready' ? outcome : null;
 
   const generate = useCallback(async () => {
@@ -143,21 +157,35 @@ export function AiDiagramDialog({
     const avoid = ready ? specSummaryForAvoid(ready.compiled) : undefined;
     setRunning(true);
     setError(null);
-    const result = await realizeDiagram({
-      ai,
-      kind,
-      material: material || request,
-      heading: '',
-      title: request ? clip(request.charAt(0).toUpperCase() + request.slice(1), 60) : '',
-      description: request || undefined,
-      avoid,
-      // With selected text, the diagram must stick to it. Without, the person
-      // asked the model to supply the content.
-      ground: material.length > 0,
-      budget: promptBudget(contextWindowOf(status)),
-      validateMermaid: validateMermaidSource,
-      signal: controller.signal,
-    });
+    const title = request ? clip(request.charAt(0).toUpperCase() + request.slice(1), 60) : '';
+    // With selected text, the picture must stick to it. Without, the person
+    // asked the model to supply the content.
+    const ground = material.length > 0;
+    const result =
+      kind === 'illustration' && contextWindow !== null
+        ? await realizeIllustration({
+            ai,
+            material,
+            description: request,
+            title,
+            avoid,
+            ground,
+            contextWindow,
+            signal: controller.signal,
+          })
+        : await realizeDiagram({
+            ai,
+            kind: kind === 'illustration' ? autoKind : kind,
+            material: material || request,
+            heading: '',
+            title,
+            description: request || undefined,
+            avoid,
+            ground,
+            budget: promptBudget(contextWindow),
+            validateMermaid: validateMermaidSource,
+            signal: controller.signal,
+          });
     if (requestRef.current !== requestId) return;
     setRunning(false);
     if (result.status === 'cancelled') return;
@@ -166,7 +194,7 @@ export function AiDiagramDialog({
       return;
     }
     setOutcome(result);
-  }, [ai, description, kind, material, ready, status]);
+  }, [ai, autoKind, contextWindow, description, kind, material, ready]);
 
   const stop = useCallback(() => controllerRef.current?.abort(), []);
 
@@ -257,8 +285,8 @@ export function AiDiagramDialog({
       <label className="db-ai-field db-ai-field--inline">
         <span>Kind</span>
         <select
-          value={kindChoice}
-          onChange={(event) => setKindChoice(event.currentTarget.value as 'auto' | DiagramKind)}
+          value={choice}
+          onChange={(event) => setKindChoice(event.currentTarget.value as 'auto' | PictureKind)}
         >
           <option value="auto">Auto ({DIAGRAM_KIND_LABELS[autoKind]})</option>
           {DIAGRAM_KINDS.map((option) => (
@@ -266,8 +294,15 @@ export function AiDiagramDialog({
               {DIAGRAM_KIND_LABELS[option]}
             </option>
           ))}
+          {drawsIllustrations && <option value="illustration">Illustration (drawn by AI)</option>}
         </select>
       </label>
+      {choice === 'illustration' && (
+        <p className="db-ai-note">
+          The model draws this picture itself, as SVG. Describe what it should show; it takes longer
+          than a diagram and can need a second try.
+        </p>
+      )}
 
       {material && (
         <div className="db-ai-selection-preview">
@@ -292,8 +327,8 @@ export function AiDiagramDialog({
           {placementNote(ready.compiled) && (
             <p className="db-ai-note">{placementNote(ready.compiled)}</p>
           )}
-          {LINKED_KINDS.has(ready.compiled.kind) && (
-            <p className="db-ai-note">Check the links between boxes before inserting.</p>
+          {checkNote(ready.compiled.kind) && (
+            <p className="db-ai-note">{checkNote(ready.compiled.kind)}</p>
           )}
           <button
             type="button"
@@ -314,7 +349,19 @@ export function AiDiagramDialog({
           {error}
         </p>
       )}
-      <p className="db-ai-disclaimer">Review AI-generated diagrams before adding them.</p>
+      <p className="db-ai-disclaimer">
+        Review AI-generated diagrams before adding them.
+        {ready && !running && (
+          <>
+            {' '}
+            <AiReportButton
+              feature="Insert diagram"
+              getOutput={() => ready.compiled.render(2, new Set())}
+              model={status?.kind === 'ready' ? (status.model?.label ?? null) : null}
+            />
+          </>
+        )}
+      </p>
     </Dialog>
   );
 
@@ -532,6 +579,9 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
 
   const busy = phase === 'planning' || phase === 'drawing' || regenerating !== null;
   const visible = suggestions.filter((item) => !item.dismissed);
+  const drawn = visible.flatMap((item) =>
+    item.outcome?.status === 'ready' ? [item.outcome.compiled] : [],
+  );
   const insertable = visible.filter(
     (item) =>
       !item.inserted &&
@@ -637,8 +687,8 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                   {placementNote(compiled) && (
                     <p className="db-ai-note">{placementNote(compiled)}</p>
                   )}
-                  {LINKED_KINDS.has(compiled.kind) && (
-                    <p className="db-ai-note">Check the links between boxes before inserting.</p>
+                  {checkNote(compiled.kind) && (
+                    <p className="db-ai-note">{checkNote(compiled.kind)}</p>
                   )}
                   {sourceOpen.has(item.key) && <DiagramSource compiled={compiled} />}
                 </>
@@ -736,6 +786,16 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
       )}
       <p className="db-ai-review-disclaimer">
         AI diagrams can be wrong. Check each one before inserting it.
+        {drawn.length > 0 && !busy && (
+          <>
+            {' '}
+            <AiReportButton
+              feature="Illustrate document"
+              getOutput={() => drawn.map((compiled) => compiled.render(2, new Set())).join('\n\n')}
+              model={status?.kind === 'ready' ? (status.model?.label ?? null) : null}
+            />
+          </>
+        )}
       </p>
     </aside>
   );

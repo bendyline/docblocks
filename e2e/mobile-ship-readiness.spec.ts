@@ -10,7 +10,10 @@ test.describe('mobile web-editor ship readiness', () => {
 
     await expect(page.locator('.db-shell')).toBeVisible();
     await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Welcome to DocBlocks' })).toBeVisible();
+    // The welcome document behind the drawer has the same title; the card is the one in view.
+    await expect(
+      page.locator('.db-mobile-first-run').getByRole('heading', { name: 'Welcome to DocBlocks' }),
+    ).toBeVisible();
     // The editor pane is always mounted now -- unmounting it tore down Tiptap,
     // Monaco, undo history and scroll position on every drawer toggle. While
     // the file pane is showing it is held out of reach with `inert`, which is a

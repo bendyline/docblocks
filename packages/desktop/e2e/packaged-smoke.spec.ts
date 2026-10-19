@@ -3,7 +3,7 @@ import path from 'node:path';
 import { extractFile, listPackage } from '@electron/asar';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { excludedDesktopDependencies } from '../../../scripts/desktop-runtime-policy.js';
-import { FUSE_STATE, readFuseWires } from './packaged-artifact.js';
+import { FUSE_STATE, readFuseWires, resolvePackagedArtifact } from './packaged-artifact.js';
 import { expect, test } from './packaged-fixtures.js';
 
 const EXPECTED_FUSES = [
@@ -103,14 +103,24 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
   await expect(packaged.window.locator('.db-welcome-gateway')).toBeVisible({
     timeout: 15_000,
   });
-  const welcome = path.join(workspaceDir, 'aboutDocBlocks.md');
+  const welcome = path.join(workspaceDir, 'Welcome.md');
   await expect.poll(() => fs.existsSync(welcome), { timeout: 15_000 }).toBe(true);
-  expect(fs.readFileSync(welcome, 'utf8')).toContain('# DocBlocks {[title');
+  expect(fs.readFileSync(welcome, 'utf8')).toContain('# Welcome to DocBlocks {[title');
 });
 
 test('grants capture only to the trusted renderer and exposes only working presentation targets', async ({
   launchPackagedApp,
 }) => {
+  // The probe window and the picker bypass exist only in `dist:dir` packages,
+  // which stamp app.asar's package.json; a release package keeps both prompts.
+  const appManifest = JSON.parse(
+    extractFile(resolvePackagedArtifact().appAsarPath, 'package.json').toString('utf8'),
+  ) as { docblocksAutomationHooks?: unknown };
+  test.skip(
+    appManifest.docblocksAutomationHooks !== true &&
+      appManifest.docblocksAutomationHooks !== 'true',
+    'Release packages have no automation hooks; build with `npm run dist:dir` to check capture grants.',
+  );
   const packaged = await launchPackagedApp(['--use-fake-device-for-media-stream']);
   await packaged.window.waitForSelector('.db-shell', { timeout: 30_000 });
 

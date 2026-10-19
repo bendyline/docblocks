@@ -39,6 +39,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>DocBlocks uses the camera only when you choose Take Photo or Video to add a picture or clip to a document.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>DocBlocks uses the microphone only to record sound for a video you take to add to a document.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>DocBlocks adds an image or video to your photo library only when you choose to save an export there.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

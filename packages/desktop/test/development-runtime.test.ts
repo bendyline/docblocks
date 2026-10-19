@@ -2,6 +2,8 @@ import { expect } from 'chai';
 import path from 'node:path';
 
 import {
+  DEVELOPMENT_PROFILE_ENV,
+  developmentProfileOverride,
   developmentUserDataPath,
   developmentWorkspacePath,
   isDevelopmentRuntime,
@@ -22,5 +24,18 @@ describe('Electron development runtime isolation', () => {
     expect(developmentWorkspacePath(path.join('home', 'Documents'))).to.equal(
       path.join('home', 'Documents', 'DocBlocks-dev'),
     );
+  });
+
+  it('keeps the everyday profile unless a throwaway profile root is named', () => {
+    expect(developmentProfileOverride({})).to.equal(null);
+    expect(developmentProfileOverride({ [DEVELOPMENT_PROFILE_ENV]: '  ' })).to.equal(null);
+  });
+
+  it('moves userData and Documents under an absolute throwaway profile root', () => {
+    const root = path.join('tmp', 'docblocks-new', 'app-1');
+    expect(developmentProfileOverride({ [DEVELOPMENT_PROFILE_ENV]: root })).to.deep.equal({
+      userData: path.resolve(root, 'userData'),
+      documents: path.resolve(root, 'Documents'),
+    });
   });
 });

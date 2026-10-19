@@ -53,6 +53,11 @@ import {
   toWireIdentifier,
 } from './output-bounds.js';
 import {
+  PICTURE_SELECTION_GUIDANCE,
+  authoringGuidePictures,
+  pictureExportGuidance,
+} from './picture-guidance.js';
+import {
   MOTION_SELECTION_GUIDANCE,
   STYLE_SELECTION_GUIDANCE,
   TRANSFORM_SELECTION_GUIDANCE,
@@ -720,13 +725,14 @@ function registerAuthoringGuideResource(server: McpServer): void {
       annotations: { audience: ['assistant'], priority: 1 },
     },
     async () => {
-      const [templates, schemaModule, transformModule] = await Promise.all([
+      const [templates, schemaModule, transformModule, pictures] = await Promise.all([
         authoringTemplateCatalog(),
         import('@bendyline/squisq/schemas'),
         import('@bendyline/squisq/transform'),
+        authoringGuidePictures(),
       ]);
       const guide = {
-        version: 10,
+        version: 11,
         workflow: [
           'plain text and ordinary Markdown can be passed directly to convert_document without a preflight or template annotations',
           'for deliberate PPTX slide boundaries, use one level-one Markdown heading per slide; headings alone create the boundaries, so do not add --- between them unless a visible horizontal rule is intended',
@@ -734,6 +740,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
           STYLE_SELECTION_GUIDANCE,
           TRANSFORM_SELECTION_GUIDANCE,
           MOTION_SELECTION_GUIDANCE,
+          'for pictures, choose a format from pictures.choose, follow pictures.svgRules for ```svg fences, and check pictures.exports for the target; never write raw <svg> HTML, which is silently dropped',
           'use a bundle source when assets must travel with the document, or create_document_bundle when one draft will be reused by two or more inspect, preview, or convert calls',
           'use inspect_document or preview_document only when the user asks for document analysis or visual evidence',
           'convert_document creates immutable artifacts; save_artifact only when a durable file is required',
@@ -742,6 +749,7 @@ function registerAuthoringGuideResource(server: McpServer): void {
         standaloneAnnotation: '{[templateId key="value"]}',
         standaloneWarning:
           'A standalone annotation creates an additional heading-less block. Bind the annotation to a heading unless that extra block is deliberate.',
+        pictures,
         fidelity: {
           semantic: 'Prioritize meaning and portability.',
           'editable-native': 'Produce editable native structures with target-specific diagnostics.',
@@ -820,6 +828,7 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
           const annotationHandling = normalizedTarget
             ? await targetTemplateAnnotationHandling(normalizedTarget)
             : null;
+          const pictureExport = pictureExportGuidance(normalizedTarget);
           // When the linked exporter flattens annotations to semantic content,
           // the visual-template catalog is inert weight for this target: scope
           // it to the loss-averse defaults instead of shipping 26 full schemas.
@@ -912,6 +921,8 @@ function registerTemplateTools(server: McpServer, context: AgenticToolContext): 
               annotationHandling === 'ignored'
                 ? 'This target flattens template annotations to semantic content, so annotations are unnecessary for the exported file.'
                 : 'Explicit valid annotations override automatic layout choices; invalid or unnecessary annotations should be omitted rather than repaired through a separate workflow.',
+              PICTURE_SELECTION_GUIDANCE,
+              ...(pictureExport ? [pictureExport] : []),
               'Pass Markdown directly to convert_document. Use a bundle source for assets, or create_document_bundle only when one draft will be reused by two or more inspect, preview, or convert calls.',
               'Use inspect_document or preview_document only when the user asks for document analysis or visual evidence. Save only final durable artifacts with save_artifact.',
             ],

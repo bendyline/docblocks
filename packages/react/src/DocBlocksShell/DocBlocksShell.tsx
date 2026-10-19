@@ -262,6 +262,7 @@ import { useConfirmDialog } from '../components/useConfirmDialog.js';
 import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocumentDialog.js';
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
+import { openExternalUrl } from '../external-url.js';
 import { setOutsideInPdfWorker } from './outside-in-contract.js';
 import { newFileHtmlOutput, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
 import {
@@ -303,6 +304,7 @@ import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSea
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
+import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
 import {
@@ -316,6 +318,7 @@ import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
 import { createNativeFileActions } from './native-file-actions.js';
 import {
   isAppDefaultWorkspace,
+  isWelcomeDocumentPath,
   WELCOME_DOCUMENT_CONTENT,
   WELCOME_DOCUMENT_PATH,
 } from './welcome-document.js';
@@ -1206,6 +1209,10 @@ export function DocBlocksShell({
   );
   const [provider, setProvider] = useState<FileSystemProvider | null>(null);
   const [workspaceStartupError, setWorkspaceStartupError] = useState<string | null>(null);
+  // Startup opens (and on a first visit seeds) the workspace before adopting
+  // its provider, and the provider never returns to null afterwards. Until
+  // then the sidebar has nothing to show yet -- not "no workspace".
+  const workspaceStarting = provider === null && workspaceStartupError === null;
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   // The type last created in this workspace becomes the next default.
   const [defaultNewFileFormat, setDefaultNewFileFormat] =
@@ -1652,7 +1659,6 @@ export function DocBlocksShell({
         : null,
     [documentSnapshot.frozen, documentSnapshot.generation, documentSnapshot.targetKey],
   );
-  const [editorPresentationEpoch, setEditorPresentationEpoch] = useState(0);
   // The session publishes a new generation through useSyncExternalStore, which
   // React renders in a microtask -- a few microtasks before the navigation that
   // caused it adopts the new path and view. Keying Squisq on that raw
@@ -1674,7 +1680,7 @@ export function DocBlocksShell({
   useEffect(() => {
     setOutsideInPdfWorker(pdfWorkerSrc);
   }, [pdfWorkerSrc]);
-  const editorKey = `${editorGeneration}:${editorPresentationEpoch}`;
+  const editorKey = String(editorGeneration);
   const editorPlaceholder = useMemo(() => {
     // Keep the selection scoped to the same generation that remounts Squisq.
     void editorKey;
@@ -1699,6 +1705,20 @@ export function DocBlocksShell({
   const [initialSharedMode, setInitialSharedMode] = useState<SharedDocumentMode | null>(null);
   // First-run gateway over the welcome document's Play view.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
+  // Two-pane first run: the welcome screen covers the editor area while the
+  // welcome document mounts in Write beneath it. Phones keep their card in the
+  // file pane instead.
+  const welcomeScreenShown = showWelcomeGateway && !singlePane;
+  const welcomeCoveredRef = useRef<HTMLDivElement>(null);
+  useInert(welcomeCoveredRef, welcomeScreenShown);
+  /** Hide the welcome gateway and never show it again. Safe to call from
+   *  paths where it may not be showing -- only persists when it was. */
+  const closeWelcomeGateway = useCallback(() => {
+    setShowWelcomeGateway((showing) => {
+      if (showing) markWelcomeGatewayDismissed();
+      return false;
+    });
+  }, []);
   const [aiPanel, setAiPanel] = useState<AiPanel | null>(null);
   const navigationRequestRef = useRef(0);
   const workspaceAuthorityBarrier = useMemo(() => new WorkspaceAuthorityBarrier(), []);
@@ -2120,6 +2140,10 @@ export function DocBlocksShell({
             options.navigationRequestId,
             options.sharedMode ?? null,
           )) !== null;
+        // A file the OS launched, or a shared link, can land after first-run
+        // startup has already put the welcome screen up. That screen belongs
+        // over the welcome document, never over the file the person opened.
+        if (opened) closeWelcomeGateway();
         return opened;
       } finally {
         if (!opened && getTransientWorkspace(options.id)?.provider === options.provider) {
@@ -2127,7 +2151,7 @@ export function DocBlocksShell({
         }
       }
     },
-    [openFromIds],
+    [openFromIds, closeWelcomeGateway],
   );
 
   const openSharedDocument = useCallback(
@@ -2170,9 +2194,11 @@ export function DocBlocksShell({
 
   /**
    * Open the starter document when a workspace has nothing else selected.
-   * An existing lone `aboutDocBlocks.md` is selected in any workspace, but the
-   * file is only *written* when `seedWhenEmpty` is set — for the app's own
-   * default workspace. A folder the user picked is never written to.
+   * An existing lone welcome document (under its current or a former name)
+   * is selected in any workspace, but the file is only *written* when
+   * `seedWhenEmpty` is set — for the app's own default workspace. A folder
+   * the user picked is never written to. It opens in Write: the first-run
+   * screen covers it until the visitor chooses to read it or start their own.
    */
   const seedWelcomeFile = useCallback(
     async (fs: FileSystemProvider, seedWhenEmpty: boolean, navigationRequestId?: number) => {
@@ -2182,14 +2208,13 @@ export function DocBlocksShell({
       const entries = await readProviderDirectory(fs, '/');
       if (!isCurrent()) return;
 
-      // If the only file is the welcome doc, auto-select it.
-      // Match either casing so workspaces seeded before the rename
-      // (aboutDocblocks.md) keep working alongside new ones (aboutDocBlocks.md).
+      // If the only file is the welcome doc, auto-select it. Workspaces seeded
+      // before a rename keep their copy under the name it had then.
       const visibleEntries = filterVisibleFileEntries(entries);
       if (
         visibleEntries.length === 1 &&
         visibleEntries[0].kind === 'file' &&
-        visibleEntries[0].path.replace(/^\//, '').toLowerCase() === 'aboutdocblocks.md'
+        isWelcomeDocumentPath(visibleEntries[0].path)
       ) {
         const aboutPath = visibleEntries[0].path;
         const content = await readProviderText(fs, aboutPath);
@@ -2197,11 +2222,11 @@ export function DocBlocksShell({
           await documentSession.transitionTo(createDocumentTarget(fs, fs.id, aboutPath), content);
           if (!isCurrent()) return;
           adoptRegularDocument(aboutPath);
-          setInitialView('preview');
+          setInitialView('wysiwyg');
           setInitialSharedMode(null);
           setExplorerKey((k) => k + 1);
           pushHash(fs.id, aboutPath);
-          saveLastState({ workspaceId: fs.id, filePath: aboutPath, view: 'preview' });
+          saveLastState({ workspaceId: fs.id, filePath: aboutPath, view: 'wysiwyg' });
           if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
         }
         return;
@@ -2228,11 +2253,11 @@ export function DocBlocksShell({
       );
       if (!isCurrent()) return;
       adoptRegularDocument(welcomePath);
-      setInitialView('preview');
+      setInitialView('wysiwyg');
       setInitialSharedMode(null);
       setExplorerKey((k) => k + 1);
       pushHash(fs.id, welcomePath);
-      saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'preview' });
+      saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'wysiwyg' });
       if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
     },
     [adoptRegularDocument, createDocumentTarget, documentSession, pushHash],
@@ -2248,25 +2273,24 @@ export function DocBlocksShell({
   const startupSeedWelcomeFileRef = useRef(seedWelcomeFile);
   startupSeedWelcomeFileRef.current = seedWelcomeFile;
 
-  /** Hide the welcome gateway and never show it again. Safe to call from
-   *  paths where it may not be showing -- only persists when it was. */
-  const closeWelcomeGateway = useCallback(() => {
-    setShowWelcomeGateway((showing) => {
-      if (showing) markWelcomeGatewayDismissed();
-      return false;
-    });
-  }, []);
-
-  /** Gateway CTA -- flip the welcome doc from Play into the editor. */
-  const handleStartWriting = useCallback(() => {
+  /**
+   * First-run "Tour": reveal the welcome document. It is already open in
+   * Write under the screen, so this only uncovers it and moves focus into it.
+   */
+  const [focusAfterWelcome, setFocusAfterWelcome] = useState(false);
+  const handleTourWelcome = useCallback(() => {
     closeWelcomeGateway();
-    setInitialView('wysiwyg');
-    setInitialSharedMode(null);
-    setEditorPresentationEpoch((epoch) => epoch + 1);
-    if (activeWorkspaceId && selectedFile) {
-      saveLastState({ workspaceId: activeWorkspaceId, filePath: selectedFile, view: 'wysiwyg' });
-    }
-  }, [closeWelcomeGateway, activeWorkspaceId, selectedFile]);
+    setFocusAfterWelcome(true);
+  }, [closeWelcomeGateway]);
+  // After the commit that lifts `inert` from the editor (focus cannot enter an
+  // inert subtree, and useInert clears it in its own effect, declared earlier).
+  useEffect(() => {
+    if (!focusAfterWelcome || welcomeScreenShown) return;
+    setFocusAfterWelcome(false);
+    editorAreaRef.current
+      ?.querySelector<HTMLElement>('[contenteditable="true"]')
+      ?.focus({ preventScroll: true });
+  }, [focusAfterWelcome, welcomeScreenShown]);
 
   // Initialise workspace on mount -- restore from hash or last-used
   useEffect(() => {
@@ -3719,16 +3743,24 @@ export function DocBlocksShell({
       'new-folder': () => void handleNewFolder(),
       shortcuts: openKeyboardShortcuts,
       'toggle-sidebar': () => {
+        // A collapsed split view runs single-pane, so restore it before the
+        // drawer branch below; otherwise the key could never dock it again.
+        if (canRestoreSplitView) {
+          updateSidebarPreference('pinned');
+          return;
+        }
         if (singlePane) {
           setMobileShowEditor((showingEditor) => !showingEditor);
           return;
         }
-        // Split view: collapse to the drawer, and back again.
-        updateSidebarPreference(sidebarPreference === 'collapsed' ? 'pinned' : 'collapsed');
+        // Collapse as the resizer does: single-pane, showing the document.
+        updateSidebarPreference('collapsed');
+        setMobileShowEditor(true);
       },
       'focus-files': () => {
         // Reveal the tree first — focusing a hidden pane would do nothing.
         if (singlePane) setMobileShowEditor(false);
+        setSidebarView('files');
         window.requestAnimationFrame(() => {
           const tree = document.querySelector<HTMLElement>('.db-tree');
           // The tree uses a roving tabindex, so prefer the row it considers
@@ -3764,7 +3796,7 @@ export function DocBlocksShell({
       openKeyboardShortcuts,
       singlePane,
       mobileShowEditor,
-      sidebarPreference,
+      canRestoreSplitView,
       updateSidebarPreference,
     ],
   );
@@ -4130,24 +4162,12 @@ export function DocBlocksShell({
       if (target.kind === 'fragment') return false;
 
       if (target.kind === 'external') {
-        const shell = maybeGetDocBlocksHost()?.shell;
-        if (hostSupports('externalNavigation') && shell?.openExternal) {
-          void shell.openExternal(target.url).catch((error: unknown) => {
-            showToast(
-              'error',
-              error instanceof Error ? error.message : 'Could not open the external link.',
-            );
-          });
-        } else if (typeof window !== 'undefined') {
-          try {
-            window.open(target.url, '_blank', 'noopener,noreferrer');
-          } catch (error: unknown) {
-            showToast(
-              'error',
-              error instanceof Error ? error.message : 'Could not open the external link.',
-            );
-          }
-        }
+        void openExternalUrl(target.url).catch((error: unknown) => {
+          showToast(
+            'error',
+            error instanceof Error ? error.message : 'Could not open the external link.',
+          );
+        });
         return true;
       }
 
@@ -4747,6 +4767,8 @@ export function DocBlocksShell({
                   if (!opened && requestId === navigationRequestRef.current) {
                     throw new Error('The requested workspace file is no longer available.');
                   }
+                  // Same as a transient open: uncover the requested document.
+                  if (opened) closeWelcomeGateway();
                   return opened;
                 },
               );
@@ -4762,7 +4784,7 @@ export function DocBlocksShell({
         );
       });
     });
-  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast]);
+  }, [openFromIds, openTransient, workspaceAuthorityBarrier, showToast, closeWelcomeGateway]);
 
   /**
    * Web counterpart of `openTransient`: a `.md` or `.dbk` launched into the
@@ -5342,6 +5364,7 @@ export function DocBlocksShell({
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
+                loading={workspaceStarting}
                 refreshKey={descriptorRefreshKey}
                 onSelect={handleWorkspaceSelect}
                 onOpenFolder={handleOpenFolder}
@@ -5380,6 +5403,7 @@ export function DocBlocksShell({
             )}
             <FileExplorer
               key={explorerKey}
+              loading={workspaceStarting}
               // Hidden, not unmounted, while search shows: it keeps its expanded folders.
               className={sidebarView === 'search' ? 'db-sidebar-view--hidden' : undefined}
               onShowSearch={canBrowseWorkspace ? openWorkspaceSearch : undefined}
@@ -5439,25 +5463,21 @@ export function DocBlocksShell({
                 <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
                 <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
                 <p>
-                  Write visually, keep plain Markdown underneath, and export the same document in
-                  useful formats. Keep your documents in the workspace you choose.
+                  {WELCOME_SUMMARY} {WELCOME_PRIVACY_NOTE}
                 </p>
                 <div className="db-mobile-first-run-actions">
+                  <button type="button" onClick={() => void handleNewFile()}>
+                    Create a document
+                  </button>
                   <button
                     type="button"
+                    className="db-mobile-first-run-secondary"
                     onClick={() => {
                       closeWelcomeGateway();
                       setMobileShowEditor(true);
                     }}
                   >
                     Tour the welcome document
-                  </button>
-                  <button
-                    type="button"
-                    className="db-mobile-first-run-secondary"
-                    onClick={() => void handleNewFile()}
-                  >
-                    Create a document
                   </button>
                 </div>
               </section>
@@ -5544,339 +5564,331 @@ export function DocBlocksShell({
               .filter(Boolean)
               .join(' ')}
           >
-            {selectedFile && mediaProvider ? (
-              <>
-                {selectedManagedOutput === 'catalog-html' ? (
-                  <GeneratedCatalogPage
-                    html={editorContent}
-                    fileName={basenameOf(selectedFile)}
-                    onOpenSettings={
-                      activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
-                    }
-                    onBack={singlePane ? openDrawer : undefined}
-                  />
-                ) : (
-                  <GeneratedFileFrame
-                    kind={selectedManagedOutput}
-                    onOpenSettings={
-                      activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
-                    }
-                    onBack={singlePane ? openDrawer : undefined}
-                  >
-                    <Suspense
-                      fallback={
-                        <div className="db-shell-empty" role="status">
-                          Loading your document&hellip;
-                        </div>
+            {/* `display: contents`: a box-less wrapper the welcome screen can
+              make inert without changing the editor area's flex layout. */}
+            <div ref={welcomeCoveredRef} className="db-shell-editor-content">
+              {selectedFile && mediaProvider ? (
+                <>
+                  {selectedManagedOutput === 'catalog-html' ? (
+                    <GeneratedCatalogPage
+                      html={editorContent}
+                      fileName={basenameOf(selectedFile)}
+                      onOpenSettings={
+                        activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                       }
+                      onBack={singlePane ? openDrawer : undefined}
+                    />
+                  ) : (
+                    <GeneratedFileFrame
+                      kind={selectedManagedOutput}
+                      onOpenSettings={
+                        activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
+                      }
+                      onBack={singlePane ? openDrawer : undefined}
                     >
-                      {editorGenerationSettled && mediaProviderCurrent && (
-                        <EditorErrorBoundary resetKey={`${selectedFile}-${editorKey}`}>
-                          <EditorShell
-                            key={`${selectedFile}-${editorKey}`}
-                            initialMarkdown={editorContent}
-                            readOnly={
-                              selectedImage !== undefined ||
-                              selectedManagedOutput !== undefined ||
-                              (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
-                            }
-                            initialView={initialView}
-                            // At compact width the centred page column and its page
-                            // padding waste most of a 390px screen. Squisq already
-                            // exposes both switches; below 720px it is also auto-hiding
-                            // its outline and inline preview, so these agree with the
-                            // density it has already chosen for itself.
-                            fullWidth={formFactor.widthClass === 'compact'}
-                            thinMargins={formFactor.widthClass === 'compact'}
-                            defaultViewportPreset={defaultPreviewViewportPreset}
-                            articleId={selectedFile}
-                            // Outside-in documents navigate/export as their rendered
-                            // file, but Squisq edits the hidden Markdown companion.
-                            // Passing `report.csv` here classifies the editor as a
-                            // raw data/code surface and suppresses Write + data cards.
-                            fileName={selectedSourceFile ?? selectedFile}
-                            imageSrc={selectedImageUrl}
-                            imageAlt={basenameOf(selectedFile)}
-                            saveCoverImageOutput={saveRenderedImageOutput}
-                            saveDashboardImageOutput={saveRenderedImageOutput}
-                            onChange={handleEditorChange}
-                            onLinkClick={handleEditorLinkClick}
-                            colorScheme={resolvedTheme}
-                            // Documents that name no theme preview -- and so
-                            // export -- in the workspace's default theme.
-                            defaultThemeId={workspaceDefaultThemeId}
-                            defaultThemeLabel="Workspace default"
-                            writeCanvasSettings={editorWriteCanvasSettings}
-                            height="100%"
-                            placeholder={editorPlaceholder}
-                            outlineWidth={280}
-                            mediaProvider={mediaProvider}
-                            mediaEditRenders={mediaEditRenders}
-                            calcEngineFactory={calcEngineFactory}
-                            proofing={proofing}
-                            proofingDefaultEnabled={proofingDefaultEnabled}
-                            proofingSpellingEnabled={proofingPreferences.spelling}
-                            proofingGrammarEnabled={proofingPreferences.grammar}
-                            proofingIgnoreStore={effectiveProofingIgnoreStore}
-                            showCodeCopyButton={showCodeCopyButton}
-                            onCopyCode={onCopyCode}
-                            allowRecording={allowRecording}
-                            // Dictation uses the microphone, so it follows the same policy.
-                            speechInput={allowRecording ? speechInput : null}
-                            allowPresentationWindow={allowPresentationWindow}
-                            allowPresentationFullscreen={allowPresentationFullscreen}
-                            documentLinkProvider={documentLinkProvider}
-                            workspaceContainer={versionsContainer ?? undefined}
-                            allowVersioning={selectedImage === undefined && effectiveVersioning}
-                            viewPreferences={editorViewPreferences}
-                            onViewPreferencesChange={handleViewPreferencesChange}
-                            findMode={findMode}
-                            onFindModeChange={setFindMode}
-                            versionBasename={
-                              versionBasename ?? stripExtension(basenameOf(selectedFile))
-                            }
-                            versioningPrunePolicy={effectivePrunePolicy}
-                            versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
-                            onSaveVersion={onSaveVersion}
-                            statusBarSlotRight={statusBarSlotRight}
-                            sidePanelSlot={
-                              ai &&
-                              aiPanel &&
-                              selectedImage === undefined &&
-                              (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
-                                <Suspense fallback={null}>
-                                  {aiPanel === 'review' ? (
-                                    <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
-                                  ) : (
-                                    <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
-                                  )}
-                                </Suspense>
-                              ) : undefined
-                            }
-                            toolbarSlotLeft={
-                              singlePane ? (
-                                <button
-                                  className="db-mobile-back"
-                                  onClick={() => setMobileShowEditor(false)}
-                                  aria-label="Show file list"
-                                >
-                                  <span className="db-mobile-files-icon">
-                                    <FolderGlyph />
-                                  </span>
-                                </button>
-                              ) : undefined
-                            }
-                            summarizationDesigner={
-                              selectedImage === undefined &&
-                              selectedManagedOutput === undefined &&
-                              (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
-                                ? (onClose) => (
-                                    <Suspense fallback={null}>
-                                      <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
-                                    </Suspense>
-                                  )
-                                : undefined
-                            }
-                            toolbarSlotRight={
-                              <>
-                                {canFind && (
-                                  <FindButton
-                                    active={findMode}
-                                    onActiveChange={setFindMode}
-                                    shortcutLabel={findShortcut}
-                                  />
-                                )}
-                                {ai && (
+                      <Suspense
+                        fallback={
+                          <div className="db-shell-empty" role="status">
+                            Loading your document&hellip;
+                          </div>
+                        }
+                      >
+                        {editorGenerationSettled && mediaProviderCurrent && (
+                          <EditorErrorBoundary resetKey={`${selectedFile}-${editorKey}`}>
+                            <EditorShell
+                              key={`${selectedFile}-${editorKey}`}
+                              initialMarkdown={editorContent}
+                              readOnly={
+                                selectedImage !== undefined ||
+                                selectedManagedOutput !== undefined ||
+                                (selectedOutsideIn !== null && !selectedOutsideInEditingEnabled)
+                              }
+                              initialView={initialView}
+                              // At compact width the centred page column and its page
+                              // padding waste most of a 390px screen. Squisq already
+                              // exposes both switches; below 720px it is also auto-hiding
+                              // its outline and inline preview, so these agree with the
+                              // density it has already chosen for itself.
+                              fullWidth={formFactor.widthClass === 'compact'}
+                              thinMargins={formFactor.widthClass === 'compact'}
+                              defaultViewportPreset={defaultPreviewViewportPreset}
+                              articleId={selectedFile}
+                              // Outside-in documents navigate/export as their rendered
+                              // file, but Squisq edits the hidden Markdown companion.
+                              // Passing `report.csv` here classifies the editor as a
+                              // raw data/code surface and suppresses Write + data cards.
+                              fileName={selectedSourceFile ?? selectedFile}
+                              imageSrc={selectedImageUrl}
+                              imageAlt={basenameOf(selectedFile)}
+                              saveCoverImageOutput={saveRenderedImageOutput}
+                              saveDashboardImageOutput={saveRenderedImageOutput}
+                              onChange={handleEditorChange}
+                              onLinkClick={handleEditorLinkClick}
+                              colorScheme={resolvedTheme}
+                              // Documents that name no theme preview -- and so
+                              // export -- in the workspace's default theme.
+                              defaultThemeId={workspaceDefaultThemeId}
+                              defaultThemeLabel="Workspace default"
+                              writeCanvasSettings={editorWriteCanvasSettings}
+                              height="100%"
+                              placeholder={editorPlaceholder}
+                              outlineWidth={280}
+                              mediaProvider={mediaProvider}
+                              mediaEditRenders={mediaEditRenders}
+                              calcEngineFactory={calcEngineFactory}
+                              proofing={proofing}
+                              proofingDefaultEnabled={proofingDefaultEnabled}
+                              proofingSpellingEnabled={proofingPreferences.spelling}
+                              proofingGrammarEnabled={proofingPreferences.grammar}
+                              proofingIgnoreStore={effectiveProofingIgnoreStore}
+                              showCodeCopyButton={showCodeCopyButton}
+                              onCopyCode={onCopyCode}
+                              allowRecording={allowRecording}
+                              // Dictation uses the microphone, so it follows the same policy.
+                              speechInput={allowRecording ? speechInput : null}
+                              allowPresentationWindow={allowPresentationWindow}
+                              allowPresentationFullscreen={allowPresentationFullscreen}
+                              documentLinkProvider={documentLinkProvider}
+                              workspaceContainer={versionsContainer ?? undefined}
+                              allowVersioning={selectedImage === undefined && effectiveVersioning}
+                              viewPreferences={editorViewPreferences}
+                              onViewPreferencesChange={handleViewPreferencesChange}
+                              findMode={findMode}
+                              onFindModeChange={setFindMode}
+                              versionBasename={
+                                versionBasename ?? stripExtension(basenameOf(selectedFile))
+                              }
+                              versioningPrunePolicy={effectivePrunePolicy}
+                              versioningAutoSaveIdleMs={versioningAutoSaveIdleMs}
+                              onSaveVersion={onSaveVersion}
+                              statusBarSlotRight={statusBarSlotRight}
+                              sidePanelSlot={
+                                ai &&
+                                aiPanel &&
+                                selectedImage === undefined &&
+                                (selectedOutsideIn === null || selectedOutsideInEditingEnabled) ? (
                                   <Suspense fallback={null}>
-                                    <AiToolbarControl
-                                      ai={ai}
-                                      readOnly={
-                                        selectedImage !== undefined ||
-                                        (selectedOutsideIn !== null &&
-                                          !selectedOutsideInEditingEnabled)
-                                      }
-                                      openPanel={aiPanel}
-                                      onOpenPanel={setAiPanel}
-                                    />
+                                    {aiPanel === 'review' ? (
+                                      <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    ) : (
+                                      <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    )}
                                   </Suspense>
-                                )}
-                                {speech && (
-                                  <Suspense fallback={null}>
-                                    <TextFromNarration
-                                      speech={speech}
-                                      ai={ai ?? undefined}
-                                      allowRecording={allowRecording}
-                                      readOnly={
-                                        selectedImage !== undefined ||
-                                        selectedManagedOutput !== undefined ||
-                                        (selectedOutsideIn !== null &&
-                                          !selectedOutsideInEditingEnabled)
-                                      }
-                                      onOpenSettings={openSettings}
+                                ) : undefined
+                              }
+                              toolbarSlotLeft={
+                                singlePane ? (
+                                  <button
+                                    className="db-mobile-back"
+                                    onClick={() => setMobileShowEditor(false)}
+                                    aria-label="Show file list"
+                                  >
+                                    <span className="db-mobile-files-icon">
+                                      <FolderGlyph />
+                                    </span>
+                                  </button>
+                                ) : undefined
+                              }
+                              summarizationDesigner={
+                                selectedImage === undefined &&
+                                selectedManagedOutput === undefined &&
+                                (selectedOutsideIn === null || selectedOutsideInEditingEnabled)
+                                  ? (onClose) => (
+                                      <Suspense fallback={null}>
+                                        <PresentationMaker ai={ai ?? undefined} onClose={onClose} />
+                                      </Suspense>
+                                    )
+                                  : undefined
+                              }
+                              toolbarSlotRight={
+                                <>
+                                  {canFind && (
+                                    <FindButton
+                                      active={findMode}
+                                      onActiveChange={setFindMode}
+                                      shortcutLabel={findShortcut}
                                     />
-                                    {hostSupports('speechOutput') ? (
-                                      <SpeechToolbarControl
-                                        speech={speech}
-                                        onOpenSettings={openSettings}
+                                  )}
+                                  {ai && (
+                                    <Suspense fallback={null}>
+                                      <AiToolbarControl
+                                        ai={ai}
                                         readOnly={
                                           selectedImage !== undefined ||
                                           (selectedOutsideIn !== null &&
                                             !selectedOutsideInEditingEnabled)
                                         }
+                                        openPanel={aiPanel}
+                                        onOpenPanel={setAiPanel}
                                       />
-                                    ) : (
-                                      <SpeechMenuBridge />
-                                    )}
-                                  </Suspense>
-                                )}
-                                {/* Restore split view -- offered only where the
+                                    </Suspense>
+                                  )}
+                                  {speech && (
+                                    <Suspense fallback={null}>
+                                      <TextFromNarration
+                                        speech={speech}
+                                        ai={ai ?? undefined}
+                                        allowRecording={allowRecording}
+                                        readOnly={
+                                          selectedImage !== undefined ||
+                                          selectedManagedOutput !== undefined ||
+                                          (selectedOutsideIn !== null &&
+                                            !selectedOutsideInEditingEnabled)
+                                        }
+                                        onOpenSettings={openSettings}
+                                      />
+                                      {hostSupports('speechOutput') ? (
+                                        <SpeechToolbarControl
+                                          speech={speech}
+                                          onOpenSettings={openSettings}
+                                          readOnly={
+                                            selectedImage !== undefined ||
+                                            (selectedOutsideIn !== null &&
+                                              !selectedOutsideInEditingEnabled)
+                                          }
+                                        />
+                                      ) : (
+                                        <SpeechMenuBridge />
+                                      )}
+                                    </Suspense>
+                                  )}
+                                  {/* Restore split view -- offered only where the
                           viewport can actually hold both panes. Pinning is
                           persisted, so an iPad user sets it once. */}
-                                {canRestoreSplitView && (
-                                  <button
-                                    className="db-restore-split"
-                                    onClick={() => updateSidebarPreference('pinned')}
-                                    aria-label="Restore split view"
-                                    title="Restore split view"
-                                  >
-                                    <SplitViewIcon />
-                                  </button>
-                                )}
-                                {git.repo && (
-                                  <Suspense fallback={null}>
-                                    <GitToolbarControl selectedFile={selectedFile} />
-                                  </Suspense>
-                                )}
-                                <ExportToolbarControls
-                                  selectedFile={selectedFile}
-                                  mediaContainer={mediaContainerRef.current}
-                                  workspaceContainer={versionsContainer}
-                                  mediaProvider={mediaProvider}
-                                  mediaEditRenders={mediaEditRenders}
-                                  destinationAdapter={exportDestinationAdapter}
-                                  colorScheme={resolvedTheme}
-                                  videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
-                                  ffmpegWasm={ffmpegWasm}
-                                  initialSharedMode={initialSharedMode}
-                                  defaultThemeId={workspaceDefaultThemeId}
-                                  {...(speech ? { speech } : {})}
-                                />
-                              </>
-                            }
-                          />
-                        </EditorErrorBoundary>
-                      )}
-                    </Suspense>
-                  </GeneratedFileFrame>
-                )}
-                {showWelcomeGateway && !singlePane && (
-                  <div className="db-welcome-gateway" role="note" aria-label="Welcome tip">
-                    <span className="db-welcome-gateway-text">
-                      You&rsquo;re watching this welcome doc in <strong>Slideshow</strong>{' '}
-                      view&mdash;it&rsquo;s a regular Markdown file, and so is everything
-                      you&rsquo;ll write.
+                                  {canRestoreSplitView && (
+                                    <button
+                                      className="db-restore-split"
+                                      onClick={() => updateSidebarPreference('pinned')}
+                                      aria-label="Restore split view"
+                                      title="Restore split view"
+                                    >
+                                      <SplitViewIcon />
+                                    </button>
+                                  )}
+                                  {git.repo && (
+                                    <Suspense fallback={null}>
+                                      <GitToolbarControl selectedFile={selectedFile} />
+                                    </Suspense>
+                                  )}
+                                  <ExportToolbarControls
+                                    selectedFile={selectedFile}
+                                    mediaContainer={mediaContainerRef.current}
+                                    workspaceContainer={versionsContainer}
+                                    mediaProvider={mediaProvider}
+                                    mediaEditRenders={mediaEditRenders}
+                                    destinationAdapter={exportDestinationAdapter}
+                                    colorScheme={resolvedTheme}
+                                    videoExportPalette={DOCBLOCKS_VIDEO_EXPORT_PALETTE}
+                                    ffmpegWasm={ffmpegWasm}
+                                    initialSharedMode={initialSharedMode}
+                                    defaultThemeId={workspaceDefaultThemeId}
+                                    {...(speech ? { speech } : {})}
+                                  />
+                                </>
+                              }
+                            />
+                          </EditorErrorBoundary>
+                        )}
+                      </Suspense>
+                    </GeneratedFileFrame>
+                  )}
+                </>
+              ) : selectedFolder ? (
+                <div className="db-folder-view">
+                  {singlePane && (
+                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                      <span className="db-mobile-files-icon">
+                        <FolderGlyph />
+                      </span>
+                      Back to files
+                    </button>
+                  )}
+                  <div className="db-folder-view-header">
+                    <span className="db-folder-view-icon">
+                      <FolderGlyph />
                     </span>
-                    <button className="db-welcome-gateway-cta" onClick={handleStartWriting}>
-                      Start writing
-                    </button>
-                    <button
-                      className="db-welcome-gateway-dismiss"
-                      onClick={closeWelcomeGateway}
-                      aria-label="Dismiss welcome tip"
-                      title="Dismiss"
-                    >
-                      &times;
-                    </button>
+                    <span className="db-folder-view-path">{selectedFolder}</span>
                   </div>
-                )}
-              </>
-            ) : selectedFolder ? (
-              <div className="db-folder-view">
-                {singlePane && (
-                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                    <span className="db-mobile-files-icon">
-                      <FolderGlyph />
-                    </span>
-                    Back to files
-                  </button>
-                )}
-                <div className="db-folder-view-header">
-                  <span className="db-folder-view-icon">
-                    <FolderGlyph />
-                  </span>
-                  <span className="db-folder-view-path">{selectedFolder}</span>
+                  {visibleFolderEntries.length === 0 ? (
+                    <p className="db-folder-view-empty">This folder is empty.</p>
+                  ) : (
+                    <ul className="db-folder-view-list">
+                      {visibleFolderEntries.map((entry) => (
+                        <li
+                          key={entry.path}
+                          className="db-folder-view-item"
+                          onClick={() => handleSelect(entry.path, entry.kind)}
+                        >
+                          <span className="db-folder-view-item-icon">
+                            {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
+                          </span>
+                          {entry.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-                {visibleFolderEntries.length === 0 ? (
-                  <p className="db-folder-view-empty">This folder is empty.</p>
-                ) : (
-                  <ul className="db-folder-view-list">
-                    {visibleFolderEntries.map((entry) => (
-                      <li
-                        key={entry.path}
-                        className="db-folder-view-item"
-                        onClick={() => handleSelect(entry.path, entry.kind)}
-                      >
-                        <span className="db-folder-view-item-icon">
-                          {entry.kind === 'directory' ? <FolderGlyph /> : <FileGlyph />}
-                        </span>
-                        {entry.name}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <div className="db-shell-empty db-shell-empty--workspace">
-                {singlePane && (
-                  <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
-                    <span className="db-mobile-files-icon">
-                      <FolderGlyph />
+              ) : (
+                <div className="db-shell-empty db-shell-empty--workspace">
+                  {singlePane && (
+                    <button className="db-mobile-back" onClick={() => setMobileShowEditor(false)}>
+                      <span className="db-mobile-files-icon">
+                        <FolderGlyph />
+                      </span>
+                      Back to files
+                    </button>
+                  )}
+                  <div className="db-workspace-empty-content">
+                    <span className="db-workspace-empty-icon" aria-hidden="true">
+                      <FileGlyph />
                     </span>
-                    Back to files
-                  </button>
-                )}
-                <div className="db-workspace-empty-content">
-                  <span className="db-workspace-empty-icon" aria-hidden="true">
-                    <FileGlyph />
-                  </span>
-                  <h1>{activeWorkspaceDescriptor?.name ?? 'Workspace'}</h1>
-                  <p>Choose a Markdown document from the sidebar, or create a new one.</p>
-                  <div className="db-workspace-empty-actions">
-                    <button type="button" onClick={() => void handleNewFile()}>
-                      New document
-                    </button>
-                    <button
-                      type="button"
-                      className="db-workspace-empty-secondary"
-                      onClick={() => void handleNewFolder()}
-                    >
-                      New folder
-                    </button>
-                    {/* Either the host can pick a folder, or the browser can. */}
-                    {(hostSupports('workspaceFolderPicker') ||
-                      typeof (globalThis as { showDirectoryPicker?: unknown })
-                        .showDirectoryPicker === 'function') && (
+                    <h1>{activeWorkspaceDescriptor?.name ?? 'Workspace'}</h1>
+                    <p>Choose a Markdown document from the sidebar, or create a new one.</p>
+                    <div className="db-workspace-empty-actions">
+                      <button type="button" onClick={() => void handleNewFile()}>
+                        New document
+                      </button>
                       <button
                         type="button"
                         className="db-workspace-empty-secondary"
-                        onClick={() => void handleOpenFolder()}
+                        onClick={() => void handleNewFolder()}
                       >
-                        Open a folder
+                        New folder
                       </button>
-                    )}
+                      {/* Either the host can pick a folder, or the browser can. */}
+                      {(hostSupports('workspaceFolderPicker') ||
+                        typeof (globalThis as { showDirectoryPicker?: unknown })
+                          .showDirectoryPicker === 'function') && (
+                        <button
+                          type="button"
+                          className="db-workspace-empty-secondary"
+                          onClick={() => void handleOpenFolder()}
+                        >
+                          Open a folder
+                        </button>
+                      )}
+                    </div>
+                    <p className="db-workspace-empty-hint">
+                      Use the sidebar backup action to keep a portable copy of this workspace.
+                    </p>
                   </div>
-                  <p className="db-workspace-empty-hint">
-                    Use the sidebar backup action to keep a portable copy of this workspace.
-                  </p>
                 </div>
-              </div>
+              )}
+              <UpdateAvailableNotice
+                available={updateAvailable}
+                onApplyUpdate={onApplyUpdate}
+                blocked={documentSnapshot.conflict !== null || storageFull}
+                statusBarVisible={updateStatusBarVisible}
+              />
+            </div>
+            {welcomeScreenShown && (
+              <WelcomeScreen
+                onCreateDocument={handleNewFile}
+                onTour={handleTourWelcome}
+                onDismiss={handleTourWelcome}
+                offerApps={hostEnvironment === null}
+              />
             )}
-            <UpdateAvailableNotice
-              available={updateAvailable}
-              onApplyUpdate={onApplyUpdate}
-              blocked={documentSnapshot.conflict !== null || storageFull}
-              statusBarVisible={updateStatusBarVisible}
-            />
           </main>
         </div>
       </GitContext.Provider>

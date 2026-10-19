@@ -8,7 +8,12 @@
  * inside an event callback would be refused.
  */
 
-import type { AiChatRequest, AiError, DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
+import type {
+  AiChatEvent,
+  AiChatRequest,
+  AiError,
+  DocBlocksHostAiAPI,
+} from '@bendyline/docblocks/host';
 import { extractPlainText, parseMarkdown } from '@bendyline/squisq/markdown';
 import { compileDiagram, type CompiledDiagram } from './diagram-compile.js';
 import { checkGrounding } from './diagram-grounding.js';
@@ -37,14 +42,18 @@ export type ChatOutcome =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'error'; readonly error: AiError };
 
-/** Run one chat to completion, ignoring deltas; aborting `signal` cancels it. */
+/**
+ * Run one chat to completion; aborting `signal` cancels it. `onEvent` sees the
+ * call's progress and deltas, for a status line; the reply comes from `done`.
+ */
 export async function chatOnce(
   ai: ChatApi,
   request: AiChatRequest,
   signal?: AbortSignal,
+  onEvent?: (event: AiChatEvent) => void,
 ): Promise<ChatOutcome> {
   if (signal?.aborted) return { kind: 'cancelled' };
-  const handle = ai.chat(request, () => undefined);
+  const handle = ai.chat(request, onEvent ?? (() => undefined));
   const abort = () => handle.cancel();
   signal?.addEventListener('abort', abort, { once: true });
   try {
