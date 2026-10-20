@@ -463,6 +463,36 @@ describe('ElectronFileSystemProviderV2', () => {
     await provider.dispose();
   });
 
+  it('carries a listed file read issue across the host boundary and rejects malformed ones', async () => {
+    const entry = {
+      kind: 'file' as const,
+      path: parseWorkspacePath('/locked.md'),
+      name: 'locked.md',
+      size: 4,
+      version: parseFileSystemVersion('metadata-v1'),
+      lastModified: new Date(0).toISOString(),
+    };
+    let readIssue: unknown = { code: 'io', message: 'UNKNOWN: unknown error, read' };
+    installHost({
+      readDirectory: async () => ({ ok: true, value: [{ ...entry, readIssue }] }),
+    });
+    const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');
+
+    const [listed] = await provider.readDirectory(parseWorkspacePath('/'));
+    expect(listed?.kind === 'file' ? listed.readIssue : undefined).to.deep.equal({
+      code: 'io',
+      message: 'UNKNOWN: unknown error, read',
+    });
+
+    readIssue = { code: 'sync-client', message: 'held' };
+    const failure = await provider
+      .readDirectory(parseWorkspacePath('/'))
+      .catch((error: unknown) => error);
+    expect(failure).to.be.instanceOf(Error);
+    expect((failure as Error).message).to.include('malformed');
+    await provider.dispose();
+  });
+
   it('bridges ordered watch events and uses awaitable unsubscribe', async () => {
     const host = installHost();
     const provider = new ElectronFileSystemProviderV2('workspace', 'Workspace', '/tmp/workspace');

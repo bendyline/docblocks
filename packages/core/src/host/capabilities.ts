@@ -50,6 +50,7 @@ export interface HostCapabilities {
   readonly exportDestinations: boolean;
   /** Remembered, re-resolvable export targets (`resolveTarget`/`pickTarget`). */
   readonly exportRememberedTargets: boolean;
+  readonly openSavedExports: boolean;
   readonly externalResources: boolean;
   readonly openRequests: boolean;
   readonly menuCommands: boolean;
@@ -101,6 +102,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   clipboard: false,
   exportDestinations: false,
   exportRememberedTargets: false,
+  openSavedExports: false,
   externalResources: false,
   openRequests: false,
   menuCommands: false,
@@ -209,6 +211,7 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     exportDestinations: hasMethod(exports, 'save'),
     exportRememberedTargets:
       hasMethod(exports, 'resolveTarget') && hasMethod(exports, 'pickTarget'),
+    openSavedExports: hasMethod(exports, 'openSaved'),
     externalResources: hasMethod(host.external, 'readText'),
     openRequests: hasMethod(host, 'onOpenRequest'),
     menuCommands: hasMethod(host, 'onMenuCommand'),

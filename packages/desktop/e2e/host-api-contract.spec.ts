@@ -215,6 +215,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'beginSave',
     'closeTransfer',
     'finishSave',
+    'openSaved',
     'pickTarget',
     'resolveTarget',
     'save',

@@ -352,7 +352,7 @@ test('export dialog exposes a remembered native target control', async ({ launch
   await expect(window.getByRole('button', { name: 'Choose export location' })).toBeVisible();
 });
 
-test('exports exact Markdown bytes through the remembered native target', async ({
+test('exports Markdown, opens it in DocBlocks, and remembers the open preference', async ({
   launchApp,
   userDataDir,
   workspaceDir,
@@ -368,12 +368,24 @@ test('exports exact Markdown bytes through the remembered native target', async 
   const dialog = window.getByRole('dialog', { name: 'Export Document' });
   await dialog.getByRole('radio', { name: 'Markdown' }).click();
   await expect(dialog.getByLabel('Export to')).toHaveValue(target);
+  const openAfterSave = dialog.getByRole('checkbox', { name: 'Open in app after saving' });
+  await expect(openAfterSave).not.toBeChecked();
+  await openAfterSave.check();
+  const checkboxBox = await openAfterSave.boundingBox();
+  const saveBox = await dialog.getByRole('button', { name: 'Save MD', exact: true }).boundingBox();
+  expect(checkboxBox!.y + checkboxBox!.height).toBeLessThanOrEqual(saveBox!.y);
   await dialog.getByRole('button', { name: 'Save MD', exact: true }).click();
 
   await expect.poll(() => fs.existsSync(target), { timeout: 20_000 }).toBe(true);
   const exported = fs.readFileSync(target, 'utf8');
   expect(exported.length).toBeGreaterThan(100);
   expect(exported).toContain('# Welcome to DocBlocks {[title');
+  await expect(window).toHaveTitle('exported-about - DocBlocks');
+
+  await window.reload();
+  await window.getByRole('button', { name: 'Export and share' }).click();
+  await window.getByRole('menuitem', { name: 'Export document...' }).click();
+  await expect(window.getByRole('checkbox', { name: 'Open in app after saving' })).toBeChecked();
 });
 
 test('exports Word with the welcome diagram drawn as a picture, not ASCII art', async ({

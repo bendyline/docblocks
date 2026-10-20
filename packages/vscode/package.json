@@ -89,7 +89,8 @@
             "playfair-pt-serif",
             "hanken-lora",
             "dm-serif-dm-sans",
-            "inter"
+            "inter",
+            "inconsolata"
           ],
           "enumDescriptions": [
             "Inherit from theme",
@@ -101,7 +102,8 @@
             "Playfair Display headings, PT Serif body",
             "Hanken Grotesk headings, Lora body",
             "DM Serif Display headings, DM Sans body",
-            "Inter"
+            "Inter",
+            "Inconsolata"
           ],
           "description": "Default font scheme for the DocBlocks Write canvas. Applies only when no theme font override is active."
         },
@@ -200,10 +202,10 @@
   "dependencies": {
     "@bendyline/docblocks": "*",
     "@bendyline/docblocks-react": "*",
-    "@bendyline/squisq": "2.12.3",
-    "@bendyline/squisq-editor-react": "2.12.4",
-    "@bendyline/squisq-formats": "2.7.3",
-    "@bendyline/squisq-react": "2.12.4",
+    "@bendyline/squisq": "2.12.5",
+    "@bendyline/squisq-editor-react": "2.12.10",
+    "@bendyline/squisq-formats": "2.7.6",
+    "@bendyline/squisq-react": "2.12.6",
     "@ironcalc/wasm": "0.8.4",
     "harper.js": "2.7.0",
     "jsonc-parser": "3.3.1"

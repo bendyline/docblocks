@@ -24,6 +24,7 @@ const serviceWorkerRegistration = new Promise<ServiceWorkerRegistration | undefi
   resolveServiceWorkerRegistration = resolve;
 });
 let updateReloadStarted = false;
+let updateCheckTimer: ReturnType<typeof setInterval> | undefined;
 
 function reloadForUpdate(): void {
   if (updateReloadStarted) return;
@@ -35,42 +36,66 @@ function reloadForUpdate(): void {
 // <StrictMode>, whose double-invoked effects would otherwise register twice
 // in dev. With devOptions disabled the virtual module is a no-op outside
 // production builds, so importing this file is always safe.
-const updateSW = registerSW({
-  onNeedReload() {
-    reloadForUpdate();
-  },
-  onNeedRefresh() {
-    store.markUpdateAvailable();
-  },
-  onOfflineReady() {
-    store.markOfflineReady();
-  },
-  onRegisteredSW(_swScriptUrl, registration) {
-    registeredServiceWorker = registration;
-    resolveServiceWorkerRegistration?.(registration);
-    resolveServiceWorkerRegistration = undefined;
-    if (!registration) return;
-    observeInstallFailures(registration);
-    // A local-first editor can sit open for days; without a periodic check
-    // the update prompt would only ever appear on a fresh page load. The
-    // browser bypasses the HTTP cache for SW update checks, so this stays
-    // correct even behind GitHub Pages' caching.
-    setInterval(() => {
-      registration.update().catch(() => {
-        // Offline or transient network failure — try again next interval.
-      });
-    }, UPDATE_CHECK_INTERVAL_MS);
-  },
-  onRegisterError() {
-    resolveServiceWorkerRegistration?.(undefined);
-    resolveServiceWorkerRegistration = undefined;
-    store.markInstallFailed();
-  },
-});
+function registerOfflineWorker(): ReturnType<typeof registerSW> {
+  return registerSW({
+    onNeedReload() {
+      reloadForUpdate();
+    },
+    onNeedRefresh() {
+      store.markUpdateAvailable();
+    },
+    onOfflineReady() {
+      store.markOfflineReady();
+    },
+    onRegisteredSW(_swScriptUrl, registration) {
+      registeredServiceWorker = registration;
+      resolveServiceWorkerRegistration?.(registration);
+      resolveServiceWorkerRegistration = undefined;
+      if (!registration) return;
+      if (registration.active?.state === 'activated') store.markOfflineReady();
+      observeInstallFailures(registration);
+      // A local-first editor can sit open for days; without a periodic check
+      // the update prompt would only ever appear on a fresh page load. The
+      // browser bypasses the HTTP cache for SW update checks, so this stays
+      // correct even behind GitHub Pages' caching.
+      if (updateCheckTimer !== undefined) clearInterval(updateCheckTimer);
+      updateCheckTimer = setInterval(() => {
+        registration.update().catch(() => {
+          // Offline or transient network failure — try again next interval.
+        });
+      }, UPDATE_CHECK_INTERVAL_MS);
+    },
+    onRegisterError() {
+      resolveServiceWorkerRegistration?.(undefined);
+      resolveServiceWorkerRegistration = undefined;
+      store.markInstallFailed();
+    },
+  });
+}
+
+let updateSW = registerOfflineWorker();
 
 /** Activate the waiting service worker and reload onto the new version. */
 export function applyPwaUpdate(): void {
   void applyPwaUpdateAfterRegistration();
+}
+
+/** Retry a failed first install without reloading or interrupting editing. */
+export async function retryOfflineSetup(): Promise<void> {
+  const registration = registeredServiceWorker ?? (await serviceWorkerRegistration);
+  store.markInstallStarted();
+  if (!registration?.active) {
+    // A rejected first install can remove its registration altogether;
+    // update() on that old object cannot recover it. Re-register through
+    // Workbox so offline-ready and future update callbacks stay attached.
+    updateSW = registerOfflineWorker();
+    return;
+  }
+  try {
+    await registration.update();
+  } catch {
+    store.markInstallFailed();
+  }
 }
 
 async function applyPwaUpdateAfterRegistration(): Promise<void> {
@@ -99,6 +124,11 @@ function observeInstallFailures(registration: ServiceWorkerRegistration): void {
     if (!worker || observedWorkers.has(worker)) return;
     observedWorkers.add(worker);
     const handleStateChange = (): void => {
+      if (worker.state === 'activated') {
+        store.markOfflineReady();
+        worker.removeEventListener('statechange', handleStateChange);
+        return;
+      }
       if (worker.state !== 'redundant') return;
       worker.removeEventListener('statechange', handleStateChange);
       // A failed update leaves the current active version intact. Only a

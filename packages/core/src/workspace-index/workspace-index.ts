@@ -168,6 +168,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
   private generation = 0;
   private lastPublish = 0;
   private filesCache: readonly WorkspaceIndexFile[] | null = null;
+  private directoriesCache: readonly WorkspacePath[] | null = null;
   private documentsCache: readonly IndexedDocument[] | null = null;
   private statusCache: WorkspaceIndexStatus | null = null;
 
@@ -248,6 +249,24 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
       );
     }
     return this.documentsCache;
+  }
+
+  public getDirectories(): readonly WorkspacePath[] {
+    if (!this.directoriesCache) {
+      const directories = new Set(this.tree.directories);
+      // A leaf-only invalidation can discover a file whose parents were created
+      // at the same time. Include those known parents without claiming they have
+      // been fully listed (tree.directories also underpins absence checks).
+      for (const path of [...this.tree.directories, ...this.tree.files.keys()]) {
+        let slash = path.lastIndexOf('/');
+        while (slash >= 0) {
+          directories.add(parseWorkspacePath(path.slice(0, slash)));
+          slash = path.lastIndexOf('/', slash - 1);
+        }
+      }
+      this.directoriesCache = Object.freeze([...directories].sort(compareCodeUnits));
+    }
+    return this.directoriesCache;
   }
 
   public getDocument(path: string): IndexedDocument | null {
@@ -920,6 +939,7 @@ class WorkspaceIndexImpl implements WorkspaceIndex {
     this.generation += 1;
     this.lastPublish = this.now();
     this.filesCache = null;
+    this.directoriesCache = null;
     this.documentsCache = null;
     this.statusCache = null;
     for (const listener of [...this.listeners]) {

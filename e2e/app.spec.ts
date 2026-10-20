@@ -522,7 +522,10 @@ test.describe('File operations', () => {
     const card = page.locator('.squisq-data-card');
     await expect(card).toBeVisible({ timeout: 20_000 });
     await expect(card.locator('.squisq-data-card-name')).toHaveText('pg_catalog.csv');
-    await expect(page.locator('.squisq-grid-status')).toContainText('2 rows');
+    // The card mounts before the lazy grid bundle and its data worker are
+    // ready. Keep checking the actual loaded rows, with the same bounded
+    // startup allowance as the card rather than the default five seconds.
+    await expect(page.locator('.squisq-grid-status')).toContainText('2 rows', { timeout: 20_000 });
     await expect(page.locator('.squisq-grid-body [role="row"]').first()).toContainText('Alpha');
   });
 

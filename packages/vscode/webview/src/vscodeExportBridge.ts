@@ -8,18 +8,23 @@ import {
   type WebviewToExtensionMessage,
 } from '@bendyline/docblocks/vscode';
 import type { ContentContainer, ContentEntry } from '@bendyline/squisq/storage';
+import type { WikiLinkSupport, WikiLinkSuggestion } from '@bendyline/squisq/markdown';
 import { decodeBoundedBase64, encodeBoundedBase64 } from '../../src/wirePayload.js';
 import { WebviewRequestRegistry } from './webviewRequestRegistry.js';
 
 const MAX_PENDING_REQUESTS = 64;
 
 type ExportBridgeResponse =
+  | { type: 'wikiSuggestions'; items: WikiLinkSuggestion[] }
+  | { type: 'wikiLinkResult'; exists: boolean }
   | { type: 'exportSaved'; target: ExportTargetGrantMessage | null }
   | { type: 'exportTargetResolved'; target: ExportTargetGrantMessage | null }
   | { type: 'exportTargetPicked'; target: ExportTargetGrantMessage | null }
   | { type: 'workspaceFileRead'; dataBase64: string | null };
 
 type ExportBridgeRequest =
+  | { type: 'wikiSuggestRequest'; query: string }
+  | { type: 'wikiLinkRequest'; target: string; action: 'exists' | 'open' | 'create' }
   | {
       type: 'saveExport';
       filename: string;
@@ -33,6 +38,7 @@ type ExportBridgeRequest =
   | { type: 'readWorkspaceFile'; path: string };
 
 export interface VscodeExportBridge {
+  wikiLinks: WikiLinkSupport;
   saveBlob(
     blob: Blob,
     filename: string,
@@ -77,6 +83,15 @@ export function createVscodeExportBridge(
     const msg: ExtensionToWebviewMessage | null = parseExtensionToWebviewMessage(event.data);
     if (!msg) return;
     switch (msg.type) {
+      case 'wikiSuggestions':
+        requests.settle(msg.requestId, { type: 'wikiSuggestions', items: msg.items });
+        break;
+      case 'wikiLinkResult':
+        requests.settle(msg.requestId, { type: 'wikiLinkResult', exists: msg.exists });
+        break;
+      case 'wikiLinkError':
+        requests.reject(msg.requestId, new Error(msg.message));
+        break;
       case 'exportSaved':
         requests.settle(msg.requestId, { type: 'exportSaved', target: msg.target });
         break;
@@ -206,6 +221,22 @@ export function createVscodeExportBridge(
   }
 
   return {
+    wikiLinks: {
+      async suggest(query) {
+        return (await request({ type: 'wikiSuggestRequest', query }, 'wikiSuggestions')).items;
+      },
+      async exists(target) {
+        return (
+          await request({ type: 'wikiLinkRequest', target, action: 'exists' }, 'wikiLinkResult')
+        ).exists;
+      },
+      async open(target, { create }) {
+        await request(
+          { type: 'wikiLinkRequest', target, action: create ? 'create' : 'open' },
+          'wikiLinkResult',
+        );
+      },
+    },
     saveBlob,
     resolveExportTarget,
     pickExportTarget,

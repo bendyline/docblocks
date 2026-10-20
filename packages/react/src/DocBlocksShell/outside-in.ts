@@ -3,6 +3,7 @@ import {
   FsError,
   SQUISQ_RUNTIME_DIRECTORY_NAME,
   getFileSystemProviderV2,
+  findWikiArticle,
   parseWorkspacePath,
   type FileSystemProvider,
 } from '@bendyline/docblocks/filesystem';
@@ -15,6 +16,7 @@ import {
   isGeneratedCatalogJson,
 } from '@bendyline/docblocks/workspace-settings';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import type { MarkdownDocument } from '@bendyline/squisq/markdown';
 import { providerEntryExists, writeProviderText } from './provider-io.js';
 import {
   chooseOutsideInMarkdownPath,
@@ -414,13 +416,10 @@ async function writeRuntimeIfNeeded(
 async function renderPlainOutsideInHtml(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
-  markdown: string,
+  markdown: MarkdownDocument,
   themeId: string | undefined,
 ): Promise<Uint8Array> {
-  const [{ parseMarkdown }, { markdownDocToPlainHtml }] = await Promise.all([
-    import('@bendyline/squisq/markdown'),
-    import('@bendyline/squisq-formats/html'),
-  ]);
+  const { markdownDocToPlainHtml } = await import('@bendyline/squisq-formats/html');
   const container = new FileSystemContentContainer(provider, layout.companionDirectory);
   const images = new Map<string, string>();
   for (const entry of await container.listFiles()) {
@@ -429,7 +428,7 @@ async function renderPlainOutsideInHtml(
     images.set(`./${entry.path}`, outputPath);
   }
   return new TextEncoder().encode(
-    markdownDocToPlainHtml(parseMarkdown(markdown), {
+    markdownDocToPlainHtml(markdown, {
       title: layout.stem,
       images: images.size > 0 ? images : undefined,
       ...(themeId ? { themeId } : {}),
@@ -450,9 +449,24 @@ async function prepareOutsideInRender(
 ): Promise<PreparedOutsideInRender> {
   const themeId = await resolveFallbackRenderTheme(markdown, render);
   const htmlOutput = layout.format === 'html' ? await readOutsideInHtmlOutput(markdown) : null;
+  let renderedSource: string | MarkdownDocument = markdown;
+  if (layout.format === 'html') {
+    const { parseMarkdown, resolveWikiLinks } = await import('@bendyline/squisq/markdown');
+    renderedSource = await resolveWikiLinks(parseMarkdown(markdown), async (target) => {
+      const article = await findWikiArticle(provider, layout.targetPath, target, '.html');
+      return article.exists
+        ? article.relativePath.split('/').map(encodeURIComponent).join('/')
+        : null;
+    });
+  }
   if (htmlOutput === 'static') {
     return {
-      bytes: await renderPlainOutsideInHtml(provider, layout, markdown, themeId),
+      bytes: await renderPlainOutsideInHtml(
+        provider,
+        layout,
+        renderedSource as MarkdownDocument,
+        themeId,
+      ),
       runtimePath: null,
     };
   }
@@ -462,7 +476,7 @@ async function prepareOutsideInRender(
   const outputDirectory = dirname(layout.targetPath);
   const rendered = await renderOutsideInDocument(
     {
-      markdown,
+      markdown: renderedSource,
       targetPath: layout.targetPath,
       container: new FileSystemContentContainer(provider, layout.companionDirectory),
     },

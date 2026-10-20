@@ -12,6 +12,22 @@ import {
 
 const MAX_REQUEST_ID = 2_147_483_647;
 
+export interface WikiSuggestionMessage {
+  target: string;
+  label: string;
+  kind: 'article' | 'folder';
+}
+
+function isWikiSuggestion(value: unknown): value is WikiSuggestionMessage {
+  return (
+    isRecord(value) &&
+    hasOnlyKeys(value, ['target', 'label', 'kind']) &&
+    hasBoundedString(value, 'target', 2048, 1) &&
+    hasBoundedString(value, 'label', 2048, 1) &&
+    (value.kind === 'article' || value.kind === 'folder')
+  );
+}
+
 /**
  * Bounds for host-persisted proofing state.
  *
@@ -89,6 +105,7 @@ export const DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES = [
   'hanken-lora',
   'dm-serif-dm-sans',
   'inter',
+  'inconsolata',
 ] as const;
 
 export type DocBlocksWriteCanvasFontScheme = (typeof DOCBLOCKS_WRITE_CANVAS_FONT_SCHEMES)[number];
@@ -225,6 +242,9 @@ export type ExtensionToWebviewMessage =
   | { type: 'exportTargetResolved'; requestId: number; target: ExportTargetGrantMessage | null }
   | { type: 'exportTargetPicked'; requestId: number; target: ExportTargetGrantMessage | null }
   | { type: 'workspaceFileRead'; requestId: number; dataBase64: string | null }
+  | { type: 'wikiLinkResult'; requestId: number; exists: boolean }
+  | { type: 'wikiSuggestions'; requestId: number; items: WikiSuggestionMessage[] }
+  | { type: 'wikiLinkError'; requestId: number; message: string }
   | { type: 'workspaceFileError'; requestId: number; message: string }
   | { type: 'proofDictionaryLoaded'; requestId: number; words: string[] }
   | { type: 'proofIgnoresLoaded'; requestId: number; ignoredJson: string | null }
@@ -238,6 +258,13 @@ export type WebviewToExtensionMessage =
   | { type: 'setWriteCanvasSettings'; settings: VscodeWriteCanvasSettings }
   | { type: 'setProofingSettings'; settings: VscodeProofingSettings }
   | { type: 'openLink'; href: string }
+  | { type: 'wikiSuggestRequest'; requestId: number; query: string }
+  | {
+      type: 'wikiLinkRequest';
+      requestId: number;
+      target: string;
+      action: 'exists' | 'open' | 'create';
+    }
   | { type: 'copyCode'; requestId: number; code: string }
   | {
       type: 'edit';
@@ -326,6 +353,24 @@ export function parseWebviewToExtensionMessage(value: unknown): WebviewToExtensi
       return hasOnlyKeys(value, ['type', 'href']) &&
         hasBoundedString(value, 'href', HOST_WIRE_LIMITS.urlCharacters, 1)
         ? { type: 'openLink', href: value.href }
+        : null;
+    case 'wikiSuggestRequest':
+      return hasOnlyKeys(value, ['type', 'requestId', 'query']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'query', 2048, 0)
+        ? { type: 'wikiSuggestRequest', requestId: value.requestId, query: value.query }
+        : null;
+    case 'wikiLinkRequest':
+      return hasOnlyKeys(value, ['type', 'requestId', 'target', 'action']) &&
+        hasRequestId(value) &&
+        hasBoundedString(value, 'target', 2048, 1) &&
+        (value.action === 'exists' || value.action === 'open' || value.action === 'create')
+        ? {
+            type: 'wikiLinkRequest',
+            requestId: value.requestId,
+            target: value.target,
+            action: value.action,
+          }
         : null;
     case 'copyCode':
       return hasOnlyKeys(value, ['type', 'requestId', 'code']) &&
@@ -679,6 +724,7 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
     case 'exportError':
     case 'proofStateError':
     case 'workspaceFileError':
+    case 'wikiLinkError':
       return hasOnlyKeys(value, ['type', 'requestId', 'message']) &&
         hasRequestId(value) &&
         hasBoundedString(value, 'message', HOST_WIRE_LIMITS.messageCharacters, 1)
@@ -693,6 +739,20 @@ export function parseExtensionToWebviewMessage(value: unknown): ExtensionToWebvi
       const target = parseExportTargetGrant(value.target);
       return target !== undefined ? { type: value.type, requestId: value.requestId, target } : null;
     }
+    case 'wikiSuggestions':
+      return hasOnlyKeys(value, ['type', 'requestId', 'items']) &&
+        hasRequestId(value) &&
+        Array.isArray(value.items) &&
+        value.items.length <= 20 &&
+        value.items.every(isWikiSuggestion)
+        ? { type: 'wikiSuggestions', requestId: value.requestId, items: value.items }
+        : null;
+    case 'wikiLinkResult':
+      return hasOnlyKeys(value, ['type', 'requestId', 'exists']) &&
+        hasRequestId(value) &&
+        typeof value.exists === 'boolean'
+        ? { type: 'wikiLinkResult', requestId: value.requestId, exists: value.exists }
+        : null;
     case 'workspaceFileRead':
       return hasOnlyKeys(value, ['type', 'requestId', 'dataBase64']) &&
         hasRequestId(value) &&

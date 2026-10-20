@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import { SHARED_DOCUMENT_LIMITS, parseSharedDocumentHash } from '@bendyline/docblocks/share';
+import { findNodesByType, parseMarkdown } from '@bendyline/squisq/markdown';
 import {
   buildSharedDocumentQrUrl,
   buildSharedDocumentUrl,
@@ -88,7 +89,7 @@ describe('shared document links', () => {
     );
   });
 
-  it('does not turn Markdown-looking HTML image descriptions into shared images', async () => {
+  it('preserves Markdown-looking HTML image descriptions as literal shared text', async () => {
     const markdown =
       '<img src="outer.png" alt="![Inner description][inner]">\n\n[inner]: inner.png\n';
     const archive = await createSharedDocumentArchive(markdown, 'description.md');
@@ -96,7 +97,16 @@ describe('shared document links', () => {
       targetDocumentPath: 'shared.md',
       profile: 'shared-link',
     });
-    expect(snapshot.documentContent).to.equal('Inner description\n\n\n');
+    // Squisq parses plain HTML images as image nodes and escapes their alt text
+    // when omitting them. Assert the parsed content so Markdown-looking prose
+    // stays literal, without coupling this contract to a particular escaping style.
+    const document = parseMarkdown(snapshot.documentContent);
+    expect(findNodesByType(document, 'image')).to.have.length(0);
+    expect(findNodesByType(document, 'imageReference')).to.have.length(0);
+    expect(findNodesByType(document, 'text').map((node) => node.value)).to.deep.equal([
+      '![Inner description][inner]',
+    ]);
+    expect(snapshot.documentContent).not.to.include('outer.png');
   });
 
   it('preserves image syntax in code examples and escaped prose', async () => {

@@ -260,7 +260,10 @@ export class FileSystemV2IpcService {
     subscriptionId: string,
   ): Promise<HostFileSystemV2Result<null>> {
     return this.result('watch', null, null, async () => {
-      const record = this.requireRecord(ownerId, instanceId, 'watch');
+      // Switching to an exported loose file or reloading can dispose the
+      // provider before React cleans up its watchers. Teardown stays idempotent.
+      const record = this.records.get(recordKey(ownerId, instanceId));
+      if (!record) return null;
       const subscription = record.subscriptions.get(subscriptionId);
       if (!subscription) return null;
       record.subscriptions.delete(subscriptionId);

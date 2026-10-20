@@ -44,6 +44,8 @@ import { browserSaveMode, saveActionLabel } from './browser-save.js';
 import { buildExportFilename } from './export-filename.js';
 import { hostErrorDetail } from './host-error.js';
 import { createImageSaveOutput } from './image-save.js';
+import { OpenAfterSaveCheckbox } from './OpenAfterSaveCheckbox.js';
+import { loadOpenAfterExport, saveOpenAfterExport } from '../preferences/export.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 import { buildVideoExportDoc } from './video-export-doc.js';
 import { Dialog } from '../components/Dialog.js';
@@ -112,6 +114,8 @@ export interface ExportDestinationTarget {
 }
 
 export interface ExportDestinationAdapter {
+  /** Open the successful save result; display paths never authorize opening. */
+  openSaved?: (target: ExportDestinationTarget) => Promise<void>;
   shareBlob?: (blob: Blob, filename: string) => Promise<'shared' | 'presented' | 'cancelled'>;
   resolveTarget: (filename: string) => Promise<ExportDestinationTarget>;
   pickTarget: (
@@ -271,6 +275,12 @@ export function ExportToolbarControls({
   const [transformSummaries, setTransformSummaries] = useState<ExportSummaryOption[]>([]);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [openAfterSave, setOpenAfterSave] = useState(loadOpenAfterExport);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const handleOpenAfterSaveChange = useCallback((checked: boolean) => {
+    setOpenAfterSave(checked);
+    saveOpenAfterExport(checked);
+  }, []);
   // What a finished export lost (e.g. characters PDF had to replace), shown
   // once the file is saved so a degraded export never passes silently.
   const [exportNotice, setExportNotice] = useState<readonly string[] | null>(null);
@@ -462,6 +472,7 @@ export function ExportToolbarControls({
     setVideoModalOpen(false);
     setVideoDoc(null);
     setVideoLoadError(null);
+    setOpenError(null);
   }, []);
 
   const handleOptionsChange = useCallback(
@@ -493,14 +504,29 @@ export function ExportToolbarControls({
       const savedTarget = await destinationAdapter.saveBlob(blob, filename, target);
       if (!savedTarget) throw new ExportCancelledError();
       setDestinationTarget(savedTarget);
+      return savedTarget;
     },
     [destinationAdapter],
+  );
+
+  const openSaved = useCallback(
+    async (target: ExportDestinationTarget) => {
+      if (!openAfterSave || !destinationAdapter?.openSaved) return;
+      try {
+        await destinationAdapter.openSaved(target);
+      } catch (caught: unknown) {
+        const detail = hostErrorDetail(caught);
+        setOpenError(`The file was saved, but it couldn't be opened.${detail ? ` ${detail}` : ''}`);
+      }
+    },
+    [destinationAdapter, openAfterSave],
   );
 
   const handleExport = useCallback(
     async (opts: ExportOptions) => {
       setExporting(true);
       setExportError(null);
+      setOpenError(null);
       setExportNotice(null);
       try {
         let exportTarget = destinationTarget;
@@ -511,6 +537,7 @@ export function ExportToolbarControls({
           setDestinationTarget(exportTarget);
         }
         const { runExport } = await loadRunExportModule();
+        let savedTarget: ExportDestinationTarget | undefined;
         const result = await runExport(
           markdownSource,
           selectedFile,
@@ -522,13 +549,16 @@ export function ExportToolbarControls({
                 if (outcome === 'cancelled') throw new ExportCancelledError();
               }
             : destinationAdapter
-              ? (blob, filename) => saveToDestination(blob, filename, exportTarget)
+              ? async (blob, filename) => {
+                  savedTarget = await saveToDestination(blob, filename, exportTarget);
+                }
               : saveBlob,
         );
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
         setDialogOpen(false);
         if (result.warnings.length > 0) setExportNotice(result.warnings);
+        if (savedTarget) await openSaved(savedTarget);
       } catch (caught: unknown) {
         if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
       } finally {
@@ -544,6 +574,7 @@ export function ExportToolbarControls({
       destinationTarget,
       saveToDestination,
       saveBlob,
+      openSaved,
     ],
   );
 
@@ -552,6 +583,7 @@ export function ExportToolbarControls({
     closeMenu(true);
     setExporting(true);
     setExportError(null);
+    setOpenError(null);
     setExportNotice(null);
     try {
       saveExportOptions(lastOptions);
@@ -567,16 +599,20 @@ export function ExportToolbarControls({
         }
       }
       const { runExport } = await loadRunExportModule();
+      let savedTarget: ExportDestinationTarget | undefined;
       const result = await runExport(
         markdownSource,
         selectedFile,
         lastOptions,
         mediaContainer,
         destinationAdapter
-          ? async (blob, filename) => saveToDestination(blob, filename, quickTarget)
+          ? async (blob, filename) => {
+              savedTarget = await saveToDestination(blob, filename, quickTarget);
+            }
           : saveBlob,
       );
       if (result.warnings.length > 0) setExportNotice(result.warnings);
+      if (savedTarget) await openSaved(savedTarget);
     } catch (caught: unknown) {
       // No dialog is open on this path, so the failure gets its own —
       // same shape as the video-export load failure below.
@@ -594,6 +630,7 @@ export function ExportToolbarControls({
     saveToDestination,
     selectedFile,
     quickDestinationTarget,
+    openSaved,
   ]);
 
   const handleDismissExportError = useCallback(() => {
@@ -606,8 +643,19 @@ export function ExportToolbarControls({
 
   // Finished video takes the same fresh-pick host flow as rendered images.
   const videoSaveOutput = useMemo(
-    () => (destinationAdapter ? createImageSaveOutput(destinationAdapter) : undefined),
-    [destinationAdapter],
+    () =>
+      destinationAdapter
+        ? createImageSaveOutput({
+            ...destinationAdapter,
+            saveBlob: async (blob, filename, target) => {
+              setOpenError(null);
+              const saved = await destinationAdapter.saveBlob(blob, filename, target);
+              if (saved) await openSaved(saved);
+              return saved;
+            },
+          })
+        : undefined,
+    [destinationAdapter, openSaved],
   );
 
   const LoadedVideoExportModal = videoModules?.Modal;
@@ -809,6 +857,11 @@ export function ExportToolbarControls({
             documentThemes={documentThemes}
             exporting={exporting}
             error={exportError}
+            openAfterSave={
+              !fileShare && destinationAdapter?.openSaved
+                ? { checked: openAfterSave, onChange: handleOpenAfterSaveChange }
+                : undefined
+            }
             destination={
               destinationAdapter && destinationAdapter.showDestination !== false
                 ? {
@@ -862,8 +915,14 @@ export function ExportToolbarControls({
         </Dialog>
       )}
 
+      {openError && !videoModalOpen && (
+        <Dialog title="Open saved export" onClose={() => setOpenError(null)}>
+          <p role="alert">{openError}</p>
+        </Dialog>
+      )}
+
       {/* The file was saved, but not everything made it in. */}
-      {exportNotice && !dialogOpen && !exportError && (
+      {exportNotice && !dialogOpen && !exportError && !openError && (
         <Dialog
           title="Export Document"
           onClose={handleDismissExportNotice}
@@ -927,6 +986,17 @@ export function ExportToolbarControls({
             mediaEditRenders={mediaEditRenders}
             colorScheme={colorScheme}
             uiPalette={videoExportPalette}
+            saveOptions={
+              destinationAdapter?.openSaved ? (
+                <>
+                  <OpenAfterSaveCheckbox
+                    checked={openAfterSave}
+                    onChange={handleOpenAfterSaveChange}
+                  />
+                  {openError && <p role="alert">{openError}</p>}
+                </>
+              ) : undefined
+            }
             defaultConfig={{
               audioPolicy: 'best-effort',
               ...(ffmpegWasm ? { ffmpegWasm } : {}),

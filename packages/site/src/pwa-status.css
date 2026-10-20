@@ -1,5 +1,14 @@
 .db-pwa-offline-unavailable {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
   color: var(--db-warning, #946200);
+}
+
+.db-pwa-offline-unavailable:hover {
+  text-decoration: underline;
 }
 
 .db-shell[data-theme='dark'] .db-pwa-offline-unavailable {

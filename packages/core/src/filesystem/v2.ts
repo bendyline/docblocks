@@ -1,4 +1,4 @@
-import type { FsError } from './fs-error.js';
+import type { FsError, FsErrorCode } from './fs-error.js';
 import type { WorkspacePath } from './workspace-path.js';
 
 /**
@@ -68,9 +68,21 @@ interface FileSystemEntrySnapshotBase {
   readonly lastModified: string;
 }
 
+/** Why a listed file's bytes could not be read when it was observed. */
+export interface FileSystemEntryReadIssue {
+  readonly code: FsErrorCode;
+  readonly message: string;
+}
+
 export interface FileSystemFileSnapshot extends FileSystemEntrySnapshotBase {
   readonly kind: 'file';
   readonly size: number;
+  /**
+   * Present when a listing or watch observation could not read the file (a
+   * sync client holding it, an ACL). The entry stays listed, but its version
+   * then reflects metadata only; callers needing content must read the file.
+   */
+  readonly readIssue?: FileSystemEntryReadIssue;
 }
 
 export interface FileSystemDirectorySnapshot extends FileSystemEntrySnapshotBase {

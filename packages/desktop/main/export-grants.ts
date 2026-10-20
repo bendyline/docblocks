@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { OwnerGrantStore } from './owner-grants.js';
+import { readExportTargetIdentity } from './export-overwrite.js';
 
 interface ExportTargetResource {
   documentKey: string;
@@ -9,6 +10,7 @@ interface ExportTargetResource {
   physicalParent: string;
   bookmark?: string;
   pickerApprovedIdentity?: string;
+  savedIdentity?: string;
 }
 
 export interface ResolvedExportTarget {
@@ -83,4 +85,29 @@ export async function resolveExportGrant(
 
 export function revokeExportOwner(ownerId: number): void {
   grants.revokeOwner(ownerId);
+}
+
+/** Only a completed write authorizes opening an export. A picker alone does not. */
+export async function markExportSaved(
+  ownerId: number,
+  documentKey: string,
+  grantId: string,
+): Promise<void> {
+  const target = await resolveExportGrant(ownerId, documentKey, grantId);
+  const identity = await readExportTargetIdentity(target.absolutePath);
+  if (!identity) throw new Error('The saved export is no longer available');
+  grants.require(ownerId, grantId).savedIdentity = identity;
+}
+
+export async function resolveSavedExportGrant(
+  ownerId: number,
+  documentKey: string,
+  grantId: string,
+): Promise<ResolvedExportTarget> {
+  const target = await resolveExportGrant(ownerId, documentKey, grantId);
+  const savedIdentity = grants.require(ownerId, grantId).savedIdentity;
+  if (!savedIdentity || savedIdentity !== (await readExportTargetIdentity(target.absolutePath))) {
+    throw new Error('The export has not been saved or has changed since saving');
+  }
+  return target;
 }

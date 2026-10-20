@@ -102,16 +102,20 @@ test.describe('DocBlocks offline (PWA)', () => {
     await expect(page.locator('.db-shell')).toHaveCount(0);
   });
 
-  test('keeps a first-install cache failure unobtrusive without breaking the online editor', async ({
+  test('keeps a first-install cache failure unobtrusive and retries without reloading', async ({
     page,
     context,
-  }) => {
-    test.setTimeout(90_000);
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.addInitScript(() => {
+      const key = 'docblocks-pwa-retry-loads';
+      sessionStorage.setItem(key, String(Number(sessionStorage.getItem(key) ?? '0') + 1));
+    });
     const devtools = await context.newCDPSession(page);
     await devtools.send('Storage.overrideQuotaForOrigin', {
       origin: 'http://localhost:5230',
       // Enough for normal IndexedDB startup, deliberately below the checked
-      // ~60 MiB application precache (including the two harper proofing
+      // ~80 MiB application precache (including the two harper proofing
       // binaries).
       quotaSize: 4 * 1024 * 1024,
     });
@@ -122,6 +126,16 @@ test.describe('DocBlocks offline (PWA)', () => {
         timeout: 45_000,
       });
       await expect(page.locator('.db-pwa-install-error')).toHaveCount(0);
+      const tour = page.getByRole('button', { name: 'Tour the welcome document' });
+      if (await tour.isVisible()) await tour.click();
+      await page.screenshot({ path: testInfo.outputPath('offline-retry.png') });
+      await devtools.send('Storage.overrideQuotaForOrigin', { origin: 'http://localhost:5230' });
+      await page.getByRole('button', { name: 'Offline unavailable. Retry offline setup' }).click();
+      await expectControllingWorker(page, '/sw.js', 45_000);
+      await expect(page.locator('.db-pwa-offline-unavailable')).toHaveCount(0);
+      expect(await page.evaluate(() => sessionStorage.getItem('docblocks-pwa-retry-loads'))).toBe(
+        '1',
+      );
     } finally {
       await devtools.detach();
     }
@@ -211,6 +225,10 @@ test.describe('DocBlocks offline (PWA)', () => {
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
     });
+
+    // Fresh installs must be controlled before any reload. A reload before
+    // this assertion masked first-visit readiness problems in earlier reviews.
+    await expectControllingWorker(page, '/sw.js', 10_000);
 
     // Precache completeness: `maximumFileSizeToCacheInBytes` silently drops
     // anything above its cap, so assert the families most at risk — the 6 MB

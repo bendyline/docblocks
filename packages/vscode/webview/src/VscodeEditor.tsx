@@ -500,6 +500,7 @@ export function VscodeEditor() {
           blockTagVisibility="none"
           onChange={handleChange}
           onLinkClick={handleLinkClick}
+          wikiLinks={exportBridge.wikiLinks}
           showCodeCopyButton
           onCopyCode={clipboardBridge.copyCode}
           colorScheme={theme}

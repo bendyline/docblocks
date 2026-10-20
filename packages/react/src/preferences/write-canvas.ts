@@ -16,7 +16,8 @@ export type WriteCanvasFontScheme =
   | 'playfair-pt-serif'
   | 'hanken-lora'
   | 'dm-serif-dm-sans'
-  | 'inter';
+  | 'inter'
+  | 'inconsolata';
 
 export type WriteCanvasFontSchemeGroup = 'theme' | 'system' | 'curated';
 
@@ -106,6 +107,13 @@ export const WRITE_CANVAS_FONT_SCHEMES: readonly WriteCanvasFontSchemeOption[] =
     group: 'curated',
     headerFont: '"Inter", system-ui, sans-serif',
     bodyFont: '"Inter", system-ui, sans-serif',
+  },
+  {
+    id: 'inconsolata',
+    label: 'Inconsolata',
+    group: 'curated',
+    headerFont: '"Inconsolata", ui-monospace, SFMono-Regular, Consolas, monospace',
+    bodyFont: '"Inconsolata", ui-monospace, SFMono-Regular, Consolas, monospace',
   },
 ];
 

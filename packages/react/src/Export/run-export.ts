@@ -249,9 +249,16 @@ async function exportDocument(
       themeId,
       pageSize: options.pageSize,
       images,
-      // Replaced characters are reported to the user, not just the console.
+      // Check fidelity before any download or destination write occurs.
       onWarning: (message) => warnings.push(message),
     });
+    if (warnings.length > 0) {
+      throw new Error(
+        'PDF was not saved because its fonts cannot preserve all of this document’s text. ' +
+          'Export as Word, HTML, or EPUB to keep every character. ' +
+          warnings.join(' '),
+      );
+    }
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;
   }
@@ -274,19 +281,33 @@ async function exportDocument(
     const pptxModule = converterOverrides.docToPptx
       ? Promise.resolve({ docToPptx: converterOverrides.docToPptx })
       : import('@bendyline/squisq-formats/pptx');
-    const [{ markdownToDoc }, { applyTransform }, { buildPreviewDoc }, { docToPptx }] =
-      await Promise.all([
-        import('@bendyline/squisq/doc'),
-        import('@bendyline/squisq/transform'),
-        import('@bendyline/squisq-editor-react'),
-        pptxModule,
-      ]);
+    const [
+      { markdownToDoc },
+      { applyTransform, PRESENTATION_KEY },
+      { buildPreviewDoc },
+      { docToPptx },
+    ] = await Promise.all([
+      import('@bendyline/squisq/doc'),
+      import('@bendyline/squisq/transform'),
+      import('@bendyline/squisq-editor-react'),
+      pptxModule,
+    ]);
     // Use the exact slideshow projection before PPTX conversion. The player
     // and exporter therefore share block flattening, typed template inputs,
     // image interleaving, synthetic timing, and the later expandDocBlocks pass.
     const baseDoc = markdownToDoc(doc);
-    const transformed = applyTransform(baseDoc, options.transformStyle);
-    const enrichedDoc = buildPreviewDoc(transformed.doc);
+    if (!options.transformStyle) {
+      // None also overrides saved slide summaries for this export. Work on a
+      // copy: buildPreviewDoc otherwise applies dynamic or legacy plans itself.
+      baseDoc.frontmatter = { ...baseDoc.frontmatter };
+      delete baseDoc.frontmatter['squisq-transform'];
+      delete baseDoc.frontmatter['transform-style'];
+      delete baseDoc.frontmatter[PRESENTATION_KEY];
+    }
+    const contentDoc = options.transformStyle
+      ? applyTransform(baseDoc, options.transformStyle).doc
+      : baseDoc;
+    const enrichedDoc = buildPreviewDoc(contentDoc);
     if (themeId) {
       enrichedDoc.themeId = themeId;
     }

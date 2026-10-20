@@ -48,6 +48,14 @@ const manifestUrls = new Set(
   [...serviceWorker.matchAll(/(?:"url"|\burl):"([^"]+)"/gu)].map((match) => match[1]),
 );
 const eligibleFiles = await collectEligibleFiles(distRoot);
+const calculationBinary = await readFile(path.join(distRoot, 'ironcalc/wasm_bg.wasm'));
+for (const file of eligibleFiles.filter(
+  (file) => file.startsWith('assets/') && file.endsWith('.wasm'),
+)) {
+  if (calculationBinary.equals(await readFile(path.join(distRoot, file)))) {
+    throw new Error(`PWA precache contains a duplicate calculation engine: ${file}`);
+  }
+}
 for (const requiredNotice of ['THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_COMPONENTS.json']) {
   if (!eligibleFiles.includes(requiredNotice)) {
     throw new Error(`Site distribution is missing ${requiredNotice}.`);

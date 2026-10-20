@@ -64,7 +64,7 @@ describe('Write canvas font picker', () => {
       });
 
       const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
-      expect(options).to.have.length(10);
+      expect(options).to.have.length(11);
       const pairing = options.find((option) => option.textContent?.includes('Lora'));
       expect(
         pairing?.querySelector<HTMLElement>('.db-font-picker-heading')?.style.fontFamily,

@@ -11,7 +11,7 @@ const URI_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 /**
  * Classify a link authored in the editor without treating its path as
  * filesystem authority. External navigation is limited to canonical HTTP(S)
- * URLs, while relative Markdown paths are resolved inside the active
+ * URLs, while relative Markdown/HTML paths are resolved inside the active
  * workspace and cannot traverse above its root.
  */
 export function resolveShellEditorLinkTarget(
@@ -53,7 +53,11 @@ export function resolveShellEditorLinkTarget(
   }
 
   const path = targetSegments.join('/');
-  if (!path || path.length > HOST_WIRE_LIMITS.pathCharacters || !isMarkdownFileName(path)) {
+  if (
+    !path ||
+    path.length > HOST_WIRE_LIMITS.pathCharacters ||
+    (!isMarkdownFileName(path) && !/\.html?$/i.test(path))
+  ) {
     return null;
   }
   return { kind: 'workspace', path };

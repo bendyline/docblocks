@@ -74,6 +74,8 @@ export interface AppMenuProps {
    * the menu item is hidden.
    */
   onDownloadAllWorkspaces?: () => void | Promise<void>;
+  /** Restore a ZIP backup into new browser workspaces. */
+  onRestoreBackup?: () => void;
   /** Opens the keyboard-shortcut sheet. When omitted, the menu item is hidden. */
   onShowKeyboardShortcuts?: () => void;
   /**
@@ -154,6 +156,7 @@ export function AppMenu({
   onVersioningPreferenceChange,
   onOpenWorkspaceSettings,
   onDownloadAllWorkspaces,
+  onRestoreBackup,
   onShowKeyboardShortcuts,
   onKeepBrowserData,
   onInstallApp,
@@ -304,7 +307,7 @@ export function AppMenu({
             {/* Keeping work safe is one group: the backup the footer and the
                 storage-full banner also offer, by the same name, then the
                 request that the browser keep its copy. */}
-            {(onDownloadAllWorkspaces || onKeepBrowserData) && (
+            {(onDownloadAllWorkspaces || onRestoreBackup || onKeepBrowserData) && (
               <div className="db-app-menu-divider" />
             )}
             {onDownloadAllWorkspaces && (
@@ -315,6 +318,16 @@ export function AppMenu({
                 onClick={() => handleAction(() => void onDownloadAllWorkspaces())}
               >
                 Back up all workspaces
+              </button>
+            )}
+            {onRestoreBackup && (
+              <button
+                className="db-app-menu-item"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={() => handleAction(onRestoreBackup)}
+              >
+                Restore backup…
               </button>
             )}
             {onKeepBrowserData && (

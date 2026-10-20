@@ -1,5 +1,13 @@
 /** Design a live summarization. Persist intent and explicit wording, never generated slides. */
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useEditorContext, usePreviewSettingsOptional } from '@bendyline/squisq-editor-react';
 import { BlockRenderer, MediaContext } from '@bendyline/squisq-react';
@@ -143,6 +151,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const follow = useRef(false);
   const suggestButton = useRef<HTMLButtonElement>(null);
   const stopButton = useRef<HTMLButtonElement>(null);
+  const slidesRef = useRef<HTMLElement>(null);
   useEffect(() => {
     let disposed = false;
     const parsed = markdownToDoc(parseMarkdown(markdownSource));
@@ -227,6 +236,36 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const section = beat && sectionAt(sections, beat.sourceStart);
   const hint = hints.blocks.find((item) => item.blockId === section?.blockId);
   const visual = projection?.blocks.find((block) => block.id === beat?.id);
+  const handleSlideKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.nativeEvent.isComposing ||
+      (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+    )
+      return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.closest('input, textarea, select') || target.isContentEditable)
+    )
+      return;
+    if (!plan?.beats.length) return;
+    event.preventDefault();
+    event.stopPropagation();
+    follow.current = false;
+    const nextIndex = Math.max(
+      0,
+      Math.min(plan.beats.length - 1, selectedIndex + (event.key === 'ArrowRight' ? 1 : -1)),
+    );
+    setSelectedSourceStart(plan.beats[nextIndex].sourceStart);
+    const button = slidesRef.current?.querySelectorAll('button')[nextIndex];
+    button?.focus({ preventScroll: true });
+    button?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
   const updateHint = (patch: Partial<PresentationBlockHint>) => {
     if (!section) return;
     const entry = { ...hint, blockId: section.blockId, ...patch };
@@ -324,6 +363,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       size="full"
       className="db-presentation db-ai-draft-dialog"
       onClose={onClose}
+      onKeyDown={handleSlideKeyDown}
       closeOnBackdrop={false}
       footer={
         <>
@@ -427,7 +467,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       )}
       {plan && beat && section && (
         <div className="db-presentation-workspace">
-          <nav className="db-presentation-beats" aria-label="Presentation slides">
+          <nav ref={slidesRef} className="db-presentation-beats" aria-label="Presentation slides">
             {plan.beats.map((item, index) => {
               const owner = sectionAt(sections, item.sourceStart);
               const layout =

@@ -12,6 +12,7 @@ import {
   FsError,
   deserializeFsError,
   fsErrorFromUnknown,
+  isFsErrorCode,
   isSerializedFsError,
   type FsOperation,
 } from './fs-error.js';
@@ -30,6 +31,7 @@ import {
   parseFileSystemVersion,
   type FileSystemCreateDirectoryOptions,
   type FileSystemDirectorySnapshot,
+  type FileSystemEntryReadIssue,
   type FileSystemEntrySnapshot,
   type FileSystemFileRead,
   type FileSystemFileSnapshot,
@@ -543,13 +545,31 @@ function normalizeEntry(entry: FileSystemEntrySnapshot): FileSystemEntrySnapshot
     if (!isNonNegativeSafeInteger(entry.size)) {
       throw new TypeError('Filesystem file size must be a non-negative safe integer.');
     }
-    return Object.freeze({ ...common, kind: 'file', size: entry.size });
+    const readIssue = normalizeReadIssue(entry.readIssue);
+    return Object.freeze({
+      ...common,
+      kind: 'file',
+      size: entry.size,
+      ...(readIssue ? { readIssue } : {}),
+    });
   }
   if (entry.kind === 'directory') {
     if (entry.size !== null) throw new TypeError('Filesystem directory size must be null.');
     return Object.freeze({ ...common, kind: 'directory', size: null });
   }
   throw new TypeError('Unknown filesystem entry kind.');
+}
+
+function normalizeReadIssue(value: unknown): FileSystemEntryReadIssue | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !isRecord(value) ||
+    !isFsErrorCode(value.code) ||
+    !isBoundedString(value.message, HOST_WIRE_LIMITS.messageCharacters, 1)
+  ) {
+    throw new TypeError('Filesystem entry read issue is malformed.');
+  }
+  return Object.freeze({ code: value.code, message: value.message });
 }
 
 function normalizeDirectoryListing(

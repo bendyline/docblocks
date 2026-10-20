@@ -34,7 +34,7 @@
     'Helvetica Neue', Arial, sans-serif;
   /* Metadata face: counts, timestamps, version strings, section labels. A
      small mono sets what you read apart from what you act on. */
-  --db-meta-font: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  --db-meta-font: 'Inconsolata', ui-monospace, SFMono-Regular, Consolas, monospace;
   /* Squisq's chrome reads `--squisq-ux-font` with a `system-ui` fallback, the
      same bridge shape as the `--squisq-*` color tokens further down. Binding
      it carries the chrome face into the editor toolbar, menus and dialogs.
@@ -329,7 +329,7 @@
 .db-explorer-title {
   font-family: var(--db-meta-font);
   font-weight: 500;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--db-text-muted);
@@ -805,6 +805,16 @@
   cursor: pointer;
 }
 
+/* A listed file the provider could not read (e.g. a sync client holding it). */
+.db-tree-read-issue {
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 0 4px;
+  color: var(--db-danger, #c33);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .db-tree--drop-target {
   box-shadow: inset 0 0 0 2px var(--db-accent);
   background: var(--db-accent-soft-08);
@@ -883,7 +893,7 @@
   overflow: hidden;
   color: var(--db-text-secondary);
   font-family: var(--db-meta-font);
-  font-size: 10.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   text-overflow: ellipsis;
@@ -1792,6 +1802,7 @@ body.db-resizing-sidebar * {
 .db-shell .squisq-status-bar {
   line-height: 16px;
   font-family: var(--db-meta-font);
+  font-size: 13px;
 }
 
 .db-shell-sidebar-footer {
@@ -2362,6 +2373,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-about-version code {
   color: var(--db-text);
   font-family: var(--db-meta-font);
+  font-size: 14px;
   user-select: all;
 }
 
@@ -2379,7 +2391,7 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-settings-legend {
   font-family: var(--db-meta-font);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -3416,10 +3428,15 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-export-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px 16px;
   border-top: 1px solid var(--db-border);
+}
+
+.db-export-open-after-save {
+  flex-basis: 100%;
 }
 
 .db-export-more-formats {
@@ -3988,13 +4005,19 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload {
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  :is(.squisq-media-bin-record, .squisq-media-bin-upload) {
   background: var(--db-accent-tint-strong);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload:hover {
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  :is(.squisq-media-bin-record, .squisq-media-bin-upload):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }
@@ -5799,7 +5822,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   display: block;
   margin-bottom: 10px;
   color: var(--db-text-muted);
-  font: 600 11px/1 var(--db-meta-font);
+  font: 600 12px/1 var(--db-meta-font);
   letter-spacing: 0.04em;
 }
 
@@ -5807,7 +5830,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   display: block;
   overflow: hidden;
   color: var(--db-text-secondary);
-  font: 12px/1.65 var(--db-meta-font);
+  font: 13px/1.65 var(--db-meta-font);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -5927,7 +5950,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   margin: 0;
   padding: 0;
   color: var(--db-text-muted);
-  font: 600 11px/1 var(--db-meta-font);
+  font: 600 12px/1 var(--db-meta-font);
   letter-spacing: 0.08em;
   list-style: none;
   text-transform: uppercase;

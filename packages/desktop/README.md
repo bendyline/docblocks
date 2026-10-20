@@ -4,6 +4,13 @@ DocBlocks desktop application — an Electron shell around the DocBlocks editor 
 
 [Desktop overview and downloads](https://docblocks.com/desktop/)
 
+Document and video exports offer **Open in app after saving** above Save. The
+choice defaults to off and is remembered across documents, export formats, and
+app launches; quick document export also follows it. Completed exports open in
+the operating system's default application, except Markdown, which opens in
+DocBlocks. Canceling or failing a save never opens a file. If opening fails,
+the export remains saved and the dialog reports the opening failure separately.
+
 ## Layout
 
 Three Electron processes, three directories:

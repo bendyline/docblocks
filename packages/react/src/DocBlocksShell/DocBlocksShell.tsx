@@ -28,6 +28,7 @@ import type {
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
 import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
+import type { WikiLinkSupport } from '@bendyline/squisq/markdown';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
@@ -55,6 +56,8 @@ import {
   rewriteCompanionReferences,
   parseWorkspacePath,
   workspacePathContains,
+  findWikiArticle,
+  suggestWikiArticles,
 } from '@bendyline/docblocks/filesystem';
 import {
   createFileSystemDocumentTarget,
@@ -89,8 +92,12 @@ import {
   registerTransientWorkspace,
   getTransientWorkspace,
   unregisterTransientWorkspace,
+  appendWorkspaceBackup,
+  finishWorkspaceBackup,
+  type BackupWorkspace,
 } from '@bendyline/docblocks/workspace';
 import { AppMenu } from '../AppMenu/AppMenu.js';
+import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
   FileExplorer,
@@ -239,6 +246,7 @@ import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
+import { ensureShellWikiArticle, wikiArticleExtension } from './wiki-articles.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
 import {
   createNewOutsideInDocument,
@@ -1610,6 +1618,14 @@ export function DocBlocksShell({
             pickTarget(documentId, filename, currentTarget?.grantId ?? null),
           saveBlob: (blob, filename, target) =>
             saveBlobToHost(exports, documentId, blob, filename, target?.grantId ?? null),
+          ...(hostSupports('openSavedExports') && exports.openSaved
+            ? {
+                openSaved: async (target: { grantId: string | null }) => {
+                  if (!target.grantId) throw new Error('The saved export has no native target.');
+                  await exports.openSaved!(documentId, target.grantId);
+                },
+              }
+            : {}),
         };
       }
     }
@@ -3943,7 +3959,7 @@ export function DocBlocksShell({
   // depends on -- see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
-    async (path: string, kind: 'file' | 'directory') => {
+    async (path: string, kind: 'file' | 'directory', createWikiArticle = false) => {
       if (!provider || !activeWorkspaceId) return;
       const requestId = ++navigationRequestRef.current;
 
@@ -3961,6 +3977,19 @@ export function DocBlocksShell({
         try {
           const transitioned = await documentSession.transitionWithLoad(async () => {
             if (requestId !== navigationRequestRef.current) return null;
+            if (createWikiArticle) {
+              if (
+                await ensureShellWikiArticle(
+                  provider,
+                  parseWorkspacePath(path),
+                  defaultNewFileFormat,
+                  outsideInRenderRef.current,
+                )
+              ) {
+                notifyWorkspaceChanged(activeWorkspaceId, path);
+              }
+              if (requestId !== navigationRequestRef.current) return null;
+            }
             openedDocument = await loadEditableShellDocument(
               provider,
               path,
@@ -4014,8 +4043,78 @@ export function DocBlocksShell({
       notifyWorkspaceChanged,
       transitionAwayFromDocument,
       showToast,
+      defaultNewFileFormat,
     ],
   );
+
+  const wikiNavigationRef = useRef(handleSelect);
+  wikiNavigationRef.current = handleSelect;
+  const wikiLinks = useMemo<WikiLinkSupport | null>(() => {
+    if (!provider || !selectedFile || !activeWorkspaceId) return null;
+    // Article names belong beside the public document, never inside its sidecar.
+    const source = selectedFile;
+    const extension = wikiArticleExtension(defaultNewFileFormat);
+    const lookups = new Map<string, ReturnType<typeof findWikiArticle>>();
+    let queue = Promise.resolve();
+    const lookup = (target: string) => {
+      let result = lookups.get(target);
+      if (!result) {
+        result = queue.then(() => findWikiArticle(provider, source, target, extension));
+        queue = result.then(
+          () => undefined,
+          () => undefined,
+        );
+        lookups.set(target, result);
+      }
+      return result;
+    };
+    return {
+      async suggest(query) {
+        const index = workspaceIndex.index;
+        if (!index) return [];
+        workspaceIndex.ensure();
+        await index.whenListed({ timeoutMs: 5_000 });
+        return suggestWikiArticles(
+          index.getFiles(),
+          index.getDirectories(),
+          source,
+          query,
+          extension,
+        );
+      },
+      async exists(target) {
+        return (await lookup(target)).exists;
+      },
+      async resolve(target) {
+        const article = await lookup(target);
+        if (!article.exists) return null;
+        const href =
+          selectedSourceFile !== selectedFile ? `/${article.path}` : article.relativePath;
+        return href.split('/').map(encodeURIComponent).join('/');
+      },
+      async open(target, { create }) {
+        const requestId = navigationRequestRef.current;
+        const navigate = wikiNavigationRef.current;
+        const { path } = await lookup(target);
+        if (requestId !== navigationRequestRef.current || navigate !== wikiNavigationRef.current)
+          return;
+        // Creation and the destination read run inside the same session
+        // transition, after flushing the source, and share its stale-nav guard.
+        await navigate(path, 'file', create);
+      },
+    };
+    // Index changes invalidate cached existence without walking the workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    provider,
+    selectedFile,
+    selectedSourceFile,
+    activeWorkspaceId,
+    defaultNewFileFormat,
+    workspaceIndex.index,
+    workspaceIndex.ensure,
+    workspaceIndex.status.generation,
+  ]);
 
   const handleEnableOutsideInEditing = useCallback(
     async (path: string) => {
@@ -4155,7 +4254,7 @@ export function DocBlocksShell({
       if (!target) {
         showToast(
           'error',
-          'DocBlocks only opens HTTP(S) links or Markdown files inside this workspace.',
+          'DocBlocks only opens HTTP(S) links or Markdown and HTML files inside this workspace.',
         );
         return true;
       }
@@ -4175,14 +4274,14 @@ export function DocBlocksShell({
         if (!provider) return;
         try {
           if (!(await providerEntryExists(provider, target.path))) {
-            showToast('error', 'The linked Markdown file was not found in this workspace.');
+            showToast('error', 'The linked document was not found in this workspace.');
             return;
           }
           await handleSelect(target.path, 'file');
         } catch (error: unknown) {
           showToast(
             'error',
-            error instanceof Error ? error.message : 'Could not open the linked Markdown file.',
+            error instanceof Error ? error.message : 'Could not open the linked document.',
           );
         }
       })();
@@ -4587,10 +4686,54 @@ export function DocBlocksShell({
     ],
   );
 
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+  const restoreInProgress = useRef(false);
+  const handleRestoreBackup = useCallback(
+    async (file: File) => {
+      if (restoreInProgress.current) {
+        showToast('error', 'A backup is already being restored. Please wait.');
+        return;
+      }
+      restoreInProgress.current = true;
+      try {
+        await documentSession.flush('backup');
+        const restored = await restoreBrowserBackup(file);
+        setDescriptorRefreshKey((key) => key + 1);
+        if (restored[0]) await handleWorkspaceSelect(restored[0]);
+        showToast(
+          'success',
+          `Restored ${restored.length} workspace(s) as new copies. Your existing workspaces are unchanged.`,
+        );
+      } catch (error) {
+        showToast(
+          'error',
+          `Could not restore ${file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        );
+      } finally {
+        restoreInProgress.current = false;
+      }
+    },
+    [documentSession, handleWorkspaceSelect, showToast],
+  );
+
+  const importOrRestore = useCallback(
+    async (files: File[]) => {
+      const backups = hostSupports('nativeWorkspaces')
+        ? []
+        : files.filter((file) => /\.zip$/i.test(file.name));
+      const documents = files.filter((file) => !backups.includes(file));
+      const result = provider ? await importDroppedFiles(documents, provider) : null;
+      for (const file of backups) await handleRestoreBackup(file);
+      return result;
+    },
+    [handleRestoreBackup, provider],
+  );
+
   const handleImportFiles = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      const result = await importDroppedFiles(files, provider);
+      const result = await importOrRestore(files);
+      if (!result) return;
       notifyWorkspaceChanged(activeWorkspaceId);
       // Refresh file tree so the new markdown files + _files folders show up.
       setExplorerKey((k) => k + 1);
@@ -4598,7 +4741,7 @@ export function DocBlocksShell({
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
     },
-    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast],
+    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, importOrRestore],
   );
 
   /**
@@ -4609,18 +4752,23 @@ export function DocBlocksShell({
   const handleImportFilesToEditor = useCallback(
     async (files: File[]) => {
       if (!provider) return;
-      const result = await importDroppedFiles(files, provider);
+      const result = await importOrRestore(files);
+      if (!result) return;
       notifyWorkspaceChanged(activeWorkspaceId);
       setExplorerKey((k) => k + 1);
       const summary = summariseImport(result);
       if (summary) showToast(summary.kind, summary.message);
       const imported = result.imported;
-      if (imported.length === 1 && result.failed.length === 0) {
+      if (
+        imported.length === 1 &&
+        result.failed.length === 0 &&
+        !files.some((file) => /\.zip$/i.test(file.name))
+      ) {
         const only = imported[0];
         if (only) void handleSelect(only.path, 'file');
       }
     },
-    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, handleSelect],
+    [activeWorkspaceId, notifyWorkspaceChanged, provider, showToast, handleSelect, importOrRestore],
   );
 
   const editorDropActive = useEditorFileDrop(
@@ -4877,9 +5025,12 @@ export function DocBlocksShell({
       ]);
 
       const container = new MemoryContentContainer();
-      await copyProviderToContainer(provider, container, '');
+      const source = getFileSystemProviderV2(provider);
+      if (!source) throw new Error('This workspace does not support complete backups.');
+      const workspaces = await appendWorkspaceBackup(container, source, []);
+      await finishWorkspaceBackup(container, workspaces);
 
-      const blob = await containerToZip(container);
+      const blob = await containerToZip(container, { compression: 'STORE' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -4889,8 +5040,7 @@ export function DocBlocksShell({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Failed to download workspace', err);
-      showToast('error', 'Failed to download workspace. See console for details.');
+      showToast('error', err instanceof Error ? err.message : 'Failed to download workspace.');
     }
   }, [provider, documentSession, showToast]);
 
@@ -4920,7 +5070,7 @@ export function DocBlocksShell({
       }
 
       const container = new MemoryContentContainer();
-      const usedFolders = new Set<string>();
+      let backupWorkspaces: BackupWorkspace[] = [];
       const skipped: string[] = [];
 
       for (const ws of candidates) {
@@ -4951,28 +5101,22 @@ export function DocBlocksShell({
           continue;
         }
 
-        // Pick a unique, filesystem-safe folder name per workspace.
-        const base = (ws.name || 'workspace').replace(/[^a-z0-9_\- ]/gi, '_').trim() || 'workspace';
-        let folder = base;
-        let suffix = 2;
-        while (usedFolders.has(folder)) {
-          folder = `${base} (${suffix++})`;
-        }
-        usedFolders.add(folder);
-
         try {
-          await copyProviderToContainer(p, container, folder);
+          const source = getFileSystemProviderV2(p);
+          if (!source) throw new Error('This workspace does not support complete backups.');
+          backupWorkspaces = await appendWorkspaceBackup(container, source, backupWorkspaces);
         } finally {
           if (ownsProvider) await getFileSystemProviderV2(p)?.dispose();
         }
       }
 
-      if (usedFolders.size === 0) {
+      if (backupWorkspaces.length === 0) {
         showToast('error', 'No workspaces could be opened for download.');
         return;
       }
 
-      const blob = await containerToZip(container);
+      await finishWorkspaceBackup(container, backupWorkspaces);
+      const blob = await containerToZip(container, { compression: 'STORE' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -4985,12 +5129,11 @@ export function DocBlocksShell({
         // re-grant one by one. A list you must act on cannot expire in 3s.
         await acknowledge({
           title: 'Some workspaces were skipped',
-          message: `Downloaded ${usedFolders.size} workspace(s). Skipped ${skipped.length} that require re-granting access: ${skipped.join(', ')}.`,
+          message: `Downloaded ${backupWorkspaces.length} workspace(s). Skipped ${skipped.length} that require re-granting access: ${skipped.join(', ')}.`,
         });
       }
     } catch (err) {
-      console.error('Failed to download all workspaces', err);
-      showToast('error', 'Failed to download all workspaces. See console for details.');
+      showToast('error', err instanceof Error ? err.message : 'Failed to download all workspaces.');
     }
   }, [documentSession, acknowledge, showToast]);
 
@@ -5344,6 +5487,11 @@ export function DocBlocksShell({
                   activeWorkspaceDescriptor ? handleOpenWorkspaceSettings : undefined
                 }
                 onDownloadAllWorkspaces={handleDownloadAllWorkspaces}
+                onRestoreBackup={
+                  hostSupports('nativeWorkspaces')
+                    ? undefined
+                    : () => restoreInputRef.current?.click()
+                }
                 // A phone layout has no keyboard to describe.
                 onShowKeyboardShortcuts={singlePane ? undefined : openKeyboardShortcuts}
                 onKeepBrowserData={
@@ -5361,6 +5509,18 @@ export function DocBlocksShell({
                 ai={ai}
                 speech={speech}
                 settingsRequest={settingsRequest}
+              />
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept=".zip,application/zip"
+                aria-label="Restore workspace backup"
+                hidden
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void handleRestoreBackup(file);
+                }}
               />
               <WorkspacePicker
                 activeWorkspaceId={activeWorkspaceId}
@@ -5624,6 +5784,7 @@ export function DocBlocksShell({
                               saveDashboardImageOutput={saveRenderedImageOutput}
                               onChange={handleEditorChange}
                               onLinkClick={handleEditorLinkClick}
+                              wikiLinks={wikiLinks}
                               colorScheme={resolvedTheme}
                               // Documents that name no theme preview -- and so
                               // export -- in the workspace's default theme.

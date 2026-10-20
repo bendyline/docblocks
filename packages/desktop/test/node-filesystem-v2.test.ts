@@ -368,6 +368,169 @@ describe('NodeWorkspaceFileSystemV2 native boundary', () => {
   });
 });
 
+/** What Node reports on Windows when a sync client's Cloud Files filter fails a read. */
+function cloudFileReadError(): NodeJS.ErrnoException {
+  return Object.assign(new Error('UNKNOWN: unknown error, read'), {
+    code: 'UNKNOWN',
+    errno: -4094,
+    syscall: 'read',
+  });
+}
+
+describe('NodeWorkspaceFileSystemV2 transient read failures', () => {
+  async function withProvider(
+    files: Record<string, string>,
+    options: ConstructorParameters<typeof NodeWorkspaceFileSystemV2>[4],
+    run: (provider: NodeWorkspaceFileSystemV2) => Promise<void>,
+  ): Promise<void> {
+    const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-transient-'));
+    const id = `node-v2-transient-${++providerSequence}`;
+    for (const [name, content] of Object.entries(files)) {
+      await fs.writeFile(path.join(rootPath, name), content);
+    }
+    roots.register(id, rootPath);
+    const provider = new NodeWorkspaceFileSystemV2(id, 'Transient', rootPath, roots, options);
+    try {
+      await provider.initialize();
+      await run(provider);
+    } finally {
+      await provider.dispose();
+      roots.unregister(id);
+      await fs.rm(rootPath, { recursive: true, force: true });
+    }
+  }
+
+  /** Real descriptors whose reads fail while `failing(name)` holds. */
+  function failingReads(failing: (name: string) => Error | null) {
+    return async (absolutePath: string) => {
+      const handle = await fs.open(absolutePath, 'r');
+      const read = async () => {
+        const error = failing(path.basename(absolutePath));
+        if (error) throw error;
+        return handle.readFile();
+      };
+      return {
+        stat: () => handle.stat({ bigint: true }),
+        readFile: read,
+        hashFile: async () => {
+          const data = await read();
+          return {
+            digest: createHash('sha256').update(data).digest('hex'),
+            byteLength: data.byteLength,
+          };
+        },
+        close: () => handle.close(),
+      };
+    };
+  }
+
+  it('retries a hash that a sync client briefly blocks', async () => {
+    let attempts = 0;
+    await withProvider(
+      { 'note.md': 'synced' },
+      {
+        openReadableFile: failingReads(() => (++attempts <= 2 ? cloudFileReadError() : null)),
+      },
+      async (provider) => {
+        const [entry] = await provider.readDirectory(parseWorkspacePath('/'));
+        expect(attempts).to.equal(3);
+        expect(entry).to.not.have.property('readIssue');
+        expect(entry?.version).to.equal(
+          (await provider.stat(parseWorkspacePath('/note.md')))?.version,
+        );
+      },
+    );
+  });
+
+  it('lists a file it cannot read with a read issue instead of failing the folder', async () => {
+    await withProvider(
+      { 'locked.md': 'held by OneDrive', 'open.md': 'readable' },
+      {
+        openReadableFile: failingReads((name) =>
+          name === 'locked.md' ? cloudFileReadError() : null,
+        ),
+      },
+      async (provider) => {
+        const listing = await provider.readDirectory(parseWorkspacePath('/'));
+        const locked = listing.find((entry) => entry.name === 'locked.md');
+        const open = listing.find((entry) => entry.name === 'open.md');
+        expect(open).to.not.have.property('readIssue');
+        expect(locked?.kind).to.equal('file');
+        const readIssue = locked?.kind === 'file' ? locked.readIssue : undefined;
+        expect(readIssue?.code).to.equal('io');
+        expect(readIssue?.message).to.include('sync client');
+        expect(readIssue?.message).to.include('UNKNOWN: unknown error, read');
+
+        const failure = await provider
+          .readFile(parseWorkspacePath('/locked.md'))
+          .catch((error: unknown) => error);
+        expect(failure).to.be.instanceOf(FsError);
+        expect((failure as FsError).path).to.equal(parseWorkspacePath('/locked.md'));
+        expect((failure as FsError).retryable).to.equal(true);
+      },
+    );
+  });
+
+  it('bounds the total retry wait one listing spends on unreadable files', async () => {
+    const names = ['a.md', 'b.md', 'c.md', 'd.md'];
+    let attempts = 0;
+    await withProvider(
+      Object.fromEntries(names.map((name) => [name, name])),
+      {
+        openReadableFile: failingReads(() => {
+          attempts += 1;
+          return cloudFileReadError();
+        }),
+      },
+      async (provider) => {
+        const listing = await provider.readDirectory(parseWorkspacePath('/'));
+        expect(listing.map((entry) => entry.name)).to.deep.equal(names);
+        expect(listing.every((entry) => entry.kind === 'file' && entry.readIssue)).to.equal(true);
+        // Four full per-file retry schedules would be 16 reads.
+        expect(attempts).to.be.below(names.length * 4);
+      },
+    );
+  });
+
+  it('keeps watching when a changed file cannot be read, then recovers', async () => {
+    const control = new ControlledWatcher();
+    let locked = true;
+    const accessDenied = () =>
+      Object.assign(new Error('EACCES: permission denied, read'), { code: 'EACCES' });
+    await withProvider(
+      { 'note.md': 'synced' },
+      {
+        acquireWatcher: () => control.handle,
+        openReadableFile: failingReads(() => (locked ? accessDenied() : null)),
+      },
+      async (provider) => {
+        const events: FileSystemWatchEvent[] = [];
+        const errors: FsError[] = [];
+        const subscription = provider.watch((event) => events.push(event), {
+          onError: (error) => errors.push(error),
+        });
+        await subscription.ready;
+
+        await control.emit({ type: 'modified', kind: 'file', path: '/note.md' });
+        expect(errors).to.deep.equal([]);
+        expect(
+          events.some((event) => event.origin === 'external' && event.type === 'modified'),
+        ).to.equal(true);
+        const [unreadable] = await provider.readDirectory(parseWorkspacePath('/'));
+        expect(unreadable?.kind === 'file' && unreadable.readIssue?.code).to.equal(
+          'permission-denied',
+        );
+
+        locked = false;
+        const [readable] = await provider.readDirectory(parseWorkspacePath('/'));
+        expect(readable).to.not.have.property('readIssue');
+        expect(readable?.version).to.not.equal(unreadable?.version);
+        await subscription.dispose();
+      },
+    );
+  });
+});
+
 describe('NodeWorkspaceFileSystemV2 watch hardening', () => {
   it('opens a fresh watch session when subscribing during last-unsubscribe teardown', async () => {
     const rootPath = await fs.mkdtemp(path.join(os.tmpdir(), 'docblocks-node-v2-watch-race-'));

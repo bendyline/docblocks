@@ -80,4 +80,68 @@ describe('FileExplorer directory health', () => {
       await provider.v2.dispose();
     }
   });
+
+  it('names the failing file in the banner and flags unreadable files in the tree', async () => {
+    const provider = new MemoryFileSystemProvider('health', 'Health');
+    for (const name of ['Bendyline.md', 'notes.md']) {
+      await provider.v2.writeFile(parseWorkspacePath(name), new TextEncoder().encode(name), {
+        mode: 'create',
+      });
+    }
+    const readDirectory = provider.v2.readDirectory.bind(provider.v2);
+    let reads = 0;
+    provider.v2.readDirectory = async (path) => {
+      reads += 1;
+      if (reads === 1) {
+        throw new FsError('io', 'UNKNOWN: unknown error, read', {
+          operation: 'list',
+          path: parseWorkspacePath('Bendyline.md'),
+        });
+      }
+      return (await readDirectory(path)).map((entry) =>
+        entry.kind === 'file' && entry.name === 'Bendyline.md'
+          ? { ...entry, readIssue: { code: 'io' as const, message: 'Held by a sync client.' } }
+          : entry,
+      );
+    };
+
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+
+    try {
+      await act(async () => {
+        root.render(createElement(FileExplorer, { provider }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+      expect(container.querySelector('.db-file-explorer > .db-tree-error')?.textContent).to.include(
+        'Bendyline.md: UNKNOWN: unknown error, read',
+      );
+
+      const retry = container.querySelector<HTMLButtonElement>(
+        '.db-file-explorer > .db-tree-error .db-tree-error-retry',
+      );
+      if (!retry) throw new Error('root retry button missing');
+      await act(async () => {
+        retry.click();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      expect(container.querySelector('.db-file-explorer > .db-tree-error')).to.equal(null);
+      const rows = [...container.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+      const locked = rows.find((row) => row.dataset.path === 'Bendyline.md');
+      const readable = rows.find((row) => row.dataset.path === 'notes.md');
+      expect(locked?.querySelector('.db-tree-read-issue')?.getAttribute('title')).to.equal(
+        'Could not read this file: Held by a sync client.',
+      );
+      expect(locked?.getAttribute('aria-label')).to.equal(
+        'Bendyline.md, could not be read: Held by a sync client.',
+      );
+      expect(readable?.querySelector('.db-tree-read-issue')).to.equal(null);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      await provider.v2.dispose();
+    }
+  });
 });

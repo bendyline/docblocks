@@ -15,6 +15,7 @@ import {
   workspacePathJoin,
   type FileSystemCreateDirectoryOptions,
   type FileSystemDirectorySnapshot,
+  type FileSystemEntryReadIssue,
   type FileSystemEntryWatchEvent,
   type FileSystemEntrySnapshot,
   type FileSystemFileRead,
@@ -33,6 +34,7 @@ import {
   type FileSystemWatchOptions,
   type FileSystemWatchSubscription,
   type FileSystemWriteOptions,
+  type FsErrorCode,
   type FsOperation,
   type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
@@ -64,9 +66,15 @@ interface ScannedFile extends ScannedEntry {
   readonly root: FileSystemSnapshotFile;
 }
 
+/** Wait allowance shared by every transient-read retry within one operation. */
+interface ReadRetryBudget {
+  remainingMs: number;
+}
+
 interface ScanBudget {
   entries: number;
   bytes: number;
+  readonly readRetry: ReadRetryBudget;
 }
 
 interface NodeWatcher {
@@ -131,6 +139,24 @@ type PendingWatchEvent =
 const CAPABILITIES: FileSystemProviderCapabilities = ELECTRON_FILE_SYSTEM_V2_CAPABILITIES;
 const LOCAL_ECHO_WINDOW_MS = 1_000;
 const MAX_STABLE_READ_ATTEMPTS = 3;
+/**
+ * Node codes for a file another program briefly holds. Windows Cloud Files
+ * errors (OneDrive mid-sync or mid-hydration) have no libuv mapping and
+ * surface as UNKNOWN; sharing and lock violations surface as EBUSY.
+ */
+const TRANSIENT_READ_ERROR_CODES: ReadonlySet<string> = new Set(['UNKNOWN', 'EBUSY']);
+const TRANSIENT_READ_RETRY_DELAYS_MS = Object.freeze([50, 150, 400] as const);
+/**
+ * Total retry wait one operation may spend. Listings hold the root lock, so a
+ * folder of persistently unreadable files must not stall writes per file.
+ */
+const TRANSIENT_READ_RETRY_BUDGET_MS = 1_000;
+/** Failures for which a listing or watch scan keeps the file, flagged with a readIssue. */
+const LISTABLE_READ_ISSUE_CODES: ReadonlySet<FsErrorCode> = new Set([
+  'io',
+  'busy',
+  'permission-denied',
+]);
 /** Remembered file digests; the oldest is evicted first (~200 bytes each). */
 const MAX_REMEMBERED_CONTENT_DIGESTS = 50_000;
 
@@ -267,9 +293,14 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         );
       }
       const snapshots: FileSystemEntrySnapshot[] = [];
+      const readRetry = newReadRetryBudget();
       for (const child of children) {
         const childPath = workspacePathJoin(canonical, child.name);
-        const scanned = await this.scanEntry(childPath, false, new Set(), 'list');
+        const scanned = await this.scanEntry(childPath, false, new Set(), 'list', {
+          entries: 0,
+          bytes: 0,
+          readRetry,
+        });
         this.remember(scanned.entries);
         snapshots.push(withoutData(scanned.root));
       }
@@ -874,11 +905,57 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
   }
 
   /**
+   * Run one stable read, waiting out errors raised while another program (a
+   * sync client, an indexer) briefly holds the file. Waits draw on the
+   * operation's shared allowance; every failure it throws names `itemPath`.
+   */
+  private async retryTransientRead<T>(
+    itemPath: WorkspacePath,
+    operation: FsOperation,
+    readRetry: ReadRetryBudget,
+    read: () => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await read();
+      } catch (error: unknown) {
+        if (!isTransientReadError(error)) {
+          throw this.translateError(error, operation, itemPath, null);
+        }
+        const delay = TRANSIENT_READ_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined || delay > readRetry.remainingMs) {
+          const translated = this.translateError(error, operation, itemPath, null);
+          throw new FsError(
+            translated.code,
+            `The file is temporarily unavailable; another program, such as a sync client, may be using it (${translated.message}).`,
+            { operation, path: itemPath, retryable: true },
+          );
+        }
+        readRetry.remainingMs -= delay;
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  private readStableFile(
+    itemPath: WorkspacePath,
+    operation: FsOperation,
+    budget?: ScanBudget,
+  ): Promise<ScannedFile> {
+    return this.retryTransientRead(
+      itemPath,
+      operation,
+      budget?.readRetry ?? newReadRetryBudget(),
+      () => this.readStableFileOnce(itemPath, operation, budget),
+    );
+  }
+
+  /**
    * Couple returned bytes to one stable descriptor observation. A pathname can
    * be atomically replaced while its old descriptor is still readable, so the
    * post-read pathname stat must also match before the result is published.
    */
-  private async readStableFile(
+  private async readStableFileOnce(
     itemPath: WorkspacePath,
     operation: FsOperation,
     budget?: ScanBudget,
@@ -935,8 +1012,44 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     throw this.error('busy', operation, itemPath, 'File kept changing while it was being read.');
   }
 
+  private statStableFile(
+    itemPath: WorkspacePath,
+    operation: FsOperation,
+    readRetry: ReadRetryBudget,
+  ): Promise<ScannedFile> {
+    return this.retryTransientRead(itemPath, operation, readRetry, () =>
+      this.statStableFileOnce(itemPath, operation),
+    );
+  }
+
+  /**
+   * Version a file for a browsing observation. Listings and watch scans keep a
+   * file they cannot read right now (a sync client holding it, an ACL) with a
+   * metadata-derived version and a readIssue rather than failing the whole
+   * directory; content reads and mutation preconditions still require a hash.
+   */
+  private async statObservedFile(
+    itemPath: WorkspacePath,
+    stat: BigIntStats,
+    operation: FsOperation,
+    readRetry: ReadRetryBudget,
+  ): Promise<ScannedFile> {
+    try {
+      return await this.statStableFile(itemPath, operation, readRetry);
+    } catch (error: unknown) {
+      const translated = this.translateError(error, operation, itemPath, null);
+      if (
+        (operation !== 'list' && operation !== 'watch') ||
+        !LISTABLE_READ_ISSUE_CODES.has(translated.code)
+      ) {
+        throw translated;
+      }
+      return unreadableFile(itemPath, stat, operation, translated);
+    }
+  }
+
   /** Compute a content-derived version while retaining no payload bytes. */
-  private async statStableFile(
+  private async statStableFileOnce(
     itemPath: WorkspacePath,
     operation: FsOperation,
   ): Promise<ScannedFile> {
@@ -984,7 +1097,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     includeData: boolean,
     ancestors: ReadonlySet<string>,
     operation: FsOperation,
-    budget: ScanBudget = { entries: 0, bytes: 0 },
+    budget: ScanBudget = { entries: 0, bytes: 0, readRetry: newReadRetryBudget() },
   ): Promise<ScannedEntry> {
     budget.entries += 1;
     if (budget.entries > this.traversalEntryLimit) {
@@ -1000,7 +1113,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     if (stat.isFile()) {
       const file = await (includeData
         ? this.readStableFile(itemPath, operation, budget)
-        : this.statStableFile(itemPath, operation));
+        : this.statObservedFile(itemPath, stat, operation, budget.readRetry));
       this.observeVersion(itemPath, file.root.version);
       return file;
     }
@@ -1267,8 +1380,8 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     }
   }
 
-  private notifyWatchError(error: unknown): void {
-    const typed = this.translateError(error, 'watch', null, null);
+  private notifyWatchError(error: unknown, itemPath: WorkspacePath | null = null): void {
+    const typed = this.translateError(error, 'watch', itemPath, null);
     for (const watcher of [...this.watchers]) {
       try {
         watcher.onError?.(typed);
@@ -1373,9 +1486,10 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
     session: WatchSession,
     event: WorkspaceWatcherEvent,
   ): Promise<void> {
+    let itemPath: WorkspacePath | null = null;
     try {
       if (this.watchSession !== session || isClosingWatchSession(session)) return;
-      const itemPath = parseWorkspacePath(event.path);
+      itemPath = parseWorkspacePath(event.path);
       // Rehash anything another process touched, even if its metadata looks unchanged.
       this.contentDigests.delete(itemPath);
       if (await this.shouldSuppressEcho(itemPath)) return;
@@ -1431,7 +1545,7 @@ export class NodeWorkspaceFileSystemV2 implements FileSystemProviderV2 {
         previousVersion: previous?.version ?? null,
       });
     } catch (error: unknown) {
-      this.notifyWatchError(error);
+      this.notifyWatchError(error, itemPath);
     }
   }
 
@@ -1615,6 +1729,16 @@ function versionForFile(itemPath: WorkspacePath, contentDigest: string): FileSys
   return parseFileSystemVersion(`sha256:${hash.digest('hex')}`);
 }
 
+/** Metadata-only identity for a file whose bytes could not be read when observed. */
+function versionForUnreadableFile(itemPath: WorkspacePath, stat: BigIntStats): FileSystemVersion {
+  const hash = createHash('sha256');
+  hash.update('file-metadata-v1\0');
+  hash.update(itemPath);
+  hash.update('\0');
+  hash.update(stableMetadataIdentity(stat));
+  return parseFileSystemVersion(`sha256:${hash.digest('hex')}`);
+}
+
 function versionForDirectory(
   itemPath: WorkspacePath,
   stat: BigIntStats,
@@ -1649,13 +1773,11 @@ function sameNodeIdentity(left: BigIntStats, right: BigIntStats): boolean {
   );
 }
 
-function scannedFile(
+function snapshotFileSize(
   itemPath: WorkspacePath,
   stat: BigIntStats,
-  data: ArrayBuffer | null,
   operation: FsOperation,
-  contentDigest: string,
-): ScannedFile {
+): number {
   const size = Number(stat.size);
   if (!Number.isSafeInteger(size) || size < 0) {
     throw new FsError('not-supported', 'File size exceeds the safe provider range.', {
@@ -1663,11 +1785,21 @@ function scannedFile(
       path: itemPath,
     });
   }
+  return size;
+}
+
+function scannedFile(
+  itemPath: WorkspacePath,
+  stat: BigIntStats,
+  data: ArrayBuffer | null,
+  operation: FsOperation,
+  contentDigest: string,
+): ScannedFile {
   const base: FileSystemFileSnapshot = Object.freeze({
     kind: 'file',
     path: itemPath,
     name: workspacePathBasename(itemPath),
-    size,
+    size: snapshotFileSize(itemPath, stat, operation),
     version: versionForFile(itemPath, contentDigest),
     lastModified: stat.mtime.toISOString(),
   });
@@ -1676,6 +1808,42 @@ function scannedFile(
     data: data?.slice(0) ?? new ArrayBuffer(0),
   });
   return { root, entries: [root] };
+}
+
+function unreadableFile(
+  itemPath: WorkspacePath,
+  stat: BigIntStats,
+  operation: FsOperation,
+  error: FsError,
+): ScannedFile {
+  const readIssue: FileSystemEntryReadIssue = Object.freeze({
+    code: error.code,
+    message: (error.message || 'The file could not be read.').slice(
+      0,
+      HOST_WIRE_LIMITS.messageCharacters,
+    ),
+  });
+  const root: FileSystemSnapshotFile = Object.freeze({
+    kind: 'file',
+    path: itemPath,
+    name: workspacePathBasename(itemPath),
+    size: snapshotFileSize(itemPath, stat, operation),
+    version: versionForUnreadableFile(itemPath, stat),
+    lastModified: stat.mtime.toISOString(),
+    readIssue,
+    data: new ArrayBuffer(0),
+  });
+  return { root, entries: [root] };
+}
+
+function newReadRetryBudget(): ReadRetryBudget {
+  return { remainingMs: TRANSIENT_READ_RETRY_BUDGET_MS };
+}
+
+function isTransientReadError(error: unknown): boolean {
+  if (!(error instanceof Error) || error instanceof FsError) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code !== undefined && TRANSIENT_READ_ERROR_CODES.has(code);
 }
 
 /** Metadata fields that identify the observed file state without reading bytes. */

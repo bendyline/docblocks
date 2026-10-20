@@ -39,7 +39,7 @@ const webviewFontsDir = path.join(repoRoot, 'packages/vscode/webview/src/fonts')
  * the fixed UI face, which gives the shell chrome a deterministic alternative to
  * `system-ui` — see the block that declares it in the site's fonts.css.
  */
-const ADDITIONAL_FAMILIES = ['Hanken Grotesk', 'DocBlocks Fixed UI'] as const;
+const ADDITIONAL_FAMILIES = ['Hanken Grotesk', 'DocBlocks Fixed UI', 'Inconsolata'] as const;
 
 const HEADER = `/* Self-hosted theme fonts for the DocBlocks VS Code webview (Latin + Latin
  * Extended).

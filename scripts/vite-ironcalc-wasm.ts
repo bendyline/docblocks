@@ -72,6 +72,13 @@ export function ironCalcWasmPlugin(): Plugin {
     name: 'docblocks-ironcalc-wasm',
     enforce: 'pre',
 
+    resolveId(source) {
+      // A linked Squisq adapter otherwise resolves its sibling checkout's
+      // glue, bypassing the transform below and emitting a second binary.
+      // Keep glue and the explicitly published WASM from the same package.
+      return source === '@ironcalc/wasm' ? gluePath : null;
+    },
+
     transform(code, id) {
       if (path.resolve(id.split('?', 1)[0]) !== gluePath) return null;
       if (!code.includes(IRONCALC_DEFAULT_WASM_SOURCE)) {

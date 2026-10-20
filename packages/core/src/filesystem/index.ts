@@ -8,6 +8,13 @@ export type {
   FileCommitResult,
 } from './types.js';
 export { getFileSystemProviderV2, hasFileSystemProviderV2 } from './types.js';
+export {
+  resolveWikiArticlePath,
+  findWikiArticle,
+  suggestWikiArticles,
+  wikiArticleExists,
+  ensureWikiArticle,
+} from './wiki-links.js';
 
 export {
   WORKSPACE_ROOT,
@@ -44,6 +51,7 @@ export type {
   FileSystemAtomicity,
   FileSystemCaseSensitivity,
   FileSystemDurability,
+  FileSystemEntryReadIssue,
   FileSystemEntrySnapshot,
   FileSystemFileSnapshot,
   FileSystemDirectorySnapshot,
