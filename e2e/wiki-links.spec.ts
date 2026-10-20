@@ -186,6 +186,21 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
   page,
 }) => {
   await openInitializedSite(page);
+  // Monaco's keymap follows the emulated browser, not Playwright's host OS.
+  const modifier = await page.evaluate(() =>
+    navigator.userAgent.includes('Macintosh') ? 'Meta' : 'Control',
+  );
+  const appendBodyParagraph = async (text: string) => {
+    await page.getByRole('tab', { name: 'Source', exact: true }).click();
+    const monaco = page.locator('.monaco-editor').first();
+    await expect(monaco).toBeVisible({ timeout: MONACO_COLD_LOAD_TIMEOUT });
+    const input = monaco.locator('textarea');
+    await input.press(`${modifier}+a`);
+    await input.press('ArrowRight');
+    await page.keyboard.insertText(`\n${text}\n`);
+    await expect(monaco.locator('.view-lines')).toContainText(text);
+    await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  };
   await page.keyboard.press('ControlOrMeta+KeyN');
   const dialog = page.getByRole('dialog', { name: 'New document' });
   await dialog.getByLabel('Type').selectOption('web-static');
@@ -193,18 +208,17 @@ test('an HTML workspace default creates wiki pages outside-in beside the public 
   await dialog.getByRole('button', { name: 'Create', exact: true }).click();
   const source = page.getByRole('textbox', { name: /^Edit \/?wiki-html_files\/wiki-html\.md$/ });
   await expect(source).toBeVisible({ timeout: 30_000 });
-  await source.click();
-  await source.press('ControlOrMeta+End');
-  await source.press('Enter');
-  await source.pressSequentially('[[reference/blah]]');
+  // Seed a body link through Source, preserving the outside-in frontmatter.
+  // A Write-view end shortcut can land beside the heading's inert badges and
+  // turn this fixture into a heading link instead of the intended paragraph.
+  await appendBodyParagraph('[[reference/blah]]');
+  await expect(source.locator(':scope > h1 + p')).toHaveText('reference/blah');
   await page.getByRole('button', { name: 'Create article: reference/blah', exact: true }).click();
   await expect(page).toHaveURL(/reference%2Fblah\.html$|reference\/blah\.html$/);
   const article = page.getByRole('textbox', { name: /^Edit \/?reference\/blah_files\/blah\.md$/ });
   await expect(article).toBeVisible();
-  await article.click();
-  await article.press('ControlOrMeta+End');
-  await article.press('Enter');
-  await page.keyboard.insertText('Saved through the HTML companion');
+  await appendBodyParagraph('Saved through the HTML companion');
+  await expect(article.locator(':scope > h1 + p')).toHaveText('Saved through the HTML companion');
   await page
     .locator('.db-tree-row[data-path="wiki-html.html"], .db-tree-row[data-path="/wiki-html.html"]')
     .click();
