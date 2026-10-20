@@ -10,7 +10,7 @@ import {
 import { FsError } from '../src/filesystem/fs-error.js';
 
 describe('workspace wiki articles', () => {
-  it('suggests immediate articles and empty folders relative to the source', () => {
+  it('suggests immediate articles and empty folders relative to the source', async () => {
     const files = [
       'notes/source.md',
       'notes/foo.md',
@@ -19,29 +19,31 @@ describe('workspace wiki articles', () => {
       'notes/picture.png',
     ].map((path) => ({ path }));
     const directories = ['', 'notes', 'notes/empty', 'notes/reference', 'outside'];
-    expect(suggestWikiArticles(files, directories, 'notes/source.md', '')).to.deep.equal([
+    expect(await suggestWikiArticles(files, directories, 'notes/source.md', '')).to.deep.equal([
       { target: 'empty/', label: 'empty/', kind: 'folder' },
       { target: 'reference/', label: 'reference/', kind: 'folder' },
       { target: 'foo', label: 'foo', kind: 'article' },
     ]);
     expect(
-      suggestWikiArticles(files, directories, 'notes/source.md', 'reference/al'),
+      await suggestWikiArticles(files, directories, 'notes/source.md', 'reference/al'),
     ).to.deep.equal([{ target: 'reference/Alpha', label: 'Alpha', kind: 'article' }]);
     for (const query of ['../', '/outside', 'a%2fb', 'foo|label']) {
-      expect(suggestWikiArticles(files, directories, 'notes/source.md', query)).to.deep.equal([]);
+      expect(await suggestWikiArticles(files, directories, 'notes/source.md', query)).to.deep.equal(
+        [],
+      );
     }
   });
-  it('disambiguates formats using the workspace preference and bounds suggestions', () => {
+  it('disambiguates formats using the workspace preference and bounds suggestions', async () => {
     const files = ['foo.md', 'foo.html', 'bar.html'].map((path) => ({ path }));
-    expect(suggestWikiArticles(files, [], 'source.md', 'foo', '.html')).to.deep.equal([
+    expect(await suggestWikiArticles(files, [], 'source.md', 'foo', '.html')).to.deep.equal([
       { target: 'foo', label: 'foo', kind: 'article' },
       { target: 'foo.md', label: 'foo.md', kind: 'article' },
     ]);
     expect(
-      suggestWikiArticles(files, [], 'source.md', 'foo', '.md', true).map((x) => x.target),
+      (await suggestWikiArticles(files, [], 'source.md', 'foo', '.md', true)).map((x) => x.target),
     ).to.have.members(['foo.md', 'foo.html']);
     expect(
-      suggestWikiArticles(
+      await suggestWikiArticles(
         Array.from({ length: 30 }, (_, i) => ({ path: `a${i}.md` })),
         [],
         'source.md',
@@ -69,13 +71,13 @@ describe('workspace wiki articles', () => {
     expect((await findWikiArticle(provider, 'notes/index.html', 'foo.md', '.html')).path).to.equal(
       'notes/foo.md',
     );
-    expect(resolveWikiArticlePath('notes/index.html', 'reference/foo.html')).to.equal(
+    expect(await resolveWikiArticlePath('notes/index.html', 'reference/foo.html')).to.equal(
       'notes/reference/foo.html',
     );
   });
   it('resolves beside the source and exclusively creates missing subfolder articles', async () => {
     const provider = new MemoryFileSystemProvider('wiki', 'Wiki');
-    const path = resolveWikiArticlePath('notes/source.md', 'reference/blah');
+    const path = await resolveWikiArticlePath('notes/source.md', 'reference/blah');
     expect(path).to.equal('notes/reference/blah.md');
     expect(await wikiArticleExists(provider, path)).to.equal(false);
     expect(await ensureWikiArticle(provider, path)).to.equal(true);
@@ -86,14 +88,14 @@ describe('workspace wiki articles', () => {
   });
   it('does not overwrite a concurrent creator', async () => {
     const provider = new MemoryFileSystemProvider('wiki-race', 'Wiki');
-    const path = resolveWikiArticlePath('source.md', 'foo');
+    const path = await resolveWikiArticlePath('source.md', 'foo');
     const results = await Promise.all([
       ensureWikiArticle(provider, path),
       ensureWikiArticle(provider, path),
     ]);
     expect(results.sort()).to.deep.equal([false, true]);
   });
-  it('rejects traversal, absolute paths, URLs and encoded separators', () => {
+  it('rejects traversal, absolute paths, URLs and encoded separators', async () => {
     for (const target of [
       '../foo',
       '/foo',
@@ -104,12 +106,17 @@ describe('workspace wiki articles', () => {
       'a%2fb',
       'a\\b',
     ]) {
-      expect(() => resolveWikiArticlePath('notes/source.md', target), target).to.throw(FsError);
+      try {
+        await resolveWikiArticlePath('notes/source.md', target);
+        expect.fail(`accepted ${target}`);
+      } catch (error) {
+        expect(error, target).to.be.instanceOf(FsError);
+      }
     }
   });
   it('does not mistake folders or failed metadata reads for missing articles', async () => {
     const provider = new MemoryFileSystemProvider('wiki-errors', 'Wiki');
-    const path = resolveWikiArticlePath('source.md', 'folder');
+    const path = await resolveWikiArticlePath('source.md', 'folder');
     await provider.createDirectory(path);
     try {
       await ensureWikiArticle(provider, path);

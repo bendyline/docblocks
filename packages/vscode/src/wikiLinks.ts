@@ -38,7 +38,7 @@ export async function suggestWikiArticleTargets(source: vscode.Uri, query: strin
   const documentPath = vscode.workspace.asRelativePath(source, false);
   const prefix = query.slice(0, query.lastIndexOf('/') + 1);
   const directory = workspacePathDirname(
-    resolveWikiArticlePath(documentPath, `${prefix}wiki-lookup`),
+    await resolveWikiArticlePath(documentPath, `${prefix}wiki-lookup`),
   );
   if (!(await checkPath(folder.uri, directory, vscode.FileType.Directory))) return [];
   const entries = await vscode.workspace.fs.readDirectory(
@@ -65,7 +65,7 @@ export async function accessWikiArticle(
 ): Promise<boolean> {
   const folder = vscode.workspace.getWorkspaceFolder(source);
   if (!folder) throw new Error('Open a workspace folder to use wiki links.');
-  const path = resolveWikiArticlePath(vscode.workspace.asRelativePath(source, false), target);
+  const path = await resolveWikiArticlePath(vscode.workspace.asRelativePath(source, false), target);
   let exists = await checkPath(folder.uri, path);
   if (action === 'exists') return exists;
   await beforeOpen();

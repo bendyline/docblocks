@@ -1,4 +1,4 @@
-import { wikiLinkPath, type WikiLinkSuggestion } from '@bendyline/squisq/markdown';
+import type { WikiLinkSuggestion } from '@bendyline/squisq/markdown';
 import { FsError } from './fs-error.js';
 import {
   parseWorkspacePath,
@@ -8,15 +8,27 @@ import {
 } from './workspace-path.js';
 import { getFileSystemProviderV2, type FileSystemProvider } from './types.js';
 
+type MarkdownModule = typeof import('@bendyline/squisq/markdown');
+
+// Squisq ships wikiLinkPath in the same chunk as its Markdown parser. This
+// module is re-exported from the filesystem barrel every shell entry imports,
+// so a static import would put the whole parser in each first-paint bundle.
+let markdownModule: Promise<MarkdownModule> | null = null;
+function loadMarkdown(): Promise<MarkdownModule> {
+  markdownModule ??= import('@bendyline/squisq/markdown');
+  return markdownModule;
+}
+
 /** Immediate article/folder suggestions from an already bounded listing. */
-export function suggestWikiArticles(
+export async function suggestWikiArticles(
   files: readonly { path: string }[],
   directories: readonly string[],
   documentPath: string,
   query: string,
   extension: '.md' | '.html' = '.md',
   explicitExtensions = false,
-): WikiLinkSuggestion[] {
+): Promise<WikiLinkSuggestion[]> {
+  const { wikiLinkPath } = await loadMarkdown();
   if (query.length > 2048 || (query && !wikiLinkPath(`${query.trimEnd()}x`))) return [];
   const source = parseWorkspacePath(documentPath);
   const parent = workspacePathDirname(source);
@@ -70,11 +82,12 @@ export function suggestWikiArticles(
 }
 
 /** Resolve a literal wiki name beside its source, never relative to the media sidecar. */
-export function resolveWikiArticlePath(
+export async function resolveWikiArticlePath(
   documentPath: string,
   target: string,
   extension: '.md' | '.html' = '.md',
-): WorkspacePath {
+): Promise<WorkspacePath> {
+  const { wikiLinkPath } = await loadMarkdown();
   const relative = wikiLinkPath(target, extension);
   if (!relative) throw new FsError('invalid-path', 'Invalid wiki article name.');
   return workspacePathJoin(workspacePathDirname(parseWorkspacePath(documentPath)), relative);
@@ -88,12 +101,13 @@ export async function findWikiArticle(
   target: string,
   extension: '.md' | '.html' = '.md',
 ): Promise<{ path: WorkspacePath; relativePath: string; exists: boolean }> {
-  const preferred = resolveWikiArticlePath(documentPath, target, extension);
+  const { wikiLinkPath } = await loadMarkdown();
+  const preferred = await resolveWikiArticlePath(documentPath, target, extension);
   const candidates = /\.(?:md|html?)$/i.test(target)
     ? [target]
     : [...new Set([`${target}${extension}`, `${target}.md`, `${target}.html`, `${target}.htm`])];
   for (const relativePath of candidates) {
-    const path = resolveWikiArticlePath(documentPath, relativePath, extension);
+    const path = await resolveWikiArticlePath(documentPath, relativePath, extension);
     if (await wikiArticleExists(provider, path)) return { path, relativePath, exists: true };
   }
   return { path: preferred, relativePath: wikiLinkPath(target, extension)!, exists: false };
