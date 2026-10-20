@@ -44,7 +44,12 @@ const ELECTRON_HOST = {
     openWorkspaceFolder: () => undefined,
   },
   clipboard: { writeText: () => undefined },
-  exports: { save: () => undefined, resolveTarget: () => undefined, pickTarget: () => undefined },
+  exports: {
+    save: () => undefined,
+    resolveTarget: () => undefined,
+    pickTarget: () => undefined,
+    openSaved: () => undefined,
+  },
   ffmpeg: { available: () => undefined },
   git: { status: () => undefined },
   updater: { checkForUpdates: () => undefined },
@@ -121,6 +126,7 @@ describe('shell host capability accessors', () => {
         'updater',
         'systemFfmpeg',
         'exportRememberedTargets',
+        'openSavedExports',
         'ownsWindowChrome',
       ] as const) {
         expect(hostSupports(capability), capability).to.equal(true);
@@ -164,6 +170,7 @@ describe('shell host capability accessors', () => {
         'systemFfmpeg',
         // It can hand bytes to a share sheet but cannot remember a destination.
         'exportRememberedTargets',
+        'openSavedExports',
         'ownsWindowChrome',
       ] as const) {
         expect(hostSupports(capability), capability).to.equal(false);

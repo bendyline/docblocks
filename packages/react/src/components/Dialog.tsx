@@ -12,6 +12,8 @@ import React, { useCallback, useEffect, useId, useRef } from 'react';
 export interface DialogProps {
   title: string;
   onClose: () => void;
+  /** Keyboard shortcuts scoped to the active dialog. */
+  onKeyDown?: React.KeyboardEventHandler<HTMLDivElement>;
   /** default 380px / wide 560px / full min(1100px, 94vw) column. */
   size?: 'default' | 'wide' | 'full';
   children: React.ReactNode;
@@ -39,6 +41,7 @@ export interface DialogProps {
 export function Dialog({
   title,
   onClose,
+  onKeyDown,
   size = 'default',
   children,
   footer,
@@ -133,6 +136,9 @@ export function Dialog({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
+        onKeyDown={(event) => {
+          if (isTopmostDialog(registeredClose.current)) onKeyDown?.(event);
+        }}
       >
         {titleHidden ? (
           <h2 id={titleId} className="db-visually-hidden">

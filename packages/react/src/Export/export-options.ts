@@ -23,7 +23,7 @@ export type HtmlBundle =
 export interface ExportOptions {
   format: ExportFormat;
   themeId: string;
-  /** Transform style for PPTX — controls how content is segmented and styled. */
+  /** Transform style for PPTX; an empty string explicitly disables transforms. */
   transformStyle: string;
   /** Only applies to PDF */
   pageSize: 'letter' | 'a4';

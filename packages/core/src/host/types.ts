@@ -103,6 +103,8 @@ export interface HostExportTargetGrant {
 
 /** Native export target selection and binary file writing. */
 export interface DocBlocksHostExportAPI {
+  /** Open a successfully saved grant in its default app; Markdown opens in DocBlocks. */
+  openSaved?(documentId: string, grantId: string): Promise<void>;
   /** A share-sheet outcome is never a durable export target. Android can only report presentation. */
   share?(
     filename: string,

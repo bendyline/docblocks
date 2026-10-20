@@ -13,6 +13,7 @@ import type {
 import { FORMAT_LABELS, exportThemeChoices, saveExportOptions } from './export-options.js';
 import { loadTransformStyleSummaries, type ExportSummaryOption } from './transform-summaries.js';
 import { Dialog } from '../components/Dialog.js';
+import { OpenAfterSaveCheckbox, type OpenAfterSaveControl } from './OpenAfterSaveCheckbox.js';
 
 export interface ExportDialogProps {
   /** Initial options (pre-populated from last export). */
@@ -32,6 +33,8 @@ export interface ExportDialogProps {
   error?: string | null;
   /** Optional host-provided destination path control. */
   destination?: ExportDestinationControl;
+  /** Present only when the host can open saved exports. */
+  openAfterSave?: OpenAfterSaveControl;
   /** Called when the user confirms the export. */
   onExport: (options: ExportOptions) => void;
   /** Called whenever the currently selected options change. */
@@ -152,6 +155,7 @@ export function ExportDialog({
   exporting,
   error,
   destination,
+  openAfterSave,
   onExport,
   onOptionsChange,
   actionLabel,
@@ -263,6 +267,7 @@ export function ExportDialog({
       footerClassName="db-export-footer"
       footer={
         <>
+          {openAfterSave && <OpenAfterSaveCheckbox {...openAfterSave} disabled={exporting} />}
           <button
             type="button"
             className="db-export-btn db-export-btn--secondary"
@@ -446,7 +451,8 @@ export function ExportDialog({
             value={transformStyle}
             onChange={(e) => setTransformStyle(e.target.value)}
           >
-            {transforms.length === 0 ? (
+            <option value="">None</option>
+            {transforms.length === 0 && transformStyle ? (
               <option value={transformStyle}>Loading...</option>
             ) : (
               transforms.map((t) => (
@@ -457,7 +463,9 @@ export function ExportDialog({
             )}
           </select>
           <span className="db-export-hint">
-            {transforms.find((t) => t.id === transformStyle)?.description}
+            {transformStyle
+              ? transforms.find((t) => t.id === transformStyle)?.description
+              : 'Use the document’s content and slide layouts without applying a transform.'}
           </span>
         </div>
       )}

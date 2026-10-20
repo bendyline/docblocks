@@ -3428,10 +3428,15 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 .db-export-footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 20px 16px;
   border-top: 1px solid var(--db-border);
+}
+
+.db-export-open-after-save {
+  flex-basis: 100%;
 }
 
 .db-export-more-formats {

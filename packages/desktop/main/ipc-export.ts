@@ -1,6 +1,6 @@
 /** Native save-target selection backed by exact owner-scoped grants. */
 
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type {
   IpcMainInvokeEvent,
   MessageBoxOptions,
@@ -16,6 +16,7 @@ import { HOST_WIRE_LIMITS, isBoundedBytePayload, isBoundedString } from '@bendyl
 import {
   consumeExportPickerApproval,
   mintExportGrant,
+  markExportSaved,
   resolveExportGrant,
   revokeExportOwner,
   type ResolvedExportTarget,
@@ -27,6 +28,8 @@ import {
 } from './export-overwrite.js';
 import { exportSaveErrorMessage } from './export-save-error.js';
 import { ExportTransfers } from './export-transfers.js';
+import { openSavedExport } from './open-saved-export.js';
+import { resolveOpenRequests, sendOpenRequest } from './open-requests.js';
 import {
   findExportTargetAccess,
   getExportExtension,
@@ -281,6 +284,7 @@ async function commitExport(
       );
       if (!confirmed) return false;
       await write(target.absolutePath);
+      await markExportSaved(ownerId, documentKey, grantId);
       return true;
     }),
   );
@@ -311,6 +315,22 @@ async function showReplacementConfirmation(
 }
 
 export function registerExportIpc(): void {
+  ipcMain.handle('exports:openSaved', async (event, ...args: unknown[]): Promise<void> => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 2);
+    await openSavedExport(owner.id, storageKey(args[0]), requireGrant(args[1]), {
+      beginAccess: startAccessingBookmark,
+      openDefault: (absolutePath) => shell.openPath(absolutePath),
+      openInDocBlocks: (absolutePath) => {
+        const window = BrowserWindow.fromWebContents(owner);
+        const request = resolveOpenRequests([absolutePath])[0];
+        if (!window || !request || !sendOpenRequest(window, request)) {
+          throw new Error('The saved Markdown could not be opened in DocBlocks');
+        }
+      },
+    });
+  });
+
   ipcMain.handle('exports:resolveTarget', async (event, ...args: unknown[]) => {
     const owner = ownerFor(event);
     assertIpcArgumentCount(args, 2);

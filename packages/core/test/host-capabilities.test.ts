@@ -33,6 +33,7 @@ function electronHost(): Record<string, unknown> {
     },
     clipboard: { writeText: () => undefined },
     exports: {
+      openSaved: () => undefined,
       save: () => undefined,
       resolveTarget: () => undefined,
       pickTarget: () => undefined,
@@ -194,6 +195,7 @@ describe('deriveHostCapabilities', () => {
     // It can hand bytes to a share sheet, but cannot remember a destination.
     expect(capabilities.exportDestinations).to.equal(true);
     expect(capabilities.exportRememberedTargets).to.equal(false);
+    expect(capabilities.openSavedExports).to.equal(false);
 
     // Genuinely absent.
     expect(capabilities.revealInFileManager).to.equal(false);

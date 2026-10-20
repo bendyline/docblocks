@@ -88,6 +88,25 @@ describe('FileSystemV2IpcService transport', () => {
     expect(messages).to.have.length(1);
   });
 
+  for (const disposal of ['provider', 'owner'] as const) {
+    it(`allows watcher cleanup after ${disposal} disposal`, async () => {
+      expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
+      expect(
+        (await service.watchSubscribe('owner-a', request.instanceId, 'watch-1', () => {})).ok,
+      ).to.equal(true);
+      if (disposal === 'provider') await service.dispose('owner-a', request.instanceId);
+      else await service.disposeOwner('owner-a');
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(
+          await service.watchUnsubscribe('owner-a', request.instanceId, 'watch-1'),
+        ).to.deep.equal({ ok: true, value: null });
+      }
+      const read = await service.stat('owner-a', request.instanceId, WORKSPACE_ROOT);
+      expect(read.ok).to.equal(false);
+      if (!read.ok) expect(read.error.code).to.equal('closed');
+    });
+  }
+
   it('serializes oversized writes without changing existing content or granting another owner access', async () => {
     expect((await service.open('owner-a', request, rootPath)).ok).to.equal(true);
     const recordingPath = parseWorkspacePath('/recording.webm');

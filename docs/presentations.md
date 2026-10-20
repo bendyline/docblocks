@@ -12,6 +12,14 @@ shows the full original section read-only alongside the current slide preview.
 That source text stays the same when layouts split or merge supporting slides,
 and the selection follows the source passage rather than its slide number.
 
+Use the **Left** and **Right** arrow keys to move between slides. Navigation stops
+at the first and last slides and keeps the selected slide visible in the list.
+Text fields and dropdowns retain their normal arrow-key behavior.
+
+For PowerPoint exports, choose **Transform → None** in the export dialog to use
+the document's content and slide layouts without summarization. This overrides
+saved presentation settings for that export without changing the document.
+
 Choose a summary density, a preferred layout per section, and whether to add
 supporting visual slides (on by default). A section can override the document-wide preference
 with **Allow** or **Do not add**. A supporting slide is added only when it shows

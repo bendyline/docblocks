@@ -200,6 +200,7 @@ const clipboardApi: DocBlocksHostClipboardAPI = {
 // ── exports ─────────────────────────────────────────────────────────
 
 const exportApi: DocBlocksHostExportAPI = {
+  openSaved: (documentId, grantId) => ipcRenderer.invoke('exports:openSaved', documentId, grantId),
   resolveTarget: (documentId, filename) =>
     ipcRenderer.invoke('exports:resolveTarget', documentId, filename),
   pickTarget: (documentId, filename, currentGrantId) =>

@@ -1614,6 +1614,14 @@ export function DocBlocksShell({
             pickTarget(documentId, filename, currentTarget?.grantId ?? null),
           saveBlob: (blob, filename, target) =>
             saveBlobToHost(exports, documentId, blob, filename, target?.grantId ?? null),
+          ...(hostSupports('openSavedExports') && exports.openSaved
+            ? {
+                openSaved: async (target: { grantId: string | null }) => {
+                  if (!target.grantId) throw new Error('The saved export has no native target.');
+                  await exports.openSaved!(documentId, target.grantId);
+                },
+              }
+            : {}),
         };
       }
     }
