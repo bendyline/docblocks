@@ -21,6 +21,13 @@ describe('shell editor link navigation', () => {
   });
 
   it('rejects paths outside the workspace and non-document link targets', () => {
+    expect(
+      resolveShellEditorLinkTarget('/reference/foo.html', 'index_files/index.md'),
+    ).to.deep.equal({
+      kind: 'workspace',
+      path: 'reference/foo.html',
+    });
+    expect(resolveShellEditorLinkTarget('../../outside.html', 'docs/current.md')).to.equal(null);
     expect(resolveShellEditorLinkTarget('../../outside.md', 'docs/current.md')).to.equal(null);
     expect(resolveShellEditorLinkTarget('image.png', 'docs/current.md')).to.equal(null);
     expect(resolveShellEditorLinkTarget('//example.com/guide', 'docs/current.md')).to.equal(null);

@@ -28,6 +28,7 @@ import type {
   ViewPreferences,
 } from '@bendyline/squisq-editor-react';
 import type { CodeBlockCopyHandler } from '@bendyline/squisq-react';
+import type { WikiLinkSupport } from '@bendyline/squisq/markdown';
 import type { MediaProvider } from '@bendyline/squisq/schemas';
 import type { FfmpegWasmLoadConfig } from '@bendyline/squisq-video';
 import type { VideoExportPalette } from '@bendyline/squisq-video-react';
@@ -55,6 +56,8 @@ import {
   rewriteCompanionReferences,
   parseWorkspacePath,
   workspacePathContains,
+  findWikiArticle,
+  suggestWikiArticles,
 } from '@bendyline/docblocks/filesystem';
 import {
   createFileSystemDocumentTarget,
@@ -243,6 +246,7 @@ import { retainFileSystemProvider } from '../provider-lease.js';
 import { useDocumentTitle } from './document-title.js';
 import { decodeDbkWorkspace } from './dbk-import.js';
 import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
+import { ensureShellWikiArticle, wikiArticleExtension } from './wiki-articles.js';
 import { importDroppedFiles, summariseImport } from './import-files.js';
 import {
   createNewOutsideInDocument,
@@ -3955,7 +3959,7 @@ export function DocBlocksShell({
   // depends on -- see the `openTransient` + onOpenRequest effect below.
 
   const handleSelect = useCallback(
-    async (path: string, kind: 'file' | 'directory') => {
+    async (path: string, kind: 'file' | 'directory', createWikiArticle = false) => {
       if (!provider || !activeWorkspaceId) return;
       const requestId = ++navigationRequestRef.current;
 
@@ -3973,6 +3977,19 @@ export function DocBlocksShell({
         try {
           const transitioned = await documentSession.transitionWithLoad(async () => {
             if (requestId !== navigationRequestRef.current) return null;
+            if (createWikiArticle) {
+              if (
+                await ensureShellWikiArticle(
+                  provider,
+                  parseWorkspacePath(path),
+                  defaultNewFileFormat,
+                  outsideInRenderRef.current,
+                )
+              ) {
+                notifyWorkspaceChanged(activeWorkspaceId, path);
+              }
+              if (requestId !== navigationRequestRef.current) return null;
+            }
             openedDocument = await loadEditableShellDocument(
               provider,
               path,
@@ -4026,8 +4043,78 @@ export function DocBlocksShell({
       notifyWorkspaceChanged,
       transitionAwayFromDocument,
       showToast,
+      defaultNewFileFormat,
     ],
   );
+
+  const wikiNavigationRef = useRef(handleSelect);
+  wikiNavigationRef.current = handleSelect;
+  const wikiLinks = useMemo<WikiLinkSupport | null>(() => {
+    if (!provider || !selectedFile || !activeWorkspaceId) return null;
+    // Article names belong beside the public document, never inside its sidecar.
+    const source = selectedFile;
+    const extension = wikiArticleExtension(defaultNewFileFormat);
+    const lookups = new Map<string, ReturnType<typeof findWikiArticle>>();
+    let queue = Promise.resolve();
+    const lookup = (target: string) => {
+      let result = lookups.get(target);
+      if (!result) {
+        result = queue.then(() => findWikiArticle(provider, source, target, extension));
+        queue = result.then(
+          () => undefined,
+          () => undefined,
+        );
+        lookups.set(target, result);
+      }
+      return result;
+    };
+    return {
+      async suggest(query) {
+        const index = workspaceIndex.index;
+        if (!index) return [];
+        workspaceIndex.ensure();
+        await index.whenListed({ timeoutMs: 5_000 });
+        return suggestWikiArticles(
+          index.getFiles(),
+          index.getDirectories(),
+          source,
+          query,
+          extension,
+        );
+      },
+      async exists(target) {
+        return (await lookup(target)).exists;
+      },
+      async resolve(target) {
+        const article = await lookup(target);
+        if (!article.exists) return null;
+        const href =
+          selectedSourceFile !== selectedFile ? `/${article.path}` : article.relativePath;
+        return href.split('/').map(encodeURIComponent).join('/');
+      },
+      async open(target, { create }) {
+        const requestId = navigationRequestRef.current;
+        const navigate = wikiNavigationRef.current;
+        const { path } = await lookup(target);
+        if (requestId !== navigationRequestRef.current || navigate !== wikiNavigationRef.current)
+          return;
+        // Creation and the destination read run inside the same session
+        // transition, after flushing the source, and share its stale-nav guard.
+        await navigate(path, 'file', create);
+      },
+    };
+    // Index changes invalidate cached existence without walking the workspace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    provider,
+    selectedFile,
+    selectedSourceFile,
+    activeWorkspaceId,
+    defaultNewFileFormat,
+    workspaceIndex.index,
+    workspaceIndex.ensure,
+    workspaceIndex.status.generation,
+  ]);
 
   const handleEnableOutsideInEditing = useCallback(
     async (path: string) => {
@@ -4167,7 +4254,7 @@ export function DocBlocksShell({
       if (!target) {
         showToast(
           'error',
-          'DocBlocks only opens HTTP(S) links or Markdown files inside this workspace.',
+          'DocBlocks only opens HTTP(S) links or Markdown and HTML files inside this workspace.',
         );
         return true;
       }
@@ -4187,14 +4274,14 @@ export function DocBlocksShell({
         if (!provider) return;
         try {
           if (!(await providerEntryExists(provider, target.path))) {
-            showToast('error', 'The linked Markdown file was not found in this workspace.');
+            showToast('error', 'The linked document was not found in this workspace.');
             return;
           }
           await handleSelect(target.path, 'file');
         } catch (error: unknown) {
           showToast(
             'error',
-            error instanceof Error ? error.message : 'Could not open the linked Markdown file.',
+            error instanceof Error ? error.message : 'Could not open the linked document.',
           );
         }
       })();
@@ -5697,6 +5784,7 @@ export function DocBlocksShell({
                               saveDashboardImageOutput={saveRenderedImageOutput}
                               onChange={handleEditorChange}
                               onLinkClick={handleEditorLinkClick}
+                              wikiLinks={wikiLinks}
                               colorScheme={resolvedTheme}
                               // Documents that name no theme preview -- and so
                               // export -- in the workspace's default theme.

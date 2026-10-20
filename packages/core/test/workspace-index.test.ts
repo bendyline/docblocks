@@ -83,6 +83,44 @@ const settled = (index: WorkspaceIndex) => () => {
 };
 
 describe('workspace index', () => {
+  it('includes parents discovered by a leaf-only invalidation', async () => {
+    const provider = await seed({ 'source.md': '# Source' });
+    const index = createIndex(spy(provider, { watch: false }).source);
+    index.start();
+    try {
+      await waitFor(settled(index), 'ready');
+      await provider.writeFile(p('reference/nested/new.md'), encode('# New'), {
+        createParents: true,
+      });
+      index.invalidate('reference/nested/new.md');
+      await waitFor(() => index.getDocument('reference/nested/new.md') !== null);
+      expect(index.getDirectories()).to.include('reference').and.include('reference/nested');
+    } finally {
+      index.dispose();
+      await provider.dispose();
+    }
+  });
+  it('exposes empty discoverable folders and refreshes them after changes', async () => {
+    const provider = await seed({ 'source.md': '# Source' });
+    await provider.createDirectory(p('empty'));
+    await provider.createDirectory(p('source_files'));
+    const index = createIndex(spy(provider).source);
+    index.start();
+    try {
+      await waitFor(settled(index), 'ready');
+      expect(index.getDirectories()).to.include('empty').and.not.include('source_files');
+      const before = index.getDirectories();
+      expect(index.getDirectories()).to.equal(before);
+      await provider.createDirectory(p('new'));
+      await waitFor(() => index.getDirectories().includes(p('new')), 'new folder');
+      expect(index.getDirectories()).not.to.equal(before);
+      await provider.remove(p('empty'));
+      await waitFor(() => !index.getDirectories().includes(p('empty')), 'removed folder');
+    } finally {
+      await index.dispose();
+      await provider.dispose();
+    }
+  });
   it('lists discoverable files and analyzes documents in the background', async () => {
     const provider = await seed({
       'guide.md': '---\ntitle: The Guide\n---\n\n# Ignored heading\n\n## Setup\n\nInstall it.\n',

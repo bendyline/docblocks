@@ -72,7 +72,9 @@ test('shows image upload progress, embeds durable media, and replaces broken ima
   await drop.dispose();
 
   // The source contains a portable durable reference, and no upload marker.
-  await page.locator('[data-view="raw"]').click();
+  const sourceTab = page.getByRole('tab', { name: 'Source', exact: true });
+  await sourceTab.click();
+  await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
   const lines = page.locator('.monaco-editor .view-lines');
   // Source shows a busy plain textarea until this page's first Monaco mount
   // finishes loading, which routinely outlasts the default expect timeout.

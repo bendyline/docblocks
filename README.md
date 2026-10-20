@@ -28,6 +28,7 @@ DocBlocks ships as **four surfaces** from this one repository:
 - **Copy-by-link sharing** — create a bounded URL containing a compressed Markdown-only copy of the current document, optionally opening directly in Slideshow, Video, Page, Document, or Narrate mode.
 - **Themes and transforms** — visual themes (documentary, cinematic, bold, …) and content transform styles (magazine, data-driven, narrative, …) applied at export or in Play mode.
 - **Workspaces** — browser-local, native-folder, or desktop workspaces; documents are always plain markdown files you can open with anything else.
+- **Wiki articles** — `[[foo]]` links to a neighboring article; `[[reference/blah]]` supports subfolders. Follow a missing link in Write to create it, using HTML outside-in editing when the workspace defaults to Web pages. Missing targets remain plain text in presentations. See [Wiki articles](docs/wiki-links.md).
 - **Version history** — optional per-document revisions kept in a plain `<name>_files/.versions/` sibling folder. On by default for browser workspaces, off for local folders (your files, your call).
 - **AI-agent ready** — `docblocks mcp` starts a local [Model Context Protocol](https://modelcontextprotocol.io) server where agents can convert plain text or Markdown directly, optionally inspect or preview documents, retain media in DBK bundles, and materialize finished artifacts only when requested.
 

@@ -36,7 +36,9 @@ for (const theme of ['Light', 'Dark']) {
   }) => {
     await openInitializedSite(page);
     await page.getByRole('tab', { name: 'Write', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Heading 2', exact: true })).toBeVisible();
+    const heading = page.getByRole('button', { name: 'Heading 2', exact: true });
+    await heading.click();
+    await expect(heading).toHaveAttribute('aria-pressed', 'true');
     for (const accent of ['Rust', 'Green', 'Blue', 'Purple', 'Maroon', 'Orange', 'Gray']) {
       await page.getByRole('button', { name: 'DocBlocks', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
@@ -48,6 +50,7 @@ for (const theme of ['Light', 'Dark']) {
       await accentRadio.press('Space');
       await expect(accentRadio).toBeChecked();
       await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.mouse.move(0, 0);
       // Squisq owns the markup, but DocBlocks supplies these foreground and
       // background colors; excluding the editor would hide host palette bugs.
       const { violations } = await new AxeBuilder({ page })
@@ -56,6 +59,19 @@ for (const theme of ['Light', 'Dark']) {
         .withRules(['color-contrast'])
         .analyze();
       expect(violations, `${theme} / ${accent}: ${formatViolations(violations)}`).toEqual([]);
+      // Active text and its hover state both need readable ink on the tint.
+      await heading.hover();
+      await heading.evaluate(async (element) => {
+        await Promise.all(element.getAnimations({ subtree: true }).map((entry) => entry.finished));
+      });
+      const hovered = await new AxeBuilder({ page })
+        .include('.squisq-toolbar-button--active')
+        .withRules(['color-contrast'])
+        .analyze();
+      expect(
+        hovered.violations,
+        `${theme} / ${accent} active hover: ${formatViolations(hovered.violations)}`,
+      ).toEqual([]);
       await page.getByRole('button', { name: 'Choose Use mode', exact: true }).click();
       // Measure the settled menu, not the partially transparent entrance frame.
       await page.locator('.squisq-use-mode-menu').evaluate(async (element) => {

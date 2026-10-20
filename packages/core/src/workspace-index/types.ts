@@ -190,6 +190,8 @@ export interface WorkspaceIndex {
   start(): void;
   /** Every discoverable file, sorted by path; the same array within a generation. */
   getFiles(): readonly WorkspaceIndexFile[];
+  /** Discoverable folders, including empty folders; sorted within a generation. */
+  getDirectories(): readonly WorkspacePath[];
   /** Every document (Markdown and outside-in), sorted by path. */
   getDocuments(): readonly IndexedDocument[];
   getDocument(path: string): IndexedDocument | null;

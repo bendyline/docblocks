@@ -36,6 +36,7 @@ import { getEditorLocalResourceRoots, handleMediaMessage } from './mediaBridge.j
 import { getEditorHtml, getNonce, getVscodeTheme } from './webviewHelper.js';
 import { handleProofStateMessage } from './proofStateBridge.js';
 import { resolveEditorLinkTarget } from './editorLinkNavigation.js';
+import { accessWikiArticle, suggestWikiArticleTargets } from './wikiLinks.js';
 
 const KEEP_LOCAL_CHOICE = 'Keep DocBlocks Changes';
 const USE_EXTERNAL_CHOICE = 'Use VS Code Buffer';
@@ -402,6 +403,44 @@ export class MarkdownEditorPanel {
 
   private async handleMessage(message: QueuedWebviewMessage): Promise<void> {
     switch (message.type) {
+      case 'wikiSuggestRequest':
+        try {
+          const items = await suggestWikiArticleTargets(this.uri, message.query);
+          this.postMessage({ type: 'wikiSuggestions', requestId: message.requestId, items });
+        } catch (error: unknown) {
+          this.postMessage({
+            type: 'wikiLinkError',
+            requestId: message.requestId,
+            message: boundedMessage(toError(error).message),
+          });
+        }
+        return;
+      case 'wikiLinkRequest':
+        try {
+          const exists = await accessWikiArticle(
+            this.uri,
+            message.target,
+            message.action,
+            async () => {
+              await this.latestEditQueue.flush();
+              const sync = await this.syncReady;
+              const snapshot = sync.getSnapshot();
+              await sync.save({
+                sessionId: snapshot.sessionId,
+                clientRevision: snapshot.acknowledgedClientRevision,
+                baseDocumentVersion: snapshot.baseDocumentVersion,
+              });
+            },
+          );
+          this.postMessage({ type: 'wikiLinkResult', requestId: message.requestId, exists });
+        } catch (error: unknown) {
+          this.postMessage({
+            type: 'wikiLinkError',
+            requestId: message.requestId,
+            message: boundedMessage(toError(error).message),
+          });
+        }
+        return;
       case 'resolveMedia':
       case 'listMedia':
       case 'addMedia':
@@ -720,6 +759,14 @@ export class MarkdownEditorPanel {
     if (!('requestId' in message)) return;
     const responseMessage = 'DocBlocks rejected the request because the editor queue is full.';
     switch (message.type) {
+      case 'wikiSuggestRequest':
+      case 'wikiLinkRequest':
+        this.postMessage({
+          type: 'wikiLinkError',
+          requestId: message.requestId,
+          message: responseMessage,
+        });
+        return;
       case 'resolveMedia':
       case 'listMedia':
       case 'addMedia':

@@ -4005,13 +4005,19 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload {
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  :is(.squisq-media-bin-record, .squisq-media-bin-upload) {
   background: var(--db-accent-tint-strong);
   border-color: var(--db-border);
   color: var(--db-text-secondary);
 }
 
-.db-shell .squisq-editor-shell .squisq-media-bin .squisq-media-bin-upload:hover {
+.db-shell
+  .squisq-editor-shell
+  .squisq-media-bin
+  :is(.squisq-media-bin-record, .squisq-media-bin-upload):hover {
   background: var(--db-bg-hover);
   border-color: var(--db-border-strong);
 }

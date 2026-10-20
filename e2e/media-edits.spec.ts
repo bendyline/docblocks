@@ -97,7 +97,10 @@ test('cleans up a clip’s audio non-destructively and renders it in the backgro
   await modal.getByRole('button', { name: 'Cancel' }).click();
 
   // Undo removes the recipe; the source file was never touched.
-  await page.locator('.squisq-editor-content').first().click();
-  await page.keyboard.press('ControlOrMeta+Z');
+  // The document tray is outside the contenteditable. Clicking the wrapper
+  // can land on the tray (or blank space) and leave undo without an editor.
+  await content.focus();
+  await expect(content).toBeFocused();
+  await content.press('ControlOrMeta+z');
   await expect(editButton).toHaveAttribute('data-edited', 'false', { timeout: 10_000 });
 });
