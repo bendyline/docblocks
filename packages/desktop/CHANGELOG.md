@@ -1,3 +1,15 @@
+## docblocks-desktop [2.7.4](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.3...docblocks-desktop@2.7.4) (2026-10-20)
+
+### Bug Fixes
+
+* Add workspace backup restore and ship regressions ([#31](https://github.com/bendyline/docblocks/issues/31)) ([bd7ade1](https://github.com/bendyline/docblocks/commit/bd7ade1e12b23dbe476819b773f01774d54ae43f))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.4
+* **@bendyline/docblocks-react:** upgraded to 2.7.4
+
 ## docblocks-desktop [2.7.3](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.2...docblocks-desktop@2.7.3) (2026-10-19)
 
 ### Bug Fixes
