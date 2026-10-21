@@ -39,24 +39,30 @@ describe('AI editor assistant', () => {
     );
   });
 
-  it('sends a uniquely selected passage once while retaining surrounding context', () => {
+  it('sends only the selection to rewrite, never the document around it', () => {
+    // Given the surrounding document, Apple's on-device model returned the
+    // whole document, and "Replace selection" pasted it into the paragraph.
     const selectedText = 'The uniquely selected paragraph.';
     const request = buildDraftRequest({
       mode: 'rewrite',
       instructions: 'Rewrite.',
       selectedText,
-      documentSource: `# Before\n\n${selectedText}\n\n# After`,
+      documentSource: `# Before {[factCard]}\n\n${selectedText}\n\n# After`,
     });
-    const body = request.messages[1].content;
+    const body = request.messages.map((message) => message.content).join('\n');
     expect(body.split(selectedText)).to.have.length(2);
-    expect(body).to.contain('# Before').and.contain('# After');
-    const repeated = buildDraftRequest({
+    expect(body).not.to.contain('# Before').and.not.to.contain('# After');
+    expect(body).not.to.contain('<document>');
+    // An example annotation in the prompt was copied into plain paragraphs.
+    expect(body).not.to.contain('{[');
+
+    const heading = buildDraftRequest({
       mode: 'rewrite',
       instructions: 'Rewrite.',
-      selectedText: 'Repeated.',
-      documentSource: 'Repeated.\n\nRepeated.',
+      selectedText: '## Staffing {[factCard]}\n\nTwo bakers start at five.',
+      documentSource: '',
     });
-    expect(repeated.messages[1].content).to.contain('<document>\nRepeated.\n\nRepeated.');
+    expect(heading.messages[0]?.content).to.contain('Squisq block annotation');
   });
 
   it('continues the original task with the exact edited draft and no new output cap', () => {

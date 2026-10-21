@@ -1,5 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  type PDFRawStream,
+  StandardFonts,
+  decodePDFRawStream,
+} from 'pdf-lib';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { expect, test } from './helpers/test.js';
@@ -26,6 +35,73 @@ async function restoreFromMenu(
   await page.getByRole('menuitem', { name: 'Restore backup…' }).click();
   await (await chooser).setFiles(file);
   await expect(page.getByText(/Restored \d+ workspace\(s\) as new copies/)).toBeVisible();
+}
+
+/** Restore exact Markdown bytes as a new workspace, which becomes current. */
+async function seedWorkspace(
+  page: Page,
+  name: string,
+  files: Readonly<Record<string, string>>,
+): Promise<void> {
+  const seed = new MemoryContentContainer();
+  for (const [path, text] of Object.entries(files))
+    await seed.writeFile(path, new TextEncoder().encode(text));
+  await restoreFromMenu(page, {
+    name: `${name}.zip`,
+    mimeType: 'application/zip',
+    buffer: Buffer.from(await (await containerToZip(seed)).arrayBuffer()),
+  });
+}
+
+/** The current workspace's files, read back through a real backup download. */
+async function backUpCurrentWorkspace(page: Page, path: string): Promise<Map<string, string>> {
+  await page.getByRole('button', { name: 'Workspace settings', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await page.getByRole('menuitem', { name: 'Back up this workspace' }).click();
+  await (await download).saveAs(path);
+  const [snapshot] = await readWorkspaceBackup(
+    await zipToContainer(await readFile(path)),
+    'ignored',
+  );
+  return new Map(snapshot.files.map((file) => [file.path, new TextDecoder().decode(file.data)]));
+}
+
+interface TextShow {
+  font: string;
+  size: number;
+  x: number;
+  text: string;
+}
+
+/** Every `Tj` on the first page, with the font, size and x it was drawn at. */
+async function readFirstPageTextShows(bytes: Uint8Array): Promise<TextShow[]> {
+  const pdf = await PDFDocument.load(bytes);
+  const page = pdf.getPages()[0]!;
+  const contents = page.node.Contents();
+  const streams = contents instanceof PDFArray ? contents.asArray() : [contents];
+  const operators = streams
+    .map((ref) => pdf.context.lookup(ref))
+    .map((stream) => new TextDecoder().decode(decodePDFRawStream(stream as PDFRawStream).decode()))
+    .join('\n');
+  return [
+    ...operators.matchAll(
+      /\/(\S+) ([\d.]+) Tf[\s\S]*?1 0 0 1 ([\d.]+) [\d.]+ Tm\s*<([0-9A-F]*)> Tj/g,
+    ),
+  ].map(([, resource, size, x, hex]) => {
+    const font = page.node
+      .Resources()!
+      .lookup(PDFName.of('Font'), PDFDict)
+      .get(PDFName.of(resource!));
+    const baseFont = pdf.context.lookup(font, PDFDict).get(PDFName.of('BaseFont'));
+    return {
+      font: baseFont instanceof PDFName ? baseFont.decodeText() : String(baseFont),
+      size: Number(size),
+      x: Number(x),
+      text: (hex!.match(/../g) ?? [])
+        .map((byte) => String.fromCharCode(parseInt(byte, 16)))
+        .join(''),
+    };
+  });
 }
 
 test('backup ZIP restores in a fresh profile with media, history and original files intact', async ({
@@ -137,6 +213,83 @@ test('task lists in table cells survive Source, Write, save, and reload', async 
   await expect(cell.locator('input[type="checkbox"]')).toHaveCount(3);
   await expect(cell.locator('input[type="checkbox"]').first()).toBeChecked();
   await page.screenshot({ path: testInfo.outputPath('table-preserved.png') });
+});
+
+test('opening a document in Write never rewrites the file', async ({ page }, testInfo) => {
+  await openInitializedSite(page);
+  // Valid Markdown the editor would serialize differently (`*` bullets and
+  // `__strong__`), so any save of an unedited document changes these bytes.
+  const source = '# Opened only\n\nKeep __this__ spelling.\n\n* first\n* second\n';
+  await seedWorkspace(page, 'Opened only', { 'opened-only.md': source, 'other.md': '# Other\n' });
+  await page.getByRole('treeitem', { name: /^opened-only/ }).click();
+  await expect(page.locator('.ProseMirror')).toContainText('second');
+  // Switching documents flushes any pending save of the one being left.
+  await page.getByRole('treeitem', { name: /^other/ }).click();
+  await expect(page.locator('.ProseMirror')).toContainText('Other');
+  const files = await backUpCurrentWorkspace(page, testInfo.outputPath('opened-only.zip'));
+  expect(files.get('opened-only.md')).toBe(source);
+  expect([...files.keys()].filter((path) => path.startsWith('.versions/opened-only.md/'))).toEqual(
+    [],
+  );
+});
+
+test('table column alignment survives an edit and save', async ({ page }, testInfo) => {
+  await openInitializedSite(page);
+  await seedWorkspace(page, 'Aligned table', {
+    'aligned-table.md':
+      '# Aligned\n\n| Left | Center | Right | Plain |\n| :--- | :---: | ---: | --- |\n| a | b | c | d |\n',
+    'other.md': '# Other\n',
+  });
+  await page.getByRole('treeitem', { name: /^aligned-table/ }).click();
+  await page.locator('.ProseMirror td').filter({ hasText: /^d$/ }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('x');
+  await expect(page.locator('.ProseMirror td').filter({ hasText: /^dx$/ })).toBeVisible();
+  await page.getByRole('treeitem', { name: /^other/ }).click();
+  await expect(page.locator('.ProseMirror')).toContainText('Other');
+  const files = await backUpCurrentWorkspace(page, testInfo.outputPath('aligned-table.zip'));
+  const saved = files.get('aligned-table.md') ?? '';
+  expect(saved).toContain('dx');
+  const delimiter = saved.split('\n').find((line) => /^\|?\s*:?-{3,}/.test(line)) ?? '';
+  // `:---` is explicit left and `---` is none; each must be written back as read.
+  expect(
+    delimiter
+      .split('|')
+      .map((cell) => cell.trim())
+      .filter(Boolean),
+  ).toEqual([
+    expect.stringMatching(/^:-+$/),
+    expect.stringMatching(/^:-+:$/),
+    expect.stringMatching(/^-+:$/),
+    expect.stringMatching(/^-+$/),
+  ]);
+});
+
+test('PDF export keeps the space after a kerned word', async ({ page }, testInfo) => {
+  await openInitializedSite(page);
+  await seedWorkspace(page, 'Kerning', { 'kerning.md': 'Type to add text.\n' });
+  await page.getByRole('treeitem', { name: /^kerning/ }).click();
+  await expect(page.locator('.ProseMirror')).toContainText('Type to add text.');
+  await page.getByRole('button', { name: 'Export and share' }).click();
+  await page.getByRole('menuitem', { name: 'Export document...' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export Document' });
+  await dialog.getByRole('radio', { name: 'PDF', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
+  const pdfPath = testInfo.outputPath('kerning.pdf');
+  await (await download).saveAs(pdfPath);
+
+  const shows = await readFirstPageTextShows(await readFile(pdfPath));
+  const word = shows.findIndex((show) => show.text === 'Type');
+  expect(word, JSON.stringify(shows)).toBeGreaterThanOrEqual(0);
+  const { font, size, x } = shows[word]!;
+  expect(Object.values(StandardFonts)).toContain(font);
+  // pdf-lib draws the standard fonts without kerning, so the next run must
+  // start where the unkerned glyphs end, not where the kerned measure does.
+  const metrics = await (await PDFDocument.create()).embedFont(font as StandardFonts);
+  const drawn = [...'Type'].reduce((sum, c) => sum + metrics.widthOfTextAtSize(c, size), 0);
+  expect(metrics.widthOfTextAtSize('Type', size)).toBeLessThan(drawn - 0.5);
+  expect(shows[word + 1]!.x - x).toBeCloseTo(drawn, 1);
 });
 
 for (const width of [320, 390]) {
