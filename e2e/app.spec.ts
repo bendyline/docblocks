@@ -967,7 +967,8 @@ test.describe('Simple diagram theming', () => {
     const handle = scene.locator('.squisq-scene-selection-handle').first();
     await expect(handle).toBeVisible();
     const handleStroke = await handle.evaluate((element) => getComputedStyle(element).stroke);
-    await scene.getByRole('button', { name: 'Connect' }).click();
+    // Exact: the Arrange button's name ("…so connections flow…") also contains "connect".
+    await scene.getByRole('button', { name: 'Connect', exact: true }).click();
     const fitButton = scene.getByRole('button', { name: 'Fit diagram' });
     await fitButton.click();
     await expect(fitButton).toHaveAttribute('aria-pressed', 'true');
