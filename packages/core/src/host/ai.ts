@@ -180,6 +180,19 @@ export interface AiChatMessage {
  */
 export type AiChatPurpose = 'write' | 'review' | 'illustrate' | 'study' | 'chat';
 
+/**
+ * Structured output: the reply should be one JSON value matching `schema`, a
+ * JSON Schema object. Hosts that can enforce it do (llama.cpp with a grammar,
+ * Apple's on-device model with guided generation); others ignore it. Callers
+ * still validate the reply.
+ */
+export interface AiResponseFormat {
+  readonly type: 'json_schema';
+  /** A short identifier for the shape, such as `presentation_slide`. */
+  readonly name: string;
+  readonly schema: Readonly<Record<string, unknown>>;
+}
+
 export interface AiChatRequest {
   readonly messages: readonly AiChatMessage[];
   /** Opaque provider model id. Omitted means "the host's current choice". */
@@ -188,6 +201,7 @@ export interface AiChatRequest {
   /** Optional caller cap. Writing without one uses the host/model's available capacity. */
   readonly maxTokens?: number;
   readonly purpose: AiChatPurpose;
+  readonly responseFormat?: AiResponseFormat;
 }
 
 export interface AiChatCompletion {

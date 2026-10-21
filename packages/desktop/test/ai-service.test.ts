@@ -656,6 +656,18 @@ describe('desktop AI service: chat', () => {
     expect(connector.connection.streams[0].request.model).to.equal('llama-cpp:qwen3-4b');
   });
 
+  it('passes a requested response schema to the provider', async () => {
+    const { service, connector } = await readyService();
+    const responseFormat = {
+      type: 'json_schema' as const,
+      name: 'slide',
+      schema: { type: 'object' },
+    };
+    service.startChat('1:a', { ...WRITE_REQUEST, responseFormat }, () => undefined);
+    await settle();
+    expect(connector.connection.streams[0].request.responseFormat).to.deep.equal(responseFormat);
+  });
+
   it('a cancelled stream still ends once, with its partial text', async () => {
     const { service, connector } = await readyService();
     const { events, emit } = recorder();

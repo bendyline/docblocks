@@ -31,7 +31,7 @@ From the repo root:
 pip install shapely pillow                         # once
 python packages/site/design/brand/make_brand.py    # SVG masters + wordmarks
 node packages/site/design/brand/render-brand.mjs   # PNGs, OG card, DMG background
-python packages/desktop/scripts/generate-icons.py  # desktop .png/.ico/.icns + NSIS sidebar
+python packages/desktop/scripts/generate-icons.py  # desktop .png/.ico/.icns/.icon + Assets.car, tray, NSIS sidebar
 ```
 
 `render-brand.mjs` writes the favicon, the PWA and apple-touch icons, the VS

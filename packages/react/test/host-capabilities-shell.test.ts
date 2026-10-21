@@ -54,7 +54,11 @@ const ELECTRON_HOST = {
   git: { status: () => undefined },
   updater: { checkForUpdates: () => undefined },
   lifecycle: { onPrepareClose: () => undefined },
-  menu: { setPinnedDocuments: () => undefined },
+  menu: {
+    setPinnedDocuments: () => undefined,
+    getTrayEnabled: () => undefined,
+    setTrayEnabled: () => undefined,
+  },
   onMenuCommand: () => undefined,
   onOpenRequest: () => undefined,
 };
@@ -122,6 +126,7 @@ describe('shell host capability accessors', () => {
         'openWorkspaceFolder',
         'menuCommands',
         'pinnedDocumentMirror',
+        'trayIcon',
         'git',
         'updater',
         'systemFfmpeg',
@@ -164,6 +169,7 @@ describe('shell host capability accessors', () => {
         // No native menu bar, no tray to mirror pinned documents into.
         'menuCommands',
         'pinnedDocumentMirror',
+        'trayIcon',
         'git',
         // The store delivers updates.
         'updater',

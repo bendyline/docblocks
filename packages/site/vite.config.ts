@@ -124,7 +124,8 @@ const docblocksPwa = (): Plugin[] =>
       // window-controls-overlay)`. 'standalone' is the fallback.
       display_override: ['window-controls-overlay', 'standalone'],
       theme_color: '#f3eede',
-      background_color: '#ffffff',
+      // Matches theme_color, so an installed app does not flash white on launch.
+      background_color: '#f3eede',
       categories: ['productivity'],
       // A document editor has to rotate; without this an installed app can be
       // locked to whatever orientation it launched in.

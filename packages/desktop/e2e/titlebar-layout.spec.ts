@@ -145,3 +145,29 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
     (geometry.headerBottom ?? -Infinity) + physicalPixel,
   );
 });
+
+test('keeps the welcome screen drag strip inside its pane', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const gateway = window.locator('.db-welcome-gateway');
+  await expect(gateway).toBeVisible({ timeout: 30_000 });
+
+  // The titlebar-area values are measured from the window, but the welcome
+  // screen starts after the sidebar. A strip sized from them alone overhangs
+  // the pane by the sidebar's width, which Windows and Linux show as a
+  // permanent horizontal scrollbar on the first screen.
+  const geometry = await gateway.evaluate((element) => {
+    const strip = getComputedStyle(element, '::before');
+    return {
+      devicePixelRatio: globalThis.devicePixelRatio,
+      paneLeft: element.getBoundingClientRect().left,
+      overflow: element.scrollWidth - element.clientWidth,
+      stripLeft: Number.parseFloat(strip.left),
+      stripRight: Number.parseFloat(strip.right),
+    };
+  });
+
+  expect(geometry.paneLeft).toBeGreaterThan(0);
+  expect(geometry.overflow).toBeLessThan(1 / geometry.devicePixelRatio);
+  expect(geometry.stripLeft).toBeGreaterThanOrEqual(0);
+  expect(geometry.stripRight).toBeGreaterThanOrEqual(0);
+});

@@ -43,6 +43,7 @@ import type {
   AiPreferencesPatch,
   AiProgress,
   AiProviderInfo,
+  AiResponseFormat,
   AiResult,
   AiStatus,
   AiUnavailableReason,
@@ -94,6 +95,7 @@ export interface ProviderChatRequest {
   readonly purpose?: AiChatRequest['purpose'];
   readonly temperature?: number;
   readonly maxTokens?: number;
+  readonly responseFormat?: AiResponseFormat;
 }
 
 export interface ProviderChatChunk {
@@ -636,6 +638,7 @@ export class AiService {
       messages: request.messages,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
       ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
+      ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
     };
     void this.runChat(connection, chat, providerRequest, emit).finally(() => {
       this.chats.delete(streamKey);

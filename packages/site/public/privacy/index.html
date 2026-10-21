@@ -11,7 +11,7 @@
     <title>Privacy — DocBlocks Local-First Markdown Editor</title>
     <meta
       name="description"
-      content="Learn how DocBlocks keeps documents local, uses browser storage and granted folders, works offline, and relies on GitHub Pages to deliver the website."
+      content="How DocBlocks keeps documents on your device, and every way it uses the network: AI and speech downloads, updates, video embeds, share links, and hosting."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/privacy/" />
@@ -20,10 +20,14 @@
     <meta property="og:title" content="DocBlocks privacy" />
     <meta
       property="og:description"
-      content="How a local-first editor handles documents, browser storage, granted folders, offline caching, and hosting."
+      content="Where DocBlocks keeps your documents, and every way it uses the network."
     />
     <meta property="og:url" content="https://docblocks.com/privacy/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
@@ -55,62 +59,208 @@
 
     <main class="page-main" id="content">
       <article class="prose">
-        <p class="eyebrow">Privacy · Updated July 14, 2026</p>
-        <h1>Local-first means your documents stay under your control.</h1>
+        <p class="eyebrow">Privacy · Updated October 20, 2026</p>
+        <h1>
+          <span class="nowrap">Local-first</span> means your documents stay under your control.
+        </h1>
         <p class="lede">
-          DocBlocks does not require an account and does not send the documents you edit to a
-          DocBlocks/Bendyline server. Storage and network behavior depend on the surface and
-          features you choose, as described below.
+          DocBlocks has no accounts and no DocBlocks server, and the documents you edit are not sent
+          to Bendyline. This page lists every way DocBlocks uses the network, so you can see when
+          something leaves your device, where it goes, and why.
         </p>
 
-        <h2>Documents in the web editor</h2>
+        <h2>At a glance</h2>
+        <ul>
+          <li>No accounts, advertising, analytics, or crash reporting in any DocBlocks app.</li>
+          <li>
+            Your documents stay on your device, or in the folders and repositories you choose.
+          </li>
+          <li>
+            AI, dictation, and read aloud run on your device. They are off until you turn them on,
+            and models download only when you choose one.
+          </li>
+          <li>
+            A few features contact other services: desktop update checks, downloads you request,
+            videos embedded in a document, share links, and services you connect. Each is described
+            below.
+          </li>
+        </ul>
+
+        <h2>Where your documents are kept</h2>
         <p>
-          Browser workspaces are stored on your device using browser storage. When you choose a
-          local folder through the browser’s File System Access interface, DocBlocks can access only
-          the handles you grant and the browser can ask you to renew that permission. Documents,
-          media, revisions, and workspace metadata are used to provide the editing features you
-          request.
+          <strong>Web editor.</strong> Workspaces are stored in your browser&rsquo;s storage on this
+          device. If you open a local folder through your browser&rsquo;s File System Access
+          interface, DocBlocks can use only the folders you grant, and the browser may ask you to
+          renew that permission. Browser storage can be cleared by you, by browser settings, or by
+          the browser under storage pressure. DocBlocks offers backups and a persistent-storage
+          request, but you remain responsible for keeping copies of important work.
         </p>
         <p>
-          Browser storage can be cleared by you, by browser settings, or sometimes by the browser
-          under storage pressure. DocBlocks therefore offers backup and persistent-storage controls,
-          but you remain responsible for keeping copies of important work.
+          <strong>Desktop app.</strong> Documents stay in the folders you open. The app keeps its
+          settings, including the list of folders you opened, in its application data folder.
+        </p>
+        <p>
+          <strong>VS Code extension.</strong> It edits the files VS Code opens. Words you add to the
+          proofing dictionary and suggestions you dismiss are kept in VS Code&rsquo;s extension
+          storage and are not synced by Settings Sync.
+        </p>
+        <p>
+          <strong>Mobile preview apps.</strong> Documents are kept in the app&rsquo;s storage or in
+          folders you choose. Your phone&rsquo;s backup settings decide whether that storage is
+          included in an iCloud or Google backup.
+        </p>
+        <p>
+          <strong>CLI and MCP server.</strong> Commands you run read and write the files you point
+          them at. The MCP server starts with no access to your files: it can use only the folders
+          granted with <code>--allow-read</code> and <code>--allow-write</code>, and by default
+          keeps temporary results in your system&rsquo;s temporary folder for up to 30 minutes. In
+          the VS Code extension&rsquo;s setup panel, <strong>Register DocBlocks MCP</strong> grants
+          it read and write access to the open workspace folder.
+        </p>
+        <p>
+          Every app also keeps device-local data: preferences, recently opened files, a recovery
+          copy of unsaved edits, your spelling dictionary and dismissed suggestions, and, where
+          enabled, revision history. None of it is sent anywhere.
         </p>
 
-        <h2>Desktop, VS Code, and CLI files</h2>
+        <h2>AI assistance</h2>
         <p>
-          The desktop app works inside folders you explicitly register. The VS Code extension edits
-          the workspace documents opened by VS Code. Direct CLI commands use the filesystem
-          authority of the process that you run. The MCP server begins without filesystem authority
-          unless you start it with explicit read or write root grants.
+          AI features are available in the desktop app and the mobile preview apps, and are off
+          until you turn them on in Settings. Built-in AI runs models on your device, with bundled
+          engines or, where available, Apple&rsquo;s on-device Foundation Models. Your requests and
+          the document text they include are processed on your device.
+        </p>
+        <p>
+          <strong>Downloads.</strong> AI models, the optional relevance model, and reference
+          catalogs are downloaded from Hugging Face only when you choose to add them. Hugging Face
+          receives your IP address and the files requested, under the
+          <a href="https://huggingface.co/privacy">Hugging Face privacy policy</a>. If a Hugging
+          Face access token is set in your environment (<code>HF_TOKEN</code>), it is sent with
+          those downloads. Passages from reference catalogs you enable are found on your device and
+          added to your AI requests there.
+        </p>
+        <p>
+          <strong>Connecting the Gezel app (desktop).</strong> When you open AI settings, DocBlocks
+          checks whether the Gezel app is running on this computer. If you choose
+          <strong>Connect Gezel app</strong>, DocBlocks sends your AI requests, including the
+          document text they contain, to that app over a connection that stays on your computer. If
+          you have set up Gezel to use a model hosted elsewhere, Gezel sends those requests to that
+          provider, under Gezel&rsquo;s settings and that provider&rsquo;s terms. DocBlocks keeps
+          the connection token in a file in its application data folder that only your user account
+          can read. This option is not available in the Mac App Store version.
+        </p>
+        <p>
+          <strong>Reporting AI output.</strong> <strong>Report output</strong> opens a pre-filled,
+          public GitHub issue with the reason, model, app version, and browser details. The
+          AI&rsquo;s response, which can contain text from your document, is added only if you
+          choose <strong>Include the AI response in the report</strong>.
+        </p>
+        <p>
+          Models, catalogs, and engine logs are stored on your device: on desktop, in a DocBlocks
+          folder inside <code>~/.gezel</code>, or inside the app&rsquo;s container in the Mac App
+          Store version.
         </p>
 
-        <h2>Offline files and preferences</h2>
+        <h2>Dictation and read aloud (desktop)</h2>
         <p>
-          The web app installs a service worker and caches application code, fonts, and interface
-          assets so the editor can work offline. Theme choices, workspace descriptors, dismissed
-          notices, and similar device-local preferences may be stored by the browser. DocBlocks does
-          not include advertising or behavioral analytics scripts.
+          Dictation and read aloud run on your computer; your voice and your documents never leave
+          it. DocBlocks uses the microphone only while you dictate or record. Speech models and
+          voices are downloaded from Hugging Face only when you choose to download them.
         </p>
 
-        <h2>Website hosting</h2>
+        <h2>Spelling and grammar</h2>
         <p>
-          DocBlocks.com is delivered through GitHub Pages. GitHub states that a visitor’s IP address
-          is logged and stored for security purposes when a GitHub Pages site is visited. That
-          hosting activity is governed by the
+          DocBlocks proofing runs entirely on your device in every app. The desktop app also shows
+          your system&rsquo;s spelling suggestions when you right-click a word; on Windows and
+          Linux, the app&rsquo;s Chromium engine may download a spelling dictionary from Google for
+          this.
+        </p>
+
+        <h2>Desktop updates</h2>
+        <p>
+          The desktop app from docblocks.com or GitHub checks GitHub for a new release each time it
+          starts and when you choose <strong>Check for Updates</strong>. A new version downloads in
+          the background and installs when you choose to restart. These requests send GitHub your IP
+          address and a random identifier that the updater creates once and stores in the
+          app&rsquo;s data folder; it is not linked to your name or your documents. Versions
+          installed from an app store are updated by that store, and the final Intel Mac version
+          does not check for updates.
+        </p>
+
+        <h2>Content in documents that loads from other sites</h2>
+        <p>
+          A video in a document from YouTube, Vimeo, Loom, Dailymotion, or Wistia loads that
+          provider&rsquo;s player as soon as the document is shown, including in a document someone
+          shares with you. The provider receives your IP address, browser details, and the video
+          being shown, may learn that DocBlocks is showing it, and may set cookies, under its own
+          privacy policy. YouTube videos load from YouTube&rsquo;s privacy-enhanced
+          youtube-nocookie.com address.
+        </p>
+        <p>
+          The web editor, desktop app, and VS Code extension do not load images or other files from
+          other websites. The mobile preview apps do: remote images in a document, map tiles from
+          OpenStreetMap, OpenTopoMap, Esri, and Stadia Maps, and video thumbnails load directly from
+          those sites. MCP document previews can also load images a document references from other
+          websites.
+        </p>
+
+        <h2>Share links</h2>
+        <p>
+          <strong>Share link with content embedded</strong> puts a copy of the document&rsquo;s text
+          in the link itself, after the <code>#</code>. Browsers do not send that part of an address
+          to the website, so docblocks.com never receives it. Images are left out, and the QR code
+          is made on your device. Anyone with the link can read the shared copy, and the text goes
+          wherever the link goes, such as chat and email services or browser history, so do not
+          share secrets this way.
+        </p>
+
+        <h2>Git (desktop)</h2>
+        <p>
+          When you push, pull, fetch, or clone, the desktop app runs Git with your credentials and
+          exchanges repository contents with the remotes you configured, such as GitHub.
+        </p>
+
+        <h2>The website and the offline web app</h2>
+        <p>
+          DocBlocks.com is delivered through GitHub Pages. GitHub states that a visitor&rsquo;s IP
+          address is logged and stored for security purposes when a GitHub Pages site is visited.
+          That hosting activity is governed by the
           <a
             href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
             >GitHub Privacy Statement</a
-          >.
+          >. DocBlocks sets no cookies and includes no advertising or analytics scripts.
+        </p>
+        <p>
+          On your first visit, the web editor saves its application files (about 80&nbsp;MB) in your
+          browser so it can work offline, and checks for a new version every hour while it is open.
+          The Desktop download page asks GitHub&rsquo;s API for the latest release, which sends
+          GitHub your IP address, and remembers the answer in your browser for an hour.
         </p>
 
-        <h2>External links and issue reports</h2>
+        <h2>VS Code extension and CLI</h2>
         <p>
-          Links to GitHub, npm, Bendyline, or other external services are governed by those
-          services’ policies. If you choose the DocBlocks issue-report link, your browser opens
-          GitHub with a prefilled report containing the date, DocBlocks version and surface, and
-          browser user-agent string. Review the report before submitting it. Document contents are
-          not inserted into that report automatically.
+          The extension makes no network requests of its own and does not use VS Code telemetry;
+          links you click open in your browser. In its setup panel,
+          <strong>Install DocBlocks CLI</strong> runs npm in a terminal, which downloads the CLI
+          from the npm registry. The CLI makes no network requests of its own, and
+          <code>docblocks serve</code> listens only on your computer unless you pass
+          <code>--allow-network</code>.
+        </p>
+
+        <h2>Links and issue reports</h2>
+        <p>
+          Links to GitHub, npm, Hugging Face, Bendyline, or other external services are governed by
+          those services&rsquo; policies. If you choose the DocBlocks issue-report link, your
+          browser opens GitHub with a prefilled report containing the date, DocBlocks version and
+          surface, and browser user-agent string. Review the report before submitting it. Document
+          contents are not inserted into that report automatically.
+        </p>
+
+        <h2>Changes to this page</h2>
+        <p>
+          This page changes when DocBlocks&rsquo; use of the network changes. The date at the top
+          shows the latest revision, and the page&rsquo;s history is public in the DocBlocks
+          repository.
         </p>
 
         <h2>Questions and corrections</h2>

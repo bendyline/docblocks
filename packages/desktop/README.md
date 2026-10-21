@@ -45,7 +45,7 @@ entry point. Gezel owns stored-grant adoption, consent gating, private fallback,
 model preparation, Apple model readiness, download observation, evidence
 serialization, native verification, and host-environment restoration. DocBlocks
 retains its provider-neutral `AiService`, renderer ownership, wire limits,
-preferences, encrypted token storage, editor prompts/transactions, and MAS seal
+preferences, owner-only token file (`main/ai/ai-credentials.ts` explains why not the keychain), editor prompts/transactions, and MAS seal
 verification. `withKnowledgeContext` receives the host's prompt/message limits;
 model locality comes from SDK metadata, never from an engine name.
 

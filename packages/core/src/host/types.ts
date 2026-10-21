@@ -231,6 +231,14 @@ export interface DocBlocksHostMenuAPI {
    * previously published list; send an empty array to clear the shortcuts.
    */
   setPinnedDocuments(documents: readonly HostPinnedDocument[]): void;
+  /**
+   * Whether DocBlocks keeps an icon in the macOS menu bar, the Windows
+   * notification area, or the Linux system tray. Off until the user turns it
+   * on. Absent on a host without one.
+   */
+  getTrayEnabled?(): Promise<boolean>;
+  /** Show or remove the tray icon, remembered across launches; resolves with the saved value. */
+  setTrayEnabled?(enabled: boolean): Promise<boolean>;
 }
 
 /**

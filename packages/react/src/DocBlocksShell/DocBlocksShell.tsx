@@ -327,8 +327,8 @@ import { createNativeFileActions } from './native-file-actions.js';
 import {
   isAppDefaultWorkspace,
   isWelcomeDocumentPath,
-  WELCOME_DOCUMENT_CONTENT,
   WELCOME_DOCUMENT_PATH,
+  welcomeDocumentContent,
 } from './welcome-document.js';
 import {
   loadPinnedDocuments,
@@ -950,6 +950,7 @@ export function DocBlocksShell({
   const speech = hostSupports('speechModelManagement')
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
+  const trayMenu = hostSupports('trayIcon') ? maybeGetDocBlocksHost()?.menu : undefined;
   /** Bumped to open Settings, e.g. when dictation needs a model first. */
   const [settingsRequest, setSettingsRequest] = useState(0);
   const openSettings = useCallback(() => setSettingsRequest((count) => count + 1), []);
@@ -1071,6 +1072,7 @@ export function DocBlocksShell({
   // Warn about eviction only where documents actually live in the web origin.
   const showBrowserStorageWarning = hostSupports('browserOriginStorage');
   const hostEnvironment = getHostEnvironment();
+  const desktopApp = hostEnvironment?.surface === 'electron';
   const appVersion = hostEnvironment
     ? `${hostEnvironment.appVersion} ${hostEnvironment.surfaceLabel}`
     : (issueReportVersion ?? 'web');
@@ -2251,7 +2253,10 @@ export function DocBlocksShell({
       if (!seedWhenEmpty || entries.length > 0) return;
 
       const welcomePath = WELCOME_DOCUMENT_PATH;
-      const welcomeContent = WELCOME_DOCUMENT_CONTENT;
+      const welcomeContent = welcomeDocumentContent({
+        browserStorage: showBrowserStorageWarning,
+        desktopApp,
+      });
 
       let seededContent = welcomeContent;
       try {
@@ -2276,7 +2281,14 @@ export function DocBlocksShell({
       saveLastState({ workspaceId: fs.id, filePath: welcomePath, view: 'wysiwyg' });
       if (!isWelcomeGatewayDismissed()) setShowWelcomeGateway(true);
     },
-    [adoptRegularDocument, createDocumentTarget, documentSession, pushHash],
+    [
+      adoptRegularDocument,
+      createDocumentTarget,
+      desktopApp,
+      documentSession,
+      pushHash,
+      showBrowserStorageWarning,
+    ],
   );
 
   // Startup is a mount lifecycle, not a reaction to callback identity. Keep
@@ -5508,6 +5520,7 @@ export function DocBlocksShell({
                 appBuildDate={appBuildDate}
                 ai={ai}
                 speech={speech}
+                tray={trayMenu}
                 settingsRequest={settingsRequest}
               />
               <input
@@ -6029,9 +6042,12 @@ export function DocBlocksShell({
                         </button>
                       )}
                     </div>
-                    <p className="db-workspace-empty-hint">
-                      Use the sidebar backup action to keep a portable copy of this workspace.
-                    </p>
+                    {/* Only browser storage has the sidebar Back up action. */}
+                    {showBrowserStorageWarning && (
+                      <p className="db-workspace-empty-hint">
+                        Use the sidebar backup action to keep a portable copy of this workspace.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

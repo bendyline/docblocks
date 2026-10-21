@@ -60,6 +60,40 @@ describe('parseAiChatRequest', () => {
     }
   });
 
+  it('accepts a JSON schema response format as a plain copy', () => {
+    const schema = {
+      type: 'object',
+      properties: { headline: { type: 'string' } },
+      required: ['headline'],
+      additionalProperties: false,
+    };
+    const parsed = parseAiChatRequest({
+      ...VALID_REQUEST,
+      responseFormat: { type: 'json_schema', name: 'slide', schema },
+    });
+    expect(parsed?.responseFormat).to.deep.equal({ type: 'json_schema', name: 'slide', schema });
+    expect(parsed?.responseFormat?.schema).not.to.equal(schema);
+  });
+
+  it('rejects a malformed or oversized response format', () => {
+    const schema = { type: 'object' };
+    for (const responseFormat of [
+      null,
+      'json',
+      { type: 'json_object', name: 'slide', schema },
+      { type: 'json_schema', schema },
+      { type: 'json_schema', name: 'has spaces', schema },
+      { type: 'json_schema', name: 'slide', schema: [] },
+      { type: 'json_schema', name: 'slide', schema, strict: true },
+      {
+        type: 'json_schema',
+        name: 'slide',
+        schema: { description: 'x'.repeat(AI_WIRE_LIMITS.responseSchemaCharacters) },
+      },
+    ])
+      expect(parseAiChatRequest({ ...VALID_REQUEST, responseFormat })).to.equal(null);
+  });
+
   it('rejects an empty or oversized message list', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST, messages: [] })).to.equal(null);
     const many = Array.from({ length: AI_WIRE_LIMITS.messageEntries + 1 }, () => ({

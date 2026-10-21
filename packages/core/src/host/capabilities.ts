@@ -55,6 +55,8 @@ export interface HostCapabilities {
   readonly openRequests: boolean;
   readonly menuCommands: boolean;
   readonly pinnedDocumentMirror: boolean;
+  /** An opt-in tray / menu bar icon the user can turn on and off. */
+  readonly trayIcon: boolean;
   readonly guardedClose: boolean;
   readonly git: boolean;
   readonly updater: boolean;
@@ -107,6 +109,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   openRequests: false,
   menuCommands: false,
   pinnedDocumentMirror: false,
+  trayIcon: false,
   guardedClose: false,
   git: false,
   updater: false,
@@ -216,6 +219,7 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
     openRequests: hasMethod(host, 'onOpenRequest'),
     menuCommands: hasMethod(host, 'onMenuCommand'),
     pinnedDocumentMirror: hasMethod(host.menu, 'setPinnedDocuments'),
+    trayIcon: hasMethod(host.menu, 'getTrayEnabled') && hasMethod(host.menu, 'setTrayEnabled'),
     guardedClose: hasMethod(host.lifecycle, 'onPrepareClose'),
     git: hasMethod(host.git, 'status'),
     updater: hasMethod(host.updater, 'checkForUpdates'),

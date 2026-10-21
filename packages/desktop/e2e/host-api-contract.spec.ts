@@ -233,7 +233,11 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'onPrepareClose',
     'requestWindowClose',
   ]);
-  expect(contract.methods.menu).toEqual(['setPinnedDocuments']);
+  expect(contract.methods.menu).toEqual([
+    'getTrayEnabled',
+    'setPinnedDocuments',
+    'setTrayEnabled',
+  ]);
   // The core AI group only: workspace search, images, and speech are optional
   // members this host does not implement, so their capabilities stay false.
   expect(contract.methods.ai).toEqual([

@@ -993,6 +993,9 @@
 .db-tree-context {
   position: fixed;
   z-index: 1000;
+  /* Portaled onto <body>, outside .db-shell, where no font is set; the items
+     inherit theirs, so without this they render in the browser's serif. */
+  font-family: var(--db-ui-font);
   background: var(--db-bg-raised);
   border: 1px solid var(--db-border);
   border-radius: 4px;
@@ -2251,6 +2254,9 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   box-sizing: border-box;
   padding: 16px;
   background: rgba(0, 0, 0, 0.4);
+  /* The AI, presentation and narration dialogs portal onto <body>, outside
+     .db-shell; give them the chrome face the shell would have. */
+  font-family: var(--db-ui-font);
 }
 
 /* Palette-style dialogs (quick-open) sit near the top, where the eye already is. */
@@ -5845,9 +5851,13 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   animation: db-welcome-loop-nudge 3s ease-in-out infinite;
 }
 
+/* The stage is a container so the slide and video frames can size their type
+   against it (cqi) rather than in pixels: like a real slide, the words fill
+   the canvas at whatever width the welcome screen gives it. */
 .db-welcome-loop-stage {
   position: relative;
   aspect-ratio: 4 / 3;
+  container-type: inline-size;
 }
 
 .db-welcome-loop-frame {
@@ -5890,10 +5900,15 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   color: #2b241c;
 }
 
+/* 16:9 frames, so 100cqi wide by 56.25cqi tall. Their type is in cqi to keep
+   presentation proportions at every stage size. */
 .db-welcome-loop-frame--slide,
 .db-welcome-loop-frame--video {
+  box-sizing: border-box;
   height: 75%;
   justify-content: center;
+  gap: 2cqi;
+  padding: 6cqi 8cqi;
   background: radial-gradient(circle at 30% 20%, #5a3322, #24170f 72%);
   color: #f6ecdc;
 }
@@ -5905,12 +5920,30 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 }
 
 .db-welcome-loop-frame--slide strong {
-  font-size: 21px;
+  font-size: 7cqi;
+  text-wrap: balance;
 }
 
+.db-welcome-loop-frame--slide span {
+  font-size: 4cqi;
+}
+
+/* The bottom padding keeps the list centered in the picture above the
+   player controls. */
 .db-welcome-loop-frame--video {
-  justify-content: flex-start;
+  padding-bottom: 12cqi;
   animation-delay: 6s;
+}
+
+.db-welcome-loop-frame--video em {
+  margin: 0 0 1cqi;
+  font-size: 8.5cqi;
+  line-height: 1.15;
+}
+
+.db-welcome-loop-frame--video span {
+  font-size: 5.75cqi;
+  line-height: 1.3;
 }
 
 .db-welcome-loop-play {
@@ -7870,15 +7903,18 @@ button.db-git-file-row:hover {
 
   /* Folder and empty states do not render Squisq's toolbar, and the first-run
      welcome screen covers it. Preserve a top drag strip in those states and
-     keep folder content below it. */
+     keep folder content below it. The titlebar-area values are measured from
+     the window, but these panes start after the sidebar: span the pane and
+     reserve only the caption-button inset on the right, or the strip
+     overhangs the pane and the welcome screen scrolls sideways. */
   .db-shell .db-shell-empty::before,
   .db-shell .db-folder-view::before,
   .db-shell .db-welcome-gateway::before {
     content: '';
     position: absolute;
     top: 0;
-    left: env(titlebar-area-x, 0px);
-    width: env(titlebar-area-width, 100%);
+    left: 0;
+    right: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
     height: var(--db-wco-titlebar-height);
     app-region: drag;
     -webkit-app-region: drag;

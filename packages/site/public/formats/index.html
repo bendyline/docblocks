@@ -8,10 +8,10 @@
     />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Markdown Conversion Formats — Word, PDF, Slides &amp; More | DocBlocks</title>
+    <title>Markdown Formats — Word, PDF, Slides &amp; More | DocBlocks</title>
     <meta
       name="description"
-      content="See the current DocBlocks import and export directions for Markdown, Word, PDF, PowerPoint, Excel, CSV, HTML, EPUB, DBK, MP4, and GIF."
+      content="See which formats DocBlocks imports and exports: Markdown, Word, PDF, PowerPoint, Excel, CSV, HTML, EPUB, DBK, MP4, and GIF."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/formats/" />
@@ -24,6 +24,10 @@
     />
     <meta property="og:url" content="https://docblocks.com/formats/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
@@ -56,12 +60,11 @@
     <main class="page-main" id="content">
       <section class="hero">
         <div>
-          <p class="eyebrow">Format registry</p>
+          <p class="eyebrow">Supported formats</p>
           <h1>Write once. Keep Markdown. Publish almost anywhere.</h1>
           <p class="lede">
-            DocBlocks uses the linked Squisq format registry as its source of truth. Import and
-            export are directional: a format appears here only when the current toolchain has an
-            explicit conversion path for it.
+            Write in Markdown, then open or export the formats your work needs. Some formats open
+            and export; others are export-only. Every format listed here works today.
           </p>
           <div class="hero-actions">
             <a class="button" href="/">Open the editor</a>
@@ -80,13 +83,15 @@
       <section class="section" aria-labelledby="format-directions">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Current linked capabilities</p>
-            <h2 id="format-directions">Import and export directions</h2>
+            <p class="eyebrow">Import and export</p>
+            <h2 id="format-directions">What DocBlocks opens and exports</h2>
           </div>
           <p class="section-copy">
-            The table reflects the current linked registry. HTML ZIP, EPUB, MP4, and GIF are
-            export-only. For runtime discovery, use <code>docblocks mcp</code> and
-            <code>list_formats</code> or consult the authoritative CLI reference.
+            HTML ZIP, EPUB, MP4, and GIF are export-only; every other format opens as well as
+            exports. AI agents can ask the DocBlocks MCP server for this list with
+            <code>list_formats</code>, and the
+            <a href="https://github.com/bendyline/docblocks/blob/main/docs/cli.md">CLI reference</a>
+            covers every option.
           </p>
         </div>
         <p class="table-scroll-hint" id="format-table-scroll-hint">
@@ -191,23 +196,20 @@
           <article class="card">
             <h3>Visual export</h3>
             <p>
-              Use the web or desktop editor for common document exports, EPUB, and MP4 video without
-              leaving the writing surface. Animated GIF is produced by the CLI and MCP, which drive
-              a system FFmpeg binary rather than a bundled one.
+              Export common document formats, EPUB, and MP4 video from the web or desktop editor
+              without leaving your document. Animated GIF comes from the CLI and MCP server, which
+              use the FFmpeg installed on your computer.
             </p>
           </article>
           <article class="card">
             <h3>Batch conversion</h3>
-            <p>
-              Use the CLI to select one or more output formats and write documented results
-              directly.
-            </p>
+            <p>Use the CLI to convert a document into one or more formats with a single command.</p>
           </article>
           <article class="card">
             <h3>Agent workflows</h3>
             <p>
-              Use MCP to produce immutable session artifacts, inspect fidelity, and save only the
-              result you choose.
+              AI agents convert through the MCP server, check how faithfully each format kept the
+              content, and save only the results you choose.
             </p>
           </article>
         </div>

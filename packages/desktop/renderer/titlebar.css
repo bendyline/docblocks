@@ -221,15 +221,19 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
 
 /* Folder and empty states do not render Squisq's toolbar, and the first-run
    welcome screen covers it. Preserve a top drag strip in those states and
-   keep folder content below it. */
+   keep folder content below it. The titlebar-area values are measured from the
+   window, but these panes start after the sidebar: span the pane and reserve
+   only the caption-button inset on the right. Sizing the strip from those
+   values overhangs the pane by the sidebar's width, and the welcome screen
+   then scrolls sideways. */
 .db-desktop-root .db-shell-empty::before,
 .db-desktop-root .db-folder-view::before,
 .db-desktop-root .db-welcome-gateway::before {
   content: '';
   position: absolute;
   top: 0;
-  left: env(titlebar-area-x, 0px);
-  width: env(titlebar-area-width, 100%);
+  left: 0;
+  right: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
   height: var(--db-desktop-titlebar-height);
   app-region: drag;
   -webkit-app-region: drag;

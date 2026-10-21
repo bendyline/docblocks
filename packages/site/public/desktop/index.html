@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'sha256-mJH6qUKByOhlhJkV/Fus2SLmuMjoQMIpNnqN0u1mm8g='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://api.github.com; media-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+      content="default-src 'none'; script-src 'sha256-1qZLKnSCjvBUvB1BVnIx6qtBFeZBwCr0+b1mAjrqTPI='; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://api.github.com; media-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
     />
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -24,6 +24,10 @@
     />
     <meta property="og:url" content="https://docblocks.com/desktop/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
@@ -129,9 +133,9 @@
             <h2 id="downloads-heading">Get DocBlocks for your platform</h2>
           </div>
           <p class="section-copy">
-            These installers come from the latest release on GitHub (<strong data-dl-version
-              >the latest version</strong
-            ><span data-dl-date></span>). You can also
+            These installers come from the latest release on GitHub<span data-dl-release hidden>
+              (<strong data-dl-version></strong><span data-dl-date></span>)</span
+            >. You can also
             <a href="https://github.com/bendyline/docblocks/releases/latest" data-dl-notes
               >view the release notes</a
             >
@@ -153,14 +157,26 @@
           >
           to grab an installer for your platform.
         </p>
+        <ul class="dl-requirements">
+          <li>
+            <strong>macOS:</strong> Apple silicon with macOS 12 or later. Built-in AI and dictation
+            need macOS 13.3 or later, and read aloud needs macOS 14. DocBlocks 2.7.1 was the final
+            version for Intel Macs: Intel Macs that already have it update to it automatically, and
+            new Intel installs are no longer offered. On an Intel Mac, use the
+            <a href="/">web editor</a>.
+          </li>
+          <li>
+            <strong>Windows:</strong> choose the 64-bit (x64) or ARM64 installer that matches your
+            PC, or the universal installer if you are not sure.
+          </li>
+          <li>
+            <strong>Linux:</strong> choose the AppImage or Debian package for x64 or ARM64. Built-in
+            AI and dictation need glibc 2.38 or later, such as Ubuntu 24.04 or Debian 13.
+          </li>
+        </ul>
         <p class="dl-note">
-          macOS downloads are for Apple silicon with macOS 12 or later. DocBlocks 2.7.1 is the final
-          version for Intel Macs; Intel Macs that already have DocBlocks update to it automatically.
-          Optional built-in AI and dictation require macOS 13.3 or later; read aloud requires macOS
-          14. On Linux, built-in AI and dictation require glibc 2.38 or later, such as Ubuntu 24.04
-          or Debian 13. Older systems can still edit and export documents, with those native
-          features unavailable. Choose the Windows or Linux package that matches your computer. For
-          browser, VS Code, and mobile options,
+          Older systems can still edit and export documents, with those native features unavailable.
+          For browser, VS Code, and mobile options,
           <a href="/docs/#apps">compare the DocBlocks apps</a>.
         </p>
       </section>
@@ -209,7 +225,9 @@
         <div class="section-heading">
           <div>
             <p class="eyebrow">One editor, native capabilities</p>
-            <h2 id="desktop-workflow">A desktop workflow without document lock-in.</h2>
+            <h2 id="desktop-workflow">
+              A desktop workflow without document <span class="nowrap">lock-in.</span>
+            </h2>
           </div>
           <p class="section-copy">
             Keep your notes beside your project, use your usual backup tools, and open the same
@@ -536,12 +554,21 @@
           return true;
         }
 
-        function updateHero(primary, version) {
+        function updateHero(primary, version, platform) {
           const button = q('[data-dl-primary]');
           const label = q('[data-dl-label]');
           const sub = q('[data-dl-sub]');
           if (!button) return;
-          if (primary && primary.asset) {
+          if (platform.os === 'mac' && platform.arch === 'x64') {
+            // Intel Mac builds ended with 2.7.1 and are not offered for new
+            // installs, so "choose your platform below" would be a dead end.
+            button.href = '/';
+            if (label) label.textContent = 'Use DocBlocks on the web';
+            if (sub) sub.textContent = 'DocBlocks Desktop requires an Apple silicon Mac';
+            // The button no longer downloads anything; drop the download arrow.
+            const icon = button.querySelector('.dl-button__icon');
+            if (icon) icon.remove();
+          } else if (primary && primary.asset) {
             const osName = OS_NAMES[primary.os] || 'desktop';
             button.href = primary.asset.browser_download_url;
             if (label) label.textContent = 'Download for ' + osName;
@@ -549,10 +576,8 @@
               sub.textContent =
                 'v' + version + ' · ' + primary.archLabel + ' · ' + formatSize(primary.asset.size);
             }
-            button.setAttribute(
-              'aria-label',
-              'Download DocBlocks ' + version + ' for ' + osName + ' (' + primary.archLabel + ')',
-            );
+            // The visible label and sub-label name the button; a separate
+            // aria-label would not contain "Download for <OS>" (WCAG 2.5.3).
           } else {
             button.href = '#downloads';
             if (label) label.textContent = 'Download DocBlocks';
@@ -563,6 +588,9 @@
         function updateMeta(version, release) {
           const versionEl = q('[data-dl-version]');
           if (versionEl) versionEl.textContent = 'v' + version;
+          // Shown only once a release is known, so a failed lookup leaves no placeholder.
+          const releaseEl = q('[data-dl-release]');
+          if (releaseEl) releaseEl.hidden = false;
           const dateEl = q('[data-dl-date]');
           if (dateEl && release.published_at) {
             const parsed = new Date(release.published_at);
@@ -669,7 +697,7 @@
               showFallback();
               return;
             }
-            updateHero(primary, version);
+            updateHero(primary, version, platform);
           } catch {
             showFallback();
           }
