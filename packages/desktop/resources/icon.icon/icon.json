@@ -1,0 +1,46 @@
+{
+  "fill": {
+    "solid": "srgb:0.13725,0.12157,0.09412,1.00000"
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "face.svg",
+          "name": "face",
+          "position": {
+            "scale": 0.62,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name": "shade.svg",
+          "name": "shade",
+          "position": {
+            "scale": 0.62,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "none",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

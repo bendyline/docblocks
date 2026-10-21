@@ -35,6 +35,13 @@ export function isAppDefaultWorkspace(
     : workspaceId === DEFAULT_WORKSPACE_ID;
 }
 
+export interface WelcomeDocumentOptions {
+  /** Documents live in browser storage, where the file list offers Back up. */
+  readonly browserStorage: boolean;
+  /** This is the desktop app, which needs no link to itself. */
+  readonly desktopApp: boolean;
+}
+
 /**
  * The first document a new user reads, in Write, and the deck they see when
  * they press Slideshow. Written for someone who has never heard of Markdown:
@@ -42,57 +49,76 @@ export function isAppDefaultWorkspace(
  * be a readable slide. Annotations stay attached to headings, so each heading
  * becomes a deliberate presentation block while the source reads as prose.
  */
-export const WELCOME_DOCUMENT_CONTENT = [
-  '---',
-  'squisq-theme: warm-earth',
-  'squisq-cover-slide: false',
-  '---',
-  '',
-  '# Welcome to DocBlocks {[title subtitle="Write once. Share it as a document, a deck, or a video."]}',
-  '',
-  'This is an ordinary document, so go ahead and change it. Click anywhere and type; DocBlocks saves as you go.',
-  '',
-  '## Write the way you already do {[list]}',
-  '',
-  '- Type to add text, and use the toolbar for headings, lists, and bold or italic text.',
-  '- Choose **Insert** in the toolbar to add a table, a checklist, a chart, a diagram, or a picture.',
-  '- Choose **Source** to see the Markdown text behind this page. Both views edit the same document.',
-  '',
-  '## One document, many ways to share it {[diagram]}',
-  '',
-  '```diagram',
-  '              +-----------------+',
-  '              |  Your document  |',
-  '              +--------+--------+',
-  '                       |',
-  '    +-----------+------+-----+------------+',
-  '    |           |            |            |',
-  '    v           v            v            v',
-  '+-------+  +--------+  +----------+  +---------+',
-  '|  PDF  |  |  Word  |  |  Slides  |  |  Video  |',
-  '+-------+  +--------+  +----------+  +---------+',
-  '```',
-  '',
-  '## Present it or send it {[content]}',
-  '',
-  'Each heading starts a new slide, so this document is already a slideshow. Choose **Slideshow** at the top to see it, or **Export** to save it as a PDF, a Word document, a PowerPoint deck, an e-book, a web page, or a video.',
-  '',
-  '## Your documents stay yours {[factCard]}',
-  '',
-  'There is no account to create. Your documents stay on this device as plain text files that other apps can open too. Choose **Back up** at the bottom of the file list to keep a copy somewhere safe.',
-  '',
-  '## Make your own {[list]}',
-  '',
-  '1. Choose **New File** above the file list and give it a name.',
-  '2. Write a heading and a few sentences.',
-  '3. Choose **Slideshow** to present it, or **Export** to share it.',
-  '',
-  '## Go further {[list]}',
-  '',
-  '- [Get the desktop app](https://docblocks.com/desktop/) to work in folders on your computer.',
-  '- [Add DocBlocks to VS Code](https://docblocks.com/vscode/) to edit documents beside your code.',
-  '- [Read the guides](https://docblocks.com/docs/) for everything else.',
-  // End with a newline, as the Write view saves every document. Without it,
-  // merely opening the welcome document in Write rewrote the file.
-  '',
-].join('\n');
+export function welcomeDocumentContent({
+  browserStorage,
+  desktopApp,
+}: WelcomeDocumentOptions): string {
+  return [
+    '---',
+    'squisq-theme: warm-earth',
+    'squisq-cover-slide: false',
+    '---',
+    '',
+    '# Welcome to DocBlocks {[title subtitle="Write once. Share it as a document, a deck, or a video."]}',
+    '',
+    'This is an ordinary document, so go ahead and change it. Click anywhere and type; DocBlocks saves as you go.',
+    '',
+    '## Write the way you already do {[list]}',
+    '',
+    '- Type to add text, and use the toolbar for headings, lists, and bold or italic text.',
+    '- Choose **Insert** in the toolbar to add a table, a checklist, a chart, a diagram, or a picture.',
+    '- Choose **Source** to see the Markdown text behind this page. Both views edit the same document.',
+    '',
+    '## One document, many ways to share it {[diagram]}',
+    '',
+    '```diagram',
+    '              +-----------------+',
+    '              |  Your document  |',
+    '              +--------+--------+',
+    '                       |',
+    '    +-----------+------+-----+------------+',
+    '    |           |            |            |',
+    '    v           v            v            v',
+    '+-------+  +--------+  +----------+  +---------+',
+    '|  PDF  |  |  Word  |  |  Slides  |  |  Video  |',
+    '+-------+  +--------+  +----------+  +---------+',
+    '```',
+    '',
+    '## Present it or send it {[content]}',
+    '',
+    'Each heading starts a new slide, so this document is already a slideshow. Choose **Slideshow** at the top to see it, or **Export** to save it as a PDF, a Word document, a PowerPoint deck, an e-book, a web page, or a video.',
+    '',
+    '## Your documents stay yours {[factCard]}',
+    '',
+    // Not "files other apps can open": in the browser they live in browser storage.
+    'There is no account to create. Your documents stay on this device, written in plain Markdown that any text editor can read.' +
+      // Only browser storage shows Back up in the file list. Elsewhere the
+      // documents are files the device itself keeps.
+      (browserStorage
+        ? ' Choose **Back up** at the bottom of the file list to keep a copy somewhere safe.'
+        : ''),
+    '',
+    '## Make your own {[list]}',
+    '',
+    '1. Choose **New File** above the file list and give it a name.',
+    '2. Write a heading and a few sentences.',
+    '3. Choose **Slideshow** to present it, or **Export** to share it.',
+    '',
+    '## Go further {[list]}',
+    '',
+    desktopApp
+      ? '- Choose **Open Folder** in the workspace menu above the file list to work on Markdown files you already have.'
+      : '- [Get the desktop app](https://docblocks.com/desktop/) to work in folders on your computer.',
+    '- [Add DocBlocks to VS Code](https://docblocks.com/vscode/) to edit documents beside your code.',
+    '- [Read the guides](https://docblocks.com/docs/) for everything else.',
+    // End with a newline, as the Write view saves every document. Without it,
+    // merely opening the welcome document in Write rewrote the file.
+    '',
+  ].join('\n');
+}
+
+/** The welcome document for the browser, where documents live in browser storage. */
+export const WELCOME_DOCUMENT_CONTENT = welcomeDocumentContent({
+  browserStorage: true,
+  desktopApp: false,
+});

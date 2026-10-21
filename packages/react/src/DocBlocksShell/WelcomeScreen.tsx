@@ -12,8 +12,11 @@ export const WELCOME_SUMMARY =
 /** The trust line, kept apart so the compact phone card can reuse it. */
 export const WELCOME_PRIVACY_NOTE = 'No account, and your documents stay on this device.';
 
-/** Where the browser build sends visitors who want a native app. */
-const DOCBLOCKS_APPS_URL = 'https://docblocks.com/desktop/';
+/**
+ * Where the browser build sends visitors who want another DocBlocks app: the
+ * comparison of every app, since the link promises more than the desktop one.
+ */
+const DOCBLOCKS_APPS_URL = 'https://docblocks.com/docs/#apps';
 
 export interface WelcomeScreenProps {
   /** Opens the New Document dialog. */

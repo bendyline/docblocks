@@ -31,6 +31,7 @@ export type {
   PersistedExportTarget,
   PersistedExportTargetAccess,
   PersistedGitSettings,
+  PersistedTraySettings,
   PersistedWorkspace,
   Settings,
 } from './settings-schema.js';

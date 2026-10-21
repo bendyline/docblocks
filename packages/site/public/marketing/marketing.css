@@ -266,6 +266,12 @@ h3 {
   line-height: 1.1;
 }
 
+/* Keeps a hyphenated word or a dash-joined phrase on one line, so a heading
+   never breaks as "Local- / first" or starts a line with an em dash. */
+.nowrap {
+  white-space: nowrap;
+}
+
 .lede {
   max-width: 760px;
   margin: 0;
@@ -341,6 +347,21 @@ h3 {
 }
 
 .dl-note a {
+  font-weight: 700;
+}
+
+.dl-requirements {
+  margin: 22px 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.dl-requirements li + li {
+  margin-top: 6px;
+}
+
+.dl-requirements a {
   font-weight: 700;
 }
 
@@ -439,7 +460,7 @@ h3 {
   border-radius: 999px;
   background: var(--accent);
   color: var(--paper-bright);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -472,6 +493,13 @@ h3 {
   border-radius: 24px;
   background: rgba(255, 253, 247, 0.64);
   box-shadow: var(--shadow);
+}
+
+/* A summary card beside the hero, not a second headline: at the section h2
+   size its three words wrapped onto three lines and outweighed the h1. */
+.hero-aside h2 {
+  font-size: clamp(1.55rem, 2.3vw, 2.1rem);
+  line-height: 1.08;
 }
 
 .hero-aside p,
@@ -682,6 +710,15 @@ h3 {
     grid-row: 2;
   }
 
+  /* Text-height links were 18px tall on tablets and phones; give each a
+     thumb-sized target. */
+  .site-nav a,
+  .footer-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
   .hero,
   .section-heading {
     grid-template-columns: 1fr;
@@ -703,7 +740,7 @@ h3 {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px 14px;
     min-height: 0;
-    padding-block: 10px;
+    padding-block: 8px;
   }
 
   .brand,
@@ -713,24 +750,33 @@ h3 {
 
   .site-header > .button {
     justify-self: end;
-    min-height: 36px;
+    min-height: 40px;
     padding-inline: 12px;
     font-size: 0.76rem;
   }
 
+  /* Two fixed rows of three. A sideways scroller hid "Docs" at 320px with no
+     cue; a wrapping row reflowed from two lines to one when the web font
+     replaced the fallback and moved the whole page up 40px. A grid's row
+     count does not depend on which font has loaded. */
   .site-nav {
     grid-column: 1 / -1;
     grid-row: 2;
-    flex-wrap: nowrap;
-    gap: 6px 14px;
-    overflow-x: auto;
-    padding-bottom: 7px;
-    white-space: nowrap;
-    scrollbar-width: thin;
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    gap: 0 18px;
   }
 
+  /* 30px rows keep the two-row header inside the compact height the
+     marketing-responsive spec pins, and above WCAG's 24px target minimum. */
   .site-nav a {
-    font-size: 0.78rem;
+    min-height: 30px;
+    font-size: 0.8rem;
+  }
+
+  .install-command {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .page-main {
@@ -741,8 +787,9 @@ h3 {
     display: block;
   }
 
+  /* 17vw set six-line headlines that pushed the hero's buttons below the fold. */
   h1 {
-    font-size: clamp(3rem, 17vw, 5rem);
+    font-size: clamp(2.4rem, 11vw, 3.4rem);
   }
 
   .card-grid,

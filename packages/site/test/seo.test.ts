@@ -414,9 +414,21 @@ describe('site SEO surface', () => {
   });
 
   it('ships a noindex custom 404 and a correctly sized social card', async () => {
-    const notFound = await read('public/404.html');
+    const [notFound, web] = await Promise.all([
+      read('public/404.html'),
+      read('public/web/index.html'),
+    ]);
     expect(notFound).to.include('name="robots" content="noindex, follow"');
     expect(notFound).to.include('Page not found — DocBlocks');
+    // The 404 is a page like the others: same skip link, same primary nav.
+    expect(notFound).to.include('<a class="skip-link" href="#content">Skip to content</a>');
+    const primaryNavHrefs = (html: string): string[] =>
+      [
+        ...(html.match(/<nav class="site-nav"[\s\S]*?<\/nav>/u)?.[0] ?? '').matchAll(
+          /href="([^"]+)"/gu,
+        ),
+      ].map(([, href]) => href);
+    expect(primaryNavHrefs(notFound), '404 primary nav').to.deep.equal(primaryNavHrefs(web));
 
     const socialCardPath = path.join(PUBLIC_ROOT, 'og.png');
     const [socialCard, socialCardBytes] = await Promise.all([

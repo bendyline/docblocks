@@ -6,6 +6,8 @@ playwright-report
 playwright-report-offline
 playwright-report-cross-browser
 CHANGELOG.md
+# Icon Composer bundle: written by generate-icons.py, re-saved in Icon Composer's own style.
+packages/desktop/resources/icon.icon
 
 packages/mobile/android/app/build
 packages/mobile/android/capacitor-cordova-android-plugins

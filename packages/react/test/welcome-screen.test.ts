@@ -41,7 +41,7 @@ describe('WelcomeScreen', () => {
     const { container, cleanup } = await renderWelcome(true);
     try {
       const link = appsLink(container);
-      expect(link?.href).to.equal('https://docblocks.com/desktop/');
+      expect(link?.href).to.equal('https://docblocks.com/docs/#apps');
       expect(link?.target).to.equal('_blank');
       expect(link?.rel).to.equal('noopener noreferrer');
     } finally {

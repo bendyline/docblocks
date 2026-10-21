@@ -522,6 +522,8 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
     return [
       'The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.',
       "Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.",
+      'The bundled native AI and speech engines (llama.cpp, whisper.cpp, stable-diffusion.cpp, uv, and the components compiled into them) ship their verbatim license texts and a manifest under `gezel-native/<platform>/THIRD_PARTY_LICENSES/` in the application resources directory.',
+      'AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
     ];
   }
   if (surface.id === 'vscode') {

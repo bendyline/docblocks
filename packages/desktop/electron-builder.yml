@@ -108,6 +108,9 @@ win:
   extraResources:
     - from: dist/vc-runtime/${arch}
       to: vc-runtime
+    # The opt-in notification-area icon (tray.ts) reads this at runtime.
+    - from: resources/icon.ico
+      to: resources/icon.ico
   # electron-builder 26 moved signtool options under `signtoolOptions`.
   signtoolOptions:
     publisherName: 'Bendyline LLC'
@@ -165,6 +168,20 @@ mac:
       arch:
         - arm64
   icon: resources/icon.icns
+  # macOS 26+ shrinks an .icns-only icon onto a gray plate unless it is exactly
+  # the system squircle. Assets.car carries the Icon Composer icon (compiled
+  # from resources/icon.icon by scripts/generate-icons.py, so packaging needs
+  # no Xcode) that the system masks itself; extendInfo.CFBundleIconName names
+  # it. icon.icns stays the CFBundleIconFile fallback and DMG volume icon.
+  # The tray needs its menu bar template image at runtime too; build resources
+  # are not copied into process.resourcesPath automatically.
+  extraResources:
+    - from: resources/Assets.car
+      to: Assets.car
+    - from: resources/trayTemplate.png
+      to: resources/trayTemplate.png
+    - from: resources/trayTemplate@2x.png
+      to: resources/trayTemplate@2x.png
   category: public.app-category.productivity
   # Release builds keep the hardened runtime. The unpacked `dist:dir` smoke
   # build overrides this to false: ad-hoc signatures have no shared Team ID,
@@ -178,6 +195,7 @@ mac:
   signIgnore:
     - /Contents/Resources/gezel-native/
   extendInfo:
+    CFBundleIconName: icon
     NSCameraUsageDescription: DocBlocks accesses the camera only when you choose to record video for a document.
     NSMicrophoneUsageDescription: DocBlocks accesses the microphone only when you choose to record audio or video for a document, or to dictate into one.
     NSAudioCaptureUsageDescription: DocBlocks accesses system audio only when you choose to include it in a screen recording.

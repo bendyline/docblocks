@@ -23,6 +23,44 @@ async function expectControllingWorker(
     .toContain(scriptPath);
 }
 
+/**
+ * Track the page's requests so a test can wait for a quiet period. Attach it
+ * before the navigation whose requests matter, so none are missed.
+ */
+function trackRequests(page: Page): {
+  waitForQuiet: (quietMs: number, timeout: number) => Promise<void>;
+  dispose: () => void;
+} {
+  let inFlight = 0;
+  let lastActivity = Date.now();
+  const started = (): void => {
+    inFlight += 1;
+    lastActivity = Date.now();
+  };
+  const ended = (): void => {
+    inFlight = Math.max(0, inFlight - 1);
+    lastActivity = Date.now();
+  };
+  page.on('request', started);
+  page.on('requestfinished', ended);
+  page.on('requestfailed', ended);
+  return {
+    waitForQuiet: (quietMs, timeout) =>
+      expect
+        .poll(() => inFlight === 0 && Date.now() - lastActivity >= quietMs, {
+          message: `expected ${quietMs}ms without page requests`,
+          timeout,
+          intervals: [100],
+        })
+        .toBe(true),
+    dispose: () => {
+      page.off('request', started);
+      page.off('requestfinished', ended);
+      page.off('requestfailed', ended);
+    },
+  };
+}
+
 test.describe('DocBlocks offline (PWA)', () => {
   const legacyRegistrationPageName = 'legacy-worker-registration.fixture.html';
   const legacyWorkerName = 'legacy-navigation-worker.fixture.js';
@@ -181,12 +219,25 @@ test.describe('DocBlocks offline (PWA)', () => {
         const loads = Number(sessionStorage.getItem(key) ?? '0');
         sessionStorage.setItem(key, String(loads + 1));
       });
+      const requests = trackRequests(page);
       await page.reload();
       await expect(page.locator('.db-shell')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText('Update available', { exact: true })).toBeVisible({
         timeout: 30_000,
       });
       expect(await page.evaluate(() => navigator.serviceWorker.controller)).toBeNull();
+
+      // Apply the update from a settled page. skipWaiting() asks Chromium to
+      // stop the old worker as soon as it is idle; a lazy chunk or proofing
+      // binary that reaches the old worker inside that window restarts it
+      // without the request, and with DevTools attached (as under Playwright)
+      // the new worker then stays waiting for up to five minutes. Proofing's
+      // harper binaries are the last lazy load on this page.
+      await expect(page.locator('.squisq-proof-status')).toHaveText(/^(✓ Proofing|\d+ issues?)$/, {
+        timeout: 60_000,
+      });
+      await requests.waitForQuiet(1_000, 30_000);
+      requests.dispose();
 
       const loadCountBeforeApply = await page.evaluate(() =>
         Number(sessionStorage.getItem('docblocks-pwa-update-e2e-loads') ?? '0'),

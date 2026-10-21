@@ -312,6 +312,29 @@ describe('Gezel connector against the app SDK', () => {
     });
   });
 
+  it('forwards a response schema as strict OpenAI structured output', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    const schema = { type: 'object', properties: { headline: { type: 'string' } } };
+    const stream = await connection.streamChat(
+      {
+        model: 'gezel:writer',
+        messages: [{ role: 'user', content: 'Hi' }],
+        responseFormat: { type: 'json_schema', name: 'slide', schema },
+      },
+      new AbortController().signal,
+    );
+    for await (const chunk of stream) expect(chunk).to.have.property('text');
+    const request = daemon.requests.find((entry) => entry.path === '/v1/chat/completions');
+    expect(request?.body).to.have.deep.property('response_format', {
+      type: 'json_schema',
+      json_schema: { name: 'slide', schema, strict: true },
+    });
+  });
+
   for (const purpose of ['write', 'chat', 'review', 'illustrate', 'study'] as const) {
     it(`uses the expected reasoning policy for ${purpose} through the real SDK`, async () => {
       const daemon = new FakeDaemon();

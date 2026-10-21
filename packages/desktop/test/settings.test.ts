@@ -65,8 +65,19 @@ describe('desktop settings boundary', () => {
     });
   });
 
+  it('round-trips the tray opt-in', () => {
+    // Absent means off — if this stops persisting, the tray icon the user
+    // turned on disappears on the next launch.
+    expect(parseSettings({ workspaces: [], tray: { enabled: true } })).to.deep.equal({
+      workspaces: [],
+      tray: { enabled: true },
+    });
+  });
+
   for (const [label, value] of [
     ['unknown root field', { workspaces: [], surprise: true }],
+    ['non-boolean tray opt-in', { workspaces: [], tray: { enabled: 'yes' } }],
+    ['unknown tray field', { workspaces: [], tray: { enabled: true, minimizeToTray: true } }],
     ['unknown git field', { workspaces: [], git: { allowEverything: true } }],
     ['non-boolean git default', { workspaces: [], git: { allowExpandedByDefault: 'yes' } }],
     ['relative allowed repository', { workspaces: [], git: { allowedRepositories: ['relative'] } }],

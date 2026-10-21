@@ -43,6 +43,11 @@ export interface PersistedAiSettings {
   reviewMode?: AiReviewMode;
 }
 
+/** The opt-in tray / menu bar icon. Absent means off. */
+export interface PersistedTraySettings {
+  enabled: boolean;
+}
+
 export interface Settings {
   defaultWorkspaceRoot?: string;
   workspaces: PersistedWorkspace[];
@@ -51,6 +56,7 @@ export interface Settings {
   exportTargets?: Record<string, PersistedExportTarget>;
   git?: PersistedGitSettings;
   ai?: PersistedAiSettings;
+  tray?: PersistedTraySettings;
 }
 
 export const SETTINGS_MAX_BYTES = 4 * 1024 * 1024;
@@ -63,6 +69,7 @@ const SETTINGS_KEYS = [
   'exportTargets',
   'git',
   'ai',
+  'tray',
 ] as const;
 
 const AI_REVIEW_MODES: ReadonlySet<string> = new Set(['off', 'explicit', 'implicit']);
@@ -100,6 +107,11 @@ export function parseSettings(value: unknown): Settings {
   }
   if (record.ai !== undefined) {
     parsed.ai = parseAiSettings(record.ai);
+  }
+  if (record.tray !== undefined) {
+    const tray = exactRecord(record.tray, ['enabled'], 'tray');
+    if (typeof tray.enabled !== 'boolean') invalid('tray.enabled must be a boolean');
+    parsed.tray = { enabled: tray.enabled };
   }
   return parsed;
 }

@@ -136,6 +136,18 @@ async function streamFrom(
       ...(request.purpose === 'write' ? {} : { reasoning_effort: 'none' }),
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
       ...(maxTokens == null ? {} : { max_tokens: maxTokens }),
+      ...(request.responseFormat
+        ? {
+            response_format: {
+              type: 'json_schema' as const,
+              json_schema: {
+                name: request.responseFormat.name,
+                schema: request.responseFormat.schema,
+                strict: true,
+              },
+            },
+          }
+        : {}),
     },
     { signal },
   );

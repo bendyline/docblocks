@@ -279,6 +279,23 @@ function requireWindowsUserDataRetention(): void {
 
 requireWindowsUserDataRetention();
 
+function isPngOfSize(file: string, width: number, height: number): boolean {
+  const png = readFileSync(file);
+  return (
+    png.length >= 24 &&
+    png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) &&
+    png.readUInt32BE(16) === width &&
+    png.readUInt32BE(20) === height
+  );
+}
+
+function copiesResource(resources: unknown, from: string, to: string): boolean {
+  return (
+    Array.isArray(resources) &&
+    resources.some((resource) => isRecord(resource) && resource.from === from && resource.to === to)
+  );
+}
+
 function requireLinuxIcons(): void {
   if (!isRecord(config)) {
     failConfigPolicy('electron-builder.yml must contain an object configuration.');
@@ -303,24 +320,12 @@ function requireLinuxIcons(): void {
     if (!existsSync(iconPath)) {
       failConfigPolicy(`Linux icon set is missing ${iconPath}.`);
     }
-    const png = readFileSync(iconPath);
-    const isPng =
-      png.length >= 24 &&
-      png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    if (!isPng || png.readUInt32BE(16) !== size || png.readUInt32BE(20) !== size) {
+    if (!isPngOfSize(iconPath, size, size)) {
       failConfigPolicy(`Linux icon ${iconPath} must be a ${size}x${size} PNG.`);
     }
   }
 
-  const includesRuntimeIcon =
-    Array.isArray(linux.extraResources) &&
-    linux.extraResources.some(
-      (resource) =>
-        isRecord(resource) &&
-        resource.from === 'resources/icon.png' &&
-        resource.to === 'resources/icon.png',
-    );
-  if (!includesRuntimeIcon) {
+  if (!copiesResource(linux.extraResources, 'resources/icon.png', 'resources/icon.png')) {
     failConfigPolicy('electron-builder.yml must copy the Linux runtime icon into resources.');
   }
 
@@ -328,6 +333,75 @@ function requireLinuxIcons(): void {
 }
 
 requireLinuxIcons();
+
+/**
+ * macOS 26+ shrinks an .icns-only app icon onto a gray plate, so the bundle
+ * must name the Icon Composer icon compiled into Assets.car. The menu bar
+ * extra needs its @1x/@2x template image at runtime.
+ */
+function requireMacIcons(): void {
+  if (!isRecord(config) || !isRecord(config.mac)) {
+    failConfigPolicy('electron-builder.yml must contain a mac configuration.');
+  }
+  const mac = config.mac;
+  const resourcesDirectory = path.join(repoRoot, 'packages/desktop/resources');
+
+  if (!isRecord(mac.extendInfo) || mac.extendInfo.CFBundleIconName !== 'icon') {
+    failConfigPolicy(
+      'electron-builder.yml mac.extendInfo.CFBundleIconName must name the Icon Composer icon "icon".',
+    );
+  }
+  if (!existsSync(path.join(resourcesDirectory, 'icon.icon', 'icon.json'))) {
+    failConfigPolicy('packages/desktop/resources/icon.icon must hold the Icon Composer source.');
+  }
+  const catalogPath = path.join(resourcesDirectory, 'Assets.car');
+  // A compiled asset catalog is a BOM store.
+  if (
+    !existsSync(catalogPath) ||
+    !readFileSync(catalogPath).subarray(0, 8).equals(Buffer.from('BOMStore'))
+  ) {
+    failConfigPolicy(
+      'packages/desktop/resources/Assets.car must be the compiled asset catalog; run npm run icons -w docblocks-desktop.',
+    );
+  }
+  if (!copiesResource(mac.extraResources, 'resources/Assets.car', 'Assets.car')) {
+    failConfigPolicy(
+      'electron-builder.yml mac.extraResources must copy Assets.car into Resources.',
+    );
+  }
+
+  for (const [fileName, size] of [
+    ['trayTemplate.png', 16],
+    ['trayTemplate@2x.png', 32],
+  ] as const) {
+    const trayPath = path.join(resourcesDirectory, fileName);
+    if (!existsSync(trayPath) || !isPngOfSize(trayPath, size, size)) {
+      failConfigPolicy(`packages/desktop/resources/${fileName} must be a ${size}x${size} PNG.`);
+    }
+    if (!copiesResource(mac.extraResources, `resources/${fileName}`, `resources/${fileName}`)) {
+      failConfigPolicy(
+        `electron-builder.yml mac.extraResources must copy ${fileName} into resources.`,
+      );
+    }
+  }
+
+  process.stdout.write('electron-builder.yml: macOS Icon Composer icon + menu bar template OK\n');
+}
+
+requireMacIcons();
+
+/** The opt-in tray reads its notification-area icon from resources at runtime. */
+function requireWindowsTrayIcon(): void {
+  if (!isRecord(config) || !isRecord(config.win)) {
+    failConfigPolicy('electron-builder.yml must contain a win configuration.');
+  }
+  if (!copiesResource(config.win.extraResources, 'resources/icon.ico', 'resources/icon.ico')) {
+    failConfigPolicy('electron-builder.yml win.extraResources must copy icon.ico into resources.');
+  }
+  process.stdout.write('electron-builder.yml: Windows tray icon OK\n');
+}
+
+requireWindowsTrayIcon();
 
 function requireLinuxPackageMetadata(): void {
   if (!isRecord(config)) {

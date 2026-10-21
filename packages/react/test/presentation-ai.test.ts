@@ -175,6 +175,17 @@ describe('presentation AI refinement', () => {
     assert.deepEqual(result.plan.beats[0], source.beats[0]);
     assert.equal(result.plan.sourceText, source.sourceText);
     assert.equal(api.requests[0]!.maxTokens, 550);
+    // A reasoning model would spend the small cap thinking; only `write` may reason.
+    assert.notEqual(api.requests[0]!.purpose, 'write');
+    // Structured output limits the reply to the three fields the parser accepts.
+    const format = api.requests[0]!.responseFormat!;
+    assert.equal(format.type, 'json_schema');
+    assert.deepEqual((format.schema as { required: string[] }).required, [
+      'layout',
+      'headline',
+      'points',
+    ]);
+    assert.equal((format.schema as { additionalProperties: boolean }).additionalProperties, false);
     assert.ok(api.requests.every((request) => JSON.stringify(request).length < 4000));
   });
   it('reports each slide as it resolves, before the next request starts', async () => {

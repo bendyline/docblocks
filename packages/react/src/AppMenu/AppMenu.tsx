@@ -6,6 +6,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   getHostEnvironment,
   type DocBlocksHostAiAPI,
+  type DocBlocksHostMenuAPI,
   type DocBlocksHostSpeechAPI,
   type HostSurfaceKind,
 } from '@bendyline/docblocks/host';
@@ -30,6 +31,7 @@ import {
 } from '../Settings/Settings.js';
 import { AiSettingsControls } from '../Settings/AiSettings.js';
 import { SpeechSettingsControls } from '../Settings/SpeechSettings.js';
+import { TraySettingsControls } from '../Settings/TraySettings.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { displayBuildDate } from '../local-date.js';
@@ -114,6 +116,11 @@ export interface AppMenuProps {
    * dictation and narration models; when omitted the section is hidden.
    */
   speech?: DocBlocksHostSpeechAPI;
+  /**
+   * The host's menu API, when it offers the opt-in tray / menu bar icon
+   * (`hostSupports('trayIcon')`). When omitted the section is hidden.
+   */
+  tray?: DocBlocksHostMenuAPI;
   /** Opens Settings whenever it changes to a new non-zero value. */
   settingsRequest?: number;
 }
@@ -166,6 +173,7 @@ export function AppMenu({
   appBuildDate,
   ai,
   speech,
+  tray,
   settingsRequest = 0,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -402,6 +410,7 @@ export function AppMenu({
           />
           {ai && <AiSettingsControls ai={ai} />}
           {speech && <SpeechSettingsControls speech={speech} />}
+          {tray && <TraySettingsControls menu={tray} platform={getHostEnvironment()?.platform} />}
 
           {getStorageEstimate && (
             <fieldset className="db-settings-fieldset">

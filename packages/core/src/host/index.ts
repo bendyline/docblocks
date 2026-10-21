@@ -36,6 +36,7 @@ export type {
   AiPreferencesPatch,
   AiProgress,
   AiProviderInfo,
+  AiResponseFormat,
   AiResult,
   AiReviewMode,
   AiSearchHit,

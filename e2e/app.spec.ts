@@ -603,7 +603,7 @@ test.describe('File operations', () => {
 });
 
 test.describe('Folder context menu theming', () => {
-  test('uses DocBlocks colors when portaled outside the dark shell', async ({ page }) => {
+  test('uses DocBlocks colors and font when portaled outside the dark shell', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
     });
@@ -634,19 +634,25 @@ test.describe('Folder context menu theming', () => {
 
       const normalItem = element.querySelector<HTMLElement>('.db-tree-context-item');
       const dangerItem = element.querySelector<HTMLElement>('.db-tree-context-item--danger');
+      const shell = document.querySelector<HTMLElement>('.db-shell');
       return {
         background: getComputedStyle(element).backgroundColor,
         normalText: normalItem ? getComputedStyle(normalItem).color : '',
         dangerText: dangerItem ? getComputedStyle(dangerItem).color : '',
+        itemFont: normalItem ? getComputedStyle(normalItem).fontFamily : '',
         expectedBackground: resolveColor('--db-bg-raised'),
         expectedNormalText: resolveColor('--db-text-secondary'),
         expectedDangerText: resolveColor('--db-danger'),
+        // <body> sets no font, so a portaled menu that inherits one renders
+        // in the browser's serif rather than the shell's chrome face.
+        expectedFont: shell ? getComputedStyle(shell).fontFamily : '',
       };
     });
 
     expect(colors.background).toBe(colors.expectedBackground);
     expect(colors.normalText).toBe(colors.expectedNormalText);
     expect(colors.dangerText).toBe(colors.expectedDangerText);
+    expect(colors.itemFont).toBe(colors.expectedFont);
   });
 });
 
@@ -961,7 +967,8 @@ test.describe('Simple diagram theming', () => {
     const handle = scene.locator('.squisq-scene-selection-handle').first();
     await expect(handle).toBeVisible();
     const handleStroke = await handle.evaluate((element) => getComputedStyle(element).stroke);
-    await scene.getByRole('button', { name: 'Connect' }).click();
+    // Exact: the Arrange button's name ("…so connections flow…") also contains "connect".
+    await scene.getByRole('button', { name: 'Connect', exact: true }).click();
     const fitButton = scene.getByRole('button', { name: 'Fit diagram' });
     await fitButton.click();
     await expect(fitButton).toHaveAttribute('aria-pressed', 'true');

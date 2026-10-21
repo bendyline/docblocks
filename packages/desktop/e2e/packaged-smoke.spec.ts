@@ -75,6 +75,15 @@ test('boots the packaged app.asar with production fuses and renderer isolation',
       .replace(`gezel-native-${nativeRelease.release}-`, '')
       .replace(/\.(zip|tar\.gz)$/u, '');
     expect(fs.statSync(path.join(nativeRoot, key)).isDirectory()).toBe(true);
+    // THIRD_PARTY_NOTICES.txt points here for the native engines' licenses.
+    const licenseManifest = path.join(
+      nativeRoot,
+      key,
+      'THIRD_PARTY_LICENSES',
+      'native',
+      'manifest.json',
+    );
+    expect(fs.statSync(licenseManifest).isFile()).toBe(true);
   }
   const cpuOrMetal = `${process.platform}-${process.arch}-${process.platform === 'darwin' ? 'metal' : 'cpu'}`;
   const executable = process.platform === 'win32' ? 'gezel-llama-server.exe' : 'gezel-llama-server';

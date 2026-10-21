@@ -653,6 +653,12 @@ async function bootstrap(): Promise<void> {
   // Engines start lazily on first use; nothing is spawned here.
   speechService = await createSpeechService();
   registerSpeechIpc(speechService);
+  // Before the window loads: the shell publishes its pinned documents as soon
+  // as it mounts, and the tray has to be listening already.
+  registerTray(
+    { getWindow: () => mainWindow.current(), ensureWindow: () => mainWindow.ensure() },
+    settings.tray?.enabled === true,
+  );
 
   // Probe before the renderer loads so its Git UI and the native menu use the
   // same process-lifetime capability. On macOS this never executes the Apple
@@ -676,8 +682,6 @@ async function bootstrap(): Promise<void> {
     tts: speechService?.ttsAvailable ?? false,
   });
   win.setMenuBarVisibility(false);
-
-  registerTray(() => mainWindow.current());
 
   if (settingsRecovery) reportSettingsRecovery(win, settingsRecovery);
 

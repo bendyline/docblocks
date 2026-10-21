@@ -12,6 +12,7 @@
  *   npm run ux:crawl -- --no-build        # reuse packages/site/dist
  *   npm run ux:crawl -- --review          # functional, export, accessibility audit
  *   npm run ux:crawl -- --affordances     # click every control; contact sheet
+ *   npm run ux:crawl -- --pages           # every static page × 7 profiles; downloads
  *   LIVE_UX_BASE_URL=https://docblocks.com npm run ux:crawl   # the live site
  *
  * The service worker only exists in a production build, which is the same
@@ -77,14 +78,19 @@ async function main(): Promise<void> {
   const skipBuild = passThrough.includes('--no-build');
   const review = passThrough.includes('--review');
   const affordances = passThrough.includes('--affordances');
-  if (review && affordances) throw new Error('Choose one of --review or --affordances.');
+  const pages = passThrough.includes('--pages');
+  if ([review, affordances, pages].filter(Boolean).length > 1) {
+    throw new Error('Choose one of --review, --affordances, or --pages.');
+  }
   const entry = review
     ? path.join(repoRoot, 'e2e', 'site-ship-review.ts')
     : affordances
       ? path.join(repoRoot, 'e2e', 'site-affordance-crawl.ts')
-      : crawlEntry;
+      : pages
+        ? path.join(repoRoot, 'e2e', 'site-pages-crawl.ts')
+        : crawlEntry;
   const crawlArgs = passThrough.filter(
-    (argument) => !['--no-build', '--review', '--affordances'].includes(argument),
+    (argument) => !['--no-build', '--review', '--affordances', '--pages'].includes(argument),
   );
 
   const externalBaseUrl = process.env.LIVE_UX_BASE_URL;

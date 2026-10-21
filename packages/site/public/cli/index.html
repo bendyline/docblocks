@@ -11,7 +11,7 @@
     <title>DocBlocks CLI &amp; MCP — Build, Convert and Automate Markdown</title>
     <meta
       name="description"
-      content="Build, preview, convert, render, inspect, and automate Markdown with the DocBlocks CLI and its local artifact-first MCP server for AI agents."
+      content="Build, preview, convert, and render Markdown from the command line with the DocBlocks CLI, and connect AI agents through its local MCP server."
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href="https://docblocks.com/cli/" />
@@ -20,10 +20,14 @@
     <meta property="og:title" content="DocBlocks CLI &amp; MCP" />
     <meta
       property="og:description"
-      content="Build, convert, render, and automate local documents from the command line or an artifact-first MCP server."
+      content="Build, convert, render, and automate local documents from the command line, or connect AI agents through a local MCP server."
     />
     <meta property="og:url" content="https://docblocks.com/cli/" />
     <meta property="og:image" content="https://docblocks.com/og.png" />
+    <meta
+      property="og:image:alt"
+      content="DocBlocks, the local-first Markdown editor for web, desktop, VS Code, and CLI"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
@@ -57,10 +61,11 @@
       <section class="hero">
         <div>
           <p class="eyebrow">DocBlocks CLI and MCP</p>
-          <h1>Documents that work at the command line—and with agents.</h1>
+          <h1>Documents that work at the command line and with agents.</h1>
           <p class="lede">
-            Build Markdown sites, preview local documents, convert between formats, render video,
-            parse source, and expose a bounded local MCP server for artifact-first agent workflows.
+            Build Markdown into web pages, preview a folder locally, convert between formats, and
+            render video. AI agents get a local MCP server that can touch only the folders you
+            allow.
           </p>
           <div class="install-commands" aria-label="Install and verify DocBlocks CLI">
             <code class="install-command" tabindex="0"
@@ -82,10 +87,11 @@
         <aside class="hero-aside" aria-label="CLI highlights">
           <h2>Nine focused commands</h2>
           <ul>
-            <li>Build and serve Markdown</li>
-            <li>Convert across the linked format registry</li>
-            <li>Render configurable MP4 video</li>
-            <li>Run a local, artifact-first MCP server</li>
+            <li>Build and serve Markdown as web pages</li>
+            <li>Convert to Word, PowerPoint, PDF, and more</li>
+            <li>Render documents as MP4 video</li>
+            <li>Connect AI agents over MCP</li>
+            <li>Parse Markdown, list themes, and refresh workspace catalogs in scripts</li>
           </ul>
         </aside>
       </section>
@@ -93,21 +99,21 @@
       <section class="section" aria-labelledby="cli-workflows">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Direct when you want it, bounded when you need it</p>
-            <h2 id="cli-workflows">One toolchain, two authority models.</h2>
+            <p class="eyebrow">You decide what it can touch</p>
+            <h2 id="cli-workflows">Run it yourself, or hand it to an agent.</h2>
           </div>
           <p class="section-copy">
-            Direct CLI commands use the invoking process’s filesystem authority and write their
-            documented outputs. MCP starts with no filesystem grants, keeps results as temporary
-            session artifacts, and materializes a file only through an explicit save operation.
+            Commands you run read and write files like any other command-line tool. The MCP server
+            starts with no access to your files: it holds results for the session and writes to disk
+            only when asked to save, inside folders you allowed when you started it.
           </p>
         </div>
         <div class="card-grid">
           <article class="card">
             <h3>Build and preview</h3>
             <p>
-              Recursively turn Markdown into standalone HTML or serve a constrained local preview
-              with contained asset reads and an allowlisted set of file types.
+              Turn a folder of Markdown into standalone web pages, or preview it on a local server
+              that serves only supported file types from inside that folder.
             </p>
           </article>
           <article class="card">
@@ -120,8 +126,8 @@
           <article class="card">
             <h3>Work with AI agents</h3>
             <p>
-              Convert plain text or Markdown directly, with optional inspect, preview, and compare
-              tools. Explicit root grants remain separate from artifact creation and durable output.
+              Agents can convert text or Markdown, inspect and preview the result, and compare
+              versions. They read and save files only in the folders you grant.
             </p>
           </article>
         </div>
@@ -130,11 +136,8 @@
       <section class="section">
         <div class="callout">
           <div>
-            <h2>See every supported direction.</h2>
-            <p>
-              Format capabilities come from the linked Squisq registry and distinguish import from
-              export.
-            </p>
+            <h2>See every format it reads and writes.</h2>
+            <p>Check which formats open as well as export, and what each one is for.</p>
           </div>
           <a class="button" href="/formats/">Explore formats</a>
         </div>

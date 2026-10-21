@@ -9,6 +9,7 @@ import {
   isWelcomeDocumentPath,
   WELCOME_DOCUMENT_CONTENT,
   WELCOME_DOCUMENT_PATH,
+  welcomeDocumentContent,
 } from '../src/DocBlocksShell/welcome-document.js';
 
 const MARKETING_URLS = [
@@ -17,17 +18,37 @@ const MARKETING_URLS = [
   'https://docblocks.com/docs/',
 ] as const;
 
+const BROWSER = WELCOME_DOCUMENT_CONTENT;
+const DESKTOP = welcomeDocumentContent({ browserStorage: false, desktopApp: true });
+const DEVICE_FOLDER = welcomeDocumentContent({ browserStorage: false, desktopApp: false });
+const VARIANTS = { browser: BROWSER, desktop: DESKTOP, 'device folder': DEVICE_FOLDER };
+
 describe('welcome document', () => {
-  it('survives the Write view unchanged, so opening it does not rewrite the file', async () => {
-    // The Write view saves whatever its Markdown conversion produces. The
-    // welcome text once lacked the trailing newline every saved document
-    // ends with, so simply opening it in Write modified it.
-    const { markdownToTiptap, tiptapToMarkdown } = await import('@bendyline/squisq-editor-react');
-    const body = WELCOME_DOCUMENT_CONTENT.replace(/^---\n[\s\S]*?\n---\n/, '');
-    expect(tiptapToMarkdown(markdownToTiptap(body))).to.equal(body);
+  for (const [name, content] of Object.entries(VARIANTS)) {
+    it(`survives the Write view unchanged (${name}), so opening it does not rewrite the file`, async () => {
+      // The Write view saves whatever its Markdown conversion produces. The
+      // welcome text once lacked the trailing newline every saved document
+      // ends with, so simply opening it in Write modified it.
+      const { markdownToTiptap, tiptapToMarkdown } = await import('@bendyline/squisq-editor-react');
+      const body = content.replace(/^---\n[\s\S]*?\n---\n/, '');
+      expect(tiptapToMarkdown(markdownToTiptap(body))).to.equal(body);
+    });
+  }
+
+  it('names only the backup and app controls each surface shows', () => {
+    // Back up sits at the bottom of the file list only where the browser holds
+    // the documents, and the desktop app needs no link to itself.
+    expect(BROWSER).to.include('Choose **Back up** at the bottom of the file list');
+    expect(BROWSER).to.include('[Get the desktop app]');
+    for (const content of [DESKTOP, DEVICE_FOLDER]) expect(content).not.to.include('Back up');
+    expect(DESKTOP).not.to.include('docblocks.com/desktop');
+    expect(DESKTOP).to.include('**Open Folder**');
+    expect(DEVICE_FOLDER).to.include('[Get the desktop app]');
   });
 
   it('uses valid, diverse presentation templates and a complete value-proposition diagram', () => {
+    for (const content of Object.values(VARIANTS))
+      expect(validateMarkdownSource(content).diagnostics).to.deep.equal([]);
     const result = validateMarkdownSource(WELCOME_DOCUMENT_CONTENT);
     expect(result.diagnostics).to.deep.equal([]);
     expect(result.doc.frontmatter?.['squisq-cover-slide']).to.equal(false);

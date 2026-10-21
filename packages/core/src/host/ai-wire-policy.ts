@@ -15,6 +15,7 @@ import type {
   AiPreferences,
   AiPreferencesPatch,
   AiProgress,
+  AiResponseFormat,
   AiReviewMode,
   AiStatus,
   AiUnavailableReason,
@@ -36,6 +37,8 @@ export const AI_WIRE_LIMITS = Object.freeze({
   completionCharacters: HOST_WIRE_LIMITS.documentCharacters,
   maxTokensCeiling: 32_768,
   temperatureCeiling: 2,
+  /** A response schema describes a reply's shape; it is not another prompt. */
+  responseSchemaCharacters: 16 * 1024,
   verificationCodeCharacters: 16,
   progressPhaseCharacters: 64,
   modelEntries: 200,
@@ -318,6 +321,29 @@ function parseAiChatMessage(value: unknown): AiChatMessage | null {
   return { role: value.role as AiChatMessage['role'], content: value.content };
 }
 
+const RESPONSE_FORMAT_NAME = /^[A-Za-z0-9_-]{1,64}$/u;
+
+/** A JSON Schema object, bounded by its serialized size and copied as plain JSON. */
+function parseAiResponseFormat(value: unknown): AiResponseFormat | null {
+  if (!isRecord(value)) return null;
+  if (!hasExactKeys(value, ['type', 'name', 'schema'])) return null;
+  if (value.type !== 'json_schema') return null;
+  if (typeof value.name !== 'string' || !RESPONSE_FORMAT_NAME.test(value.name)) return null;
+  if (!isRecord(value.schema)) return null;
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value.schema);
+  } catch {
+    return null;
+  }
+  if (serialized.length > AI_WIRE_LIMITS.responseSchemaCharacters) return null;
+  return {
+    type: 'json_schema',
+    name: value.name,
+    schema: JSON.parse(serialized) as Record<string, unknown>,
+  };
+}
+
 /**
  * Parse a renderer-originated chat request.
  *
@@ -327,7 +353,13 @@ function parseAiChatMessage(value: unknown): AiChatMessage | null {
  */
 export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   if (!isRecord(value)) return null;
-  if (!hasKeysWithin(value, ['messages', 'purpose'], ['model', 'temperature', 'maxTokens'])) {
+  if (
+    !hasKeysWithin(
+      value,
+      ['messages', 'purpose'],
+      ['model', 'temperature', 'maxTokens', 'responseFormat'],
+    )
+  ) {
     return null;
   }
   if (typeof value.purpose !== 'string' || !CHAT_PURPOSES.has(value.purpose)) return null;
@@ -363,6 +395,9 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   ) {
     return null;
   }
+  const responseFormat =
+    value.responseFormat === undefined ? undefined : parseAiResponseFormat(value.responseFormat);
+  if (responseFormat === null) return null;
 
   return {
     messages,
@@ -370,6 +405,7 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     ...(value.model === undefined ? {} : { model: value.model as string }),
     ...(value.temperature === undefined ? {} : { temperature: value.temperature as number }),
     ...(value.maxTokens === undefined ? {} : { maxTokens: value.maxTokens as number }),
+    ...(responseFormat === undefined ? {} : { responseFormat }),
   };
 }
 

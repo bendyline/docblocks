@@ -576,6 +576,8 @@ const menuApi: DocBlocksHostMenuAPI = {
       })),
     );
   },
+  getTrayEnabled: () => ipcRenderer.invoke('tray:getEnabled'),
+  setTrayEnabled: (enabled) => ipcRenderer.invoke('tray:setEnabled', enabled),
 };
 
 // ── env ─────────────────────────────────────────────────────────────

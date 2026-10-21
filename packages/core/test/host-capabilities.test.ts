@@ -73,7 +73,11 @@ function electronHost(): Record<string, unknown> {
     git: { status: () => undefined },
     updater: { checkForUpdates: () => undefined },
     lifecycle: { onPrepareClose: () => undefined },
-    menu: { setPinnedDocuments: () => undefined },
+    menu: {
+      setPinnedDocuments: () => undefined,
+      getTrayEnabled: () => undefined,
+      setTrayEnabled: () => undefined,
+    },
     onMenuCommand: () => undefined,
     onOpenRequest: () => undefined,
   };
@@ -202,6 +206,7 @@ describe('deriveHostCapabilities', () => {
     expect(capabilities.openWorkspaceFolder).to.equal(false);
     expect(capabilities.menuCommands).to.equal(false);
     expect(capabilities.pinnedDocumentMirror).to.equal(false);
+    expect(capabilities.trayIcon).to.equal(false);
     expect(capabilities.git).to.equal(false);
     expect(capabilities.updater).to.equal(false);
     expect(capabilities.systemFfmpeg).to.equal(false);
@@ -221,6 +226,16 @@ describe('deriveHostCapabilities', () => {
     expect(capabilities.git).to.equal(false);
     expect(capabilities.updater).to.equal(false);
     expect(capabilities.filesystemV2).to.equal(true);
+  });
+
+  it('offers the tray switch only when both halves of it are bridged', () => {
+    // A preload that can publish pinned documents but predates the tray
+    // switch must not grow a Settings control that throws on first use.
+    const host = electronHost();
+    host.menu = { setPinnedDocuments: () => undefined, getTrayEnabled: () => undefined };
+    const capabilities = deriveHostCapabilities(host);
+    expect(capabilities.pinnedDocumentMirror).to.equal(true);
+    expect(capabilities.trayIcon).to.equal(false);
   });
 
   it('treats a present-but-wrong member as absent', () => {
