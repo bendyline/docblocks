@@ -1,5 +1,9 @@
+// Draw from 20000-32767, below every common ephemeral range (Linux starts at
+// 32768, macOS and Windows at 49152). Inside those ranges an open client
+// connection can hold the drawn port: the availability probe only sees
+// listeners, and the server then fails to bind ::1 with EADDRINUSE.
 const minimumDynamicPort = 20_000;
-const dynamicPortCount = 30_000;
+const dynamicPortCount = 12_768;
 
 function parseConfiguredPort(value: string): number {
   const port = Number(value);
