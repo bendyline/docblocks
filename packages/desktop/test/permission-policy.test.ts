@@ -147,12 +147,14 @@ describe('desktop permission policy', () => {
         },
         platform: 'win32',
       });
-      const result = await new Promise<Streams>((resolve) =>
+      const result = await new Promise<Streams | null>((resolve) =>
         handler(displayRequest(owner.frame), resolve),
       );
       expect(choices).to.equal(1);
+      // Denial is `null`: Electron throws on an empty Streams object when
+      // video was requested.
       expect(result).to.deep.equal(
-        outcome === 'window' ? { video: { id: 'window:2:0', name: 'Editor' } } : {},
+        outcome === 'window' ? { video: { id: 'window:2:0', name: 'Editor' } } : null,
       );
       expect(owner.contents.listenerCount('did-start-navigation')).to.equal(0);
     }
@@ -178,13 +180,15 @@ describe('desktop permission policy', () => {
         }),
       platform: 'win32',
     });
-    const first = new Promise<Streams>((resolve) => handler(displayRequest(owner.frame), resolve));
+    const first = new Promise<Streams | null>((resolve) =>
+      handler(displayRequest(owner.frame), resolve),
+    );
     await Promise.resolve();
     expect(
-      await new Promise<Streams>((resolve) => handler(displayRequest(owner.frame), resolve)),
-    ).to.deep.equal({});
+      await new Promise<Streams | null>((resolve) => handler(displayRequest(owner.frame), resolve)),
+    ).to.equal(null);
     choose(null);
-    expect(await first).to.deep.equal({});
+    expect(await first).to.equal(null);
   });
 
   it('allows only the intended permissions from the trusted owner main frame', () => {

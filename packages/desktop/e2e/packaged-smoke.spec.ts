@@ -161,50 +161,14 @@ test('grants capture only to the trusted renderer and exposes only working prese
     camera: { status: 'granted', audioTracks: 0, videoTracks: 1 },
   });
 
-  // An automation-only exact popup route creates a genuine second
-  // BrowserWindow/WebContents in the same Electron session. Its canonical
-  // app:// URL is not enough to inherit the main window's media authority.
-  const unownedPagePromise = packaged.context.waitForEvent('page');
-  const popupOpened = await packaged.window.evaluate(
-    () =>
-      window.open(
-        'app://docblocks/index.html?docblocks-e2e-permission-probe=1',
-        'docblocks-e2e-permission-probe',
-      ) !== null,
-  );
-  expect(popupOpened).toBe(true);
-  const unownedPage = await unownedPagePromise;
-  try {
-    await unownedPage.waitForURL('app://docblocks/index.html?docblocks-e2e-permission-probe=1', {
-      waitUntil: 'domcontentloaded',
-    });
-    const deniedMedia = await unownedPage.evaluate(async () => {
-      const request = async (constraints: MediaStreamConstraints) => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          stream.getTracks().forEach((track) => track.stop());
-          return 'granted';
-        } catch (error: unknown) {
-          return error instanceof DOMException ? error.name : 'Error';
-        }
-      };
-      return {
-        microphone: await request({ audio: true, video: false }),
-        camera: await request({ audio: false, video: true }),
-      };
-    });
-    expect(deniedMedia).toEqual({
-      microphone: 'NotAllowedError',
-      camera: 'NotAllowedError',
-    });
-  } finally {
-    await unownedPage.close();
-  }
-
   // Exercise getDisplayMedia through a real click so the main process sees
   // Chromium's required transient user activation.
   // A headless macOS runner cannot operate the native screen picker or grant
   // TCC screen-recording consent. Windows exercises loopback audio too.
+  // This runs before the probe popup below opens and closes. On Linux CI,
+  // Chromium's X11 screen capturer intermittently failed to initialize
+  // ("Failed to initialize pixel buffer") right after that popup closed,
+  // leaving no screen to grant; the popup's window teardown is the suspect.
   if (process.platform !== 'darwin') {
     const requestSystemAudio = process.platform === 'win32';
     await packaged.window.evaluate((audio) => {
@@ -247,6 +211,46 @@ test('grants capture only to the trusted renderer and exposes only working prese
         audioTracks: requestSystemAudio ? 1 : 0,
         videoTracks: 1,
       });
+  }
+
+  // An automation-only exact popup route creates a genuine second
+  // BrowserWindow/WebContents in the same Electron session. Its canonical
+  // app:// URL is not enough to inherit the main window's media authority.
+  const unownedPagePromise = packaged.context.waitForEvent('page');
+  const popupOpened = await packaged.window.evaluate(
+    () =>
+      window.open(
+        'app://docblocks/index.html?docblocks-e2e-permission-probe=1',
+        'docblocks-e2e-permission-probe',
+      ) !== null,
+  );
+  expect(popupOpened).toBe(true);
+  const unownedPage = await unownedPagePromise;
+  try {
+    await unownedPage.waitForURL('app://docblocks/index.html?docblocks-e2e-permission-probe=1', {
+      waitUntil: 'domcontentloaded',
+    });
+    const deniedMedia = await unownedPage.evaluate(async () => {
+      const request = async (constraints: MediaStreamConstraints) => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          stream.getTracks().forEach((track) => track.stop());
+          return 'granted';
+        } catch (error: unknown) {
+          return error instanceof DOMException ? error.name : 'Error';
+        }
+      };
+      return {
+        microphone: await request({ audio: true, video: false }),
+        camera: await request({ audio: false, video: true }),
+      };
+    });
+    expect(deniedMedia).toEqual({
+      microphone: 'NotAllowedError',
+      camera: 'NotAllowedError',
+    });
+  } finally {
+    await unownedPage.close();
   }
 
   const gateway = packaged.window.locator('.db-welcome-gateway');

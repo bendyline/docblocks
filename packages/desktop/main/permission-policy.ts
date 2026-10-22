@@ -258,6 +258,22 @@ export function grantedDisplayStreams(
   };
 }
 
+type DisplayMediaCallback = Parameters<
+  Exclude<Parameters<Session['setDisplayMediaRequestHandler']>[0], null>
+>[1];
+
+/**
+ * Refuse a display-capture request. Electron's typings admit only a `Streams`
+ * object, but an empty one makes Electron 43 throw "Video was requested, but
+ * no video stream was provided" back into the main process whenever video was
+ * requested — it still denies, then leaves an uncaught error behind. `null`
+ * is the denial Electron accepts without throwing, with the same result in
+ * the renderer.
+ */
+function denyDisplayMedia(callback: DisplayMediaCallback): void {
+  (callback as (streams: Streams | null) => void)(null);
+}
+
 export function configureDesktopPermissionPolicy(options: DesktopPermissionPolicyOptions): void {
   const {
     session,
@@ -310,20 +326,21 @@ export function configureDesktopPermissionPolicy(options: DesktopPermissionPolic
     const allowed = () =>
       getOwner() === owner && allowsDisplayMediaRequest(owner, request, developmentOrigin);
     if (choosingDisplay || !owner || !allowed()) {
-      callback({});
+      denyDisplayMedia(callback);
       return;
     }
 
     choosingDisplay = true;
     let completed = false;
-    const finish = (streams: Streams = {}) => {
+    const finish = (streams: Streams | null = null) => {
       if (completed) return;
       completed = true;
       clearTimeout(timeout);
       owner.removeListener('did-start-navigation', cancel);
       owner.removeListener('destroyed', cancel);
       choosingDisplay = false;
-      callback(streams);
+      if (streams) callback(streams);
+      else denyDisplayMedia(callback);
     };
     const cancel = () => finish();
     const timeout = setTimeout(cancel, 120_000);
@@ -331,16 +348,16 @@ export function configureDesktopPermissionPolicy(options: DesktopPermissionPolic
     owner.once('destroyed', cancel);
     void getDisplaySources()
       .then(async (sources) => {
-        if (completed || !allowed() || sources.length === 0) return {};
+        if (completed || !allowed() || sources.length === 0) return null;
         const source = await chooseDisplaySource(owner, sources);
         // Neither an unrecognized selection nor a picker that outlived its
         // owning renderer can authorize capture. Cancellation never falls back
         // to the primary monitor.
         return !completed && source && sources.includes(source) && allowed()
           ? grantedDisplayStreams(source, request.audioRequested, platform)
-          : {};
+          : null;
       })
-      .catch(() => ({}))
+      .catch(() => null)
       .then(finish);
   }, displayMediaHandlerOptions(platform));
 }
