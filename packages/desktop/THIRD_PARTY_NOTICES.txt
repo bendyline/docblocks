@@ -128,7 +128,7 @@ AI models, speech models, and voices are not part of this distribution. They are
 | define-properties | 1.2.1 | MIT | https://github.com/ljharb/define-properties |
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
 | dijkstrajs | 1.0.3 | MIT | https://github.com/tcort/dijkstrajs |
-| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.17 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | electron | 43.5.0 | MIT | https://github.com/electron/electron |
 | electron-updater | 6.8.9 | MIT | https://github.com/electron-userland/electron-builder |
 | electron-window-state | 5.0.3 | MIT | https://github.com/mawie81/electron-window-state |
@@ -7919,7 +7919,7 @@ Source files: node_modules/@huggingface/tokenizers/LICENSE, node_modules/genson-
    limitations under the License.
 
 ==============================================================================
-Components: @huggingface/transformers@4.3.1, dompurify@3.4.16
+Components: @huggingface/transformers@4.3.1, dompurify@3.4.17
 Source files: node_modules/@huggingface/transformers/LICENSE, node_modules/dompurify/LICENSE
 ==============================================================================
 
@@ -9530,7 +9530,7 @@ THE SOFTWARE.
 ```
 
 ==============================================================================
-Components: dompurify@3.4.16
+Components: dompurify@3.4.17
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
 Mozilla Public License Version 2.0

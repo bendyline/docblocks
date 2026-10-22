@@ -163,7 +163,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 | depd | 2.0.0 | MIT | https://github.com/dougwilson/nodejs-depd |
 | dequal | 2.0.3 | MIT | https://github.com/lukeed/dequal |
 | devlop | 1.1.0 | MIT | https://github.com/wooorm/devlop |
-| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.17 | (MPL-2.0 OR Apache-2.0) | https://github.com/cure53/DOMPurify |
 | dunder-proto | 1.0.1 | MIT | https://github.com/es-shims/dunder-proto |
 | ee-first | 1.1.1 | MIT | https://github.com/jonathanong/ee-first |
 | encodeurl | 2.0.0 | MIT | https://github.com/pillarjs/encodeurl |
@@ -11530,7 +11530,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: @chevrotain/types@11.1.2, dompurify@3.4.16
+Components: @chevrotain/types@11.1.2, dompurify@3.4.17
 Source files: node_modules/@chevrotain/types/LICENSE.txt, node_modules/dompurify/LICENSE
 ==============================================================================
 
@@ -13377,7 +13377,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
-Components: dompurify@3.4.16
+Components: dompurify@3.4.17
 Source files: node_modules/dompurify/LICENSE-MPL
 ==============================================================================
 Mozilla Public License Version 2.0
