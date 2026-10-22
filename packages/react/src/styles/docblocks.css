@@ -2060,8 +2060,23 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar {
   min-height: calc(var(--db-toolbar-wrapped-row) * 2);
   flex-wrap: wrap;
-  align-content: stretch;
+  align-content: flex-start;
+  /* Squisq's 1px item gap would otherwise also open between the two rows. */
+  row-gap: 0;
   padding-right: var(--db-toolbar-wrapped-inline-end);
+}
+
+/* A flex line is only as tall as its tallest item, which on the second row is
+   a 28px button, and stretching the lines splits the leftover height between
+   both of them, so the controls sat below the row's center by half of it.
+   This zero-width strut holds the second line open to a full row instead. It
+   is the last item, so it lands there whatever the current mode renders; its
+   negative margin cancels the 1px column gap so the right edge stays put. */
+.db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) .squisq-toolbar::after {
+  content: '';
+  flex: 0 0 0;
+  height: var(--db-toolbar-wrapped-second-row, var(--db-toolbar-wrapped-row));
+  margin-inline-start: -1px;
 }
 
 /* The tab row spans the whole toolbar, padding included, so its surface runs
@@ -6469,8 +6484,12 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   gap: 8px;
 }
 
-/* Status has its own row, so errors cannot steal space from the actions. */
+/* Status has its own row, so errors cannot steal space from the actions. The
+   footer is a wrapping column, which sizes each row to its content: a definite
+   width keeps a one-line knowledge pill from widening it, and keeps text from
+   being measured at a narrower width than it is shown at. */
 .db-ai-footer-status {
+  width: 100%;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -6601,6 +6620,115 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Knowledge indicator: whether the person's knowledge catalogs informed the
+   output. A pill that opens to list the cited articles, or to say why none. */
+.db-ai-knowledge {
+  max-width: 100%;
+  margin: 6px 0;
+  color: var(--db-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.db-ai-knowledge > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 2px 9px;
+  border: 1px solid var(--db-border);
+  border-radius: 999px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.db-ai-knowledge > summary::-webkit-details-marker {
+  display: none;
+}
+
+.db-ai-knowledge > summary:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-ai-knowledge > summary:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
+}
+
+.db-ai-knowledge--used > summary {
+  border-color: var(--db-accent);
+  background: var(--db-badge-bg);
+  color: var(--db-badge-text);
+}
+
+.db-ai-knowledge--used > summary:hover {
+  color: var(--db-badge-text-hover);
+}
+
+.db-ai-knowledge-names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.db-ai-knowledge-count {
+  flex: none;
+  white-space: pre;
+}
+
+.db-ai-knowledge p,
+.db-ai-knowledge ul {
+  margin: 6px 0 0;
+  color: var(--db-text-muted);
+}
+
+.db-ai-knowledge ul {
+  padding-left: 18px;
+  color: var(--db-text-secondary);
+}
+
+/* A run can cite many articles; a list scrolls rather than pushing the actions away. */
+.db-ai-knowledge-source {
+  max-height: 8.5em;
+  overflow: auto;
+}
+
+.db-ai-knowledge .db-ai-knowledge-catalog {
+  color: var(--db-text-secondary);
+  font-weight: 600;
+}
+
+/* Facts to check: details in AI output that no source shows. */
+.db-ai-facts > summary {
+  border-color: var(--db-danger);
+}
+
+.db-ai-facts > summary svg {
+  color: var(--db-danger);
+}
+
+.db-ai-facts ul {
+  max-height: 10em;
+  overflow: auto;
+}
+
+.db-ai-facts li + li {
+  margin-top: 4px;
+}
+
+.db-ai-facts mark {
+  padding: 0;
+  background: none;
+  color: var(--db-danger);
+  font-weight: 600;
+}
+
+.db-ai-review-knowledge {
+  padding: 10px 14px 0;
 }
 
 .db-text-from-narration button:not(.db-dialog-close),
@@ -6806,18 +6934,6 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   margin-top: 10px;
 }
 
-.db-settings-ai-knowledge-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.db-settings-ai-knowledge-list > li {
-  border-top: 1px solid var(--db-border);
-  padding-block: 12px;
-  overflow-wrap: anywhere;
-}
-
 .db-settings-ai-knowledge-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6827,6 +6943,231 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-settings-ai-knowledge progress {
   max-width: 100%;
+}
+
+/* Knowledge catalogs: the downloaded ones sit together in one bin, each row a
+   disclosure that starts collapsed; adding one happens in its own dialog. */
+.db-knowledge-bin {
+  margin-top: 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+.db-knowledge-bin-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-knowledge-bin-title {
+  margin: 0;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.db-knowledge-bin-count {
+  min-width: 18px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid var(--db-border);
+  border-radius: 9px;
+  background: var(--db-bg-raised);
+  color: var(--db-text-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.db-knowledge-bin-header .db-settings-action {
+  margin: 0 0 0 auto;
+  padding: 4px 10px;
+}
+
+.db-knowledge-bin .db-knowledge-bin-empty {
+  margin: 0;
+  padding: 12px;
+}
+
+.db-knowledge-bin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.db-knowledge-item + .db-knowledge-item {
+  border-top: 1px solid var(--db-border);
+}
+
+.db-knowledge-item-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--db-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-knowledge-item:last-child .db-knowledge-item-toggle:not([aria-expanded='true']) {
+  border-radius: 0 0 5px 5px;
+}
+
+.db-knowledge-item-toggle:hover {
+  background: var(--db-bg-hover);
+}
+
+.db-knowledge-item-toggle:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: -2px;
+}
+
+/* Points right while collapsed, down while open. */
+.db-knowledge-item-caret {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  color: var(--db-text-muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+
+.db-knowledge-item-caret--open {
+  transform: rotate(45deg);
+}
+
+.db-knowledge-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.db-knowledge-item-summary {
+  flex: 0 1 auto;
+  color: var(--db-text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.db-knowledge-item-summary--error {
+  color: var(--db-danger);
+}
+
+/* Indented to line up with the catalog name, past the caret. */
+.db-knowledge-item-body {
+  padding: 0 12px 12px 30px;
+}
+
+.db-knowledge-item-body p {
+  margin: 0 0 6px;
+}
+
+.db-knowledge-item-body [role='group'] {
+  margin-top: 10px;
+}
+
+/* The add dialog keeps one height while a search narrows the list, and only
+   the list scrolls, so the search field stays in reach. */
+.db-knowledge-add-dialog {
+  height: min(calc(100dvh - 32px), 560px);
+}
+
+.db-knowledge-add-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* The footer sits outside the dialog body's 13px, so its settings actions
+   would otherwise inherit the page's 16px. */
+.db-knowledge-add-dialog .db-dialog-footer {
+  font-size: 13px;
+}
+
+.db-knowledge-add-dialog .db-dialog-footer .db-settings-action {
+  margin-top: 0;
+}
+
+.db-knowledge-search {
+  margin-bottom: 8px;
+}
+
+.db-knowledge-catalog-list {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  margin: 0;
+  /* Room for focus rings at the scroll edges. */
+  padding: 2px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.db-knowledge-catalog {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 12px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+.db-knowledge-catalog-text {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.db-knowledge-catalog-name {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--db-text);
+  font-size: 13px;
+}
+
+.db-knowledge-catalog p {
+  margin: 0 0 4px;
+}
+
+.db-knowledge-catalog-action {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-knowledge-catalog-action .db-settings-action {
+  margin-top: 0;
+}
+
+.db-knowledge-catalog-action progress {
+  width: 96px;
+  max-width: 100%;
+  accent-color: var(--db-accent);
+}
+
+.db-knowledge-catalog-added {
+  color: var(--db-accent-deep);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .db-ai-review-disclaimer {
@@ -6856,11 +7197,152 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   font: inherit;
 }
 
+/* The Illustrate panel's two steps: ideas to edit, then pictures to insert. */
+.db-ai-illustrate-steps ol {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 14px 0;
+  list-style: none;
+}
+
+.db-ai-illustrate-steps li {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.db-ai-review-panel .db-ai-illustrate-steps button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border-color: var(--db-border);
+  background: transparent;
+  color: var(--db-text-muted);
+}
+
+.db-ai-review-panel .db-ai-illustrate-steps button[aria-current='step'] {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft-08);
+  color: var(--db-text);
+}
+
+.db-ai-step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  box-sizing: border-box;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 50%;
+  font-size: 11px;
+}
+
+[aria-current='step'] > .db-ai-step-number {
+  border-color: var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
+.db-ai-illustrate-intro {
+  margin: 10px 14px 0;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-illustrate-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+
+.db-ai-illustrate-progress {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  color: var(--db-text-secondary);
+  font: 600 12px/1.2 var(--db-ui-font);
+}
+
+.db-ai-illustrate-progress progress {
+  width: 90px;
+  height: 6px;
+  accent-color: var(--db-accent);
+}
+
+.db-ai-review-panel button.db-ai-illustrate-primary {
+  border-color: var(--db-accent);
+  background: var(--db-accent);
+  color: var(--db-text-on-accent);
+}
+
 .db-ai-illustrate-footer {
   position: sticky;
   bottom: 0;
-  padding-bottom: 10px;
-  background: var(--db-bg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--db-border);
+  background: var(--db-bg-raised);
+}
+
+.db-ai-idea-card .db-ai-field {
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.db-ai-idea-card .db-ai-field textarea {
+  min-height: 64px;
+}
+
+.db-ai-idea-card input,
+.db-ai-idea-card select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--db-target-min);
+  padding: 5px 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.3 var(--db-ui-font);
+}
+
+.db-ai-idea-card input:focus-visible,
+.db-ai-idea-card select:focus-visible {
+  border-color: var(--db-accent);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--db-accent);
+}
+
+.db-ai-idea-card :is(input, select, textarea):disabled {
+  opacity: 0.6;
+}
+
+.db-ai-idea-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 8px;
+}
+
+.db-ai-idea-state {
+  margin-left: auto;
+}
+
+.db-ai-idea-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .db-ai-field--inline {
@@ -6923,6 +7405,13 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-report-dialog .db-settings-fieldset {
   margin-bottom: 14px;
+}
+
+/* Public issue, private email, Cancel: stacked full width, since the
+   destinations need their whole labels to say where the report goes. */
+.db-ai-report-dialog .db-ai-report-footer {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 /* Study aids: Summarize document, Create quiz, Create flashcards. */
@@ -7691,6 +8180,7 @@ button.db-git-file-row:hover {
 @media (prefers-reduced-motion: reduce) {
   .db-workspace-picker-caret,
   .db-app-menu-caret,
+  .db-knowledge-item-caret,
   .db-ws-settings-btn,
   .db-shell-sidebar-resizer,
   .db-sidebar-collapse-preview,

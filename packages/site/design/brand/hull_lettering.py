@@ -184,7 +184,12 @@ def icon_svg(
     radius: float = 0.18,
     title: str = "DocBlocks",
 ) -> str:
-    """A square icon: the lettering centred at `fill` of the square.
+    """A square icon: the lettering centred within `fill` of the square.
+
+    The letters' faces are centred across, and the shade hangs off them: the
+    eye reads the face as the letter, so centring the shade too would push
+    the face off centre by half the shade vector. Down, the shaded letters are
+    centred as a whole, which leaves the faces a touch above centre.
 
     `plate` is the background color, or None for a transparent glyph. A
     `radius` of 0 gives a full-bleed square for platforms that apply their
@@ -193,8 +198,10 @@ def icon_svg(
     face = letters(lines, paint)
     shade = extrude(face, *paint.vector)
     minx, miny, maxx, maxy = shade.bounds
-    scale = size * fill / max(maxx - minx, maxy - miny)
-    cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+    face_minx, _, face_maxx, _ = face.bounds
+    cx, cy = (face_minx + face_maxx) / 2, (miny + maxy) / 2
+    reach = 2 * max(cx - minx, maxx - cx)
+    scale = size * fill / max(reach, maxy - miny)
 
     def place(geom):
         geom = affinity.translate(geom, -cx, -cy)

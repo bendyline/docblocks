@@ -7,6 +7,8 @@ import type {
   AiChatCompletion,
   AiChatEvent,
   AiChatRequest,
+  AiFactCheck,
+  AiFactCheckRequest,
   AiModelInfo,
   AiResult,
   DocBlocksHostAiAPI,
@@ -28,13 +30,22 @@ function unused(): never {
   throw new Error('Not used by the draft dialog');
 }
 
-function fakeAi() {
+function fakeAi(factCheck?: (request: AiFactCheckRequest) => AiFactCheck) {
   const requests: {
     request: AiChatRequest;
     cancelled: boolean;
     emit(event: AiChatEvent): void;
   }[] = [];
+  const checks: AiFactCheckRequest[] = [];
   const api: DocBlocksHostAiAPI = {
+    ...(factCheck
+      ? {
+          async checkFacts(request: AiFactCheckRequest) {
+            checks.push(request);
+            return { ok: true as const, value: factCheck(request) };
+          },
+        }
+      : {}),
     providerInstalled: unused,
     status: unused,
     onStatus: unused,
@@ -66,7 +77,7 @@ function fakeAi() {
       };
     },
   };
-  return { api, requests };
+  return { api, requests, checks };
 }
 
 function button(label: string, parent: ParentNode = document.body) {
@@ -186,6 +197,90 @@ describe('AiDraftDialog', () => {
     await finish(markdown);
     await click('Replace selection');
     expect(applied).to.deep.equal([markdown]);
+  });
+
+  it('shows which knowledge a draft drew on, and only for the current draft', async () => {
+    const indicator = () => document.querySelector('.db-ai-knowledge');
+    const pnw = {
+      kind: 'knowledge',
+      knowledge: {
+        outcome: 'used',
+        sources: [
+          { catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel', 'Nihonmachi'] },
+        ],
+        evidence: ['Built in 1910.', 'Japantown.'],
+      },
+    } as const;
+    await render('compose');
+    await click('Generate');
+    expect(indicator()).to.equal(null);
+    await act(async () => fake.requests[0].emit(pnw));
+    expect(indicator()?.querySelector('summary')?.textContent).to.equal(
+      'Knowledge: Pacific Northwest · 2 articles',
+    );
+    expect(
+      Array.from(indicator()?.querySelectorAll('li') ?? [], (item) => item.textContent),
+    ).to.deep.equal(['Panama Hotel', 'Nihonmachi']);
+    await finish();
+    // It describes the finished draft too, not only the run.
+    expect(indicator()).not.to.equal(null);
+    await click('Regenerate');
+    expect(indicator()).to.equal(null);
+    await act(async () =>
+      fake.requests[1].emit({ kind: 'knowledge', knowledge: { outcome: 'none' } }),
+    );
+    // A superseded request cannot relabel the new draft.
+    await act(async () => fake.requests[0].emit(pnw));
+    expect(indicator()?.querySelector('summary')?.textContent).to.equal('No matching knowledge');
+  });
+
+  it('flags details no source shows and asks before inserting them', async () => {
+    fake = fakeAi((request) => ({
+      checked: 2,
+      unsourced: request.text.includes('1888')
+        ? [{ text: 'It was built in 1888.', missing: ['1888'], strong: true }]
+        : [],
+    }));
+    const settle = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 450)));
+    const pill = () => document.querySelector('.db-ai-facts, .db-ai-facts--sourced');
+    await render('compose');
+    await type(prompt(), 'Write about the Panama Hotel.');
+    await click('Generate');
+    await act(async () =>
+      fake.requests[0].emit({
+        kind: 'knowledge',
+        knowledge: {
+          outcome: 'used',
+          sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
+          evidence: ['Built in 1910 by Sabro Ozasa.'],
+        },
+      }),
+    );
+    await finish('The hotel opened in 1910. It was built in 1888.');
+    await settle();
+    expect(pill()?.querySelector('summary')?.textContent).to.equal('1 statement to check');
+    expect(pill()?.querySelector('mark')?.textContent).to.equal('1888');
+    // Checked against what the model was shown: the passage, the request and the document.
+    const checked = fake.checks.at(-1);
+    expect(checked?.evidence).to.deep.equal(['Built in 1910 by Sabro Ozasa.']);
+    expect(checked?.given).to.contain('Write about the Panama Hotel.').and.contain('Original');
+
+    await click('Insert');
+    const confirmation = () =>
+      Array.from(document.querySelectorAll('[role="dialog"]')).find((dialog) =>
+        dialog.textContent?.includes('Use details no source shows?'),
+      );
+    expect(confirmation()?.textContent).to.contain('1 statement in this draft includes');
+    await click('Review draft', confirmation());
+    expect(applied).to.deep.equal([]);
+
+    // Fixing the draft clears the flag and the question.
+    await type(output(), 'The hotel opened in 1910.');
+    await settle();
+    expect(pill()?.querySelector('summary')?.textContent).to.equal('Details found in sources');
+    await click('Insert');
+    expect(confirmation()).to.equal(undefined);
+    expect(applied).to.deep.equal(['The hotel opened in 1910.']);
   });
 
   it('does not replace a selection whose block metadata changed while the dialog was open', async () => {

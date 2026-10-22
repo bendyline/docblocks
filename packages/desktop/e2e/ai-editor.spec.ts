@@ -553,7 +553,7 @@ test('AI rewrite shows prefill and token activity, and Stop works before text ar
   );
 });
 
-test('Illustrate suggests diagrams and inserts them all as one undo step', async ({
+test('Illustrate finds ideas, draws them when asked, and inserts them as one undo step', async ({
   launchApp,
   workspaceDir,
   gezelHome,
@@ -571,17 +571,42 @@ test('Illustrate suggests diagrams and inserts them all as one undo step', async
     async ({ window, editor, file, fake }) => {
       await openAiMenuItem(window, 'Illustrate document…');
       const panel = window.getByRole('complementary', { name: 'AI illustrations' });
-      await expect(panel.locator('.db-ai-review-count')).toBeVisible({
+      // Step one: ideas to review and edit. Nothing is drawn until asked.
+      await expect(panel.getByRole('button', { name: 'Find ideas again' })).toBeVisible({
         timeout: ANSWER_TIMEOUT_MS * 3,
       });
+      const ideas = await panel.locator('.db-ai-idea-card').count();
+      if (!upstream) expect(ideas).toBe(2);
+      test.skip(ideas === 0, 'The model suggested no diagrams for this document.');
+      if (!upstream) expect(fake.chats.length).toBe(1);
+      await expect(panel.locator('.db-ai-diagram-preview')).toHaveCount(0);
+      await expect(panel.locator('.db-ai-idea-card textarea').first()).not.toHaveValue('');
+      await test.info().attach('Illustrate ideas', {
+        body: await panel.screenshot({ path: test.info().outputPath('illustrate-ideas.png') }),
+        contentType: 'image/png',
+      });
+
+      // Step two: draw every idea, then insert.
+      await panel
+        .getByRole('button', { name: `Draw ${String(ideas)} picture${ideas === 1 ? '' : 's'}` })
+        .click();
+      await expect(
+        panel.locator('.db-ai-illustrate-card').filter({
+          has: window.getByRole('button', { name: 'Edit idea' }),
+        }),
+      ).toHaveCount(ideas, { timeout: ANSWER_TIMEOUT_MS * 3 });
       const ready = panel.locator('.db-ai-illustrate-card').filter({
         has: window.getByRole('button', { name: 'Insert', exact: true }),
       });
       const count = await ready.count();
       // A real model may decline to suggest anything; the fake always suggests two.
       if (!upstream) expect(count).toBe(2);
-      test.skip(count === 0, 'The model suggested no diagrams for this document.');
+      test.skip(count === 0, 'The model drew none of its ideas.');
       await expect(ready.first().locator('.db-ai-diagram-preview[role="img"]')).toBeVisible();
+      await test.info().attach('Illustrate pictures', {
+        body: await panel.screenshot({ path: test.info().outputPath('illustrate-pictures.png') }),
+        contentType: 'image/png',
+      });
 
       if (count > 1) {
         await panel.getByRole('button', { name: `Insert all (${String(count)})` }).click();
@@ -595,7 +620,7 @@ test('Illustrate suggests diagrams and inserts them all as one undo step', async
       await expect.poll(() => diagramCount(file)).toBe(0);
       expect(readDocument(file)).toContain('moved to monthly releases in 2023.');
 
-      // One plan call, then one call per suggestion, all marked as illustration work.
+      // One plan call, then one call per idea, all marked as illustration work.
       if (!upstream) expect(fake.chats.length).toBe(3);
     },
   );

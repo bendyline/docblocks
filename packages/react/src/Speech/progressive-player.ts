@@ -104,6 +104,8 @@ export class ProgressivePlayer {
       this.playbackOffset = 0;
     }
     await this.context.resume();
+    // Another play() may have started, or dispose() run, while resuming.
+    if (this.playing || this.disposed) return this.playing;
     this.stopSources();
     this.playing = true;
     this.playbackStartedAt = this.context.currentTime + 0.025;
@@ -130,6 +132,20 @@ export class ProgressivePlayer {
     this.clearEndTimer();
     if (wasPlaying) void this.play();
     else this.emit();
+  }
+
+  /** Drop the whole timeline but keep the audio context, to start again from a new place. */
+  reset(): void {
+    if (this.disposed) return;
+    this.playing = false;
+    this.stopSources();
+    this.clearEndTimer();
+    this.chunks.length = 0;
+    this.pending.clear();
+    this.bufferedDuration = 0;
+    this.playbackOffset = 0;
+    this.complete = false;
+    this.emit();
   }
 
   /** No more chunks will arrive. */
@@ -238,39 +254,70 @@ export class ProgressivePlayer {
   }
 }
 
+/** Never start with less than this buffered, whatever the prediction says. */
+const MIN_AHEAD_SECONDS = 3;
+/** How far ahead, in seconds of speech, the gate checks for a stall. */
+const LOOKAHEAD_SECONDS = 60;
+
 /**
- * When streamed narration may start on its own — Gezel's `DocumentNarration`
- * rule. Rates are measured from the first chunk onward, so model load time is
- * not counted against synthesis. Playback starts once at least 4 s is buffered
- * ahead and either audio is being generated at 1.15× realtime or better, or the
- * buffer already covers the estimated remaining generation time plus 3 s.
+ * When streamed narration may start, or resume after catching up, on its own.
+ *
+ * Audio arrives a whole sentence at a time, and on a CPU a long sentence takes
+ * several seconds to synthesize, so a fixed few seconds of buffer is not
+ * enough when synthesis is only a little faster than realtime: playback
+ * reaches the end of the buffer before the next sentence exists. The gate
+ * measures how fast this machine synthesizes and how long text sounds, plays
+ * the sentences still to come against that, and opens once the buffer covers
+ * the longest stall it predicts over the next minute of speech. Ask again
+ * while waiting: the sentence being synthesized gets closer as time passes.
  */
 export class AutoPlayGate {
-  private firstAt: number | null = null;
-  private firstDuration = 0;
-  private firstCharacters = 0;
+  private spokenCharacters = 0;
+  private spokenSeconds = 0;
+  private timedCharacters = 0;
+  private busySeconds = 0;
+  private lastAt: number | null = null;
 
-  /** Call after each appended chunk; true when it is safe to start playing. */
-  ready(
-    snapshot: ProgressivePlayerSnapshot,
-    progress: { readonly completedCharacters: number; readonly totalCharacters: number } | null,
-    nowMs: number,
-  ): boolean {
-    if (this.firstAt === null) {
-      this.firstAt = nowMs;
-      this.firstDuration = snapshot.bufferedDuration;
-      this.firstCharacters = progress?.completedCharacters ?? 0;
+  /**
+   * Record a synthesized chunk. The first chunk after `restart()` only marks
+   * the clock, so model loading and skips are not counted against synthesis.
+   */
+  record(characters: number, audioSeconds: number, nowMs: number): void {
+    this.spokenCharacters += characters;
+    this.spokenSeconds += audioSeconds;
+    if (this.lastAt !== null) {
+      this.timedCharacters += characters;
+      this.busySeconds += (nowMs - this.lastAt) / 1000;
     }
-    const elapsed = (nowMs - this.firstAt) / 1000;
-    const audioRate =
-      elapsed > 0.25 ? (snapshot.bufferedDuration - this.firstDuration) / elapsed : 0;
-    const characterRate =
-      elapsed > 0.25 ? ((progress?.completedCharacters ?? 0) - this.firstCharacters) / elapsed : 0;
-    const remaining =
-      progress && characterRate > 0
-        ? (progress.totalCharacters - progress.completedCharacters) / characterRate
-        : Number.POSITIVE_INFINITY;
-    const ahead = snapshot.bufferedDuration - snapshot.currentTime;
-    return ahead >= 4 && (audioRate >= 1.15 || ahead >= remaining + 3);
+    this.lastAt = nowMs;
+  }
+
+  /** Synthesis stopped and starts again; the next gap is not a rate sample. */
+  restart(): void {
+    this.lastAt = null;
+  }
+
+  /**
+   * True when `ahead` seconds of buffered audio should carry playback through
+   * the sentences still to be synthesized, given as character counts in order.
+   * The first of them has been synthesizing since the last recorded chunk.
+   */
+  ready(ahead: number, upcoming: Iterable<number>, nowMs: number): boolean {
+    if (this.busySeconds <= 0.25 || this.timedCharacters <= 0 || this.spokenCharacters <= 0) {
+      return false;
+    }
+    const charactersPerSecond = this.timedCharacters / this.busySeconds;
+    const secondsPerCharacter = this.spokenSeconds / this.spokenCharacters;
+    // Negative until the in-flight sentence's head start is used up.
+    let arrives = this.lastAt === null ? 0 : -(nowMs - this.lastAt) / 1000;
+    let startsAfter = 0;
+    let stall = 0;
+    for (const characters of upcoming) {
+      arrives = Math.max(0, arrives + characters / charactersPerSecond);
+      stall = Math.max(stall, arrives - startsAfter);
+      startsAfter += characters * secondsPerCharacter;
+      if (startsAfter >= LOOKAHEAD_SECONDS) break;
+    }
+    return ahead >= Math.max(MIN_AHEAD_SECONDS, stall);
   }
 }

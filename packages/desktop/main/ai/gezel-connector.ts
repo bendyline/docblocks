@@ -113,7 +113,7 @@ async function streamFrom(
   signal: AbortSignal,
   knowledge: boolean,
 ): Promise<AsyncIterable<ProviderChatChunk>> {
-  const messages = knowledge
+  const context = knowledge
     ? await withGezelKnowledge(
         app,
         request.messages,
@@ -121,13 +121,14 @@ async function streamFrom(
         request.contextWindow,
         request.maxTokens,
       )
-    : [...request.messages];
+    : { messages: [...request.messages], knowledge: null };
+  const { messages } = context;
   // Preserve the evaluated writing policy until effective output budgets have their own A/B gate.
   const localEngine = /^(?:mlx|llama-cpp|ollama|ds4):/u.test(request.model);
   const maxTokens =
     request.maxTokens ??
     (request.purpose === 'write' && localEngine ? request.contextWindow : undefined);
-  const stream = await app.chat(
+  const opened = app.chat(
     {
       model: request.model,
       messages,
@@ -151,8 +152,19 @@ async function streamFrom(
     },
     { signal },
   );
+  const { knowledge: cited } = context;
+  if (!cited) {
+    const stream = await opened;
+    return (async function* () {
+      for await (const chunk of stream) yield toProviderChunk(chunk);
+    })();
+  }
+  // Report what was cited at once: loading a large model can take minutes
+  // before the stream opens. A failure to open still surfaces when it is read.
+  opened.catch(() => undefined);
   return (async function* () {
-    for await (const chunk of stream) yield toProviderChunk(chunk);
+    yield { knowledge: cited, text: '', finishReason: null, model: null, usage: null };
+    for await (const chunk of await opened) yield toProviderChunk(chunk);
   })();
 }
 

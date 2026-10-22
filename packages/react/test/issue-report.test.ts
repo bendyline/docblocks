@@ -1,6 +1,8 @@
 import { expect } from 'chai';
+import { parseSupportMailtoUrl } from '@bendyline/docblocks/host';
 import {
   AI_REPORT_OUTPUT_CHARACTERS,
+  buildAiOutputReportEmailUrl,
   buildAiOutputReportUrl,
   buildIssueReportUrl,
 } from '../src/DocBlocksShell/issue-report.js';
@@ -106,5 +108,51 @@ describe('AI output report link', () => {
       ) ?? '';
     expect(body).to.include('- Reason: Something else');
     expect(body).to.include('- Model: unknown');
+  });
+});
+
+describe('AI output report email', () => {
+  const base = {
+    feature: 'Rewrite selection',
+    reason: 'inaccurate' as const,
+    model: 'Qwen 3.5 0.8B',
+    details: '',
+    output: null,
+    reportedAt: new Date(2026, 9, 21),
+    version: '2.7.5 macOS',
+    userAgent: 'Test Browser',
+  };
+
+  it('addresses support privately, in a link every host will open', () => {
+    const href = buildAiOutputReportEmailUrl(base);
+    const url = new URL(href);
+
+    expect(url.protocol).to.equal('mailto:');
+    expect(url.pathname).to.equal('support@bendyline.com');
+    expect(parseSupportMailtoUrl(href)).to.equal(href);
+    expect(url.searchParams.get('subject')).to.equal(
+      'DocBlocks AI output report: Inaccurate or misleading',
+    );
+    const body = url.searchParams.get('body') ?? '';
+    expect(body).to.include('- Feature: Rewrite selection\r\n- Model: Qwen 3.5 0.8B');
+    expect(body).to.include('## Details\r\n\r\n(none given)\r\n');
+    expect(body).to.not.include('<!--');
+    expect(body).to.include('- DocBlocks: 2.7.5 macOS');
+  });
+
+  it('encodes spaces and pluses so mail apps read them literally', () => {
+    const href = buildAiOutputReportEmailUrl({ ...base, details: 'Said 2 + 2 = 5\nTwice.' });
+
+    expect(href).to.not.match(/\+/);
+    expect(href).to.include('Said%202%20%2B%202%20%3D%205%0D%0ATwice.');
+  });
+
+  it('carries the same bounded response as the GitHub issue', () => {
+    const output = `Text ${'y'.repeat(3_000)}`;
+    const body =
+      new URL(buildAiOutputReportEmailUrl({ ...base, output })).searchParams.get('body') ?? '';
+
+    expect(body).to.include(`\`\`\`text\r\n${output.slice(0, AI_REPORT_OUTPUT_CHARACTERS)}\r\n`);
+    expect(body).to.not.include('y'.repeat(AI_REPORT_OUTPUT_CHARACTERS));
   });
 });

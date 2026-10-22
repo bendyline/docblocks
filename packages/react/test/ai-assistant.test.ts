@@ -39,6 +39,27 @@ describe('AI editor assistant', () => {
     );
   });
 
+  it('holds drafts to the factual-writing rule: no specific detail from memory', () => {
+    const compose = buildDraftRequest({
+      mode: 'compose',
+      instructions: 'Write about the Panama Hotel.',
+      documentSource: '',
+      selectedText: '',
+    });
+    expect(compose.messages[0]?.content)
+      .to.contain('only when the instructions, the document or a reference passage')
+      .and.contain('never fill a gap with a plausible detail');
+    const rewrite = buildDraftRequest({
+      mode: 'rewrite',
+      instructions: 'Make it vivid.',
+      documentSource: '',
+      selectedText: 'The hotel is old.',
+    });
+    expect(rewrite.messages[0]?.content).to.contain(
+      'Add no name, date, number, place or quotation',
+    );
+  });
+
   it('sends only the selection to rewrite, never the document around it', () => {
     // Given the surrounding document, Apple's on-device model returned the
     // whole document, and "Replace selection" pasted it into the paragraph.
@@ -92,6 +113,25 @@ describe('AI editor assistant', () => {
     expect(sanitizeGeneratedMarkdown('```markdown\n## Draft\n\nBody\n```')).to.equal(
       '## Draft\n\nBody',
     );
+  });
+
+  it('removes prompt tags a model echoes around its whole reply', () => {
+    // Qwen 3.5 0.8B returned a rewrite inside the prompt's <selection> tags,
+    // and Replace wrote them into the document.
+    expect(sanitizeGeneratedMarkdown('<selection>\nThe quick brown fox.\n</selection>')).to.equal(
+      'The quick brown fox.',
+    );
+    expect(sanitizeGeneratedMarkdown('```markdown\n<selection>\nBody\n</selection>\n```')).to.equal(
+      'Body',
+    );
+    expect(sanitizeGeneratedMarkdown('<document>\n# Title\n\nBody\n</document>')).to.equal(
+      '# Title\n\nBody',
+    );
+    // Tags that do not surround the whole reply are the author's content.
+    const inline = 'Wrap it in <selection>tags</selection> like this.';
+    expect(sanitizeGeneratedMarkdown(inline)).to.equal(inline);
+    const two = '<selection>a</selection> and <selection>b</selection>';
+    expect(sanitizeGeneratedMarkdown(two)).to.equal(two);
   });
 
   it('parses only exact review findings', () => {

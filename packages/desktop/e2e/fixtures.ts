@@ -370,8 +370,12 @@ export const test = base.extend<DocBlocksFixtures>({
     });
 
     if (running && testInfo.status !== testInfo.expectedStatus) {
+      // A file, not a body: CI's `github` reporter prints only the first line
+      // of a body attachment, while the diagnostics upload keeps this folder.
+      const logPath = testInfo.outputPath('source-electron-process.log');
+      await fs.promises.writeFile(logPath, running.processLog());
       await testInfo.attach('source-electron-process.log', {
-        body: running.processLog(),
+        path: logPath,
         contentType: 'text/plain',
       });
     }

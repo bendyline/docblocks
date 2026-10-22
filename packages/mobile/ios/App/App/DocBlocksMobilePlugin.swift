@@ -64,9 +64,19 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
     }
     @objc func openExternal(_ call: CAPPluginCall) {
         guard Set(call.options.keys) == ["url"], let value = call.getString("url"), value.utf16.count <= 8192,
-              let url = URL(string: value), ["http", "https"].contains(url.scheme), url.host != nil, url.user == nil, url.password == nil,
+              let url = URL(string: value), Self.isWebLink(url) || Self.isSupportEmail(url),
               url.absoluteString == value, !value.contains("\\"), value.unicodeScalars.allSatisfy({ $0.value > 32 && $0.value != 127 }) else { call.reject("Invalid external URL."); return }
         DispatchQueue.main.async { UIApplication.shared.open(url) { opened in if opened { call.resolve() } else { call.reject("The link could not be opened.") } } }
+    }
+    private static func isWebLink(_ url: URL) -> Bool {
+        ["http", "https"].contains(url.scheme) && url.host != nil && url.user == nil && url.password == nil
+    }
+    /// Mirrors parseSupportMailtoUrl: only support, prefilled with at most a subject and a body.
+    private static func isSupportEmail(_ url: URL) -> Bool {
+        guard url.scheme == "mailto", let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.path == "support@bendyline.com", parts.fragment == nil else { return false }
+        let names = (parts.queryItems ?? []).map(\.name)
+        return Set(names).isSubset(of: ["subject", "body"]) && Set(names).count == names.count
     }
     @objc func pickFolder(_ call: CAPPluginCall) {
         guard call.options.isEmpty else { call.reject("Invalid folder request."); return }

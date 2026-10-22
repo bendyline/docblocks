@@ -29,6 +29,8 @@ import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import { AiDiagramDialog } from './AiDiagrams.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
+import { AiFactsIndicator, AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
+import { factCheckRequest, factsNeedReview, useAiKnowledge, useFactCheck } from './ai-knowledge.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { draftCapacityNotice } from './draft-capacity.js';
 import {
@@ -371,7 +373,19 @@ export function AiDraftDialog({
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
   const { confirm: confirmAction, confirmDialog } = useConfirmDialog();
+  const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
   const selectedMarkdown = capturedSelection.markdown ?? capturedSelection.text;
+  // What the person supplied, as the model received it: instructions plus the
+  // document or selection. A detail found here needs no other source.
+  const factsGiven = useMemo(
+    () =>
+      originalRequest?.messages
+        .filter((message) => message.role === 'user')
+        .map((message) => message.content)
+        .join('\n\n') ?? '',
+    [originalRequest],
+  );
+  const facts = useFactCheck(ai, running ? null : draft, knowledge, factsGiven);
   const draftRequest = useMemo(
     () => ({
       ...buildDraftRequest({
@@ -413,10 +427,12 @@ export function AiDraftDialog({
       setFinishNote(null);
       setIncomplete(false);
       setRunning(true);
+      // A continuation finishes the same draft, so it adds to what the draft cited.
+      if (!prefix) resetKnowledge();
       const startedAt = Date.now();
       setGeneration({ progress: null, startedAt, lastActivityAt: startedAt });
-      const handle = ai.chat(request, (event: AiChatEvent) => {
-        if (requestRef.current !== requestId) return;
+      const handle = knowledgeAi.chat(request, (event: AiChatEvent) => {
+        if (requestRef.current !== requestId || event.kind === 'knowledge') return;
         if (event.kind === 'progress') {
           setGeneration(
             (current) =>
@@ -480,7 +496,7 @@ export function AiDraftDialog({
       });
       handleRef.current = handle;
     },
-    [ai, documentSource],
+    [knowledgeAi, resetKnowledge, documentSource],
   );
 
   const generate = useCallback(async () => {
@@ -512,6 +528,28 @@ export function AiDraftDialog({
     if (running) return;
     const replacement = sanitizeGeneratedMarkdown(draft ?? '', documentSource);
     if (!replacement) return;
+    // An unfinished draft is confirmed below as reviewed by the person, so it is not asked twice.
+    const factCheck =
+      !incomplete && ai.checkFacts && factCheckRequest(replacement, knowledge, factsGiven);
+    if (factCheck) {
+      // Checked afresh: the indicator may still be waiting out an edit.
+      const previousRequest = requestRef.current;
+      const checked = await ai.checkFacts?.(factCheck);
+      if (requestRef.current !== previousRequest) return;
+      if (checked?.ok && factsNeedReview(checked.value)) {
+        const count = checked.value.unsourced.length;
+        const accepted = await confirmAction({
+          title: 'Use details no source shows?',
+          message:
+            `${count} ${count === 1 ? 'statement in this draft includes' : 'statements in this draft include'} ` +
+            'names, dates or numbers that neither your document nor the reference passages show. ' +
+            'The model may have written them from memory. Check them before you rely on them.',
+          confirmLabel: mode === 'rewrite' ? 'Replace anyway' : 'Insert anyway',
+          cancelLabel: 'Review draft',
+        });
+        if (!accepted || requestRef.current !== previousRequest) return;
+      }
+    }
     if (incomplete) {
       const previousRequest = requestRef.current;
       const accepted = await confirmAction({
@@ -560,6 +598,9 @@ export function AiDraftDialog({
     running,
     incomplete,
     confirmAction,
+    ai,
+    knowledge,
+    factsGiven,
   ]);
 
   const dialog = (
@@ -576,7 +617,7 @@ export function AiDraftDialog({
         <>
           {/* In the footer, not the scrolling body: a long selection must never
               push progress or an error out of sight of the buttons. */}
-          {(running || finishNote || error || capacity) && (
+          {(running || finishNote || error || capacity || knowledge || facts?.checked) && (
             <div className="db-ai-footer-status">
               {running && generation && (
                 <AiGenerationStatus
@@ -584,6 +625,8 @@ export function AiDraftDialog({
                   characters={Math.max(0, (draft?.length ?? 0) - prefixCharacters)}
                 />
               )}
+              <AiKnowledgeIndicator knowledge={knowledge} />
+              {!running && <AiFactsIndicator check={facts} />}
               {finishNote && <p className="db-ai-note">{finishNote}</p>}
               {!running && capacity && (
                 <p className="db-ai-note" role="status">
@@ -726,6 +769,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
   const startedRef = useRef(false);
+  const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
 
   const cancelReview = useCallback(() => {
     requestRef.current += 1;
@@ -758,8 +802,14 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     setResolvedIds(new Set());
     setApplyErrorId(null);
     setError(null);
-    const handle = ai.chat(buildReviewRequest(source), (event: AiChatEvent) => {
-      if (requestRef.current !== requestId || event.kind === 'delta' || event.kind === 'progress')
+    resetKnowledge();
+    const handle = knowledgeAi.chat(buildReviewRequest(source), (event: AiChatEvent) => {
+      if (
+        requestRef.current !== requestId ||
+        event.kind === 'delta' ||
+        event.kind === 'progress' ||
+        event.kind === 'knowledge'
+      )
         return;
       handleRef.current = null;
       if (event.kind === 'error') {
@@ -793,7 +843,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       setPhase('ready');
     });
     handleRef.current = handle;
-  }, [ai, markdownSource]);
+  }, [knowledgeAi, resetKnowledge, markdownSource]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -872,6 +922,11 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       {phase === 'running' && (
         <div className="db-ai-review-empty" role="status">
           <span className="db-ai-spinner" aria-hidden="true" /> Reviewing this document…
+        </div>
+      )}
+      {phase !== 'idle' && knowledge && (
+        <div className="db-ai-review-knowledge">
+          <AiKnowledgeIndicator knowledge={knowledge} />
         </div>
       )}
       {phase === 'error' && error && (

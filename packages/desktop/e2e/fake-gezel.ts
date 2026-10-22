@@ -136,7 +136,7 @@ function scriptedPlan(messages: readonly ChatMessage[]): string {
         passage: id,
         kind: dated ? 'timeline' : 'flow',
         title: dated ? 'Milestones' : 'How it works',
-        why: 'A deterministic pick from the fake Gezel.',
+        show: dated ? 'The milestones by year.' : 'The steps in order.',
       };
     }),
   );

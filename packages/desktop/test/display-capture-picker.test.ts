@@ -1,7 +1,10 @@
 import { expect } from 'chai';
 import { EventEmitter } from 'node:events';
 import type { BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
-import { pickDisplayCaptureSource } from '../main/display-capture-picker.js';
+import {
+  listDisplayCaptureSources,
+  pickDisplayCaptureSource,
+} from '../main/display-capture-picker.js';
 
 const sources = [
   { id: 'screen:1:0', name: 'Screen 1', display_id: '1' },
@@ -51,6 +54,24 @@ function fixture() {
 }
 
 describe('desktop display capture picker', () => {
+  it('lists screens, then windows, without overlapping lookups', async () => {
+    const calls: string[][] = [];
+    let inFlight = 0;
+    let overlapped = false;
+    const listed = await listDisplayCaptureSources(async (options) => {
+      calls.push([...options.types]);
+      inFlight++;
+      overlapped ||= inFlight > 1;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      inFlight--;
+      return sources.filter((source) => source.id.startsWith(`${options.types[0]!}:`));
+    });
+    // Overlapping lookups race on X11 and drop every screen.
+    expect(overlapped).to.equal(false);
+    expect(calls).to.deep.equal([['screen'], ['window']]);
+    expect(listed).to.deep.equal(sources);
+  });
+
   it('offers every screen and app window, and returns only the explicit selection', async () => {
     const picker = fixture();
     picker.choose('Screens', 1);

@@ -10,12 +10,14 @@
  */
 
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { BrowserWindow, app } from 'electron';
 import type { WebContents } from 'electron';
 import {
   HOST_WIRE_LIMITS,
   isBoundedString,
   parseAiChatRequest,
+  parseAiFactCheckRequest,
   parseAiKnowledgeAction,
   parseAiPreferencesPatch,
 } from '@bendyline/docblocks/host';
@@ -28,6 +30,17 @@ import { AiService } from './ai/ai-service.js';
 import { GezelConnector } from './ai/gezel-connector.js';
 import { resolveGezelNativeHost } from './ai/gezel-native-host.js';
 import { readSettings, updateSettings } from './settings.js';
+
+type FactCheckModule = typeof import('./ai/fact-check.js');
+let factCheck: Promise<FactCheckModule> | undefined;
+/** The separately bundled checker (see tsup.config.ts), loaded on first use. */
+function loadFactCheck(): Promise<FactCheckModule> {
+  factCheck ??= import(pathToFileURL(path.join(__dirname, 'fact-check.cjs')).href).then(
+    // Node exposes a CommonJS module's exports by name, and always as `default`.
+    (loaded: FactCheckModule & { default?: FactCheckModule }) => loaded.default ?? loaded,
+  );
+  return factCheck;
+}
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
@@ -120,6 +133,12 @@ export function registerAiIpc(service: AiService): void {
   registerTrustedIpcHandler('ai:disconnect', 0, () => service.disconnect());
   registerTrustedIpcHandler('ai:models', 0, () => service.listModels());
   registerTrustedIpcHandler('ai:availableModels', 0, () => service.listAvailableModels());
+  // Mechanical and provider-free: it works whatever the connection state.
+  registerTrustedIpcHandler('ai:checkFacts', 1, async (_event, value: unknown) => {
+    const request = parseAiFactCheckRequest(value);
+    if (!request) throw new Error('Invalid fact check request');
+    return { ok: true, value: (await loadFactCheck()).checkFacts(request) };
+  });
   registerTrustedIpcHandler('ai:knowledge:state', 0, (event) => {
     watch(event.sender);
     return service.knowledgeState(`${event.sender.id}:knowledge`);

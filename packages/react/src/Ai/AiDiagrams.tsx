@@ -2,8 +2,9 @@
  * AI diagrams: "Insert diagram…" and the "Illustrate document" panel.
  *
  * The model describes each diagram as a small JSON spec; DocBlocks compiles,
- * checks, and previews it, and inserts it as one undoable edit. See
- * `illustrate-pipeline.ts` for the calls and `illustrate-passages.ts` for
+ * checks, and previews it, and inserts it as one undoable edit. The panel
+ * works in two steps: ideas (what to picture, editable) and then pictures.
+ * See `illustrate-pipeline.ts` for the calls and `illustrate-passages.ts` for
  * where diagrams go.
  */
 
@@ -23,30 +24,32 @@ import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
 import { AiReportButton } from './AiOutputReport.js';
+import { AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
+import { useAiKnowledge } from './ai-knowledge.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import type { CompiledDiagram, PictureKind } from './diagram-compile.js';
 import { clip } from './diagram-sanitize.js';
-import { DIAGRAM_KINDS, DIAGRAM_KIND_LABELS, type DiagramKind } from './diagram-spec.js';
+import { DIAGRAM_KINDS, DIAGRAM_KIND_LABELS } from './diagram-spec.js';
 import {
   documentTitle,
   idsIn,
   locatePassage,
   planInsertions,
+  segmentPassages,
+  type Passage,
   type PendingInsertion,
 } from './illustrate-passages.js';
 import {
+  drawDiagram,
+  findIdeas,
   realizeDiagram,
   specSummaryForAvoid,
-  startIllustrationRun,
-  type DiagramOutcome,
-  type IllustrationRun,
 } from './illustrate-pipeline.js';
 import { canDrawIllustrations, realizeIllustration, type PictureOutcome } from './illustration.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   inferKind,
   promptBudget,
-  type PlanPick,
 } from './illustrate-prompts.js';
 
 /** Kinds whose links between boxes cannot be checked against the text. */
@@ -128,6 +131,7 @@ export function AiDiagramDialog({
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const requestRef = useRef(0);
+  const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
 
   useEffect(
     () => () => {
@@ -157,6 +161,7 @@ export function AiDiagramDialog({
     const avoid = ready ? specSummaryForAvoid(ready.compiled) : undefined;
     setRunning(true);
     setError(null);
+    resetKnowledge();
     const title = request ? clip(request.charAt(0).toUpperCase() + request.slice(1), 60) : '';
     // With selected text, the picture must stick to it. Without, the person
     // asked the model to supply the content.
@@ -164,7 +169,7 @@ export function AiDiagramDialog({
     const result =
       kind === 'illustration' && contextWindow !== null
         ? await realizeIllustration({
-            ai,
+            ai: knowledgeAi,
             material,
             description: request,
             title,
@@ -174,7 +179,7 @@ export function AiDiagramDialog({
             signal: controller.signal,
           })
         : await realizeDiagram({
-            ai,
+            ai: knowledgeAi,
             kind: kind === 'illustration' ? autoKind : kind,
             material: material || request,
             heading: '',
@@ -194,7 +199,7 @@ export function AiDiagramDialog({
       return;
     }
     setOutcome(result);
-  }, [ai, autoKind, contextWindow, description, kind, material, ready]);
+  }, [autoKind, contextWindow, description, kind, knowledgeAi, material, ready, resetKnowledge]);
 
   const stop = useCallback(() => controllerRef.current?.abort(), []);
 
@@ -316,6 +321,7 @@ export function AiDiagramDialog({
           <span className="db-ai-spinner" aria-hidden="true" /> Drawing…
         </p>
       )}
+      {(running || ready) && <AiKnowledgeIndicator knowledge={knowledge} />}
       {ready && !running && (
         <div className="db-ai-diagram-result">
           <DiagramPreview compiled={ready.compiled} />
@@ -370,233 +376,685 @@ export function AiDiagramDialog({
 
 // ─── Illustrate panel ──────────────────────────────────────
 
-interface Suggestion {
+/** An idea's kind: a picture kind, or Auto, inferred from its prompt and passage. */
+type IdeaKind = PictureKind | 'auto';
+
+/**
+ * One idea for a picture. Phase one suggests ideas; the person edits them or
+ * writes their own; phase two draws each one.
+ */
+interface Idea {
   readonly key: string;
-  readonly pick: PlanPick;
-  readonly state: 'waiting' | 'drawing' | 'done';
-  readonly outcome: DiagramOutcome | null;
+  /** The passage the picture takes its facts from and goes after. */
+  readonly passage: Passage;
+  readonly kind: IdeaKind;
+  readonly title: string;
+  /** What the picture should show. */
+  readonly prompt: string;
+  /** The person wrote or changed the prompt, so its facts count as stated. */
+  readonly personPrompt: boolean;
+  /** The person wrote or changed the idea, so finding ideas again keeps it. */
+  readonly edited: boolean;
+  readonly status: 'idle' | 'queued' | 'drawing';
+  readonly picture: DrawnPicture | null;
   readonly inserted: boolean;
-  readonly dismissed: boolean;
   readonly problem: string | null;
 }
 
-type IllustratePhase = 'idle' | 'planning' | 'drawing' | 'done' | 'error';
+interface DrawnPicture {
+  readonly outcome: Exclude<PictureOutcome, { readonly status: 'cancelled' }>;
+  /** The idea's {@link ideaSignature} when drawn, to tell when it changed since. */
+  readonly drawnFrom: string;
+}
+
+type IdeaEdit = Partial<Pick<Idea, 'passage' | 'kind' | 'title' | 'prompt'>>;
+
+type IllustrateStep = 'ideas' | 'pictures';
+
+function resolvedKind(idea: Pick<Idea, 'kind' | 'prompt' | 'passage'>): PictureKind {
+  return idea.kind === 'auto' ? inferKind(idea.prompt, idea.passage.plain) : idea.kind;
+}
+
+function kindLabel(kind: PictureKind): string {
+  return kind === 'illustration' ? 'Illustration' : DIAGRAM_KIND_LABELS[kind];
+}
+
+/** What a picture is drawn from; where it goes can change without a redraw. */
+function ideaSignature(idea: Idea): string {
+  return JSON.stringify([resolvedKind(idea), idea.title.trim(), idea.prompt.trim()]);
+}
+
+/** The idea's picture, when it is ready and the idea has not changed since. */
+function freshPicture(idea: Idea): CompiledDiagram | null {
+  const picture = idea.picture;
+  return picture?.outcome.status === 'ready' && picture.drawnFrom === ideaSignature(idea)
+    ? picture.outcome.compiled
+    : null;
+}
+
+function plural(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function passageLabel(passage: Passage): string {
+  const text = clip(passage.plain, 60);
+  return passage.heading ? `${clip(passage.heading, 28)}: ${text}` : text;
+}
+
+/** Where a new idea starts: the selected passage, else the first without an idea. */
+function defaultPassage(
+  anchors: readonly Passage[],
+  ideas: readonly Idea[],
+  selection: EditorSelectionInfo | null,
+): Passage | null {
+  const selected = selection?.text.replace(/\s+/gu, ' ').trim().slice(0, 80) ?? '';
+  const holding = selected ? anchors.find((anchor) => anchor.plain.includes(selected)) : undefined;
+  return (
+    holding ??
+    anchors.find((anchor) => !ideas.some((idea) => idea.passage.text === anchor.text)) ??
+    anchors[0] ??
+    null
+  );
+}
+
+interface IdeaCardProps {
+  idea: Idea;
+  index: number;
+  anchors: readonly Passage[];
+  placed: { readonly start: number } | null;
+  drawsIllustrations: boolean;
+  promptRef: (element: HTMLTextAreaElement | null) => void;
+  onEdit: (change: IdeaEdit) => void;
+  onRemove: () => void;
+}
+
+/** Phase one: an idea the person can change before it is drawn. */
+function IdeaCard({
+  idea,
+  index,
+  anchors,
+  placed,
+  drawsIllustrations,
+  promptRef,
+  onEdit,
+  onRemove,
+}: IdeaCardProps) {
+  const anchor = placed ? anchors.find((passage) => passage.start === placed.start) : undefined;
+  const locked = idea.inserted || idea.status === 'drawing';
+  const outcome = idea.picture?.outcome;
+  const state = idea.inserted
+    ? 'Inserted'
+    : idea.status === 'drawing'
+      ? 'Drawing…'
+      : idea.status === 'queued'
+        ? 'Waiting to draw'
+        : freshPicture(idea)
+          ? 'Drawn'
+          : outcome?.status === 'ready'
+            ? 'Changed since drawn'
+            : outcome?.status === 'failed'
+              ? 'Could not draw'
+              : null;
+  return (
+    <li className="db-ai-review-finding db-ai-idea-card" aria-label={`Idea ${String(index + 1)}`}>
+      <div className="db-ai-review-finding-meta">
+        <span className="db-ai-review-severity db-ai-illustrate-kind">Idea {index + 1}</span>
+        <span>{idea.edited ? 'Yours' : 'Suggested'}</span>
+        {state && <span className="db-ai-idea-state">{state}</span>}
+      </div>
+      <label className="db-ai-field">
+        <span>What should it show?</span>
+        <textarea
+          ref={promptRef}
+          rows={3}
+          value={idea.prompt}
+          maxLength={AI_DIAGRAM_DESCRIPTION_CHARACTERS}
+          disabled={locked}
+          placeholder="For example: The four release steps, from draft to announcement."
+          onChange={(event) => onEdit({ prompt: event.currentTarget.value })}
+        />
+      </label>
+      <div className="db-ai-idea-row">
+        <label className="db-ai-field">
+          <span>Kind</span>
+          <select
+            value={idea.kind}
+            disabled={locked}
+            onChange={(event) => onEdit({ kind: event.currentTarget.value as IdeaKind })}
+          >
+            <option value="auto">
+              Auto ({kindLabel(inferKind(idea.prompt, idea.passage.plain))})
+            </option>
+            {DIAGRAM_KINDS.map((option) => (
+              <option key={option} value={option}>
+                {DIAGRAM_KIND_LABELS[option]}
+              </option>
+            ))}
+            {(drawsIllustrations || idea.kind === 'illustration') && (
+              <option value="illustration">Illustration (drawn by AI)</option>
+            )}
+          </select>
+        </label>
+        <label className="db-ai-field">
+          <span>Title</span>
+          <input
+            type="text"
+            value={idea.title}
+            maxLength={60}
+            disabled={locked}
+            placeholder="Optional"
+            onChange={(event) => onEdit({ title: event.currentTarget.value })}
+          />
+        </label>
+      </div>
+      <label className="db-ai-field">
+        <span>Goes after</span>
+        <select
+          value={anchor ? String(anchor.start) : ''}
+          disabled={locked}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            const next = anchors.find((passage) => String(passage.start) === value);
+            if (next) onEdit({ passage: next });
+          }}
+        >
+          {!anchor && (
+            <option value="" disabled>
+              Choose a passage
+            </option>
+          )}
+          {anchors.map((passage) => (
+            <option key={passage.start} value={String(passage.start)}>
+              {passageLabel(passage)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!anchor && !idea.inserted && (
+        <p className="db-ai-error" role="alert">
+          This passage changed. Choose where the picture goes.
+        </p>
+      )}
+      {idea.problem && (
+        <p className="db-ai-error" role="alert">
+          {idea.problem}
+        </p>
+      )}
+      {!idea.inserted && (
+        <div className="db-ai-idea-actions">
+          <button type="button" disabled={idea.status === 'drawing'} onClick={onRemove}>
+            Remove
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+interface PictureCardProps {
+  idea: Idea;
+  placed: boolean;
+  busy: boolean;
+  sourceOpen: boolean;
+  onToggleSource: () => void;
+  onRemove: () => void;
+  onEditIdea: () => void;
+  onDraw: () => void;
+  onInsert: () => void;
+}
+
+/** Phase two: an idea's picture, to check and insert. */
+function PictureCard({
+  idea,
+  placed,
+  busy,
+  sourceOpen,
+  onToggleSource,
+  onRemove,
+  onEditIdea,
+  onDraw,
+  onInsert,
+}: PictureCardProps) {
+  const kind = resolvedKind(idea);
+  const compiled = freshPicture(idea);
+  const outcome = idea.picture?.outcome ?? null;
+  const prompt = idea.prompt.trim();
+  return (
+    <li className="db-ai-review-finding db-ai-illustrate-card">
+      <div className="db-ai-review-finding-meta">
+        <span className="db-ai-review-severity db-ai-illustrate-kind">{kindLabel(kind)}</span>
+        {idea.passage.heading && <span>{clip(idea.passage.heading, 48)}</span>}
+      </div>
+      <h3>{compiled?.title || idea.title.trim() || kindLabel(kind)}</h3>
+      {prompt && <p>{prompt}</p>}
+      <div className="db-ai-review-excerpt">
+        <span>After</span>
+        <blockquote>{clip(idea.passage.plain, 180)}</blockquote>
+      </div>
+
+      {idea.status === 'queued' && <p className="db-ai-note">Waiting…</p>}
+      {idea.status === 'drawing' && (
+        <p className="db-ai-progress" role="status">
+          <span className="db-ai-spinner" aria-hidden="true" /> Drawing…
+        </p>
+      )}
+      {idea.inserted && <p className="db-ai-note">Inserted.</p>}
+      {idea.status === 'idle' && !idea.inserted && (
+        <>
+          {!outcome && <p className="db-ai-note">Not drawn yet.</p>}
+          {outcome?.status === 'ready' && (
+            <>
+              <DiagramPreview compiled={outcome.compiled} />
+              {compiled ? (
+                <>
+                  {outcome.notes.map((note) => (
+                    <p key={note} className="db-ai-note">
+                      {note}
+                    </p>
+                  ))}
+                  {placementNote(compiled) && (
+                    <p className="db-ai-note">{placementNote(compiled)}</p>
+                  )}
+                  {checkNote(compiled.kind) && (
+                    <p className="db-ai-note">{checkNote(compiled.kind)}</p>
+                  )}
+                </>
+              ) : (
+                <p className="db-ai-note">
+                  You changed this idea after it was drawn. Redraw it to use your changes.
+                </p>
+              )}
+              {sourceOpen && <DiagramSource compiled={outcome.compiled} />}
+            </>
+          )}
+          {outcome?.status === 'failed' && (
+            <p className="db-ai-error" role="alert">
+              {outcome.message}
+            </p>
+          )}
+        </>
+      )}
+      {!placed && !idea.inserted && (
+        <p className="db-ai-error" role="alert">
+          This passage changed. Edit the idea to choose where the picture goes.
+        </p>
+      )}
+      {idea.problem && placed && (
+        <p className="db-ai-error" role="alert">
+          {idea.problem}
+        </p>
+      )}
+
+      {!idea.inserted && idea.status === 'idle' && (
+        <div className="db-ai-review-finding-actions db-ai-illustrate-actions">
+          <button type="button" onClick={onRemove}>
+            Remove
+          </button>
+          {outcome?.status === 'ready' && (
+            <button type="button" aria-expanded={sourceOpen} onClick={onToggleSource}>
+              {sourceOpen ? 'Hide source' : 'Source'}
+            </button>
+          )}
+          <button type="button" onClick={onEditIdea}>
+            Edit idea
+          </button>
+          <button type="button" disabled={busy || !placed} onClick={onDraw}>
+            {outcome ? 'Redraw' : 'Draw'}
+          </button>
+          {compiled && (
+            <button type="button" disabled={busy || !placed} onClick={onInsert}>
+              Insert
+            </button>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 export interface AiIllustratePanelProps {
   ai: DocBlocksHostAiAPI;
   onClose: () => void;
 }
 
+/**
+ * Illustrate document, in two steps. Ideas: the model suggests where a
+ * picture would help and what each should show, and the person edits those
+ * ideas or adds their own. Pictures: each idea is drawn, checked, and
+ * inserted. Nothing is drawn until the person asks.
+ */
 export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
-  const { markdownSource, applySourceEdits } = useEditorContext();
+  const { markdownSource, applySourceEdits, getSelection } = useEditorContext();
   const status = useAiStatus(ai);
   const contextWindow = contextWindowOf(status);
+  const drawsIllustrations = canDrawIllustrations(contextWindow);
   const ready = status?.kind === 'ready' && status.model !== null;
-  const [phase, setPhase] = useState<IllustratePhase>('idle');
-  const [progress, setProgress] = useState<{ index: number; total: number } | null>(null);
-  const [suggestions, setSuggestions] = useState<readonly Suggestion[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [chosenStep, setStep] = useState<IllustrateStep>('ideas');
+  const [ideas, setIdeas] = useState<readonly Idea[]>([]);
+  const [finding, setFinding] = useState(false);
+  const [searched, setSearched] = useState(false);
+  /** Said when a search adds no ideas. */
+  const [findNote, setFindNote] = useState<string | null>(null);
+  const [findError, setFindError] = useState<string | null>(null);
+  // With every idea removed there are no pictures to show.
+  const step: IllustrateStep = ideas.length === 0 ? 'ideas' : chosenStep;
+  const [drawProgress, setDrawProgress] = useState<{ done: number; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState<string | null>(null);
   const [sourceOpen, setSourceOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const [kindChoice, setKindChoice] = useState<Readonly<Record<string, DiagramKind>>>({});
-  const runRef = useRef<IllustrationRun | null>(null);
-  const regenerateRef = useRef<AbortController | null>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  // The draw loop reads ideas through this ref, so edits to queued ideas count.
+  const ideasRef = useRef<readonly Idea[]>(ideas);
+  const findRef = useRef<AbortController | null>(null);
+  const drawRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
+  const nextKeyRef = useRef(0);
   const startedRef = useRef(false);
+  const promptRefs = useRef(new Map<string, HTMLTextAreaElement>());
+  // Finding ideas reads the whole document; each picture reads one passage.
+  const { knowledge: findKnowledge, ai: findAi, reset: resetFindKnowledge } = useAiKnowledge(ai);
+  const { knowledge: drawKnowledge, ai: drawAi } = useAiKnowledge(ai);
 
-  const update = useCallback((key: string, change: (current: Suggestion) => Suggestion) => {
-    setSuggestions((current) => current.map((item) => (item.key === key ? change(item) : item)));
+  useEffect(() => {
+    ideasRef.current = ideas;
+  }, [ideas]);
+
+  const anchors = useMemo(
+    () => segmentPassages(markdownSource, { everyBlock: true }),
+    [markdownSource],
+  );
+  const placements = useMemo(
+    () => new Map(ideas.map((idea) => [idea.key, locatePassage(markdownSource, idea.passage)])),
+    [ideas, markdownSource],
+  );
+
+  const update = useCallback((key: string, change: (current: Idea) => Idea) => {
+    setIdeas((current) => current.map((idea) => (idea.key === key ? change(idea) : idea)));
   }, []);
 
-  const start = useCallback(() => {
-    runRef.current?.cancel();
-    regenerateRef.current?.abort();
-    const generation = ++generationRef.current;
-    setSuggestions([]);
-    setError(null);
-    setNotice(null);
-    setProgress(null);
-    setPhase('planning');
-    runRef.current = startIllustrationRun({
-      ai,
+  const newKey = useCallback(() => `idea-${String(++nextKeyRef.current)}`, []);
+
+  const find = useCallback(async () => {
+    if (findRef.current || drawRef.current) return;
+    const controller = new AbortController();
+    findRef.current = controller;
+    const generation = generationRef.current;
+    setFinding(true);
+    setFindError(null);
+    setFindNote(null);
+    resetFindKnowledge();
+    const outcome = await findIdeas({
+      ai: findAi,
       source: markdownSource,
       title: documentTitle(markdownSource),
       budget: promptBudget(contextWindow),
-      validateMermaid: validateMermaidSource,
-      onEvent: (event) => {
-        if (generationRef.current !== generation) return;
-        switch (event.type) {
-          case 'planning':
-            setPhase('planning');
-            break;
-          case 'planned':
-            setSuggestions(
-              event.picks.map((pick) => ({
-                key: pick.passage.id,
-                pick,
-                state: 'waiting',
-                outcome: null,
-                inserted: false,
-                dismissed: false,
-                problem: null,
-              })),
-            );
-            break;
-          case 'drawing':
-            setPhase('drawing');
-            setProgress({ index: event.index, total: event.total });
-            setSuggestions((current) =>
-              current.map((item, index) =>
-                index === event.index ? { ...item, state: 'drawing' } : item,
-              ),
-            );
-            break;
-          case 'suggestion':
-            update(event.pick.passage.id, (item) => ({
-              ...item,
-              state: 'done',
-              outcome: event.outcome,
-            }));
-            break;
-          case 'error':
-            setError(event.message);
-            setPhase('error');
-            break;
-          case 'done':
-            runRef.current = null;
-            setProgress(null);
-            setPhase((current) => (current === 'error' ? current : 'done'));
-            setSuggestions((current) =>
-              current.map((item) => (item.state === 'done' ? item : { ...item, state: 'done' })),
-            );
-            break;
-        }
-      },
+      signal: controller.signal,
     });
-  }, [ai, contextWindow, markdownSource, update]);
+    if (generationRef.current !== generation) return;
+    findRef.current = null;
+    setFinding(false);
+    if (outcome.status === 'cancelled') return;
+    if (outcome.status === 'failed') {
+      setFindError(outcome.message);
+      return;
+    }
+    // Keep what the person wrote, changed, drew or inserted; replace the rest.
+    const kept = ideasRef.current.filter(
+      (idea) => idea.edited || idea.picture !== null || idea.inserted || idea.status !== 'idle',
+    );
+    const found = outcome.picks
+      .filter((pick) => !kept.some((idea) => idea.passage.text === pick.passage.text))
+      .map(
+        (pick): Idea => ({
+          key: newKey(),
+          passage: pick.passage,
+          kind: pick.kind,
+          title: pick.title,
+          prompt: pick.prompt,
+          personPrompt: false,
+          edited: false,
+          status: 'idle',
+          picture: null,
+          inserted: false,
+          problem: null,
+        }),
+      );
+    setSearched(true);
+    if (found.length === 0) {
+      setFindNote(
+        kept.length === 0
+          ? 'No passage here stood out as needing a picture. Add your own idea.'
+          : 'No other passage stood out as needing a picture.',
+      );
+    }
+    setIdeas((current) => {
+      const keep = new Set(kept.map((idea) => idea.key));
+      return [...current.filter((idea) => keep.has(idea.key)), ...found].sort(
+        (a, b) => a.passage.start - b.passage.start,
+      );
+    });
+  }, [findAi, resetFindKnowledge, contextWindow, markdownSource, newKey]);
+
+  const drawOne = useCallback(
+    (idea: Idea, avoid: string | undefined, signal: AbortSignal): Promise<PictureOutcome> => {
+      const kind = resolvedKind(idea);
+      const title = idea.title.trim();
+      const prompt = idea.prompt.trim();
+      if (kind === 'illustration') {
+        if (contextWindow === null || !canDrawIllustrations(contextWindow)) {
+          return Promise.resolve({
+            status: 'failed',
+            message: 'This model cannot draw illustrations. Choose a diagram kind instead.',
+          });
+        }
+        return realizeIllustration({
+          ai: drawAi,
+          material: idea.passage.plain,
+          description: prompt,
+          title,
+          avoid,
+          ground: true,
+          descriptionFacts: idea.personPrompt,
+          contextWindow,
+          signal,
+        });
+      }
+      return drawDiagram(
+        { passage: idea.passage, kind, title, prompt },
+        {
+          ai: drawAi,
+          budget: promptBudget(contextWindow),
+          validateMermaid: validateMermaidSource,
+          personPrompt: idea.personPrompt,
+          avoid,
+          signal,
+        },
+      );
+    },
+    [drawAi, contextWindow],
+  );
+
+  /** Phase two: draw `keys` one at a time, showing each picture as it lands. */
+  const draw = useCallback(
+    async (keys: readonly string[]) => {
+      if (keys.length === 0 || findRef.current || drawRef.current) return;
+      const controller = new AbortController();
+      drawRef.current = controller;
+      const generation = generationRef.current;
+      const queued = new Set(keys);
+      setNotice(null);
+      setDrawProgress({ done: 0, total: keys.length });
+      setIdeas((current) =>
+        current.map((idea) =>
+          queued.has(idea.key) ? { ...idea, status: 'queued', problem: null } : idea,
+        ),
+      );
+      for (const [index, key] of keys.entries()) {
+        if (controller.signal.aborted) break;
+        const idea = ideasRef.current.find((entry) => entry.key === key);
+        if (!idea || idea.inserted) continue;
+        setDrawProgress({ done: index, total: keys.length });
+        update(key, (current) => ({ ...current, status: 'drawing' }));
+        // A redraw of an unchanged idea should give something different.
+        const shown = freshPicture(idea);
+        const outcome = await drawOne(
+          idea,
+          shown ? specSummaryForAvoid(shown) : undefined,
+          controller.signal,
+        );
+        if (generationRef.current !== generation) return;
+        if (outcome.status === 'cancelled') break;
+        const picture: DrawnPicture = { outcome, drawnFrom: ideaSignature(idea) };
+        update(key, (current) => ({ ...current, status: 'idle', picture }));
+      }
+      if (generationRef.current !== generation) return;
+      drawRef.current = null;
+      setDrawProgress(null);
+      setIdeas((current) =>
+        current.map((idea) => (idea.status === 'idle' ? idea : { ...idea, status: 'idle' })),
+      );
+    },
+    [drawOne, update],
+  );
 
   const stop = useCallback(() => {
-    runRef.current?.cancel();
-    regenerateRef.current?.abort();
+    findRef.current?.abort();
+    drawRef.current?.abort();
   }, []);
 
   useEffect(() => {
     if (startedRef.current || !ready) return;
     startedRef.current = true;
-    start();
-  }, [ready, start]);
+    void find();
+  }, [ready, find]);
 
   useEffect(
     () => () => {
       generationRef.current += 1;
-      runRef.current?.cancel();
-      regenerateRef.current?.abort();
+      findRef.current?.abort();
+      drawRef.current?.abort();
+      findRef.current = null;
+      drawRef.current = null;
       // StrictMode replays mount effects in development; let the replay start.
       startedRef.current = false;
     },
     [],
   );
 
+  useEffect(() => {
+    if (!focusKey || step !== 'ideas') return;
+    promptRefs.current.get(focusKey)?.focus();
+    setFocusKey(null);
+  }, [focusKey, ideas, step]);
+
+  const addIdea = useCallback(() => {
+    const passage = defaultPassage(anchors, ideasRef.current, getSelection());
+    if (!passage) return;
+    const key = newKey();
+    setIdeas((current) => [
+      ...current,
+      {
+        key,
+        passage,
+        kind: 'auto',
+        title: '',
+        prompt: '',
+        personPrompt: true,
+        edited: true,
+        status: 'idle',
+        picture: null,
+        inserted: false,
+        problem: null,
+      },
+    ]);
+    setStep('ideas');
+    setFocusKey(key);
+  }, [anchors, getSelection, newKey]);
+
+  const edit = useCallback(
+    (key: string, change: IdeaEdit) =>
+      update(key, (idea) => ({
+        ...idea,
+        ...change,
+        edited: true,
+        personPrompt: idea.personPrompt || change.prompt !== undefined,
+        problem: null,
+      })),
+    [update],
+  );
+
+  const remove = useCallback((key: string) => {
+    setIdeas((current) => current.filter((idea) => idea.key !== key));
+  }, []);
+
   const insert = useCallback(
-    (items: readonly Suggestion[]) => {
+    (items: readonly Idea[]) => {
       const pending: PendingInsertion[] = [];
-      for (const item of items) {
-        if (item.inserted || item.dismissed || item.outcome?.status !== 'ready') continue;
-        pending.push({
-          key: item.key,
-          passage: item.pick.passage,
-          compiled: item.outcome.compiled,
-        });
+      for (const idea of items) {
+        const compiled = freshPicture(idea);
+        if (idea.inserted || !compiled) continue;
+        pending.push({ key: idea.key, passage: idea.passage, compiled });
       }
       if (pending.length === 0) return;
       const plan = planInsertions(markdownSource, pending);
       const stale = new Set(plan.stale);
       const unplaceable = new Set(plan.unplaceable);
       if (plan.edits.length > 0 && !applySourceEdits(plan.edits, { baseSource: markdownSource })) {
-        setNotice('Switch to Write or Source view, in the Document layout, to insert diagrams.');
+        setNotice('Switch to Write or Source view, in the Document layout, to insert pictures.');
         return;
       }
       setNotice(null);
-      setSuggestions((current) =>
-        current.map((item) => {
-          if (!pending.some((entry) => entry.key === item.key)) return item;
-          if (stale.has(item.key)) {
+      setIdeas((current) =>
+        current.map((idea) => {
+          if (!pending.some((entry) => entry.key === idea.key)) return idea;
+          if (stale.has(idea.key)) {
             return {
-              ...item,
-              problem: 'This passage changed. Regenerate the diagram or dismiss it.',
+              ...idea,
+              problem: 'This passage changed. Edit the idea to choose where the picture goes.',
             };
           }
-          if (unplaceable.has(item.key)) {
+          if (unplaceable.has(idea.key)) {
             return {
-              ...item,
+              ...idea,
               problem:
                 'No heading level fits at the end of this section without capturing the text after it.',
             };
           }
-          return { ...item, inserted: true, problem: null };
+          return { ...idea, inserted: true, problem: null };
         }),
       );
     },
     [applySourceEdits, markdownSource],
   );
 
-  const regenerate = useCallback(
-    async (item: Suggestion) => {
-      if (runRef.current || regenerating) return;
-      const kind = kindChoice[item.key] ?? item.pick.kind;
-      const controller = new AbortController();
-      regenerateRef.current = controller;
-      const generation = generationRef.current;
-      setRegenerating(item.key);
-      update(item.key, (current) => ({ ...current, state: 'drawing', problem: null }));
-      const outcome = await realizeDiagram({
-        ai,
-        kind,
-        material: item.pick.passage.plain,
-        heading: item.pick.passage.heading,
-        title: item.pick.title,
-        avoid:
-          item.outcome?.status === 'ready' && kind === item.pick.kind
-            ? specSummaryForAvoid(item.outcome.compiled)
-            : undefined,
-        ground: true,
-        budget: promptBudget(contextWindow),
-        validateMermaid: validateMermaidSource,
-        signal: controller.signal,
-      });
-      if (generationRef.current !== generation) return;
-      setRegenerating(null);
-      regenerateRef.current = null;
-      update(item.key, (current) =>
-        outcome.status === 'cancelled'
-          ? { ...current, state: 'done' }
-          : { ...current, state: 'done', outcome, pick: { ...current.pick, kind } },
-      );
-    },
-    [ai, contextWindow, kindChoice, regenerating, update],
+  const drawing = drawProgress !== null;
+  const busy = finding || drawing;
+  const placed = (idea: Idea) => placements.get(idea.key) != null;
+  const toDraw = ideas.filter(
+    (idea) => !idea.inserted && freshPicture(idea) === null && placed(idea),
   );
+  const insertable = ideas.filter(
+    (idea) => !idea.inserted && freshPicture(idea) !== null && placed(idea),
+  );
+  const drawn = ideas.flatMap((idea) => {
+    const compiled = freshPicture(idea);
+    return compiled ? [compiled] : [];
+  });
+  const anyPicture = ideas.some((idea) => idea.picture !== null);
 
-  const busy = phase === 'planning' || phase === 'drawing' || regenerating !== null;
-  const visible = suggestions.filter((item) => !item.dismissed);
-  const drawn = visible.flatMap((item) =>
-    item.outcome?.status === 'ready' ? [item.outcome.compiled] : [],
-  );
-  const insertable = visible.filter(
-    (item) =>
-      !item.inserted &&
-      item.outcome?.status === 'ready' &&
-      locatePassage(markdownSource, item.pick.passage) !== null,
-  );
+  const drawPictures = (keys: readonly string[]) => {
+    setStep('pictures');
+    void draw(keys);
+  };
 
   return (
     <aside className="db-ai-review-panel db-ai-illustrate-panel" aria-label="AI illustrations">
       <div className="db-ai-review-header">
         <div>
           <h2>AI illustrations</h2>
-          {phase === 'done' && (
+          {ideas.length > 0 && (
             <span className="db-ai-review-count">
-              {visible.length} {visible.length === 1 ? 'suggestion' : 'suggestions'}
+              {plural(ideas.length, 'idea')}
+              {drawn.length > 0 && ` · ${String(drawn.length)} drawn`}
             </span>
           )}
         </div>
@@ -610,182 +1068,157 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         </button>
       </div>
 
-      <div className="db-ai-review-actions">
-        {busy ? (
-          <button type="button" onClick={stop}>
-            Stop
-          </button>
-        ) : (
-          <button type="button" disabled={!ready} onClick={start}>
-            {phase === 'idle' ? 'Suggest diagrams' : 'Suggest again'}
-          </button>
-        )}
-      </div>
+      <nav className="db-ai-illustrate-steps" aria-label="Steps">
+        <ol>
+          <li>
+            <button
+              type="button"
+              aria-current={step === 'ideas' ? 'step' : undefined}
+              onClick={() => setStep('ideas')}
+            >
+              <span className="db-ai-step-number" aria-hidden="true">
+                1
+              </span>
+              Ideas
+            </button>
+          </li>
+          <li>
+            <button
+              type="button"
+              aria-current={step === 'pictures' ? 'step' : undefined}
+              disabled={ideas.length === 0}
+              onClick={() => setStep('pictures')}
+            >
+              <span className="db-ai-step-number" aria-hidden="true">
+                2
+              </span>
+              Pictures
+            </button>
+          </li>
+        </ol>
+      </nav>
 
       {!ready && status && (
         <div className="db-ai-review-empty" role="status">
           {unavailableSentence(status)}
         </div>
       )}
-      {(phase === 'planning' || phase === 'drawing') && (
-        <div className="db-ai-review-empty" role="status">
-          <span className="db-ai-spinner" aria-hidden="true" />{' '}
-          {phase === 'planning' || !progress
-            ? 'Reading the document…'
-            : `Drawing diagram ${String(progress.index + 1)} of ${String(progress.total)}…`}
-        </div>
-      )}
-      {phase === 'error' && error && (
-        <div className="db-ai-review-empty db-ai-error" role="alert">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="db-ai-review-stale" role="status">
-          {notice}
-        </div>
-      )}
-      {phase === 'done' && visible.length === 0 && (
-        <div className="db-ai-review-empty">
-          {suggestions.length === 0
-            ? 'No passage here would be clearer as a diagram.'
-            : 'All suggestions have been handled.'}
-        </div>
-      )}
 
-      <ol className="db-ai-review-list">
-        {visible.map((item) => {
-          const outcome = item.outcome;
-          const compiled = outcome?.status === 'ready' ? outcome.compiled : null;
-          const kind = item.pick.kind;
-          const passageMoved = locatePassage(markdownSource, item.pick.passage) === null;
-          return (
-            <li key={item.key} className="db-ai-review-finding db-ai-illustrate-card">
-              <div className="db-ai-review-finding-meta">
-                <span className="db-ai-review-severity db-ai-illustrate-kind">
-                  {DIAGRAM_KIND_LABELS[kind]}
+      {step === 'ideas' ? (
+        <section aria-label="Ideas">
+          <p className="db-ai-illustrate-intro">
+            Each idea says where a picture goes and what it should show. Edit the ideas or add your
+            own, then draw them.
+          </p>
+          <div className="db-ai-illustrate-bar">
+            {finding ? (
+              <>
+                <span className="db-ai-illustrate-progress" role="status">
+                  <span className="db-ai-spinner" aria-hidden="true" /> Finding ideas…
                 </span>
-                {item.pick.passage.heading && <span>{clip(item.pick.passage.heading, 48)}</span>}
-              </div>
-              <h3>{compiled?.title || item.pick.title || DIAGRAM_KIND_LABELS[kind]}</h3>
-              {item.pick.why && <p>{item.pick.why}</p>}
-              <div className="db-ai-review-excerpt">
-                <span>After</span>
-                <blockquote>{clip(item.pick.passage.plain, 180)}</blockquote>
-              </div>
-
-              {item.state === 'waiting' && <p className="db-ai-note">Waiting…</p>}
-              {item.state === 'drawing' && (
-                <p className="db-ai-progress" role="status">
-                  <span className="db-ai-spinner" aria-hidden="true" /> Drawing…
-                </p>
-              )}
-              {item.inserted && <p className="db-ai-note">Inserted.</p>}
-              {item.state === 'done' && compiled && !item.inserted && (
-                <>
-                  <DiagramPreview compiled={compiled} />
-                  {placementNote(compiled) && (
-                    <p className="db-ai-note">{placementNote(compiled)}</p>
-                  )}
-                  {checkNote(compiled.kind) && (
-                    <p className="db-ai-note">{checkNote(compiled.kind)}</p>
-                  )}
-                  {sourceOpen.has(item.key) && <DiagramSource compiled={compiled} />}
-                </>
-              )}
-              {item.state === 'done' && outcome?.status === 'failed' && (
-                <p className="db-ai-error" role="alert">
-                  {outcome.message}
-                </p>
-              )}
-              {passageMoved && !item.inserted && (
-                <p className="db-ai-error" role="alert">
-                  This passage changed. Regenerate the diagram or dismiss it.
-                </p>
-              )}
-              {item.problem && !passageMoved && (
-                <p className="db-ai-error" role="alert">
-                  {item.problem}
-                </p>
-              )}
-
-              {!item.inserted && item.state === 'done' && (
-                <div className="db-ai-review-finding-actions db-ai-illustrate-actions">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSuggestions((current) =>
-                        current.map((entry) =>
-                          entry.key === item.key ? { ...entry, dismissed: true } : entry,
-                        ),
-                      )
-                    }
-                  >
-                    Dismiss
-                  </button>
-                  {compiled && (
-                    <button
-                      type="button"
-                      aria-expanded={sourceOpen.has(item.key)}
-                      onClick={() =>
-                        setSourceOpen((current) => {
-                          const next = new Set(current);
-                          if (next.has(item.key)) next.delete(item.key);
-                          else next.add(item.key);
-                          return next;
-                        })
-                      }
-                    >
-                      {sourceOpen.has(item.key) ? 'Hide source' : 'Source'}
-                    </button>
-                  )}
-                  <select
-                    aria-label="Diagram kind"
-                    value={kindChoice[item.key] ?? kind}
-                    disabled={busy || passageMoved}
-                    onChange={(event) => {
-                      const value = event.currentTarget.value as DiagramKind;
-                      setKindChoice((current) => ({ ...current, [item.key]: value }));
-                    }}
-                  >
-                    {DIAGRAM_KINDS.map((option) => (
-                      <option key={option} value={option}>
-                        {DIAGRAM_KIND_LABELS[option]}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={busy || passageMoved}
-                    onClick={() => void regenerate(item)}
-                  >
-                    Regenerate
-                  </button>
-                  {compiled && (
-                    <button
-                      type="button"
-                      disabled={busy || passageMoved}
-                      onClick={() => insert([item])}
-                    >
-                      Insert
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      {insertable.length > 1 && !busy && (
-        <div className="db-ai-review-actions db-ai-illustrate-footer">
-          <button type="button" onClick={() => insert(insertable)}>
-            Insert all ({insertable.length})
-          </button>
-        </div>
+                <button type="button" onClick={stop}>
+                  Stop
+                </button>
+              </>
+            ) : (
+              <button type="button" disabled={!ready || drawing} onClick={() => void find()}>
+                {searched ? 'Find ideas again' : 'Find ideas'}
+              </button>
+            )}
+          </div>
+          {(finding || searched) && findKnowledge && (
+            <div className="db-ai-review-knowledge">
+              <AiKnowledgeIndicator knowledge={findKnowledge} />
+            </div>
+          )}
+          {findError && (
+            <div className="db-ai-review-empty db-ai-error" role="alert">
+              {findError}
+            </div>
+          )}
+          {!finding && findNote && (
+            <div className="db-ai-review-empty" role="status">
+              {findNote}
+            </div>
+          )}
+          {ideas.length > 0 && (
+            <ol className="db-ai-review-list">
+              {ideas.map((idea, index) => (
+                <IdeaCard
+                  key={idea.key}
+                  idea={idea}
+                  index={index}
+                  anchors={anchors}
+                  placed={placements.get(idea.key) ?? null}
+                  drawsIllustrations={drawsIllustrations}
+                  promptRef={(element) => {
+                    if (element) promptRefs.current.set(idea.key, element);
+                    else promptRefs.current.delete(idea.key);
+                  }}
+                  onEdit={(change) => edit(idea.key, change)}
+                  onRemove={() => remove(idea.key)}
+                />
+              ))}
+            </ol>
+          )}
+          <div className="db-ai-illustrate-bar">
+            <button type="button" disabled={anchors.length === 0} onClick={addIdea}>
+              Add idea
+            </button>
+          </div>
+          {anchors.length === 0 && (
+            <p className="db-ai-illustrate-intro">
+              Write some text first: each picture goes after a paragraph, list or table.
+            </p>
+          )}
+        </section>
+      ) : (
+        <section aria-label="Pictures">
+          <p className="db-ai-illustrate-intro">
+            Check each picture against your text, then insert the ones you want. To change a
+            picture, edit its idea and redraw it.
+          </p>
+          {notice && (
+            <div className="db-ai-review-stale" role="status">
+              {notice}
+            </div>
+          )}
+          {drawKnowledge && (
+            <div className="db-ai-review-knowledge">
+              <AiKnowledgeIndicator knowledge={drawKnowledge} />
+            </div>
+          )}
+          <ol className="db-ai-review-list">
+            {ideas.map((idea) => (
+              <PictureCard
+                key={idea.key}
+                idea={idea}
+                placed={placed(idea)}
+                busy={busy}
+                sourceOpen={sourceOpen.has(idea.key)}
+                onToggleSource={() =>
+                  setSourceOpen((current) => {
+                    const next = new Set(current);
+                    if (next.has(idea.key)) next.delete(idea.key);
+                    else next.add(idea.key);
+                    return next;
+                  })
+                }
+                onRemove={() => remove(idea.key)}
+                onEditIdea={() => {
+                  setStep('ideas');
+                  setFocusKey(idea.key);
+                }}
+                onDraw={() => void draw([idea.key])}
+                onInsert={() => insert([idea])}
+              />
+            ))}
+          </ol>
+        </section>
       )}
+
       <p className="db-ai-review-disclaimer">
-        AI diagrams can be wrong. Check each one before inserting it.
+        AI pictures can be wrong. Check each one before inserting it.
         {drawn.length > 0 && !busy && (
           <>
             {' '}
@@ -797,6 +1230,74 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
           </>
         )}
       </p>
+
+      {(drawing || step === 'ideas' || toDraw.length > 0 || insertable.length > 1) && (
+        <div className="db-ai-illustrate-footer">
+          {drawProgress ? (
+            <>
+              <div className="db-ai-illustrate-progress" role="status">
+                <span className="db-ai-spinner" aria-hidden="true" />
+                <span>
+                  Drawing picture {Math.min(drawProgress.done + 1, drawProgress.total)} of{' '}
+                  {drawProgress.total}…
+                </span>
+                <progress
+                  max={drawProgress.total}
+                  value={drawProgress.done}
+                  aria-label="Pictures drawn so far"
+                />
+              </div>
+              <button
+                type="button"
+                title="Stop drawing. Pictures already drawn are kept."
+                onClick={stop}
+              >
+                Stop
+              </button>
+            </>
+          ) : step === 'ideas' ? (
+            toDraw.length === 0 && anyPicture ? (
+              <button
+                type="button"
+                className="db-ai-illustrate-primary"
+                onClick={() => setStep('pictures')}
+              >
+                Show pictures
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="db-ai-illustrate-primary"
+                disabled={!ready || finding || toDraw.length === 0}
+                onClick={() => drawPictures(toDraw.map((idea) => idea.key))}
+              >
+                {toDraw.length === 0 ? 'Draw pictures' : `Draw ${plural(toDraw.length, 'picture')}`}
+              </button>
+            )
+          ) : (
+            <>
+              {toDraw.length > 0 && (
+                <button
+                  type="button"
+                  disabled={!ready || finding}
+                  onClick={() => drawPictures(toDraw.map((idea) => idea.key))}
+                >
+                  Draw {plural(toDraw.length, 'picture')}
+                </button>
+              )}
+              {insertable.length > 1 && (
+                <button
+                  type="button"
+                  className="db-ai-illustrate-primary"
+                  onClick={() => insert(insertable)}
+                >
+                  Insert all ({insertable.length})
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

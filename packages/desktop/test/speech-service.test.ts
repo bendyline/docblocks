@@ -9,7 +9,11 @@ import type {
   SpeechSynthesizeEvent,
   SpeechTranscript,
 } from '@bendyline/docblocks/host';
-import { SpeechModelStore, type SpeechModelEntry } from '../main/speech/speech-models.js';
+import {
+  KOKORO_MODEL_FILE,
+  SpeechModelStore,
+  type SpeechModelEntry,
+} from '../main/speech/speech-models.js';
 import { SpeechPreferenceStore } from '../main/speech/speech-preferences.js';
 import {
   SpeechService,
@@ -45,7 +49,7 @@ const CATALOG: readonly SpeechModelEntry[] = [
     licenseUrl: 'https://example.test/l',
     files: [
       {
-        name: 'onnx/model_quantized.onnx',
+        name: KOKORO_MODEL_FILE,
         url: 'https://m.test/m.onnx',
         sha256: sha(MODEL),
         size: 3,

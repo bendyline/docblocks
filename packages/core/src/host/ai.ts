@@ -221,11 +221,67 @@ export interface AiChatProgress {
   readonly tokensPerSecond: number | null;
 }
 
+/** One knowledge catalog that contributed reference passages to a request. */
+export interface AiChatKnowledgeSource {
+  readonly catalogId: string;
+  /** The catalog's display name, or its id when the provider did not name it. */
+  readonly name: string;
+  /** Distinct titles of the cited articles, best first. */
+  readonly titles: readonly string[];
+}
+
+/**
+ * What the person's enabled knowledge catalogs added to one request. A
+ * provider sends this at most once, before any text, and only when at least
+ * one catalog is enabled.
+ */
+export type AiChatKnowledge =
+  | {
+      readonly outcome: 'used';
+      readonly sources: readonly AiChatKnowledgeSource[];
+      /** The passage texts the model was given, so its output can be checked against them. */
+      readonly evidence: readonly string[];
+    }
+  /** The catalogs were searched and nothing relevant came back. */
+  | { readonly outcome: 'none' }
+  /** The catalogs could not be consulted: retrieval failed or the prompt left no room. */
+  | { readonly outcome: 'skipped' };
+
 export type AiChatEvent =
+  | { readonly kind: 'knowledge'; readonly knowledge: AiChatKnowledge }
   | { readonly kind: 'progress'; readonly progress: AiChatProgress }
   | { readonly kind: 'delta'; readonly text: string }
   | { readonly kind: 'done'; readonly completion: AiChatCompletion }
   | { readonly kind: 'error'; readonly error: AiError };
+
+/** Check AI output for specific details that nothing the model was shown supports. */
+export interface AiFactCheckRequest {
+  /** The output, as Markdown. */
+  readonly text: string;
+  /** Reference passages the model was given. */
+  readonly evidence: readonly string[];
+  /** What the person supplied: their instructions and document. Details found here need no source. */
+  readonly given: string;
+}
+
+export interface AiFactCheckSentence {
+  /** The sentence, possibly shortened. */
+  readonly text: string;
+  /** The names, dates, numbers or quotations no source shows. */
+  readonly missing: readonly string[];
+  /**
+   * A missing detail is a year, number, month or quotation. Names alone are a
+   * weaker signal: capitalized words are the noisiest part of the check.
+   */
+  readonly strong: boolean;
+}
+
+export interface AiFactCheck {
+  /** Sentences that state something checkable. */
+  readonly checked: number;
+  /** Sentences stating details no source shows, strongest first. */
+  readonly unsourced: readonly AiFactCheckSentence[];
+}
 
 export interface AiChatHandle {
   readonly done: Promise<AiResult<AiChatCompletion>>;
@@ -336,6 +392,11 @@ export interface DocBlocksHostAiAPI {
   models(): Promise<AiResult<readonly AiModelInfo[]>>;
   /** Catalog models this host can download. Optional for older providers. */
   availableModels?(): Promise<AiResult<readonly AiModelDownloadInfo[]>>;
+  /**
+   * Find sentences whose names, dates, numbers or quotations appear in none of
+   * the evidence or the person's own text. Mechanical: no model call.
+   */
+  checkFacts?(request: AiFactCheckRequest): Promise<AiResult<AiFactCheck>>;
   /** Start a model download from an explicit user gesture. */
   installModel?(modelId: string, onProgress?: (progress: AiProgress) => void): AiModelInstallHandle;
   /**

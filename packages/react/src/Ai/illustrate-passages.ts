@@ -142,8 +142,17 @@ function isVisual(node: MarkdownNode | undefined): boolean {
   return false;
 }
 
-/** Every passage in `source`, in document order. */
-export function segmentPassages(source: string): Passage[] {
+/**
+ * Every passage in `source`, in document order. By default only passages
+ * worth offering the planner: long enough to draw from, with no picture after
+ * them already. `everyBlock` keeps every paragraph, list and table outside a
+ * template, for a person choosing where their own picture goes.
+ */
+export function segmentPassages(
+  source: string,
+  options: { readonly everyBlock?: boolean } = {},
+): Passage[] {
+  const every = options.everyBlock === true;
   let children: MarkdownNode[];
   try {
     children = parseMarkdown(source).children;
@@ -170,10 +179,14 @@ export function segmentPassages(source: string): Passage[] {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (typeof start !== 'number' || typeof end !== 'number') return;
-    if (isVisual(node) || isVisual(children[position + 1])) return;
+    if (isVisual(node)) return;
     const plain = extractPlainText(node).replace(/\s+/gu, ' ').trim();
-    if (node.type === 'paragraph' && plain.length < MIN_PARAGRAPH_CHARACTERS) return;
-    if (node.type === 'list' && node.children.length < 2) return;
+    if (!plain) return;
+    if (!every) {
+      if (isVisual(children[position + 1])) return;
+      if (node.type === 'paragraph' && plain.length < MIN_PARAGRAPH_CHARACTERS) return;
+      if (node.type === 'list' && node.children.length < 2) return;
+    }
     const hints = hintsFor(node, plain);
     passages.push({
       id: `P${String(passages.length + 1)}`,

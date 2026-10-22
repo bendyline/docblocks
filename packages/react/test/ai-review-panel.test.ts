@@ -265,7 +265,7 @@ describe('AiReviewPanel output report', () => {
       const dialog = document.body.querySelector('[role="dialog"]');
       expect(dialog?.textContent).to.contain('Report AI output');
       expect(dialog?.textContent).to.contain('GitHub issues are public');
-      await click(document.body, 'Open report');
+      await click(document.body, 'Open Public Issue on GitHub');
       const withoutResponse = new URL(opened[0]).searchParams.get('body') ?? '';
       expect(withoutResponse).to.contain('- Feature: Review document');
       expect(withoutResponse).to.contain('- Model: test-model');
@@ -277,10 +277,19 @@ describe('AiReviewPanel output report', () => {
         '[role="dialog"] input[type="checkbox"]',
       );
       await act(async () => include?.click());
-      await click(document.body, 'Open report');
+      await click(document.body, 'Open Public Issue on GitHub');
       const withResponse = new URL(opened[1]).searchParams.get('body') ?? '';
       expect(withResponse).to.contain('suggestion · Clarity: Use a more precise phrase.');
       expect(withResponse).to.contain('Suggested: distinctive');
+
+      await click(container, 'Report output');
+      await click(document.body, 'Send report e-mail');
+      const email = new URL(opened[2]);
+      expect(email.protocol).to.equal('mailto:');
+      expect(email.pathname).to.equal('support@bendyline.com');
+      expect(email.searchParams.get('body')).to.contain('- Feature: Review document');
+      expect(email.searchParams.get('body')).not.to.contain('Use a more precise phrase.');
+      expect(document.body.querySelector('[role="dialog"]')).to.equal(null);
     } finally {
       window.open = open;
       await cleanup();

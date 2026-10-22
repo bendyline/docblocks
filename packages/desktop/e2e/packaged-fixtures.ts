@@ -299,10 +299,11 @@ export const test = base.extend<PackagedFixtures>({
     });
 
     if (running && testInfo.status !== testInfo.expectedStatus) {
-      await testInfo.attach('packaged-process.log', {
-        body: running.processLog(),
-        contentType: 'text/plain',
-      });
+      // A file, not a body: CI's `github` reporter prints only the first line
+      // of a body attachment, while the diagnostics upload keeps this folder.
+      const logPath = testInfo.outputPath('packaged-process.log');
+      await fs.promises.writeFile(logPath, running.processLog());
+      await testInfo.attach('packaged-process.log', { path: logPath, contentType: 'text/plain' });
     }
     await running?.close();
 

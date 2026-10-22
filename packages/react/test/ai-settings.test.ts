@@ -153,51 +153,166 @@ function buttonLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('button')).map((button) => button.textContent ?? '');
 }
 
-describe('AI knowledge settings', () => {
-  it('browses downloads and requires a gesture for every mutation', async () => {
-    const fake = fakeAi(READY, OPTED_IN);
-    const actions: unknown[] = [];
-    const api: DocBlocksHostAiAPI = {
-      ...fake.api,
-      knowledge: {
-        state: async () => ({ ok: true, value: KNOWLEDGE }),
-        update: async (action) => {
-          actions.push(action);
-          return { ok: true, value: null };
-        },
+function typeInto(element: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(element) as object,
+    'value',
+  )?.set;
+  setter?.call(element, value);
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Clicks the button whose text or accessible label is `label`. */
+async function clickButton(scope: ParentNode, label: string): Promise<void> {
+  await act(async () => {
+    const button = Array.from(scope.querySelectorAll('button')).find(
+      (candidate) =>
+        candidate.textContent === label || candidate.getAttribute('aria-label') === label,
+    );
+    expect(button, label).not.to.equal(undefined);
+    button!.click();
+  });
+  await flush();
+}
+
+function knowledgeApi(
+  base: DocBlocksHostAiAPI,
+  actions: unknown[],
+  state: AiKnowledgeState = KNOWLEDGE,
+  update: (action: unknown) => AiResult<null> = () => ({ ok: true, value: null }),
+): DocBlocksHostAiAPI {
+  return {
+    ...base,
+    knowledge: {
+      state: async () => ({ ok: true, value: state }),
+      update: async (action) => {
+        actions.push(action);
+        return update(action);
       },
-    };
-    const { container, cleanup } = await render(api);
-    const click = async (label: string) => {
-      await act(async () => {
-        const button = Array.from(container.querySelectorAll('button')).find(
-          (button) => button.textContent === label,
-        );
-        expect(button, label).not.to.equal(undefined);
-        button!.click();
-      });
-      await flush();
-    };
+    },
+  };
+}
+
+describe('AI knowledge settings', () => {
+  it('keeps downloaded catalogs in a bin of collapsed rows, each changed only by a gesture', async () => {
+    const actions: unknown[] = [];
+    const { container, cleanup } = await render(knowledgeApi(fakeAi(READY, OPTED_IN).api, actions));
     try {
-      expect(container.textContent)
+      const bin = container.querySelector<HTMLElement>('.db-knowledge-bin');
+      expect(bin?.textContent).to.contain('Downloaded catalogs').and.contain('Science');
+      // Only downloaded catalogs are in the bin, and searching belongs to adding.
+      expect(bin?.textContent).not.to.contain('History');
+      expect(container.querySelector('input[type="search"]')).to.equal(null);
+
+      const toggle = bin!.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+      expect(toggle.getAttribute('aria-expanded')).to.equal('false');
+      expect(toggle.textContent).to.contain('In use · Update available');
+      expect(bin!.textContent).not.to.contain('Science reference');
+      expect(buttonLabels(bin!)).not.to.include('Update to 2');
+
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute('aria-expanded')).to.equal('true');
+      expect(bin!.textContent)
         .to.contain('Science reference')
-        .and.not.contain('History reference');
+        .and.contain('Version 1 · 20 documents · 0.0 MB');
       expect(actions).to.deep.equal([]);
-      await click('Browse additional catalogs');
-      expect(container.textContent).to.contain('History reference');
-      await click('Download catalog');
-      await click('Update to 2');
-      expect(actions).to.have.length(2);
-      await click('Improve knowledge results with a 23 MB model download');
+
+      await clickButton(bin!, 'Update to 2');
+      await act(async () =>
+        bin!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+      );
+      await flush();
+      await clickButton(container, 'Improve knowledge results with a 23 MB model download');
       expect(actions).to.deep.equal([
-        { action: 'install', catalogId: 'history' },
         { action: 'install', catalogId: 'science' },
+        { action: 'disable', catalogId: 'science' },
         { action: 'improve' },
       ]);
-      await click('Remove Science…');
+      await clickButton(bin!, 'Remove Science…');
       expect(actions).to.have.length(3);
-      await click('Confirm removal');
+      await clickButton(bin!, 'Confirm removal');
       expect(actions.at(-1)).to.deep.equal({ action: 'remove', catalogId: 'science' });
+
+      await act(async () => toggle.click());
+      expect(toggle.getAttribute('aria-expanded')).to.equal('false');
+      expect(bin!.textContent).not.to.contain('Science reference');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('says the bin is empty instead of listing catalogs that are not downloaded', async () => {
+    const available = { ...KNOWLEDGE, catalogs: KNOWLEDGE.catalogs.slice(1) };
+    const { container, cleanup } = await render(
+      knowledgeApi(fakeAi(READY, OPTED_IN).api, [], available),
+    );
+    try {
+      const bin = container.querySelector<HTMLElement>('.db-knowledge-bin');
+      expect(bin?.textContent).to.contain('No catalogs downloaded yet.');
+      expect(bin?.textContent).not.to.contain('History');
+      expect(buttonLabels(bin!)).to.include('Add catalog…');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('adds catalogs from their own dialog, the one place to search them', async () => {
+    const actions: unknown[] = [];
+    const { container, cleanup } = await render(knowledgeApi(fakeAi(READY, OPTED_IN).api, actions));
+    try {
+      await clickButton(container, 'Add catalog…');
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+      expect(dialog?.querySelector('h2')?.textContent).to.equal('Add knowledge catalog');
+      // Every catalog the service offers, the downloaded one marked as such.
+      expect(dialog?.querySelectorAll('.db-knowledge-catalog')).to.have.length(2);
+      expect(dialog?.textContent).to.contain('History reference').and.contain('Downloaded');
+      expect(dialog?.querySelector('[aria-label="Download Science"]')).to.equal(null);
+      // What can still be added leads, ahead of the provider's own order.
+      expect(
+        Array.from(
+          dialog!.querySelectorAll('.db-knowledge-catalog-name'),
+          (name) => name.textContent,
+        ),
+      ).to.deep.equal(['History', 'Science']);
+
+      const search = dialog!.querySelector<HTMLInputElement>('input[type="search"]')!;
+      expect(document.activeElement).to.equal(search);
+      await act(async () => typeInto(search, 'HIST'));
+      expect(dialog!.querySelectorAll('.db-knowledge-catalog')).to.have.length(1);
+      expect(dialog!.querySelector('mark')?.textContent).to.equal('Hist');
+      await act(async () => typeInto(search, 'geology'));
+      expect(dialog!.querySelector('[role="status"]')?.textContent).to.equal(
+        'No catalogs match “geology”.',
+      );
+      await act(async () => typeInto(search, ''));
+
+      expect(actions).to.deep.equal([]);
+      await clickButton(dialog!, 'Download History');
+      expect(actions).to.deep.equal([{ action: 'install', catalogId: 'history' }]);
+      await clickButton(dialog!, 'Done');
+      expect(document.body.querySelector('[role="dialog"]')).to.equal(null);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('shows a failed download in the add dialog rather than behind it', async () => {
+    const failure = 'Gezel could not download History.';
+    const { container, cleanup } = await render(
+      knowledgeApi(fakeAi(READY, OPTED_IN).api, [], KNOWLEDGE, () => ({
+        ok: false,
+        error: { code: 'unknown', message: failure },
+      })),
+    );
+    try {
+      await clickButton(container, 'Add catalog…');
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+      await clickButton(dialog, 'Download History');
+      expect(dialog.querySelector('[role="alert"]')?.textContent).to.equal(failure);
+      expect(container.querySelector('[role="alert"]')).to.equal(null);
+      // Closing the dialog closes the matter; Settings does not inherit it.
+      await clickButton(dialog, 'Done');
+      expect(container.querySelector('[role="alert"]')).to.equal(null);
     } finally {
       await cleanup();
     }
@@ -269,7 +384,9 @@ describe('AI knowledge settings', () => {
       expect(container.querySelector('[role="alert"]')?.textContent).to.equal(
         'Gezel could not list catalogs.',
       );
-      expect(container.textContent).not.to.contain('No downloaded catalogs');
+      expect(container.textContent).not.to.contain('No catalogs downloaded');
+      expect(container.querySelector('.db-knowledge-bin')).to.equal(null);
+      expect(buttonLabels(container)).to.include('Try again');
     } finally {
       await cleanup();
     }

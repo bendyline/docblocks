@@ -64,6 +64,8 @@ class FakeDaemon {
   decision: 'approved' | 'denied' = 'approved';
   knowledgePassages: unknown[] = [];
   chatProgress: unknown[] = [];
+  /** Refuse completions, as a model that cannot load would. */
+  chatFailure: { status: number; code: string } | null = null;
   additionalModels: unknown[] = [];
   modelInstalled = false;
   readonly requests: RecordedRequest[] = [];
@@ -151,6 +153,11 @@ class FakeDaemon {
       ]);
     }
     if (method === 'POST' && url.pathname === '/v1/chat/completions') {
+      if (this.chatFailure) {
+        return json(this.chatFailure.status, {
+          error: { code: this.chatFailure.code, message: 'The model could not be loaded.' },
+        });
+      }
       const chunk = (content: string | undefined, finish: string | null, usage?: unknown) => ({
         id: 'c1',
         object: 'chat.completion.chunk',
@@ -458,7 +465,22 @@ describe('Gezel connector against the app SDK', () => {
       { model: 'gezel:writer', messages: [{ role: 'user', content: 'Explain science.' }] },
       new AbortController().signal,
     );
-    for await (const chunk of stream) expect(chunk.model).to.equal('gezel:writer');
+    const chunks: ProviderChatChunk[] = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const [first, ...rest] = chunks;
+    // What was cited reaches the renderer before any text.
+    expect(first).to.deep.equal({
+      knowledge: {
+        outcome: 'used',
+        sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
+        evidence: ['A relevant fact.'],
+      },
+      text: '',
+      finishReason: null,
+      model: null,
+      usage: null,
+    });
+    for (const chunk of rest) expect(chunk.model).to.equal('gezel:writer');
     const retrieval = daemon.requests.find((entry) => entry.path === '/v1/knowledge/retrieve');
     // The SDK picks the ranking mode; DocBlocks only asks.
     expect(retrieval?.body).to.include({ query: 'Explain science.' });
@@ -472,6 +494,43 @@ describe('Gezel connector against the app SDK', () => {
     expect(body.messages[0].role).to.equal('system');
     expect(body.messages[0].content).to.contain(source).and.contain('A relevant fact.');
     expect(body.messages[1]).to.deep.equal({ role: 'user', content: 'Explain science.' });
+  });
+
+  it('reports cited knowledge before the model answers, even when it then fails', async () => {
+    const daemon = new FakeDaemon();
+    daemon.validToken = 'kept-token';
+    daemon.knowledgePassages = [
+      {
+        uri: 'knowledge://a/pnw/x',
+        title: 'Panama Hotel',
+        text: 'Fact.',
+        catalogId: 'pnw',
+        version: '1',
+      },
+    ];
+    daemon.chatFailure = { status: 503, code: 'model_load_failed' };
+    const connection = await connectorFor(daemon, new MemoryCredentials('kept-token')).connect({
+      interactive: false,
+    });
+    // Loading a large model can take minutes; the stream must not wait for it.
+    const stream = await connection.streamChat(
+      { model: 'gezel:writer', messages: [{ role: 'user', content: 'Panama Hotel' }] },
+      new AbortController().signal,
+    );
+    const iterator = stream[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.value?.knowledge).to.deep.equal({
+      outcome: 'used',
+      sources: [{ catalogId: 'pnw', name: 'pnw', titles: ['Panama Hotel'] }],
+      evidence: ['Fact.'],
+    });
+    let failure: unknown = null;
+    try {
+      await iterator.next();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).not.to.equal(null);
   });
 
   it('downloads a model only when the caller explicitly requests it', async () => {

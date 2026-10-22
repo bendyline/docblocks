@@ -21,6 +21,8 @@ import type { AiChatEvent, DocBlocksHostAiAPI } from '@bendyline/docblocks/host'
 
 import { Dialog } from '../components/Dialog.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
+import { AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
+import { useAiKnowledge } from './ai-knowledge.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { unavailableSentence, useAiStatus } from './ai-status.js';
 import {
@@ -157,6 +159,7 @@ export function AiStudyDialog({
   const primaryRef = useRef<HTMLButtonElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const requestRef = useRef(0);
+  const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
 
   useEffect(
     () => () => {
@@ -235,8 +238,9 @@ export function AiStudyDialog({
     setNotes([]);
     setShowSource(false);
     setGeneration({ progress: null, startedAt, lastActivityAt: startedAt });
+    resetKnowledge();
     const outcome = await generateStudyAid({
-      ai,
+      ai: knowledgeAi,
       kind,
       source: documentSource,
       sourceName: documentName,
@@ -273,7 +277,7 @@ export function AiStudyDialog({
     if (saveError === null) setSaved({ status: 'found', aid });
     else setError(`The ${labels.noun} could not be saved: ${saveError}`);
   }, [
-    ai,
+    knowledgeAi,
     budget,
     container,
     documentName,
@@ -283,6 +287,7 @@ export function AiStudyDialog({
     model,
     onEvent,
     ready,
+    resetKnowledge,
     running,
   ]);
 
@@ -341,6 +346,7 @@ export function AiStudyDialog({
           {note}
         </p>
       ))}
+      <AiKnowledgeIndicator knowledge={knowledge} />
       {/* One line under the viewer, so the deck keeps the height. */}
       <div className="db-ai-study-meta">
         <p className="db-ai-disclaimer">
@@ -373,6 +379,7 @@ export function AiStudyDialog({
         {stageLabel(kind, stage)}
       </p>
       {generation && <AiGenerationStatus state={generation} characters={0} />}
+      <AiKnowledgeIndicator knowledge={knowledge} />
     </div>
   );
 

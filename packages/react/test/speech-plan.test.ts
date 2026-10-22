@@ -36,6 +36,34 @@ describe('speech planning', () => {
     expect(plan.segments.map((s) => s.text).join(' ')).to.contain('After.');
   });
 
+  it('reads a hard-wrapped paragraph as one passage, not a line at a time', async () => {
+    const markdown = [
+      '# Notes',
+      '',
+      'DocBlocks can take dictation into a document and read',
+      'it aloud. Both run on the computer',
+      'that opened it.',
+      '',
+      '- an item that wraps',
+      '  onto a second line',
+      '- a second item',
+    ].join('\n');
+    const plan = await planSpeech(markdown);
+    expect(plan.segments.map((s) => s.text)).to.deep.equal([
+      'Notes.',
+      'DocBlocks can take dictation into a document and read it aloud. Both run on the computer that opened it.',
+      'an item that wraps onto a second line.',
+      'a second item.',
+    ]);
+    // The returned script is the document's own, newlines and all, and the
+    // segment ranges still index it.
+    expect(plan.sourceText).to.contain('read\nit aloud');
+    const paragraph = plan.segments[1]!;
+    expect(plan.sourceText.slice(paragraph.sourceStart, paragraph.sourceEnd)).to.equal(
+      'DocBlocks can take dictation into a document and read\nit aloud. Both run on the computer\nthat opened it.',
+    );
+  });
+
   it('closes unpunctuated lines but leaves punctuated ones alone', () => {
     expect(ensureSentenceEnd('A title')).to.equal('A title.');
     expect(ensureSentenceEnd('Done!')).to.equal('Done!');

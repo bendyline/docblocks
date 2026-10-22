@@ -1,3 +1,5 @@
+import { SUPPORT_EMAIL_ADDRESS } from '@bendyline/docblocks/host';
+
 import { localDateStamp } from '../local-date.js';
 
 const NEW_ISSUE_URL = 'https://github.com/bendyline/docblocks/issues/new';
@@ -74,29 +76,42 @@ export function buildIssueReportUrl(environment: IssueReportEnvironment): string
   return url.href;
 }
 
-/** Build an editable GitHub issue that reports one AI response. */
-export function buildAiOutputReportUrl(report: AiOutputReport): string {
-  const reason = AI_OUTPUT_REPORT_REASONS[report.reason];
+/** The report text, with `noDetails` standing in when the reporter wrote none. */
+function aiOutputReportBody(report: AiOutputReport, noDetails: string): string {
   const details = report.details.trim().slice(0, AI_REPORT_DETAILS_CHARACTERS);
   const output = report.output?.trim().slice(0, AI_REPORT_OUTPUT_CHARACTERS) ?? '';
   const fence = fenceFor(output);
-  const body = [
+  return [
     '## AI output report',
     '',
-    `- Reason: ${reason}`,
+    `- Reason: ${AI_OUTPUT_REPORT_REASONS[report.reason]}`,
     `- Feature: ${normalizeEnvironmentValue(report.feature, 'unknown', VERSION_VALUE_LIMIT)}`,
     `- Model: ${normalizeEnvironmentValue(report.model ?? '', 'unknown', VERSION_VALUE_LIMIT)}`,
     '',
     '## Details',
     '',
-    details || '<!-- What was wrong with the response? -->',
+    details || noDetails,
     '',
     ...(output ? ['## AI response', '', `${fence}text`, output, fence, ''] : []),
     ...environmentLines(report),
   ].join('\n');
+}
 
+/** Build an editable, public GitHub issue that reports one AI response. */
+export function buildAiOutputReportUrl(report: AiOutputReport): string {
   const url = new URL(NEW_ISSUE_URL);
-  url.searchParams.set('title', `AI output report: ${reason}`);
-  url.searchParams.set('body', body);
+  url.searchParams.set('title', `AI output report: ${AI_OUTPUT_REPORT_REASONS[report.reason]}`);
+  url.searchParams.set(
+    'body',
+    aiOutputReportBody(report, '<!-- What was wrong with the response? -->'),
+  );
   return url.href;
+}
+
+/** Build an editable email to support that reports one AI response privately. */
+export function buildAiOutputReportEmailUrl(report: AiOutputReport): string {
+  const subject = `DocBlocks AI output report: ${AI_OUTPUT_REPORT_REASONS[report.reason]}`;
+  // RFC 6068: line breaks are CRLF, and spaces are %20; a `+` stays a literal plus.
+  const body = aiOutputReportBody(report, '(none given)').replace(/\r?\n/g, '\r\n');
+  return `mailto:${SUPPORT_EMAIL_ADDRESS}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }

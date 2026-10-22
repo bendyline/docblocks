@@ -1,5 +1,8 @@
 /**
- * Run the model calls that turn a document into diagram suggestions.
+ * Run the model calls that turn a document into pictures, in two phases:
+ * {@link findIdeas} picks passages and says what each picture should show,
+ * and {@link drawIdea} draws one idea. The Illustrate panel lets the person
+ * edit and add ideas between the two.
  *
  * Calls run strictly one at a time, each awaiting the previous call's `done`:
  * a local model serves one request at a time anyway, and the mobile host
@@ -99,6 +102,8 @@ export interface RealizeOptions {
   readonly heading: string;
   readonly title: string;
   readonly description?: string;
+  /** The description is the person's own words, so its facts count as stated too. */
+  readonly descriptionFacts?: boolean;
   readonly avoid?: string;
   /**
    * Check the spec's facts against `material`. Off only when the person
@@ -118,9 +123,14 @@ export async function realizeDiagram(options: RealizeOptions): Promise<DiagramOu
     heading: options.heading,
     title: options.title,
     description: options.description,
+    descriptionFacts: options.descriptionFacts,
     avoid: options.avoid,
     maxTokens: options.budget.realizeTokens,
   });
+  const facts =
+    options.descriptionFacts && options.description
+      ? `${options.material}\n${options.description}`
+      : options.material;
   let repaired = false;
   let widened = false;
   for (;;) {
@@ -154,7 +164,7 @@ export async function realizeDiagram(options: RealizeOptions): Promise<DiagramOu
     }
 
     if (options.ground) {
-      const grounding = checkGrounding(parsed.spec, options.material);
+      const grounding = checkGrounding(parsed.spec, facts);
       if (!grounding.ok) {
         if (!repaired) {
           repaired = true;
@@ -212,6 +222,100 @@ export function tableChartSpec(tableMarkdown: string, title: string): ChartSpec 
   return null;
 }
 
+export type FindIdeasOutcome =
+  | { readonly status: 'found'; readonly picks: readonly PlanPick[] }
+  | { readonly status: 'failed'; readonly message: string }
+  | { readonly status: 'cancelled' };
+
+/**
+ * Phase one: pick the passages a picture would help and say what each picture
+ * should show. One planning call, repaired at most once; no picture is drawn.
+ */
+export async function findIdeas(options: {
+  ai: ChatApi;
+  source: string;
+  title: string;
+  budget: PromptBudget;
+  signal?: AbortSignal;
+}): Promise<FindIdeasOutcome> {
+  const passages = segmentPassages(options.source);
+  if (passages.length === 0) return { status: 'found', picks: [] };
+  const shortlist = shortlistPassages(passages, options.budget.passageCharacters);
+  const planRequest = buildPlanRequest({
+    title: options.title,
+    shortlist,
+    budget: options.budget,
+  });
+  let reply = await chatOnce(options.ai, planRequest, options.signal);
+  if (reply.kind === 'cancelled') return { status: 'cancelled' };
+  if (reply.kind === 'error') return { status: 'failed', message: reply.error.message };
+  let picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
+  if (picks === null) {
+    reply = await chatOnce(
+      options.ai,
+      buildRepairRequest(planRequest, reply.text, 'It was not a JSON array.'),
+      options.signal,
+    );
+    if (reply.kind === 'cancelled') return { status: 'cancelled' };
+    if (reply.kind === 'error') return { status: 'failed', message: reply.error.message };
+    picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
+  }
+  if (picks === null) {
+    return { status: 'failed', message: "The model's plan could not be read. Try again." };
+  }
+  return { status: 'found', picks };
+}
+
+export interface DrawOptions {
+  readonly ai: ChatApi;
+  readonly budget: PromptBudget;
+  readonly validateMermaid: MermaidValidator;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * Phase two for one diagram idea. The idea's prompt says what to draw; its
+ * passage supplies the facts. A numeric table asked for as a chart, as the
+ * planner suggested it, is charted straight from its cells with no model call.
+ */
+export async function drawDiagram(
+  idea: PlanPick,
+  options: DrawOptions & {
+    /** The person wrote or changed the prompt, so its facts count as stated. */
+    readonly personPrompt?: boolean;
+    /** A summary of an earlier picture, so a redraw gives something different. */
+    readonly avoid?: string;
+  },
+): Promise<DiagramOutcome> {
+  if (
+    idea.passage.kind === 'table' &&
+    idea.kind === 'chart' &&
+    !options.personPrompt &&
+    !options.avoid
+  ) {
+    const spec = tableChartSpec(idea.passage.text, idea.title);
+    if (spec) {
+      const compiled = compileDiagram(spec, { title: idea.title });
+      const valid = await validateCompiledDiagram(compiled, options.validateMermaid);
+      if (valid.ok) return { status: 'ready', spec, compiled, notes: [] };
+    }
+  }
+  return realizeDiagram({
+    ai: options.ai,
+    kind: idea.kind,
+    material: idea.passage.plain,
+    heading: idea.passage.heading,
+    title: idea.title,
+    description: idea.prompt || undefined,
+    descriptionFacts: options.personPrompt,
+    avoid: options.avoid,
+    ground: true,
+    budget: options.budget,
+    validateMermaid: options.validateMermaid,
+    signal: options.signal,
+  });
+}
+
 export type IllustrationEvent =
   | { readonly type: 'planning' }
   | { readonly type: 'planned'; readonly picks: readonly PlanPick[] }
@@ -225,7 +329,11 @@ export interface IllustrationRun {
   cancel(): void;
 }
 
-/** Plan, then draw each pick in turn, reporting progress through `onEvent`. */
+/**
+ * Both phases back to back, drawing every idea as the planner wrote it and
+ * reporting progress through `onEvent`. The eval harness measures this; the
+ * panel runs the phases separately so the person can edit ideas in between.
+ */
 export function startIllustrationRun(options: {
   ai: ChatApi;
   source: string;
@@ -239,47 +347,18 @@ export function startIllustrationRun(options: {
   const emit = options.onEvent;
 
   const run = async (): Promise<void> => {
-    const passages = segmentPassages(options.source);
-    if (passages.length === 0) {
-      emit({ type: 'planned', picks: [] });
-      return;
-    }
     emit({ type: 'planning' });
-    const shortlist = shortlistPassages(passages, options.budget.passageCharacters);
-    const planRequest = buildPlanRequest({
-      title: options.title,
-      shortlist,
-      budget: options.budget,
-    });
-    let reply = await chatOnce(options.ai, planRequest, signal);
-    if (reply.kind === 'cancelled') return;
-    if (reply.kind === 'error') {
-      emit({ type: 'error', message: reply.error.message });
+    const found = await findIdeas({ ...options, signal });
+    if (found.status === 'cancelled') return;
+    if (found.status === 'failed') {
+      emit({ type: 'error', message: found.message });
       return;
     }
-    let picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
-    if (picks === null) {
-      reply = await chatOnce(
-        options.ai,
-        buildRepairRequest(planRequest, reply.text, 'It was not a JSON array.'),
-        signal,
-      );
-      if (reply.kind === 'cancelled') return;
-      if (reply.kind === 'error') {
-        emit({ type: 'error', message: reply.error.message });
-        return;
-      }
-      picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
-    }
-    if (picks === null) {
-      emit({ type: 'error', message: "The model's plan could not be read. Try again." });
-      return;
-    }
-    emit({ type: 'planned', picks });
-    for (const [index, pick] of picks.entries()) {
+    emit({ type: 'planned', picks: found.picks });
+    for (const [index, pick] of found.picks.entries()) {
       if (signal.aborted) return;
-      emit({ type: 'drawing', index, total: picks.length });
-      const outcome = await drawPick(pick, options, signal);
+      emit({ type: 'drawing', index, total: found.picks.length });
+      const outcome = await drawDiagram(pick, { ...options, signal });
       if (outcome.status === 'cancelled') return;
       emit({ type: 'suggestion', pick, outcome });
     }
@@ -291,32 +370,6 @@ export function startIllustrationRun(options: {
     })
     .finally(() => emit({ type: 'done', cancelled: signal.aborted }));
   return { done, cancel: () => controller.abort() };
-}
-
-async function drawPick(
-  pick: PlanPick,
-  options: { ai: ChatApi; budget: PromptBudget; validateMermaid: MermaidValidator },
-  signal: AbortSignal,
-): Promise<DiagramOutcome> {
-  if (pick.passage.kind === 'table' && pick.kind === 'chart') {
-    const spec = tableChartSpec(pick.passage.text, pick.title);
-    if (spec) {
-      const compiled = compileDiagram(spec, { title: pick.title });
-      const valid = await validateCompiledDiagram(compiled, options.validateMermaid);
-      if (valid.ok) return { status: 'ready', spec, compiled, notes: [] };
-    }
-  }
-  return realizeDiagram({
-    ai: options.ai,
-    kind: pick.kind,
-    material: pick.passage.plain,
-    heading: pick.passage.heading,
-    title: pick.title,
-    ground: true,
-    budget: options.budget,
-    validateMermaid: options.validateMermaid,
-    signal,
-  });
 }
 
 /** Labels of a spec, for telling the model what to avoid on Regenerate. */

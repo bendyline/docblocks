@@ -37,12 +37,14 @@ export const VSCODE_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
     location: /\/static\/devextensions\/package\.nls\.json/u,
   },
   {
-    // The workbench asks the marketplace about the extension it is hosting.
-    // A development extension under test has never been published, so the
-    // gallery answers 404.
+    // The workbench asks the marketplace about the extension it is hosting,
+    // through the gallery API or the vscode-unpkg `_gallery` lookup, at times
+    // that vary from run to run. A development extension under test has never
+    // been published, so both answer 404.
     reason: 'workbench: marketplace lookup for the unpublished development extension',
     match: /Failed to load resource/u,
-    location: /marketplace\.visualstudio\.com\/_apis\/public\/gallery/u,
+    location:
+      /marketplace\.visualstudio\.com\/_apis\/public\/gallery|www\.vscode-unpkg\.net\/_gallery\//u,
   },
   {
     // A built-in extension of the pinned VS Code Web build using an API

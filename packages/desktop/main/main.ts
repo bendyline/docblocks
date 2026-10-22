@@ -57,6 +57,7 @@ import { repairWorkspaceIdentities } from './workspace-id.js';
 import { handleOpenFileArg, handleOpenUrl } from './open-requests.js';
 import { PendingOpenRequests } from './pending-open-requests.js';
 import { MainWindowSlot } from './main-window.js';
+import { showAndFocusWindow, showWhenReady } from './window-activation.js';
 import { registerTray, resolveIconPath } from './tray.js';
 import { startAccessingBookmark, releaseAllScopedResources } from './security-scoped.js';
 import {
@@ -77,7 +78,7 @@ import {
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { vcRuntimePath } from './vc-runtime-path.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
-import { pickDisplayCaptureSource } from './display-capture-picker.js';
+import { listDisplayCaptureSources, pickDisplayCaptureSource } from './display-capture-picker.js';
 import { attachEditorContextMenu } from './context-menu.js';
 import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
@@ -182,8 +183,9 @@ if (!gotLock) {
 app.on('second-instance', (_event, argv) => {
   const win = mainWindow.current();
   if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
+    // Show as well as focus: relaunching is how a user recovers a window
+    // that never appeared.
+    showAndFocusWindow(app, win);
     handleOpenFileArg(win, argv);
   } else {
     // A second launch can arrive after the primary acquired its lock but
@@ -444,8 +446,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
     preventUntrustedNavigation(event, url);
   });
 
-  win.once('ready-to-show', () => {
-    win.show();
+  showWhenReady(win, () => {
     // Drain any pending open requests received before the window existed.
     drainPendingOpenRequests(win);
     handleOpenFileArg(win, process.argv);
@@ -578,10 +579,7 @@ async function bootstrap(): Promise<void> {
         : Promise.resolve(null);
     },
     getDisplaySources: () =>
-      desktopCapturer.getSources({
-        types: ['screen', 'window'],
-        thumbnailSize: { width: 0, height: 0 },
-      }),
+      listDisplayCaptureSources((options) => desktopCapturer.getSources(options)),
   });
 
   // Strict headers on the top-level DocBlocks renderer only. The default
@@ -672,7 +670,7 @@ async function bootstrap(): Promise<void> {
   const developmentWorkspace = isDev ? await ensureDevelopmentWorkspace() : undefined;
   const win = await createWindow(developmentWorkspace?.id);
   mainWindow.set(win);
-  // `ready-to-show` can precede the `createWindow()` continuation. Close the
+  // The first show can precede the `createWindow()` continuation. Close the
   // narrow interval where an OS event still observed no main window after the
   // first drain and therefore queued one late request.
   drainPendingOpenRequests(win);

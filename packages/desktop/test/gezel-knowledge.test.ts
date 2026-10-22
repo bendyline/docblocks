@@ -20,9 +20,12 @@ function app(
     request: Record<string, unknown>,
     options: { signal: AbortSignal },
   ) => Promise<unknown>,
+  state: () => Promise<unknown> = async () => ({
+    catalogs: [{ id: 'science', name: 'Science Library', enabled: true }],
+  }),
 ): GezelApp {
   return {
-    knowledge: { retrieve, state: async () => ({}), update: async () => undefined },
+    knowledge: { retrieve, state, update: async () => undefined },
   } as unknown as GezelApp;
 }
 async function rejects(promise: Promise<unknown>) {
@@ -48,11 +51,11 @@ describe('Gezel knowledge in inference', () => {
     );
     expect(observed).to.include({ query: 'Write about science.', maxResults: 4 });
     expect(observed).not.to.have.property('rerank');
-    expect(result[0].content)
+    expect(result.messages[0].content)
       .to.contain('untrusted source material')
       .and.contain(passage.uri)
       .and.contain(passage.text);
-    expect(result.slice(1)).to.deep.equal(messages);
+    expect(result.messages.slice(1)).to.deep.equal(messages);
   });
   it('keeps the prompt when no relevant knowledge is found', async () => {
     expect(
@@ -61,7 +64,7 @@ describe('Gezel knowledge in inference', () => {
         messages,
         new AbortController().signal,
       ),
-    ).to.deep.equal(messages);
+    ).to.deep.equal({ messages, knowledge: { outcome: 'none' } });
   });
   it('sends the request without knowledge whenever retrieval fails', async () => {
     for (const code of ['knowledge_unavailable', 'unauthorized', 'rate_limited']) {
@@ -73,11 +76,11 @@ describe('Gezel knowledge in inference', () => {
           messages,
           new AbortController().signal,
         ),
-      ).to.deep.equal(messages);
+      ).to.deep.equal({ messages, knowledge: { outcome: 'skipped' } });
     }
     expect(
       await withGezelKnowledge({} as GezelApp, messages, new AbortController().signal),
-    ).to.deep.equal(messages);
+    ).to.deep.equal({ messages, knowledge: null });
   });
   it('skips retrieval when the context window leaves no room', async () => {
     let called = false;
@@ -92,7 +95,7 @@ describe('Gezel knowledge in inference', () => {
         new AbortController().signal,
         4096,
       ),
-    ).to.deep.equal(long);
+    ).to.deep.equal({ messages: long, knowledge: { outcome: 'skipped' } });
     expect(called).to.equal(false);
   });
   it('injects passages Gezel admitted without ranking', async () => {
@@ -101,7 +104,7 @@ describe('Gezel knowledge in inference', () => {
       messages,
       new AbortController().signal,
     );
-    expect(result[0].content).to.contain(passage.text);
+    expect(result.messages[0].content).to.contain(passage.text);
   });
   it('never injects any part of a malformed answer', async () => {
     for (const raw of [
@@ -115,7 +118,7 @@ describe('Gezel knowledge in inference', () => {
           messages,
           new AbortController().signal,
         ),
-      ).to.deep.equal(messages);
+      ).to.deep.equal({ messages, knowledge: { outcome: 'skipped' } });
     }
   });
   it('does not include late retrieval after cancellation', async () => {
@@ -140,7 +143,103 @@ describe('Gezel knowledge in inference', () => {
       new AbortController().signal,
       4096,
     );
-    expect(result).to.deep.equal(messages);
+    expect(result).to.deep.equal({ messages, knowledge: { outcome: 'skipped' } });
+  });
+});
+
+describe('Gezel knowledge reported to the renderer', () => {
+  it('names the catalogs and distinct articles a request cited', async () => {
+    const result = await withGezelKnowledge(
+      app(async () => ({
+        reranked: true,
+        passages: [
+          passage,
+          { ...passage, uri: 'knowledge://publisher/science/article#2', text: 'More.' },
+          { ...passage, uri: 'knowledge://publisher/physics/a', title: ' Physics ' },
+          { ...passage, uri: 'knowledge://publisher/law/a', title: 'Statute', catalogId: 'law' },
+        ],
+      })),
+      messages,
+      new AbortController().signal,
+    );
+    expect(result.knowledge).to.deep.equal({
+      outcome: 'used',
+      sources: [
+        { catalogId: 'science', name: 'Science Library', titles: ['Science', 'Physics'] },
+        // Not in the catalog state: named by its id rather than left out.
+        { catalogId: 'law', name: 'law', titles: ['Statute'] },
+      ],
+      // Every passage the model saw, for checking its output against.
+      evidence: ['A cited fact.', 'More.', 'A cited fact.', 'A cited fact.'],
+    });
+  });
+  it('says nothing about knowledge when no catalog is enabled', async () => {
+    const result = await withGezelKnowledge(
+      app(
+        async () => ({ reranked: true, passages: [] }),
+        async () => ({ catalogs: [{ id: 'science', name: 'Science', enabled: false }] }),
+      ),
+      messages,
+      new AbortController().signal,
+    );
+    expect(result).to.deep.equal({ messages, knowledge: null });
+  });
+  it('still reports citations when catalog state cannot be read', async () => {
+    const result = await withGezelKnowledge(
+      app(
+        async () => ({ reranked: true, passages: [passage] }),
+        async () => {
+          throw Object.assign(new Error('busy'), { code: 'rate_limited' });
+        },
+      ),
+      messages,
+      new AbortController().signal,
+    );
+    expect(result.knowledge).to.deep.equal({
+      outcome: 'used',
+      sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
+      evidence: ['A cited fact.'],
+    });
+    // Without state, "nothing matched" cannot be told from "nothing enabled".
+    const none = await withGezelKnowledge(
+      app(
+        async () => ({ reranked: true, passages: [] }),
+        async () => {
+          throw new Error('busy');
+        },
+      ),
+      messages,
+      new AbortController().signal,
+    );
+    expect(none.knowledge).to.equal(null);
+  });
+  it('reads catalog state once per interval, not once per request', async () => {
+    let reads = 0;
+    const shared = app(
+      async () => ({ reranked: true, passages: [] }),
+      async () => {
+        reads += 1;
+        return { catalogs: [{ id: 'science', name: 'Science', enabled: true }] };
+      },
+    );
+    for (let index = 0; index < 3; index += 1) {
+      await withGezelKnowledge(shared, messages, new AbortController().signal);
+    }
+    expect(reads).to.equal(1);
+  });
+  it('reads catalog state again after a catalog is enabled or disabled', async () => {
+    let enabled = false;
+    const shared = app(
+      async () => ({ reranked: true, passages: [] }),
+      async () => ({ catalogs: [{ id: 'science', name: 'Science', enabled }] }),
+    );
+    const signal = new AbortController().signal;
+    expect((await withGezelKnowledge(shared, messages, signal)).knowledge).to.equal(null);
+    enabled = true;
+    await updateGezelKnowledge(shared, { action: 'enable', catalogId: 'science' }, signal);
+    expect((await withGezelKnowledge(shared, messages, signal)).knowledge).to.deep.equal({
+      outcome: 'none',
+    });
   });
 });
 

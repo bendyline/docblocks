@@ -17,7 +17,7 @@ import {
   type MobileFsRequest,
 } from '@bendyline/docblocks/host/mobile';
 import {
-  parseExternalHttpUrl,
+  parseOpenExternalUrl,
   type DocBlocksHostAPI,
   type HostPrepareCloseRequest,
   type HostPrepareCloseResult,
@@ -54,7 +54,7 @@ export async function installMobileHost(): Promise<void> {
       draining = undefined;
     }));
   const openExternal = async (value: string) => {
-    const url = parseExternalHttpUrl(value);
+    const url = parseOpenExternalUrl(value);
     if (!url) throw new TypeError('Invalid external URL.');
     await native.openExternal({ url });
   };

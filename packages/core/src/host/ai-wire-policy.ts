@@ -1,6 +1,11 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
 import type {
   AiChatEvent,
+  AiChatKnowledge,
+  AiChatKnowledgeSource,
+  AiFactCheck,
+  AiFactCheckRequest,
+  AiFactCheckSentence,
   AiChatMessage,
   AiChatProgress,
   AiChatPurpose,
@@ -41,6 +46,24 @@ export const AI_WIRE_LIMITS = Object.freeze({
   responseSchemaCharacters: 16 * 1024,
   verificationCodeCharacters: 16,
   progressPhaseCharacters: 64,
+  /** Catalogs, and titles per catalog, one request can cite; Gezel sends at most 8 passages. */
+  knowledgeSources: 8,
+  knowledgeTitles: 8,
+  knowledgeTitleCharacters: 256,
+  /** Passage texts sent with a knowledge report; Gezel caps a retrieval at 24,000 characters. */
+  knowledgeEvidence: 8,
+  knowledgeEvidenceCharacters: 24 * 1024,
+  /**
+   * A fact check reads one draft against every passage its run was given. It
+   * runs synchronously in the host; at these bounds it takes tens of ms.
+   */
+  factCheckTextCharacters: 64 * 1024,
+  factCheckEvidence: 64,
+  factCheckEvidenceCharacters: 128 * 1024,
+  factCheckGivenCharacters: 128 * 1024,
+  factCheckSentences: 50,
+  factCheckSentenceCharacters: 1_000,
+  factCheckDetails: 16,
   modelEntries: 200,
   contextWindowCeiling: 8_000_000,
   downloadBytesCeiling: Number.MAX_SAFE_INTEGER,
@@ -442,8 +465,120 @@ export function parseAiChatProgress(value: unknown): AiChatProgress | null {
   };
 }
 
+function parseAiChatKnowledgeSource(value: unknown): AiChatKnowledgeSource | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['catalogId', 'name', 'titles'])) return null;
+  if (!isBoundedString(value.catalogId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
+  if (!isBoundedString(value.name, HOST_WIRE_LIMITS.labelCharacters, 1)) return null;
+  if (!Array.isArray(value.titles) || value.titles.length > AI_WIRE_LIMITS.knowledgeTitles) {
+    return null;
+  }
+  const titles: string[] = [];
+  for (const title of value.titles) {
+    if (!isBoundedString(title, AI_WIRE_LIMITS.knowledgeTitleCharacters, 1)) return null;
+    titles.push(title);
+  }
+  return { catalogId: value.catalogId, name: value.name, titles };
+}
+
+export function parseAiChatKnowledge(value: unknown): AiChatKnowledge | null {
+  if (!isRecord(value)) return null;
+  if (value.outcome === 'none' || value.outcome === 'skipped') {
+    return hasExactKeys(value, ['outcome']) ? { outcome: value.outcome } : null;
+  }
+  if (value.outcome !== 'used' || !hasExactKeys(value, ['outcome', 'sources', 'evidence'])) {
+    return null;
+  }
+  const evidence = parseTextList(
+    value.evidence,
+    AI_WIRE_LIMITS.knowledgeEvidence,
+    AI_WIRE_LIMITS.knowledgeEvidenceCharacters,
+  );
+  if (!evidence || evidence.length === 0) return null;
+  if (
+    !Array.isArray(value.sources) ||
+    value.sources.length === 0 ||
+    value.sources.length > AI_WIRE_LIMITS.knowledgeSources
+  ) {
+    return null;
+  }
+  const sources: AiChatKnowledgeSource[] = [];
+  const ids = new Set<string>();
+  for (const entry of value.sources) {
+    const source = parseAiChatKnowledgeSource(entry);
+    if (!source || ids.has(source.catalogId)) return null;
+    ids.add(source.catalogId);
+    sources.push(source);
+  }
+  return { outcome: 'used', sources, evidence };
+}
+
+/** Non-empty strings, at most `entries` of them and `characters` in all. */
+function parseTextList(value: unknown, entries: number, characters: number): string[] | null {
+  if (!Array.isArray(value) || value.length > entries) return null;
+  let total = 0;
+  const texts: string[] = [];
+  for (const text of value) {
+    if (!isBoundedString(text, characters, 1)) return null;
+    total += text.length;
+    if (total > characters) return null;
+    texts.push(text);
+  }
+  return texts;
+}
+
+export function parseAiFactCheckRequest(value: unknown): AiFactCheckRequest | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['text', 'evidence', 'given'])) return null;
+  if (!isBoundedString(value.text, AI_WIRE_LIMITS.factCheckTextCharacters)) return null;
+  if (!isBoundedString(value.given, AI_WIRE_LIMITS.factCheckGivenCharacters)) return null;
+  const evidence = parseTextList(
+    value.evidence,
+    AI_WIRE_LIMITS.factCheckEvidence,
+    AI_WIRE_LIMITS.factCheckEvidenceCharacters,
+  );
+  return evidence ? { text: value.text, evidence, given: value.given } : null;
+}
+
+function parseAiFactCheckSentence(value: unknown): AiFactCheckSentence | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['text', 'missing', 'strong'])) return null;
+  if (!isBoundedString(value.text, AI_WIRE_LIMITS.factCheckSentenceCharacters, 1)) return null;
+  if (typeof value.strong !== 'boolean') return null;
+  if (!Array.isArray(value.missing) || value.missing.length > AI_WIRE_LIMITS.factCheckDetails) {
+    return null;
+  }
+  const missing: string[] = [];
+  for (const detail of value.missing) {
+    if (!isBoundedString(detail, AI_WIRE_LIMITS.knowledgeTitleCharacters, 1)) return null;
+    missing.push(detail);
+  }
+  return { text: value.text, missing, strong: value.strong };
+}
+
+export function parseAiFactCheck(value: unknown): AiFactCheck | null {
+  if (!isRecord(value) || !hasExactKeys(value, ['checked', 'unsourced'])) return null;
+  if (!isNonNegativeInteger(value.checked, Number.MAX_SAFE_INTEGER)) return null;
+  if (
+    !Array.isArray(value.unsourced) ||
+    value.unsourced.length > AI_WIRE_LIMITS.factCheckSentences
+  ) {
+    return null;
+  }
+  const unsourced: AiFactCheckSentence[] = [];
+  for (const entry of value.unsourced) {
+    const sentence = parseAiFactCheckSentence(entry);
+    if (!sentence) return null;
+    unsourced.push(sentence);
+  }
+  return { checked: value.checked, unsourced };
+}
+
 export function parseAiChatEvent(value: unknown): AiChatEvent | null {
   if (!isRecord(value)) return null;
+
+  if (value.kind === 'knowledge') {
+    if (!hasExactKeys(value, ['kind', 'knowledge'])) return null;
+    const knowledge = parseAiChatKnowledge(value.knowledge);
+    return knowledge ? { kind: 'knowledge', knowledge } : null;
+  }
 
   if (value.kind === 'progress') {
     if (!hasExactKeys(value, ['kind', 'progress'])) return null;

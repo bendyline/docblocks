@@ -12,8 +12,15 @@ const emitSourceMaps = process.env.DOCBLOCKS_SOURCEMAPS === 'true';
 export const desktopTsupOptions = [
   // Main process — Node runtime, no DOM globals.
   {
-    // The narration engine runs ONNX Runtime in its own utility process.
-    entry: { main: 'main/main.ts', 'kokoro-utility': 'main/speech/kokoro-utility.ts' },
+    // The narration engine runs ONNX Runtime in its own utility process. The
+    // fact check is its own bundle because Gezel's checker is reachable only
+    // through Gezel core's root entry, which would quintuple main.cjs; main
+    // loads it on the first check instead of at startup.
+    entry: {
+      main: 'main/main.ts',
+      'kokoro-utility': 'main/speech/kokoro-utility.ts',
+      'fact-check': 'main/ai/fact-check.ts',
+    },
     outDir: 'dist/main',
     format: ['cjs'],
     platform: 'node',

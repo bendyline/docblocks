@@ -723,6 +723,29 @@ describe('desktop AI service: chat', () => {
     expect(events).to.have.length(2);
   });
 
+  it('relays what knowledge catalogs added, and drops a report it cannot read', async () => {
+    const { service, connector } = await readyService();
+    const { events, emit } = recorder();
+    service.startChat('1:a', WRITE_REQUEST, emit);
+    await settle();
+    const { stream } = connector.connection.streams[0];
+    const knowledge = {
+      outcome: 'used',
+      sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
+      evidence: ['Built in 1910.'],
+    } as const;
+    stream.push('', { knowledge });
+    stream.push('', {
+      knowledge: { ...knowledge, sources: [] } as unknown as typeof knowledge,
+    });
+    stream.push('Done', { finishReason: 'stop' });
+    stream.end();
+    await settle();
+    expect(events[0]).to.deep.equal({ kind: 'knowledge', knowledge });
+    expect(events.filter((event) => event.kind === 'knowledge')).to.have.length(1);
+    expect(terminalEvents(events)).to.have.length(1);
+  });
+
   it('waits past the stall limit for the first text', async () => {
     // Loading, a long prefill, and thinking send no text; Gezel owns that deadline.
     const { service, connector } = await readyService({

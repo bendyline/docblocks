@@ -1,5 +1,24 @@
-import type { BrowserWindow, Menu, MenuItemConstructorOptions } from 'electron';
+import type { BrowserWindow, Menu, MenuItemConstructorOptions, SourcesOptions } from 'electron';
 import type { DisplayCaptureSource } from './permission-policy.js';
+
+/**
+ * Every screen, then every app window, from one lookup per source type made
+ * one after the other.
+ *
+ * A single `getSources({ types: ['screen', 'window'] })` lists both kinds
+ * concurrently. On X11, WebRTC's screen capturer reads the root window under a
+ * process-wide Xlib error trap, so an X error raised meanwhile by the window
+ * lister fails the screen capturer: about half the time no screen came back,
+ * and the picker offered windows only.
+ */
+export async function listDisplayCaptureSources(
+  getSources: (options: SourcesOptions) => Promise<readonly DisplayCaptureSource[]>,
+): Promise<DisplayCaptureSource[]> {
+  const thumbnailSize = { width: 0, height: 0 };
+  const screens = await getSources({ types: ['screen'], thumbnailSize });
+  const windows = await getSources({ types: ['window'], thumbnailSize });
+  return [...screens, ...windows];
+}
 
 /** A native, keyboard-accessible picker; source IDs never leave main. */
 export function pickDisplayCaptureSource(

@@ -6,8 +6,10 @@ import {
   isBoundedString,
   isTrustedRendererUrl,
   parseExternalHttpUrl,
+  parseOpenExternalUrl,
   parseOpenRequest,
   parsePinnedMenuDocuments,
+  parseSupportMailtoUrl,
 } from '../src/host/index.js';
 
 describe('host wire policy', () => {
@@ -27,6 +29,45 @@ describe('host wire policy', () => {
     expect(parseExternalHttpUrl('data:text/html,<script>alert(1)</script>')).to.equal(null);
     expect(parseExternalHttpUrl('docblocks://open?path=/tmp/secret.md')).to.equal(null);
     expect(parseExternalHttpUrl('x'.repeat(HOST_WIRE_LIMITS.urlCharacters + 1))).to.equal(null);
+  });
+
+  it('opens email only to support, with at most a subject and a body', () => {
+    const email = 'mailto:support@bendyline.com?subject=AI%20report&body=Line%20one%0D%0ATwo';
+    expect(parseSupportMailtoUrl(email)).to.equal(email);
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com')).to.equal(
+      'mailto:support@bendyline.com',
+    );
+    expect(parseSupportMailtoUrl('mailto:someone@example.com?subject=Hi')).to.equal(null);
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com,someone@example.com')).to.equal(
+      null,
+    );
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com?cc=someone@example.com')).to.equal(
+      null,
+    );
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com?to=someone@example.com')).to.equal(
+      null,
+    );
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com?subject=a&subject=b')).to.equal(
+      null,
+    );
+    expect(parseSupportMailtoUrl('mailto:support@bendyline.com#fragment')).to.equal(null);
+    expect(
+      parseSupportMailtoUrl(
+        `mailto:support@bendyline.com?body=${'x'.repeat(HOST_WIRE_LIMITS.urlCharacters)}`,
+      ),
+    ).to.equal(null);
+    expect(parseSupportMailtoUrl('https://example.com/')).to.equal(null);
+  });
+
+  it('lets openExternal take web links and support email, and nothing else', () => {
+    expect(parseOpenExternalUrl('https://example.com/a/../b')).to.equal('https://example.com/b');
+    expect(parseOpenExternalUrl('mailto:support@bendyline.com?subject=Hi')).to.equal(
+      'mailto:support@bendyline.com?subject=Hi',
+    );
+    expect(parseOpenExternalUrl('mailto:someone@example.com')).to.equal(null);
+    expect(parseOpenExternalUrl('file:///tmp/secret')).to.equal(null);
+    expect(parseOpenExternalUrl('javascript:alert(1)')).to.equal(null);
+    expect(parseExternalHttpUrl('mailto:support@bendyline.com')).to.equal(null);
   });
 
   it('requires the exact app host or configured development origin', () => {
