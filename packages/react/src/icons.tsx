@@ -8,6 +8,8 @@
 
 import {
   ArrowDownAZ,
+  BookOpen,
+  CircleCheck,
   Clock,
   Download,
   Ellipsis,
@@ -20,6 +22,7 @@ import {
   Pin,
   Search,
   Settings2,
+  TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -75,6 +78,21 @@ export function SplitViewIcon() {
 
 export function SearchIcon() {
   return <ShellIcon icon={Search} />;
+}
+
+/** Reference passages from a knowledge catalog. */
+export function KnowledgeIcon() {
+  return <ShellIcon icon={BookOpen} />;
+}
+
+/** AI output states a detail no source shows. */
+export function UnsourcedFactsIcon() {
+  return <ShellIcon icon={TriangleAlert} />;
+}
+
+/** Every checkable detail in AI output appears in a source. */
+export function SourcedFactsIcon() {
+  return <ShellIcon icon={CircleCheck} />;
 }
 
 export function FilesIcon() {

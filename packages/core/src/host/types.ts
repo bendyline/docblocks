@@ -82,7 +82,10 @@ export interface DocBlocksHostShellAPI {
   revealInFolder?(workspaceId: string, workspacePath?: string): Promise<void>;
   /** Open a registered workspace root in Finder or the platform file manager. */
   openWorkspaceFolder?(workspaceId: string): Promise<void>;
-  /** Open a URL in the default browser. */
+  /**
+   * Open an HTTP(S) URL in the default browser, or a `mailto:` URL to support
+   * in the default mail app. See `parseOpenExternalUrl`.
+   */
   openExternal(url: string): Promise<void>;
 }
 

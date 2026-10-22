@@ -239,6 +239,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
   expect(contract.methods.ai).toEqual([
     'availableModels',
     'chat',
+    'checkFacts',
     'connect',
     'disconnect',
     'getPreferences',

@@ -179,6 +179,10 @@ html:has(.db-desktop-root) .squisq-template-gallery-dialog {
    native titlebar, so the second row starts below the caption buttons. */
 .db-desktop-root .db-shell--desktop-toolbar-wrapped:not(.db-shell--mobile) {
   --db-toolbar-wrapped-row: var(--db-desktop-titlebar-height);
+  /* The header's fixed height includes its 1px bottom divider, so the second
+     row has one pixel less than the caption row above it. Centering in that
+     space matches the single-row toolbar, which also sits above the divider. */
+  --db-toolbar-wrapped-second-row: calc(var(--db-toolbar-wrapped-row) - 1px);
 }
 
 .db-desktop-root

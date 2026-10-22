@@ -9,13 +9,14 @@
  *
  *   DOCBLOCKS_E2E_REAL_SPEECH=1
  *   DOCBLOCKS_E2E_WHISPER_MODEL=~/.gezel/engines/whisper-cpp/models/whisper-base.en/ggml-base.en.bin
- *   DOCBLOCKS_E2E_KOKORO_MODEL=<…>/Kokoro-82M-v1.0-ONNX-timestamped/onnx/model_quantized.onnx
+ *   DOCBLOCKS_E2E_KOKORO_MODEL=<…>/Kokoro-82M-v1.0-ONNX-timestamped/<KOKORO_MODEL_FILE, the catalog pin>
  *   DOCBLOCKS_E2E_KOKORO_VOICES=<a directory holding af_heart.bin and the other curated voices>
  */
 
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { KOKORO_MODEL_FILE } from '@bendyline/gezel/speech-models';
 import { expect, test } from './packaged-fixtures.js';
 
 const real = process.env.DOCBLOCKS_E2E_REAL_SPEECH === '1';
@@ -93,7 +94,7 @@ test.describe('real speech engines in the packaged app', () => {
     const voices = process.env.DOCBLOCKS_E2E_KOKORO_VOICES ?? '';
     seed(userDataDir, 'whisper-base.en', { 'ggml-base.en.bin': whisper });
     seed(userDataDir, 'kokoro-82m-v1.0', {
-      'onnx/model_quantized.onnx': kokoro,
+      [KOKORO_MODEL_FILE]: kokoro,
       ...Object.fromEntries(
         VOICES.map((voice) => [`voices/${voice}.bin`, path.join(voices, `${voice}.bin`)]),
       ),

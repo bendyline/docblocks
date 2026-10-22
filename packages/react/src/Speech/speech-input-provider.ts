@@ -37,6 +37,24 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * Drop the ellipses Whisper writes for pauses.
+ *
+ * Takes are cut at every breath, so Whisper ends nearly each one with "..." —
+ * and since each take's text primes the next take's prompt, the habit
+ * compounds until every pause carries one. A pause is not punctuation the
+ * speaker asked for: the ellipsis becomes a word break, a take that was only
+ * an ellipsis becomes silence, and any space it leaves before closing
+ * punctuation closes up.
+ */
+export function stripPauseEllipses(transcript: string): string {
+  return transcript
+    .replace(/(?:\.{3,}|…)+/gu, ' ')
+    .replace(/\s+([,;:!?]|\.(?=\s|$))/gu, '$1')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
 export interface SpeechInputProviderOptions {
   /** Show the host's model setup, e.g. open Settings at the Speech section. */
   readonly onRequestSetup: () => void;
@@ -74,7 +92,7 @@ export function createSpeechInputProvider(
         signal,
       );
       if (!result.ok) throw new Error(result.error.message);
-      return { text: result.value.text };
+      return { text: stripPauseEllipses(result.value.text) };
     },
   };
 }

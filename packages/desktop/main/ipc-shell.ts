@@ -1,7 +1,7 @@
 /** IPC handlers for bounded shell operations over existing capabilities. */
 
 import { shell } from 'electron';
-import { HOST_WIRE_LIMITS, isBoundedString, parseExternalHttpUrl } from '@bendyline/docblocks/host';
+import { HOST_WIRE_LIMITS, isBoundedString, parseOpenExternalUrl } from '@bendyline/docblocks/host';
 import { parseWorkspacePath } from '@bendyline/docblocks/filesystem';
 
 import { registerTrustedIpcHandler } from './ipc-authority.js';
@@ -48,8 +48,12 @@ export function registerShellIpc(): void {
     'shell:openExternal',
     1,
     async (_event, urlValue: unknown): Promise<void> => {
-      const url = parseExternalHttpUrl(urlValue);
-      if (!url) throw new Error('Only credential-free HTTP(S) URLs may be opened externally');
+      const url = parseOpenExternalUrl(urlValue);
+      if (!url) {
+        throw new Error(
+          'Only credential-free HTTP(S) URLs or support email may be opened externally',
+        );
+      }
       await shell.openExternal(url);
     },
   );

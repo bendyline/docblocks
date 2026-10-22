@@ -55,6 +55,9 @@ async function toolbarControls(page: Page) {
       .filter((child) => child.getBoundingClientRect().top < (viewTabsRect?.bottom ?? 0) - 1)
       .map((child) => child.className.toString());
     const toolbarRect = toolbar.getBoundingClientRect();
+    const exportRect = toolbar
+      .querySelector('[aria-label="Export and share"]')
+      ?.getBoundingClientRect();
     return {
       formatting: [
         ...toolbar.querySelectorAll('.squisq-toolbar-actions .squisq-toolbar-button'),
@@ -64,6 +67,10 @@ async function toolbarControls(page: Page) {
       height: Math.round(toolbarRect.height),
       // How far the tab row stops short of the toolbar's own right edge.
       viewTabsRightGap: toolbarRect.right - (viewTabsRect?.right ?? -Infinity),
+      // Room above and below a host control, within the tab row's bottom edge
+      // and the toolbar's.
+      exportSpaceAbove: (exportRect?.top ?? Number.NaN) - (viewTabsRect?.bottom ?? Number.NaN),
+      exportSpaceBelow: toolbarRect.bottom - (exportRect?.bottom ?? Number.NaN),
     };
   });
 }
@@ -88,6 +95,9 @@ test.describe('editor toolbar on a narrow desktop viewport', () => {
     // as an off-colour strip past the last tab (past the caption buttons in
     // Electron), which is how it once looked.
     expect(controls.viewTabsRightGap).toBeLessThan(1);
+    // The second row centers its controls; stretched flex lines once left
+    // them several pixels below center.
+    expect(Math.abs(controls.exportSpaceAbove - controls.exportSpaceBelow)).toBeLessThan(1);
 
     // Whatever did not fit is still reachable rather than merely clipped.
     // Scoped to the toolbar — the file explorer has a "More actions" button too.

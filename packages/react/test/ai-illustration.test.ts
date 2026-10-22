@@ -159,6 +159,21 @@ describe('AI illustrations', () => {
       expect(outcome.status === 'failed' ? outcome.message : '').to.contain('75');
     });
 
+    it('accepts numbers the person stated in their own request', async () => {
+      const stated = PICTURE.replace('>Evaporation</text>', '>75% evaporates</text>');
+      const ai = scriptedAi([stated]);
+      const outcome = await realizeIllustration({
+        ai: ai.api,
+        ...BASE,
+        description: 'Show that 75% of the water evaporates.',
+        material: 'Water evaporates, condenses and falls as rain.',
+        ground: true,
+        descriptionFacts: true,
+      });
+      expect(outcome.status).to.equal('ready');
+      expect(ai.requests[0]?.messages[0]?.content).to.contain('or after "Draw this"');
+    });
+
     it('notes a picture drawn in fixed colors', async () => {
       const fixed = PICTURE.replace(/currentColor/gu, '#3366cc');
       const outcome = await realizeIllustration({ ai: scriptedAi([fixed]).api, ...BASE });

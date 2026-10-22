@@ -6,6 +6,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import {
   parseAiChatEvent,
+  parseAiFactCheck,
+  parseAiFactCheckRequest,
   parseAiKnowledgeState,
   parseAiKnowledgeAction,
   parseAiError,
@@ -338,7 +340,11 @@ function parseAvailableModelsResult(value: unknown): AiResult<readonly AiModelDo
   return { ok: false, error: aiFailure('DocBlocks received a model list it could not read.') };
 }
 
-function parseKnowledgeResult<T>(value: unknown, parse: (value: unknown) => T | null): AiResult<T> {
+function parseKnowledgeResult<T>(
+  value: unknown,
+  parse: (value: unknown) => T | null,
+  unreadable = 'DocBlocks received catalog information it could not read.',
+): AiResult<T> {
   if (typeof value === 'object' && value !== null && Object.keys(value).length === 2) {
     const result = value as { ok?: unknown; value?: unknown; error?: unknown };
     if (result.ok === true && Object.hasOwn(value, 'value')) {
@@ -350,10 +356,7 @@ function parseKnowledgeResult<T>(value: unknown, parse: (value: unknown) => T | 
       if (error) return { ok: false, error };
     }
   }
-  return {
-    ok: false,
-    error: aiFailure('DocBlocks received catalog information it could not read.'),
-  };
+  return { ok: false, error: aiFailure(unreadable) };
 }
 
 const aiApi: DocBlocksHostAiAPI = {
@@ -373,6 +376,15 @@ const aiApi: DocBlocksHostAiAPI = {
       );
       return result.ok ? { ok: true, value: null } : result;
     },
+  },
+  async checkFacts(value) {
+    const request = parseAiFactCheckRequest(value);
+    if (!request) return { ok: false, error: aiFailure('That text is too long to check.') };
+    return parseKnowledgeResult(
+      await ipcRenderer.invoke('ai:checkFacts', request),
+      parseAiFactCheck,
+      'DocBlocks received a fact check it could not read.',
+    );
   },
   async providerInstalled() {
     const installed: unknown = await ipcRenderer.invoke('ai:providerInstalled');

@@ -159,7 +159,17 @@ test('reads the document aloud through the narration utility', async ({
   const transport = window.getByRole('group', { name: 'Reading aloud' });
   await expect(transport).toBeVisible();
   // Two segments (the heading and the paragraph) arrive from the utility.
-  await expect(transport.getByRole('status')).toHaveText(/\/ 2|Generating…|Preparing voice…/u);
+  const status = transport.getByRole('status');
+  await expect(status).toHaveText(/\/ 2|Generating…|Preparing voice…/u);
+  // Pause so the short tones cannot finish while the transport is driven.
+  await transport.getByRole('button', { name: 'Pause reading' }).click();
+  await transport.getByRole('button', { name: 'Previous segment' }).click();
+  await expect(status).toHaveText('1 / 2');
+  await transport.getByRole('button', { name: 'Next segment' }).click();
+  await expect(status).toHaveText('2 / 2');
+  await expect(transport.getByRole('button', { name: 'Next segment' })).toBeDisabled();
+  await transport.getByRole('button', { name: 'Previous segment' }).click();
+  await expect(status).toHaveText('1 / 2');
   await transport.getByRole('button', { name: 'Stop reading' }).click();
   await expect(transport).toHaveCount(0);
 });

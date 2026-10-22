@@ -25,12 +25,14 @@ import {
   AI_WIRE_LIMITS,
   HOST_WIRE_LIMITS,
   isBoundedString,
+  parseAiChatKnowledge,
   parseAiChatProgress,
   parseAiKnowledgeState,
 } from '@bendyline/docblocks/host';
 import type { AiKnowledgeState, AiKnowledgeAction } from '@bendyline/docblocks/host';
 import type {
   AiChatEvent,
+  AiChatKnowledge,
   AiChatMessage,
   AiChatProgress,
   AiChatRequest,
@@ -99,6 +101,8 @@ export interface ProviderChatRequest {
 }
 
 export interface ProviderChatChunk {
+  /** What enabled knowledge catalogs added to the request; sent before any text. */
+  readonly knowledge?: AiChatKnowledge;
   readonly progress?: AiChatProgress;
   readonly text: string;
   readonly finishReason: 'stop' | 'length' | null;
@@ -913,6 +917,8 @@ export class AiService {
       const stream = await connection.streamChat(request, chat.controller.signal);
       for await (const chunk of stream) {
         if (chat.ending) break;
+        const knowledge = chunk.knowledge ? parseAiChatKnowledge(chunk.knowledge) : null;
+        if (knowledge) emit({ kind: 'knowledge', knowledge });
         const progress = parseAiChatProgress(chunk.progress);
         if (progress) emit({ kind: 'progress', progress });
         if (chunk.model && isBoundedString(chunk.model, HOST_WIRE_LIMITS.identifierCharacters, 1)) {

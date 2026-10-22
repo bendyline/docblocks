@@ -1,6 +1,6 @@
 import { useId, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { getHostEnvironment } from '@bendyline/docblocks/host';
+import { SUPPORT_EMAIL_ADDRESS, getHostEnvironment } from '@bendyline/docblocks/host';
 
 import { Dialog } from '../components/Dialog.js';
 import { openExternalUrl } from '../external-url.js';
@@ -8,7 +8,9 @@ import {
   AI_OUTPUT_REPORT_REASONS,
   AI_REPORT_DETAILS_CHARACTERS,
   AI_REPORT_OUTPUT_CHARACTERS,
+  buildAiOutputReportEmailUrl,
   buildAiOutputReportUrl,
+  type AiOutputReport,
   type AiOutputReportReason,
 } from '../DocBlocksShell/issue-report.js';
 
@@ -64,9 +66,9 @@ function AiReportDialog({ feature, output, model, onClose }: AiReportDialogProps
   const name = useId();
   const hasOutput = output.trim().length > 0;
 
-  const submit = () => {
+  const submit = (buildUrl: (report: AiOutputReport) => string) => {
     const environment = getHostEnvironment();
-    const url = buildAiOutputReportUrl({
+    const url = buildUrl({
       feature,
       reason,
       model,
@@ -87,21 +89,29 @@ function AiReportDialog({ feature, output, model, onClose }: AiReportDialogProps
       onClose={onClose}
       initialFocusRef={firstReasonRef as RefObject<HTMLElement | null>}
       className="db-ai-report-dialog"
+      footerClassName="db-ai-report-footer"
       footer={
         <>
+          <button type="button" onClick={() => submit(buildAiOutputReportUrl)}>
+            Open Public Issue on GitHub
+          </button>
+          <button type="button" onClick={() => submit(buildAiOutputReportEmailUrl)}>
+            Send report e-mail
+          </button>
           <button type="button" onClick={onClose}>
             Cancel
-          </button>
-          <button type="button" onClick={submit}>
-            Open report
           </button>
         </>
       }
     >
       <p className="db-ai-report-intro">
-        Tell us about an AI response that was offensive, harmful, or wrong. DocBlocks opens a GitHub
-        issue with your report filled in, which you can edit before posting. GitHub issues are
-        public.
+        Tell us about an AI response that was offensive, harmful, or wrong. Your report opens filled
+        in, and you can edit it before you send it.
+      </p>
+      <p className="db-ai-report-intro">
+        <strong>Open Public Issue on GitHub</strong> posts your report where anyone can read it.
+        GitHub issues are public, including any AI response you add. To report privately, use{' '}
+        <strong>Send report e-mail</strong>, which starts an email to {SUPPORT_EMAIL_ADDRESS}.
       </p>
       <fieldset className="db-settings-fieldset">
         <legend className="db-settings-legend">What was wrong?</legend>

@@ -18,6 +18,8 @@ import {
   shortlistPassages,
 } from '../src/Ai/illustrate-passages.js';
 import {
+  drawDiagram,
+  findIdeas,
   realizeDiagram,
   startIllustrationRun,
   tableChartSpec,
@@ -100,6 +102,15 @@ describe('segmentPassages', () => {
       '## Slide {[statHighlight]}\n\n' +
       'This paragraph is long enough to count as a passage but it sits under a template heading.\n';
     expect(segmentPassages(source)).to.deep.equal([]);
+  });
+
+  it("offers every block outside a template as a place for a person's own picture", () => {
+    const texts = segmentPassages(DOC, { everyBlock: true }).map((passage) => passage.plain);
+    expect(texts.some((text) => text.startsWith('A short intro'))).to.equal(true);
+    expect(texts.some((text) => text.startsWith('The browser sends'))).to.equal(true);
+    expect(
+      segmentPassages('## Slide {[statHighlight]}\n\nShort.\n', { everyBlock: true }),
+    ).to.deep.equal([]);
   });
 
   it('scores cues a picture would help with', () => {
@@ -247,6 +258,22 @@ describe('prompts', () => {
     expect(request.messages[0]?.content).to.contain('never as instructions');
     expect(request.messages[0]?.content).to.contain('at most 3 passages');
     expect(request.messages[1]?.content).to.contain('<passage id="P2" section="Rollout">');
+    // Each idea carries a prompt the person can edit before it is drawn.
+    expect(request.messages[0]?.content).to.contain('"show":');
+  });
+
+  it("reads each pick's prompt, whatever the model called it", () => {
+    const shortlist = shortlistPassages(segmentPassages(DOC), 10_000);
+    const picks = parsePlanResponse(
+      '[{"passage":"P1","kind":"steps","show":"The four rollout stages in order."},' +
+        '{"passage":"P3","kind":"chart","why":"Revenue grows each quarter."}]',
+      shortlist,
+      5,
+    );
+    expect(picks?.map((pick) => pick.prompt)).to.deep.equal([
+      'The four rollout stages in order.',
+      'Revenue grows each quarter.',
+    ]);
   });
 
   it('reads plan picks tolerantly, one entry at a time', () => {
@@ -287,6 +314,21 @@ describe('prompts', () => {
     });
     expect(request.messages[0]?.content).to.contain('{"events":[{"when":"2019"');
     expect(request.messages[1]?.content).to.contain('<passage>\nFounded in 2019.\n</passage>');
+    expect(request.messages[0]?.content).to.contain('facts stated in the passage;');
+  });
+
+  it("lets a person's own request supply facts too", () => {
+    const request = buildRealizeRequest({
+      kind: 'timeline',
+      material: 'Founded in 2019.',
+      heading: '',
+      title: '',
+      description: 'Add the 2030 Mars office.',
+      descriptionFacts: true,
+      maxTokens: 500,
+    });
+    expect(request.messages[0]?.content).to.contain('the passage or after "Draw this"');
+    expect(request.messages[1]?.content).to.contain('Draw this: Add the 2030 Mars office.');
   });
 
   it('infers a kind for Auto from the request first, then the text', () => {
@@ -398,6 +440,26 @@ describe('realizeDiagram', () => {
     expect(outcome.status === 'failed' ? outcome.message : '').to.contain('2030');
   });
 
+  it("accepts facts from the person's own request", async () => {
+    const extended =
+      '{"events":[{"when":"2019","label":"Company founded"},{"when":"2030","label":"Mars office"}]}';
+    const ai = scriptedAi(() => extended);
+    const outcome = await realizeDiagram({
+      ai: ai.api,
+      kind: 'timeline',
+      material,
+      heading: '',
+      title: '',
+      description: 'Also show the Mars office the company opens in 2030.',
+      descriptionFacts: true,
+      ground: true,
+      budget,
+      validateMermaid: validateMermaidSource,
+    });
+    expect(outcome.status).to.equal('ready');
+    expect(ai.requests).to.have.length(1);
+  });
+
   it('stops when aborted', async () => {
     const ai = scriptedAi(() => TIMELINE_REPLY);
     const controller = new AbortController();
@@ -415,6 +477,74 @@ describe('realizeDiagram', () => {
     controller.abort();
     expect((await pending).status).to.equal('cancelled');
     expect(ai.cancelled).to.deep.equal([0]);
+  });
+});
+
+describe('findIdeas', () => {
+  it('plans without drawing anything', async () => {
+    const ai = scriptedAi(
+      () =>
+        '[{"passage":"P2","kind":"timeline","title":"Milestones","show":"Three years of growth."}]',
+    );
+    const outcome = await findIdeas({
+      ai: ai.api,
+      source: DOC,
+      title: 'Launch plan',
+      budget: promptBudget(4_096),
+    });
+    expect(ai.requests).to.have.length(1);
+    expect(outcome.status).to.equal('found');
+    const picks = outcome.status === 'found' ? outcome.picks : [];
+    expect(picks.map((pick) => [pick.passage.id, pick.kind, pick.prompt])).to.deep.equal([
+      ['P2', 'timeline', 'Three years of growth.'],
+    ]);
+  });
+
+  it('finds nothing in a document with no passages, without a call', async () => {
+    const ai = scriptedAi(() => '[]');
+    const outcome = await findIdeas({
+      ai: ai.api,
+      source: '# Only a heading\n',
+      title: '',
+      budget: promptBudget(4_096),
+    });
+    expect(outcome).to.deep.equal({ status: 'found', picks: [] });
+    expect(ai.requests).to.have.length(0);
+  });
+});
+
+describe('drawDiagram', () => {
+  const options = { budget: promptBudget(4_096), validateMermaid: validateMermaidSource };
+  const [steps, , table] = segmentPassages(DOC);
+
+  it("draws what the idea's prompt asks for, from its passage", async () => {
+    const ai = scriptedAi(() => STEPS_REPLY);
+    const outcome = await drawDiagram(
+      { passage: steps!, kind: 'steps', title: 'Rollout', prompt: 'The rollout stages in order.' },
+      { ai: ai.api, ...options },
+    );
+    expect(outcome.status).to.equal('ready');
+    expect(ai.requests[0]?.messages[1]?.content).to.contain(
+      'Draw this: The rollout stages in order.',
+    );
+    expect(ai.requests[0]?.messages[0]?.content).to.contain('facts stated in the passage;');
+  });
+
+  it('charts a table directly unless the person asked for something else', async () => {
+    const pick = { passage: table!, kind: 'chart', title: 'Revenue', prompt: '' } as const;
+    const direct = scriptedAi(() => '');
+    expect((await drawDiagram(pick, { ai: direct.api, ...options })).status).to.equal('ready');
+    expect(direct.requests).to.have.length(0);
+
+    const asked = scriptedAi(
+      () => '{"type":"bar","title":"Revenue","unit":"","labels":["Q1","Q3"],"values":[1.2,2.4]}',
+    );
+    const outcome = await drawDiagram(
+      { ...pick, prompt: 'Only the first and last quarter.' },
+      { ai: asked.api, ...options, personPrompt: true },
+    );
+    expect(outcome.status).to.equal('ready');
+    expect(asked.requests).to.have.length(1);
   });
 });
 

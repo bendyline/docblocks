@@ -9,6 +9,10 @@
  * - Headings are spoken as their own segment with closing punctuation, so the
  *   voice pauses after a title instead of running it into the first sentence.
  * - Fenced code is left out; nobody wants a program read to them.
+ * - Soft line breaks are spoken as spaces. A hard-wrapped paragraph reaches the
+ *   script with a newline at every wrap, indistinguishable from the break
+ *   between paragraphs, and would otherwise be read a line at a time with a
+ *   full stop in the middle of each sentence.
  */
 
 import type { NarrationScript } from '@bendyline/squisq/narration';
@@ -43,6 +47,20 @@ const FENCE =
 /** Remove fenced code blocks, leaving the surrounding structure intact. */
 export function stripFencedCode(markdown: string): string {
   return markdown.replace(FENCE, '');
+}
+
+/**
+ * Turn soft line breaks into spaces in every text node of a parsed markdown
+ * tree, in place. Hard breaks are their own nodes and stay. One character for
+ * one, so a narration script built from the result keeps every offset.
+ */
+export function joinSoftBreaks(node: unknown): void {
+  if (typeof node !== 'object' || node === null) return;
+  const { type, value, children } = node as { type?: unknown; value?: unknown; children?: unknown };
+  if (type === 'text' && typeof value === 'string') {
+    (node as { value: string }).value = value.replace(/\n/gu, ' ');
+  }
+  if (Array.isArray(children)) for (const child of children) joinSoftBreaks(child);
 }
 
 /** Give a line closing punctuation so the voice ends it as a sentence. */
@@ -96,11 +114,19 @@ export async function planSpeech(markdown: string): Promise<SpeechPlan> {
     import('@bendyline/squisq/doc'),
     import('@bendyline/squisq/narration'),
   ]);
-  const doc = markdownToDoc(parseMarkdown(stripFencedCode(markdown)));
+  const source = stripFencedCode(markdown);
+  const doc = markdownToDoc(parseMarkdown(source));
   const script = buildNarrationScript(doc);
+  // What is spoken comes from a second script with soft breaks joined. The
+  // returned script stays the document's own, since saved narration is
+  // matched against it; the two share offsets, so segment ranges fit both.
+  const joined = parseMarkdown(source);
+  joinSoftBreaks(joined);
+  const joinedText = buildNarrationScript(markdownToDoc(joined)).sourceText;
+  const spoken = joinedText.length === script.sourceText.length ? joinedText : script.sourceText;
   const segments: SpeechSegmentPlan[] = [];
   for (const block of script.blocks) {
-    const text = script.sourceText.slice(block.charStart, block.charEnd);
+    const text = spoken.slice(block.charStart, block.charEnd);
     let bodyStart = block.charStart;
     const heading = block.heading?.trim();
     if (heading && text.startsWith(heading)) {
@@ -116,7 +142,7 @@ export async function planSpeech(markdown: string): Promise<SpeechPlan> {
     // One segment per line: paragraphs and list items each end as a sentence,
     // so an unpunctuated item never runs into the next.
     const lines = /[^\n]+/gu;
-    const body = script.sourceText.slice(bodyStart, block.charEnd);
+    const body = spoken.slice(bodyStart, block.charEnd);
     for (const line of body.matchAll(lines)) {
       for (const piece of splitLongText(line[0], bodyStart + line.index)) {
         segments.push({

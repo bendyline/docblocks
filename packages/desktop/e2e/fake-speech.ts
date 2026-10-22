@@ -7,13 +7,14 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { KOKORO_MODEL_FILE } from '@bendyline/gezel/speech-models';
 
 const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex');
 
 const FILES = {
   'whisper-base.en': { 'ggml-base.en.bin': Buffer.from('fake whisper weights') },
   'kokoro-82m-v1.0': {
-    'onnx/model_quantized.onnx': Buffer.from('fake kokoro model'),
+    [KOKORO_MODEL_FILE]: Buffer.from('fake kokoro model'),
     'voices/af_heart.bin': Buffer.from('fake voice'),
   },
 } as const;
@@ -34,7 +35,7 @@ export function installFakeSpeechModels(
     ...(options.kokoro
       ? {
           'kokoro-82m-v1.0': {
-            'onnx/model_quantized.onnx': fs.readFileSync(options.kokoro.model),
+            [KOKORO_MODEL_FILE]: fs.readFileSync(options.kokoro.model),
             'voices/af_heart.bin': fs.readFileSync(options.kokoro.voice),
           },
         }

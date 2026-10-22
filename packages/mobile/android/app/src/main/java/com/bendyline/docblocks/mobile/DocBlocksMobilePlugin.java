@@ -59,9 +59,26 @@ public class DocBlocksMobilePlugin extends Plugin {
         try {
             if (call.getData().length() != 1 || value == null || value.length() > 8192 || value.indexOf('\\') >= 0) throw new IllegalArgumentException();
             java.net.URI uri = new java.net.URI(value);
-            if (!Arrays.asList("https", "http").contains(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null || !uri.toASCIIString().equals(value)) throw new IllegalArgumentException();
-            getActivity().startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(value))); call.resolve();
+            if (!(isWebLink(uri) || isSupportEmail(uri)) || !uri.toASCIIString().equals(value)) throw new IllegalArgumentException();
+            String action = "mailto".equals(uri.getScheme()) ? Intent.ACTION_SENDTO : Intent.ACTION_VIEW;
+            getActivity().startActivity(new Intent(action, Uri.parse(value))); call.resolve();
         } catch (Exception e) { call.reject("The link could not be opened."); }
+    }
+    private static boolean isWebLink(java.net.URI uri) {
+        return Arrays.asList("https", "http").contains(uri.getScheme()) && uri.getHost() != null && uri.getUserInfo() == null;
+    }
+    /** Mirrors parseSupportMailtoUrl: only support, prefilled with at most a subject and a body. */
+    private static boolean isSupportEmail(java.net.URI uri) {
+        if (!"mailto".equals(uri.getScheme()) || !uri.isOpaque() || uri.getRawFragment() != null) return false;
+        String[] parts = uri.getRawSchemeSpecificPart().split("\\?", 2);
+        if (!"support@bendyline.com".equals(parts[0])) return false;
+        if (parts.length == 1) return true;
+        Set<String> names = new HashSet<>();
+        for (String field : parts[1].split("&", -1)) {
+            String name = field.split("=", 2)[0];
+            if (!("subject".equals(name) || "body".equals(name)) || !names.add(name)) return false;
+        }
+        return true;
     }
     @PluginMethod public void pickFolder(PluginCall call) {
         if (call.getData().length() != 0 || pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }

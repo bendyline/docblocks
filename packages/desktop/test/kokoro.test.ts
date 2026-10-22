@@ -376,7 +376,7 @@ describe('KokoroEngine', () => {
 /**
  * Opt-in: the real model through real ONNX Runtime. Set
  * DOCBLOCKS_TEST_KOKORO_MODEL and DOCBLOCKS_TEST_KOKORO_VOICE to a downloaded
- * `model_quantized.onnx` and `af_heart.bin`.
+ * copy of the catalog's `KOKORO_MODEL_FILE` and `af_heart.bin`.
  */
 describe('KokoroRuntime with the real model', function () {
   const model = process.env.DOCBLOCKS_TEST_KOKORO_MODEL;

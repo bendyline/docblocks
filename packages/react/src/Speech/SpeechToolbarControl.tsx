@@ -120,6 +120,16 @@ export function SpeechToolbarControl({
 
       {active && (
         <div className="db-speech-transport" role="group" aria-label="Reading aloud">
+          <button
+            type="button"
+            className="squisq-toolbar-button"
+            aria-label="Previous segment"
+            data-tooltip="Previous segment"
+            disabled={state.phase !== 'reading'}
+            onClick={() => readAloud.previous()}
+          >
+            <PreviousGlyph />
+          </button>
           {state.phase === 'reading' && state.playing ? (
             <button
               type="button"
@@ -142,6 +152,16 @@ export function SpeechToolbarControl({
               <PlayGlyph />
             </button>
           )}
+          <button
+            type="button"
+            className="squisq-toolbar-button"
+            aria-label="Next segment"
+            data-tooltip="Next segment"
+            disabled={state.phase !== 'reading' || state.segment >= state.segments - 1}
+            onClick={() => readAloud.next()}
+          >
+            <NextGlyph />
+          </button>
           <button
             type="button"
             className="squisq-toolbar-button"
@@ -283,6 +303,24 @@ function PauseGlyph() {
   return (
     <Glyph>
       <path d="M6.5 4.5v9M11.5 4.5v9" />
+    </Glyph>
+  );
+}
+
+function PreviousGlyph() {
+  return (
+    <Glyph>
+      <path d="M5 4.5v9" />
+      <path d="M13 4.5v9L6.5 9z" />
+    </Glyph>
+  );
+}
+
+function NextGlyph() {
+  return (
+    <Glyph>
+      <path d="M13 4.5v9" />
+      <path d="M5 4.5v9L11.5 9z" />
     </Glyph>
   );
 }

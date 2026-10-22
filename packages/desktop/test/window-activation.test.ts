@@ -1,85 +1,95 @@
+import { EventEmitter } from 'node:events';
 import { expect } from 'chai';
 
-import { showAndFocusWindow } from '../main/window-activation.js';
+import { showWhenReady } from '../main/window-activation.js';
 
-interface HarnessOptions {
-  appHidden?: boolean;
-  windowMinimized?: boolean;
+class FakeWindow extends EventEmitter {
+  public readonly webContents = new EventEmitter();
+  public destroyed = false;
+  public visible = false;
+  public shows = 0;
+
+  public isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  public isVisible(): boolean {
+    return this.visible;
+  }
+
+  public show(): void {
+    this.shows += 1;
+    this.visible = true;
+  }
 }
 
-function createHarness(options: HarnessOptions = {}) {
-  const calls: string[] = [];
-  const app = {
-    focus(focusOptions?: { steal?: boolean }) {
-      calls.push(`app.focus:${focusOptions?.steal === true ? 'steal' : 'normal'}`);
-    },
-    isHidden() {
-      calls.push('app.isHidden');
-      return options.appHidden ?? false;
-    },
-    show() {
-      calls.push('app.show');
-    },
-  };
-  const win = {
-    focus() {
-      calls.push('window.focus');
-    },
-    isMinimized() {
-      calls.push('window.isMinimized');
-      return options.windowMinimized ?? false;
-    },
-    restore() {
-      calls.push('window.restore');
-    },
-    show() {
-      calls.push('window.show');
-    },
-  };
-  return { app, calls, win };
+function track(win: FakeWindow): { firstShows: () => number } {
+  let firstShows = 0;
+  showWhenReady(win, () => {
+    firstShows += 1;
+  });
+  return { firstShows: () => firstShows };
 }
 
-describe('desktop window activation', () => {
-  it('activates the app before focusing a visible window on macOS', () => {
-    const { app, calls, win } = createHarness();
+describe('desktop window reveal', () => {
+  it('shows the window on ready-to-show', () => {
+    const win = new FakeWindow();
+    const { firstShows } = track(win);
 
-    showAndFocusWindow(app, win, 'darwin');
+    win.emit('ready-to-show');
 
-    expect(calls).to.deep.equal([
-      'window.isMinimized',
-      'app.isHidden',
-      'app.focus:steal',
-      'window.show',
-      'window.focus',
-    ]);
+    expect(win.shows).to.equal(1);
+    expect(firstShows()).to.equal(1);
   });
 
-  it('unhides and restores the app before focusing it on macOS', () => {
-    const { app, calls, win } = createHarness({ appHidden: true, windowMinimized: true });
+  it('shows the window when the page loads but ready-to-show never fires', () => {
+    // Wayland: a hidden window never paints, so ready-to-show never arrives.
+    const win = new FakeWindow();
+    const { firstShows } = track(win);
 
-    showAndFocusWindow(app, win, 'darwin');
+    win.webContents.emit('did-finish-load');
 
-    expect(calls).to.deep.equal([
-      'window.isMinimized',
-      'window.restore',
-      'app.isHidden',
-      'app.show',
-      'app.focus:steal',
-      'window.show',
-      'window.focus',
-    ]);
+    expect(win.shows).to.equal(1);
+    expect(firstShows()).to.equal(1);
   });
 
-  it('keeps the existing window-only behavior on other platforms', () => {
-    const { app, calls, win } = createHarness({ appHidden: true, windowMinimized: true });
+  it('delivers launch work once when both signals fire, in either order', () => {
+    for (const order of [
+      ['ready-to-show', 'did-finish-load'],
+      ['did-finish-load', 'ready-to-show'],
+    ]) {
+      const win = new FakeWindow();
+      const { firstShows } = track(win);
 
-    showAndFocusWindow(app, win, 'win32');
+      for (const signal of order) {
+        if (signal === 'ready-to-show') win.emit(signal);
+        else win.webContents.emit(signal);
+      }
 
-    expect(calls).to.deep.equal([
-      'window.isMinimized',
-      'window.restore',
-      'window.show',
-      'window.focus',
-    ]);
+      expect(win.shows, order.join(' then ')).to.equal(1);
+      expect(firstShows(), order.join(' then ')).to.equal(1);
+    }
+  });
+
+  it('does not show a window that is already visible', () => {
+    const win = new FakeWindow();
+    win.visible = true;
+    const { firstShows } = track(win);
+
+    win.webContents.emit('did-finish-load');
+
+    expect(win.shows).to.equal(0);
+    expect(firstShows()).to.equal(1);
+  });
+
+  it('ignores a window destroyed before it could be shown', () => {
+    const win = new FakeWindow();
+    const { firstShows } = track(win);
+
+    win.destroyed = true;
+    win.emit('ready-to-show');
+
+    expect(win.shows).to.equal(0);
+    expect(firstShows()).to.equal(0);
   });
 });

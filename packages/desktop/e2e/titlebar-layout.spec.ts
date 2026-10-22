@@ -35,6 +35,9 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
     const exportRect = element
       .querySelector('[aria-label="Export and share"]')
       ?.getBoundingClientRect();
+    const editorHeaderBorder = editorHeader
+      ? Number.parseFloat(getComputedStyle(editorHeader).borderBottomWidth)
+      : Number.NaN;
 
     return {
       devicePixelRatio: globalThis.devicePixelRatio,
@@ -46,11 +49,13 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
         width: toolbarRect.width,
       },
       editorHeaderHeight: editorHeaderRect?.height,
+      editorHeaderContentBottom: (editorHeaderRect?.bottom ?? Number.NaN) - editorHeaderBorder,
       sidebarHeaderHeight: sidebarHeaderRect?.height,
       viewTabsBottom: viewTabsRect?.bottom,
       viewTabsRight: viewTabsRect?.right,
       controls,
       exportTop: exportRect?.top,
+      exportBottom: exportRect?.bottom,
       exportRight: exportRect?.right,
     };
   });
@@ -68,6 +73,12 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
     (geometry.viewTabsBottom ?? Infinity) - physicalPixel,
   );
   expect(geometry.exportRight).toBeLessThanOrEqual(geometry.toolbar.right - 8);
+  // The second row centers its controls between the tab row and the header's
+  // bottom divider, as the single-row toolbar does. Stretched flex lines once
+  // left them a few pixels low.
+  const spaceAbove = (geometry.exportTop ?? Number.NaN) - (geometry.viewTabsBottom ?? Number.NaN);
+  const spaceBelow = geometry.editorHeaderContentBottom - (geometry.exportBottom ?? Number.NaN);
+  expect(Math.abs(spaceAbove - spaceBelow)).toBeLessThan(physicalPixel);
   for (const control of geometry.controls) {
     expect(control.right, control.className).toBeLessThanOrEqual(geometry.toolbar.right);
     if (control.className !== 'squisq-toolbar-view-tabs') {
