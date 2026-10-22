@@ -15,22 +15,89 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  /* Lets a long message ellipsize instead of pushing the buttons off the end
+     of the status bar, which never wraps. */
+  min-width: 0;
   color: var(--db-accent-deep);
   font-family: 'Hanken Grotesk', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
 }
 
+/* The ready notice claims the status bar's free space and sizes its contents
+   to it with the container queries below, so Restart to install stays on
+   screen whatever the window width or the document's counts. Squisq's spacer
+   would otherwise split that space with it, so it steps aside and the parse
+   status sits beside the counts while an update is waiting. `safe` keeps an overflow on the
+   right edge instead of over the parse status. */
 .db-desktop-update-status--ready {
+  flex: 1 1 0;
+  justify-content: safe flex-end;
+  container: db-desktop-update / inline-size;
   color: var(--db-text);
+}
+
+.squisq-status-bar:has(> .db-desktop-update-status--ready) > .squisq-status-spacer {
+  display: none;
+}
+
+/* Squisq hides its secondary readouts as the bar narrows. While an update is
+   waiting they go a step sooner, so long counts never crowd out the button. */
+@container squisq-status-bar (max-width: 640px) {
+  .squisq-status-bar:has(> .db-desktop-update-status--ready) > .squisq-status-lines {
+    display: none;
+  }
+}
+
+@container squisq-status-bar (max-width: 400px) {
+  .squisq-status-bar:has(> .db-desktop-update-status--ready) > .squisq-status-blocks {
+    display: none;
+  }
 }
 
 .db-desktop-update-status--error {
   color: var(--db-danger, #a33a35);
 }
 
+.db-desktop-update-message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.db-desktop-update-message--short {
+  display: none;
+}
+
+/* Each threshold is the measured width of the step above it (29.4em, 15.1em,
+   8.3em at 13px), plus slack for longer version numbers. In em so they track
+   the status bar's font size. */
+@container db-desktop-update (max-width: 31em) {
+  .db-desktop-update-message--full,
+  .db-desktop-update-link {
+    display: none;
+  }
+
+  .db-desktop-update-message--short {
+    display: block;
+  }
+}
+
+@container db-desktop-update (max-width: 15.75em) {
+  .db-desktop-update-message--short {
+    display: none;
+  }
+}
+
+@container db-desktop-update (max-width: 8.75em) {
+  .db-desktop-update-action-detail {
+    display: none;
+  }
+}
+
 .db-desktop-update-link,
 .db-desktop-update-action,
 .db-desktop-update-dismiss {
+  flex-shrink: 0;
   padding: 0;
   color: inherit;
   font: inherit;

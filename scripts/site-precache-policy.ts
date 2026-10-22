@@ -34,6 +34,9 @@ export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'css',
   'png',
   'webp',
+  // The hull-lettering wordmarks in _res/siteimages/ — the editor's boot
+  // splash, app menu, and every product page show them.
+  'svg',
   'ttf',
   'woff2',
   'webmanifest',

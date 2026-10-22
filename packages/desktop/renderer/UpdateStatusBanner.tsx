@@ -73,19 +73,36 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
       );
     }
 
-    case 'downloaded':
+    case 'downloaded': {
+      const readyMessage = `DocBlocks ${status.version} is ready to install.`;
+      const message = installError ?? (installing ? 'Saving documents before restart…' : null);
       return (
         <span
           className="squisq-status-item db-desktop-update-status db-desktop-update-status--ready"
           role="status"
           aria-live="polite"
         >
-          <span>
-            {installError ??
-              (installing
-                ? 'Saving documents before restart…'
-                : `DocBlocks ${status.version} is ready to install.`)}
-          </span>
+          {message ? (
+            <span className="db-desktop-update-message" title={message}>
+              {message}
+            </span>
+          ) : (
+            <>
+              {/* update-banner.css shows whichever of these fits the status bar. */}
+              <span
+                className="db-desktop-update-message db-desktop-update-message--full"
+                title={readyMessage}
+              >
+                {readyMessage}
+              </span>
+              <span
+                className="db-desktop-update-message db-desktop-update-message--short"
+                title={readyMessage}
+              >
+                Update ready.
+              </span>
+            </>
+          )}
           {status.releaseUrl && (
             <button
               type="button"
@@ -103,10 +120,17 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
             onClick={() => void restartToInstall()}
             disabled={installing}
           >
-            {installing ? 'Preparing restart…' : 'Restart to install'}
+            {installing ? (
+              'Preparing restart…'
+            ) : (
+              <>
+                Restart<span className="db-desktop-update-action-detail"> to install</span>
+              </>
+            )}
           </button>
         </span>
       );
+    }
 
     case 'error':
       if (dismissedError === status.message) return null;
@@ -116,7 +140,9 @@ export function UpdateStatusItem({ status }: UpdateStatusItemProps) {
           role="alert"
           aria-live="assertive"
         >
-          <span>{status.message}</span>
+          <span className="db-desktop-update-message" title={status.message}>
+            {status.message}
+          </span>
           <button
             type="button"
             className="db-desktop-update-dismiss"
