@@ -1,6 +1,6 @@
 {
   "name": "docblocks-mobile",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,8 +13,8 @@
     "open:android": "cap open android"
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.7.5",
-    "@bendyline/docblocks-react": "2.7.5",
+    "@bendyline/docblocks": "2.7.6",
+    "@bendyline/docblocks-react": "2.7.6",
     "@bendyline/gezel": "file:vendor/bendyline-gezel-1.2.2-docblocks.2.tgz",
     "@bendyline/gezel-app-sdk": "file:vendor/bendyline-gezel-app-sdk-1.1.2-docblocks.2.tgz",
     "@bendyline/gezel-capacitor": "file:vendor/bendyline-gezel-capacitor-0.1.0-docblocks.2.tgz",
