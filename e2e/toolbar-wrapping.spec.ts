@@ -82,6 +82,11 @@ test.describe('editor toolbar on a narrow desktop viewport', () => {
     await openWelcomeDocument(page);
 
     await expect(page.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
+    // The export control is lazy-loaded and renders nothing until its chunk
+    // arrives; measure the second row only once it is there.
+    await expect(
+      page.locator('.squisq-toolbar').getByRole('button', { name: 'Export and share' }),
+    ).toBeVisible();
 
     const controls = await toolbarControls(page);
     // The view tabs claim a row of their own, which is what pushes the
