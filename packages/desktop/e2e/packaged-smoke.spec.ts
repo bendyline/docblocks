@@ -165,10 +165,6 @@ test('grants capture only to the trusted renderer and exposes only working prese
   // Chromium's required transient user activation.
   // A headless macOS runner cannot operate the native screen picker or grant
   // TCC screen-recording consent. Windows exercises loopback audio too.
-  // This runs before the probe popup below opens and closes. On Linux CI,
-  // Chromium's X11 screen capturer intermittently failed to initialize
-  // ("Failed to initialize pixel buffer") right after that popup closed,
-  // leaving no screen to grant; the popup's window teardown is the suspect.
   if (process.platform !== 'darwin') {
     const requestSystemAudio = process.platform === 'win32';
     await packaged.window.evaluate((audio) => {

@@ -78,7 +78,7 @@ import {
 import { configureLinuxCredentialStorage } from './linux-credential-storage.js';
 import { vcRuntimePath } from './vc-runtime-path.js';
 import { configureDesktopPermissionPolicy } from './permission-policy.js';
-import { pickDisplayCaptureSource } from './display-capture-picker.js';
+import { listDisplayCaptureSources, pickDisplayCaptureSource } from './display-capture-picker.js';
 import { attachEditorContextMenu } from './context-menu.js';
 import {
   DESKTOP_DEVELOPMENT_SERVER_URL,
@@ -579,10 +579,7 @@ async function bootstrap(): Promise<void> {
         : Promise.resolve(null);
     },
     getDisplaySources: () =>
-      desktopCapturer.getSources({
-        types: ['screen', 'window'],
-        thumbnailSize: { width: 0, height: 0 },
-      }),
+      listDisplayCaptureSources((options) => desktopCapturer.getSources(options)),
   });
 
   // Strict headers on the top-level DocBlocks renderer only. The default
