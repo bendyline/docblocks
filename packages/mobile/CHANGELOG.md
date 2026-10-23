@@ -1,3 +1,27 @@
+## docblocks-mobile [1.0.6](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.5...docblocks-mobile@1.0.6) (2026-10-22)
+
+### Bug Fixes
+
+* Harden E2E diagnostics and VS Code web setup ([#33](https://github.com/bendyline/docblocks/issues/33)) ([f30a700](https://github.com/bendyline/docblocks/commit/f30a7004ccea33ef537151c3d872fa41ef8d5c7f))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.6
+* **@bendyline/docblocks-react:** upgraded to 2.7.6
+
+## docblocks-mobile [1.0.5](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.4...docblocks-mobile@1.0.5) (2026-10-21)
+
+### Bug Fixes
+
+* Release updates and editor hardening ([#32](https://github.com/bendyline/docblocks/issues/32)) ([53d58b2](https://github.com/bendyline/docblocks/commit/53d58b2b2b44587a69a2aab035b01123a1d65080))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.5
+* **@bendyline/docblocks-react:** upgraded to 2.7.5
+
 ## docblocks-mobile [1.0.4](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.3...docblocks-mobile@1.0.4) (2026-10-20)
 
 ### Bug Fixes
