@@ -1,5 +1,5 @@
-import { useEffect, useState, type RefObject } from 'react';
-import { isEditorDocumentImportFile } from './import-file-types.js';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { isEditorDocumentImportFile, isEditorMediaMimeType } from './import-file-types.js';
 
 /** Matches the explorer's internal drag marker so a tree reorder never imports. */
 const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
@@ -16,8 +16,9 @@ const INTERNAL_DRAG_TYPE = 'application/x-docblocks-entry';
  * container, so prop ordering against Squisq's own drop handling is not
  * deterministic; a capture-phase listener on this node is.
  *
- * Images are excluded by `isEditorDocumentImportFile` and fall through to
- * Squisq, which inserts them into the document at the drop point.
+ * Images, video and audio are excluded by `isEditorDocumentImportFile` and
+ * fall through to Squisq, which inserts them into the document at the drop
+ * point.
  */
 export function useEditorFileDrop(
   targetRef: RefObject<HTMLElement | null>,
@@ -25,6 +26,13 @@ export function useEditorFileDrop(
   onFiles: (files: File[]) => void,
 ): boolean {
   const [dropActive, setDropActive] = useState(false);
+  // Callers pass an inline callback. Re-subscribing for each new one would run
+  // the cleanup below on every render — including the one `setDropActive(true)`
+  // causes — and switch the drop affordance straight back off.
+  const onFilesRef = useRef(onFiles);
+  useEffect(() => {
+    onFilesRef.current = onFiles;
+  }, [onFiles]);
 
   useEffect(() => {
     const element = targetRef.current;
@@ -45,9 +53,7 @@ export function useEditorFileDrop(
       // item does expose and let the drop handler make the real decision.
       return items.some((item) => {
         const file = item.getAsFile();
-        return file
-          ? isEditorDocumentImportFile(file)
-          : !item.type.toLowerCase().startsWith('image/');
+        return file ? isEditorDocumentImportFile(file) : !isEditorMediaMimeType(item.type);
       });
     };
 
@@ -83,7 +89,7 @@ export function useEditorFileDrop(
       // image-only drop still reaches Squisq.
       event.preventDefault();
       event.stopPropagation();
-      onFiles(files);
+      onFilesRef.current(files);
     };
 
     element.addEventListener('dragenter', onDragEnter, true);
@@ -97,7 +103,7 @@ export function useEditorFileDrop(
       element.removeEventListener('drop', onDrop, true);
       setDropActive(false);
     };
-  }, [targetRef, enabled, onFiles]);
+  }, [targetRef, enabled]);
 
   return dropActive;
 }

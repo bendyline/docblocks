@@ -1,16 +1,26 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from '@bendyline/docblocks/host';
 
 const MEDIA_MIME_TYPES: Record<string, string> = {
+  aac: 'audio/aac',
   avif: 'image/avif',
+  flac: 'audio/flac',
   gif: 'image/gif',
   jpeg: 'image/jpeg',
   jpg: 'image/jpeg',
+  m4a: 'audio/mp4',
+  m4v: 'video/mp4',
+  mkv: 'video/x-matroska',
+  mov: 'video/quicktime',
   mp3: 'audio/mpeg',
   mp4: 'video/mp4',
+  oga: 'audio/ogg',
   ogg: 'audio/ogg',
+  ogv: 'video/ogg',
+  opus: 'audio/opus',
   png: 'image/png',
   svg: 'image/svg+xml',
   wav: 'audio/wav',
+  weba: 'audio/webm',
   webm: 'video/webm',
   webp: 'image/webp',
 };

@@ -11,18 +11,19 @@ Components: 279.
 The copied IronCalc formula engine and its selected upstream MIT license ship inside the renderer at `ironcalc/`.
 Electron's own license and Chromium third-party notices are copied as `licenses/ELECTRON_LICENSE.txt` and `licenses/ELECTRON_THIRD_PARTY_NOTICES.html` in the application resources directory.
 The bundled native AI and speech engines (llama.cpp, whisper.cpp, stable-diffusion.cpp, uv, and the components compiled into them) ship their verbatim license texts and a manifest under `gezel-native/<platform>/THIRD_PARTY_LICENSES/` in the application resources directory.
+The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship with their license at `node_modules/@bendyline/gezel-inference/dist/kokoro-lexicon/LICENSE` in `app.asar`.
 AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.
 
 ## Component manifest
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.2.7 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.1.7 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-catalog | 1.2.7 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-client | 1.2.7 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-inference | 1.0.2 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-knowledge | 1.2.7 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.2.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.1.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-catalog | 1.2.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-client | 1.2.8 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-inference | 1.0.3 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-knowledge | 1.2.8 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/gezk | 1.0.4 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.13.1 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
@@ -294,7 +295,7 @@ AI models, speech models, and voices are not part of this distribution. They are
 | yauzl | 3.4.0 | MIT | https://github.com/thejoshwolfe/yauzl |
 | yazl | 3.3.1 | MIT | https://github.com/thejoshwolfe/yazl |
 | zod | 4.6.5 | MIT | https://github.com/colinhacks/zod |
-| zod | 4.6.6 | MIT | https://github.com/colinhacks/zod |
+| zod | 4.6.7 | MIT | https://github.com/colinhacks/zod |
 | zwitch | 2.0.4 | MIT | https://github.com/wooorm/zwitch |
 
 ## License and notice texts
@@ -314,7 +315,7 @@ The following locked packages declare a license identifier but publish no packag
 | onnxruntime-node | 1.30.0 | MIT | https://www.npmjs.com/package/onnxruntime-node |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.1.7, @bendyline/gezel-catalog@1.2.7, @bendyline/gezel-client@1.2.7, @bendyline/gezel-inference@1.0.2, @bendyline/gezel-knowledge@1.2.7, @bendyline/gezel@1.2.7, @bendyline/gezk@1.0.4
+Components: @bendyline/gezel-app-sdk@1.1.8, @bendyline/gezel-catalog@1.2.8, @bendyline/gezel-client@1.2.8, @bendyline/gezel-inference@1.0.3, @bendyline/gezel-knowledge@1.2.8, @bendyline/gezel@1.2.8, @bendyline/gezk@1.0.4
 Source files: node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezk/LICENSE, node_modules/@bendyline/gezel-inference/LICENSE, node_modules/@bendyline/gezel-inference/node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, packages/desktop/node_modules/@bendyline/gezel-app-sdk/LICENSE
 ==============================================================================
 MIT License
@@ -544,7 +545,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
-Components: zod@4.6.5, zod@4.6.6
+Components: zod@4.6.5, zod@4.6.7
 Source files: node_modules/@bendyline/gezel-knowledge/node_modules/zod/LICENSE, packages/desktop/node_modules/zod/LICENSE
 ==============================================================================
 MIT License

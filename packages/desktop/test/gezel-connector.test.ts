@@ -641,6 +641,8 @@ describe('Gezel connector with the real embedding SDK', () => {
         home: path.join(root, 'apps', 'docblocks'),
         role: 'user',
         embeddedInferenceOnly: true,
+        // gezel-app-sdk keeps a hosted daemon's log lines off the app's stdout.
+        logOutput: 'stderr',
         port: 0,
         preferCanonicalPort: false,
       },

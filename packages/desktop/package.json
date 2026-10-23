@@ -42,8 +42,8 @@
     "test:e2e:packaged:only": "playwright test --config=e2e/playwright.packaged.config.ts"
   },
   "dependencies": {
-    "@bendyline/gezel-app-sdk": "1.1.7",
-    "@bendyline/gezel-inference": "1.0.2",
+    "@bendyline/gezel-app-sdk": "1.1.8",
+    "@bendyline/gezel-inference": "1.0.3",
     "@huggingface/transformers": "4.3.1",
     "chokidar": "4.0.3",
     "electron-updater": "6.8.9",
@@ -53,7 +53,7 @@
   "devDependencies": {
     "@bendyline/docblocks": "2.7.6",
     "@bendyline/docblocks-react": "2.7.6",
-    "@bendyline/gezel": "1.2.7",
+    "@bendyline/gezel": "1.2.8",
     "@bendyline/squisq": "2.13.1",
     "@bendyline/squisq-editor-react": "2.13.3",
     "@bendyline/squisq-formats": "2.8.2",

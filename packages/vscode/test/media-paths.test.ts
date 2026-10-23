@@ -36,4 +36,10 @@ describe('VS Code media paths', () => {
     expect(guessMediaMimeType('mikehome_files/mikerv.jpg')).to.equal('image/jpeg');
     expect(guessMediaMimeType('mikehome_files/audio.webm')).to.equal('video/webm');
   });
+
+  it('types the video and audio a drop inserts as players', () => {
+    expect(guessMediaMimeType('mikehome_files/IMG_0042.MOV')).to.equal('video/quicktime');
+    expect(guessMediaMimeType('mikehome_files/memo.m4a')).to.equal('audio/mp4');
+    expect(guessMediaMimeType('mikehome_files/take.flac')).to.equal('audio/flac');
+  });
 });
