@@ -42,6 +42,8 @@ export interface FakeGezel {
   readonly home: string;
   readonly chats: readonly RecordedChat[];
   readonly registrations: number;
+  /** Bodies of `/v1/knowledge/retrieve` requests, in order. */
+  readonly retrievals: readonly Record<string, unknown>[];
   /** Chat streams the client closed before the last chunk. */
   readonly abandonedStreams: number;
   /** Approve the pending connection, as a person typing the code would. */
@@ -59,6 +61,11 @@ export interface FakeGezelOptions {
   readonly chatProgress?: readonly AiChatProgress[];
   /** Replies for exercising truncation and continuation across requests. */
   readonly replies?: readonly { text: string; finishReason: 'stop' | 'length' }[];
+  /** One installed, enabled catalog, and the passages every retrieval returns. */
+  readonly knowledge?: {
+    readonly catalog: { readonly id: string; readonly name: string };
+    readonly passages: readonly { readonly title: string; readonly text: string }[];
+  };
 }
 
 async function readJson(request: http.IncomingMessage): Promise<Record<string, unknown>> {
@@ -299,6 +306,8 @@ async function streamUpstream(
 
 export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGezel> {
   const chats: RecordedChat[] = [];
+  const retrievals: Record<string, unknown>[] = [];
+  const knowledge = options.knowledge;
   let registrations = 0;
   let abandonedStreams = 0;
   let approved = false;
@@ -351,7 +360,24 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
         sendJson(response, 401, { error: { code: 'unauthorized', message: 'Unauthorized' } });
       } else if (request.method === 'GET' && url.pathname === '/v1/knowledge/state') {
         sendJson(response, 200, {
-          catalogs: [],
+          catalogs: knowledge
+            ? [
+                {
+                  id: knowledge.catalog.id,
+                  name: knowledge.catalog.name,
+                  description: 'Fake reference articles.',
+                  version: '1',
+                  installedVersion: '1',
+                  enabled: true,
+                  updateAvailable: false,
+                  downloadBytes: null,
+                  documents: knowledge.passages.length,
+                  state: 'installed',
+                  percent: null,
+                  message: null,
+                },
+              ]
+            : [],
           reranker: { ready: true, downloading: false, message: null },
         });
       } else if (request.method === 'GET' && url.pathname === '/v1/knowledge/relevance') {
@@ -364,9 +390,19 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
       } else if (request.method === 'POST' && url.pathname === '/v1/knowledge/retrieve') {
         // Gezel's own validation: the SDK picks `auto`; older SDKs send `required`.
         const query = await readJson(request);
+        retrievals.push(query);
         if (query.rerank !== 'required' && query.rerank !== 'auto') {
           sendJson(response, 422, { error: 'Invalid enum value' });
-        } else sendJson(response, 200, { reranked: true, passages: [] });
+        } else {
+          const passages = (knowledge?.passages ?? []).map((passage, index) => ({
+            uri: `knowledge://fake/${knowledge!.catalog.id}/doc-${index + 1}#chunk=${'0'.repeat(31)}${index + 1}`,
+            title: passage.title,
+            text: passage.text,
+            catalogId: knowledge!.catalog.id,
+            version: '1',
+          }));
+          sendJson(response, 200, { reranked: true, passages });
+        }
       } else if (request.method === 'GET' && url.pathname === '/v1/models') {
         sendJson(response, 200, {
           object: 'list',
@@ -425,6 +461,7 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
   return {
     home: options.home,
     chats,
+    retrievals,
     get registrations() {
       return registrations;
     },

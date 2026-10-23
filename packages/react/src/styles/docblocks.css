@@ -6649,6 +6649,11 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   display: none;
 }
 
+/* A long catalog name truncates; the icon never shrinks to make room. */
+.db-ai-knowledge > summary svg {
+  flex: none;
+}
+
 .db-ai-knowledge > summary:hover {
   background: var(--db-bg-hover);
 }
@@ -6677,7 +6682,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-knowledge-count {
   flex: none;
-  white-space: pre;
+  /* Its leading space separates the words for reading; the gap spaces the pill. */
+  white-space: nowrap;
 }
 
 .db-ai-knowledge p,
