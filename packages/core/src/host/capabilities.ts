@@ -52,6 +52,8 @@ export interface HostCapabilities {
   readonly exportRememberedTargets: boolean;
   readonly openSavedExports: boolean;
   readonly externalResources: boolean;
+  /** A loose OS-opened file's relative images can be read from beside it. */
+  readonly externalRelativeMedia: boolean;
   readonly openRequests: boolean;
   readonly menuCommands: boolean;
   readonly pinnedDocumentMirror: boolean;
@@ -106,6 +108,7 @@ const NO_CAPABILITIES: HostCapabilities = Object.freeze({
   exportRememberedTargets: false,
   openSavedExports: false,
   externalResources: false,
+  externalRelativeMedia: false,
   openRequests: false,
   menuCommands: false,
   pinnedDocumentMirror: false,
@@ -216,6 +219,7 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
       hasMethod(exports, 'resolveTarget') && hasMethod(exports, 'pickTarget'),
     openSavedExports: hasMethod(exports, 'openSaved'),
     externalResources: hasMethod(host.external, 'readText'),
+    externalRelativeMedia: hasMethod(host.external, 'readRelativeMedia'),
     openRequests: hasMethod(host, 'onOpenRequest'),
     menuCommands: hasMethod(host, 'onMenuCommand'),
     pinnedDocumentMirror: hasMethod(host.menu, 'setPinnedDocuments'),

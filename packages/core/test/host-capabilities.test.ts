@@ -19,7 +19,7 @@ function electronHost(): Record<string, unknown> {
     env: { ...VALID_ENV },
     fs: { readFile: () => undefined },
     fsV2: { open: () => undefined },
-    external: { readText: () => undefined },
+    external: { readText: () => undefined, readRelativeMedia: () => undefined },
     workspaces: {
       list: () => undefined,
       getDefault: () => undefined,
@@ -202,6 +202,7 @@ describe('deriveHostCapabilities', () => {
     expect(capabilities.openSavedExports).to.equal(false);
 
     // Genuinely absent.
+    expect(capabilities.externalRelativeMedia).to.equal(false);
     expect(capabilities.revealInFileManager).to.equal(false);
     expect(capabilities.openWorkspaceFolder).to.equal(false);
     expect(capabilities.menuCommands).to.equal(false);

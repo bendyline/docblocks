@@ -489,6 +489,53 @@ test('quick close flushes a loose OS-opened file through its origin target', asy
   expect(fs.readFileSync(externalFile, 'utf8')).toContain(sentinel);
 });
 
+test('a loose OS-opened file shows the media beside it, and nothing outside', async ({
+  launchApp,
+  userDataDir,
+}) => {
+  const folder = path.join(userDataDir, 'loose-media');
+  const pixel = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  fs.mkdirSync(path.join(folder, 'shots', 'journey'), { recursive: true });
+  fs.mkdirSync(path.join(folder, 'report_files'), { recursive: true });
+  fs.writeFileSync(path.join(folder, 'shots', 'journey', 'beside.png'), pixel);
+  fs.writeFileSync(path.join(folder, 'report_files', 'sidecar.png'), pixel);
+  fs.writeFileSync(path.join(userDataDir, 'outside.png'), pixel);
+  fs.symlinkSync(path.join(userDataDir, 'outside.png'), path.join(folder, 'shots', 'linked.png'));
+  const report = path.join(folder, 'report.md');
+  fs.writeFileSync(
+    report,
+    [
+      '# Loose media',
+      '',
+      '<img src="shots/journey/beside.png" alt="beside" width="40">',
+      '',
+      '![sidecar](report_files/sidecar.png)',
+      '',
+      '![escape](../outside.png)',
+      '',
+      '![linked](shots/linked.png)',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const { window } = await launchApp([report]);
+  await expect(window.locator('[contenteditable="true"]').first()).toContainText('Loose media', {
+    timeout: 30_000,
+  });
+  const figures = window.locator('figure[data-image-state]');
+  await expect(figures).toHaveCount(4);
+  // Beside the document, as other tools write it, and in its own sidecar.
+  await expect(figures.nth(0)).toHaveAttribute('data-image-state', 'ready');
+  await expect(figures.nth(1)).toHaveAttribute('data-image-state', 'ready');
+  // Above the folder, and through a link that leaves it.
+  await expect(figures.nth(2)).toHaveAttribute('data-image-state', 'error');
+  await expect(figures.nth(3)).toHaveAttribute('data-image-state', 'error');
+});
+
 test('an approved window close cannot be vetoed again by renderer beforeunload', async ({
   launchApp,
 }) => {

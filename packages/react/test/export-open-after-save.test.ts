@@ -117,6 +117,22 @@ describe('open after export', () => {
     expect(document.querySelector('.db-export-dialog')).to.equal(null);
   });
 
+  it('confirms the saved path and opens that result on request without exporting again', async () => {
+    await mount();
+    await openDialog();
+    await act(async () => button('Save MD')!.click());
+    await until(() => !!button('Open exported file'));
+    expect(document.querySelector('.db-export-completion')?.textContent).to.include(
+      'Saved /saved/report.md',
+    );
+    expect(calls).to.deep.equal(['save']);
+    await act(async () => button('Open exported file')!.click());
+    expect(calls).to.deep.equal(['save', 'open']);
+    expect(loadOpenAfterExport()).to.equal(false);
+    await act(async () => button('Dismiss')!.click());
+    expect(document.querySelector('.db-export-completion')).to.equal(null);
+  });
+
   for (const outcome of ['cancelled', 'failed'] as const) {
     it(`never opens a ${outcome} save`, async () => {
       saveOpenAfterExport(true);
@@ -131,6 +147,7 @@ describe('open after export', () => {
       await until(() => calls.length > 0 && !button('Save MD')?.disabled);
       expect(calls).to.deep.equal(['save']);
       expect(document.querySelector('.db-export-dialog')).not.to.equal(null);
+      expect(document.querySelector('.db-export-completion')).to.equal(null);
     });
   }
 

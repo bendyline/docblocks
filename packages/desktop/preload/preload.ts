@@ -169,6 +169,12 @@ const externalApi: DocBlocksHostExternalAPI = {
     ipcRenderer.invoke('external:commitText', resourceId, content, expectedContent),
   commitBinary: (resourceId, data, expectedVersion) =>
     ipcRenderer.invoke('external:commitBinary', resourceId, data, expectedVersion),
+  readRelativeMedia: (resourceId, relativePath) =>
+    ipcRenderer.invoke(
+      'external:readRelativeMedia',
+      resourceId,
+      relativePath,
+    ) as Promise<ArrayBuffer | null>,
   revoke: (resourceId) => ipcRenderer.invoke('external:revoke', resourceId),
 };
 

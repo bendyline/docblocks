@@ -13,6 +13,7 @@ import {
 } from '@bendyline/docblocks/host';
 
 import {
+  resolveExternalRelativeMedia,
   resolveExternalResource,
   revokeExternalOwner,
   revokeExternalResource,
@@ -103,6 +104,24 @@ async function readBoundedFile(absolutePath: string, maximumBytes: number): Prom
   }
 }
 
+/**
+ * Read one media file beside a loose document. Only an existing regular file is
+ * opened: opening a FIFO would wait for a writer, and a symbolic link (in any
+ * component) fails the bounded read's physical-identity check.
+ */
+async function readRelativeMediaFile(absolutePath: string): Promise<Buffer | null> {
+  let stat: Awaited<ReturnType<typeof fs.lstat>>;
+  try {
+    stat = await fs.lstat(absolutePath);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return null;
+    throw error;
+  }
+  if (!stat.isFile()) throw new Error('Relative media must be a regular file');
+  return readBoundedFile(absolutePath, HOST_WIRE_LIMITS.binaryBytes);
+}
+
 async function assertDescriptorStillNamesGrantedFile(
   absolutePath: string,
   descriptorStat: Awaited<ReturnType<fs.FileHandle['stat']>>,
@@ -148,6 +167,22 @@ export function registerExternalIpc(): void {
     const resourceId = requireResourceId(resourceValue);
     const absolutePath = await resolveExternalResource(owner.id, resourceId);
     const bytes = await readBoundedFile(absolutePath, HOST_WIRE_LIMITS.binaryBytes);
+    if (!bytes) return null;
+    const result = new Uint8Array(bytes.byteLength);
+    result.set(bytes);
+    return result.buffer;
+  });
+
+  ipcMain.handle('external:readRelativeMedia', async (event, ...args: unknown[]) => {
+    const owner = ownerFor(event);
+    assertIpcArgumentCount(args, 2);
+    const [resourceValue, pathValue] = args;
+    const resourceId = requireResourceId(resourceValue);
+    if (!isBoundedString(pathValue, HOST_WIRE_LIMITS.pathCharacters, 1)) {
+      throw new Error('Invalid relative media path');
+    }
+    const absolutePath = await resolveExternalRelativeMedia(owner.id, resourceId, pathValue);
+    const bytes = await readRelativeMediaFile(absolutePath);
     if (!bytes) return null;
     const result = new Uint8Array(bytes.byteLength);
     result.set(bytes);

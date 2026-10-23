@@ -17,6 +17,9 @@
  *     (`notes_files/image.png`) references — so legacy markdown and
  *     exports from other tools both work
  *   • Types resolved URLs by file extension, as the workspace containers do
+ *   • Optionally falls back, read-only, to a reference as Markdown written
+ *     elsewhere spells it (`shots/a.png` beside the document) when the
+ *     sidecar holds no such file
  */
 
 import type { MediaProvider, MediaEntry } from '@bendyline/squisq/schemas';
@@ -27,9 +30,20 @@ function stripExt(name: string): string {
   return name.replace(/\.[^.]+$/, '');
 }
 
+export interface FileMediaProviderOptions {
+  /**
+   * Read a reference the sidecar does not hold, relative to the document
+   * rather than to its sidecar. Receives the reference as written and
+   * resolves null when nothing is there. Never consulted for writes, and a
+   * failure counts as absence: the fallback can only add resolutions.
+   */
+  readonly readDocumentRelative?: (ref: string) => Promise<ArrayBuffer | null>;
+}
+
 export function createFileMediaProvider(
   container: ContentContainer,
   markdownBasename: string,
+  options: FileMediaProviderOptions = {},
 ): MediaProvider {
   const folder = stripExt(markdownBasename) + '_files';
   const prefix = folder + '/';
@@ -43,20 +57,60 @@ export function createFileMediaProvider(
     return clean.startsWith(prefix) ? clean : prefix + clean;
   }
 
+  /**
+   * Where a reference's document-relative resolution is cached: apart from
+   * the sidecar file it shares a key with, so `notes_files/a.png` never
+   * displays what `a.png` found beside the document.
+   */
+  function fallbackSlot(key: string): string {
+    return '\0' + key;
+  }
+
   function invalidate(key: string): void {
     generations.set(key, (generations.get(key) ?? 0) + 1);
-    pending.delete(key);
-    const cached = blobUrlCache.get(key);
-    if (cached) URL.revokeObjectURL(cached);
-    blobUrlCache.delete(key);
+    // A sidecar write supersedes whatever the document-relative read found.
+    for (const slot of [key, fallbackSlot(key)]) {
+      pending.delete(slot);
+      const cached = blobUrlCache.get(slot);
+      if (cached) URL.revokeObjectURL(cached);
+      blobUrlCache.delete(slot);
+    }
   }
 
   function resolveUrl(ref: string): Promise<string> {
     if (disposed) return Promise.resolve(ref);
     const key = toKey(ref);
-    const cached = blobUrlCache.get(key);
+    const readDocumentRelative = options.readDocumentRelative;
+    // A rooted reference, or one that already names the sidecar, has no other
+    // home. Every caller sharing a fallback slot therefore spells it alike.
+    if (!readDocumentRelative || ref.startsWith('/') || ref.startsWith(prefix)) {
+      return resolveSlot(ref, key, key, () => container.readFile(key));
+    }
+    const found = blobUrlCache.get(key) ?? blobUrlCache.get(fallbackSlot(key));
+    if (found) return Promise.resolve(found);
+    const resolveFallback = () =>
+      resolveSlot(ref, key, fallbackSlot(key), () =>
+        // The fallback can only add resolutions, never new failures.
+        readDocumentRelative(ref).catch(() => null),
+      );
+    // `./shots/a.png` or `../shared/a.png` cannot name a file in the sidecar.
+    if (key.split('/').some((segment) => segment === '.' || segment === '..')) {
+      return resolveFallback();
+    }
+    return resolveSlot(ref, key, key, () => container.readFile(key)).then((url) =>
+      url !== ref || disposed ? url : resolveFallback(),
+    );
+  }
+
+  function resolveSlot(
+    ref: string,
+    key: string,
+    slot: string,
+    read: () => Promise<ArrayBuffer | null>,
+  ): Promise<string> {
+    const cached = blobUrlCache.get(slot);
     if (cached) return Promise.resolve(cached);
-    const existing = pending.get(key);
+    const existing = pending.get(slot);
     if (existing) {
       // Equivalent paths share I/O, but absence must return each caller's
       // original reference rather than the spelling used by the first caller.
@@ -64,19 +118,19 @@ export function createFileMediaProvider(
     }
     const generation = generations.get(key) ?? 0;
     const work = (async () => {
-      const data = await container.readFile(key);
+      const data = await read();
       if (disposed) return ref;
       if ((generations.get(key) ?? 0) !== generation) return resolveUrl(ref);
       if (!data) return ref;
       // Derive the MIME from the path. Listing the container for it walked
       // the whole workspace once per media reference.
       const url = URL.createObjectURL(new Blob([data], { type: guessMimeType(key) }));
-      blobUrlCache.set(key, url);
+      blobUrlCache.set(slot, url);
       return url;
     })().finally(() => {
-      if (pending.get(key)?.promise === work) pending.delete(key);
+      if (pending.get(slot)?.promise === work) pending.delete(slot);
     });
-    pending.set(key, { ref, promise: work });
+    pending.set(slot, { ref, promise: work });
     return work;
   }
 

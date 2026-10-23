@@ -14,7 +14,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/squisq | 2.13.0 | MIT | https://github.com/bendyline/squisq |
+| @bendyline/squisq | 2.13.1 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-graph | 2.13.0 | MIT | https://github.com/bendyline/squisq |
 | @types/debug | 4.1.12 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
 | @types/hast | 3.0.4 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped |
@@ -133,7 +133,7 @@ This notice is included in the published npm tarball. Transitive packages instal
 Package-local license, copying, and notice files are reproduced below. Where a published package omits its repository license, the reviewed aggregate or README identified in `Source files` supplies the retained material.
 
 ==============================================================================
-Components: @bendyline/squisq-graph@2.13.0, @bendyline/squisq@2.13.0
+Components: @bendyline/squisq-graph@2.13.0, @bendyline/squisq@2.13.1
 Source files: node_modules/@bendyline/squisq-graph/LICENSE, node_modules/@bendyline/squisq/LICENSE
 ==============================================================================
 MIT License
@@ -189,7 +189,7 @@ repository license, the pinned upstream copy is vendored and identified below.
 COMPONENTS
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.0
+Components: @bendyline/squisq@2.13.1
 Source files: node_modules/@bendyline/squisq/NOTICE.md
 ==============================================================================
 # Third-Party Notices for @bendyline/squisq
@@ -220,7 +220,7 @@ third-party license texts for bundled code and data are shipped in
 THIRD_PARTY_LICENSES.txt.
 
 ==============================================================================
-Components: @bendyline/squisq@2.13.0
+Components: @bendyline/squisq@2.13.1
 Source files: node_modules/@bendyline/squisq/THIRD_PARTY_LICENSES.txt
 ==============================================================================
 THIRD-PARTY LICENSES FOR @bendyline/squisq

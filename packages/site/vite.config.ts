@@ -397,6 +397,13 @@ export default defineConfig({
       // Squisq formats is excluded for linked development, so its nested CJS
       // XML parser must receive an ESM interop wrapper explicitly.
       '@bendyline/squisq-formats > @xmldom/xmldom',
+      // The first PDF export must not discover new dependencies and reload
+      // the editor before its download completes during linked development.
+      '@bendyline/squisq-formats > pdf-lib',
+      '@bendyline/squisq-formats > @pdf-lib/fontkit',
+      '@bendyline/squisq-formats > @pdf-lib/upng',
+      '@bendyline/squisq-formats > pdfjs-dist',
+      '@bendyline/squisq-formats > pdfjs-dist/legacy/build/pdf.mjs',
       'ngeohash',
       'pako',
       'lie',
@@ -412,6 +419,9 @@ export default defineConfig({
       'util-deprecate',
     ],
     exclude: [
+      // The optional Parquet reader is already ESM. Discovering it through
+      // the lazy formats entry must not reload an in-progress export either.
+      'hyparquet',
       // Symlinked squisq packages — serve from source for live dev
       '@bendyline/squisq',
       '@bendyline/squisq-react',

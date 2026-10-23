@@ -684,6 +684,10 @@ try {
             await page.getByRole('button', { name: 'Export and share' }).click();
             await page.getByRole('menuitem', { name: 'Export video...' }).click();
             await page.getByRole('dialog', { name: 'Export Video' }).waitFor({ timeout: 30_000 });
+            await page
+              .getByRole('dialog')
+              .locator('summary', { hasText: 'Advanced options' })
+              .click();
             await page.getByRole('combobox', { name: 'Animations and transitions' }).selectOption({
               label: animations === 'enabled' ? 'Enabled' : 'Disabled — smaller files',
             });

@@ -282,6 +282,14 @@ export interface DocBlocksHostExternalAPI {
     data: ArrayBuffer | Uint8Array,
     expectedVersion: string | null,
   ): Promise<ExternalBinaryCommitResult>;
+  /**
+   * Read, never write, a media file inside the folder of a loose markdown
+   * grant, so the document's relative image paths render. `relativePath` is a
+   * canonical `WorkspacePath` from that folder naming an image, audio, or video
+   * file; it cannot climb out or follow a symbolic link. Resolves null when
+   * the file does not exist. Bundle grants carry their media and refuse this.
+   */
+  readRelativeMedia?(resourceId: string, relativePath: string): Promise<ArrayBuffer | null>;
   /** Revoke one external resource when its transient document is closed. */
   revoke(resourceId: string): Promise<void>;
 }

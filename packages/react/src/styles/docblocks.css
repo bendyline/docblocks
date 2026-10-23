@@ -2945,6 +2945,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   margin: 0;
 }
 
+.db-settings-speech-model .db-settings-hint a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .db-settings-speech-model .db-settings-ai-download-progress {
   min-width: 140px;
   margin-top: 0;
@@ -3472,6 +3477,37 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 .db-export-more-formats a {
   color: var(--db-accent);
   font-weight: 600;
+}
+
+.db-export-more-formats summary {
+  cursor: pointer;
+}
+
+.db-export-completion {
+  position: fixed;
+  z-index: 200;
+  right: 16px;
+  bottom: calc(48px + var(--db-safe-bottom, 0px));
+  box-sizing: border-box;
+  width: min(400px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: var(--db-bg-raised);
+  color: var(--db-text);
+  box-shadow: 0 4px 16px var(--db-shadow);
+  font: 13px/1.5 var(--db-ui-font);
+  overflow-wrap: anywhere;
+}
+
+.db-export-completion p {
+  margin: 0 0 8px;
+}
+
+.db-export-completion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .db-export-btn {

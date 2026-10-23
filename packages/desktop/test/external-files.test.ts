@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import {
   grantExternalPath,
+  resolveExternalRelativeMedia,
   resolveExternalResource,
   revokeExternalOwner,
   revokeExternalResource,
@@ -41,6 +42,45 @@ describe('external file grants', () => {
     const ownerWide = grantExternalPath(3, file);
     revokeExternalOwner(3);
     await expectRejected(resolveExternalResource(3, ownerWide), 'expired');
+  });
+
+  describe('relative media', () => {
+    it('confines a loose document to media inside its own folder', async () => {
+      const grant = grantExternalPath(4, file, { relativeMedia: true });
+      const parent = await fs.realpath(directory);
+
+      expect(await resolveExternalRelativeMedia(4, grant, 'shots/journey/j02.png')).to.equal(
+        path.join(parent, 'shots', 'journey', 'j02.png'),
+      );
+      for (const relativePath of [
+        '../outside.png',
+        'shots/../../outside.png',
+        './a.png',
+        '/etc/a.png',
+        'shots//a.png',
+        'shots\\a.png',
+        'C:/a.png',
+        'notes.md',
+        'id_ed25519',
+        '',
+      ]) {
+        await expectRejected(
+          resolveExternalRelativeMedia(4, grant, relativePath),
+          'Invalid relative media path',
+        );
+      }
+      await expectRejected(resolveExternalRelativeMedia(5, grant, 'a.png'), 'another window');
+      revokeExternalOwner(4);
+    });
+
+    it('refuses a grant minted without relative media, such as a bundle', async () => {
+      const grant = grantExternalPath(6, file);
+      await expectRejected(
+        resolveExternalRelativeMedia(6, grant, 'a.png'),
+        'does not grant relative media',
+      );
+      revokeExternalOwner(6);
+    });
   });
 });
 

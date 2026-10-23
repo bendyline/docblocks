@@ -292,4 +292,125 @@ describe('file media provider', () => {
       restore();
     }
   });
+
+  describe('document-relative fallback', () => {
+    function bytesOf(...values: number[]): ArrayBuffer {
+      return new Uint8Array(values).buffer;
+    }
+
+    it('reads a reference beside the document when the sidecar has none', async () => {
+      const { probe, restore } = installObjectUrlProbe();
+      const asked: string[] = [];
+      const provider = createFileMediaProvider(new MemoryContentContainer(), 'report.md', {
+        readDocumentRelative: async (ref) => {
+          asked.push(ref);
+          return ref === 'shots/a.png' ? bytesOf(7) : null;
+        },
+      });
+      try {
+        expect(await provider.resolveUrl('shots/a.png')).to.equal('blob:media-1');
+        expect(probe.created[0]?.type).to.equal('image/png');
+        // Cached: a second render neither rereads nor mints another URL.
+        expect(await provider.resolveUrl('shots/a.png')).to.equal('blob:media-1');
+        expect(asked).to.deep.equal(['shots/a.png']);
+        expect(await provider.resolveUrl('shots/missing.png')).to.equal('shots/missing.png');
+      } finally {
+        provider.dispose();
+        restore();
+      }
+      expect(probe.revoked).to.deep.equal(['blob:media-1']);
+    });
+
+    it('prefers the sidecar and never falls back for sidecar or rooted references', async () => {
+      const { restore } = installObjectUrlProbe();
+      const container = new MemoryContentContainer();
+      await container.writeFile('report_files/a.png', new Uint8Array([1]), 'image/png');
+      const asked: string[] = [];
+      const provider = createFileMediaProvider(container, 'report.md', {
+        readDocumentRelative: async (ref) => {
+          asked.push(ref);
+          return bytesOf(9);
+        },
+      });
+      try {
+        expect(await provider.resolveUrl('a.png')).to.equal('blob:media-1');
+        expect(await provider.resolveUrl('report_files/b.png')).to.equal('report_files/b.png');
+        expect(await provider.resolveUrl('/b.png')).to.equal('/b.png');
+        expect(asked).to.deep.equal([]);
+      } finally {
+        provider.dispose();
+        restore();
+      }
+    });
+
+    it('keeps a fallback hit apart from the sidecar file sharing its key', async () => {
+      const { restore } = installObjectUrlProbe();
+      const provider = createFileMediaProvider(new MemoryContentContainer(), 'report.md', {
+        readDocumentRelative: async () => bytesOf(3),
+      });
+      try {
+        expect(await provider.resolveUrl('shots/a.png')).to.equal('blob:media-1');
+        // `report_files/shots/a.png` is a different file, and it does not exist.
+        expect(await provider.resolveUrl('report_files/shots/a.png')).to.equal(
+          'report_files/shots/a.png',
+        );
+      } finally {
+        provider.dispose();
+        restore();
+      }
+    });
+
+    it('sends dot-segment references straight to the fallback', async () => {
+      const { restore } = installObjectUrlProbe();
+      const container = new MemoryContentContainer();
+      container.readFile = async () => {
+        throw new Error('A dot-segment reference cannot name a sidecar file');
+      };
+      const asked: string[] = [];
+      const provider = createFileMediaProvider(container, 'report.md', {
+        readDocumentRelative: async (ref) => {
+          asked.push(ref);
+          return bytesOf(5);
+        },
+      });
+      try {
+        expect(await provider.resolveUrl('./shots/a.png')).to.equal('blob:media-1');
+        expect(await provider.resolveUrl('../shared/b.png')).to.equal('blob:media-2');
+        expect(asked).to.deep.equal(['./shots/a.png', '../shared/b.png']);
+      } finally {
+        provider.dispose();
+        restore();
+      }
+    });
+
+    it('treats a failing fallback as absence', async () => {
+      const provider = createFileMediaProvider(new MemoryContentContainer(), 'report.md', {
+        readDocumentRelative: async () => {
+          throw new Error('grant revoked');
+        },
+      });
+      expect(await provider.resolveUrl('shots/a.png')).to.equal('shots/a.png');
+      provider.dispose();
+    });
+
+    it('lets an upload to the sidecar supersede the fallback', async () => {
+      const { probe, restore } = installObjectUrlProbe();
+      const container = new MemoryContentContainer();
+      const provider = createFileMediaProvider(container, 'report.md', {
+        readDocumentRelative: async () => bytesOf(1),
+      });
+      try {
+        expect(await provider.resolveUrl('shots/a.png')).to.equal('blob:media-1');
+        await provider.addMedia('shots/a.png', new Uint8Array([2]), 'image/png');
+        expect(probe.revoked).to.include('blob:media-1');
+        expect(await provider.resolveUrl('shots/a.png')).to.equal('blob:media-2');
+        expect(Array.from(new Uint8Array(await probe.created[1]!.arrayBuffer()))).to.deep.equal([
+          2,
+        ]);
+      } finally {
+        provider.dispose();
+        restore();
+      }
+    });
+  });
 });
