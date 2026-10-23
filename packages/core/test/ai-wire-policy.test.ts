@@ -21,6 +21,18 @@ const VALID_REQUEST = Object.freeze({
 });
 
 describe('parseAiChatRequest', () => {
+  it('accepts a knowledge search and a citation request, bounded', () => {
+    const request = { ...VALID_REQUEST, knowledgeQuery: 'Panama Hotel', knowledgeCitations: true };
+    expect(parseAiChatRequest(request)).to.deep.equal(request);
+    for (const invalid of [
+      { ...VALID_REQUEST, knowledgeQuery: '' },
+      { ...VALID_REQUEST, knowledgeQuery: 'x'.repeat(AI_WIRE_LIMITS.knowledgeQueryCharacters + 1) },
+      { ...VALID_REQUEST, knowledgeCitations: 'yes' },
+    ]) {
+      expect(parseAiChatRequest(invalid)).to.equal(null);
+    }
+  });
+
   it('accepts a minimal request and drops nothing', () => {
     expect(parseAiChatRequest({ ...VALID_REQUEST })).to.deep.equal({
       messages: [{ role: 'user', content: 'Draft an intro.' }],
@@ -230,7 +242,14 @@ describe('parseAiChatEvent', () => {
         { catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel', 'Nihonmachi'] },
         { catalogId: 'law', name: 'Alaska caselaw', titles: [] },
       ],
-      evidence: ['Built in 1910 by Sabro Ozasa.', 'City of Seattle.'],
+      evidence: [
+        {
+          title: 'Panama Hotel (Seattle)',
+          catalogId: 'pnw',
+          text: 'Built in 1910 by Sabro Ozasa.',
+        },
+        { title: '', catalogId: 'law', text: 'City of Seattle.' },
+      ],
     };
     expect(parseAiChatEvent({ kind: 'knowledge', knowledge })).to.deep.equal({
       kind: 'knowledge',
@@ -247,7 +266,8 @@ describe('parseAiChatEvent', () => {
   it('rejects a knowledge report that is malformed or unbounded', () => {
     const source = { catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] };
     const title = 'x'.repeat(AI_WIRE_LIMITS.knowledgeTitleCharacters + 1);
-    const evidence = ['A passage.'];
+    const passage = { title: 'Panama Hotel', catalogId: 'pnw', text: 'A passage.' };
+    const evidence = [passage];
     for (const knowledge of [
       { outcome: 'used', sources: [], evidence },
       { outcome: 'used', sources: [source, source], evidence },
@@ -269,16 +289,22 @@ describe('parseAiChatEvent', () => {
       },
       { outcome: 'used', sources: [source] },
       { outcome: 'used', sources: [source], evidence: [] },
-      { outcome: 'used', sources: [source], evidence: [''] },
+      { outcome: 'used', sources: [source], evidence: [{ ...passage, text: '' }] },
+      { outcome: 'used', sources: [source], evidence: [{ ...passage, catalogId: '' }] },
+      { outcome: 'used', sources: [source], evidence: [{ ...passage, extra: true }] },
+      { outcome: 'used', sources: [source], evidence: ['A passage.'] },
       {
         outcome: 'used',
         sources: [source],
-        evidence: Array(AI_WIRE_LIMITS.knowledgeEvidence + 1).fill('A'),
+        evidence: Array(AI_WIRE_LIMITS.knowledgeEvidence + 1).fill(passage),
       },
       {
         outcome: 'used',
         sources: [source],
-        evidence: ['x'.repeat(AI_WIRE_LIMITS.knowledgeEvidenceCharacters), 'y'],
+        evidence: [
+          { ...passage, text: 'x'.repeat(AI_WIRE_LIMITS.knowledgeEvidenceCharacters) },
+          { ...passage, text: 'y' },
+        ],
       },
       { outcome: 'none', sources: [source] },
       { outcome: 'maybe' },
@@ -529,7 +555,12 @@ describe('parseAiError', () => {
 });
 
 describe('AI fact check wire values', () => {
-  const request = { text: 'Built in 1888.', evidence: ['Built in 1910.'], given: 'Write it.' };
+  const request = {
+    text: 'Built in 1888 [1].',
+    evidence: ['Built in 1910.'],
+    given: 'Write it.',
+    citations: true,
+  };
 
   it('accepts a bounded request and rejects one past the host bounds', () => {
     expect(parseAiFactCheckRequest(request)).to.deep.equal(request);
@@ -539,6 +570,8 @@ describe('AI fact check wire values', () => {
     });
     for (const invalid of [
       { ...request, extra: true },
+      { ...request, citations: 'yes' },
+      { text: request.text, evidence: request.evidence, given: request.given },
       { ...request, text: 'x'.repeat(AI_WIRE_LIMITS.factCheckTextCharacters + 1) },
       { ...request, given: 'x'.repeat(AI_WIRE_LIMITS.factCheckGivenCharacters + 1) },
       { ...request, evidence: [''] },
@@ -552,13 +585,17 @@ describe('AI fact check wire values', () => {
   it('accepts a result and rejects a malformed or unbounded one', () => {
     const result = {
       checked: 3,
-      unsourced: [{ text: 'Built in 1888.', missing: ['1888'], strong: true }],
+      unsourced: [
+        { text: 'Built in 1888.', problem: 'unsourced', missing: ['1888'], strong: true },
+        { text: 'It was rebuilt.', problem: 'bad-citation', missing: ['[4]'], strong: true },
+      ],
     };
     expect(parseAiFactCheck(result)).to.deep.equal(result);
     const sentence = result.unsourced[0];
     for (const invalid of [
       { ...result, checked: -1 },
       { ...result, unsourced: [{ ...sentence, strong: 'yes' }] },
+      { ...result, unsourced: [{ ...sentence, problem: 'invented' }] },
       { ...result, unsourced: [{ ...sentence, text: '' }] },
       {
         ...result,

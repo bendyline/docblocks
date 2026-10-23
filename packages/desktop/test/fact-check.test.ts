@@ -15,10 +15,12 @@ describe('fact check of AI output', () => {
         'It is a wonderful place to visit.',
       evidence: [passage],
       given: 'Write about the Panama Hotel.',
+      citations: false,
     });
     expect(result.checked).to.equal(3);
     expect(result.unsourced.map((sentence) => sentence.strong)).to.deep.equal([true, false]);
     expect(result.unsourced[0].text).to.contain('March 26, 1913');
+    expect(result.unsourced[0]).to.include({ problem: 'unsourced' });
     expect(result.unsourced[0].missing).to.include('1913');
     expect(result.unsourced[1].missing).to.include.members(['Steamship', 'Company']);
   });
@@ -28,6 +30,7 @@ describe('fact check of AI output', () => {
       text: 'Our office opened in 1987 in Tacoma.',
       evidence: [],
       given: 'Instructions: say the office opened in 1987 in Tacoma.',
+      citations: false,
     });
     expect(result).to.deep.equal({ checked: 1, unsourced: [] });
   });
@@ -37,6 +40,7 @@ describe('fact check of AI output', () => {
       text: 'The hotel was built in 1910 [7].',
       evidence: [passage],
       given: '',
+      citations: false,
     });
     expect(result.unsourced).to.deep.equal([]);
   });
@@ -46,7 +50,32 @@ describe('fact check of AI output', () => {
       text: 'The year the bathhouse closed could not be verified.',
       evidence: [passage],
       given: '',
+      citations: false,
     });
     expect(result.unsourced).to.deep.equal([]);
+  });
+
+  it('checks each sentence against the passage it cites, and flags made-up numbers', () => {
+    const other = "Pike Place Market opened in 1907 on Seattle's waterfront.";
+    const result = checkFacts({
+      text:
+        'The Panama Hotel was built in 1910 [1]. ' +
+        'Pike Place Market opened in 1907 [1]. ' +
+        'It was designed by Sabro Ozasa [3].',
+      evidence: [passage, other],
+      given: '',
+      citations: true,
+    });
+    // The second sentence is true but cites the wrong passage: a slip, not an
+    // invention, so it is not reported.
+    expect(result.checked).to.equal(3);
+    expect(result.unsourced).to.deep.equal([
+      {
+        text: 'It was designed by Sabro Ozasa.',
+        problem: 'bad-citation',
+        missing: ['[3]'],
+        strong: true,
+      },
+    ]);
   });
 });

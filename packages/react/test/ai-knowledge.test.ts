@@ -8,7 +8,7 @@ import { factCheckRequest, factsNeedReview, mergeAiKnowledge } from '../src/Ai/a
 const used = (catalogId: string, ...titles: string[]): AiChatKnowledge => ({
   outcome: 'used',
   sources: [{ catalogId, name: catalogId.toUpperCase(), titles }],
-  evidence: titles.map((title) => `${title} passage.`),
+  evidence: titles.map((title) => ({ title, catalogId, text: `${title} passage.` })),
 });
 
 describe('mergeAiKnowledge', () => {
@@ -36,7 +36,11 @@ describe('mergeAiKnowledge', () => {
         { catalogId: 'pnw', name: 'PNW', titles: ['Panama Hotel', 'Nihonmachi'] },
         { catalogId: 'law', name: 'LAW', titles: ['Statute'] },
       ],
-      evidence: ['Panama Hotel passage.', 'Nihonmachi passage.', 'Statute passage.'],
+      evidence: [
+        { title: 'Panama Hotel', catalogId: 'pnw', text: 'Panama Hotel passage.' },
+        { title: 'Nihonmachi', catalogId: 'pnw', text: 'Nihonmachi passage.' },
+        { title: 'Statute', catalogId: 'law', text: 'Statute passage.' },
+      ],
     });
     expect(merged).to.deep.equal({
       outcome: 'used',
@@ -44,7 +48,11 @@ describe('mergeAiKnowledge', () => {
         { catalogId: 'pnw', name: 'PNW', titles: ['Panama Hotel', 'Nihonmachi'] },
         { catalogId: 'law', name: 'LAW', titles: ['Statute'] },
       ],
-      evidence: ['Panama Hotel passage.', 'Nihonmachi passage.', 'Statute passage.'],
+      evidence: [
+        { title: 'Panama Hotel', catalogId: 'pnw', text: 'Panama Hotel passage.' },
+        { title: 'Nihonmachi', catalogId: 'pnw', text: 'Nihonmachi passage.' },
+        { title: 'Statute', catalogId: 'law', text: 'Statute passage.' },
+      ],
     });
     expect(first).to.deep.equal(used('pnw', 'Panama Hotel'));
   });
@@ -52,30 +60,48 @@ describe('mergeAiKnowledge', () => {
 
 describe('fact check requests', () => {
   it('checks against every passage the run was shown, and nothing past the host bounds', () => {
-    expect(factCheckRequest('Draft.', used('pnw', 'A', 'B'), 'Given.')).to.deep.equal({
+    expect(factCheckRequest('Draft.', used('pnw', 'A', 'B'), 'Given.', true)).to.deep.equal({
       text: 'Draft.',
       evidence: ['A passage.', 'B passage.'],
       given: 'Given.',
+      citations: true,
     });
-    expect(factCheckRequest('Draft.', { outcome: 'none' }, '')?.evidence).to.deep.equal([]);
+    // Numbers that may mean different passages are not checked as citations.
+    expect(factCheckRequest('Draft.', used('pnw', 'A'), '', false)?.citations).to.equal(false);
+    expect(factCheckRequest('Draft.', { outcome: 'none' }, '', true)).to.deep.include({
+      evidence: [],
+      citations: false,
+    });
     const big = 'x'.repeat(AI_WIRE_LIMITS.factCheckEvidenceCharacters - 10);
     const many: AiChatKnowledge = {
       outcome: 'used',
       sources: [{ catalogId: 'a', name: 'A', titles: [] }],
-      evidence: [big, 'one too many'],
+      evidence: [
+        { title: 'A', catalogId: 'a', text: big },
+        { title: 'B', catalogId: 'a', text: 'one too many' },
+      ],
     };
-    expect(factCheckRequest('Draft.', many, '')?.evidence).to.deep.equal([big]);
+    expect(factCheckRequest('Draft.', many, '', true)?.evidence).to.deep.equal([big]);
     expect(
-      factCheckRequest('x'.repeat(AI_WIRE_LIMITS.factCheckTextCharacters + 1), null, ''),
+      factCheckRequest('x'.repeat(AI_WIRE_LIMITS.factCheckTextCharacters + 1), null, '', true),
     ).to.equal(null);
     expect(
-      factCheckRequest('Draft.', null, 'g'.repeat(AI_WIRE_LIMITS.factCheckGivenCharacters + 5))
-        ?.given.length,
+      factCheckRequest(
+        'Draft.',
+        null,
+        'g'.repeat(AI_WIRE_LIMITS.factCheckGivenCharacters + 5),
+        true,
+      )?.given.length,
     ).to.equal(AI_WIRE_LIMITS.factCheckGivenCharacters);
   });
 
   it("asks before inserting at Gezel's bar for refusing a write", () => {
-    const sentence = (strong: boolean) => ({ text: 'S.', missing: ['X'], strong });
+    const sentence = (strong: boolean) => ({
+      text: 'S.',
+      problem: 'unsourced' as const,
+      missing: ['X'],
+      strong,
+    });
     expect(factsNeedReview({ checked: 4, unsourced: [] })).to.equal(false);
     expect(factsNeedReview({ checked: 4, unsourced: [sentence(true)] })).to.equal(true);
     // One or two sentences of unsourced names alone are too often a false alarm.

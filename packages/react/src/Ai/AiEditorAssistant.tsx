@@ -31,6 +31,7 @@ import { AiDiagramDialog } from './AiDiagrams.js';
 import { AiGenerationStatus, type AiGenerationState } from './AiGenerationStatus.js';
 import { AiFactsIndicator, AiKnowledgeIndicator } from './AiKnowledgeIndicator.js';
 import { factCheckRequest, factsNeedReview, useAiKnowledge, useFactCheck } from './ai-knowledge.js';
+import { citationsToFootnotes, stripCitationMarkers } from './knowledge-citations.js';
 import { AiReportButton } from './AiOutputReport.js';
 import { draftCapacityNotice } from './draft-capacity.js';
 import {
@@ -373,7 +374,7 @@ export function AiDraftDialog({
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
   const { confirm: confirmAction, confirmDialog } = useConfirmDialog();
-  const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
+  const { knowledge, citable, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
   const selectedMarkdown = capturedSelection.markdown ?? capturedSelection.text;
   // What the person supplied, as the model received it: instructions plus the
   // document or selection. A detail found here needs no other source.
@@ -385,7 +386,7 @@ export function AiDraftDialog({
         .join('\n\n') ?? '',
     [originalRequest],
   );
-  const facts = useFactCheck(ai, running ? null : draft, knowledge, factsGiven);
+  const facts = useFactCheck(ai, running ? null : draft, knowledge, factsGiven, citable);
   const draftRequest = useMemo(
     () => ({
       ...buildDraftRequest({
@@ -530,7 +531,7 @@ export function AiDraftDialog({
     if (!replacement) return;
     // An unfinished draft is confirmed below as reviewed by the person, so it is not asked twice.
     const factCheck =
-      !incomplete && ai.checkFacts && factCheckRequest(replacement, knowledge, factsGiven);
+      !incomplete && ai.checkFacts && factCheckRequest(replacement, knowledge, factsGiven, citable);
     if (factCheck) {
       // Checked afresh: the indicator may still be waiting out an edit.
       const previousRequest = requestRef.current;
@@ -581,7 +582,21 @@ export function AiDraftDialog({
       setError('The selected text changed. Close this dialog and select it again.');
       return;
     }
-    if (!replaceSelection(replacement)) {
+    // `[n]` points into this dialog's passages. New content keeps it as a
+    // footnote naming the source; a rewritten selection drops it, since its
+    // paragraph has nowhere to put the note.
+    const inserted =
+      knowledge?.outcome !== 'used'
+        ? replacement
+        : mode === 'compose' && citable
+          ? citationsToFootnotes(
+              replacement,
+              knowledge.evidence,
+              new Map(knowledge.sources.map((source) => [source.catalogId, source.name])),
+              documentSource,
+            )
+          : stripCitationMarkers(replacement);
+    if (!replaceSelection(inserted)) {
       setError('DocBlocks could not apply the draft in the current editor view.');
       return;
     }
@@ -601,6 +616,7 @@ export function AiDraftDialog({
     ai,
     knowledge,
     factsGiven,
+    citable,
   ]);
 
   const dialog = (

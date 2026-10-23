@@ -208,7 +208,10 @@ describe('AiDraftDialog', () => {
         sources: [
           { catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel', 'Nihonmachi'] },
         ],
-        evidence: ['Built in 1910.', 'Japantown.'],
+        evidence: [
+          { title: 'Panama Hotel', catalogId: 'pnw', text: 'Built in 1910.' },
+          { title: 'Nihonmachi', catalogId: 'pnw', text: 'Japantown.' },
+        ],
       },
     } as const;
     await render('compose');
@@ -252,7 +255,9 @@ describe('AiDraftDialog', () => {
         knowledge: {
           outcome: 'used',
           sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
-          evidence: ['Built in 1910 by Sabro Ozasa.'],
+          evidence: [
+            { title: 'Panama Hotel', catalogId: 'pnw', text: 'Built in 1910 by Sabro Ozasa.' },
+          ],
         },
       }),
     );
@@ -281,6 +286,56 @@ describe('AiDraftDialog', () => {
     await click('Insert');
     expect(confirmation()).to.equal(undefined);
     expect(applied).to.deep.equal(['The hotel opened in 1910.']);
+  });
+
+  it('searches for what was asked, and keeps cited sources as footnotes on insert', async () => {
+    fake = fakeAi(() => ({ checked: 1, unsourced: [] }));
+    const cited = {
+      kind: 'knowledge',
+      knowledge: {
+        outcome: 'used',
+        sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
+        evidence: [{ title: 'Panama Hotel (Seattle)', catalogId: 'pnw', text: 'Built in 1910.' }],
+      },
+    } as const;
+    await render('compose', { text: '# Panama Hotel\n' });
+    await type(prompt(), 'Write about the hotel.');
+    await click('Generate');
+    expect(fake.requests[0].request).to.include({
+      knowledgeQuery: 'Write about the hotel.\nPanama Hotel',
+      knowledgeCitations: true,
+    });
+    await act(async () => fake.requests[0].emit(cited));
+    await finish('It opened in 1910 [1].');
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 450)));
+    expect(fake.checks.at(-1)).to.include({ citations: true });
+    await click('Insert');
+    expect(applied).to.deep.equal([
+      'It opened in 1910[^source-1].\n\n' +
+        '[^source-1]: Panama Hotel (Seattle), from the Pacific Northwest knowledge catalog.',
+    ]);
+  });
+
+  it('drops citation markers from a rewritten selection', async () => {
+    await render('rewrite', { text: 'The hotel is old.' });
+    await click('Generate');
+    expect(fake.requests[0].request).to.include({
+      knowledgeQuery:
+        'Improve clarity and flow while preserving the meaning and voice.\nThe hotel is old.',
+    });
+    await act(async () =>
+      fake.requests[0].emit({
+        kind: 'knowledge',
+        knowledge: {
+          outcome: 'used',
+          sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
+          evidence: [{ title: 'Panama Hotel', catalogId: 'pnw', text: 'Built in 1910.' }],
+        },
+      }),
+    );
+    await finish('The hotel dates from 1910 [1].');
+    await click('Replace selection');
+    expect(applied).to.deep.equal(['The hotel dates from 1910.']);
   });
 
   it('does not replace a selection whose block metadata changed while the dialog was open', async () => {

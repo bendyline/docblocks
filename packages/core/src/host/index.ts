@@ -16,6 +16,7 @@ export type { HostCapabilities, HostPlatform, HostSurfaceKind } from './capabili
 export type {
   AiChatCompletion,
   AiChatEvent,
+  AiChatEvidence,
   AiChatHandle,
   AiChatKnowledge,
   AiChatKnowledgeSource,

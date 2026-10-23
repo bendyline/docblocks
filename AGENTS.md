@@ -248,9 +248,14 @@ Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/d
 `main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
 machine — to the renderer. `main/ai/gezel-connector.ts` delegates consent,
 standalone/private fallback, and model preparation to the SDK's
-`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets
-to `withKnowledgeContext`; Gezel owns retrieval validation, ranking, citations,
-and evidence serialization. The connection asks for `openai` plus scoped
+`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets,
+the request's `knowledgeQuery`, and (for drafts only) `citations: 'numbered'`
+to the SDK's `knowledgeContext`; Gezel owns retrieval validation, ranking,
+citations, and evidence serialization. Each chat reports what knowledge it used
+as a `knowledge` event. Drafts are checked against their passages and the
+person's own text by `main/ai/fact-check.ts`, which runs Gezel's model-free
+`groundText` from `@bendyline/gezel/grounding` behind `host.ai.checkFacts`.
+The connection asks for `openai` plus scoped
 `knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
 `host.ai.knowledge`; every desktop chat retrieves bounded cited passages and

@@ -61,6 +61,8 @@ export function AiKnowledgeIndicator({ knowledge }: { knowledge: AiChatKnowledge
 /** `text` with each unsourced detail marked, so the eye lands on what to check. */
 function markDetails(text: string, details: readonly string[]): ReactNode[] {
   const terms = details
+    // "2020 next to Panama": the source states 2020, but not beside that name.
+    .map((detail) => detail.replace(/ next to .+$/u, ''))
     .filter(Boolean)
     .map((detail) => detail.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'))
     .sort((a, b) => b.length - a.length);
@@ -108,7 +110,19 @@ export function AiFactsIndicator({ check }: { check: AiFactCheck | null }) {
       </p>
       <ul>
         {check.unsourced.map((sentence, index) => (
-          <li key={index}>{markDetails(sentence.text, sentence.missing)}</li>
+          <li key={index}>
+            {sentence.problem === 'bad-citation' ? (
+              <>
+                {sentence.text}{' '}
+                <span className="db-ai-facts-note">
+                  It cites {sentence.missing.join(', ')}, which is not one of the reference
+                  passages.
+                </span>
+              </>
+            ) : (
+              markDetails(sentence.text, sentence.missing)
+            )}
+          </li>
         ))}
       </ul>
     </details>

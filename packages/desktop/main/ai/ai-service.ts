@@ -98,6 +98,8 @@ export interface ProviderChatRequest {
   readonly temperature?: number;
   readonly maxTokens?: number;
   readonly responseFormat?: AiResponseFormat;
+  readonly knowledgeQuery?: string;
+  readonly knowledgeCitations?: boolean;
 }
 
 export interface ProviderChatChunk {
@@ -643,6 +645,8 @@ export class AiService {
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
       ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
       ...(request.responseFormat === undefined ? {} : { responseFormat: request.responseFormat }),
+      ...(request.knowledgeQuery === undefined ? {} : { knowledgeQuery: request.knowledgeQuery }),
+      ...(request.knowledgeCitations ? { knowledgeCitations: true } : {}),
     };
     void this.runChat(connection, chat, providerRequest, emit).finally(() => {
       this.chats.delete(streamKey);

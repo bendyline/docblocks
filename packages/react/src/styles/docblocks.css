@@ -6720,6 +6720,10 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   margin-top: 4px;
 }
 
+.db-ai-facts-note {
+  color: var(--db-danger);
+}
+
 .db-ai-facts mark {
   padding: 0;
   background: none;

@@ -668,6 +668,25 @@ describe('desktop AI service: chat', () => {
     expect(connector.connection.streams[0].request.responseFormat).to.deep.equal(responseFormat);
   });
 
+  it("passes the caller's knowledge search and citation request to the provider", async () => {
+    const { service, connector } = await readyService();
+    service.startChat(
+      '1:a',
+      { ...WRITE_REQUEST, knowledgeQuery: 'The Panama Hotel', knowledgeCitations: true },
+      () => undefined,
+    );
+    service.startChat('1:b', WRITE_REQUEST, () => undefined);
+    await settle();
+    expect(connector.connection.streams[0].request).to.include({
+      knowledgeQuery: 'The Panama Hotel',
+      knowledgeCitations: true,
+    });
+    expect(connector.connection.streams[1].request).not.to.have.any.keys(
+      'knowledgeQuery',
+      'knowledgeCitations',
+    );
+  });
+
   it('a cancelled stream still ends once, with its partial text', async () => {
     const { service, connector } = await readyService();
     const { events, emit } = recorder();
@@ -732,7 +751,7 @@ describe('desktop AI service: chat', () => {
     const knowledge = {
       outcome: 'used',
       sources: [{ catalogId: 'pnw', name: 'Pacific Northwest', titles: ['Panama Hotel'] }],
-      evidence: ['Built in 1910.'],
+      evidence: [{ title: 'Panama Hotel', catalogId: 'pnw', text: 'Built in 1910.' }],
     } as const;
     stream.push('', { knowledge });
     stream.push('', {

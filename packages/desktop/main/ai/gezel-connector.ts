@@ -114,13 +114,12 @@ async function streamFrom(
   knowledge: boolean,
 ): Promise<AsyncIterable<ProviderChatChunk>> {
   const context = knowledge
-    ? await withGezelKnowledge(
-        app,
-        request.messages,
-        signal,
-        request.contextWindow,
-        request.maxTokens,
-      )
+    ? await withGezelKnowledge(app, request.messages, signal, {
+        contextWindow: request.contextWindow,
+        maxTokens: request.maxTokens,
+        query: request.knowledgeQuery,
+        citations: request.knowledgeCitations === true,
+      })
     : { messages: [...request.messages], knowledge: null };
   const { messages } = context;
   // Preserve the evaluated writing policy until effective output budgets have their own A/B gate.
