@@ -1,3 +1,15 @@
+## docblocks-mobile [1.0.7](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.6...docblocks-mobile@1.0.7) (2026-10-24)
+
+### Bug Fixes
+
+* Small fixes, test improvements ([#34](https://github.com/bendyline/docblocks/issues/34)) ([f3ba3bb](https://github.com/bendyline/docblocks/commit/f3ba3bb16091a897ec4d153fa793cc3d65039276))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.7
+* **@bendyline/docblocks-react:** upgraded to 2.7.7
+
 ## docblocks-mobile [1.0.6](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.5...docblocks-mobile@1.0.6) (2026-10-22)
 
 ### Bug Fixes
