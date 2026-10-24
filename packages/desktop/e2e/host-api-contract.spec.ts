@@ -197,6 +197,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'commitBinary',
     'commitText',
     'readBinary',
+    'readRelativeMedia',
     'readText',
     'revoke',
     'writeBinary',

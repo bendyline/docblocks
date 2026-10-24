@@ -85,6 +85,30 @@ describe('desktop update status', () => {
     ).to.deep.equal(["What's new", 'Restart to install']);
   });
 
+  it('carries the shorter forms the status bar falls back to when narrow', async () => {
+    await act(async () => {
+      root.render(
+        createElement(UpdateStatusItem, { status: { kind: 'downloaded', version: '2.3.0' } }),
+      );
+    });
+
+    const short = container.querySelector('.db-desktop-update-message--short');
+    expect(short?.textContent).to.equal('Update ready.');
+    expect(short?.getAttribute('title')).to.equal('DocBlocks 2.3.0 is ready to install.');
+    expect(container.querySelector('.db-desktop-update-action-detail')?.textContent).to.equal(
+      ' to install',
+    );
+  });
+
+  it('sizes the ready notice to the free status-bar space and never shrinks its buttons', () => {
+    expect(updateStyles).to.match(
+      /\.db-desktop-update-status--ready\s*\{[^}]*container:\s*db-desktop-update\s*\/\s*inline-size;/s,
+    );
+    expect(updateStyles).to.match(
+      /\.db-desktop-update-action,\s*\.db-desktop-update-dismiss\s*\{[^}]*flex-shrink:\s*0;/s,
+    );
+  });
+
   it('stays quiet when no update is available', async () => {
     await act(async () => {
       root.render(createElement(UpdateStatusItem, { status: { kind: 'not-available' } }));

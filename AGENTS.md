@@ -248,9 +248,14 @@ Renderer code calls `getDocBlocksHost()` / `isElectronHost()` from `@bendyline/d
 `main/ipc-ai.ts` adapts `main/ai/ai-service.ts` — a provider-neutral state
 machine — to the renderer. `main/ai/gezel-connector.ts` delegates consent,
 standalone/private fallback, and model preparation to the SDK's
-`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets
-to `withKnowledgeContext`; Gezel owns retrieval validation, ranking, citations,
-and evidence serialization. The connection asks for `openai` plus scoped
+`connectDesktopEmbedding`. `main/ai/gezel-knowledge.ts` passes the host's budgets,
+the request's `knowledgeQuery`, and (for drafts only) `citations: 'numbered'`
+to the SDK's `knowledgeContext`; Gezel owns retrieval validation, ranking,
+citations, and evidence serialization. Each chat reports what knowledge it used
+as a `knowledge` event. Drafts are checked against their passages and the
+person's own text by `main/ai/fact-check.ts`, which runs Gezel's model-free
+`groundText` from `@bendyline/gezel/grounding` behind `host.ai.checkFacts`.
+The connection asks for `openai` plus scoped
 `knowledge` access with a typed verification code. Catalog
 inventory and explicit download/update/enable/remove actions use optional
 `host.ai.knowledge`; every desktop chat retrieves bounded cited passages and
@@ -598,6 +603,7 @@ isolated iOS/Android `.tests` app and require an explicit arm64 device ID.
 - **VS Code dual build.** `extension.js` runs in the Node-backed host; `extension.web.js` runs in vscode.dev. Don't let Node-only imports (`fs`, `path` with Node semantics, `child_process`) sneak into the web bundle.
 - **Workspace-roots whitelist.** `packages/desktop/main/workspace-roots.ts` enforces that the renderer can only read/write inside folders the user has explicitly granted. New `ipc-fs` operations must respect it.
 - **Electron workspace paths are display-only.** Filesystem, reveal, FFmpeg, and Git detection IPC accept a registered workspace ID, never `WorkspaceDescriptor.rootPath`. Export, external-file, and repository operations use owner-scoped opaque grants.
+- **Media resolves sidecar first, then document-relative (site and desktop).** `createFileMediaProvider` reads `<stem>_files/` first and only then, read-only, the reference relative to the document (`shots/a.png`, `../shared/a.png`) through `resolveDocumentRelativeMediaPath`: image/audio/video extensions only, never above the workspace root. Writes always land in the sidecar, so editing a document-relative image saves a sidecar copy. A loose OS-opened file's grant adds `external.readRelativeMedia` (read-only, media only, inside that file's own folder, no symbolic links) behind both lookups; DBK grants refuse it. VS Code still authorizes only the sidecar (`packages/vscode/src/documentAuthority.ts`).
 - **Electron workspace identity is main-authoritative.** New roots use canonical-path SHA-256 IDs. Main repairs legacy collisions before registering roots, and the renderer reconciles/remaps its IndexedDB descriptors from `workspaces.list()` before restoring hash or last-session state.
 - **Git repository expansion is explicit, but never a startup modal.** A workspace nested in a parent repository or linked to external Git metadata gets no repository grant from `git:detectRepo` — detection reports `requiresExpandedGrant` and git stays off. The renderer shows a quiet one-line offer above the sidebar footer (`GitGrantNotice`, deliberately unstyled as a warning — nothing is broken) whose dialog calls `git:grantExpandedRepo`, and main persists that answer (`settings.git`, per repository or `allowExpandedByDefault`) so the question is asked at most once. Do not reintroduce a confirmation on the detection path. Every command must use the granted, pinned `GIT_DIR` and work tree rather than rediscovering a repository from renderer input.
 - **Clone cleanup owns staging only.** Reserve the final directory exclusively, clone into a hidden operation-owned staging tree, and publish with no-replace entry creation. Never recursively delete the final target on failure or cancellation.

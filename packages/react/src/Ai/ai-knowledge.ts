@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type {
+  AiChatEvidence,
   AiChatKnowledge,
   AiFactCheck,
   AiFactCheckRequest,
@@ -35,8 +36,26 @@ export function mergeAiKnowledge(
     }
   }
   const evidence = [...current.evidence];
-  for (const text of next.evidence) if (!evidence.includes(text)) evidence.push(text);
+  for (const passage of next.evidence) {
+    if (!evidence.some((known) => known.text === passage.text)) evidence.push(passage);
+  }
   return { outcome: 'used', sources, evidence };
+}
+
+function sameEvidence(a: readonly AiChatEvidence[], b: readonly AiChatEvidence[]): boolean {
+  return a.length === b.length && a.every((passage, index) => passage.text === b[index]?.text);
+}
+
+/**
+ * Whether `next` keeps the run's `[n]` numbers meaning one passage each. A
+ * continuation that retrieves different passages numbers them from 1 again.
+ */
+function numberingHolds(current: AiChatKnowledge | null, next: AiChatKnowledge): boolean {
+  return (
+    current?.outcome !== 'used' ||
+    next.outcome !== 'used' ||
+    sameEvidence(current.evidence, next.evidence)
+  );
 }
 
 /**
@@ -45,15 +64,21 @@ export function mergeAiKnowledge(
  * superseded run reports afterwards is ignored.
  */
 export function useAiKnowledge(ai: ChatApi) {
-  const [knowledge, setKnowledge] = useState<AiChatKnowledge | null>(null);
+  const [run, setRun] = useState<{ knowledge: AiChatKnowledge | null; citable: boolean }>({
+    knowledge: null,
+    citable: true,
+  });
   const runRef = useRef(0);
   const helpers = useMemo(() => {
     const tapped: ChatApi = {
       chat(request, onEvent) {
-        const run = runRef.current;
+        const started = runRef.current;
         return ai.chat(request, (event) => {
-          if (event.kind === 'knowledge' && run === runRef.current) {
-            setKnowledge((current) => mergeAiKnowledge(current, event.knowledge));
+          if (event.kind === 'knowledge' && started === runRef.current) {
+            setRun((current) => ({
+              knowledge: mergeAiKnowledge(current.knowledge, event.knowledge),
+              citable: current.citable && numberingHolds(current.knowledge, event.knowledge),
+            }));
           }
           onEvent(event);
         });
@@ -61,12 +86,13 @@ export function useAiKnowledge(ai: ChatApi) {
     };
     const reset = () => {
       runRef.current += 1;
-      setKnowledge(null);
+      setRun({ knowledge: null, citable: true });
     };
     // `ai` and `reset` stay stable across renders, for effect and callback deps.
     return { ai: tapped, reset };
   }, [ai]);
-  return { knowledge, ...helpers };
+  // `citable`: every `[n]` in the run's output means one known passage.
+  return { knowledge: run.knowledge, citable: run.citable, ...helpers };
 }
 
 /**
@@ -78,21 +104,28 @@ export function factCheckRequest(
   text: string,
   knowledge: AiChatKnowledge | null,
   given: string,
+  citable: boolean,
 ): AiFactCheckRequest | null {
   if (text.length > AI_WIRE_LIMITS.factCheckTextCharacters) return null;
   const evidence: string[] = [];
   let total = 0;
   for (const passage of knowledge?.outcome === 'used' ? knowledge.evidence : []) {
-    total += passage.length;
+    total += passage.text.length;
     if (
       evidence.length >= AI_WIRE_LIMITS.factCheckEvidence ||
       total > AI_WIRE_LIMITS.factCheckEvidenceCharacters
     ) {
       break;
     }
-    evidence.push(passage);
+    evidence.push(passage.text);
   }
-  return { text, evidence, given: given.slice(0, AI_WIRE_LIMITS.factCheckGivenCharacters) };
+  return {
+    text,
+    evidence,
+    given: given.slice(0, AI_WIRE_LIMITS.factCheckGivenCharacters),
+    // Passages were numbered for citing only when there were passages.
+    citations: citable && evidence.length > 0,
+  };
 }
 
 /**
@@ -113,10 +146,12 @@ export function useFactCheck(
   text: string | null,
   knowledge: AiChatKnowledge | null,
   given: string,
+  citable: boolean,
 ): AiFactCheck | null {
   const [result, setResult] = useState<AiFactCheck | null>(null);
   useEffect(() => {
-    const request = text?.trim() && ai.checkFacts ? factCheckRequest(text, knowledge, given) : null;
+    const request =
+      text?.trim() && ai.checkFacts ? factCheckRequest(text, knowledge, given, citable) : null;
     if (!request) {
       setResult(null);
       return;
@@ -136,6 +171,6 @@ export function useFactCheck(
       live = false;
       clearTimeout(timer);
     };
-  }, [ai, text, knowledge, given]);
+  }, [ai, text, knowledge, given, citable]);
   return result;
 }

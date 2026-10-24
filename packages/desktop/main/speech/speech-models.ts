@@ -287,9 +287,22 @@ export class SpeechModelStore {
       await rm(temporary, { force: true });
     }
     for (const file of previous?.files ?? []) {
-      if (!entry.files.some((current) => current.sha256 === file.sha256))
-        await this.assets.collect(file);
+      if (entry.files.some((current) => current.sha256 === file.sha256)) continue;
+      // A file the pins renamed (Kokoro's int8 weights became `onnx/model.onnx`)
+      // is still this app's link to the old bytes; a same-named file was
+      // already replaced in place.
+      if (!entry.files.some((current) => current.name === file.name))
+        await this.removeFile(entry.id, file.name);
+      await this.assets.collect(file);
     }
+  }
+
+  /** Best effort: a leftover file costs disk space, never a failed install. */
+  private async removeFile(id: string, name: string): Promise<void> {
+    const target = this.filePath(id, name);
+    const relative = path.relative(this.modelDir(id), target);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return;
+    await rm(target, { force: true }).catch(() => undefined);
   }
 
   /** Remove this app's copy. A shared copy belongs to another app and is never touched. */

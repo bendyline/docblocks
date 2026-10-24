@@ -93,7 +93,7 @@ describe('Gezel knowledge in inference', () => {
         }),
         long,
         new AbortController().signal,
-        4096,
+        { contextWindow: 4096 },
       ),
     ).to.deep.equal({ messages: long, knowledge: { outcome: 'skipped' } });
     expect(called).to.equal(false);
@@ -141,7 +141,7 @@ describe('Gezel knowledge in inference', () => {
       })),
       messages,
       new AbortController().signal,
-      4096,
+      { contextWindow: 4096 },
     );
     expect(result).to.deep.equal({ messages, knowledge: { outcome: 'skipped' } });
   });
@@ -170,7 +170,12 @@ describe('Gezel knowledge reported to the renderer', () => {
         { catalogId: 'law', name: 'law', titles: ['Statute'] },
       ],
       // Every passage the model saw, for checking its output against.
-      evidence: ['A cited fact.', 'More.', 'A cited fact.', 'A cited fact.'],
+      evidence: [
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
+        { title: 'Science', catalogId: 'science', text: 'More.' },
+        { title: 'Physics', catalogId: 'science', text: 'A cited fact.' },
+        { title: 'Statute', catalogId: 'law', text: 'A cited fact.' },
+      ],
     });
   });
   it('says nothing about knowledge when no catalog is enabled', async () => {
@@ -198,7 +203,7 @@ describe('Gezel knowledge reported to the renderer', () => {
     expect(result.knowledge).to.deep.equal({
       outcome: 'used',
       sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
-      evidence: ['A cited fact.'],
+      evidence: [{ title: 'Science', catalogId: 'science', text: 'A cited fact.' }],
     });
     // Without state, "nothing matched" cannot be told from "nothing enabled".
     const none = await withGezelKnowledge(
@@ -292,5 +297,46 @@ describe('Gezel knowledge catalogs', () => {
       { action: 'prepare-reranker' },
       { action: 'enable', catalogId: 'science' },
     ]);
+  });
+});
+
+describe('Gezel knowledge for cited drafts', () => {
+  it('searches for what the person asked rather than the templated prompt', async () => {
+    let observed: Record<string, unknown> | undefined;
+    await withGezelKnowledge(
+      app(async (request) => {
+        observed = request;
+        return { reranked: true, passages: [] };
+      }),
+      [
+        {
+          role: 'user',
+          content: `Instructions:\nWrite about science.\n\n<document>${'x'.repeat(9000)}`,
+        },
+      ],
+      new AbortController().signal,
+      { query: 'Write about science.\nNotes' },
+    );
+    expect(observed).to.include({ query: 'Write about science.\nNotes' });
+  });
+
+  it('numbers passages for citation only when the caller checks citations', async () => {
+    const two = async () => ({
+      reranked: true,
+      passages: [passage, { ...passage, uri: 'knowledge://publisher/science/b', title: 'B' }],
+    });
+    const cited = await withGezelKnowledge(app(two), messages, new AbortController().signal, {
+      citations: true,
+    });
+    expect(cited.messages[0].content).to.contain('"cite":"[1]"').and.contain('"cite":"[2]"');
+    // The model was asked to cite evidence[0] as [1].
+    expect(cited.knowledge).to.deep.include({
+      evidence: [
+        { title: 'Science', catalogId: 'science', text: 'A cited fact.' },
+        { title: 'B', catalogId: 'science', text: 'A cited fact.' },
+      ],
+    });
+    const plain = await withGezelKnowledge(app(two), messages, new AbortController().signal);
+    expect(plain.messages[0].content).not.to.contain('"cite"');
   });
 });

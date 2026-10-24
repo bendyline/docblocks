@@ -123,12 +123,14 @@ img {
   padding: 10px 14px;
   border-radius: 999px;
   background: var(--ink);
-  color: white;
+  color: var(--paper-bright);
   transform: translateY(-160%);
 }
 
 .skip-link:focus {
   transform: translateY(0);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .site-header,

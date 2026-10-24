@@ -330,6 +330,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
       await window.getByRole('button', { name: 'Export and share' }).click();
       await window.getByRole('menuitem', { name: 'Export video...' }).click();
       const dialog = window.getByRole('dialog', { name: 'Export Video', exact: true });
+      await dialog.locator('summary', { hasText: 'Advanced options' }).click();
       await dialog.getByRole('combobox', { name: 'Frame Rate' }).selectOption('15');
       await dialog.getByRole('combobox', { name: 'Quality' }).selectOption('draft');
       return dialog;

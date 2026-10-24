@@ -17,6 +17,7 @@ import {
   useMemo,
   type ComponentType,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   useEditorContext,
   usePreviewSettings,
@@ -277,6 +278,11 @@ export function ExportToolbarControls({
   const [exportError, setExportError] = useState<string | null>(null);
   const [openAfterSave, setOpenAfterSave] = useState(loadOpenAfterExport);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [exportCompletion, setExportCompletion] = useState<{
+    filename: string;
+    target?: ExportDestinationTarget;
+  } | null>(null);
+  useEffect(() => setExportCompletion(null), [selectedFile]);
   const handleOpenAfterSaveChange = useCallback((checked: boolean) => {
     setOpenAfterSave(checked);
     saveOpenAfterExport(checked);
@@ -510,8 +516,8 @@ export function ExportToolbarControls({
   );
 
   const openSaved = useCallback(
-    async (target: ExportDestinationTarget) => {
-      if (!openAfterSave || !destinationAdapter?.openSaved) return;
+    async (target: ExportDestinationTarget, requested = false) => {
+      if ((!requested && !openAfterSave) || !destinationAdapter?.openSaved) return;
       try {
         await destinationAdapter.openSaved(target);
       } catch (caught: unknown) {
@@ -528,6 +534,7 @@ export function ExportToolbarControls({
       setExportError(null);
       setOpenError(null);
       setExportNotice(null);
+      setExportCompletion(null);
       try {
         let exportTarget = destinationTarget;
         if (!fileShare && destinationAdapter?.pickBeforeSave) {
@@ -557,6 +564,12 @@ export function ExportToolbarControls({
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
         setDialogOpen(false);
+        if (!fileShare) {
+          setExportCompletion({
+            filename: buildExportFilename(selectedFile, opts),
+            target: savedTarget,
+          });
+        }
         if (result.warnings.length > 0) setExportNotice(result.warnings);
         if (savedTarget) await openSaved(savedTarget);
       } catch (caught: unknown) {
@@ -585,6 +598,7 @@ export function ExportToolbarControls({
     setExportError(null);
     setOpenError(null);
     setExportNotice(null);
+    setExportCompletion(null);
     try {
       saveExportOptions(lastOptions);
       let quickTarget: ExportDestinationTarget | null = null;
@@ -611,6 +625,10 @@ export function ExportToolbarControls({
             }
           : saveBlob,
       );
+      setExportCompletion({
+        filename: buildExportFilename(selectedFile, lastOptions),
+        target: savedTarget,
+      });
       if (result.warnings.length > 0) setExportNotice(result.warnings);
       if (savedTarget) await openSaved(savedTarget);
     } catch (caught: unknown) {
@@ -920,6 +938,42 @@ export function ExportToolbarControls({
           <p role="alert">{openError}</p>
         </Dialog>
       )}
+
+      {exportCompletion &&
+        !dialogOpen &&
+        !exportError &&
+        !openError &&
+        !exportNotice &&
+        createPortal(
+          <aside className="db-export-completion" aria-label="Export result">
+            <p role="status">
+              {exportCompletion.target
+                ? `Saved ${exportCompletion.target.displayPath}`
+                : !destinationAdapter && !saveBlob
+                  ? `Sent ${exportCompletion.filename} to your browser’s downloads.`
+                  : `Exported ${exportCompletion.filename}`}
+            </p>
+            <div className="db-export-completion-actions">
+              {exportCompletion.target && destinationAdapter?.openSaved && (
+                <button
+                  type="button"
+                  className="db-export-btn db-export-btn--primary"
+                  onClick={() => void openSaved(exportCompletion.target!, true)}
+                >
+                  Open exported file
+                </button>
+              )}
+              <button
+                type="button"
+                className="db-export-btn db-export-btn--secondary"
+                onClick={() => setExportCompletion(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </aside>,
+          document.body,
+        )}
 
       {/* The file was saved, but not everything made it in. */}
       {exportNotice && !dialogOpen && !exportError && !openError && (

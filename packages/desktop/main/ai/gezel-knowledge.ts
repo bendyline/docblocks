@@ -7,7 +7,9 @@ import type {
   AiKnowledgeAction,
 } from '@bendyline/docblocks/host';
 
-type KnowledgeRetrieval = Awaited<ReturnType<GezelApp['knowledge']['retrieve']>>;
+type KnowledgePassage = Awaited<
+  ReturnType<typeof import('@bendyline/gezel-app-sdk').knowledgeContext>
+>['passages'][number];
 
 interface CatalogSnapshot {
   readonly at: number;
@@ -90,7 +92,7 @@ export function updateGezelKnowledge(
 
 /** Group cited passages by catalog, in the order Gezel ranked them. */
 function knowledgeSources(
-  passages: KnowledgeRetrieval['passages'],
+  passages: readonly KnowledgePassage[],
   names: ReadonlyMap<string, string> | undefined,
 ): AiChatKnowledgeSource[] {
   const sources = new Map<string, { name: string; titles: string[] }>();
@@ -120,42 +122,41 @@ export interface GezelKnowledgeContext {
   readonly knowledge: AiChatKnowledge | null;
 }
 
+export interface GezelKnowledgeOptions {
+  readonly contextWindow?: number | null;
+  readonly maxTokens?: number;
+  /** What to search for; the SDK otherwise searches with the last user message. */
+  readonly query?: string;
+  /** Number the passages and ask for `[n]` citations of them. */
+  readonly citations?: boolean;
+}
+
 const warned = new Set<string>();
 export async function withGezelKnowledge(
   app: GezelApp,
   messages: readonly AiChatMessage[],
   signal: AbortSignal,
-  contextWindow?: number | null,
-  maxTokens?: number,
+  options: GezelKnowledgeOptions = {},
 ): Promise<GezelKnowledgeContext> {
-  const { withKnowledgeContext } = await import('@bendyline/gezel-app-sdk');
-  // The SDK folds passages into the prompt and keeps the retrieval to itself;
-  // watch the call it makes to learn what was cited.
-  const seen: { retrieval?: KnowledgeRetrieval; unavailable?: boolean } = {};
+  const { knowledgeContext } = await import('@bendyline/gezel-app-sdk');
   const knowledge = app.knowledge as GezelApp['knowledge'] | undefined;
-  const client: Pick<GezelApp['knowledge'], 'retrieve'> | null = knowledge
-    ? {
-        retrieve: async (input, options) => {
-          seen.retrieval = await knowledge.retrieve(input, options);
-          return seen.retrieval;
-        },
-      }
-    : null;
-  const enriched = await withKnowledgeContext(client, messages, {
+  const context = await knowledgeContext(knowledge, messages, {
     signal,
-    contextWindow,
-    maxOutputTokens: maxTokens,
+    contextWindow: options.contextWindow,
+    maxOutputTokens: options.maxTokens,
     maxPromptCharacters: AI_WIRE_LIMITS.promptCharacters,
     maxMessages: AI_WIRE_LIMITS.messageEntries,
+    // Numbered when the caller checks citations: each sentence then says which
+    // passage it rests on, and is checked against exactly that passage.
+    ...(options.citations ? { citations: 'numbered' as const } : {}),
+    ...(options.query?.trim() ? { query: options.query } : {}),
     onUnavailable(reason) {
-      seen.unavailable = true;
       if (warned.has(reason)) return;
       warned.add(reason);
       console.warn(`[ai] sending AI requests without knowledge passages: ${reason}`);
     },
   });
-  // Passages count only once they are in the prompt the model receives.
-  const cited = enriched.length > messages.length ? (seen.retrieval?.passages ?? []) : [];
+  const cited = context.passages;
   const snapshot = knowledge
     ? await catalogSnapshot(
         app,
@@ -163,19 +164,21 @@ export async function withGezelKnowledge(
         cited.map((passage) => passage.catalogId),
       )
     : null;
-  if (cited.length) {
+  if (context.status === 'used') {
     return {
-      messages: enriched,
+      messages: context.messages,
       knowledge: {
         outcome: 'used',
         sources: knowledgeSources(cited, snapshot?.names),
-        evidence: cited.map((passage) => passage.text),
+        // In citation order: the model was asked to cite `evidence[0]` as [1].
+        evidence: cited.map((passage) => ({
+          title: passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters),
+          catalogId: passage.catalogId,
+          text: passage.text,
+        })),
       },
     };
   }
-  if (!snapshot?.enabled) return { messages: enriched, knowledge: null };
-  return {
-    messages: enriched,
-    knowledge: { outcome: seen.retrieval && !seen.unavailable ? 'none' : 'skipped' },
-  };
+  if (!snapshot?.enabled) return { messages: context.messages, knowledge: null };
+  return { messages: context.messages, knowledge: { outcome: context.status } };
 }

@@ -20,13 +20,13 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Material non-JavaScript distributions
 
-- The site ships 16 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
+- The site ships 17 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
 - Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@0.8.4 as a deferred formula engine, together with the selected upstream MIT license.
 - Desktop distributions embed Electron 43.5.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
 
 ## Major runtime components
 
-- Squisq packages: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-cli@2.9.12, @bendyline/squisq-editor-react@2.13.2, @bendyline/squisq-formats@2.8.1, @bendyline/squisq-graph@2.13.0, @bendyline/squisq-grid-react@2.11.29, @bendyline/squisq-react@2.12.9, @bendyline/squisq-video-react@2.5.10, @bendyline/squisq-video@2.4.6, @bendyline/squisq@2.13.0.
+- Squisq packages: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-cli@2.9.15, @bendyline/squisq-editor-react@2.13.5, @bendyline/squisq-formats@2.8.4, @bendyline/squisq-graph@2.13.0, @bendyline/squisq-grid-react@2.11.32, @bendyline/squisq-react@2.12.12, @bendyline/squisq-video-react@2.5.13, @bendyline/squisq-video@2.4.9, @bendyline/squisq@2.13.3.
 - MCP SDK: @modelcontextprotocol/sdk@1.32.1.
 - Monaco Editor: monaco-editor@0.50.0.
 - Archive and PDF tooling: jszip@3.10.1, pdf-lib@1.17.1, pdfjs-dist@4.10.38, and @pdf-lib/upng@1.0.1.

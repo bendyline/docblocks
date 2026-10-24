@@ -251,7 +251,7 @@ describe('site SEO surface', () => {
     expect(config).to.include("appType: 'mpa'");
     expect(config).to.include("strategies: 'injectManifest'");
     expect(config).to.include('SITE_PRECACHE_GLOB');
-    for (const extension of ['webmanifest', 'txt', 'xml', 'wasm', 'mjs']) {
+    for (const extension of ['webmanifest', 'txt', 'xml', 'wasm', 'mjs', 'svg']) {
       expect(SITE_PRECACHE_EXTENSIONS).to.include(extension);
     }
     expect(serviceWorker).to.include("createHandlerBoundToURL('index.html')");

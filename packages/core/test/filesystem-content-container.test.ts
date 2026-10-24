@@ -43,6 +43,19 @@ describe('FileSystemContentContainer', () => {
     ]);
   });
 
+  it('lists phone video and voice memos as the media they are', async () => {
+    const provider = new MemoryFileSystemProvider('container-media-types', 'Container');
+    await provider.writeBinary('/notes_files/IMG_0042.MOV', new Uint8Array([1]));
+    await provider.writeBinary('/notes_files/memo.m4a', new Uint8Array([2]));
+    const container = new FileSystemContentContainer(provider, 'notes_files');
+
+    const listed = await container.listFiles();
+    expect([...listed].sort((left, right) => left.path.localeCompare(right.path))).to.deep.equal([
+      { path: 'IMG_0042.MOV', mimeType: 'video/quicktime', size: 1 },
+      { path: 'memo.m4a', mimeType: 'audio/mp4', size: 1 },
+    ]);
+  });
+
   it('preserves nested file paths and prefix scans from a root-scoped container', async () => {
     const provider = new MemoryFileSystemProvider('root-container', 'Container');
     await provider.writeBinary(

@@ -128,7 +128,10 @@ export function sendOpenRequest(win: BrowserWindow, request: ResolvedOpenRequest
     // The path was valid when argv was resolved, but the file can disappear or
     // be replaced before authority is minted. Treat that as a stale request,
     // not an uncaught main-process exception.
-    resourceId = grantExternalPath(ownerId, request.absolutePath);
+    // A loose document's relative images live beside it; a bundle carries its own.
+    resourceId = grantExternalPath(ownerId, request.absolutePath, {
+      relativeMedia: request.kind === 'external-file',
+    });
   } catch {
     return false;
   }

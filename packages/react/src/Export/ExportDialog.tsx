@@ -488,13 +488,16 @@ export function ExportDialog({
         </div>
       )}
 
-      <p className="db-export-more-formats">
-        Need spreadsheets, animated media, portable bundles, or automation?{' '}
-        <a href="https://docblocks.com/cli/" target="_blank" rel="noopener noreferrer">
-          More formats with the DocBlocks CLI
-        </a>
-        .
-      </p>
+      <details className="db-export-more-formats">
+        <summary>More formats and automation</summary>
+        <p>
+          Need spreadsheets, portable bundles, or batch exports?{' '}
+          <a href="https://docblocks.com/cli/" target="_blank" rel="noopener noreferrer">
+            Explore the DocBlocks CLI
+          </a>
+          .
+        </p>
+      </details>
 
       {error && (
         <p className="db-export-error" role="alert">

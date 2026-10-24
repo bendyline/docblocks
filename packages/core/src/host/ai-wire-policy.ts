@@ -1,6 +1,7 @@
 import { HOST_WIRE_LIMITS, isBoundedString } from './wire-policy.js';
 import type {
   AiChatEvent,
+  AiChatEvidence,
   AiChatKnowledge,
   AiChatKnowledgeSource,
   AiFactCheck,
@@ -50,6 +51,8 @@ export const AI_WIRE_LIMITS = Object.freeze({
   knowledgeSources: 8,
   knowledgeTitles: 8,
   knowledgeTitleCharacters: 256,
+  /** A knowledge search; Gezel accepts up to 8,192 characters. */
+  knowledgeQueryCharacters: 8192,
   /** Passage texts sent with a knowledge report; Gezel caps a retrieval at 24,000 characters. */
   knowledgeEvidence: 8,
   knowledgeEvidenceCharacters: 24 * 1024,
@@ -380,7 +383,14 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     !hasKeysWithin(
       value,
       ['messages', 'purpose'],
-      ['model', 'temperature', 'maxTokens', 'responseFormat'],
+      [
+        'model',
+        'temperature',
+        'maxTokens',
+        'responseFormat',
+        'knowledgeQuery',
+        'knowledgeCitations',
+      ],
     )
   ) {
     return null;
@@ -421,6 +431,15 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
   const responseFormat =
     value.responseFormat === undefined ? undefined : parseAiResponseFormat(value.responseFormat);
   if (responseFormat === null) return null;
+  if (
+    value.knowledgeQuery !== undefined &&
+    !isBoundedString(value.knowledgeQuery, AI_WIRE_LIMITS.knowledgeQueryCharacters, 1)
+  ) {
+    return null;
+  }
+  if (value.knowledgeCitations !== undefined && typeof value.knowledgeCitations !== 'boolean') {
+    return null;
+  }
 
   return {
     messages,
@@ -429,6 +448,12 @@ export function parseAiChatRequest(value: unknown): AiChatRequest | null {
     ...(value.temperature === undefined ? {} : { temperature: value.temperature as number }),
     ...(value.maxTokens === undefined ? {} : { maxTokens: value.maxTokens as number }),
     ...(responseFormat === undefined ? {} : { responseFormat }),
+    ...(value.knowledgeQuery === undefined
+      ? {}
+      : { knowledgeQuery: value.knowledgeQuery as string }),
+    ...(value.knowledgeCitations === undefined
+      ? {}
+      : { knowledgeCitations: value.knowledgeCitations as boolean }),
   };
 }
 
@@ -488,12 +513,8 @@ export function parseAiChatKnowledge(value: unknown): AiChatKnowledge | null {
   if (value.outcome !== 'used' || !hasExactKeys(value, ['outcome', 'sources', 'evidence'])) {
     return null;
   }
-  const evidence = parseTextList(
-    value.evidence,
-    AI_WIRE_LIMITS.knowledgeEvidence,
-    AI_WIRE_LIMITS.knowledgeEvidenceCharacters,
-  );
-  if (!evidence || evidence.length === 0) return null;
+  const evidence = parseAiChatEvidence(value.evidence);
+  if (!evidence) return null;
   if (
     !Array.isArray(value.sources) ||
     value.sources.length === 0 ||
@@ -512,6 +533,28 @@ export function parseAiChatKnowledge(value: unknown): AiChatKnowledge | null {
   return { outcome: 'used', sources, evidence };
 }
 
+function parseAiChatEvidence(value: unknown): AiChatEvidence[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > AI_WIRE_LIMITS.knowledgeEvidence
+  ) {
+    return null;
+  }
+  const evidence: AiChatEvidence[] = [];
+  let total = 0;
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasExactKeys(entry, ['title', 'catalogId', 'text'])) return null;
+    if (!isBoundedString(entry.title, AI_WIRE_LIMITS.knowledgeTitleCharacters)) return null;
+    if (!isBoundedString(entry.catalogId, HOST_WIRE_LIMITS.identifierCharacters, 1)) return null;
+    if (!isBoundedString(entry.text, AI_WIRE_LIMITS.knowledgeEvidenceCharacters, 1)) return null;
+    total += entry.text.length;
+    if (total > AI_WIRE_LIMITS.knowledgeEvidenceCharacters) return null;
+    evidence.push({ title: entry.title, catalogId: entry.catalogId, text: entry.text });
+  }
+  return evidence;
+}
+
 /** Non-empty strings, at most `entries` of them and `characters` in all. */
 function parseTextList(value: unknown, entries: number, characters: number): string[] | null {
   if (!Array.isArray(value) || value.length > entries) return null;
@@ -527,7 +570,10 @@ function parseTextList(value: unknown, entries: number, characters: number): str
 }
 
 export function parseAiFactCheckRequest(value: unknown): AiFactCheckRequest | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['text', 'evidence', 'given'])) return null;
+  if (!isRecord(value) || !hasExactKeys(value, ['text', 'evidence', 'given', 'citations'])) {
+    return null;
+  }
+  if (typeof value.citations !== 'boolean') return null;
   if (!isBoundedString(value.text, AI_WIRE_LIMITS.factCheckTextCharacters)) return null;
   if (!isBoundedString(value.given, AI_WIRE_LIMITS.factCheckGivenCharacters)) return null;
   const evidence = parseTextList(
@@ -535,12 +581,17 @@ export function parseAiFactCheckRequest(value: unknown): AiFactCheckRequest | nu
     AI_WIRE_LIMITS.factCheckEvidence,
     AI_WIRE_LIMITS.factCheckEvidenceCharacters,
   );
-  return evidence ? { text: value.text, evidence, given: value.given } : null;
+  return evidence
+    ? { text: value.text, evidence, given: value.given, citations: value.citations }
+    : null;
 }
 
 function parseAiFactCheckSentence(value: unknown): AiFactCheckSentence | null {
-  if (!isRecord(value) || !hasExactKeys(value, ['text', 'missing', 'strong'])) return null;
+  if (!isRecord(value) || !hasExactKeys(value, ['text', 'problem', 'missing', 'strong'])) {
+    return null;
+  }
   if (!isBoundedString(value.text, AI_WIRE_LIMITS.factCheckSentenceCharacters, 1)) return null;
+  if (value.problem !== 'unsourced' && value.problem !== 'bad-citation') return null;
   if (typeof value.strong !== 'boolean') return null;
   if (!Array.isArray(value.missing) || value.missing.length > AI_WIRE_LIMITS.factCheckDetails) {
     return null;
@@ -550,7 +601,7 @@ function parseAiFactCheckSentence(value: unknown): AiFactCheckSentence | null {
     if (!isBoundedString(detail, AI_WIRE_LIMITS.knowledgeTitleCharacters, 1)) return null;
     missing.push(detail);
   }
-  return { text: value.text, missing, strong: value.strong };
+  return { text: value.text, problem: value.problem, missing, strong: value.strong };
 }
 
 export function parseAiFactCheck(value: unknown): AiFactCheck | null {

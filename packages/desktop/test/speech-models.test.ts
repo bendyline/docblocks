@@ -193,6 +193,34 @@ describe('SpeechModelStore', () => {
     expect(new Uint8Array(await readFile(located!.files['voices/a.bin']!))).to.deep.equal(VOICE);
   });
 
+  it('removes a file an update renamed, keeping unchanged voices', async () => {
+    await installPreviousRevision();
+    const renamedCatalog = CATALOG.map((entry) => ({
+      ...entry,
+      files: entry.files.map((file) =>
+        file.name === 'onnx/model.onnx'
+          ? { ...file, name: 'onnx/model-fp32.onnx', sha256: sha(updatedModel) }
+          : file,
+      ),
+    }));
+    const models = new SpeechModelStore({
+      root: path.join(root, 'models'),
+      sharedHome: null,
+      catalog: renamedCatalog,
+      fetchImpl: fetchFor({ 'https://m.test/model.onnx': updatedModel }).fetchImpl,
+    });
+    await models.install('tts-test');
+    const located = await models.locate('tts-test');
+    expect(new Uint8Array(await readFile(located!.files['onnx/model-fp32.onnx']!))).to.deep.equal(
+      updatedModel,
+    );
+    expect(new Uint8Array(await readFile(located!.files['voices/a.bin']!))).to.deep.equal(VOICE);
+    const stale = await stat(path.join(root, 'models', 'tts-test', 'onnx', 'model.onnx')).catch(
+      () => null,
+    );
+    expect(stale).to.equal(null);
+  });
+
   it('preserves the previous manifest and file when update verification fails, then retries', async () => {
     await installPreviousRevision();
     const manifestPath = path.join(root, 'models', 'tts-test', 'manifest.json');
@@ -435,6 +463,10 @@ describe('the pinned speech catalog', () => {
     expect(
       kokoro?.files.every((f) => !f.name.startsWith('voices/') || f.size === KOKORO_VOICE_BYTES),
     ).to.equal(true);
-    expect(downloadBytes(kokoro!)).to.equal(92_361_055 + KOKORO_VOICES.length * KOKORO_VOICE_BYTES);
+    // Gezel 1.2.8 pins the full-precision weights (326 MB), which run 2–2.5×
+    // faster than the int8 export and keep streamed narration ahead of playback.
+    expect(downloadBytes(kokoro!)).to.equal(
+      325_532_171 + KOKORO_VOICES.length * KOKORO_VOICE_BYTES,
+    );
   });
 });

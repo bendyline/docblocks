@@ -77,7 +77,8 @@ export class KokoroFrontend {
     if (cached) return cached;
     const file = path.join(this.lexiconDir, LEXICON_FILES[language]);
     const pending = readFile(file).then(
-      (packed) => parseKokoroLexicon(gunzipSync(packed).toString('utf8')),
+      // The language enables readings chosen by context ("to present", "the present").
+      (packed) => parseKokoroLexicon(gunzipSync(packed).toString('utf8'), { language }),
       (cause: unknown) => {
         throw new Error(`The narration pronunciation dictionary is missing at ${file}.`, {
           cause,

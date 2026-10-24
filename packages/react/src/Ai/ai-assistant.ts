@@ -1,5 +1,7 @@
+import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
 import type { AiChatRequest } from '@bendyline/docblocks/host';
 import { completeLeadingObjects } from './ai-json.js';
+import { documentTitle } from './document-title.js';
 import {
   elideSvgPictures,
   normalizeGeneratedPictures,
@@ -50,6 +52,25 @@ const FACTS_RULE =
   'verified; never fill a gap with a plausible detail. Keep a source\'s certainty: if it says "about" ' +
   'or "disputed", so do you. ';
 
+/**
+ * What to search knowledge catalogs for: the request and its subject, not the
+ * whole prompt, whose document text would otherwise drown the request out.
+ */
+function knowledgeQuery(...parts: string[]): { knowledgeQuery?: string } {
+  const query = parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, AI_WIRE_LIMITS.knowledgeQueryCharacters);
+  return query ? { knowledgeQuery: query } : {};
+}
+
+/**
+ * Drafts cite knowledge passages as `[n]`: the draft dialog checks each
+ * sentence against what it cites and turns the markers into footnotes.
+ */
+const CITED = { knowledgeCitations: true } as const;
+
 function boundedDocumentContext(source: string): string {
   if (source.length <= DRAFT_DOCUMENT_CONTEXT_CHARACTERS) return source;
   return `${source.slice(0, DRAFT_DOCUMENT_CONTEXT_CHARACTERS)}\n\n[Document context truncated]`;
@@ -72,6 +93,8 @@ export function buildDraftRequest(options: {
     return {
       purpose: 'write',
       temperature: 0.35,
+      ...knowledgeQuery(instructions, options.selectedText),
+      ...CITED,
       messages: [
         {
           role: 'system',
@@ -106,6 +129,8 @@ export function buildDraftRequest(options: {
   return {
     purpose: 'write',
     temperature: 0.7,
+    ...knowledgeQuery(instructions, documentTitle(options.documentSource)),
+    ...CITED,
     messages: [
       {
         role: 'system',

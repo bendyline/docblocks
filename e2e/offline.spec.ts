@@ -313,6 +313,12 @@ test.describe('DocBlocks offline (PWA)', () => {
     // Media edits (audio cleanup) render in a worker that carries RNNoise
     // (~5 MB); without it, cleanup would need the network on a plane.
     expect(precachedUrls.some((url) => /mediaEdit\.worker/.test(url))).toBeTruthy();
+    // Both wordmarks: the boot splash and app menu pick one by color scheme.
+    for (const wordmark of ['docblocks.svg', 'docblocks-dark.svg']) {
+      expect(
+        precachedUrls.some((url) => new URL(url).pathname === `/_res/siteimages/${wordmark}`),
+      ).toBeTruthy();
+    }
 
     // The one-time legacy-route migration claims a fresh installation. A
     // reload remains useful here to exercise a cold controlled navigation;

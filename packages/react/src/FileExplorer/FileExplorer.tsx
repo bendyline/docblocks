@@ -9,12 +9,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   isFileSystemMoveStateError,
   parseWorkspacePath,
-  tryParseWorkspacePath,
   type FileSystemProvider,
   type FileSystemEntry,
   type FileSystemEntryMoveOptions,
 } from '@bendyline/docblocks/filesystem';
-import { useFileTree, type FileTreeReadIssue } from './useFileTree.js';
+import { useFileTree } from './useFileTree.js';
+import { readIssueText } from './read-issue-text.js';
 import {
   FileTreeNode,
   type FileTreeNodeAction,
@@ -84,14 +84,6 @@ export interface WorkspaceMoveDestination {
 
 function normalisePath(path: string): string {
   return parseWorkspacePath(path);
-}
-
-/** Name the exact failing entry when it is not the directory being listed. */
-function readIssueText(issue: FileTreeReadIssue): string {
-  const failingPath = tryParseWorkspacePath(issue.path);
-  return failingPath && failingPath !== issue.directoryPath
-    ? `${failingPath}: ${issue.message}`
-    : issue.message;
 }
 
 function hasEquivalentPath(paths: ReadonlySet<string>, path: string): boolean {

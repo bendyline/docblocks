@@ -84,8 +84,7 @@ export class RawIndexedDBFileSystemStore implements IndexedDBFileSystemStore {
     mode: IndexedDBFileSystemTransactionMode,
     operation: (transaction: IndexedDBFileSystemTransaction) => Promise<T>,
   ): Promise<T> {
-    const database = await this.getDatabase();
-    const nativeTransaction = database.transaction(this.storeName, mode);
+    const nativeTransaction = await this.beginTransaction(mode);
     const completion = waitForTransaction(nativeTransaction);
     const transaction = new RawIndexedDBFileSystemTransaction(
       nativeTransaction.objectStore(this.storeName),
@@ -116,6 +115,34 @@ export class RawIndexedDBFileSystemStore implements IndexedDBFileSystemStore {
     this.opening = null;
   }
 
+  /**
+   * Start a native transaction, reconnecting once if the cached connection
+   * was closed underneath this store. Browsers close IndexedDB connections on
+   * their own (after the device sleeps, when site data is cleared, or when
+   * the storage backend restarts), and a closed connection rejects every
+   * later `transaction()` call with InvalidStateError ("The database
+   * connection is closing"). No work has run at that point, so reopening and
+   * starting again is safe.
+   */
+  private async beginTransaction(
+    mode: IndexedDBFileSystemTransactionMode,
+  ): Promise<IDBTransaction> {
+    const database = await this.getDatabase();
+    try {
+      return database.transaction(this.storeName, mode);
+    } catch (error: unknown) {
+      if (!isClosedConnectionError(error)) throw error;
+      this.forgetDatabase(database);
+      const reopened = await this.getDatabase();
+      return reopened.transaction(this.storeName, mode);
+    }
+  }
+
+  private forgetDatabase(database: IDBDatabase): void {
+    if (this.database === database) this.database = null;
+    database.close();
+  }
+
   private getDatabase(): Promise<IDBDatabase> {
     if (this.closed) {
       return Promise.reject(new Error('The IndexedDB filesystem store is closed.'));
@@ -134,10 +161,9 @@ export class RawIndexedDBFileSystemStore implements IndexedDBFileSystemStore {
         }
         this.database = database;
         this.opening = null;
-        database.onversionchange = () => {
-          database.close();
-          if (this.database === database) this.database = null;
-        };
+        database.onversionchange = () => this.forgetDatabase(database);
+        // Fired when the browser closes the connection without being asked.
+        database.onclose = () => this.forgetDatabase(database);
         return database;
       })
       .catch((error: unknown) => {
@@ -280,6 +306,19 @@ function openDatabase(
       reject(new Error(`IndexedDB database ${databaseName} is blocked by another open page.`));
     };
   });
+}
+
+/**
+ * `IDBDatabase.transaction()` throws InvalidStateError only when the
+ * connection is closing; an upgrade transaction cannot be live here because
+ * connections are handed out after their open request succeeds.
+ */
+function isClosedConnectionError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { readonly name?: unknown }).name === 'InvalidStateError'
+  );
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {

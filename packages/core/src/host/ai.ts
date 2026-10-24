@@ -202,6 +202,17 @@ export interface AiChatRequest {
   readonly maxTokens?: number;
   readonly purpose: AiChatPurpose;
   readonly responseFormat?: AiResponseFormat;
+  /**
+   * What to search knowledge catalogs for. Without it a provider searches with
+   * the last user message, which for a templated prompt is mostly document.
+   */
+  readonly knowledgeQuery?: string;
+  /**
+   * Number knowledge passages and ask the model to cite them as `[n]`. Only a
+   * caller that checks and renders citations should: the markers otherwise
+   * end up in its output.
+   */
+  readonly knowledgeCitations?: boolean;
 }
 
 export interface AiChatCompletion {
@@ -219,6 +230,13 @@ export interface AiChatProgress {
   /** Exact engine count, including private reasoning when the engine counts it. */
   readonly outputTokens: number | null;
   readonly tokensPerSecond: number | null;
+}
+
+/** One reference passage the model was given; its citation number is its position from 1. */
+export interface AiChatEvidence {
+  readonly title: string;
+  readonly catalogId: string;
+  readonly text: string;
 }
 
 /** One knowledge catalog that contributed reference passages to a request. */
@@ -239,8 +257,11 @@ export type AiChatKnowledge =
   | {
       readonly outcome: 'used';
       readonly sources: readonly AiChatKnowledgeSource[];
-      /** The passage texts the model was given, so its output can be checked against them. */
-      readonly evidence: readonly string[];
+      /**
+       * The passages the model was given, in citation order: it was asked to
+       * cite `evidence[0]` as `[1]`. Its output can be checked against them.
+       */
+      readonly evidence: readonly AiChatEvidence[];
     }
   /** The catalogs were searched and nothing relevant came back. */
   | { readonly outcome: 'none' }
@@ -258,15 +279,23 @@ export type AiChatEvent =
 export interface AiFactCheckRequest {
   /** The output, as Markdown. */
   readonly text: string;
-  /** Reference passages the model was given. */
+  /** Reference passage texts the model was given, `[1]` first. */
   readonly evidence: readonly string[];
+  /**
+   * The model was asked to cite passages by number, and its numbers match
+   * `evidence`: check each sentence against what it cites. Otherwise each
+   * sentence is checked against all of the evidence and markers are ignored.
+   */
+  readonly citations: boolean;
   /** What the person supplied: their instructions and document. Details found here need no source. */
   readonly given: string;
 }
 
 export interface AiFactCheckSentence {
-  /** The sentence, possibly shortened. */
+  /** The sentence without citation markers, possibly shortened. */
   readonly text: string;
+  /** `bad-citation`: it cites a passage number the model was never given. */
+  readonly problem: 'unsourced' | 'bad-citation';
   /** The names, dates, numbers or quotations no source shows. */
   readonly missing: readonly string[];
   /**

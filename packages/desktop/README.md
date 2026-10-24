@@ -46,7 +46,9 @@ model preparation, Apple model readiness, download observation, evidence
 serialization, native verification, and host-environment restoration. DocBlocks
 retains its provider-neutral `AiService`, renderer ownership, wire limits,
 preferences, owner-only token file (`main/ai/ai-credentials.ts` explains why not the keychain), editor prompts/transactions, and MAS seal
-verification. `withKnowledgeContext` receives the host's prompt/message limits;
+verification. `knowledgeContext` receives the host's prompt/message limits and
+the request's knowledge query; drafts ask for numbered citations, which
+`main/ai/fact-check.ts` checks with `@bendyline/gezel/grounding`;
 model locality comes from SDK metadata, never from an engine name.
 
 DocBlocks uses `@bendyline/gezel-inference` for its private host. The full

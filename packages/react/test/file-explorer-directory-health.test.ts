@@ -54,7 +54,8 @@ describe('FileExplorer directory health', () => {
 
       const childAlert = container.querySelector<HTMLElement>('.db-tree-error--child');
       expect(childAlert?.dataset.directoryPath).to.equal('docs');
-      expect(childAlert?.textContent).to.include('Directory not found.');
+      expect(childAlert?.textContent).to.include("This folder can't be found.");
+      expect(childAlert?.textContent).not.to.include('Directory not found.');
       expect(
         container.querySelector('.db-file-explorer > .db-tree-error:not(.db-tree-error--child)'),
         'a child read must not become a workspace-wide banner',
@@ -114,9 +115,9 @@ describe('FileExplorer directory health', () => {
         root.render(createElement(FileExplorer, { provider }));
         await new Promise((resolve) => setTimeout(resolve, 50));
       });
-      expect(container.querySelector('.db-file-explorer > .db-tree-error')?.textContent).to.include(
-        'Bendyline.md: UNKNOWN: unknown error, read',
-      );
+      const rootAlert = container.querySelector('.db-file-explorer > .db-tree-error');
+      expect(rootAlert?.textContent).to.include("Bendyline.md couldn't be read.");
+      expect(rootAlert?.textContent).not.to.include('UNKNOWN');
 
       const retry = container.querySelector<HTMLButtonElement>(
         '.db-file-explorer > .db-tree-error .db-tree-error-retry',

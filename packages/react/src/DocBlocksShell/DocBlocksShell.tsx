@@ -323,6 +323,11 @@ import {
 } from '../WorkspaceIndex/recent-documents.js';
 import { WorkspaceAuthorityBarrier } from './workspace-authority-barrier.js';
 import { copyTransientWorkspaceContents } from './transient-workspace-move.js';
+import {
+  createDocumentRelativeMediaReader,
+  createMediaContainer,
+  looseFileMediaReader,
+} from './document-relative-media.js';
 import { createNativeFileActions } from './native-file-actions.js';
 import {
   isAppDefaultWorkspace,
@@ -2808,12 +2813,19 @@ export function DocBlocksShell({
     const parentDir = dirnameOf(selectedFile);
     const base = basenameOf(selectedFile);
     const baseNoExt = base.replace(/\.[^.]+$/, '');
-    const container = new FileSystemContentContainer(provider, parentDir);
+    // A loose OS-opened file reads the media its session copy lacks from disk.
+    const readBeside = looseFileMediaReader(provider.id);
+    const container = createMediaContainer(provider, parentDir, readBeside);
     const vPrefix = parentDir ? `${parentDir}/${baseNoExt}_files` : `${baseNoExt}_files`;
     const vContainer = new FileSystemContentContainer(provider, vPrefix, {
       documentMediaPrefix: `${baseNoExt}_files`,
     });
-    const mp = createFileMediaProvider(container, base);
+    const mp = createFileMediaProvider(container, base, {
+      readDocumentRelative: createDocumentRelativeMediaReader(
+        createMediaContainer(provider, '', readBeside),
+        parentDir,
+      ),
+    });
     mediaContainerRef.current = container;
     versionsContainerRef.current = vContainer;
     setMediaProvider(mp);

@@ -120,7 +120,11 @@ export {
 } from './dbk-workspace.js';
 export { IndexedDBContentContainer } from './indexeddb-content-container.js';
 export { FileSystemContentContainer } from './filesystem-content-container.js';
-export { createFileMediaProvider } from './file-media-provider.js';
+export { createFileMediaProvider, type FileMediaProviderOptions } from './file-media-provider.js';
+export {
+  isDocumentMediaPath,
+  resolveDocumentRelativeMediaPath,
+} from './document-relative-media.js';
 export {
   MARKDOWN_FILE_EXTENSIONS,
   SQUISQ_RUNTIME_DIRECTORY_NAME,

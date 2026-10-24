@@ -335,6 +335,79 @@ test('AI drafts protect edits on regeneration and insert the reviewed response',
   );
 });
 
+test('AI drafts show the knowledge they drew on, flag unsourced details, and cite sources as footnotes', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.skip(Boolean(upstream), 'The reply and its citations are scripted.');
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {
+      knowledge: {
+        catalog: { id: 'wikis', name: 'Team Wikis' },
+        passages: [
+          {
+            title: 'Wiki history',
+            text: 'The team wiki moved to DocBlocks in 2024 after a review by the documentation group.',
+          },
+        ],
+      },
+      replies: [
+        {
+          text: 'The wiki moved to DocBlocks in 2024 [1]. The old wiki held 312 pages.',
+          finishReason: 'stop',
+        },
+      ],
+    },
+    async ({ window, editor, file, fake }) => {
+      await caretAtNewParagraph(window, editor);
+      await openAiMenuItem(window, 'Add content…');
+      const dialog = window.getByRole('dialog', { name: 'Add content with AI' });
+      await dialog
+        .getByRole('textbox', { name: 'What should be added?' })
+        .fill('Add a sentence about when the wiki moved.');
+      await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+      const insert = dialog.getByRole('button', { name: 'Insert', exact: true });
+      await expect(insert).toBeEnabled({ timeout: ANSWER_TIMEOUT_MS });
+
+      // The catalog was searched for the request and its subject, not the
+      // whole prompt, and the model was asked to cite passages by number.
+      expect(fake.retrievals[0]).toMatchObject({
+        query: 'Add a sentence about when the wiki moved.\nTeam wiki migration',
+      });
+      expect(fake.chats[0].messages[0].content).toContain('"cite":"[1]"');
+
+      const knowledge = dialog.locator('.db-ai-knowledge--used');
+      await expect(knowledge.locator('summary')).toHaveText('Knowledge: Team Wikis · 1 article');
+      const facts = dialog.locator('.db-ai-facts');
+      await expect(facts.locator('summary')).toHaveText('1 statement to check');
+      await facts.locator('summary').click();
+      await expect(facts.locator('mark')).toHaveText('312');
+      await test.info().attach('Knowledge and facts', {
+        body: await dialog.screenshot({ path: test.info().outputPath('knowledge-and-facts.png') }),
+        contentType: 'image/png',
+      });
+
+      // An unsourced number is asked about before it reaches the document.
+      await insert.click();
+      const confirmation = window.getByRole('dialog', { name: 'Use details no source shows?' });
+      await expect(confirmation).toContainText('1 statement in this draft includes');
+      await confirmation.getByRole('button', { name: 'Insert anyway' }).click();
+      await expect(dialog).toBeHidden();
+      await expect
+        .poll(() => readDocument(file))
+        .toContain('The wiki moved to DocBlocks in 2024[^source-1].');
+      expect(readDocument(file)).toContain(
+        '[^source-1]: Wiki history, from the Team Wikis knowledge catalog.',
+      );
+    },
+  );
+});
+
 test('AI continues a truncated rewrite without losing edits and applies it as one undo step', async ({
   launchApp,
   workspaceDir,

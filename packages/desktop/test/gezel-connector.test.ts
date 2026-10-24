@@ -473,7 +473,7 @@ describe('Gezel connector against the app SDK', () => {
       knowledge: {
         outcome: 'used',
         sources: [{ catalogId: 'science', name: 'science', titles: ['Science'] }],
-        evidence: ['A relevant fact.'],
+        evidence: [{ title: 'Science', catalogId: 'science', text: 'A relevant fact.' }],
       },
       text: '',
       finishReason: null,
@@ -522,7 +522,7 @@ describe('Gezel connector against the app SDK', () => {
     expect(first.value?.knowledge).to.deep.equal({
       outcome: 'used',
       sources: [{ catalogId: 'pnw', name: 'pnw', titles: ['Panama Hotel'] }],
-      evidence: ['Fact.'],
+      evidence: [{ title: 'Panama Hotel', catalogId: 'pnw', text: 'Fact.' }],
     });
     let failure: unknown = null;
     try {
@@ -641,6 +641,8 @@ describe('Gezel connector with the real embedding SDK', () => {
         home: path.join(root, 'apps', 'docblocks'),
         role: 'user',
         embeddedInferenceOnly: true,
+        // gezel-app-sdk keeps a hosted daemon's log lines off the app's stdout.
+        logOutput: 'stderr',
         port: 0,
         preferCanonicalPort: false,
       },
