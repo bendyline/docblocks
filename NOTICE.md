@@ -20,7 +20,7 @@ The public npm package notices are explicitly included by each package's `files`
 
 ## Material non-JavaScript distributions
 
-- The site ships 16 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
+- The site ships 17 font-family license files from [packages/site/public/fonts/licenses](packages/site/public/fonts/licenses). The font binaries and their license files are copied together.
 - Site, desktop renderer, and VS Code webview builds ship @ironcalc/wasm@0.8.4 as a deferred formula engine, together with the selected upstream MIT license.
 - Desktop distributions embed Electron 43.5.0. Electron's MIT license and its Chromium third-party notice are copied from the pinned Electron distribution into the application resources directory.
 

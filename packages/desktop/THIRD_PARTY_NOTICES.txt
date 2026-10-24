@@ -316,7 +316,7 @@ The following locked packages declare a license identifier but publish no packag
 
 ==============================================================================
 Components: @bendyline/gezel-app-sdk@1.1.8, @bendyline/gezel-catalog@1.2.8, @bendyline/gezel-client@1.2.8, @bendyline/gezel-inference@1.0.3, @bendyline/gezel-knowledge@1.2.8, @bendyline/gezel@1.2.8, @bendyline/gezk@1.0.4
-Source files: node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezk/LICENSE, node_modules/@bendyline/gezel-inference/LICENSE, node_modules/@bendyline/gezel-inference/node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, packages/desktop/node_modules/.docblocks-gezel/@bendyline/gezel-app-sdk/LICENSE
+Source files: node_modules/@bendyline/gezel-catalog/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezel-catalog/node_modules/@bendyline/gezk/LICENSE, node_modules/@bendyline/gezel-inference/LICENSE, node_modules/@bendyline/gezel-inference/node_modules/@bendyline/gezel-client/LICENSE, node_modules/@bendyline/gezel-knowledge/LICENSE, packages/desktop/node_modules/@bendyline/gezel-app-sdk/LICENSE
 ==============================================================================
 MIT License
 
