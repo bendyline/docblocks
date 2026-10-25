@@ -318,6 +318,32 @@ describe('DocumentSession', () => {
     expect(session.getSnapshot().status).to.equal('saved');
   });
 
+  it('dates the local branch of a conflict by its latest edit in this session', async () => {
+    const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
+    await session.transitionTo(
+      target('workspace:a.md', async () => undefined),
+      'initial',
+    );
+
+    const before = Date.now();
+    edit(session, 'local draft');
+    session.observeExternal({ targetKey: 'workspace:a.md', content: 'external', version: 2 });
+    const editedAt = session.getSnapshot().conflict?.localEditedAt;
+    expect(editedAt).to.be.within(before, Date.now());
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    edit(session, 'local draft, continued');
+    expect(session.getSnapshot().conflict?.localEditedAt).to.be.above(editedAt!);
+
+    await session.resolveConflict('use-external');
+    await session.transitionTo(
+      target('workspace:b.md', async () => undefined),
+      'other',
+    );
+    session.observeExternal({ targetKey: 'workspace:b.md', content: null });
+    expect(session.getSnapshot().conflict?.localEditedAt).to.equal(undefined);
+  });
+
   it('refreshes a conflict when the external branch returns to the persisted baseline', async () => {
     const session = new DocumentSession({ autoSaveDelayMs: 1_000 });
     await session.transitionTo(

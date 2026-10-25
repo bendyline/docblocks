@@ -71,6 +71,8 @@ export interface DocumentSessionConflict {
   targetKey: string;
   localContent: string;
   localRevision: number;
+  /** Wall-clock time of this session's latest local edit, when it made one. */
+  localEditedAt?: number;
   externalContent: string | null;
   externalVersion: DocumentExternalVersion;
 }

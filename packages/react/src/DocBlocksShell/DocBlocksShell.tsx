@@ -311,6 +311,7 @@ import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-rankin
 import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
+import { DocumentConflictBanner } from './DocumentConflictBanner.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
@@ -2713,12 +2714,21 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
+  // Dismissing hides the conflict banner, not the conflict: saving stays
+  // blocked, so a blocked save or the next conflict brings the banner back.
+  const [dismissedConflictKey, setDismissedConflictKey] = useState<string | null>(null);
+  const conflictTargetKey = documentSnapshot.conflict?.targetKey ?? null;
+  useEffect(() => {
+    if (conflictTargetKey === null) setDismissedConflictKey(null);
+  }, [conflictTargetKey]);
+
   const saveActiveDocument = useCallback(() => {
     void (async () => {
       try {
         await documentSession.flush('manual');
         showToast('success', 'Saved. You’re all set.');
       } catch (error: unknown) {
+        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
         showToast(
           'error',
           isQuotaExceededError(error)
@@ -3008,6 +3018,7 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
+        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
         showToast(
           'error',
           error instanceof Error
@@ -5421,20 +5432,15 @@ export function DocBlocksShell({
             DocBlocks is ready to work offline.
           </div>
         )}
-        {documentSnapshot.conflict && (
-          <div className="db-document-conflict" role="alert">
-            <span>
-              {documentSnapshot.conflict.recoveredDraft
-                ? 'A recovery draft from a previous session differs from the saved file. The saved file may be newer. Choose which version to use.'
-                : 'This document changed outside DocBlocks. Your unsaved version is still intact.'}
-            </span>
-            <div className="db-document-conflict-actions">
-              <button type="button" onClick={() => setShowConflictComparison(true)}>
-                Compare versions
-              </button>
-            </div>
-          </div>
-        )}
+        {documentSnapshot.conflict &&
+          documentSnapshot.conflict.targetKey !== dismissedConflictKey && (
+            <DocumentConflictBanner
+              conflict={documentSnapshot.conflict}
+              readSavedFile={readConflictFile}
+              onCompare={() => setShowConflictComparison(true)}
+              onDismiss={() => setDismissedConflictKey(conflictTargetKey)}
+            />
+          )}
         {documentSnapshot.conflict && showConflictComparison && (
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog

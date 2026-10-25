@@ -6158,6 +6158,18 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   transform: translateX(-50%);
 }
 
+.db-document-conflict-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.db-document-conflict-details {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
 .db-document-conflict-actions {
   display: flex;
   flex: none;
