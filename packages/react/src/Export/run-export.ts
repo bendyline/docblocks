@@ -25,6 +25,7 @@ import type {
 } from '@bendyline/squisq-formats/diagrams';
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
+import { PdfReplacementsError } from './export-errors.js';
 export { buildExportFilename } from './export-filename.js';
 
 export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
@@ -173,6 +174,15 @@ export interface ExportResult {
   readonly warnings: readonly string[];
 }
 
+/** Choices the user made for this one export, as opposed to its saved options. */
+export interface ExportBehavior {
+  /**
+   * Save a PDF even though its fonts replace some characters. Without it,
+   * such an export throws `PdfReplacementsError` before saving anything.
+   */
+  allowPdfReplacements?: boolean;
+}
+
 /** Run the export and trigger a download. */
 export async function runExport(
   markdown: string,
@@ -181,6 +191,7 @@ export async function runExport(
   mediaContainer?: ContentContainer | null,
   saveBlob?: ExportBlobSaver,
   converterOverrides: ExportConverterOverrides = {},
+  behavior: ExportBehavior = {},
 ): Promise<ExportResult> {
   const warnings: string[] = [];
   await exportDocument(
@@ -190,6 +201,7 @@ export async function runExport(
     mediaContainer,
     saveBlob,
     converterOverrides,
+    behavior,
     warnings,
   );
   return { warnings };
@@ -202,6 +214,7 @@ async function exportDocument(
   mediaContainer: ContentContainer | null | undefined,
   saveBlob: ExportBlobSaver | undefined,
   converterOverrides: ExportConverterOverrides,
+  behavior: ExportBehavior,
   warnings: string[],
 ): Promise<void> {
   const filename = buildFilename(selectedFile, options.format);
@@ -252,12 +265,8 @@ async function exportDocument(
       // Check fidelity before any download or destination write occurs.
       onWarning: (message) => warnings.push(message),
     });
-    if (warnings.length > 0) {
-      throw new Error(
-        'PDF was not saved because its fonts cannot preserve all of this document’s text. ' +
-          'Export as Word, HTML, or EPUB to keep every character. ' +
-          warnings.join(' '),
-      );
+    if (warnings.length > 0 && !behavior.allowPdfReplacements) {
+      throw new PdfReplacementsError([...warnings]);
     }
     await saveExportBlob(new Blob([buf], { type: MIME_TYPES.pdf }), filename, saveBlob);
     return;

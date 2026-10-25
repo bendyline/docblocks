@@ -4,7 +4,12 @@
  * Code webview do not eagerly transform the video worker graph.
  */
 export { ExportDialog } from './ExportDialog.js';
-export type { ExportDestinationControl, ExportDialogProps } from './ExportDialog.js';
+export type {
+  ExportDestinationControl,
+  ExportDialogProps,
+  ExportErrorAction,
+} from './ExportDialog.js';
+export { PdfReplacementsError } from './export-errors.js';
 export {
   DEFAULT_OPTIONS,
   FORMAT_EXTENSIONS,
@@ -25,4 +30,9 @@ export type {
 } from './dashboard-image-save.js';
 export { createImageSaveOutput } from './image-save.js';
 export type { ImageSaveAdapter, ImageSaveOutput } from './image-save.js';
-export type { ExportBlobSaver, ExportConverterOverrides, ExportResult } from './run-export.js';
+export type {
+  ExportBehavior,
+  ExportBlobSaver,
+  ExportConverterOverrides,
+  ExportResult,
+} from './run-export.js';

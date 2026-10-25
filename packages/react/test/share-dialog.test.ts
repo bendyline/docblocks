@@ -22,35 +22,37 @@ describe('ShareDialog', () => {
     });
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const current = container.querySelector<HTMLTextAreaElement>('#db-share-link')?.value;
+      const current = document.body.querySelector<HTMLTextAreaElement>('#db-share-link')?.value;
       if (current) break;
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
     }
 
-    expect(container.textContent).to.include('text and formatting of this document are embedded');
-    expect(container.textContent).to.include('Images are excluded from share links.');
-    expect(container.textContent).to.include('Image descriptions are kept when available.');
-    const select = container.querySelector<HTMLSelectElement>('#db-share-mode');
-    const link = container.querySelector<HTMLTextAreaElement>('#db-share-link');
+    expect(document.body.textContent).to.include(
+      'text and formatting of this document are embedded',
+    );
+    expect(document.body.textContent).to.include('Images are excluded from share links.');
+    expect(document.body.textContent).to.include('Image descriptions are kept when available.');
+    const select = document.body.querySelector<HTMLSelectElement>('#db-share-mode');
+    const link = document.body.querySelector<HTMLTextAreaElement>('#db-share-link');
     expect(select).not.to.equal(null);
     expect(link?.value).to.include('#shared(');
 
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (container.querySelector<HTMLImageElement>('.db-share-qr-image')) break;
+      if (document.body.querySelector<HTMLImageElement>('.db-share-qr-image')) break;
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       });
     }
 
-    const qrImage = container.querySelector<HTMLImageElement>('.db-share-qr-image');
-    const saveQrButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-      (button) => button.textContent === 'Save QR PNG',
-    );
+    const qrImage = document.body.querySelector<HTMLImageElement>('.db-share-qr-image');
+    const saveQrButton = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent === 'Save QR PNG');
     expect(qrImage?.src).to.match(/^data:image\/png;base64,/u);
     expect(qrImage?.alt).to.include('QR code');
-    expect(container.textContent).to.include('docblocks.com link');
+    expect(document.body.textContent).to.include('docblocks.com link');
     expect(saveQrButton?.disabled).to.equal(false);
 
     const previousClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
@@ -71,9 +73,9 @@ describe('ShareDialog', () => {
     });
 
     try {
-      const copyQrButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
-        (button) => button.textContent === 'Copy QR image',
-      );
+      const copyQrButton = Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((button) => button.textContent === 'Copy QR image');
       await act(async () => copyQrButton?.click());
       expect(copied).to.have.length(1);
       expect(copied[0]?.['image/png']).to.be.instanceOf(Blob);

@@ -24,6 +24,7 @@
     "@rollup/plugin-terser": {
       "serialize-javascript": "7.1.2"
     },
+    "hono@4.13.9": "4.13.13",
     "minimatch@3.1.5": {
       "brace-expansion": "1.1.21"
     },
@@ -41,9 +42,11 @@
     "tsx": {
       "esbuild": "0.28.1"
     },
+    "undici@8.11.2": "8.12.2",
     "xcode": {
       "uuid": "11.1.1"
-    }
+    },
+    "zod@4.6.5": "4.6.7"
   },
   "scripts": {
     "all": "tsx scripts/run-canonical-gate.ts",

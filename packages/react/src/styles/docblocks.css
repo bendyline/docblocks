@@ -1631,12 +1631,11 @@
   visibility: visible;
   transition-delay: 0s;
   /* `transform: none`, not `translateX(0)`. ANY non-none transform makes this
-     element the containing block for `position: fixed` descendants, and the
-     modal overlay (.db-dialog-overlay, `position: fixed; inset: 0`) is rendered
-     inside the sidebar rather than portalled to <body>. With a transform here
-     every dialog opened from the app menu is sized and clipped to the drawer
-     instead of the viewport. Removing it once the drawer is open is visually
-     identical, because progress is 1 and translateX(0) moves nothing. */
+     element the containing block for `position: fixed` descendants, which
+     sizes and clips anything fixed inside the drawer to the drawer instead of
+     the viewport. (Dialogs portal to <body> and are immune.) Removing it once
+     the drawer is open is visually identical, because progress is 1 and
+     translateX(0) moves nothing. */
   transform: none;
 }
 
@@ -8077,6 +8076,10 @@ button.db-git-file-row:hover {
   margin: 8px 0 0;
   color: var(--db-danger);
   font-size: 12.5px;
+}
+
+.db-export-error-action {
+  margin-top: 8px;
 }
 
 .db-git-hint {

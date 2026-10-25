@@ -43,9 +43,10 @@ describe('usePromptDialog', () => {
     container.remove();
   });
 
-  const input = () => container.querySelector<HTMLInputElement>('.db-git-form-input');
-  const confirmButton = () => container.querySelector<HTMLButtonElement>('.db-git-primary-btn');
-  const cancelButton = () => container.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
+  const input = () => document.body.querySelector<HTMLInputElement>('.db-git-form-input');
+  const confirmButton = () => document.body.querySelector<HTMLButtonElement>('.db-git-primary-btn');
+  const cancelButton = () =>
+    document.body.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
 
   async function open(initialValue = 'Untitled.md') {
     let settled: string | null | undefined;
@@ -82,9 +83,11 @@ describe('usePromptDialog', () => {
     expect(field?.value).to.equal('Untitled.md');
     expect(document.activeElement).to.equal(field);
     // The field must be programmatically labelled, not just visually.
-    const label = container.querySelector<HTMLLabelElement>('.db-git-form-label');
+    const label = document.body.querySelector<HTMLLabelElement>('.db-git-form-label');
     expect(label?.htmlFor).to.equal(field?.id);
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).to.equal('true');
+    expect(document.body.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).to.equal(
+      'true',
+    );
   });
 
   it('pre-selects the whole value by default', async () => {

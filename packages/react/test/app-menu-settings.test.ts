@@ -26,9 +26,9 @@ describe('AppMenu settings', () => {
       });
 
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
-      const persistenceButton = Array.from(container.querySelectorAll('button')).find(
+      const persistenceButton = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'Protect data from browser cleanup',
       );
       expect(persistenceButton).not.to.equal(undefined);
@@ -36,8 +36,8 @@ describe('AppMenu settings', () => {
       await act(async () => persistenceButton?.click());
 
       expect(persistenceRequests).to.equal(1);
-      expect(container.querySelector('.db-dialog')).to.equal(null);
-      expect(container.querySelector('.db-app-menu-dropdown')).to.equal(null);
+      expect(document.body.querySelector('.db-dialog')).to.equal(null);
+      expect(document.body.querySelector('.db-app-menu-dropdown')).to.equal(null);
     } finally {
       await act(async () => root.unmount());
       container.remove();
@@ -68,27 +68,27 @@ describe('AppMenu settings', () => {
       });
 
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
-      const settingsButton = Array.from(container.querySelectorAll('button')).find(
+      const settingsButton = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'Settings',
       );
       await act(async () => settingsButton?.click());
 
-      expect(container.querySelector('.db-dialog--wide')).not.to.equal(null);
-      expect(container.querySelectorAll('.db-settings-accent')).to.have.length(7);
-      expect(container.textContent).to.include(
+      expect(document.body.querySelector('.db-dialog--wide')).not.to.equal(null);
+      expect(document.body.querySelectorAll('.db-settings-accent')).to.have.length(7);
+      expect(document.body.textContent).to.include(
         'Browsers may clear site data under storage pressure unless protection is granted.',
       );
-      expect(container.textContent).not.to.include('in the app menu');
+      expect(document.body.textContent).not.to.include('in the app menu');
 
-      const persistenceButton = Array.from(container.querySelectorAll('button')).find(
+      const persistenceButton = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'Protect data from browser cleanup',
       );
       expect(persistenceButton).not.to.equal(undefined);
       await act(async () => persistenceButton?.click());
       expect(persistenceRequests).to.equal(1);
-      expect(container.querySelector('.db-dialog')).to.equal(null);
+      expect(document.body.querySelector('.db-dialog')).to.equal(null);
 
       await act(async () => finishPersistenceRequest?.());
     } finally {
@@ -112,21 +112,23 @@ describe('AppMenu settings', () => {
         );
       });
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
-      const aboutButton = Array.from(container.querySelectorAll('button')).find(
+      const aboutButton = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'About',
       );
       await act(async () => aboutButton?.click());
 
       // App Review rejects apps that label themselves beta (guideline 2.2).
-      expect(container.textContent).not.to.match(/\bbeta\b/i);
-      expect(container.querySelector('.db-about-version')?.textContent).to.contain('2.1.0 web');
-      expect(container.querySelector('time')?.textContent).to.equal('2026-07-15');
-      const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('a')).map((link) => ({
-        text: link.textContent?.trim(),
-        href: link.href,
-      }));
+      expect(document.body.textContent).not.to.match(/\bbeta\b/i);
+      expect(document.body.querySelector('.db-about-version')?.textContent).to.contain('2.1.0 web');
+      expect(document.body.querySelector('time')?.textContent).to.equal('2026-07-15');
+      const links = Array.from(document.body.querySelectorAll<HTMLAnchorElement>('a')).map(
+        (link) => ({
+          text: link.textContent?.trim(),
+          href: link.href,
+        }),
+      );
       expect(links).to.deep.include({
         text: 'More information...',
         href: 'https://docblocks.com/web/',
@@ -139,7 +141,7 @@ describe('AppMenu settings', () => {
         text: 'Support',
         href: 'https://github.com/bendyline/docblocks/issues',
       });
-      expect(container.textContent).to.contain(
+      expect(document.body.textContent).to.contain(
         'See our free desktop apps at docblocks.com/desktop',
       );
       expect(links).to.deep.include({
@@ -177,19 +179,19 @@ describe('AppMenu settings', () => {
         root.render(createElement(AppMenu));
       });
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
-      const aboutButton = Array.from(container.querySelectorAll('button')).find(
+      const aboutButton = Array.from(document.body.querySelectorAll('button')).find(
         (button) => button.textContent?.trim() === 'About',
       );
       await act(async () => aboutButton?.click());
 
       const moreInformationLink = Array.from(
-        container.querySelectorAll<HTMLAnchorElement>('a'),
+        document.body.querySelectorAll<HTMLAnchorElement>('a'),
       ).find((link) => link.textContent?.trim() === 'More information...');
       expect(moreInformationLink?.href).to.equal('https://docblocks.com/desktop/');
       // Desktop users already have the app; the web-only pitch stays out.
-      expect(container.textContent).not.to.contain('See our free desktop apps');
+      expect(document.body.textContent).not.to.contain('See our free desktop apps');
     } finally {
       delete hostGlobal.docBlocksHost;
       await act(async () => root.unmount());
@@ -219,10 +221,10 @@ describe('AppMenu settings', () => {
         );
       });
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
 
-      const menu = container.querySelector('.db-app-menu-dropdown');
+      const menu = document.body.querySelector('.db-app-menu-dropdown');
       const entries = [...(menu?.children ?? [])].map((child) =>
         child.classList.contains('db-app-menu-divider')
           ? '---'
@@ -248,12 +250,12 @@ describe('AppMenu settings', () => {
       );
       await act(async () => shortcuts?.click());
       expect(sheets).to.equal(1);
-      expect(container.querySelector('.db-app-menu-dropdown')).to.equal(null);
+      expect(document.body.querySelector('.db-app-menu-dropdown')).to.equal(null);
 
       await act(async () => {
-        container.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
+        document.body.querySelector<HTMLButtonElement>('.db-app-menu-btn')?.click();
       });
-      const backup = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      const backup = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
         (button) => button.textContent?.trim() === 'Back up all workspaces',
       );
       await act(async () => backup?.click());

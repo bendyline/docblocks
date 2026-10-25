@@ -484,9 +484,11 @@ Two traps the drawer layout has already hit, both guarded by tests:
   Unmounting tore down Tiptap, Monaco, undo history, scroll position, and tree
   expansion on every toggle. `inert` keeps the hidden pane out of the tab order.
 - **The open drawer must set `transform: none`.** Any non-`none` transform makes
-  the sidebar the containing block for `position: fixed` descendants, and
-  `.db-dialog-overlay` is rendered inside the sidebar rather than portalled — so
-  a transform sizes and clips every app-menu dialog to the drawer.
+  the sidebar the containing block for `position: fixed` descendants, and sizes
+  and clips them to the drawer. `Dialog` portals `.db-dialog-overlay` to
+  `<body>` for the same reason: Squisq's toolbar is a size container, which the
+  Chromium in VS Code 1.85–1.97 also made a containing block, so Export and
+  Settings opened above the top of the webview.
 
 Never set `padding-bottom` on `.squisq-status-bar` to apply a safe-area or
 keyboard inset: it replaces Squisq's own padding rather than adding to it. Put

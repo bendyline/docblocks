@@ -54,7 +54,7 @@ describe('Document conflict comparison', () => {
   }
 
   async function click(text: string) {
-    const button = [...container.querySelectorAll('button')].find(
+    const button = [...document.body.querySelectorAll('button')].find(
       (item) => item.textContent === text,
     );
     expect(button, text).not.to.equal(undefined);
@@ -63,14 +63,14 @@ describe('Document conflict comparison', () => {
 
   it('shows both exact read-only versions and distinguishes capture time from file modification', async () => {
     await render();
-    const previews = [...container.querySelectorAll('textarea')];
+    const previews = [...document.body.querySelectorAll('textarea')];
     expect(previews.map((preview) => preview.value)).to.deep.equal([
       props.conflict.localContent,
       props.conflict.externalContent,
     ]);
     expect(previews.every((preview) => preview.readOnly)).to.equal(true);
-    expect(container.textContent).to.include('Recovery copy captured:');
-    expect(container.textContent).to.include('File last modified:');
+    expect(document.body.textContent).to.include('Recovery copy captured:');
+    expect(document.body.textContent).to.include('File last modified:');
     expect(localChoices + savedChoices).to.equal(0);
     await click('Decide later');
     expect(localChoices + savedChoices).to.equal(0);
@@ -93,8 +93,8 @@ describe('Document conflict comparison', () => {
       lastModified: '2026-10-05T12:00:00Z',
     });
     await render();
-    expect(container.textContent).to.include('File modification time unavailable');
-    expect(container.textContent).not.to.include('File last modified:');
+    expect(document.body.textContent).to.include('File modification time unavailable');
+    expect(document.body.textContent).not.to.include('File last modified:');
   });
 
   it('still offers both branches when file metadata cannot be read', async () => {
@@ -102,18 +102,20 @@ describe('Document conflict comparison', () => {
       throw new Error('permission denied');
     };
     await render();
-    expect(container.querySelectorAll('textarea')).to.have.length(2);
-    expect(container.textContent).to.include('File modification time unavailable');
+    expect(document.body.querySelectorAll('textarea')).to.have.length(2);
+    expect(document.body.textContent).to.include('File modification time unavailable');
   });
 
   it('explains a deletion and keeps the dialog open if resolution fails', async () => {
     props.conflict = { ...props.conflict, externalContent: null };
     props.onUseSaved = async () => false;
     await render();
-    expect(container.textContent).to.include('The saved file no longer exists.');
+    expect(document.body.textContent).to.include('The saved file no longer exists.');
     await click('Accept deletion');
     expect(closes).to.equal(0);
-    expect(container.querySelector('[role="alert"]')?.textContent).to.include('Could not resolve');
+    expect(document.body.querySelector('[role="alert"]')?.textContent).to.include(
+      'Could not resolve',
+    );
   });
 
   it('disables both choices while a save is in flight', async () => {
@@ -125,7 +127,7 @@ describe('Document conflict comparison', () => {
     await render();
     await click('Replace file with draft');
     const choices = [
-      ...container.querySelectorAll<HTMLButtonElement>('.db-conflict-version button'),
+      ...document.body.querySelectorAll<HTMLButtonElement>('.db-conflict-version button'),
     ];
     expect(choices.every((button) => button.disabled)).to.equal(true);
     await click('Use saved file');

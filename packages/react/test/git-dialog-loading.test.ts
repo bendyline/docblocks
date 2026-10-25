@@ -124,10 +124,10 @@ describe('git dialogs — failed loads', () => {
       );
       await settle();
 
-      expect(container.textContent, 'the dialog must not sit on a spinner').to.not.include(
+      expect(document.body.textContent, 'the dialog must not sit on a spinner').to.not.include(
         'Loading branches…',
       );
-      const alert = container.querySelector('[role="alert"]');
+      const alert = document.body.querySelector('[role="alert"]');
       expect(alert, 'a rejected load must be surfaced').to.not.equal(null);
       expect(alert?.textContent).to.include('Host channel closed');
       expect(unhandled, 'the rejection must be handled').to.deep.equal([]);
@@ -153,8 +153,8 @@ describe('git dialogs — failed loads', () => {
       );
       await settle();
 
-      expect(container.textContent).to.include('main');
-      expect(container.querySelector('[role="alert"]')).to.equal(null);
+      expect(document.body.textContent).to.include('main');
+      expect(document.body.querySelector('[role="alert"]')).to.equal(null);
     });
   });
 
@@ -176,10 +176,10 @@ describe('git dialogs — failed loads', () => {
       );
       await settle();
 
-      const alert = container.querySelector('[role="alert"]');
+      const alert = document.body.querySelector('[role="alert"]');
       expect(alert, 'a rejected log must be surfaced').to.not.equal(null);
       expect(alert?.textContent).to.include('Host channel closed');
-      expect(container.textContent).to.not.include('No commits yet');
+      expect(document.body.textContent).to.not.include('No commits yet');
       expect(unhandled, 'the rejection must be handled').to.deep.equal([]);
     });
 
@@ -200,15 +200,15 @@ describe('git dialogs — failed loads', () => {
       );
       await settle();
 
-      const toggle = container.querySelector<HTMLButtonElement>('.db-git-history-toggle');
+      const toggle = document.body.querySelector<HTMLButtonElement>('.db-git-history-toggle');
       expect(toggle, 'the commit row should render').to.not.equal(null);
       await act(async () => toggle!.click());
       await settle();
 
-      expect(container.textContent, 'the expanded row must not spin forever').to.not.include(
+      expect(document.body.textContent, 'the expanded row must not spin forever').to.not.include(
         'Loading…',
       );
-      const alert = container.querySelector('[role="alert"]');
+      const alert = document.body.querySelector('[role="alert"]');
       expect(alert?.textContent).to.include('Commit read failed');
       expect(unhandled, 'the rejection must be handled').to.deep.equal([]);
     });
@@ -242,7 +242,7 @@ describe('git dialogs — failed loads', () => {
       // The user switches repository while the first log is still in flight.
       await act(async () => render('repo-new'));
       await settle();
-      expect(container.textContent).to.include('New repo commit');
+      expect(document.body.textContent).to.include('New repo commit');
 
       // The old repo's page finally lands.
       await act(async () => {
@@ -251,10 +251,10 @@ describe('git dialogs — failed loads', () => {
       await settle();
 
       expect(
-        container.textContent,
+        document.body.textContent,
         "the previous repository's commits must not appear",
       ).to.not.include('Old repo commit');
-      expect(container.textContent).to.include('New repo commit');
+      expect(document.body.textContent).to.include('New repo commit');
     });
   });
 });

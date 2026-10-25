@@ -44,6 +44,7 @@ import type { ExportBlobSaver } from './run-export.js';
 import { browserSaveMode, saveActionLabel } from './browser-save.js';
 import { buildExportFilename } from './export-filename.js';
 import { hostErrorDetail } from './host-error.js';
+import { PdfReplacementsError } from './export-errors.js';
 import { createImageSaveOutput } from './image-save.js';
 import { OpenAfterSaveCheckbox } from './OpenAfterSaveCheckbox.js';
 import { loadOpenAfterExport, saveOpenAfterExport } from '../preferences/export.js';
@@ -195,6 +196,8 @@ function loadVideoExportModules(): Promise<VideoExportModules> {
  * destination write refused) whose messages are already user-facing.
  */
 function exportErrorMessage(caught: unknown): string {
+  // Not a failure: it says what saving anyway would replace.
+  if (caught instanceof PdfReplacementsError) return caught.message;
   const detail = hostErrorDetail(caught);
   return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
 }
@@ -290,6 +293,12 @@ export function ExportToolbarControls({
   // What a finished export lost (e.g. characters PDF had to replace), shown
   // once the file is saved so a degraded export never passes silently.
   const [exportNotice, setExportNotice] = useState<readonly string[] | null>(null);
+  // A PDF export that stopped because its fonts would replace characters,
+  // kept so the user can save it with the replacements after all.
+  const [pdfReplacements, setPdfReplacements] = useState<{
+    options: ExportOptions;
+    quick: boolean;
+  } | null>(null);
   const [destinationTarget, setDestinationTarget] = useState<ExportDestinationTarget | null>(null);
   const [quickDestination, setQuickDestination] = useState<ResolvedQuickDestination | null>(null);
   const [quickDestinationPending, setQuickDestinationPending] = useState(false);
@@ -529,9 +538,10 @@ export function ExportToolbarControls({
   );
 
   const handleExport = useCallback(
-    async (opts: ExportOptions) => {
+    async (opts: ExportOptions, allowPdfReplacements = false) => {
       setExporting(true);
       setExportError(null);
+      setPdfReplacements(null);
       setOpenError(null);
       setExportNotice(null);
       setExportCompletion(null);
@@ -560,6 +570,8 @@ export function ExportToolbarControls({
                   savedTarget = await saveToDestination(blob, filename, exportTarget);
                 }
               : saveBlob,
+          undefined,
+          { allowPdfReplacements },
         );
         // Only a completed export dismisses the dialog. Closing in a
         // `finally` used to make a failure look exactly like a success.
@@ -573,6 +585,9 @@ export function ExportToolbarControls({
         if (result.warnings.length > 0) setExportNotice(result.warnings);
         if (savedTarget) await openSaved(savedTarget);
       } catch (caught: unknown) {
+        if (caught instanceof PdfReplacementsError) {
+          setPdfReplacements({ options: opts, quick: false });
+        }
         if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
       } finally {
         setExporting(false);
@@ -591,69 +606,85 @@ export function ExportToolbarControls({
     ],
   );
 
-  const handleQuickExport = useCallback(async () => {
-    if (!lastOptions) return;
-    closeMenu(true);
-    setExporting(true);
-    setExportError(null);
-    setOpenError(null);
-    setExportNotice(null);
-    setExportCompletion(null);
-    try {
-      saveExportOptions(lastOptions);
-      let quickTarget: ExportDestinationTarget | null = null;
-      if (destinationAdapter) {
-        if (destinationAdapter.pickBeforeSave) {
-          const filename = buildExportFilename(selectedFile, lastOptions);
-          quickTarget = await destinationAdapter.pickTarget(filename, quickDestinationTarget);
-          if (!quickTarget) return;
-        } else {
-          if (!quickDestinationTarget) return;
-          quickTarget = quickDestinationTarget;
+  const handleQuickExport = useCallback(
+    async (allowPdfReplacements = false) => {
+      if (!lastOptions) return;
+      closeMenu(true);
+      setExporting(true);
+      setExportError(null);
+      setPdfReplacements(null);
+      setOpenError(null);
+      setExportNotice(null);
+      setExportCompletion(null);
+      try {
+        saveExportOptions(lastOptions);
+        let quickTarget: ExportDestinationTarget | null = null;
+        if (destinationAdapter) {
+          if (destinationAdapter.pickBeforeSave) {
+            const filename = buildExportFilename(selectedFile, lastOptions);
+            quickTarget = await destinationAdapter.pickTarget(filename, quickDestinationTarget);
+            if (!quickTarget) return;
+          } else {
+            if (!quickDestinationTarget) return;
+            quickTarget = quickDestinationTarget;
+          }
         }
+        const { runExport } = await loadRunExportModule();
+        let savedTarget: ExportDestinationTarget | undefined;
+        const result = await runExport(
+          markdownSource,
+          selectedFile,
+          lastOptions,
+          mediaContainer,
+          destinationAdapter
+            ? async (blob, filename) => {
+                savedTarget = await saveToDestination(blob, filename, quickTarget);
+              }
+            : saveBlob,
+          undefined,
+          { allowPdfReplacements },
+        );
+        setExportCompletion({
+          filename: buildExportFilename(selectedFile, lastOptions),
+          target: savedTarget,
+        });
+        if (result.warnings.length > 0) setExportNotice(result.warnings);
+        if (savedTarget) await openSaved(savedTarget);
+      } catch (caught: unknown) {
+        // No dialog is open on this path, so the failure gets its own —
+        // same shape as the video-export load failure below.
+        if (caught instanceof PdfReplacementsError) {
+          setPdfReplacements({ options: lastOptions, quick: true });
+        }
+        if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
+      } finally {
+        setExporting(false);
       }
-      const { runExport } = await loadRunExportModule();
-      let savedTarget: ExportDestinationTarget | undefined;
-      const result = await runExport(
-        markdownSource,
-        selectedFile,
-        lastOptions,
-        mediaContainer,
-        destinationAdapter
-          ? async (blob, filename) => {
-              savedTarget = await saveToDestination(blob, filename, quickTarget);
-            }
-          : saveBlob,
-      );
-      setExportCompletion({
-        filename: buildExportFilename(selectedFile, lastOptions),
-        target: savedTarget,
-      });
-      if (result.warnings.length > 0) setExportNotice(result.warnings);
-      if (savedTarget) await openSaved(savedTarget);
-    } catch (caught: unknown) {
-      // No dialog is open on this path, so the failure gets its own —
-      // same shape as the video-export load failure below.
-      if (!(caught instanceof ExportCancelledError)) setExportError(exportErrorMessage(caught));
-    } finally {
-      setExporting(false);
-    }
-  }, [
-    closeMenu,
-    destinationAdapter,
-    lastOptions,
-    markdownSource,
-    mediaContainer,
-    saveBlob,
-    saveToDestination,
-    selectedFile,
-    quickDestinationTarget,
-    openSaved,
-  ]);
+    },
+    [
+      closeMenu,
+      destinationAdapter,
+      lastOptions,
+      markdownSource,
+      mediaContainer,
+      saveBlob,
+      saveToDestination,
+      selectedFile,
+      quickDestinationTarget,
+      openSaved,
+    ],
+  );
 
   const handleDismissExportError = useCallback(() => {
     setExportError(null);
+    setPdfReplacements(null);
   }, []);
+
+  const handleSaveWithReplacements = useCallback(() => {
+    if (!pdfReplacements) return;
+    if (pdfReplacements.quick) void handleQuickExport(true);
+    else void handleExport(pdfReplacements.options, true);
+  }, [handleExport, handleQuickExport, pdfReplacements]);
 
   const handleDismissExportNotice = useCallback(() => {
     setExportNotice(null);
@@ -730,7 +761,7 @@ export function ExportToolbarControls({
                   role="menuitem"
                   tabIndex={-1}
                   className="db-toolbar-menu-item"
-                  onClick={handleQuickExport}
+                  onClick={() => void handleQuickExport()}
                   disabled={exporting || (Boolean(destinationAdapter) && !quickDestinationTarget)}
                   title={
                     quickDestinationTarget
@@ -875,6 +906,11 @@ export function ExportToolbarControls({
             documentThemes={documentThemes}
             exporting={exporting}
             error={exportError}
+            errorAction={
+              pdfReplacements
+                ? { label: 'Save PDF with replacements', onClick: handleSaveWithReplacements }
+                : null
+            }
             openAfterSave={
               !fileShare && destinationAdapter?.openSaved
                 ? { checked: openAfterSave, onChange: handleOpenAfterSaveChange }
@@ -918,13 +954,25 @@ export function ExportToolbarControls({
           title="Export Document"
           onClose={handleDismissExportError}
           footer={
-            <button
-              type="button"
-              className="db-export-btn db-export-btn--secondary"
-              onClick={handleDismissExportError}
-            >
-              Close
-            </button>
+            <>
+              {pdfReplacements && (
+                <button
+                  type="button"
+                  className="db-export-btn db-export-btn--secondary"
+                  onClick={handleSaveWithReplacements}
+                  disabled={exporting}
+                >
+                  Save PDF with replacements
+                </button>
+              )}
+              <button
+                type="button"
+                className="db-export-btn db-export-btn--secondary"
+                onClick={handleDismissExportError}
+              >
+                Close
+              </button>
+            </>
           }
         >
           <p className="db-export-error" role="alert">

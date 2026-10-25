@@ -345,6 +345,7 @@ test('unsupported PDF text is blocked before download and Word remains available
   await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
   await expect(dialog.getByRole('alert')).toContainText('PDF was not saved', { timeout: 30_000 });
   expect(downloads).toEqual([]);
+  await expect(dialog.getByRole('button', { name: 'Save PDF with replacements' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('pdf-fidelity-error.png') });
   await dialog.getByRole('radio', { name: 'Word', exact: true }).click();
   const download = page.waitForEvent('download');

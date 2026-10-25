@@ -76,12 +76,12 @@ describe('expanded git grant offer', () => {
     const value = gitValue({ openDialog: (dialog) => opened.push(dialog) });
     await render(value, createElement(GitGrantNotice));
 
-    const action = container.querySelector<HTMLButtonElement>('.db-git-grant-notice-action');
+    const action = document.body.querySelector<HTMLButtonElement>('.db-git-grant-notice-action');
     expect(action, 'a blocked repo must surface the offer').to.not.equal(null);
     expect(action?.getAttribute('aria-label')).to.include('D:/gh/molen-internal');
     // Nothing here may read as a fault: no warning glyph, no bold text.
-    expect(container.textContent).to.not.include('⚠');
-    expect(container.querySelector('strong, b')).to.equal(null);
+    expect(document.body.textContent).to.not.include('⚠');
+    expect(document.body.querySelector('strong, b')).to.equal(null);
 
     await act(async () => action?.click());
     expect(opened).to.deep.equal([{ kind: 'expanded-grant' }]);
@@ -89,12 +89,12 @@ describe('expanded git grant offer', () => {
 
   it('keeps the offer out of the status bar, which speaks only for a usable repo', async () => {
     await render(gitValue(), createElement(GitStatusBar));
-    expect(container.textContent).to.equal('');
+    expect(document.body.textContent).to.equal('');
   });
 
   it('renders nothing once no grant is pending and no repo is usable', async () => {
     await render(gitValue({ pendingGrant: null }), createElement(GitGrantNotice));
-    expect(container.textContent).to.equal('');
+    expect(document.body.textContent).to.equal('');
   });
 
   it('remembers the always-enable choice the user checked', async () => {
@@ -108,11 +108,11 @@ describe('expanded git grant offer', () => {
     });
     await render(value, createElement(GitExpandedGrantDialog, { onClose: () => (closed += 1) }));
 
-    const checkbox = container.querySelector<HTMLInputElement>('.db-git-grant-remember input');
+    const checkbox = document.body.querySelector<HTMLInputElement>('.db-git-grant-remember input');
     expect(checkbox, 'the remember-for-all choice must be offered').to.not.equal(null);
     await act(async () => checkbox?.click());
 
-    const enable = [...container.querySelectorAll('button')].find(
+    const enable = [...document.body.querySelectorAll('button')].find(
       (button) => button.textContent === 'Enable Git',
     );
     await act(async () => enable?.click());

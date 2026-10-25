@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 
+import { PdfReplacementsError } from '../src/Export/export-errors.js';
 import { DEFAULT_OPTIONS } from '../src/Export/export-options.js';
 import { runExport } from '../src/Export/run-export.js';
 
@@ -45,11 +46,31 @@ describe('export warnings', function () {
     } catch (error) {
       failure = error;
     }
-    expect(failure).to.be.instanceOf(Error);
+    expect(failure).to.be.instanceOf(PdfReplacementsError);
     expect((failure as Error).message)
       .to.include('PDF was not saved')
+      .and.include('Save it with the replacements')
       .and.include('Word, HTML, or EPUB');
     expect(saved).to.have.length(0);
+  });
+
+  it('saves the PDF with replacements when the user asks, and says what was replaced', async () => {
+    const saved: Blob[] = [];
+    const result = await runExport(
+      '# Notes\n\n日本語のテキスト\n',
+      '/notes.md',
+      { ...DEFAULT_OPTIONS, format: 'pdf' },
+      null,
+      (blob) => {
+        saved.push(blob);
+      },
+      { diagramRenderer: async () => null },
+      { allowPdfReplacements: true },
+    );
+    expect(saved).to.have.length(1);
+    expect(saved[0]!.type).to.equal('application/pdf');
+    expect(result.warnings).to.have.length(1);
+    expect(result.warnings[0]).to.include('character(s)');
   });
 
   it('reports nothing when the PDF kept every character', async () => {

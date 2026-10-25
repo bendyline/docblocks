@@ -31,6 +31,8 @@ export interface ExportDialogProps {
    * never look like a success.
    */
   error?: string | null;
+  /** A way past the error, shown under it, such as saving a PDF with replacements. */
+  errorAction?: ExportErrorAction | null;
   /** Optional host-provided destination path control. */
   destination?: ExportDestinationControl;
   /** Present only when the host can open saved exports. */
@@ -43,6 +45,11 @@ export interface ExportDialogProps {
   actionLabel?: (options: ExportOptions) => string;
   /** Called when the dialog is dismissed. */
   onClose: () => void;
+}
+
+export interface ExportErrorAction {
+  label: string;
+  onClick: () => void;
 }
 
 export interface ExportDestinationControl {
@@ -154,6 +161,7 @@ export function ExportDialog({
   documentThemes,
   exporting,
   error,
+  errorAction,
   destination,
   openAfterSave,
   onExport,
@@ -503,6 +511,18 @@ export function ExportDialog({
         <p className="db-export-error" role="alert">
           {error}
         </p>
+      )}
+      {error && errorAction && (
+        <div className="db-export-error-action">
+          <button
+            type="button"
+            className="db-export-btn db-export-btn--secondary"
+            onClick={errorAction.onClick}
+            disabled={exporting}
+          >
+            {errorAction.label}
+          </button>
+        </div>
       )}
     </Dialog>
   );

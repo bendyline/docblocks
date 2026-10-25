@@ -32,7 +32,7 @@ describe('ExportDialog destination input', () => {
         );
       });
 
-      const input = container.querySelector<HTMLInputElement>('#db-export-path');
+      const input = document.body.querySelector<HTMLInputElement>('#db-export-path');
       expect(input?.readOnly).to.equal(false);
       expect(input?.getAttribute('aria-invalid')).to.equal('true');
 
@@ -44,11 +44,11 @@ describe('ExportDialog destination input', () => {
       });
       expect(edits).to.deep.equal(['C:\\Exports\\renamed.pdf']);
 
-      const exportButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      const exportButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
         (button) => button.textContent?.trim() === 'Export',
       );
       expect(exportButton?.disabled).to.equal(true);
-      expect(container.querySelector('[role="alert"]')?.textContent).to.include('.pdf');
+      expect(document.body.querySelector('[role="alert"]')?.textContent).to.include('.pdf');
     } finally {
       await act(async () => root.unmount());
       container.remove();
