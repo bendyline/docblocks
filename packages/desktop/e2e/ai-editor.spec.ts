@@ -117,6 +117,7 @@ async function pairWithGezel(window: Page, fake: FakeGezel): Promise<void> {
   await window.locator('.db-app-menu-btn').click();
   await window.getByRole('menuitem', { name: 'Settings' }).click();
   const settings = window.getByRole('dialog', { name: 'Settings' });
+  await settings.getByRole('tab', { name: 'AI', exact: true }).click();
   const section = settings.getByRole('group', { name: 'AI assistance' });
   // The section renders once main answers its status and preference queries,
   // which a cold first launch on a busy machine can take a while to do.

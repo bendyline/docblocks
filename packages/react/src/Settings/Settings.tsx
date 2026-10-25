@@ -11,6 +11,8 @@ import {
   type ReactNode,
 } from 'react';
 import { Dialog } from '../components/Dialog.js';
+import { DB_BREAKPOINTS } from '../layout/form-factor.js';
+import { useMediaQuery } from '../layout/useMediaQuery.js';
 import {
   ACCENT_COLORS,
   type AccentColor,
@@ -47,17 +49,186 @@ const ACCENT_LABELS: Record<AccentColor, string> = {
   gray: 'Gray',
 };
 
-export interface SettingsDialogProps {
-  title?: string;
-  onClose: () => void;
-  children: ReactNode;
+export interface SettingsSection<Id extends string = string> {
+  /** Stable key for the section's tab and panel. */
+  id: Id;
+  label: string;
+  content: ReactNode;
 }
 
-export function SettingsDialog({ title = 'Settings', onClose, children }: SettingsDialogProps) {
+export interface SettingsDialogProps<Id extends string = string> {
+  title?: string;
+  onClose: () => void;
+  /** A single scrolling body, for a dialog without sections. */
+  children?: ReactNode;
+  /**
+   * Split the body into sections shown one at a time: a tab rail beside the
+   * panel, or a dropdown above it on phones and portrait tablets. Every
+   * section stays mounted, so leaving one never cancels work it started.
+   */
+  sections?: readonly SettingsSection<Id>[];
+  /** The open section. When omitted the dialog opens on the first and tracks the choice itself. */
+  section?: Id;
+  onSectionChange?: (section: Id) => void;
+}
+
+export function SettingsDialog<Id extends string = string>({
+  title = 'Settings',
+  onClose,
+  children,
+  sections,
+  section,
+  onSectionChange,
+}: SettingsDialogProps<Id>) {
+  const sectioned = sections !== undefined && sections.length > 1;
   return (
-    <Dialog title={title} onClose={onClose} size="wide">
-      {children}
+    <Dialog
+      title={title}
+      onClose={onClose}
+      size="wide"
+      className={sectioned ? 'db-settings-dialog--sectioned' : undefined}
+      bodyClassName={sectioned ? 'db-settings-dialog-body--sectioned' : undefined}
+    >
+      {sectioned ? (
+        <SettingsSections sections={sections} section={section} onSectionChange={onSectionChange} />
+      ) : (
+        (sections?.[0]?.content ?? children)
+      )}
     </Dialog>
+  );
+}
+
+/**
+ * When sections are picked from a dropdown rather than a tab rail: the
+ * `phone` and `tablet-portrait` classes of `classifyFormFactor`, plus any
+ * window too narrow to spare the rail its width. This reads the viewport, not
+ * the shell, because the dialog is sized against the viewport.
+ */
+const SECTION_DROPDOWN_QUERY = [
+  `(max-width: ${DB_BREAKPOINTS.compactMax}px)`,
+  '(pointer: coarse) and (orientation: portrait)',
+  `(pointer: coarse) and (max-height: ${DB_BREAKPOINTS.phoneMaxShortEdge}px)`,
+].join(', ');
+
+interface SettingsSectionsProps<Id extends string> {
+  sections: readonly SettingsSection<Id>[];
+  section?: Id;
+  onSectionChange?: (section: Id) => void;
+}
+
+function SettingsSections<Id extends string>({
+  sections,
+  section,
+  onSectionChange,
+}: SettingsSectionsProps<Id>) {
+  const [ownSection, setOwnSection] = useState<Id>(sections[0].id);
+  const active = sections.find((entry) => entry.id === (section ?? ownSection)) ?? sections[0];
+  const dropdown = useMediaQuery(SECTION_DROPDOWN_QUERY);
+  const baseId = useId();
+  const tabRefs = useRef(new Map<Id, HTMLButtonElement>());
+  const tabId = (id: Id) => `${baseId}-${id}-tab`;
+  const panelId = (id: Id) => `${baseId}-${id}-panel`;
+
+  const select = (id: Id) => {
+    setOwnSection(id);
+    onSectionChange?.(id);
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = sections.indexOf(active);
+    let next: number;
+    switch (event.key) {
+      case 'ArrowDown':
+        next = (index + 1) % sections.length;
+        break;
+      case 'ArrowUp':
+        next = (index - 1 + sections.length) % sections.length;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = sections.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const target = sections[next];
+    select(target.id);
+    tabRefs.current.get(target.id)?.focus();
+  };
+
+  // The nav swaps between a <select> and a tablist, but the panels keep their
+  // element type and keys, so rotating a tablet never remounts a section.
+  return (
+    <div className={`db-settings-sections db-settings-sections--${dropdown ? 'dropdown' : 'tabs'}`}>
+      {dropdown ? (
+        <div className="db-settings-section-picker">
+          <select
+            className="db-settings-select-input db-settings-section-select"
+            aria-label="Settings section"
+            value={active.id}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              const next = sections.find((entry) => entry.id === value);
+              if (next) select(next.id);
+            }}
+          >
+            {sections.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div
+          className="db-settings-tabs"
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label="Settings sections"
+        >
+          {sections.map((entry) => {
+            const selected = entry === active;
+            return (
+              <button
+                key={entry.id}
+                ref={(element) => {
+                  if (element) tabRefs.current.set(entry.id, element);
+                  else tabRefs.current.delete(entry.id);
+                }}
+                type="button"
+                role="tab"
+                id={tabId(entry.id)}
+                className={`db-settings-tab${selected ? ' db-settings-tab--selected' : ''}`}
+                aria-selected={selected}
+                aria-controls={panelId(entry.id)}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => select(entry.id)}
+                onKeyDown={handleTabKeyDown}
+              >
+                {entry.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {sections.map((entry) => (
+        <div
+          key={entry.id}
+          id={panelId(entry.id)}
+          className="db-settings-panel"
+          role={dropdown ? 'region' : 'tabpanel'}
+          aria-labelledby={dropdown ? undefined : tabId(entry.id)}
+          aria-label={dropdown ? entry.label : undefined}
+          tabIndex={dropdown ? undefined : 0}
+          hidden={entry !== active}
+        >
+          {entry.content}
+        </div>
+      ))}
+    </div>
   );
 }
 

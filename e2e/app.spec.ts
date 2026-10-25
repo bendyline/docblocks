@@ -303,19 +303,21 @@ test.describe('DocBlocks App', () => {
 
     const layout = await page.getByRole('dialog', { name: 'Settings' }).evaluate((element) => {
       const dialogRect = element.getBoundingClientRect();
-      const body = element.querySelector<HTMLElement>('.db-dialog-body');
+      const panel = element.querySelector<HTMLElement>('.db-settings-panel:not([hidden])');
       const accentRects = Array.from(
         element.querySelectorAll<HTMLElement>('.db-settings-accent'),
         (accent) => accent.getBoundingClientRect(),
       );
-      if (!body) throw new Error('Settings dialog body was not found');
+      if (!panel) throw new Error('Settings section panel was not found');
       return {
         left: Math.round(dialogRect.left),
         right: Math.round(dialogRect.right),
         top: Math.round(dialogRect.top),
         bottom: Math.round(dialogRect.bottom),
         accentRows: new Set(accentRects.map((rect) => Math.round(rect.top))).size,
-        bodyScrolls: body.scrollHeight > body.clientHeight,
+        panelScrolls: panel.scrollHeight > panel.clientHeight,
+        sectionPicker: element.querySelector('.db-settings-section-picker select') !== null,
+        tablist: element.querySelector('[role="tablist"]') !== null,
       };
     });
 
@@ -324,7 +326,10 @@ test.describe('DocBlocks App', () => {
     expect(layout.top).toBeGreaterThanOrEqual(16);
     expect(layout.bottom).toBeLessThanOrEqual(444);
     expect(layout.accentRows).toBe(3);
-    expect(layout.bodyScrolls).toBe(true);
+    // Too narrow for the tab rail: sections come from a dropdown instead.
+    expect(layout.sectionPicker).toBe(true);
+    expect(layout.tablist).toBe(false);
+    expect(layout.panelScrolls).toBe(true);
   });
 
   test('moves a shared temporary document into a workspace and closes the temporary workspace', async ({

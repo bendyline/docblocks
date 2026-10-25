@@ -2399,6 +2399,113 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 
 /* ── Settings Dialog ─────────────────────────────────────────── */
 
+/* Sectioned Settings: a tab rail beside the open section, or a dropdown above
+   it on phones and portrait tablets. The dialog keeps one height, so changing
+   sections never resizes it under the pointer, and each section scrolls on
+   its own, so returning to one finds it where it was left. The panel keeps
+   the 520px measure the single-column dialog had. */
+.db-dialog.db-settings-dialog--sectioned {
+  width: 740px;
+  height: min(660px, calc(100vh - 32px));
+  height: min(660px, calc(100dvh - 32px));
+}
+
+.db-dialog-body.db-settings-dialog-body--sectioned {
+  flex: 1;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.db-settings-sections {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.db-settings-sections--dropdown {
+  flex-direction: column;
+}
+
+.db-settings-tabs {
+  flex: 0 0 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 12px 8px;
+  border-right: 1px solid var(--db-border);
+  overflow-y: auto;
+}
+
+.db-settings-tab {
+  position: relative;
+  min-height: var(--db-row-min-height);
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--db-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-settings-tab:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+/* The accent bar is the vertical counterpart of the underline the editor's
+   Write/Source tabs carry. */
+.db-settings-tab--selected,
+.db-settings-tab--selected:hover {
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+  font-weight: 600;
+}
+
+.db-settings-tab--selected::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--db-accent);
+}
+
+.db-settings-tab:focus-visible,
+.db-settings-panel:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-settings-section-picker {
+  flex: none;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-settings-section-select {
+  font-weight: 600;
+}
+
+.db-settings-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+}
+
+.db-settings-panel[hidden] {
+  display: none;
+}
+
 .db-settings-fieldset {
   border: none;
   margin: 0;

@@ -96,7 +96,7 @@ import {
   finishWorkspaceBackup,
   type BackupWorkspace,
 } from '@bendyline/docblocks/workspace';
-import { AppMenu } from '../AppMenu/AppMenu.js';
+import { AppMenu, type AppSettingsSection } from '../AppMenu/AppMenu.js';
 import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
@@ -957,17 +957,27 @@ export function DocBlocksShell({
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
   const trayMenu = hostSupports('trayIcon') ? maybeGetDocBlocksHost()?.menu : undefined;
-  /** Bumped to open Settings, e.g. when dictation needs a model first. */
-  const [settingsRequest, setSettingsRequest] = useState(0);
-  const openSettings = useCallback(() => setSettingsRequest((count) => count + 1), []);
+  /** Bumped to open Settings, e.g. on Dictation when it needs a model first. */
+  const [settingsRequest, setSettingsRequest] = useState<{
+    count: number;
+    section?: AppSettingsSection;
+  }>({ count: 0 });
+  const openDictationSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'dictation' })),
+    [],
+  );
+  const openNarrationSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'narration' })),
+    [],
+  );
   // Squisq re-resolves a changed capability and cancels any session in
   // progress, so the provider must keep one identity for the bridge's life.
   const speechInput = useMemo(
     () =>
       speech && hostSupports('speechInput')
-        ? createSpeechInputProvider(speech, { onRequestSetup: openSettings })
+        ? createSpeechInputProvider(speech, { onRequestSetup: openDictationSettings })
         : null,
-    [speech, openSettings],
+    [speech, openDictationSettings],
   );
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
@@ -5539,7 +5549,8 @@ export function DocBlocksShell({
                 ai={ai}
                 speech={speech}
                 tray={trayMenu}
-                settingsRequest={settingsRequest}
+                settingsRequest={settingsRequest.count}
+                settingsRequestSection={settingsRequest.section}
               />
               <input
                 ref={restoreInputRef}
@@ -5927,12 +5938,12 @@ export function DocBlocksShell({
                                           (selectedOutsideIn !== null &&
                                             !selectedOutsideInEditingEnabled)
                                         }
-                                        onOpenSettings={openSettings}
+                                        onOpenSettings={openDictationSettings}
                                       />
                                       {hostSupports('speechOutput') ? (
                                         <SpeechToolbarControl
                                           speech={speech}
-                                          onOpenSettings={openSettings}
+                                          onOpenSettings={openNarrationSettings}
                                           readOnly={
                                             selectedImage !== undefined ||
                                             (selectedOutsideIn !== null &&

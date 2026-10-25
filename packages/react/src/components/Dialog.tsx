@@ -83,9 +83,13 @@ export function Dialog({
 
       const dialog = dialogRef.current;
       if (!dialog) return;
+      // Settings keeps its inactive sections mounted but hidden; the browser
+      // skips them, so the wrap points must too.
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
         (element) =>
-          !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true',
+          !element.hasAttribute('disabled') &&
+          element.getAttribute('aria-hidden') !== 'true' &&
+          element.closest('[hidden]') === null,
       );
       if (focusable.length === 0) {
         e.preventDefault();

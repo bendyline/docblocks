@@ -8,30 +8,39 @@ test('speech license links remain identifiable in light and dark Settings', asyn
   await window.locator('.db-app-menu-btn').click();
   await window.getByRole('menuitem', { name: 'Settings', exact: true }).click();
   const dialog = window.getByRole('dialog', { name: 'Settings', exact: true });
-  const links = dialog.locator('.db-settings-speech-model .db-settings-hint a');
-  await expect(links).toHaveCount(4);
+  await expect(dialog.locator('.db-settings-speech-model .db-settings-hint a')).toHaveCount(4);
   for (const theme of ['Light', 'Dark']) {
+    await dialog.getByRole('tab', { name: 'Appearance', exact: true }).click();
     await dialog.getByRole('radio', { name: theme, exact: true }).check();
-    for (const link of await links.all()) {
-      expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
-        'underline',
-      );
-      await link.focus();
-      await expect(link).toBeFocused();
-      expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
-        'underline',
-      );
-      await link.hover();
-      expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
-        'underline',
-      );
+    for (const section of ['Dictation', 'Narration']) {
+      await dialog.getByRole('tab', { name: section, exact: true }).click();
+      const links = dialog
+        .getByRole('tabpanel', { name: section })
+        .locator('.db-settings-speech-model .db-settings-hint a');
+      await expect(links.first()).toBeVisible();
+      for (const link of await links.all()) {
+        expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
+          'underline',
+        );
+        await link.focus();
+        await expect(link).toBeFocused();
+        expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
+          'underline',
+        );
+        await link.hover();
+        expect(await link.evaluate((node) => getComputedStyle(node).textDecorationLine)).toContain(
+          'underline',
+        );
+      }
+      const { violations } = await new AxeBuilder({ page: window })
+        .setLegacyMode()
+        .include('.db-settings-panel:not([hidden]) .db-settings-speech-model')
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze();
+      expect(violations).toEqual([]);
+      await window.screenshot({
+        path: info.outputPath(`speech-links-${section.toLowerCase()}-${theme.toLowerCase()}.png`),
+      });
     }
-    const { violations } = await new AxeBuilder({ page: window })
-      .setLegacyMode()
-      .include('.db-settings-speech-model')
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-    expect(violations).toEqual([]);
-    await window.screenshot({ path: info.outputPath(`speech-links-${theme.toLowerCase()}.png`) });
   }
 });

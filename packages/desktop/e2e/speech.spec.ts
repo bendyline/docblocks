@@ -48,12 +48,15 @@ test('Settings lists speech models and downloads start only from a button', asyn
 
   await window.locator('.db-app-menu-btn').click();
   await window.getByRole('menuitem', { name: 'Settings' }).click();
-  const section = window
-    .getByRole('dialog', { name: 'Settings' })
-    .getByRole('group', { name: 'Speech' });
-  await expect(section).toContainText('Whisper Base (English)');
-  await expect(section).toContainText('Kokoro (English voices)');
-  await expect(section.getByRole('button', { name: 'Download' })).toHaveCount(2);
+  const dialog = window.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByRole('tab', { name: 'Dictation', exact: true }).click();
+  const dictation = dialog.getByRole('group', { name: 'Dictation' });
+  await expect(dictation).toContainText('Whisper Base (English)');
+  await expect(dictation.getByRole('button', { name: 'Download' })).toHaveCount(1);
+  await dialog.getByRole('tab', { name: 'Narration', exact: true }).click();
+  const narration = dialog.getByRole('group', { name: 'Narration' });
+  await expect(narration).toContainText('Kokoro (English voices)');
+  await expect(narration.getByRole('button', { name: 'Download' })).toHaveCount(1);
 });
 
 test('Settings completes an interrupted model update only after a button press', async ({
@@ -85,9 +88,9 @@ test('Settings completes an interrupted model update only after a button press',
   });
   await window.locator('.db-app-menu-btn').click();
   await window.getByRole('menuitem', { name: 'Settings' }).click();
-  const section = window
-    .getByRole('dialog', { name: 'Settings' })
-    .getByRole('group', { name: 'Speech' });
+  const dialog = window.getByRole('dialog', { name: 'Settings' });
+  await dialog.getByRole('tab', { name: 'Narration', exact: true }).click();
+  const section = dialog.getByRole('group', { name: 'Narration' });
   await expect(section).toContainText('Update required');
   await expect(section.getByRole('button', { name: 'Update', exact: true })).toHaveCount(1);
   expect(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).files[0].sha256).toBe('0'.repeat(64));
@@ -400,7 +403,12 @@ test('Text from narration opens Settings when a dictation model is missing', asy
   await expect(dialog).toHaveCount(0);
   const settings = window.getByRole('dialog', { name: 'Settings', exact: true });
   await expect(settings).toBeVisible();
-  await expect(settings.getByRole('group', { name: 'Speech' })).toContainText('Whisper Base');
+  // Settings opens on the section that can fix the problem.
+  await expect(settings.getByRole('tab', { name: 'Dictation', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(settings.getByRole('group', { name: 'Dictation' })).toContainText('Whisper Base');
 });
 
 test('Text from narration stays discoverable without a speech recognition engine', async ({
