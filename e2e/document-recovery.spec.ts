@@ -57,9 +57,29 @@ test('compares a recovered draft with the saved file and remembers the choice af
   await compare.click();
   const dialog = page.getByRole('dialog', { name: 'Compare document versions' });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('textbox', { name: 'Recovery draft preview' })).toHaveValue(draft);
-  const saved = dialog.getByRole('textbox', { name: 'Saved file preview' });
-  await expect(saved).not.toHaveValue(/Older recovery draft/);
+  const recovered = dialog.getByRole('region', { name: 'Recovery draft preview' });
+  await expect(recovered.getByRole('heading', { name: 'Older recovery draft' })).toBeVisible();
+  await expect(recovered).toContainText('This was never saved.');
+  const saved = dialog.getByRole('region', { name: 'Saved file preview' });
+  await expect(saved).toBeVisible();
+  await expect(saved).not.toContainText('Older recovery draft');
+  // The source diff between them: Monaco loads lazily, so wait for its lines.
+  await expect(
+    dialog
+      .getByRole('region', { name: 'Differences' })
+      .locator('.monaco-diff-editor .view-line')
+      .first(),
+  ).toBeVisible({ timeout: 20_000 });
+  // An explicit side-by-side choice holds in the middle pane, where Monaco
+  // would otherwise fall back to inline for lack of width.
+  const diffView = dialog.getByRole('combobox', { name: 'View' });
+  const diffEditor = dialog.locator('.monaco-diff-editor');
+  await expect(diffView).toHaveValue('inline');
+  await expect(diffEditor).not.toHaveClass(/side-by-side/);
+  await diffView.selectOption('side-by-side');
+  await expect(diffEditor).toHaveClass(/side-by-side/);
+  await diffView.selectOption('inline');
+  await expect(diffEditor).not.toHaveClass(/side-by-side/);
   await expect(dialog).toContainText('Recovery copy captured:');
   await expect(dialog).toContainText('File last modified:');
   await dialog.screenshot({ path: 'reports/document-recovery/comparison.png' });

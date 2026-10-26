@@ -5460,6 +5460,10 @@ export function DocBlocksShell({
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog
               conflict={documentSnapshot.conflict}
+              fileName={selectedSourceFile ?? selectedFile ?? ''}
+              theme={resolvedTheme}
+              defaultThemeId={workspaceDefaultThemeId}
+              mediaProvider={mediaProviderCurrent ? mediaProvider : null}
               readSavedFile={readConflictFile}
               onUseLocal={handleKeepLocalDocument}
               onUseSaved={handleUseExternalDocument}

@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { resolveTheme } from '@bendyline/squisq/schemas';
 import DocumentConflictDialog, {
   type DocumentConflictDialogProps,
 } from '../src/DocBlocksShell/DocumentConflictDialog.js';
@@ -28,6 +29,8 @@ describe('Document conflict comparison', () => {
         externalContent: '# Saved document\n\nLatest edits',
         externalVersion: 'v2',
       },
+      fileName: 'notes.md',
+      theme: 'light',
       readSavedFile: async () => ({
         content: '# Saved document\n\nLatest edits',
         lastModified: '2026-10-05T10:00:00Z',
@@ -61,20 +64,78 @@ describe('Document conflict comparison', () => {
     await act(async () => button!.click());
   }
 
-  it('shows both exact read-only versions and distinguishes capture time from file modification', async () => {
+  function preview(label: string): HTMLElement | null {
+    return document.body.querySelector<HTMLElement>(`[aria-label="${label} preview"]`);
+  }
+
+  /** A color as this DOM serializes it, so theme colors compare exactly. */
+  function cssColor(color: string): string {
+    const probe = document.createElement('div');
+    probe.style.background = color;
+    return probe.style.background;
+  }
+
+  it('renders both versions as pages beside a source diff and distinguishes capture time from file modification', async () => {
     await render();
-    const previews = [...document.body.querySelectorAll('textarea')];
-    expect(previews.map((preview) => preview.value)).to.deep.equal([
-      props.conflict.localContent,
-      props.conflict.externalContent,
-    ]);
-    expect(previews.every((preview) => preview.readOnly)).to.equal(true);
+    expect(document.body.querySelectorAll('textarea')).to.have.length(0);
+    expect(preview('Recovery draft')?.textContent).to.include('Unfinished thoughts');
+    expect(preview('Saved file')?.textContent).to.include('Latest edits');
+    expect(document.body.querySelector('section[aria-label="Differences"]')).not.to.equal(null);
     expect(document.body.textContent).to.include('Recovery copy captured:');
     expect(document.body.textContent).to.include('File last modified:');
     expect(localChoices + savedChoices).to.equal(0);
     await click('Decide later');
     expect(localChoices + savedChoices).to.equal(0);
     expect(closes).to.equal(1);
+  });
+
+  it('draws each version in its own theme, and the workspace default only when it names none', async () => {
+    props.defaultThemeId = 'minimalist';
+    props.conflict = {
+      ...props.conflict,
+      externalContent: '---\ntheme: bold\n---\n\n# Saved document\n\nLatest edits',
+    };
+    await render();
+    expect(preview('Recovery draft')?.style.background).to.equal(
+      cssColor(resolveTheme('minimalist').colors.background),
+    );
+    expect(preview('Saved file')?.style.background).to.equal(
+      cssColor(resolveTheme('bold').colors.background),
+    );
+  });
+
+  it('offers inline, side-by-side and changes-only diff views, widening the diff for side by side', async () => {
+    await render();
+    const view = document.body.querySelector<HTMLSelectElement>('.db-conflict-diff select')!;
+    expect([...view.options].map((option) => option.textContent)).to.deep.equal([
+      'Inline',
+      'Side by side',
+      'Changes only',
+    ]);
+    expect(view.value).to.equal('inline');
+    const columns = document.body.querySelector('.db-conflict-columns')!;
+    expect(columns.classList.contains('db-conflict-columns--wide-diff')).to.equal(false);
+    await act(async () => {
+      view.value = 'side-by-side';
+      view.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(columns.classList.contains('db-conflict-columns--wide-diff')).to.equal(true);
+  });
+
+  it('shows the exact text of a file that is not Markdown', async () => {
+    props.fileName = 'settings.json';
+    props.conflict = {
+      ...props.conflict,
+      localContent: '{ "draft": true }',
+      externalContent: '{ "draft": false }',
+    };
+    await render();
+    const previews = [...document.body.querySelectorAll('textarea')];
+    expect(previews.map((item) => item.value)).to.deep.equal([
+      props.conflict.localContent,
+      props.conflict.externalContent,
+    ]);
+    expect(previews.every((item) => item.readOnly)).to.equal(true);
   });
 
   for (const choice of ['Replace file with draft', 'Use saved file']) {
@@ -102,7 +163,7 @@ describe('Document conflict comparison', () => {
       throw new Error('permission denied');
     };
     await render();
-    expect(document.body.querySelectorAll('textarea')).to.have.length(2);
+    expect(document.body.querySelectorAll('.db-conflict-preview')).to.have.length(2);
     expect(document.body.textContent).to.include('File modification time unavailable');
   });
 
