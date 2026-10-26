@@ -7604,15 +7604,29 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   padding: 6px 0 0;
 }
 
-/* Illustrate's design graphics: raster pictures, so a light frame in dark mode too. */
+/*
+ * Illustrate's design graphics: raster pictures, so a light frame in dark mode
+ * too. A picture scales to fit the preview's height rather than scrolling in
+ * it the way a tall diagram does, so a portrait poster is seen whole.
+ */
 .db-ai-design-preview {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
   background: #fff;
 }
 
 .db-ai-design-preview img {
   display: block;
-  width: 100%;
+  max-width: 100%;
+  /* The preview's max-height, less its border. */
+  max-height: 338px;
+  width: auto;
   height: auto;
+}
+
+.db-ai-diagram-dialog .db-ai-design-preview img {
+  max-height: 418px;
 }
 
 .db-ai-diagram-source {

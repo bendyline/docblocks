@@ -7,7 +7,7 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: '.',
-  testMatch: /packaged-(?:smoke|speech)\.spec\.ts/u,
+  testMatch: /packaged-(?:smoke|speech|images)\.spec\.ts/u,
   // An explicit outputDir resolves beside this config, not the package root.
   // CI and the release gates upload packages/desktop/test-results/.
   outputDir: '../test-results/packaged',

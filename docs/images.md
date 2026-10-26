@@ -113,6 +113,20 @@ misspells more often.
 - Unit: `core/test/ai-images.test.ts`, `desktop/test/ai-image-service.test.ts`,
   `desktop/test/ai-images-bridge.test.ts`, `react/test/ai-image-panel.test.ts`,
   `react/test/ai-design-graphics.test.ts`.
+- Desktop e2e (`e2e/ai-editor.spec.ts`): Generate image against
+  `fake-gezel.ts`, which serves `/v1/images` with a 1×1 PNG.
+- Opt-in real engine in the packaged app (`e2e/packaged-images.spec.ts`):
+  hard-links the models into DocBlocks' private Gezel home, then renders with
+  the bundled `gezel-sd-server` through Generate image and, given a chat model,
+  an Illustrate design graphic, inserting each beside the document.
+
+  ```sh
+  DOCBLOCKS_E2E_REAL_IMAGES=1 \
+  DOCBLOCKS_E2E_IMAGE_MODEL_DIR=~/.gezel/engines/sd-cpp/models/flux-2-klein-4b-q4 \
+  DOCBLOCKS_E2E_CHAT_MODEL_DIR=~/.gezel/engines/llama-cpp/models/gemma4-e4b-q8 \
+  npm run test:e2e:packaged -w docblocks-desktop
+  ```
+
 - `npm run eval:ai-diagrams -- --images <image-model>` runs the design path
   over the diagram corpus against a Gezel that serves `/v1/images`
   (`DOCBLOCKS_EVAL_IMAGES_BASE_URL`, `DOCBLOCKS_EVAL_IMAGES_TOKEN`), writing
