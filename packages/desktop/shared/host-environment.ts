@@ -72,6 +72,23 @@ export function parseAiAvailabilityArgument(argv: readonly string[]): boolean {
   return switchValue(argv, AI_AVAILABLE_SWITCH) === '1';
 }
 
+const AI_IMAGES_AVAILABLE_SWITCH = '--docblocks-ai-images=';
+
+/**
+ * Main-side: whether this build can generate images at all. The preload
+ * exposes `ai.images` only when it can, so a build without the engine never
+ * shows image commands. Whether this computer and provider can render is a
+ * runtime question `ai.images.access()` answers.
+ */
+export function aiImagesAvailabilityArguments(available: boolean): string[] {
+  return [`${AI_IMAGES_AVAILABLE_SWITCH}${available ? '1' : '0'}`];
+}
+
+/** Preload-side. Fail safe: only an explicit '1' exposes image generation. */
+export function parseAiImagesAvailabilityArgument(argv: readonly string[]): boolean {
+  return switchValue(argv, AI_IMAGES_AVAILABLE_SWITCH) === '1';
+}
+
 const SPEECH_AVAILABLE_SWITCH = '--docblocks-speech=';
 
 export interface SpeechAvailability {

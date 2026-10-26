@@ -236,20 +236,24 @@ export async function findIdeas(options: {
   source: string;
   title: string;
   budget: PromptBudget;
+  /** Offer design graphics in the plan. */
+  design?: boolean;
   signal?: AbortSignal;
 }): Promise<FindIdeasOutcome> {
   const passages = segmentPassages(options.source);
   if (passages.length === 0) return { status: 'found', picks: [] };
   const shortlist = shortlistPassages(passages, options.budget.passageCharacters);
+  const design = options.design === true;
   const planRequest = buildPlanRequest({
     title: options.title,
     shortlist,
     budget: options.budget,
+    design,
   });
   let reply = await chatOnce(options.ai, planRequest, options.signal);
   if (reply.kind === 'cancelled') return { status: 'cancelled' };
   if (reply.kind === 'error') return { status: 'failed', message: reply.error.message };
-  let picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
+  let picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions, design);
   if (picks === null) {
     reply = await chatOnce(
       options.ai,
@@ -258,7 +262,7 @@ export async function findIdeas(options: {
     );
     if (reply.kind === 'cancelled') return { status: 'cancelled' };
     if (reply.kind === 'error') return { status: 'failed', message: reply.error.message };
-    picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions);
+    picks = parsePlanResponse(reply.text, shortlist, options.budget.maxSuggestions, design);
   }
   if (picks === null) {
     return { status: 'failed', message: "The model's plan could not be read. Try again." };
@@ -279,7 +283,7 @@ export interface DrawOptions {
  * planner suggested it, is charted straight from its cells with no model call.
  */
 export async function drawDiagram(
-  idea: PlanPick,
+  idea: Omit<PlanPick, 'kind'> & { readonly kind: DiagramKind },
   options: DrawOptions & {
     /** The person wrote or changed the prompt, so its facts count as stated. */
     readonly personPrompt?: boolean;
@@ -358,7 +362,9 @@ export function startIllustrationRun(options: {
     for (const [index, pick] of found.picks.entries()) {
       if (signal.aborted) return;
       emit({ type: 'drawing', index, total: found.picks.length });
-      const outcome = await drawDiagram(pick, { ...options, signal });
+      // This run offers no design graphics, so the planner never returns one.
+      if (pick.kind === 'design') continue;
+      const outcome = await drawDiagram({ ...pick, kind: pick.kind }, { ...options, signal });
       if (outcome.status === 'cancelled') return;
       emit({ type: 'suggestion', pick, outcome });
     }

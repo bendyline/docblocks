@@ -7528,6 +7528,93 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   max-height: 420px;
 }
 
+/* ── AI image generation: the Generate image panel ── */
+.db-ai-image-form {
+  padding: 12px 14px 0;
+}
+
+.db-ai-image-aspects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.db-ai-review-panel .db-ai-image-aspects button[aria-checked='true'] {
+  border-color: var(--db-bg-selected);
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-ai-image-actions,
+.db-ai-image-allow {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.db-ai-image-code {
+  display: block;
+  margin-top: 8px;
+  color: var(--db-text);
+  font:
+    600 20px/1.2 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.db-ai-image-results {
+  margin-bottom: 14px;
+}
+
+.db-ai-image-prompt {
+  margin: 0 0 8px;
+  color: var(--db-text);
+  overflow-wrap: anywhere;
+}
+
+/* A raster image ignores the dark theme, so it sits on a light frame. */
+.db-ai-image-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 4px 0 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.db-ai-image-alt {
+  margin-bottom: 6px;
+  font-weight: 400;
+}
+
+.db-ai-image-alt input {
+  min-height: var(--db-target-min);
+  padding: 0 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.4 var(--db-ui-font);
+}
+
+.db-ai-image-result-actions {
+  padding: 6px 0 0;
+}
+
+/* Illustrate's design graphics: raster pictures, so a light frame in dark mode too. */
+.db-ai-design-preview {
+  background: #fff;
+}
+
+.db-ai-design-preview img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .db-ai-diagram-source {
   max-height: 220px;
   overflow: auto;

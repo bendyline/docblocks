@@ -52,9 +52,11 @@ import type { FileSystemEntry, FileMeta } from '@bendyline/docblocks/filesystem'
 import { BufferedEventChannel } from './buffered-event-channel.js';
 import {
   parseAiAvailabilityArgument,
+  parseAiImagesAvailabilityArgument,
   parseHostEnvironmentArguments,
   parseSpeechAvailabilityArgument,
 } from '../shared/host-environment.js';
+import { createAiImagesApi } from './ai-images-bridge.js';
 import { createSpeechApi } from './speech-bridge.js';
 
 // The main process can dispatch launch argv as soon as the BrowserWindow is
@@ -631,13 +633,20 @@ const host: DocBlocksHostAPI = {
   menu: menuApi,
   // Omitted, not stubbed, on a build that cannot do AI: capabilities are
   // derived from which members exist.
-  ...(parseAiAvailabilityArgument(process.argv) ? { ai: aiApi } : {}),
+  ...(parseAiAvailabilityArgument(process.argv) ? { ai: aiNamespace() } : {}),
   // Likewise per engine: `transcribe` / `synthesize` exist only when main found
   // the engine, and the namespace only when it found at least one.
   ...speechNamespace(),
   onMenuCommand,
   onOpenRequest,
 };
+
+/** `images` exists only on a build that can generate them; see `aiImagesAvailabilityArguments`. */
+function aiNamespace(): DocBlocksHostAiAPI {
+  return parseAiImagesAvailabilityArgument(process.argv)
+    ? { ...aiApi, images: createAiImagesApi(ipcRenderer, mintId) }
+    : aiApi;
+}
 
 function speechNamespace(): Pick<DocBlocksHostAPI, 'speech'> {
   const availability = parseSpeechAvailabilityArgument(process.argv);

@@ -297,7 +297,7 @@ describe('mobile AI through the Gezel App SDK', () => {
     );
     assert.equal(f.ai.transcribe, undefined);
     assert.equal(f.ai.search, undefined);
-    assert.equal(f.ai.generateImage, undefined);
+    assert.equal(f.ai.images, undefined);
   });
   it('never silently substitutes a missing selected model', async () => {
     const f = fixture({ enabled: true, model: 'llama-cpp:gone' });

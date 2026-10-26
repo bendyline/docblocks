@@ -357,19 +357,6 @@ export interface AiSearchResult {
   readonly truncated: boolean;
 }
 
-export interface AiImageRequest {
-  readonly prompt: string;
-  readonly width?: number;
-  readonly height?: number;
-}
-
-export interface AiImageResult {
-  readonly mimeType: 'image/png';
-  readonly data: ArrayBuffer;
-  readonly width: number;
-  readonly height: number;
-}
-
 export interface AiTranscribeRequest {
   readonly audio: ArrayBuffer;
   readonly mimeType: string;
@@ -406,6 +393,8 @@ export interface AiSpeechAudio {
 export interface DocBlocksHostAiAPI {
   /** Optional catalog browsing, downloads, and retrieval model setup. */
   readonly knowledge?: import('./ai-knowledge.js').AiKnowledgeAPI;
+  /** Optional on-device image generation and its models. */
+  readonly images?: import('./ai-images.js').AiImagesAPI;
   /** Whether the host's user-installed companion provider is present. */
   providerInstalled(): Promise<boolean>;
   status(): Promise<AiStatus>;
@@ -441,7 +430,6 @@ export interface DocBlocksHostAiAPI {
     onProgress?: (progress: AiProgress) => void,
   ): AiEnsureWorkspaceHandle;
   search?(workspaceId: string, query: AiSearchQuery): Promise<AiResult<AiSearchResult>>;
-  generateImage?(request: AiImageRequest): Promise<AiResult<AiImageResult>>;
   /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */
   transcribe?(request: AiTranscribeRequest): Promise<AiResult<AiTranscript>>;
   /** @deprecated Speech lives on `DocBlocksHostAPI.speech`; no host implements this. */

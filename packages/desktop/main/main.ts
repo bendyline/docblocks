@@ -87,11 +87,13 @@ import {
 import { desktopRendererResponseHeaders } from './renderer-response-headers.js';
 import {
   aiAvailabilityArguments,
+  aiImagesAvailabilityArguments,
   hostEnvironmentArguments,
   speechAvailabilityArguments,
 } from '../shared/host-environment.js';
+import type { AiImageService } from './ai/ai-image-service.js';
 import type { AiService } from './ai/ai-service.js';
-import { createAiService, registerAiIpc } from './ipc-ai.js';
+import { createAiImageService, createAiService, registerAiIpc } from './ipc-ai.js';
 import type { SpeechService } from './speech/speech-service.js';
 import { createSpeechService, registerSpeechIpc } from './ipc-speech.js';
 
@@ -155,6 +157,7 @@ const mainWindow = new MainWindowSlot<BrowserWindow>(reopenWindow, (error: unkno
   );
 });
 let aiService: AiService | null = null;
+let aiImageService: AiImageService | null = null;
 let speechService: SpeechService | null = null;
 let appExitApproved = false;
 let appExitPreparing = false;
@@ -375,6 +378,7 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
           isDev,
         }),
         ...aiAvailabilityArguments(true),
+        ...aiImagesAvailabilityArguments(aiImageService !== null),
         ...speechAvailabilityArguments({
           stt: speechService?.sttAvailable ?? false,
           tts: speechService?.ttsAvailable ?? false,
@@ -482,6 +486,7 @@ async function prepareApplicationExit(reason: 'app-quit' | 'update-install'): Pr
   releaseAllScopedResources();
   // Cancel in-flight completions and release the Gezel transport. Bounded: a
   // provider that has stopped answering must not hold the app open.
+  aiImageService?.dispose();
   if (aiService || speechService) {
     let disposeTimer: ReturnType<typeof setTimeout> | undefined;
     await Promise.race([
@@ -645,7 +650,8 @@ async function bootstrap(): Promise<void> {
   registerWindowLifecycleIpc();
   registerUpdaterIpc(() => prepareApplicationExit('update-install'));
   aiService = createAiService();
-  registerAiIpc(aiService);
+  aiImageService = createAiImageService(aiService);
+  registerAiIpc(aiService, aiImageService);
   // Reads preferences and starts AI only after opt-in, without prompting.
   void aiService.start();
   // Engines start lazily on first use; nothing is spawned here.

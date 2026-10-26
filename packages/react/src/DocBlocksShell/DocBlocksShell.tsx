@@ -197,6 +197,11 @@ const AiIllustratePanel = lazy(() =>
     default: module.AiIllustratePanel,
   })),
 );
+const AiImagePanel = lazy(() =>
+  import('../Ai/AiImagePanel.js').then((module) => ({
+    default: module.AiImagePanel,
+  })),
+);
 const TextFromNarration = lazy(() =>
   import('../Speech/TextFromNarration.js').then((module) => ({
     default: module.TextFromNarration,
@@ -5873,6 +5878,8 @@ export function DocBlocksShell({
                                   <Suspense fallback={null}>
                                     {aiPanel === 'review' ? (
                                       <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    ) : aiPanel === 'images' ? (
+                                      <AiImagePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     ) : (
                                       <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     )}

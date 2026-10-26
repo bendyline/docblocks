@@ -358,6 +358,16 @@ strips is inserted sanitized, with a note. Illustrate never offers it — small
 local models cannot draw reliably. `eval:ai-diagrams -- --illustrations`
 measures it.
 
+**Design graphics follow the same rule.** Illustrate's Design graphic kind
+(`design-brief.ts`) asks the chat model for a JSON brief — title, layout,
+labels, numbers, style — whose every label and number must come from the
+passage, then compiles it into the image prompt itself; the model never writes
+that prompt. The picture is rendered by `host.ai.images` with the design model
+chosen in Settings, previewed from memory with the text it should contain, and
+saved to `<stem>_files/` only when inserted. Image failures never touch the
+chat connection. See [docs/images.md](docs/images.md);
+`eval:ai-diagrams -- --images <model>` measures it.
+
 **SVG source never reaches a writing prompt.** Compose, Rewrite and Review
 (`ai-assistant.ts`) replace each `svg` fence in the document context with a
 one-line `[SVG picture: …]` stand-in (`ai-pictures.ts`), since one picture can

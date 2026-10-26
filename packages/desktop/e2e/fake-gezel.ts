@@ -23,6 +23,10 @@ export const FAKE_COMPOSE_TEXT = 'This closing paragraph was drafted by the fake
 export const FAKE_REWRITE_TEXT = 'The fake Gezel rewrote this sentence.';
 export const FAKE_REVIEW_SUFFIX = ' (reviewed)';
 export const FAKE_SUMMARY_OVERVIEW = 'The fake Gezel summarized this document.';
+export const FAKE_IMAGE_MODEL = 'sd-cpp:fake-painter';
+/** A real 1x1 PNG, so the host's signature check and the media folder see an image. */
+const FAKE_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 interface ChatMessage {
   readonly role: string;
@@ -46,6 +50,8 @@ export interface FakeGezel {
   readonly retrievals: readonly Record<string, unknown>[];
   /** Chat streams the client closed before the last chunk. */
   readonly abandonedStreams: number;
+  /** Bodies of `/v1/images/generations` requests, with their bearer token. */
+  readonly images: readonly Record<string, unknown>[];
   /** Approve the pending connection, as a person typing the code would. */
   approve(): void;
   close(): Promise<void>;
@@ -61,6 +67,8 @@ export interface FakeGezelOptions {
   readonly chatProgress?: readonly AiChatProgress[];
   /** Replies for exercising truncation and continuation across requests. */
   readonly replies?: readonly { text: string; finishReason: 'stop' | 'length' }[];
+  /** Serve `/v1/images` with one installed model, as a Gezel that allowed images. */
+  readonly images?: boolean;
   /** One installed, enabled catalog, and the passages every retrieval returns. */
   readonly knowledge?: {
     readonly catalog: { readonly id: string; readonly name: string };
@@ -307,6 +315,7 @@ async function streamUpstream(
 export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGezel> {
   const chats: RecordedChat[] = [];
   const retrievals: Record<string, unknown>[] = [];
+  const images: Record<string, unknown>[] = [];
   const knowledge = options.knowledge;
   let registrations = 0;
   let abandonedStreams = 0;
@@ -326,7 +335,62 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
           status: 'ok',
           version: '0.0.0-fake',
           apiCompat: { floor: GEZEL_API_GENERATION_FLOOR, current: GEZEL_API_GENERATION },
+          ...(options.images ? { images: { available: true } } : {}),
         });
+      } else if (
+        options.images &&
+        request.method === 'GET' &&
+        url.pathname === '/v1/images/models'
+      ) {
+        if (!authorized(request)) return sendJson(response, 401, { error: 'unauthorized' });
+        sendJson(response, 200, {
+          object: 'list',
+          data: [
+            {
+              id: FAKE_IMAGE_MODEL,
+              object: 'image_model',
+              name: 'Fake Painter',
+              availability: 'available',
+              download_bytes: 1_000_000,
+              license: 'MIT',
+              commercial_use: true,
+              renders_text: true,
+              prompt_style: 'sentences',
+              hardware_tier: 'low',
+              fit: { verdict: 'fits', reason: '' },
+            },
+          ],
+        });
+      } else if (
+        options.images &&
+        request.method === 'POST' &&
+        url.pathname === '/v1/images/generations'
+      ) {
+        if (!authorized(request)) return sendJson(response, 401, { error: 'unauthorized' });
+        const body = await readJson(request);
+        images.push({ ...body, authorization: request.headers.authorization });
+        response.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+        });
+        for (const step of [1, 2]) {
+          response.write(
+            `data: ${JSON.stringify({ type: 'progress', phase: 'sampling', step, total_steps: 2, seconds_per_step: 0.1 })}\n\n`,
+          );
+        }
+        response.write(
+          `data: ${JSON.stringify({
+            type: 'done',
+            b64_png: FAKE_PNG_BASE64,
+            width: 1,
+            height: 1,
+            seed: typeof body.seed === 'number' ? body.seed : 7,
+            model: FAKE_IMAGE_MODEL,
+            steps: 2,
+            duration_ms: 5,
+          })}\n\n`,
+        );
+        response.end();
       } else if (request.method === 'POST' && url.pathname === '/v1/apps/register') {
         await readJson(request);
         registrations += 1;
@@ -468,6 +532,7 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
     get abandonedStreams() {
       return abandonedStreams;
     },
+    images,
     approve() {
       approved = true;
       for (const wake of [...waiters]) wake();

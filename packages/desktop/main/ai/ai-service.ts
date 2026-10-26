@@ -52,6 +52,7 @@ import type {
 } from '@bendyline/docblocks/host';
 
 import { AiHostError, aiError, toAiError } from './ai-errors.js';
+import type { ProviderImages } from './ai-image-service.js';
 import {
   selectModel,
   toAiModelDownloadList,
@@ -117,6 +118,8 @@ export interface AiProviderConnection {
   updateKnowledge?(action: AiKnowledgeAction, signal: AbortSignal): Promise<void>;
   /** Why this connection offers no knowledge catalogs, in words for people. */
   readonly knowledgeUnavailable?: string;
+  /** On-device image generation, when the provider offers it to this app. */
+  readonly images?: ProviderImages;
   readonly mode: AiProviderInfo['mode'];
   /** The version of the provider actually serving, when it differs from detection. */
   readonly version?: string | null;
@@ -313,6 +316,16 @@ export class AiService {
    * for again, silently and at most every `redetectIntervalMs`, so starting
    * Gezel after DocBlocks is noticed the next time the renderer asks.
    */
+  /**
+   * The ready connection's image surface. `AiImageService` reads it on every
+   * call so it always follows the live connection, and never reaches this
+   * service's failure handling.
+   */
+  imageProvider(): ProviderImages | null {
+    if (this.disposed || this.status.kind !== 'ready') return null;
+    return this.connection?.images ?? null;
+  }
+
   async getStatus(): Promise<AiStatus> {
     await this.loadPreferences();
     const absent =

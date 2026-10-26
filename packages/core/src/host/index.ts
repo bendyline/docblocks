@@ -31,8 +31,6 @@ export type {
   AiFactCheck,
   AiFactCheckRequest,
   AiFactCheckSentence,
-  AiImageRequest,
-  AiImageResult,
   AiModelDownloadInfo,
   AiModelFit,
   AiModelInfo,
@@ -202,6 +200,7 @@ export {
 } from './wire-policy.js';
 
 export * from './ai-knowledge.js';
+export * from './ai-images.js';
 
 import type { DocBlocksHostAPI, HostEnvironment } from './types.js';
 import {

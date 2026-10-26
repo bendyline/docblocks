@@ -46,6 +46,9 @@ import {
   specSummaryForAvoid,
 } from './illustrate-pipeline.js';
 import { canDrawIllustrations, realizeIllustration, type PictureOutcome } from './illustration.js';
+import { imageProgressText, useImageAccess } from './ai-image-access.js';
+import { realizeDesign } from './design-brief.js';
+import { saveGeneratedImage } from './insert-generated-image.js';
 import {
   AI_DIAGRAM_DESCRIPTION_CHARACTERS,
   inferKind,
@@ -60,7 +63,28 @@ function checkNote(kind: PictureKind): string | null {
   if (LINKED_KINDS.has(kind)) return 'Check the links between boxes before inserting.';
   if (kind === 'matrix') return 'Check that each quadrant is in the right corner before inserting.';
   if (kind === 'illustration') return 'Check the picture against your text before inserting.';
+  if (kind === 'design') return 'Check every word in the picture before inserting.';
   return null;
+}
+
+/** A design graphic's picture, shown from memory until it is inserted. */
+function ImagePreview({ compiled }: { compiled: CompiledDiagram }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!compiled.image) return;
+    const next = URL.createObjectURL(new Blob([compiled.image.data], { type: 'image/png' }));
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [compiled]);
+  return (
+    <div
+      className="db-ai-diagram-preview db-ai-design-preview"
+      role="img"
+      aria-label={`${compiled.title}. ${compiled.summary}`}
+    >
+      {url && <img src={url} alt="" />}
+    </div>
+  );
 }
 
 function contextWindowOf(status: ReturnType<typeof useAiStatus>): number | null {
@@ -71,6 +95,7 @@ function contextWindowOf(status: ReturnType<typeof useAiStatus>): number | null 
 export function DiagramPreview({ compiled }: { compiled: CompiledDiagram }) {
   const preview = usePreviewSettingsOptional();
   const markdown = useMemo(() => compiled.render(2, new Set()), [compiled]);
+  if (compiled.image) return <ImagePreview compiled={compiled} />;
   return (
     <div
       className="db-ai-diagram-preview"
@@ -89,7 +114,7 @@ export function DiagramPreview({ compiled }: { compiled: CompiledDiagram }) {
 
 function DiagramSource({ compiled }: { compiled: CompiledDiagram }) {
   const markdown = useMemo(() => compiled.render(2, new Set()), [compiled]);
-  return <pre className="db-ai-diagram-source">{markdown}</pre>;
+  return <pre className="db-ai-diagram-source">{compiled.image?.prompt ?? markdown}</pre>;
 }
 
 function placementNote(compiled: CompiledDiagram): string | null {
@@ -180,7 +205,7 @@ export function AiDiagramDialog({
           })
         : await realizeDiagram({
             ai: knowledgeAi,
-            kind: kind === 'illustration' ? autoKind : kind,
+            kind: kind === 'illustration' || kind === 'design' ? autoKind : kind,
             material: material || request,
             heading: '',
             title,
@@ -416,7 +441,9 @@ function resolvedKind(idea: Pick<Idea, 'kind' | 'prompt' | 'passage'>): PictureK
 }
 
 function kindLabel(kind: PictureKind): string {
-  return kind === 'illustration' ? 'Illustration' : DIAGRAM_KIND_LABELS[kind];
+  if (kind === 'illustration') return 'Illustration';
+  if (kind === 'design') return 'Design graphic';
+  return DIAGRAM_KIND_LABELS[kind];
 }
 
 /** What a picture is drawn from; where it goes can change without a redraw. */
@@ -463,6 +490,8 @@ interface IdeaCardProps {
   anchors: readonly Passage[];
   placed: { readonly start: number } | null;
   drawsIllustrations: boolean;
+  /** A design model is ready, so the Design graphic kind is offered. */
+  drawsDesign: boolean;
   promptRef: (element: HTMLTextAreaElement | null) => void;
   onEdit: (change: IdeaEdit) => void;
   onRemove: () => void;
@@ -475,6 +504,7 @@ function IdeaCard({
   anchors,
   placed,
   drawsIllustrations,
+  drawsDesign,
   promptRef,
   onEdit,
   onRemove,
@@ -532,6 +562,9 @@ function IdeaCard({
             ))}
             {(drawsIllustrations || idea.kind === 'illustration') && (
               <option value="illustration">Illustration (drawn by AI)</option>
+            )}
+            {(drawsDesign || idea.kind === 'design') && (
+              <option value="design">Design graphic (image model)</option>
             )}
           </select>
         </label>
@@ -724,10 +757,23 @@ export interface AiIllustratePanelProps {
  * inserted. Nothing is drawn until the person asks.
  */
 export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
-  const { markdownSource, applySourceEdits, getSelection } = useEditorContext();
+  const { markdownSource, applySourceEdits, getSelection, mediaProvider, bumpMediaRevision } =
+    useEditorContext();
   const status = useAiStatus(ai);
   const contextWindow = contextWindowOf(status);
   const drawsIllustrations = canDrawIllustrations(contextWindow);
+  const images = ai.images;
+  const imageAccess = useImageAccess(images);
+  // The model for design graphics: undefined while finding out, null when
+  // none is ready. Ideas are found once this is known, so the plan can
+  // offer design graphics.
+  const [designModel, setDesignModel] = useState<string | null | undefined>(
+    images ? undefined : null,
+  );
+  const drawsDesign = typeof designModel === 'string';
+  const [designProgress, setDesignProgress] = useState<string | null>(null);
+  const sourceRef = useRef(markdownSource);
+  sourceRef.current = markdownSource;
   const ready = status?.kind === 'ready' && status.model !== null;
   const [chosenStep, setStep] = useState<IllustrateStep>('ideas');
   const [ideas, setIdeas] = useState<readonly Idea[]>([]);
@@ -758,6 +804,36 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
     ideasRef.current = ideas;
   }, [ideas]);
 
+  useEffect(() => {
+    if (!images) return;
+    // An image provider that never answers must not hold back finding ideas.
+    const timer = setTimeout(() => setDesignModel((current) => current ?? null), 3_000);
+    if (imageAccess === null) return () => clearTimeout(timer);
+    clearTimeout(timer);
+    if (imageAccess.kind !== 'ready') {
+      setDesignModel(null);
+      return;
+    }
+    let live = true;
+    void Promise.all([images.getPreferences(), images.models()])
+      .then(([preferences, models]) => {
+        if (!live) return;
+        const id = preferences.designModel;
+        const usable =
+          models.ok &&
+          models.value.some(
+            (model) => model.id === id && model.state === 'installed' && model.rendersText,
+          );
+        setDesignModel(usable ? id : null);
+      })
+      .catch(() => {
+        if (live) setDesignModel(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [images, imageAccess]);
+
   const anchors = useMemo(
     () => segmentPassages(markdownSource, { everyBlock: true }),
     [markdownSource],
@@ -787,6 +863,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
       source: markdownSource,
       title: documentTitle(markdownSource),
       budget: promptBudget(contextWindow),
+      design: drawsDesign,
       signal: controller.signal,
     });
     if (generationRef.current !== generation) return;
@@ -832,13 +909,35 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         (a, b) => a.passage.start - b.passage.start,
       );
     });
-  }, [findAi, resetFindKnowledge, contextWindow, markdownSource, newKey]);
+  }, [findAi, resetFindKnowledge, contextWindow, markdownSource, newKey, drawsDesign]);
 
   const drawOne = useCallback(
     (idea: Idea, avoid: string | undefined, signal: AbortSignal): Promise<PictureOutcome> => {
       const kind = resolvedKind(idea);
       const title = idea.title.trim();
       const prompt = idea.prompt.trim();
+      if (kind === 'design') {
+        if (!images || typeof designModel !== 'string') {
+          return Promise.resolve({
+            status: 'failed',
+            message:
+              'Choose a model for design graphics under Settings, AI assistance, to draw this.',
+          });
+        }
+        setDesignProgress(null);
+        return realizeDesign({
+          ai: drawAi,
+          images,
+          model: designModel,
+          material: idea.passage.plain,
+          title,
+          prompt,
+          personTitle: idea.edited && title.length > 0,
+          signal,
+          onProgress: (progress) =>
+            setDesignProgress(imageProgressText(progress, 'the design model')),
+        }).finally(() => setDesignProgress(null));
+      }
       if (kind === 'illustration') {
         if (contextWindow === null || !canDrawIllustrations(contextWindow)) {
           return Promise.resolve({
@@ -870,7 +969,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         },
       );
     },
-    [drawAi, contextWindow],
+    [drawAi, contextWindow, images, designModel],
   );
 
   /** Phase two: draw `keys` one at a time, showing each picture as it lands. */
@@ -922,10 +1021,10 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
   }, []);
 
   useEffect(() => {
-    if (startedRef.current || !ready) return;
+    if (startedRef.current || !ready || designModel === undefined) return;
     startedRef.current = true;
     void find();
-  }, [ready, find]);
+  }, [ready, find, designModel]);
 
   useEffect(
     () => () => {
@@ -987,7 +1086,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
   }, []);
 
   const insert = useCallback(
-    (items: readonly Idea[]) => {
+    async (items: readonly Idea[]) => {
       const pending: PendingInsertion[] = [];
       for (const idea of items) {
         const compiled = freshPicture(idea);
@@ -995,10 +1094,32 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         pending.push({ key: idea.key, passage: idea.passage, compiled });
       }
       if (pending.length === 0) return;
-      const plan = planInsertions(markdownSource, pending);
+      // A design graphic's Markdown points at its file, so save that first.
+      const unsaved = pending.flatMap(({ compiled }) =>
+        compiled.image && !compiled.image.mediaPath
+          ? [{ image: compiled.image, title: compiled.title }]
+          : [],
+      );
+      if (unsaved.length > 0) {
+        if (!mediaProvider) {
+          setNotice('Save the document in a folder to insert design graphics.');
+          return;
+        }
+        try {
+          for (const { image, title } of unsaved) {
+            image.mediaPath = await saveGeneratedImage(mediaProvider, image, title);
+          }
+          bumpMediaRevision?.();
+        } catch {
+          setNotice('DocBlocks could not save the design graphic beside the document.');
+          return;
+        }
+      }
+      const source = sourceRef.current;
+      const plan = planInsertions(source, pending);
       const stale = new Set(plan.stale);
       const unplaceable = new Set(plan.unplaceable);
-      if (plan.edits.length > 0 && !applySourceEdits(plan.edits, { baseSource: markdownSource })) {
+      if (plan.edits.length > 0 && !applySourceEdits(plan.edits, { baseSource: source })) {
         setNotice('Switch to Write or Source view, in the Document layout, to insert pictures.');
         return;
       }
@@ -1023,7 +1144,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
         }),
       );
     },
-    [applySourceEdits, markdownSource],
+    [applySourceEdits, mediaProvider, bumpMediaRevision],
   );
 
   const drawing = drawProgress !== null;
@@ -1043,7 +1164,10 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
 
   const drawPictures = (keys: readonly string[]) => {
     setStep('pictures');
-    void draw(keys);
+    // Design graphics take longest to render, so diagrams land first.
+    const isDesign = (key: string) =>
+      ideasRef.current.some((idea) => idea.key === key && resolvedKind(idea) === 'design');
+    void draw([...keys.filter((key) => !isDesign(key)), ...keys.filter(isDesign)]);
   };
 
   return (
@@ -1151,6 +1275,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                   anchors={anchors}
                   placed={placements.get(idea.key) ?? null}
                   drawsIllustrations={drawsIllustrations}
+                  drawsDesign={drawsDesign}
                   promptRef={(element) => {
                     if (element) promptRefs.current.set(idea.key, element);
                     else promptRefs.current.delete(idea.key);
@@ -1210,7 +1335,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                   setFocusKey(idea.key);
                 }}
                 onDraw={() => void draw([idea.key])}
-                onInsert={() => insert([idea])}
+                onInsert={() => void insert([idea])}
               />
             ))}
           </ol>
@@ -1239,7 +1364,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                 <span className="db-ai-spinner" aria-hidden="true" />
                 <span>
                   Drawing picture {Math.min(drawProgress.done + 1, drawProgress.total)} of{' '}
-                  {drawProgress.total}…
+                  {drawProgress.total}…{designProgress ? ` ${designProgress}` : ''}
                 </span>
                 <progress
                   max={drawProgress.total}
@@ -1289,7 +1414,7 @@ export function AiIllustratePanel({ ai, onClose }: AiIllustratePanelProps) {
                 <button
                   type="button"
                   className="db-ai-illustrate-primary"
-                  onClick={() => insert(insertable)}
+                  onClick={() => void insert(insertable)}
                 >
                   Insert all ({insertable.length})
                 </button>

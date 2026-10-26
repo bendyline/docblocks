@@ -126,6 +126,7 @@ test('preload exposes the complete typed host and reaches representative IPC han
           'speech',
         ].map((key) => [key, functionKeys(host[key])]),
       ),
+      aiImages: functionKeys((host.ai as Record<string, unknown> | undefined)?.images),
       workspace,
       roundTrip,
       opened,
@@ -235,8 +236,9 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'requestWindowClose',
   ]);
   expect(contract.methods.menu).toEqual(['getTrayEnabled', 'setPinnedDocuments', 'setTrayEnabled']);
-  // The core AI group only: workspace search, images, and speech are optional
-  // members this host does not implement, so their capabilities stay false.
+  // The core AI group: workspace search and the deprecated speech members are
+  // optional members this host does not implement. Images is a namespace of
+  // its own, pinned below.
   expect(contract.methods.ai).toEqual([
     'availableModels',
     'chat',
@@ -250,6 +252,17 @@ test('preload exposes the complete typed host and reaches representative IPC han
     'providerInstalled',
     'setPreferences',
     'status',
+  ]);
+  expect(contract.aiImages).toEqual([
+    'access',
+    'generate',
+    'getPreferences',
+    'installModel',
+    'models',
+    'onAccess',
+    'removeModel',
+    'requestAccess',
+    'setPreferences',
   ]);
   // Both engines are present: the fixture runs the source app against the fake
   // whisper-server and narration utility.

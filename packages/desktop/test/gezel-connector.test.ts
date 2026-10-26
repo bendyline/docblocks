@@ -740,6 +740,76 @@ describe('Gezel connector with the real embedding SDK', () => {
     expect(fixture.verifications).to.deep.equal([]);
   });
 
+  it('asks the SDK for image generation except on the Mac App Store, and adapts it', async () => {
+    const asked: unknown[] = [];
+    const generated: unknown[] = [];
+    const images = {
+      access: async () => 'granted' as const,
+      requestAccess: async () => undefined,
+      models: async () => [],
+      ensure: async () => ({ status: 'ready' as const, modelId: 'sd-cpp:x' }),
+      ensureEvents: async function* () {},
+      cancelEnsure: async () => undefined,
+      remove: async () => undefined,
+      generate: async (
+        input: unknown,
+        options: { onProgress?: (progress: Record<string, unknown>) => void },
+      ) => {
+        generated.push(input);
+        options.onProgress?.({ phase: 'sampling', step: 1, totalSteps: 4 });
+        return {
+          png: new Uint8Array(8),
+          width: 1,
+          height: 1,
+          seed: 1,
+          model: 'sd-cpp:x',
+          steps: 4,
+          durationMs: 1,
+        };
+      },
+    };
+    const connectorFor = (macAppStore: boolean) =>
+      new GezelConnector({
+        credentials: new MemoryCredentials(),
+        knowledgeRuntime: () => true,
+        ...(macAppStore
+          ? {
+              hostNative: {
+                distributionProfile: 'store' as const,
+                allowStandaloneMacPayload: false,
+                canHost: false,
+                macAppStore: true,
+              },
+            }
+          : {}),
+        loadHostSdk: async () =>
+          ({
+            connectDesktopEmbedding: async (options: { images?: boolean }) => {
+              asked.push(options.images);
+              return {
+                mode: 'hosted',
+                app: {},
+                models: { list: async () => [] },
+                revoke: async () => undefined,
+                close: async () => undefined,
+                ...(options.images ? { images } : {}),
+              };
+            },
+          }) as unknown as typeof import('@bendyline/gezel-app-sdk/host'),
+      });
+    const desktop = await connectorFor(false).connect({ interactive: false });
+    const store = await connectorFor(true).connect({ interactive: false });
+    expect(asked).to.deep.equal([true, false]);
+    expect(store.images).to.equal(undefined);
+    const progress: unknown[] = [];
+    await desktop.images!.generate(
+      { prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3 },
+      { signal: new AbortController().signal, onProgress: (p) => progress.push(p) },
+    );
+    expect(generated).to.deep.equal([{ prompt: 'A lighthouse', aspectRatio: '16:9', seed: 3 }]);
+    expect(progress).to.deep.equal([{ phase: 'sampling', step: 1, totalSteps: 4 }]);
+  });
+
   it('does not verify or load bundled engines when a stored standalone grant works', async () => {
     const daemon = new FakeDaemon();
     daemon.validToken = 'kept-token';
