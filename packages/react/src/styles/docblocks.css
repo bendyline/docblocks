@@ -7044,7 +7044,12 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   background: var(--db-bg-raised);
 }
 
+/* As tall as the close button so the title centers on the same line as the
+   ×, while the findings count still stacks underneath. */
 .db-ai-review-header h2 {
+  display: flex;
+  align-items: center;
+  min-height: var(--db-target-min);
   margin: 0;
   color: var(--db-text);
   font-size: 15px;

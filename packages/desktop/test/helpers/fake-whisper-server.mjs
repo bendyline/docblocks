@@ -44,11 +44,36 @@ const server = createServer((req, res) => {
           : mode === 'echo-prompt'
             ? `prompt was: ${prompt}`
             : (process.env.FAKE_WHISPER_TEXT ?? 'Hello from dictation.');
+      const format = /name="response_format"\r\n\r\n([^\r]*)/u.exec(body)?.[1] ?? 'json';
+      // Like whisper.cpp, plain `json` is text only; `verbose_json` adds the
+      // language by name and segments whose `words` are sub-word tokens 0.3 s
+      // apart.
+      const tokens = text
+        .trim()
+        .split(/\s+/u)
+        .flatMap((word) => {
+          const [, stem, mark] = /^(.*?)([.,!?]?)$/u.exec(word);
+          const pieces = stem.length > 5 ? [` ${stem.slice(0, 4)}`, stem.slice(4)] : [` ${stem}`];
+          return mark ? [...pieces, mark] : pieces;
+        })
+        .map((word, i) => ({ word, start: i * 0.3, end: i * 0.3 + 0.25, probability: 0.9 }));
+      const verbose = {
+        language: 'english',
+        segments: [
+          { id: 0, text: ` ${text.trim()}`, start: 0, end: tokens.length * 0.3, words: tokens },
+        ],
+      };
       res.writeHead(wav ? 200 : 400, { 'content-type': 'application/json' });
       res.end(
         JSON.stringify(
           wav
-            ? { text: ` ${text} `, language: 'en', model, prompt, requests }
+            ? {
+                text: ` ${text} `,
+                model,
+                prompt,
+                requests,
+                ...(format === 'verbose_json' ? verbose : {}),
+              }
             : { error: 'expected a WAV file' },
         ),
       );

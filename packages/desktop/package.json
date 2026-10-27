@@ -36,6 +36,7 @@
     "dist:flatpak": "npm run build && electron-builder --linux flatpak",
     "dist:dir": "npm run build && electron-builder --dir -c.mac.hardenedRuntime=false -c.extraMetadata.docblocksAutomationHooks=true",
     "start": "node scripts/run-electron.cjs",
+    "stage:gezel-native": "node scripts/stage-gezel-native.cjs",
     "icons": "python3 scripts/generate-icons.py",
     "test:e2e": "npm run build && playwright test --config=e2e/playwright.config.ts",
     "test:e2e:packaged": "npm run dist:dir && npm run test:e2e:packaged:only",

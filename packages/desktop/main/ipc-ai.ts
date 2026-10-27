@@ -61,14 +61,12 @@ export function createAiService(): AiService {
       // Enabling AI is sufficient consent to run a private Gezel for
       // DocBlocks. Connecting the person's standalone Gezel remains optional.
       hostInProcess: true,
-      hostNative: resolveGezelNativeHost(
-        app.isPackaged,
-        process.resourcesPath,
-        process.env,
-        process.platform,
-        process.arch,
+      hostNative: resolveGezelNativeHost({
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
         macAppStore,
-      ),
+      }),
     }),
     preferences: createSettingsAiPreferenceStore({ read: readSettings, update: updateSettings }),
   });

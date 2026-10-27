@@ -101,6 +101,7 @@ export type {
   SpeechTranscribeRequest,
   SpeechTranscript,
   SpeechVoiceInfo,
+  SpeechWord,
 } from './speech.js';
 
 export {

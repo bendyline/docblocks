@@ -42,7 +42,7 @@ const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/u;
 
 /**
  * Locate the bundled whisper server for this platform. Main-authoritative: the
- * path comes from the packaged payload (or an installed development engine),
+ * path comes from the packaged payload (or a source build's staged engines),
  * never from the renderer.
  */
 export async function resolveWhisperEngine(
@@ -63,24 +63,21 @@ export async function resolveWhisperEngine(
   const versions = nativePlatformVersions();
   const unavailable = bundledNativeUnavailableReason(process.platform, versions);
   if (unavailable) return { unavailable };
-  // This small, data-only module imports no service runtime and starts nothing.
-  const { NATIVE_ENGINE_RELEASE } = await import('@bendyline/gezel-inference/native-release');
   const binary = findWhisperBinary({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
     env,
     platform: process.platform,
     arch: process.arch,
     macAppStore: process.mas === true,
-    home: app.getPath('home'),
-    nativeRelease: NATIVE_ENGINE_RELEASE,
     versions,
   });
   if (!binary) {
     return {
       unavailable: app.isPackaged
         ? 'Speech recognition is not included in this build of DocBlocks.'
-        : 'Speech recognition could not find its local Whisper engine. Configure DOCBLOCKS_GEZEL_NATIVE_BIN_DIR for this development build, then restart DocBlocks.',
+        : 'Speech recognition could not find its local Whisper engine. Run `npm run stage:gezel-native` in the DocBlocks repository, then restart DocBlocks.',
     };
   }
   return new WhisperEngine({ binary });

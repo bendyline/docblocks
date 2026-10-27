@@ -432,28 +432,28 @@ test('Text from narration stays discoverable without a speech recognition engine
   await expect(dialog.getByRole('button', { name: 'Upload audio', exact: true })).toBeDisabled();
 });
 
-test('source startup discovers its installed Whisper engine without a binary override', async ({
+test('source startup discovers its staged Whisper engine without a binary override', async ({
   launchApp,
   workspaceDir,
   gezelHome,
 }) => {
+  const staged = path.join(gezelHome, 'staged-native');
   const binary = path.join(
-    gezelHome,
-    'apps',
-    'docblocks',
-    'engines',
-    'native-bin',
-    NATIVE_ENGINE_RELEASE,
+    staged,
     `${process.platform}-${process.arch}`,
     process.platform === 'win32' ? 'gezel-whisper-server.exe' : 'gezel-whisper-server',
   );
   fs.mkdirSync(path.dirname(binary), { recursive: true });
+  fs.writeFileSync(
+    path.join(staged, 'release.json'),
+    JSON.stringify({ release: NATIVE_ENGINE_RELEASE }),
+  );
   // Availability probes files only. This sentinel must never be executed.
   fs.writeFileSync(binary, 'Engine discovery fixture; not executable.');
   const { window } = await launchApp([], {
     DOCBLOCKS_SPEECH_WHISPER_BIN: '',
     DOCBLOCKS_SPEECH_WHISPER_SCRIPT: '',
-    DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: '',
+    DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: staged,
   });
   await window.waitForSelector('.db-shell', { timeout: 30_000 });
   expect(await speechStatus(window)).toMatchObject({ stt: { state: 'download-required' } });

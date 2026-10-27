@@ -21,6 +21,7 @@ import type {
   SpeechTranscribeRequest,
   SpeechTranscript,
   SpeechVoiceInfo,
+  SpeechWord,
   SpeechWordTiming,
 } from './speech.js';
 
@@ -37,6 +38,7 @@ export const SPEECH_WIRE_LIMITS = Object.freeze({
   languageCharacters: 16,
   transcriptCharacters: 64 * 1024,
   segmentEntries: 4_096,
+  segmentWordEntries: 1_024,
   synthesizeTextCharacters: 20_000,
   chunkPcmBytes: 16 * 1024 * 1024,
   chunkWordEntries: 1_024,
@@ -147,8 +149,11 @@ export function parseSpeechModelKind(value: unknown): SpeechModelKind | null {
 
 export function parseSpeechTranscribeRequest(value: unknown): SpeechTranscribeRequest | null {
   if (!isRecord(value)) return null;
-  if (!hasKeysWithin(value, ['audio', 'mimeType'], ['prompt', 'language'])) return null;
+  if (!hasKeysWithin(value, ['audio', 'mimeType'], ['prompt', 'language', 'timestamps'])) {
+    return null;
+  }
   if (value.mimeType !== 'audio/wav') return null;
+  if (value.timestamps !== undefined && typeof value.timestamps !== 'boolean') return null;
   const audio = ownedBuffer(value.audio, SPEECH_WIRE_LIMITS.transcribeAudioBytes);
   if (!audio || !hasRiffWaveHeader(audio)) return null;
   if (
@@ -169,6 +174,7 @@ export function parseSpeechTranscribeRequest(value: unknown): SpeechTranscribeRe
     mimeType: 'audio/wav',
     ...(value.prompt === undefined ? {} : { prompt: value.prompt as string }),
     ...(value.language === undefined ? {} : { language: value.language as string }),
+    ...(value.timestamps === true ? { timestamps: true } : {}),
   };
 }
 
@@ -424,12 +430,29 @@ export function parseSpeechPreferences(value: unknown): SpeechPreferences | null
   };
 }
 
-function parseSpeechSegment(value: unknown): SpeechSegment | null {
+function parseSpeechWord(value: unknown): SpeechWord | null {
   if (!isRecord(value) || !hasExactKeys(value, ['start', 'end', 'text'])) return null;
   if (!isFiniteInRange(value.start, 0, SPEECH_WIRE_LIMITS.durationCeiling)) return null;
   if (!isFiniteInRange(value.end, value.start, SPEECH_WIRE_LIMITS.durationCeiling)) return null;
   if (!isBoundedString(value.text, SPEECH_WIRE_LIMITS.transcriptCharacters)) return null;
   return { start: value.start, end: value.end, text: value.text };
+}
+
+function parseSpeechSegment(value: unknown): SpeechSegment | null {
+  if (!isRecord(value) || !hasKeysWithin(value, ['start', 'end', 'text'], ['words'])) return null;
+  const timed = parseSpeechWord({ start: value.start, end: value.end, text: value.text });
+  if (!timed) return null;
+  if (value.words === undefined) return timed;
+  if (!Array.isArray(value.words) || value.words.length > SPEECH_WIRE_LIMITS.segmentWordEntries) {
+    return null;
+  }
+  const words: SpeechWord[] = [];
+  for (const entry of value.words) {
+    const word = parseSpeechWord(entry);
+    if (!word) return null;
+    words.push(word);
+  }
+  return { ...timed, words };
 }
 
 export function parseSpeechTranscript(value: unknown): SpeechTranscript | null {

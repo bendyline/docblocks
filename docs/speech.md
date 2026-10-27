@@ -161,13 +161,12 @@ file, retry without redownload, and malformed manifests.
 
 ## Packaging
 
-Source builds first honor `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`. Otherwise they look
-for an already installed Whisper engine at the installed Gezel service's exact
-native-release pin in `~/.gezel/apps/docblocks/engines/native-bin/<release>` and
-then `~/.gezel/engines/native-bin/<release>` (`GEZEL_HOME` overrides `~/.gezel`).
-Discovery starts no service and downloads nothing. Restart the desktop app
-after installing or changing an engine. Packaged builds only use their bundled
-payload; they never fall back to these development locations.
+Source builds use the engines `npm run stage:gezel-native` stages into
+`packages/desktop/dist/gezel-native/`, the folder packaging copies into the app,
+or an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`. They never borrow an engine
+Gezel downloaded into `~/.gezel`. Discovery starts no service and downloads
+nothing. Restart the desktop app after staging. Packaged builds only use their
+bundled payload.
 
 - `onnxruntime-node` is a desktop runtime dependency, external to the main
   bundle and loaded only by `dist/main/kokoro-utility.cjs`. Its CUDA-fetching

@@ -92,6 +92,19 @@ describe('parseSpeechTranscribeRequest', () => {
     expect(
       parseSpeechTranscribeRequest({ audio: wav(), mimeType: 'audio/wav', language: 'en us' }),
     ).to.equal(null);
+    expect(
+      parseSpeechTranscribeRequest({ audio: wav(), mimeType: 'audio/wav', timestamps: 'yes' }),
+    ).to.equal(null);
+  });
+
+  it('carries a timestamps request, and drops a false one', () => {
+    expect(
+      parseSpeechTranscribeRequest({ audio: wav(), mimeType: 'audio/wav', timestamps: true })
+        ?.timestamps,
+    ).to.equal(true);
+    expect(
+      parseSpeechTranscribeRequest({ audio: wav(), mimeType: 'audio/wav', timestamps: false }),
+    ).to.not.have.property('timestamps');
   });
 });
 
@@ -264,6 +277,33 @@ describe('speech results', () => {
         durationMs: 10,
       }),
     ).to.equal(null);
+  });
+
+  it('accepts timed words inside segments and validates each one', () => {
+    const segment = {
+      start: 0,
+      end: 1.2,
+      text: 'Hello there.',
+      words: [
+        { start: 0, end: 0.4, text: 'Hello' },
+        { start: 0.5, end: 1.2, text: 'there.' },
+      ],
+    };
+    const transcript = { text: 'Hello there.', language: 'en', segments: [segment], durationMs: 9 };
+    expect(parseSpeechTranscript(transcript)).to.deep.equal(transcript);
+    const backwards = { ...segment, words: [{ start: 1, end: 0.5, text: 'x' }] };
+    expect(parseSpeechTranscript({ ...transcript, segments: [backwards] })).to.equal(null);
+    const stray = { ...segment, words: [{ start: 0, end: 1, text: 'x', probability: 1 }] };
+    expect(parseSpeechTranscript({ ...transcript, segments: [stray] })).to.equal(null);
+    const tooMany = {
+      ...segment,
+      words: Array.from({ length: SPEECH_WIRE_LIMITS.segmentWordEntries + 1 }, () => ({
+        start: 0,
+        end: 0,
+        text: 'x',
+      })),
+    };
+    expect(parseSpeechTranscript({ ...transcript, segments: [tooMany] })).to.equal(null);
   });
 });
 

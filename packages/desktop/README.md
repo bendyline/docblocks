@@ -152,10 +152,13 @@ hashes, symlinks, and platform signatures against its own source-bundled pins,
 using the directory supplied as the SDK's `host.nativeBinDir` before the service
 starts. Every packaged build uses `distributionProfile: 'store'`, so missing or invalid engines
 fail visibly instead of triggering executable downloads. Model weights remain
-data downloads initiated by **Add model**. Development may use an absolute
-`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`; it receives the same native file verification
-without requiring a notarized enclosing app. With no development override, Gezel
-may provision engines as before.
+data downloads initiated by **Add model**. Source builds use the same profile:
+`npm run stage:gezel-native` stages this machine's engines into
+`dist/gezel-native/<os>-<arch>` with the packaging helper, and the app runs
+them with the same verification, without requiring a notarized enclosing app.
+An absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` points it at another staged
+payload. A source build never downloads an engine at runtime; `dev` warns when
+the staged payload is missing or older than the installed service's pin.
 
 macOS distributions support Apple Silicon only; 2.7.1 is Intel Macs' final
 version (see [Intel Macs](#intel-macs)). Mac App Store builds include

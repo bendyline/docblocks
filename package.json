@@ -88,6 +88,7 @@
     "app": "tsx scripts/build-linked-squisq.ts && npm run build:core && npm run build:react && npm run dev:desktop",
     "app:new": "tsx scripts/build-linked-squisq.ts && npm run build:core && npm run build:react && tsx scripts/run-new-profile.ts app",
     "dev:desktop": "npm run dev -w docblocks-desktop",
+    "stage:gezel-native": "npm run stage:gezel-native -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "tsx scripts/run-tests.ts",
     "coverage:critical": "npm run coverage:desktop-critical && npm run coverage:core-critical",
