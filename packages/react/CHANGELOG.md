@@ -1,3 +1,14 @@
+## @bendyline/docblocks-react [2.7.8](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.7...@bendyline/docblocks-react@2.7.8) (2026-10-28)
+
+### Bug Fixes
+
+* Image integration, improved conflict dialog, arm64 ([#36](https://github.com/bendyline/docblocks/issues/36)) ([351eb5b](https://github.com/bendyline/docblocks/commit/351eb5bf5c78f5c5edf82e839f8074731476185a))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.8
+
 ## @bendyline/docblocks-react [2.7.7](https://github.com/bendyline/docblocks/compare/@bendyline/docblocks-react@2.7.6...@bendyline/docblocks-react@2.7.7) (2026-10-24)
 
 ### Bug Fixes
