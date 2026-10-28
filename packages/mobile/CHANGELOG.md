@@ -1,3 +1,15 @@
+## docblocks-mobile [1.0.8](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.7...docblocks-mobile@1.0.8) (2026-10-28)
+
+### Bug Fixes
+
+* Image integration, improved conflict dialog, arm64 ([#36](https://github.com/bendyline/docblocks/issues/36)) ([351eb5b](https://github.com/bendyline/docblocks/commit/351eb5bf5c78f5c5edf82e839f8074731476185a))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.8
+* **@bendyline/docblocks-react:** upgraded to 2.7.8
+
 ## docblocks-mobile [1.0.7](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.6...docblocks-mobile@1.0.7) (2026-10-24)
 
 ### Bug Fixes
