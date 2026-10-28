@@ -24,6 +24,23 @@
  * which needed markup stripped, and which used fixed colors. The pictures are
  * written beside the report for judging by eye. The context window defaults
  * to 32K, since the kind is only offered from 16K.
+ *
+ * `--images <image-model>` evaluates "Design graphic": every document is
+ * planned with design graphics offered, and each design pick runs the same
+ * brief, grounding check and compiled prompt as the panel, rendered by the
+ * image model on a Gezel that serves `/v1/images`:
+ *
+ *   DOCBLOCKS_EVAL_IMAGES_BASE_URL=http://127.0.0.1:6228 \
+ *   DOCBLOCKS_EVAL_IMAGES_TOKEN=<token with the images scope> \
+ *   npm run eval:ai-diagrams -- --images sd-cpp:ming-image-0.1-design-bf16
+ *
+ * `--design-all` draws every pick as a design graphic, whatever kind the
+ * planner chose, to exercise the brief and the render on a corpus written for
+ * diagrams. The report places each render beside the compiled diagram the
+ * same passage would get, in index.html. With DOCBLOCKS_EVAL_JUDGE_BASE_URL and
+ * DOCBLOCKS_EVAL_JUDGE_MODEL (an OpenAI-compatible vision model), each render
+ * is read back and scored: brief text spelled correctly, and text the brief
+ * never asked for. Spelling is compared here, not by the judge.
  */
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
@@ -33,9 +50,20 @@ import path from 'node:path';
 import type {
   AiChatCompletion,
   AiChatRequest,
+  AiImageResult,
+  AiImagesAPI,
   AiResult,
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
+
+/**
+ * Node's fetch, kept before the DOM is registered: happy-dom replaces the
+ * global with a browser fetch that sends CORS preflights, which a model
+ * server or Gezel does not answer. Node's fetch also only accepts Node's own
+ * AbortSignal, so its AbortController is kept too.
+ */
+const nodeFetch: typeof fetch = globalThis.fetch.bind(globalThis);
+const NodeAbortController = globalThis.AbortController;
 
 if (typeof (globalThis as { window?: unknown }).window === 'undefined') {
   // Mermaid parses through DOM APIs, as it does in the app.
@@ -90,10 +118,10 @@ function endpointChat(
 ) {
   const chat: DocBlocksHostAiAPI['chat'] = (request) => {
     log.push(request);
-    const controller = new AbortController();
+    const controller = new NodeAbortController();
     const done = (async (): Promise<AiResult<AiChatCompletion>> => {
       try {
-        const response = await fetch(`${baseUrl.replace(/\/$/u, '')}/chat/completions`, {
+        const response = await nodeFetch(`${baseUrl.replace(/\/$/u, '')}/chat/completions`, {
           method: 'POST',
           signal: controller.signal,
           headers: {
@@ -105,6 +133,8 @@ function endpointChat(
             messages: request.messages,
             temperature: request.temperature,
             max_tokens: request.maxTokens,
+            // As the desktop host sends it: only writing may spend its budget reasoning.
+            ...(request.purpose === 'write' ? {} : { reasoning_effort: 'none' }),
             stream: false,
           }),
         });
@@ -158,6 +188,19 @@ async function main(): Promise<void> {
   const only = option('only');
   if (process.argv.includes('--illustrations')) {
     await evaluateIllustrations({ baseUrl, models, context: context ?? 32_768, label });
+    return;
+  }
+  const imageModel = option('images');
+  if (imageModel) {
+    await evaluateDesigns({
+      baseUrl,
+      models,
+      context: context ?? 32_768,
+      label,
+      imageModel,
+      designAll: process.argv.includes('--design-all'),
+      only,
+    });
     return;
   }
 
@@ -382,6 +425,335 @@ async function evaluateIllustrations(options: {
   }
   fs.writeFileSync(path.join(outDir, 'summary.md'), `${summary.join('\n')}\n`);
   console.warn(`\nReport: ${path.relative(root, path.join(outDir, 'summary.md'))}`);
+}
+
+/** An `ai.images.generate` against a Gezel's `/v1/images/generations` stream. */
+function endpointImages(baseUrl: string, token: string | undefined): Pick<AiImagesAPI, 'generate'> {
+  return {
+    generate(request) {
+      const controller = new NodeAbortController();
+      const done = (async (): Promise<AiResult<AiImageResult>> => {
+        try {
+          const response = await nodeFetch(`${baseUrl.replace(/\/$/u, '')}/v1/images/generations`, {
+            method: 'POST',
+            signal: controller.signal,
+            headers: {
+              'content-type': 'application/json',
+              ...(token ? { authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              prompt: request.prompt,
+              ...(request.model ? { model: request.model } : {}),
+              ...(request.aspect ? { aspect_ratio: request.aspect } : {}),
+              ...(request.seed !== undefined ? { seed: request.seed } : {}),
+            }),
+          });
+          if (!response.ok) {
+            return {
+              ok: false,
+              error: {
+                code: 'unknown',
+                message: `HTTP ${String(response.status)}: ${await response.text()}`,
+              },
+            };
+          }
+          for (const line of (await response.text()).split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (!data) continue;
+            const event = JSON.parse(data) as
+              | { type: 'progress' }
+              | {
+                  type: 'done';
+                  b64_png: string;
+                  width: number;
+                  height: number;
+                  seed: number;
+                  model: string;
+                  duration_ms: number;
+                }
+              | { type: 'error'; error: { code: string; message: string } };
+            if (event.type === 'error') {
+              return { ok: false, error: { code: 'unknown', message: event.error.message } };
+            }
+            if (event.type === 'done') {
+              const png = Buffer.from(event.b64_png, 'base64');
+              return {
+                ok: true,
+                value: {
+                  mimeType: 'image/png',
+                  data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
+                  width: event.width,
+                  height: event.height,
+                  seed: event.seed,
+                  model: event.model,
+                  durationMs: event.duration_ms,
+                },
+              };
+            }
+          }
+          return {
+            ok: false,
+            error: { code: 'unknown', message: 'The render stream ended early.' },
+          };
+        } catch (error) {
+          return { ok: false, error: { code: 'unknown', message: String(error) } };
+        }
+      })();
+      return { done, cancel: () => controller.abort() };
+    },
+  };
+}
+
+/** Every piece of text a vision model reads in the picture, or null without a judge. */
+async function readBack(png: Buffer): Promise<string[] | null> {
+  const baseUrl = process.env.DOCBLOCKS_EVAL_JUDGE_BASE_URL?.trim();
+  const model = process.env.DOCBLOCKS_EVAL_JUDGE_MODEL?.trim();
+  if (!baseUrl || !model) return null;
+  const response = await nodeFetch(`${baseUrl.replace(/\/$/u, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(process.env.DOCBLOCKS_EVAL_JUDGE_TOKEN
+        ? { authorization: `Bearer ${process.env.DOCBLOCKS_EVAL_JUDGE_TOKEN}` }
+        : {}),
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      stream: false,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text:
+                'List every separate piece of text visible in this image, copied exactly as it is ' +
+                'spelled, including mistakes. Reply with only a JSON array of strings.',
+            },
+            {
+              type: 'image_url',
+              image_url: { url: `data:image/png;base64,${png.toString('base64')}` },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!response.ok) return null;
+  const body = (await response.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = body.choices?.[0]?.message?.content ?? '';
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === 'string')
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const normalized = (text: string) => text.toLowerCase().replace(/\s+/gu, ' ').trim();
+
+/** How much of the brief the picture spells right, and what it adds. */
+function scoreText(intended: readonly string[], seen: readonly string[]) {
+  const read = normalized(seen.join(' \n '));
+  const spelled = intended.filter((text) => read.includes(normalized(text)));
+  const invented = seen.filter(
+    (text) =>
+      normalized(text).length > 2 &&
+      !intended.some(
+        (wanted) =>
+          normalized(wanted).includes(normalized(text)) ||
+          normalized(text).includes(normalized(wanted)),
+      ),
+  );
+  return { spelled: spelled.length, total: intended.length, invented };
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/gu, (character) =>
+    character === '&'
+      ? '&amp;'
+      : character === '<'
+        ? '&lt;'
+        : character === '>'
+          ? '&gt;'
+          : '&quot;',
+  );
+}
+
+async function evaluateDesigns(options: {
+  baseUrl: string;
+  models: readonly string[];
+  context: number;
+  label: string;
+  imageModel: string;
+  /** Draw every pick as a design graphic, not only the planner's design picks. */
+  designAll: boolean;
+  only: string | undefined;
+}): Promise<void> {
+  const imagesBaseUrl = process.env.DOCBLOCKS_EVAL_IMAGES_BASE_URL?.trim();
+  if (!imagesBaseUrl) {
+    console.error('Set DOCBLOCKS_EVAL_IMAGES_BASE_URL to a Gezel that serves /v1/images.');
+    process.exitCode = 2;
+    return;
+  }
+  const { validateMermaidSource } = await import('@bendyline/squisq-editor-react');
+  const { drawDiagram, findIdeas } =
+    await import('../packages/react/src/Ai/illustrate-pipeline.js');
+  const { inferKind, promptBudget } =
+    await import('../packages/react/src/Ai/illustrate-prompts.js');
+  const { documentTitle } = await import('../packages/react/src/Ai/illustrate-passages.js');
+  const { realizeDesign } = await import('../packages/react/src/Ai/design-brief.js');
+  const images = endpointImages(imagesBaseUrl, process.env.DOCBLOCKS_EVAL_IMAGES_TOKEN);
+  const gold = JSON.parse(fs.readFileSync(path.join(corpusDir, 'gold.json'), 'utf8')) as Record<
+    string,
+    GoldEntry
+  >;
+  const outDir = path.join(root, 'reports/ai-diagram-evals', options.label);
+  fs.mkdirSync(outDir, { recursive: true });
+  const summary: string[] = [
+    `# AI design graphic eval: ${options.label}`,
+    '',
+    `Chat: ${options.baseUrl}; images: ${imagesBaseUrl} (${options.imageModel}); context: ${String(options.context)}`,
+    '',
+    ...(options.designAll ? ['Every pick drawn as a design graphic (`--design-all`).', ''] : []),
+  ];
+  const cards: string[] = [];
+  for (const model of options.models) {
+    const ai = endpointChat(options.baseUrl, model, process.env.DOCBLOCKS_EVAL_AI_TOKEN, []);
+    const rows: string[] = [];
+    let designs = 0;
+    let rendered = 0;
+    let spelled = 0;
+    let textTotal = 0;
+    let invented = 0;
+    let judged = 0;
+    let overDiagram = 0;
+    for (const document of Object.keys(gold)) {
+      if (options.only && !document.includes(options.only)) continue;
+      const source = fs.readFileSync(path.join(corpusDir, document), 'utf8');
+      const found = await findIdeas({
+        ai,
+        source,
+        title: documentTitle(source),
+        budget: promptBudget(options.context),
+        design: true,
+      });
+      if (found.status !== 'found') {
+        const reason = found.status === 'failed' ? `: ${found.message.slice(0, 120)}` : '';
+        rows.push(`| ${document} | plan ${found.status}${reason} | | | |`);
+        console.warn(`${model} ${document}: plan ${found.status}${reason}`);
+        continue;
+      }
+      const kinds = found.picks.map((pick) => pick.kind);
+      if (kinds.length === 0 || (!options.designAll && !kinds.includes('design'))) {
+        rows.push(`| ${document} | no design pick (${kinds.join(', ') || 'no picks'}) | | | |`);
+        continue;
+      }
+      for (const [index, pick] of found.picks.entries()) {
+        if (pick.kind === 'design') {
+          designs += 1;
+          const wanted = gold[document]?.expect.find((entry) =>
+            pick.passage.text.includes(entry.marker),
+          );
+          if (wanted && !wanted.kinds.includes('design')) overDiagram += 1;
+        } else if (!options.designAll) {
+          continue;
+        }
+        const started = Date.now();
+        const outcome = await realizeDesign({
+          ai,
+          images,
+          model: options.imageModel,
+          material: pick.passage.plain,
+          title: pick.title,
+          prompt: pick.prompt,
+        });
+        const seconds = Math.round((Date.now() - started) / 100) / 10;
+        const name = `${model.replace(/[^\w.-]+/gu, '_')}-${document.replace(/\.md$/u, '')}-${String(index + 1)}`;
+        if (outcome.status !== 'ready' || !outcome.compiled.image) {
+          const status =
+            outcome.status === 'failed' ? `failed: ${outcome.message}` : outcome.status;
+          rows.push(`| ${document} (${pick.kind}) | ${status} | | | ${String(seconds)}s |`);
+          console.warn(`${model} ${document} design ${String(index + 1)}: ${status}`);
+          continue;
+        }
+        rendered += 1;
+        const png = Buffer.from(outcome.compiled.image.data);
+        fs.writeFileSync(path.join(outDir, `${name}.png`), png);
+        // The first note quotes every piece of text the brief asked for.
+        const intended = [...(outcome.notes[0] ?? '').matchAll(/"([^"]+)"/gu)].map(
+          (match) => match[1] ?? '',
+        );
+        const seen = await readBack(png);
+        let score = 'not judged';
+        if (seen) {
+          judged += 1;
+          const result = scoreText(intended, seen);
+          spelled += result.spelled;
+          textTotal += result.total;
+          invented += result.invented.length;
+          score = `${String(result.spelled)}/${String(result.total)} spelled; ${String(result.invented.length)} invented`;
+        }
+        // The same passage as a compiled diagram, for comparison by eye.
+        const diagram = await drawDiagram(
+          {
+            passage: pick.passage,
+            kind: pick.kind === 'design' ? inferKind(pick.prompt, pick.passage.plain) : pick.kind,
+            title: pick.title,
+            prompt: pick.prompt,
+          },
+          { ai, budget: promptBudget(options.context), validateMermaid: validateMermaidSource },
+        );
+        const diagramMarkdown =
+          diagram.status === 'ready'
+            ? diagram.compiled.render(2, new Set())
+            : `(${diagram.status})`;
+        rows.push(
+          `| ${document} (${pick.kind}) | ready | ${intended.join(', ')} | ${score} | ${String(seconds)}s |`,
+        );
+        cards.push(
+          `<section><h2>${escapeHtml(`${model} · ${document} · ${pick.title}`)}</h2>` +
+            `<p>${escapeHtml(pick.passage.plain)}</p>` +
+            `<div class="pair"><figure><img src="${escapeHtml(name)}.png" alt=""><figcaption>` +
+            `Intended: ${escapeHtml(intended.join(' · '))}<br>Judge: ${escapeHtml(seen ? seen.join(' · ') : 'none')}` +
+            `<br>${escapeHtml(score)}</figcaption></figure>` +
+            `<pre>${escapeHtml(diagramMarkdown)}</pre></div>` +
+            `<details><summary>Prompt</summary><p>${escapeHtml(outcome.compiled.image.prompt)}</p></details></section>`,
+        );
+        console.warn(`${model} ${document} design ${String(index + 1)}: ready ${score}`);
+      }
+    }
+    summary.push(
+      `## ${model}`,
+      '',
+      `- Design picks: ${String(designs)}; rendered: ${String(rendered)}`,
+      `- On a passage gold-labelled for a compiled diagram: ${String(overDiagram)}`,
+      judged > 0
+        ? `- Judged ${String(judged)}: ${String(spelled)}/${String(textTotal)} pieces of text spelled right; ${String(invented)} invented`
+        : '- Not judged: set DOCBLOCKS_EVAL_JUDGE_BASE_URL and DOCBLOCKS_EVAL_JUDGE_MODEL',
+      '',
+      '| Document | Outcome | Intended text | Text score | Time |',
+      '| --- | --- | --- | --- | --- |',
+      ...rows,
+      '',
+    );
+  }
+  fs.writeFileSync(path.join(outDir, 'summary.md'), `${summary.join('\n')}\n`);
+  fs.writeFileSync(
+    path.join(outDir, 'index.html'),
+    '<!doctype html><meta charset="utf-8"><title>Design graphic eval</title>' +
+      '<style>body{font:14px system-ui;margin:24px;max-width:1200px}.pair{display:grid;' +
+      'grid-template-columns:1fr 1fr;gap:16px}img{max-width:100%;border:1px solid #ccc}' +
+      'pre{white-space:pre-wrap;background:#f6f6f6;padding:8px}</style>' +
+      cards.join('\n'),
+  );
+  console.warn(`\nReport: ${path.relative(root, path.join(outDir, 'index.html'))}`);
 }
 
 await main();

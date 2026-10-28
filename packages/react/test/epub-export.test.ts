@@ -51,14 +51,14 @@ describe('EPUB export', () => {
         );
       });
 
-      const epub = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      const epub = [...document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
         (button) => button.textContent?.trim() === 'EPUB',
       );
       expect(epub).not.to.equal(undefined);
       await act(async () => epub!.click());
 
-      expect(container.querySelector<HTMLSelectElement>('#db-export-theme')).not.to.equal(null);
-      const confirm = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      expect(document.body.querySelector<HTMLSelectElement>('#db-export-theme')).not.to.equal(null);
+      const confirm = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
         (button) => button.textContent?.trim() === 'Export',
       );
       await act(async () => confirm!.click());

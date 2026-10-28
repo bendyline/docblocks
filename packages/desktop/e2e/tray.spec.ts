@@ -44,6 +44,7 @@ async function openTraySettings(window: Page) {
   await window.getByRole('menuitem', { name: 'Settings' }).click();
   const dialog = window.getByRole('dialog', { name: 'Settings' });
   await expect(dialog).toBeVisible();
+  await dialog.getByRole('tab', { name: 'Device integration', exact: true }).click();
   return dialog.getByRole('group', { name: place.legend });
 }
 

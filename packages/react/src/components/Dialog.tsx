@@ -4,10 +4,17 @@
  * Promotes the `db-dialog-overlay` / `db-dialog` pattern used by the
  * settings dialogs into a reusable component, adding aria-modal and
  * initial focus. Escape and (by default) backdrop clicks close it.
+ *
+ * The overlay portals to <body>. Its `position: fixed; inset: 0` is only
+ * viewport-sized when no ancestor is a containing block for fixed
+ * descendants, and dialogs open from places that are: Squisq's toolbar is a
+ * size container, which the Chromium in VS Code 1.85–1.97 treated as one,
+ * so Export and Settings opened above the top of the webview.
  */
 
 import { registerDialogCloser, isTopmostDialog } from './dialog-stack.js';
 import React, { useCallback, useEffect, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface DialogProps {
   title: string;
@@ -76,9 +83,13 @@ export function Dialog({
 
       const dialog = dialogRef.current;
       if (!dialog) return;
+      // Settings keeps its inactive sections mounted but hidden; the browser
+      // skips them, so the wrap points must too.
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)].filter(
         (element) =>
-          !element.hasAttribute('disabled') && element.getAttribute('aria-hidden') !== 'true',
+          !element.hasAttribute('disabled') &&
+          element.getAttribute('aria-hidden') !== 'true' &&
+          element.closest('[hidden]') === null,
       );
       if (focusable.length === 0) {
         e.preventDefault();
@@ -127,7 +138,7 @@ export function Dialog({
   const overlayClassName =
     placement === 'top' ? 'db-dialog-overlay db-dialog-overlay--top' : 'db-dialog-overlay';
 
-  return (
+  const overlay = (
     <div className={overlayClassName} onClick={handleBackdropClick}>
       <div
         ref={dialogRef}
@@ -165,6 +176,7 @@ export function Dialog({
       </div>
     </div>
   );
+  return typeof document === 'undefined' ? overlay : createPortal(overlay, document.body);
 }
 
 const FOCUSABLE_SELECTOR = [

@@ -129,6 +129,15 @@ Keep the overrides until every parent raises its own dependency range; these
 are development tools, so check with a plain `npm audit` that the vulnerable
 line did not return when removing one.
 
+Three more overrides patch shipped dependencies: `undici@8.11.2` → `8.12.2`,
+`hono@4.13.9` → `4.13.13` and `zod@4.6.5` → `4.6.7`. Gezel's client, app SDK
+and inference packages pin the first two exactly, and the lockfile had kept
+`zod@4.6.5` for several Gezel packages although their ranges allow the patched
+release. Each key names only the vulnerable version, so the other undici lines
+and the zod 3 that `packages/core` and the MCP SDK use are untouched. Remove
+these once Gezel's own pins move past them, and confirm with
+`npm run check:dependency-audit` that the advisories did not return.
+
 Two root overrides replace packages instead of selecting versions. `sharp` and
 `onnxruntime-web` resolve to the private stubs in `vendor/transformers-compat`,
 which the root lists as `file:` devDependencies so that the `$sharp` and

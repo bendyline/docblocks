@@ -29,12 +29,27 @@ export interface WhisperTranscribeInput {
   readonly audio: ArrayBuffer;
   readonly prompt?: string;
   readonly language?: string;
+  /** Ask for `verbose_json`: segments with word times. */
+  readonly timestamps?: boolean;
+}
+
+export interface WhisperWord {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+}
+
+export interface WhisperSegment {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly words?: readonly WhisperWord[];
 }
 
 export interface WhisperTranscript {
   readonly text: string;
   readonly language: string | null;
-  readonly segments: readonly { start: number; end: number; text: string }[];
+  readonly segments: readonly WhisperSegment[];
   readonly durationMs: number;
 }
 
@@ -58,6 +73,67 @@ export interface WhisperEngineOptions {
 export function normalizeWhisperTranscript(value: string): string {
   const text = value.trim();
   return /^\[\s*BLANK_AUDIO\s*\]$/iu.test(text) ? '' : text;
+}
+
+/**
+ * The transcript's language, when whisper.cpp reports it as a tag. Its
+ * `verbose_json` names the language in full (`"english"`), which the speech
+ * wire rejects; nothing reads the language, so a name becomes `null`.
+ */
+export function whisperLanguage(value: unknown): string | null {
+  return typeof value === 'string' && /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/u.test(value)
+    ? value
+    : null;
+}
+
+function finiteTime(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : null;
+}
+
+/**
+ * Words from whisper.cpp's `verbose_json` tokens. Its `words` are really
+ * sub-word tokens: one that starts with a space begins a word, any other
+ * (`'re`, `flows`, punctuation) continues the word before it.
+ */
+export function whisperWords(tokens: unknown): WhisperWord[] {
+  if (!Array.isArray(tokens)) return [];
+  const words: { start: number; end: number; text: string }[] = [];
+  for (const token of tokens) {
+    if (typeof token !== 'object' || token === null) continue;
+    const { word, start, end } = token as { word?: unknown; start?: unknown; end?: unknown };
+    const from = finiteTime(start);
+    const to = finiteTime(end);
+    if (typeof word !== 'string' || !word || from === null || to === null) continue;
+    const current = words[words.length - 1];
+    if (current && !/^\s/u.test(word)) {
+      current.text += word;
+      current.end = Math.max(current.end, to);
+    } else {
+      words.push({ start: from, end: Math.max(from, to), text: word.trim() });
+    }
+  }
+  return words.filter((word) => word.text);
+}
+
+/** Segments as whisper.cpp reports them, with word times when present. */
+export function whisperSegments(value: unknown): WhisperSegment[] {
+  if (!Array.isArray(value)) return [];
+  const segments: WhisperSegment[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { start, end, text, words } = entry as Record<string, unknown>;
+    const from = finiteTime(start);
+    const to = finiteTime(end);
+    if (from === null || to === null || typeof text !== 'string') continue;
+    const timed = whisperWords(words);
+    segments.push({
+      start: from,
+      end: Math.max(from, to),
+      text: text.trim(),
+      ...(timed.length ? { words: timed } : {}),
+    });
+  }
+  return segments;
 }
 
 /** Windows `STATUS_DLL_NOT_FOUND`, as Node reports the exit code. */
@@ -304,22 +380,11 @@ export class WhisperEngine {
         language?: unknown;
         segments?: unknown;
       };
-      const segments = Array.isArray(payload.segments)
-        ? payload.segments
-            .filter(
-              (s): s is { start: number; end: number; text: string } =>
-                typeof s === 'object' &&
-                s !== null &&
-                typeof (s as { start?: unknown }).start === 'number' &&
-                typeof (s as { end?: unknown }).end === 'number' &&
-                typeof (s as { text?: unknown }).text === 'string',
-            )
-            .map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }))
-        : [];
       return {
         text: normalizeWhisperTranscript(typeof payload.text === 'string' ? payload.text : ''),
-        language: typeof payload.language === 'string' ? payload.language : null,
-        segments,
+        language: whisperLanguage(payload.language),
+        // Plain `json` carries only text; segments come with `timestamps`.
+        segments: whisperSegments(payload.segments),
         durationMs: Math.max(0, this.now - started),
       };
     } finally {
@@ -406,7 +471,7 @@ export function multipartBody(input: WhisperTranscribeInput): {
     new Uint8Array(input.audio),
     encoder.encode('\r\n'),
   );
-  field('response_format', 'json');
+  field('response_format', input.timestamps ? 'verbose_json' : 'json');
   if (input.language) field('language', input.language);
   if (input.prompt) field('prompt', input.prompt.replace(/\r?\n/gu, ' '));
   parts.push(encoder.encode(`--${boundary}--\r\n`));

@@ -24,6 +24,7 @@
     "@rollup/plugin-terser": {
       "serialize-javascript": "7.1.2"
     },
+    "hono@4.13.9": "4.13.13",
     "minimatch@3.1.5": {
       "brace-expansion": "1.1.21"
     },
@@ -41,9 +42,11 @@
     "tsx": {
       "esbuild": "0.28.1"
     },
+    "undici@8.11.2": "8.12.2",
     "xcode": {
       "uuid": "11.1.1"
-    }
+    },
+    "zod@4.6.5": "4.6.7"
   },
   "scripts": {
     "all": "tsx scripts/run-canonical-gate.ts",
@@ -85,6 +88,7 @@
     "app": "tsx scripts/build-linked-squisq.ts && npm run build:core && npm run build:react && npm run dev:desktop",
     "app:new": "tsx scripts/build-linked-squisq.ts && npm run build:core && npm run build:react && tsx scripts/run-new-profile.ts app",
     "dev:desktop": "npm run dev -w docblocks-desktop",
+    "stage:gezel-native": "npm run stage:gezel-native -w docblocks-desktop",
     "dist:desktop": "npm run dist -w docblocks-desktop",
     "test": "tsx scripts/run-tests.ts",
     "coverage:critical": "npm run coverage:desktop-critical && npm run coverage:core-critical",
@@ -145,10 +149,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
-    "@bendyline/squisq": "2.13.3",
-    "@bendyline/squisq-cli": "2.9.15",
-    "@bendyline/squisq-formats": "2.8.4",
-    "@bendyline/squisq-video": "2.4.9",
+    "@bendyline/squisq": "2.13.6",
+    "@bendyline/squisq-cli": "2.9.21",
+    "@bendyline/squisq-formats": "2.8.7",
+    "@bendyline/squisq-video": "2.4.12",
     "@commitlint/cli": "19.8.1",
     "@commitlint/config-conventional": "19.8.1",
     "@eslint/js": "9.39.4",

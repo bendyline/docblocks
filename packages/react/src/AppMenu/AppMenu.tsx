@@ -21,22 +21,13 @@ import {
   type WriteCanvasPreferences,
 } from '../preferences/write-canvas.js';
 import { DEFAULT_PROOFING_PREFERENCES, type ProofingPreferences } from '../preferences/proofing.js';
-import {
-  AccentColorSettings,
-  InterfaceFontSettings,
-  ProofingSettingsControls,
-  SettingsDialog,
-  ThemeSettings,
-  WriteCanvasSettingsControls,
-} from '../Settings/Settings.js';
-import { AiSettingsControls } from '../Settings/AiSettings.js';
-import { SpeechSettingsControls } from '../Settings/SpeechSettings.js';
-import { TraySettingsControls } from '../Settings/TraySettings.js';
+import { AppSettingsDialog, type AppSettingsSection } from '../Settings/AppSettingsDialog.js';
 import { Dialog } from '../components/Dialog.js';
 import { useMenuKeyboard } from '../components/useMenuKeyboard.js';
 import { displayBuildDate } from '../local-date.js';
 
 export type { AccentColor, ThemePreference } from '../preferences/theme.js';
+export type { AppSettingsSection } from '../Settings/AppSettingsDialog.js';
 
 export interface AppMenuProps {
   /** Optional logo image URL to display instead of the text label. */
@@ -92,9 +83,9 @@ export interface AppMenuProps {
    */
   onInstallApp?: () => void | Promise<void>;
   /**
-   * Async origin storage usage/quota for the Settings "Storage" section
+   * Async origin storage usage/quota for the Settings "Storage" group
    * (fetched when the dialog opens). When omitted — Electron, or browsers
-   * without `navigator.storage.estimate` — the section is hidden.
+   * without `navigator.storage.estimate` — the group is hidden.
    */
   getStorageEstimate?: () => Promise<{ usage: number; quota: number } | null>;
   /** Whether the browser has marked origin storage persistent (Settings display). */
@@ -112,29 +103,19 @@ export interface AppMenuProps {
    */
   ai?: DocBlocksHostAiAPI;
   /**
-   * The host's speech API. When present, Settings offers a Speech section for
-   * dictation and narration models; when omitted the section is hidden.
+   * The host's speech API. When present, Settings offers Dictation and
+   * Narration sections for the engines it has; when omitted both are hidden.
    */
   speech?: DocBlocksHostSpeechAPI;
   /**
    * The host's menu API, when it offers the opt-in tray / menu bar icon
-   * (`hostSupports('trayIcon')`). When omitted the section is hidden.
+   * (`hostSupports('trayIcon')`). When omitted the setting is hidden.
    */
   tray?: DocBlocksHostMenuAPI;
   /** Opens Settings whenever it changes to a new non-zero value. */
   settingsRequest?: number;
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '—';
-  let value = bytes;
-  let unit = 'B';
-  for (const next of ['KB', 'MB', 'GB', 'TB']) {
-    if (value < 1024) break;
-    value /= 1024;
-    unit = next;
-  }
-  return `${value >= 100 || unit === 'B' ? Math.round(value) : value.toFixed(1)} ${unit}`;
+  /** The section `settingsRequest` opens on; otherwise the last one shown. */
+  settingsRequestSection?: AppSettingsSection;
 }
 
 /** The same guide the sidebar footer's Docs link opens. */
@@ -175,13 +156,18 @@ export function AppMenu({
   speech,
   tray,
   settingsRequest = 0,
+  settingsRequestSection,
 }: AppMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // The section Settings last showed, so reopening it returns there.
+  const [settingsSection, setSettingsSection] = useState<AppSettingsSection>('appearance');
   useEffect(() => {
-    if (settingsRequest > 0) setShowSettings(true);
-  }, [settingsRequest]);
+    if (settingsRequest <= 0) return;
+    if (settingsRequestSection) setSettingsSection(settingsRequestSection);
+    setShowSettings(true);
+  }, [settingsRequest, settingsRequestSection]);
   const [requestingPersistentStorage, setRequestingPersistentStorage] = useState(false);
   // Genuinely an identity question, not a capability one: each surface has its
   // own product page. Kept as an exhaustive record so a new surface has to
@@ -191,26 +177,6 @@ export function AppMenu({
   const containerRef = useRef<HTMLDivElement>(null);
   const { menuRef, triggerRef, handleMenuKeyDown, handleTriggerKeyDown, closeMenu } =
     useMenuKeyboard(isOpen, setIsOpen);
-  const [storageEstimate, setStorageEstimate] = useState<{
-    usage: number;
-    quota: number;
-  } | null>(null);
-
-  // Refresh the Settings "Storage" figures each time the dialog opens.
-  useEffect(() => {
-    if (!showSettings || !getStorageEstimate) return;
-    let cancelled = false;
-    getStorageEstimate()
-      .then((estimate) => {
-        if (!cancelled) setStorageEstimate(estimate);
-      })
-      .catch(() => {
-        if (!cancelled) setStorageEstimate(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [showSettings, getStorageEstimate]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -387,118 +353,40 @@ export function AppMenu({
       </div>
 
       {showSettings && (
-        <SettingsDialog onClose={() => setShowSettings(false)}>
-          <ThemeSettings
-            value={themePreference}
-            onChange={(preference) => onThemeChange?.(preference)}
-          />
-          <AccentColorSettings
-            value={accentColor}
-            onChange={(color) => onAccentColorChange?.(color)}
-          />
-          <InterfaceFontSettings
-            value={interfaceFont}
-            onChange={(font) => onInterfaceFontChange?.(font)}
-          />
-          <WriteCanvasSettingsControls
-            value={writeCanvasSettings}
-            onChange={(settings) => onWriteCanvasSettingsChange?.(settings)}
-          />
-          <ProofingSettingsControls
-            value={proofingPreferences}
-            onChange={(settings) => onProofingPreferencesChange?.(settings)}
-          />
-          {ai && <AiSettingsControls ai={ai} />}
-          {speech && <SpeechSettingsControls speech={speech} />}
-          {tray && <TraySettingsControls menu={tray} platform={getHostEnvironment()?.platform} />}
-
-          {getStorageEstimate && (
-            <fieldset className="db-settings-fieldset">
-              <legend className="db-settings-legend">Storage</legend>
-              <p className="db-settings-hint">
-                {storageEstimate
-                  ? `DocBlocks documents and app data are using ${formatBytes(
-                      storageEstimate.usage,
-                    )} of the ${formatBytes(
-                      storageEstimate.quota,
-                    )} this browser allows for the site.`
-                  : 'Storage usage is not available in this browser.'}
-              </p>
-              {storagePersistent !== undefined && (
-                <p className="db-settings-hint">
-                  {storagePersistent
-                    ? 'Protected from routine browser cleanup on this device.'
-                    : 'Browsers may clear site data under storage pressure unless protection is granted.'}
-                </p>
-              )}
-              {onKeepBrowserData && (
-                <button
-                  type="button"
-                  className="db-settings-action"
-                  disabled={requestingPersistentStorage}
-                  onClick={() => void handleKeepBrowserDataFromSettings()}
-                >
-                  {requestingPersistentStorage
-                    ? 'Requesting storage protection…'
-                    : 'Protect data from browser cleanup'}
-                </button>
-              )}
-            </fieldset>
-          )}
-
-          {onVersioningPreferenceChange && (
-            <fieldset className="db-settings-fieldset">
-              <legend className="db-settings-legend">Version history</legend>
-              <p className="db-settings-hint">
-                When on, DocBlocks keeps prior revisions of each document inside a sibling{' '}
-                <code>&lt;name&gt;_files/.versions/</code> folder. Individual workspaces can
-                override this default in their own settings.
-              </p>
-              <label className="db-settings-radio">
-                <input
-                  type="radio"
-                  name="versioning"
-                  value="on"
-                  checked={versioningPreference === 'on'}
-                  onChange={() => onVersioningPreferenceChange('on')}
-                />
-                On for all workspaces
-              </label>
-              <label className="db-settings-radio">
-                <input
-                  type="radio"
-                  name="versioning"
-                  value="browser-only"
-                  checked={versioningPreference === 'browser-only'}
-                  onChange={() => onVersioningPreferenceChange('browser-only')}
-                />
-                On in browser workspaces, off for local folders
-              </label>
-              <label className="db-settings-radio">
-                <input
-                  type="radio"
-                  name="versioning"
-                  value="off"
-                  checked={versioningPreference === 'off'}
-                  onChange={() => onVersioningPreferenceChange('off')}
-                />
-                Off for all workspaces
-              </label>
-              {onOpenWorkspaceSettings && (
-                <button
-                  type="button"
-                  className="db-git-secondary-btn db-settings-link-btn"
-                  onClick={() => {
-                    setShowSettings(false);
-                    onOpenWorkspaceSettings();
-                  }}
-                >
-                  This workspace&rsquo;s settings&hellip;
-                </button>
-              )}
-            </fieldset>
-          )}
-        </SettingsDialog>
+        <AppSettingsDialog
+          onClose={() => setShowSettings(false)}
+          section={settingsSection}
+          onSectionChange={setSettingsSection}
+          themePreference={themePreference}
+          onThemeChange={onThemeChange}
+          accentColor={accentColor}
+          onAccentColorChange={onAccentColorChange}
+          interfaceFont={interfaceFont}
+          onInterfaceFontChange={onInterfaceFontChange}
+          writeCanvasSettings={writeCanvasSettings}
+          onWriteCanvasSettingsChange={onWriteCanvasSettingsChange}
+          proofingPreferences={proofingPreferences}
+          onProofingPreferencesChange={onProofingPreferencesChange}
+          ai={ai}
+          speech={speech}
+          tray={tray}
+          getStorageEstimate={getStorageEstimate}
+          storagePersistent={storagePersistent}
+          onKeepBrowserData={
+            onKeepBrowserData ? () => void handleKeepBrowserDataFromSettings() : undefined
+          }
+          requestingPersistentStorage={requestingPersistentStorage}
+          versioningPreference={versioningPreference}
+          onVersioningPreferenceChange={onVersioningPreferenceChange}
+          onOpenWorkspaceSettings={
+            onOpenWorkspaceSettings
+              ? () => {
+                  setShowSettings(false);
+                  onOpenWorkspaceSettings();
+                }
+              : undefined
+          }
+        />
       )}
 
       {showAbout && (

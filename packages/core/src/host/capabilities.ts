@@ -242,7 +242,7 @@ export function deriveHostCapabilities(host: unknown): HostCapabilities {
       hasMethod(host.ai.knowledge, 'update'),
     aiWorkspaceIndex: hasMethod(host.ai, 'ensureWorkspace'),
     aiSearch: hasMethod(host.ai, 'search'),
-    aiImages: hasMethod(host.ai, 'generateImage'),
+    aiImages: isRecord(host.ai) && hasMethod(host.ai.images, 'generate'),
     aiTranscription: hasMethod(host.ai, 'transcribe'),
     aiSpeechSynthesis: hasMethod(host.ai, 'synthesize'),
     speechInput: hasMethod(host.speech, 'transcribe'),

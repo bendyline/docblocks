@@ -69,14 +69,16 @@ describe('QuickOpenDialog', () => {
       );
     });
 
-    const input = container.querySelector<HTMLInputElement>('input[role="combobox"]')!;
-    const listbox = container.querySelector<HTMLElement>('[role="listbox"]')!;
+    const input = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    const listbox = document.body.querySelector<HTMLElement>('[role="listbox"]')!;
     expect(document.activeElement).to.equal(input);
     expect(input.getAttribute('aria-controls')).to.equal(listbox.id);
-    expect(container.querySelector('.db-visually-hidden')?.textContent).to.equal('Go to document');
+    expect(document.body.querySelector('.db-visually-hidden')?.textContent).to.equal(
+      'Go to document',
+    );
 
     await act(async () => typeInto(input, 'gam'));
-    const options = container.querySelectorAll<HTMLElement>('[role="option"]');
+    const options = document.body.querySelectorAll<HTMLElement>('[role="option"]');
     expect([...options].map((option) => option.textContent)).to.deep.equal(['gammanotes']);
     expect(options[0]!.querySelector('mark')?.textContent).to.equal('gam');
     expect(input.getAttribute('aria-activedescendant')).to.equal(options[0]!.id);
@@ -105,8 +107,8 @@ describe('QuickOpenDialog', () => {
         }),
       );
     });
-    const input = container.querySelector<HTMLInputElement>('input[role="combobox"]')!;
-    const options = () => [...container.querySelectorAll<HTMLElement>('[role="option"]')];
+    const input = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    const options = () => [...document.body.querySelectorAll<HTMLElement>('[role="option"]')];
     expect(options()).to.have.length(3);
     expect(options()[0]!.getAttribute('aria-selected')).to.equal('true');
 

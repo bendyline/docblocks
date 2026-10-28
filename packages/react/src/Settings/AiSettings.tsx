@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { AiImageSettings } from './AiImageSettings.js';
 import { AiKnowledgeSettings } from './AiKnowledgeSettings.js';
 import type {
   AiError,
@@ -477,6 +478,8 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
           {ready && ai.knowledge && (
             <AiKnowledgeSettings key={status.provider.mode} knowledge={ai.knowledge} />
           )}
+
+          {ready && ai.images && <AiImageSettings key={status.provider.mode} images={ai.images} />}
 
           {ready && status.provider.mode === 'installed' ? (
             <button

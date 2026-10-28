@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import * as React from 'react';
-import { act, createElement } from 'react';
+import { act, createElement, Fragment } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
   DocBlocksHostSpeechAPI,
@@ -12,7 +12,11 @@ import type {
   SpeechStatus,
 } from '@bendyline/docblocks/host';
 
-import { SpeechSettingsControls } from '../src/Settings/SpeechSettings.js';
+import {
+  DictationSettingsControls,
+  NarrationSettingsControls,
+} from '../src/Settings/SpeechSettings.js';
+import { useSpeechSettings } from '../src/Settings/useSpeechSettings.js';
 import { formatModelSize } from '../src/Speech/format.js';
 import { useSpeechStatus } from '../src/Speech/useSpeechStatus.js';
 import { renderHook } from './helpers/renderHook.js';
@@ -144,12 +148,24 @@ async function flush(): Promise<void> {
   });
 }
 
+/** Both sections over one session, as the Settings dialog mounts them. */
+function SpeechSections({ speech }: { speech: DocBlocksHostSpeechAPI }) {
+  const session = useSpeechSettings(speech);
+  if (!session) return null;
+  return createElement(
+    Fragment,
+    null,
+    createElement(DictationSettingsControls, { session }),
+    speech.synthesize ? createElement(NarrationSettingsControls, { session }) : null,
+  );
+}
+
 async function render(api: DocBlocksHostSpeechAPI) {
   const container = document.createElement('div');
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(createElement(SpeechSettingsControls, { speech: api }));
+    root.render(createElement(SpeechSections, { speech: api }));
   });
   await flush();
   return {
@@ -237,7 +253,8 @@ describe('Speech settings', () => {
       });
       expect(fake.calls).to.include('set {"voice":"bf_emma"}');
       expect(button(view.container, 'Preview voice')).to.not.equal(undefined);
-      expect(view.container.textContent).to.contain('Speech models are using');
+      expect(view.container.textContent).to.contain('Dictation models are using 141 MB');
+      expect(view.container.textContent).to.contain('Narration voices are using 92 MB');
       await act(async () => button(view.container, 'Remove')?.click());
       expect(fake.calls).to.include('remove whisper-base.en');
     } finally {
@@ -245,11 +262,40 @@ describe('Speech settings', () => {
     }
   });
 
-  it('hides narration when the host has no synthesis engine', async () => {
-    const view = await render(fakeSpeech({ tts: false }).api);
+  it('disables Narration downloads while Dictation is downloading', async () => {
+    const fake = fakeSpeech();
+    const view = await render(fake.api);
     try {
-      expect(view.container.textContent).to.contain('Dictation');
-      expect(view.container.textContent).to.not.contain('Narration');
+      const [dictation, narration] = Array.from(view.container.querySelectorAll('fieldset'));
+      expect(narration.querySelector('legend')?.textContent).to.equal('Narration');
+      await act(async () => button(dictation, 'Download')?.click());
+      expect(button(narration, 'Download')?.disabled).to.equal(true);
+      await act(async () => fake.complete());
+      await flush();
+      expect(fake.calls).to.deep.equal(['install whisper-base.en']);
+    } finally {
+      await view.cleanup();
+    }
+  });
+
+  it('shows a failed narration download only in Narration', async () => {
+    const fake = fakeSpeech();
+    fake.api.installModel = (id) => ({
+      done: Promise.resolve({
+        ok: false as const,
+        error: { code: 'model-download-failed' as const, message: 'The voice download stopped.' },
+      }),
+      cancel: () => fake.calls.push(`cancel ${id}`),
+    });
+    const view = await render(fake.api);
+    try {
+      const [dictation, narration] = Array.from(view.container.querySelectorAll('fieldset'));
+      await act(async () => button(narration, 'Download')?.click());
+      await flush();
+      expect(narration.querySelector('[role="alert"]')?.textContent).to.equal(
+        'The voice download stopped.',
+      );
+      expect(dictation.querySelector('[role="alert"]')).to.equal(null);
     } finally {
       await view.cleanup();
     }
@@ -281,11 +327,18 @@ describe('Speech settings', () => {
       ],
     ];
     for (const [name, broken, message] of cases) {
-      it(`keeps the Speech section and explains a failure to read ${name}`, async () => {
+      it(`keeps both speech sections and explains a failure to read ${name}`, async () => {
         const view = await render(broken(fakeSpeech().api));
         try {
-          expect(view.container.querySelector('legend')?.textContent).to.equal('Speech');
-          expect(view.container.querySelector('[role="alert"]')?.textContent).to.equal(message);
+          expect(
+            Array.from(view.container.querySelectorAll('legend'), (legend) => legend.textContent),
+          ).to.deep.equal(['Dictation', 'Narration']);
+          expect(
+            Array.from(
+              view.container.querySelectorAll('[role="alert"]'),
+              (alert) => alert.textContent,
+            ),
+          ).to.deep.equal([message, message]);
           expect(view.container.textContent).to.not.contain('EACCES');
           expect(button(view.container, 'Download')).to.equal(undefined);
         } finally {

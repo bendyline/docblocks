@@ -37,12 +37,12 @@ describe('Dialog accessibility', () => {
       );
     });
 
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
-    const close = container.querySelector<HTMLElement>('.db-dialog-close');
-    const last = container.querySelector<HTMLElement>('#last-action');
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+    const close = document.body.querySelector<HTMLElement>('.db-dialog-close');
+    const last = document.body.querySelector<HTMLElement>('#last-action');
     expect(dialog?.getAttribute('aria-modal')).to.equal('true');
     expect(dialog?.getAttribute('aria-labelledby')).to.equal(
-      container.querySelector('.db-dialog-title')?.id,
+      document.body.querySelector('.db-dialog-title')?.id,
     );
     expect(document.activeElement).to.equal(close);
 
@@ -81,16 +81,30 @@ describe('Dialog accessibility', () => {
       );
     });
 
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"]');
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
     const title = document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '');
     expect(title?.textContent).to.equal('Go to document');
     expect(title?.className).to.equal('db-visually-hidden');
-    expect(container.querySelector('.db-dialog-header')).to.equal(null);
-    expect(container.querySelector('.db-dialog-close')).to.equal(null);
-    expect(container.querySelector('.db-dialog-overlay--top')).to.not.equal(null);
+    expect(document.body.querySelector('.db-dialog-header')).to.equal(null);
+    expect(document.body.querySelector('.db-dialog-close')).to.equal(null);
+    expect(document.body.querySelector('.db-dialog-overlay--top')).to.not.equal(null);
     expect(document.activeElement).to.equal(inputRef.current);
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
     expect(closed).to.equal(1);
+  });
+
+  // Squisq's toolbar is a size container, which the Chromium in VS Code
+  // 1.85–1.97 made the containing block for a fixed overlay inside it: the
+  // Export and Settings dialogs opened above the top of the webview.
+  it('renders the overlay on <body>, outside the toolbar that opened it', async () => {
+    container.className = 'squisq-toolbar';
+    await act(async () => {
+      root.render(createElement(Dialog, { title: 'Export Document', onClose: () => undefined }));
+    });
+
+    const overlay = document.body.querySelector('.db-dialog-overlay');
+    expect(overlay?.parentElement).to.equal(document.body);
+    expect(container.contains(overlay)).to.equal(false);
   });
 });

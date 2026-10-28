@@ -5,6 +5,7 @@ const concurrently = require('concurrently');
 const { randomBytes } = require('node:crypto');
 const net = require('node:net');
 const { SUPERVISOR_PORT_ENV, SUPERVISOR_TOKEN_ENV } = require('./dev-lifecycle.cjs');
+const { sourceBuildStagingProblem } = require('./stage-gezel-native.cjs');
 
 const MAX_LIFECYCLE_MESSAGE_BYTES = 128;
 
@@ -112,9 +113,21 @@ async function runDesktopDev({ concurrentlyImpl = concurrently, processRef = pro
 }
 
 if (require.main === module) {
-  void runDesktopDev().then((exitCode) => {
-    process.exitCode = exitCode;
-  });
+  // A source build never downloads engines at runtime, so say up front when
+  // AI and dictation will be off; staging stays an explicit command.
+  void sourceBuildStagingProblem()
+    .catch(() => null)
+    .then((problem) => {
+      if (problem) {
+        console.warn(
+          `\n${problem} Built-in AI and dictation stay off until you run \`npm run stage:gezel-native\`.\n`,
+        );
+      }
+      return runDesktopDev();
+    })
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    });
 }
 
 module.exports = { runDesktopDev };

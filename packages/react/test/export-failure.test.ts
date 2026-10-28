@@ -76,7 +76,9 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="Export document"]',
+    );
     expect(trigger, 'export trigger').not.to.equal(null);
     await act(async () => trigger!.click());
 
@@ -139,7 +141,7 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
+    const menu = document.body.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
     expect(menu, 'export menu trigger').not.to.equal(null);
     await act(async () => menu!.click());
 
@@ -190,7 +192,7 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
+    const menu = document.body.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
     await act(async () => menu!.click());
     const expectedLabel = `Save DOCX to ${displayPath}`;
     await waitFor(
@@ -237,7 +239,7 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const menu = container.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
+    const menu = document.body.querySelector<HTMLButtonElement>('[aria-label="Export and share"]');
     await act(async () => menu!.click());
     await waitFor(
       () => buttonByText(document.body, 'Save MD as...') !== undefined,
@@ -272,7 +274,9 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="Export document"]',
+    );
     await act(async () => trigger!.click());
     await waitFor(() => buttonByText(document.body, 'Save PDF') !== undefined, 'the export dialog');
     await act(async () => buttonByText(document.body, 'Markdown')!.click());
@@ -308,7 +312,9 @@ describe('Export failure surfacing', () => {
       );
     });
 
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="Export document"]',
+    );
     await act(async () => trigger!.click());
     await waitFor(
       () => buttonByText(document.body, 'Save PDF to Downloads') !== undefined,
@@ -333,7 +339,9 @@ describe('Export failure surfacing', () => {
     await act(async () => buttonByText(document.body, 'Cancel')!.click());
     expect(document.body.textContent).to.not.include(SAVE_FAILURE);
 
-    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Export document"]');
+    const trigger = document.body.querySelector<HTMLButtonElement>(
+      '[aria-label="Export document"]',
+    );
     await act(async () => trigger!.click());
     await waitFor(
       () => buttonByText(document.body, 'Save MD to Downloads') !== undefined,
@@ -363,10 +371,10 @@ describe('ExportDialog error', () => {
         );
       });
 
-      const alert = container.querySelector('[role="alert"]');
+      const alert = document.body.querySelector('[role="alert"]');
       expect(alert?.textContent).to.include('an image could not be read.');
 
-      const exportButton = buttonByText(container, 'Export');
+      const exportButton = buttonByText(document.body, 'Export');
       expect(exportButton?.disabled).to.equal(false);
       await act(async () => exportButton!.click());
       expect(exported).to.deep.equal([DEFAULT_OPTIONS.format]);
@@ -393,10 +401,73 @@ describe('ExportDialog error', () => {
         );
       });
 
-      expect(container.querySelector('[role="alert"]')).to.equal(null);
+      expect(document.body.querySelector('[role="alert"]')).to.equal(null);
     } finally {
       await act(async () => root.unmount());
       container.remove();
     }
   });
+});
+
+describe('PDF characters its fonts cannot draw', () => {
+  let container: HTMLElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+    window.localStorage.clear();
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    window.localStorage.clear();
+  });
+
+  it('saves nothing at first, then saves the PDF with replacements when asked', async () => {
+    // The converter loads cold here.
+    const saved: Blob[] = [];
+    await act(async () => {
+      root.render(
+        createElement(
+          EditorProvider,
+          { initialMarkdown: '# Notes\n\n日本語のテキスト\n' },
+          createElement(ExportToolbarControls, {
+            selectedFile: '/notes/draft.md',
+            trigger: 'button',
+            showVideoExport: false,
+            saveBlob: async (blob: Blob) => {
+              saved.push(blob);
+            },
+          }),
+        ),
+      );
+    });
+    await act(async () =>
+      document.body.querySelector<HTMLButtonElement>('[aria-label="Export document"]')!.click(),
+    );
+    await waitFor(
+      () => buttonByText(document.body, 'Save PDF to Downloads') !== undefined,
+      'the export dialog',
+    );
+    await act(async () => buttonByText(document.body, 'Save PDF to Downloads')!.click());
+    await waitFor(
+      () => buttonByText(document.body, 'Save PDF with replacements') !== undefined,
+      'the offer to save with replacements',
+    );
+    expect(document.body.querySelector('[role="alert"]')?.textContent)
+      .to.include('PDF was not saved')
+      .and.not.include('Export failed');
+    expect(saved).to.have.length(0);
+
+    await act(async () => buttonByText(document.body, 'Save PDF with replacements')!.click());
+    await waitFor(() => saved.length === 1, 'the PDF to be saved');
+    expect(saved[0]!.type).to.equal('application/pdf');
+    await waitFor(
+      () => document.body.textContent?.includes('not everything in the document') === true,
+      'the notice of what was replaced',
+    );
+  }).timeout(30_000);
 });

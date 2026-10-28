@@ -1,3 +1,4 @@
+import { parseSpeechTranscript } from '@bendyline/docblocks/host';
 import { expect } from 'chai';
 import { fileURLToPath } from 'node:url';
 // Node's own fetch: the root suite installs happy-dom, whose fetch applies
@@ -8,6 +9,9 @@ import {
   WhisperEngineError,
   multipartBody,
   normalizeWhisperTranscript,
+  whisperLanguage,
+  whisperSegments,
+  whisperWords,
 } from '../main/speech/whisper-engine.js';
 
 const FAKE_SERVER = fileURLToPath(new URL('./helpers/fake-whisper-server.mjs', import.meta.url));
@@ -76,6 +80,67 @@ describe('multipartBody', () => {
     expect(text).to.contain('name="prompt"\r\n\r\nline one line two');
     expect(text.endsWith(`--${boundary}--\r\n`)).to.equal(true);
   });
+
+  it('asks for verbose output only when timestamps are wanted', () => {
+    const verbose = Buffer.from(multipartBody({ audio: wav(), timestamps: true }).body);
+    expect(verbose.toString('latin1')).to.contain('name="response_format"\r\n\r\nverbose_json');
+  });
+});
+
+describe('whisperLanguage', () => {
+  it('keeps a language tag and drops the full names verbose output reports', () => {
+    expect(whisperLanguage('en')).to.equal('en');
+    expect(whisperLanguage('english')).to.equal(null);
+    expect(whisperLanguage(7)).to.equal(null);
+    expect(whisperLanguage(undefined)).to.equal(null);
+  });
+});
+
+describe('whisperSegments', () => {
+  it('joins sub-word tokens into words and keeps segment times', () => {
+    const segments = whisperSegments([
+      {
+        id: 0,
+        text: ' So if you are building workflows.',
+        start: 3.16,
+        end: 5.36,
+        words: [
+          { word: ' So', start: 3.16, end: 3.24 },
+          { word: ' you', start: 3.32, end: 3.44 },
+          { word: "'re", start: 3.44, end: 3.49 },
+          { word: ' work', start: 4.9, end: 5.03 },
+          { word: 'flows', start: 5.18, end: 5.32 },
+          { word: '.', start: 5.32, end: 5.36 },
+        ],
+      },
+      { text: 'no times' },
+      { start: 6, end: 7, text: ' Plain.' },
+    ]);
+    expect(segments).to.deep.equal([
+      {
+        start: 3.16,
+        end: 5.36,
+        text: 'So if you are building workflows.',
+        words: [
+          { start: 3.16, end: 3.24, text: 'So' },
+          { start: 3.32, end: 3.49, text: "you're" },
+          { start: 4.9, end: 5.36, text: 'workflows.' },
+        ],
+      },
+      { start: 6, end: 7, text: 'Plain.' },
+    ]);
+  });
+
+  it('drops malformed tokens and clamps negative times', () => {
+    expect(
+      whisperWords([
+        { word: ' ok', start: -0.1, end: 0.2 },
+        { word: 7, start: 0, end: 1 },
+        { word: ' late', start: Number.NaN, end: 1 },
+        null,
+      ]),
+    ).to.deep.equal([{ start: 0, end: 0.2, text: 'ok' }]);
+  });
 });
 
 describe('WhisperEngine', function () {
@@ -97,8 +162,25 @@ describe('WhisperEngine', function () {
     });
     const result = await whisper.transcribe('/models/base.bin', { audio: wav() });
     expect(result.text).to.equal('Dictated words.');
-    expect(result.language).to.equal('en');
+    expect(result.language).to.equal(null);
     expect(result.durationMs).to.be.at.least(0);
+  });
+
+  it('returns timed words when asked, and text only otherwise', async () => {
+    const whisper = make({ FAKE_WHISPER_TEXT: 'Timing narration works.' });
+    const timed = await whisper.transcribe('/m.bin', { audio: wav(), timestamps: true });
+    expect(timed.segments).to.have.length(1);
+    expect(timed.segments[0]!.words!.map((word) => word.text)).to.deep.equal([
+      'Timing',
+      'narration',
+      'works.',
+    ]);
+    expect(timed.segments[0]!.words![1]!.start).to.equal(0.6);
+    // The preload bridge rejects any transcript the wire policy cannot read.
+    expect(parseSpeechTranscript(timed)).to.deep.equal(timed);
+    const plain = await whisper.transcribe('/m.bin', { audio: wav() });
+    expect(plain.text).to.equal('Timing narration works.');
+    expect(plain.segments).to.deep.equal([]);
   });
 
   it('forwards the continuity prompt', async () => {

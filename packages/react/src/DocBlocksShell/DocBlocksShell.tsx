@@ -96,7 +96,7 @@ import {
   finishWorkspaceBackup,
   type BackupWorkspace,
 } from '@bendyline/docblocks/workspace';
-import { AppMenu } from '../AppMenu/AppMenu.js';
+import { AppMenu, type AppSettingsSection } from '../AppMenu/AppMenu.js';
 import { restoreBrowserBackup } from './restore-backup.js';
 import { pickEmptyDocumentPrompt, useResponsivePreviewViewportPreset } from '../editor.js';
 import {
@@ -195,6 +195,11 @@ const AiReviewPanel = lazy(() =>
 const AiIllustratePanel = lazy(() =>
   import('../Ai/AiDiagrams.js').then((module) => ({
     default: module.AiIllustratePanel,
+  })),
+);
+const AiImagePanel = lazy(() =>
+  import('../Ai/AiImagePanel.js').then((module) => ({
+    default: module.AiImagePanel,
   })),
 );
 const TextFromNarration = lazy(() =>
@@ -311,6 +316,7 @@ import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-rankin
 import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
+import { DocumentConflictBanner } from './DocumentConflictBanner.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
@@ -956,17 +962,27 @@ export function DocBlocksShell({
     ? maybeGetDocBlocksHost()?.speech
     : undefined;
   const trayMenu = hostSupports('trayIcon') ? maybeGetDocBlocksHost()?.menu : undefined;
-  /** Bumped to open Settings, e.g. when dictation needs a model first. */
-  const [settingsRequest, setSettingsRequest] = useState(0);
-  const openSettings = useCallback(() => setSettingsRequest((count) => count + 1), []);
+  /** Bumped to open Settings, e.g. on Dictation when it needs a model first. */
+  const [settingsRequest, setSettingsRequest] = useState<{
+    count: number;
+    section?: AppSettingsSection;
+  }>({ count: 0 });
+  const openDictationSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'dictation' })),
+    [],
+  );
+  const openNarrationSettings = useCallback(
+    () => setSettingsRequest(({ count }) => ({ count: count + 1, section: 'narration' })),
+    [],
+  );
   // Squisq re-resolves a changed capability and cancels any session in
   // progress, so the provider must keep one identity for the bridge's life.
   const speechInput = useMemo(
     () =>
       speech && hostSupports('speechInput')
-        ? createSpeechInputProvider(speech, { onRequestSetup: openSettings })
+        ? createSpeechInputProvider(speech, { onRequestSetup: openDictationSettings })
         : null,
-    [speech, openSettings],
+    [speech, openDictationSettings],
   );
 
   const handleThemeChange = useCallback((pref: ThemePreference) => {
@@ -2713,12 +2729,21 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
+  // Dismissing hides the conflict banner, not the conflict: saving stays
+  // blocked, so a blocked save or the next conflict brings the banner back.
+  const [dismissedConflictKey, setDismissedConflictKey] = useState<string | null>(null);
+  const conflictTargetKey = documentSnapshot.conflict?.targetKey ?? null;
+  useEffect(() => {
+    if (conflictTargetKey === null) setDismissedConflictKey(null);
+  }, [conflictTargetKey]);
+
   const saveActiveDocument = useCallback(() => {
     void (async () => {
       try {
         await documentSession.flush('manual');
         showToast('success', 'Saved. You’re all set.');
       } catch (error: unknown) {
+        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
         showToast(
           'error',
           isQuotaExceededError(error)
@@ -3008,6 +3033,7 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
+        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
         showToast(
           'error',
           error instanceof Error
@@ -5421,24 +5447,23 @@ export function DocBlocksShell({
             DocBlocks is ready to work offline.
           </div>
         )}
-        {documentSnapshot.conflict && (
-          <div className="db-document-conflict" role="alert">
-            <span>
-              {documentSnapshot.conflict.recoveredDraft
-                ? 'A recovery draft from a previous session differs from the saved file. The saved file may be newer. Choose which version to use.'
-                : 'This document changed outside DocBlocks. Your unsaved version is still intact.'}
-            </span>
-            <div className="db-document-conflict-actions">
-              <button type="button" onClick={() => setShowConflictComparison(true)}>
-                Compare versions
-              </button>
-            </div>
-          </div>
-        )}
+        {documentSnapshot.conflict &&
+          documentSnapshot.conflict.targetKey !== dismissedConflictKey && (
+            <DocumentConflictBanner
+              conflict={documentSnapshot.conflict}
+              readSavedFile={readConflictFile}
+              onCompare={() => setShowConflictComparison(true)}
+              onDismiss={() => setDismissedConflictKey(conflictTargetKey)}
+            />
+          )}
         {documentSnapshot.conflict && showConflictComparison && (
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog
               conflict={documentSnapshot.conflict}
+              fileName={selectedSourceFile ?? selectedFile ?? ''}
+              theme={resolvedTheme}
+              defaultThemeId={workspaceDefaultThemeId}
+              mediaProvider={mediaProviderCurrent ? mediaProvider : null}
               readSavedFile={readConflictFile}
               onUseLocal={handleKeepLocalDocument}
               onUseSaved={handleUseExternalDocument}
@@ -5533,7 +5558,8 @@ export function DocBlocksShell({
                 ai={ai}
                 speech={speech}
                 tray={trayMenu}
-                settingsRequest={settingsRequest}
+                settingsRequest={settingsRequest.count}
+                settingsRequestSection={settingsRequest.section}
               />
               <input
                 ref={restoreInputRef}
@@ -5856,6 +5882,8 @@ export function DocBlocksShell({
                                   <Suspense fallback={null}>
                                     {aiPanel === 'review' ? (
                                       <AiReviewPanel ai={ai} onClose={() => setAiPanel(null)} />
+                                    ) : aiPanel === 'images' ? (
+                                      <AiImagePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     ) : (
                                       <AiIllustratePanel ai={ai} onClose={() => setAiPanel(null)} />
                                     )}
@@ -5921,12 +5949,12 @@ export function DocBlocksShell({
                                           (selectedOutsideIn !== null &&
                                             !selectedOutsideInEditingEnabled)
                                         }
-                                        onOpenSettings={openSettings}
+                                        onOpenSettings={openDictationSettings}
                                       />
                                       {hostSupports('speechOutput') ? (
                                         <SpeechToolbarControl
                                           speech={speech}
-                                          onOpenSettings={openSettings}
+                                          onOpenSettings={openNarrationSettings}
                                           readOnly={
                                             selectedImage !== undefined ||
                                             (selectedOutsideIn !== null &&

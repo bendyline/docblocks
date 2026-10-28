@@ -46,10 +46,11 @@ describe('useConfirmDialog', () => {
     container.remove();
   });
 
-  const dialog = () => container.querySelector('[role="dialog"]');
-  const confirmButton = () => container.querySelector<HTMLButtonElement>('.db-git-primary-btn');
-  const cancelButton = () => container.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
-  const message = () => container.querySelector('.db-dialog-message')?.textContent;
+  const dialog = () => document.body.querySelector('[role="dialog"]');
+  const confirmButton = () => document.body.querySelector<HTMLButtonElement>('.db-git-primary-btn');
+  const cancelButton = () =>
+    document.body.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
+  const message = () => document.body.querySelector('.db-dialog-message')?.textContent;
 
   /**
    * Returns the promise *wrapped* in an object on purpose: an async helper

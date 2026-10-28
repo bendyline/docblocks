@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import {
   useEditorContext,
   useEditorContextMenuItems,
+  useEditorInsertMenuItems,
   type EditorContextMenuItem,
   type EditorSelectionInfo,
 } from '@bendyline/squisq-editor-react';
@@ -60,7 +61,7 @@ const AiStudyDialog = lazy(() =>
 );
 
 /** The AI side panels; at most one is open at a time. */
-export type AiPanel = 'review' | 'illustrate';
+export type AiPanel = 'review' | 'illustrate' | 'images';
 
 export interface AiToolbarControlProps {
   ai: DocBlocksHostAiAPI;
@@ -122,6 +123,26 @@ export function AiToolbarControl({
   useEffect(() => setStudyKind(null), [workspaceContainer]);
 
   const ready = status?.kind === 'ready' && status.model !== null;
+  // Images need the connection, not a chat model; the panel explains any
+  // further step, such as allowing image generation in Gezel.
+  const imagesOffered =
+    ai.images !== undefined && status?.kind === 'ready' && !readOnly && editorMode === 'markdown';
+  const openImages = () => {
+    closeMenu(false);
+    onOpenPanel('images');
+  };
+  useEditorInsertMenuItems(
+    imagesOffered
+      ? [
+          {
+            id: 'docblocks-ai-image',
+            label: 'Image from a description…',
+            icon: <SparklesGlyph />,
+            onSelect: openImages,
+          },
+        ]
+      : [],
+  );
   const openDiagram = () => {
     const current = getSelection();
     if (!current) return;
@@ -142,6 +163,16 @@ export function AiToolbarControl({
           },
         ]
       : [];
+  if (imagesOffered) {
+    contextMenuItems.push({
+      id: 'docblocks-ai-image',
+      label: 'Generate image from selection…',
+      group: 'ai',
+      when: 'selection',
+      disabled: (context) => !context.editable,
+      onSelect: openImages,
+    });
+  }
   useEditorContextMenuItems(contextMenuItems);
 
   if (
@@ -261,6 +292,18 @@ export function AiToolbarControl({
             >
               Insert diagram…
             </button>
+            {ai.images && (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="db-toolbar-menu-item"
+                disabled={!imagesOffered}
+                onClick={openImages}
+              >
+                {openPanel === 'images' ? 'Show image generation' : 'Generate image…'}
+              </button>
+            )}
             <div className="db-toolbar-menu-divider" role="separator" />
             {STUDY_AID_KINDS.map((kind) => (
               <button

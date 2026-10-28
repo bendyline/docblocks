@@ -80,7 +80,7 @@ export function createSpeechInputProvider(
       if (!result.ok) throw new Error(result.error.message);
     },
     requestSetup: options.onRequestSetup,
-    async transcribe(wav, { prompt, language, signal }) {
+    async transcribe(wav, { prompt, language, timestamps, signal }) {
       if (!transcribe) throw new Error('Dictation is not available.');
       const result = await abortable(
         transcribe({
@@ -88,11 +88,14 @@ export function createSpeechInputProvider(
           mimeType: 'audio/wav',
           ...(prompt ? { prompt } : {}),
           ...(language ? { language } : {}),
+          ...(timestamps ? { timestamps: true } : {}),
         }),
         signal,
       );
       if (!result.ok) throw new Error(result.error.message);
-      return { text: stripPauseEllipses(result.value.text) };
+      const text = stripPauseEllipses(result.value.text);
+      // Timed segments are for matching, not insertion: they stay verbatim.
+      return timestamps ? { text, segments: result.value.segments } : { text };
     },
   };
 }

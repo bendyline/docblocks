@@ -144,6 +144,18 @@ export interface SpeechTranscribeRequest {
    */
   readonly prompt?: string;
   readonly language?: string;
+  /**
+   * Return timed `segments` with word times (Whisper's verbose output), for
+   * timing a narration from its audio. Dictation leaves it off.
+   */
+  readonly timestamps?: boolean;
+}
+
+/** A recognized word. Seconds from the start of the take. */
+export interface SpeechWord {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
 }
 
 export interface SpeechSegment {
@@ -151,6 +163,8 @@ export interface SpeechSegment {
   readonly start: number;
   readonly end: number;
   readonly text: string;
+  /** Present when the request asked for `timestamps`. */
+  readonly words?: readonly SpeechWord[];
 }
 
 export interface SpeechTranscript {

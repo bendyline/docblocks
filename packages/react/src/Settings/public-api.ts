@@ -22,6 +22,7 @@ export type {
   ProofingPreferences,
   ProofingSettingsControlsProps,
   SettingsDialogProps,
+  SettingsSection,
   ThemePreference,
   ThemeSettingsProps,
   WriteCanvasSettingsControlsProps,

@@ -117,6 +117,7 @@ test('designs dynamic slides from the Summarize toolbar and exports a timed MP4'
     await window.locator('.db-app-menu-btn').click();
     await window.getByRole('menuitem', { name: 'Settings' }).click();
     const settingsDialog = window.getByRole('dialog', { name: 'Settings' });
+    await settingsDialog.getByRole('tab', { name: 'AI', exact: true }).click();
     const section = settingsDialog.getByRole('group', { name: 'AI assistance' });
     await section.getByRole('checkbox', { name: 'Use AI features' }).check();
     await section.getByRole('button', { name: 'Connect Gezel app…' }).click();

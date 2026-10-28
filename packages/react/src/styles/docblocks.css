@@ -1631,12 +1631,11 @@
   visibility: visible;
   transition-delay: 0s;
   /* `transform: none`, not `translateX(0)`. ANY non-none transform makes this
-     element the containing block for `position: fixed` descendants, and the
-     modal overlay (.db-dialog-overlay, `position: fixed; inset: 0`) is rendered
-     inside the sidebar rather than portalled to <body>. With a transform here
-     every dialog opened from the app menu is sized and clipped to the drawer
-     instead of the viewport. Removing it once the drawer is open is visually
-     identical, because progress is 1 and translateX(0) moves nothing. */
+     element the containing block for `position: fixed` descendants, which
+     sizes and clips anything fixed inside the drawer to the drawer instead of
+     the viewport. (Dialogs portal to <body> and are immune.) Removing it once
+     the drawer is open is visually identical, because progress is 1 and
+     translateX(0) moves nothing. */
   transform: none;
 }
 
@@ -2355,9 +2354,12 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   margin-bottom: 0;
 }
 
+/* A link inside running text is underlined: the accent alone sits under the
+   3:1 against the surrounding text that WCAG 1.4.1 asks for. */
 .db-dialog-body a {
   color: var(--db-accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .db-dialog-body a:hover {
@@ -2371,6 +2373,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 16px;
+}
+
+/* The row holds nothing but links, so color alone marks them here. */
+.db-dialog-links a {
+  text-decoration: none;
 }
 
 .db-about-version {
@@ -2399,6 +2406,113 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────── */
+
+/* Sectioned Settings: a tab rail beside the open section, or a dropdown above
+   it on phones and portrait tablets. The dialog keeps one height, so changing
+   sections never resizes it under the pointer, and each section scrolls on
+   its own, so returning to one finds it where it was left. The panel keeps
+   the 520px measure the single-column dialog had. */
+.db-dialog.db-settings-dialog--sectioned {
+  width: 740px;
+  height: min(660px, calc(100vh - 32px));
+  height: min(660px, calc(100dvh - 32px));
+}
+
+.db-dialog-body.db-settings-dialog-body--sectioned {
+  flex: 1;
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.db-settings-sections {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.db-settings-sections--dropdown {
+  flex-direction: column;
+}
+
+.db-settings-tabs {
+  flex: 0 0 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 12px 8px;
+  border-right: 1px solid var(--db-border);
+  overflow-y: auto;
+}
+
+.db-settings-tab {
+  position: relative;
+  min-height: var(--db-row-min-height);
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--db-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.db-settings-tab:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+/* The accent bar is the vertical counterpart of the underline the editor's
+   Write/Source tabs carry. */
+.db-settings-tab--selected,
+.db-settings-tab--selected:hover {
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+  font-weight: 600;
+}
+
+.db-settings-tab--selected::before {
+  content: '';
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--db-accent);
+}
+
+.db-settings-tab:focus-visible,
+.db-settings-panel:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: -2px;
+}
+
+.db-settings-section-picker {
+  flex: none;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--db-border);
+}
+
+.db-settings-section-select {
+  font-weight: 600;
+}
+
+.db-settings-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+}
+
+.db-settings-panel[hidden] {
+  display: none;
+}
 
 .db-settings-fieldset {
   border: none;
@@ -6159,6 +6273,18 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   transform: translateX(-50%);
 }
 
+.db-document-conflict-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.db-document-conflict-details {
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
 .db-document-conflict-actions {
   display: flex;
   flex: none;
@@ -6179,15 +6305,23 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
+/* Three panes need more than the standard full dialog's 1100px. */
+.db-conflict-dialog.db-dialog--full {
+  width: min(1600px, 96vw);
+}
+
+/* Each version as a page, with the source diff between them. Monaco drops
+   to its inline diff by itself when the middle pane is too narrow for two. */
 .db-conflict-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
   gap: 16px;
   flex: 1;
   min-height: 300px;
 }
 
-.db-conflict-version {
+.db-conflict-version,
+.db-conflict-diff {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -6196,7 +6330,48 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   border-radius: 8px;
 }
 
-.db-conflict-version h3 {
+/* Two source columns need more of the width than one. */
+.db-conflict-columns--wide-diff {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.db-conflict-diff .db-git-diff-host {
+  min-height: 160px;
+}
+
+.db-conflict-diff-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.db-conflict-diff-view {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-conflict-diff-view select {
+  min-height: var(--db-target-min, 32px);
+  padding: 0 6px;
+  color: var(--db-text);
+  background: var(--db-bg);
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  font: inherit;
+}
+
+.db-conflict-diff-view select:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+.db-conflict-version h3,
+.db-conflict-diff h3 {
   margin: 0;
   color: var(--db-text);
   font-size: 15px;
@@ -6223,6 +6398,13 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
     13px / 1.6 ui-monospace,
     monospace;
   resize: none;
+}
+
+/* The page brings its own type and (inline) theme background; thin page
+   margins hug the content, so the frame supplies the inset. */
+.db-conflict-preview--rendered {
+  padding: 12px 16px;
+  font: inherit;
 }
 
 .db-conflict-consequence {
@@ -6870,7 +7052,12 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   background: var(--db-bg-raised);
 }
 
+/* As tall as the close button so the title centers on the same line as the
+   ×, while the findings count still stacks underneath. */
 .db-ai-review-header h2 {
+  display: flex;
+  align-items: center;
+  min-height: var(--db-target-min);
   margin: 0;
   color: var(--db-text);
   font-size: 15px;
@@ -7408,6 +7595,107 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-diagram-dialog .db-ai-diagram-preview {
   max-height: 420px;
+}
+
+/* ── AI image generation: the Generate image panel ── */
+.db-ai-image-form {
+  padding: 12px 14px 0;
+}
+
+.db-ai-image-aspects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.db-ai-review-panel .db-ai-image-aspects button[aria-checked='true'] {
+  border-color: var(--db-bg-selected);
+  background: var(--db-bg-selected);
+  color: var(--db-text-on-selected);
+}
+
+.db-ai-image-actions,
+.db-ai-image-allow {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.db-ai-image-code {
+  display: block;
+  margin-top: 8px;
+  color: var(--db-text);
+  font:
+    600 20px/1.2 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  letter-spacing: 0.08em;
+}
+
+.db-ai-image-results {
+  margin-bottom: 14px;
+}
+
+.db-ai-image-prompt {
+  margin: 0 0 8px;
+  color: var(--db-text);
+  overflow-wrap: anywhere;
+}
+
+/* A raster image ignores the dark theme, so it sits on a light frame. */
+.db-ai-image-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 4px 0 10px;
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.db-ai-image-alt {
+  margin-bottom: 6px;
+  font-weight: 400;
+}
+
+.db-ai-image-alt input {
+  min-height: var(--db-target-min);
+  padding: 0 8px;
+  border: 1px solid var(--db-input-border);
+  border-radius: 5px;
+  background: var(--db-bg-subtle);
+  color: var(--db-text);
+  font: 400 var(--db-input-font-size) / 1.4 var(--db-ui-font);
+}
+
+.db-ai-image-result-actions {
+  padding: 6px 0 0;
+}
+
+/*
+ * Illustrate's design graphics: raster pictures, so a light frame in dark mode
+ * too. A picture scales to fit the preview's height rather than scrolling in
+ * it the way a tall diagram does, so a portrait poster is seen whole.
+ */
+.db-ai-design-preview {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  background: #fff;
+}
+
+.db-ai-design-preview img {
+  display: block;
+  max-width: 100%;
+  /* The preview's max-height, less its border. */
+  max-height: 338px;
+  width: auto;
+  height: auto;
+}
+
+.db-ai-diagram-dialog .db-ai-design-preview img {
+  max-height: 418px;
 }
 
 .db-ai-diagram-source {
@@ -8077,6 +8365,10 @@ button.db-git-file-row:hover {
   margin: 8px 0 0;
   color: var(--db-danger);
   font-size: 12.5px;
+}
+
+.db-export-error-action {
+  margin-top: 8px;
 }
 
 .db-git-hint {

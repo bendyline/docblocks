@@ -54,7 +54,7 @@ function electronHost(): Record<string, unknown> {
       chat: () => undefined,
       ensureWorkspace: () => undefined,
       search: () => undefined,
-      generateImage: () => undefined,
+      images: { generate: () => undefined },
       transcribe: () => undefined,
       synthesize: () => undefined,
     },

@@ -6,7 +6,11 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 const serviceRequire = createRequire(require.resolve('@bendyline/gezel-inference/package.json'));
-const { stageForTarget } = require('../scripts/stage-gezel-native.cjs');
+const {
+  sourceBuildStagingProblem,
+  stageForSourceBuild,
+  stageForTarget,
+} = require('../scripts/stage-gezel-native.cjs');
 const { REQUIRED_DLLS } = require('../scripts/stage-vc-runtime.cjs');
 
 describe('Gezel native packaging adapter', () => {
@@ -109,6 +113,49 @@ describe('Gezel native packaging adapter', () => {
       }
       expect(staged).to.equal(false);
     }
+  });
+
+  it('stages a source build into the folder packaging copies from', async () => {
+    const calls: { destination: string; platform: string; arch: string }[] = [];
+    const destination = await stageForSourceBuild(
+      { appDir: root, platform: 'win32', arch: 'x64' },
+      {
+        stageElectronNative: async (options: {
+          destination: string;
+          platform: string;
+          arch: string;
+        }) => {
+          calls.push(options);
+        },
+        verifyNativePlatformRequirements: async () => {},
+      },
+    );
+    expect(destination).to.equal(path.join(root, 'dist', 'gezel-native', 'win-x64'));
+    expect(calls).to.have.length(1);
+    expect(calls[0]).to.include({ destination, platform: 'win32', arch: 'x64' });
+  });
+
+  it('reports a missing or stale source-build payload without downloading anything', async () => {
+    const options = { appDir: root, platform: 'win32', arch: 'x64', env: {}, release: '0.1.54' };
+    expect(await sourceBuildStagingProblem(options)).to.equal(
+      'No Gezel engines are staged for release 0.1.54.',
+    );
+    const staged = path.join(root, 'dist', 'gezel-native', 'win-x64');
+    await mkdir(staged, { recursive: true });
+    await writeFile(path.join(staged, 'release.json'), JSON.stringify({ release: '0.1.46' }));
+    expect(await sourceBuildStagingProblem(options)).to.equal(
+      'The staged Gezel engines are release 0.1.46, but this build pins 0.1.54.',
+    );
+    await writeFile(path.join(staged, 'release.json'), JSON.stringify({ release: '0.1.54' }));
+    expect(await sourceBuildStagingProblem(options)).to.equal(null);
+    // An explicit payload is the developer's own choice.
+    await rm(staged, { recursive: true, force: true });
+    expect(
+      await sourceBuildStagingProblem({
+        ...options,
+        env: { DOCBLOCKS_GEZEL_NATIVE_BIN_DIR: path.join(root, 'elsewhere') },
+      }),
+    ).to.equal(null);
   });
 
   it('stages the app-local Visual C++ runtime beside a Windows package', async () => {

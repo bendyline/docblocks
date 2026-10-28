@@ -36,7 +36,12 @@ export type { DocBlocksShellProps } from './DocBlocksShell/index.js';
 
 // AppMenu
 export { AppMenu } from './AppMenu/index.js';
-export type { AccentColor, AppMenuProps, ThemePreference } from './AppMenu/index.js';
+export type {
+  AccentColor,
+  AppMenuProps,
+  AppSettingsSection,
+  ThemePreference,
+} from './AppMenu/index.js';
 
 // Settings
 export {
@@ -65,6 +70,7 @@ export type {
   ProofingPreferences,
   ProofingSettingsControlsProps,
   SettingsDialogProps,
+  SettingsSection,
   ThemeSettingsProps,
   WriteCanvasFontScheme,
   WriteCanvasFontSchemeGroup,

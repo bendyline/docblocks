@@ -9,9 +9,20 @@ import {
   type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useEditorContext, usePreviewSettingsOptional } from '@bendyline/squisq-editor-react';
+import {
+  setBlockDurationInSource,
+  setBlockStartTimeInSource,
+  useEditorContext,
+  usePreviewSettingsOptional,
+} from '@bendyline/squisq-editor-react';
 import { BlockRenderer, MediaContext } from '@bendyline/squisq-react';
-import { markdownToDoc, resolveAudioMapping, expandDocBlocks } from '@bendyline/squisq/doc';
+import {
+  markdownToDoc,
+  resolveAudioMapping,
+  expandDocBlocks,
+  flattenRenderableBlocks,
+  getPinnedBlockMeta,
+} from '@bendyline/squisq/doc';
 import { parseMarkdown, setFrontmatterValues } from '@bendyline/squisq/markdown';
 import { VIEWPORT_PRESETS, type Doc } from '@bendyline/squisq/schemas';
 import {
@@ -193,25 +204,59 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const sections = useMemo(() => (doc ? presentationSections(doc) : []), [doc]);
   const projection = useMemo(() => {
     if (!doc || !plan) return null;
+    const expand = (projected: Doc) =>
+      expandDocBlocks(projected.blocks, {
+        theme: preview?.activeTheme,
+        viewport: VIEWPORT_PRESETS.landscape,
+        audioSegments: projected.audio.segments,
+      });
     try {
       const projected = compilePresentationPlan(doc, plan);
-      return {
-        doc: projected,
-        blocks: expandDocBlocks(projected.blocks, {
-          theme: preview?.activeTheme,
-          viewport: VIEWPORT_PRESETS.landscape,
-          audioSegments: projected.audio.segments,
-        }),
-        error: null,
-      };
+      return { doc: projected, blocks: expand(projected), error: null };
     } catch (cause: unknown) {
+      // A narration problem must not blank the slides: preview them at reading
+      // pace while the alert explains what stops them following the narration.
+      let blocks: ReturnType<typeof expand> = [];
+      try {
+        const untimed: Doc = {
+          ...doc,
+          presentationNarration: undefined,
+          documentMedia: doc.documentMedia?.filter((clip) => clip.anchor !== 'document'),
+        };
+        blocks = expand(compilePresentationPlan(untimed, plan));
+      } catch {
+        // The plan itself no longer fits the document; the alert says so.
+      }
       return {
         doc: null,
-        blocks: [],
+        blocks,
         error: cause instanceof Error ? cause.message : String(cause),
       };
     }
   }, [doc, plan, preview?.activeTheme]);
+  // Pinned section times stop a deck from following its narration, and they
+  // are invisible in Write view, so the alert offers to remove them.
+  const pinnedLines = useMemo(
+    () =>
+      doc?.presentationNarration
+        ? flattenRenderableBlocks(doc.blocks).flatMap((block) => {
+            const pin = getPinnedBlockMeta(block);
+            const line = block.sourceHeading?.position?.start.line;
+            return line !== undefined && (pin.duration !== undefined || pin.startTime !== undefined)
+              ? [line]
+              : [];
+          })
+        : [],
+    [doc],
+  );
+  const removePins = () => {
+    let next = markdownSource;
+    for (const line of pinnedLines) {
+      next = setBlockDurationInSource(next, line, null) ?? next;
+      next = setBlockStartTimeInSource(next, line, null) ?? next;
+    }
+    if (next !== markdownSource) replaceAll(next);
+  };
   // Stored AI wording per section, keyed by the passage it summarizes. Squisq
   // applies an entry only while its passage is unchanged, so this is also what
   // marks a slide in the list as AI-suggested.
@@ -449,10 +494,22 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       <p role="status" aria-live="polite">
         {plan && projection?.doc
           ? `${plan.beats.length} slides · ${projection.doc.duration.toFixed(1)} seconds · ${doc?.presentationNarration ? 'Follows narration' : 'Estimated pacing — add narration to synchronize'}`
-          : 'Preparing dynamic slides…'}
+          : plan && projection?.error
+            ? `${plan.beats.length} slides · Not synchronized with the narration`
+            : 'Preparing dynamic slides…'}
       </p>
       {(error || generated?.error || projection?.error) && (
-        <p role="alert">{error ?? generated?.error ?? projection?.error}</p>
+        <p role="alert">
+          {error ?? generated?.error ?? projection?.error}
+          {!error && !generated?.error && projection?.error && pinnedLines.length > 0 && (
+            <>
+              {' '}
+              <button type="button" disabled={running} onClick={removePins}>
+                Remove pinned times
+              </button>
+            </>
+          )}
+        </p>
       )}
       {notice && (
         <p role="status">
@@ -526,6 +583,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                     animationsEnabled={false}
                     basePath="/"
                     viewport={VIEWPORT_PRESETS.landscape}
+                    theme={preview?.activeTheme}
                   />
                 )}
               </MediaContext.Provider>

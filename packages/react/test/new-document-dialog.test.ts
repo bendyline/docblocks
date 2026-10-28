@@ -41,10 +41,12 @@ describe('NewDocumentDialog', () => {
     container.remove();
   });
 
-  const nameInput = () => container.querySelector<HTMLInputElement>('input.db-git-form-input');
-  const typeSelect = () => container.querySelector<HTMLSelectElement>('select.db-git-form-input');
-  const createButton = () => container.querySelector<HTMLButtonElement>('.db-git-primary-btn');
-  const cancelButton = () => container.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
+  const nameInput = () => document.body.querySelector<HTMLInputElement>('input.db-git-form-input');
+  const typeSelect = () =>
+    document.body.querySelector<HTMLSelectElement>('select.db-git-form-input');
+  const createButton = () => document.body.querySelector<HTMLButtonElement>('.db-git-primary-btn');
+  const cancelButton = () =>
+    document.body.querySelector<HTMLButtonElement>('.db-git-secondary-btn');
 
   async function typeName(value: string) {
     const field = nameInput();

@@ -186,7 +186,16 @@ describe('speech input provider', () => {
               value: {
                 text: `heard ${request.prompt ?? ''}`.trim(),
                 language: 'en',
-                segments: [],
+                segments: request.timestamps
+                  ? [
+                      {
+                        start: 0.5,
+                        end: 0.9,
+                        text: 'heard...',
+                        words: [{ start: 0.5, end: 0.9, text: 'heard...' }],
+                      },
+                    ]
+                  : [],
                 durationMs: 1,
               },
             }
@@ -235,6 +244,28 @@ describe('speech input provider', () => {
       signal: new AbortController().signal,
     });
     expect(transcript.text).to.equal('heard or other content');
+  });
+
+  it('passes timed segments through verbatim when timestamps are requested', async () => {
+    const provider = createSpeechInputProvider(fakeSpeech({ state: 'ready' }), {
+      onRequestSetup: () => undefined,
+    });
+    const timed = await provider.transcribe(new ArrayBuffer(44), {
+      timestamps: true,
+      signal: new AbortController().signal,
+    });
+    expect(timed.segments).to.deep.equal([
+      {
+        start: 0.5,
+        end: 0.9,
+        text: 'heard...',
+        words: [{ start: 0.5, end: 0.9, text: 'heard...' }],
+      },
+    ]);
+    const plain = await provider.transcribe(new ArrayBuffer(44), {
+      signal: new AbortController().signal,
+    });
+    expect(plain).to.not.have.property('segments');
   });
 
   it('turns a failed transcription and an aborted take into rejections', async () => {

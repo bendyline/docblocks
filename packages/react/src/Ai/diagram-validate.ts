@@ -70,6 +70,9 @@ export async function validateCompiledDiagram(
   compiled: CompiledDiagram,
   validateMermaid: MermaidValidator,
 ): Promise<DiagramValidation> {
+  if (compiled.family === 'image') {
+    return compiled.image ? { ok: true } : { ok: false, message: 'No image was rendered.' };
+  }
   if (compiled.family === 'mermaid') {
     if (!compiled.mermaidSource) return { ok: false, message: 'No Mermaid source was produced.' };
     const result = await validateMermaid(compiled.mermaidSource);

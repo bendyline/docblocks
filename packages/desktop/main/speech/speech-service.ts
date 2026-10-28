@@ -39,7 +39,7 @@ export interface SttEngine {
   prepare(model: string, signal?: AbortSignal): Promise<void>;
   transcribe(
     model: string,
-    input: { audio: ArrayBuffer; prompt?: string; language?: string },
+    input: { audio: ArrayBuffer; prompt?: string; language?: string; timestamps?: boolean },
     signal?: AbortSignal,
   ): Promise<SpeechTranscript>;
   stop(): Promise<void>;
@@ -346,6 +346,7 @@ export class SpeechService {
         audio: request.audio,
         ...(request.prompt ? { prompt: request.prompt } : {}),
         ...(request.language ? { language: request.language } : {}),
+        ...(request.timestamps ? { timestamps: true } : {}),
       });
       return { ok: true, value: transcript };
     } catch (error) {

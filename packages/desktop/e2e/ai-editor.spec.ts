@@ -22,6 +22,7 @@ import {
   FAKE_GEZEL_CODE,
   FAKE_GEZEL_MODEL,
   FAKE_GEZEL_TOKEN,
+  FAKE_IMAGE_MODEL,
   FAKE_SUMMARY_OVERVIEW,
   startFakeGezel,
   type FakeGezel,
@@ -117,6 +118,7 @@ async function pairWithGezel(window: Page, fake: FakeGezel): Promise<void> {
   await window.locator('.db-app-menu-btn').click();
   await window.getByRole('menuitem', { name: 'Settings' }).click();
   const settings = window.getByRole('dialog', { name: 'Settings' });
+  await settings.getByRole('tab', { name: 'AI', exact: true }).click();
   const section = settings.getByRole('group', { name: 'AI assistance' });
   // The section renders once main answers its status and preference queries,
   // which a cold first launch on a busy machine can take a while to do.
@@ -834,6 +836,54 @@ test('Study aids are saved beside the document, shown in a viewer, and offered a
       // Study aids never touch the document itself.
       expect(readDocument(file)).toContain('DocBlocks stood out');
       if (!upstream) expect(readDocument(file)).not.toContain(FAKE_SUMMARY_OVERVIEW);
+    },
+  );
+});
+
+test('Generate image renders on the connected Gezel and inserts the picture beside the document', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    { images: true },
+    async ({ window, editor, file, fake }) => {
+      await caretAtNewParagraph(window, editor);
+      await openAiMenuItem(window, 'Generate image…');
+      const panel = window.getByRole('complementary', { name: 'Generate image' });
+      const description = panel.getByRole('textbox', { name: 'Description' });
+      await expect(description).toBeVisible({ timeout: 30_000 });
+      await description.fill('A lighthouse at dusk');
+      await panel.getByRole('button', { name: 'Generate', exact: true }).click();
+      await expect(panel.locator('img.db-ai-image-preview')).toBeVisible({ timeout: 30_000 });
+      await panel.getByRole('button', { name: 'Insert', exact: true }).click();
+      await expect
+        .poll(() => readDocument(file))
+        .toMatch(
+          /!\[A lighthouse at dusk\]\(<?ai-review_files\/generated-a-lighthouse-at-dusk-7-[a-z0-9]+\.png>?\)/u,
+        );
+      const media = fs.readdirSync(path.join(workspaceDir, 'ai-review_files'));
+      const saved = media.find((name) => name.startsWith('generated-a-lighthouse-at-dusk-7-'));
+      expect(saved).toBeTruthy();
+      expect(
+        fs
+          .readFileSync(path.join(workspaceDir, 'ai-review_files', saved!))
+          .subarray(1, 4)
+          .toString(),
+      ).toBe('PNG');
+      // The render went to the connected Gezel with the granted token, never to chat.
+      expect(fake.images).toHaveLength(1);
+      expect(fake.images[0]).toMatchObject({
+        prompt: 'A lighthouse at dusk',
+        model: FAKE_IMAGE_MODEL,
+        aspect_ratio: '1:1',
+        authorization: `Bearer ${FAKE_GEZEL_TOKEN}`,
+      });
+      expect(fake.chats).toHaveLength(0);
     },
   );
 });

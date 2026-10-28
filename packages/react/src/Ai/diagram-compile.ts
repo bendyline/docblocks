@@ -32,10 +32,24 @@ import type {
 import { DIAGRAM_KIND_LABELS } from './diagram-spec.js';
 import { funnelSvg, matrixSvg, pyramidSvg, vennSvg } from './diagram-svg.js';
 
-export type DiagramFamily = 'mermaid' | 'timeline' | 'drawing' | 'layout' | 'svg';
+export type DiagramFamily = 'mermaid' | 'timeline' | 'drawing' | 'layout' | 'svg' | 'image';
 
-/** A spec-compiled diagram kind, or an illustration the model drew as SVG itself. */
-export type PictureKind = DiagramKind | 'illustration';
+/**
+ * A spec-compiled diagram kind, an illustration the model drew as SVG itself,
+ * or a design graphic an image model rendered from a grounded brief.
+ */
+export type PictureKind = DiagramKind | 'illustration' | 'design';
+
+/** A rendered raster picture, saved beside the document only when it is inserted. */
+export interface GeneratedPicture {
+  readonly data: ArrayBuffer;
+  readonly seed: number;
+  /** The image prompt it was rendered from. */
+  readonly prompt: string;
+  alt: string;
+  /** Where the bytes were saved; null until inserting saves them. */
+  mediaPath: string | null;
+}
 
 export interface CompiledDiagram {
   readonly kind: PictureKind;
@@ -50,6 +64,8 @@ export interface CompiledDiagram {
   readonly summary: string;
   /** Source inside the ```mermaid fence, for validation and preview. */
   readonly mermaidSource: string | null;
+  /** The raster picture of a design graphic. */
+  readonly image?: GeneratedPicture;
   /**
    * The markdown to insert. `depth` is the heading depth for a drawing or
    * layout (fences ignore it); generated ids avoid every id in `takenIds`.

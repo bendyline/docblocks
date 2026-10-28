@@ -80,6 +80,7 @@ export class DocumentSession {
   private frozen = false;
   private error: Error | null = null;
   private conflict: DocumentSessionConflict | null = null;
+  private localEditedAt: number | undefined;
 
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private autoSaveRetryAttempt = 0;
@@ -139,6 +140,7 @@ export class DocumentSession {
 
     this.content = content;
     this.revision += 1;
+    this.localEditedAt = Date.now();
     this.error = null;
     this.autoSaveRetryAttempt = 0;
     if (this.conflict) {
@@ -146,6 +148,7 @@ export class DocumentSession {
         ...this.conflict,
         localContent: content,
         localRevision: this.revision,
+        localEditedAt: this.localEditedAt,
       };
     }
     this.writeRecoverySnapshot();
@@ -390,6 +393,7 @@ export class DocumentSession {
         targetKey: change.targetKey,
         localContent: this.content,
         localRevision: this.revision,
+        localEditedAt: this.localEditedAt,
         externalContent: change.content,
         externalVersion,
       };
@@ -424,6 +428,7 @@ export class DocumentSession {
       targetKey: change.targetKey,
       localContent: this.content,
       localRevision: this.revision,
+      localEditedAt: this.localEditedAt,
       externalContent: change.content,
       externalVersion: change.version ?? null,
     };
@@ -437,6 +442,7 @@ export class DocumentSession {
     this.clearAutoSaveTimer();
     this.autoSaveRetryAttempt = 0;
     this.content = content;
+    this.localEditedAt = undefined;
     this.revision += 1;
     this.persistedRevision = this.revision;
     this.persistedContent = content;
@@ -465,6 +471,7 @@ export class DocumentSession {
         this.discardRecoverySnapshot();
         this.generation += 1;
         this.revision += 1;
+        this.localEditedAt = undefined;
         this.conflict = null;
         this.error = null;
         this.haltDrain = false;
@@ -564,6 +571,7 @@ export class DocumentSession {
       this.externalSequence = -1;
       this.target = next.target;
       this.content = next.content;
+      this.localEditedAt = undefined;
       this.revision += 1;
       this.persistedRevision = this.revision;
       this.persistedContent = next.target ? next.content : null;
@@ -677,6 +685,7 @@ export class DocumentSession {
             targetKey: target.key,
             localContent: this.content,
             localRevision: this.revision,
+            localEditedAt: this.localEditedAt,
             externalContent: error.externalContent,
             externalVersion: error.externalVersion,
           };
@@ -809,6 +818,7 @@ export class DocumentSession {
     this.externalSequence = -1;
     this.target = null;
     this.persistedContent = null;
+    this.localEditedAt = undefined;
     this.savingRevision = null;
     this.savingContent = null;
     this.error = null;

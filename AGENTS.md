@@ -318,8 +318,11 @@ Runtime authenticates the app's signature/resource seal before trusting those
 hashes. Only authenticated Apple store delivery signatures allow changed hashes;
 local builds must match exactly. Native locations, signatures and inheritance
 remain verified in both cases.
-Development may use an absolute `DOCBLOCKS_GEZEL_NATIVE_BIN_DIR` or download an
-engine with visible progress. macOS distributions support Apple Silicon only.
+Source builds run the engines `npm run stage:gezel-native` stages into
+`packages/desktop/dist/gezel-native/` (or an absolute
+`DOCBLOCKS_GEZEL_NATIVE_BIN_DIR`) with the same store profile, so they never
+download an engine at runtime; `dev:desktop` warns when that payload is missing
+or stale. macOS distributions support Apple Silicon only.
 2.7.1 is Intel Macs' final version: never add x64 Mac targets. Its x64 update
 zip stays in every `latest-mac.yml` (`packages/desktop/README.md`, "Intel Macs").
 MAS requires the new native release's Apple Foundation Models helper, UV and
@@ -357,6 +360,16 @@ numbers drawn from selected text must appear in it; markup the sanitizer
 strips is inserted sanitized, with a note. Illustrate never offers it — small
 local models cannot draw reliably. `eval:ai-diagrams -- --illustrations`
 measures it.
+
+**Design graphics follow the same rule.** Illustrate's Design graphic kind
+(`design-brief.ts`) asks the chat model for a JSON brief — title, layout,
+labels, numbers, style — whose every label and number must come from the
+passage, then compiles it into the image prompt itself; the model never writes
+that prompt. The picture is rendered by `host.ai.images` with the design model
+chosen in Settings, previewed from memory with the text it should contain, and
+saved to `<stem>_files/` only when inserted. Image failures never touch the
+chat connection. See [docs/images.md](docs/images.md);
+`eval:ai-diagrams -- --images <model>` measures it.
 
 **SVG source never reaches a writing prompt.** Compose, Rewrite and Review
 (`ai-assistant.ts`) replace each `svg` fence in the document context with a
@@ -484,9 +497,11 @@ Two traps the drawer layout has already hit, both guarded by tests:
   Unmounting tore down Tiptap, Monaco, undo history, scroll position, and tree
   expansion on every toggle. `inert` keeps the hidden pane out of the tab order.
 - **The open drawer must set `transform: none`.** Any non-`none` transform makes
-  the sidebar the containing block for `position: fixed` descendants, and
-  `.db-dialog-overlay` is rendered inside the sidebar rather than portalled — so
-  a transform sizes and clips every app-menu dialog to the drawer.
+  the sidebar the containing block for `position: fixed` descendants, and sizes
+  and clips them to the drawer. `Dialog` portals `.db-dialog-overlay` to
+  `<body>` for the same reason: Squisq's toolbar is a size container, which the
+  Chromium in VS Code 1.85–1.97 also made a containing block, so Export and
+  Settings opened above the top of the webview.
 
 Never set `padding-bottom` on `.squisq-status-bar` to apply a safe-area or
 keyboard inset: it replaces Squisq's own padding rather than adding to it. Put

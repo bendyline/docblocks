@@ -74,9 +74,9 @@ function typeInto(element: HTMLTextAreaElement, value: string): void {
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function rowFor(container: HTMLElement, path: string): HTMLInputElement {
+function rowFor(path: string): HTMLInputElement {
   const label = path.replace(/^\/+/, '');
-  const row = [...container.querySelectorAll<HTMLLIElement>('.db-git-file-row')].find(
+  const row = [...document.body.querySelectorAll<HTMLLIElement>('.db-git-file-row')].find(
     (candidate) => candidate.querySelector('span')?.textContent === label,
   );
   const checkbox = row?.querySelector<HTMLInputElement>('input[type="checkbox"]');
@@ -129,13 +129,13 @@ describe('GitCommitDialog', () => {
     await renderWithLateChange([change('/a.md')], [change('/a.md'), change('/late.md')]);
 
     // The row renders checked...
-    expect(rowFor(container, '/late.md').checked).to.equal(true);
+    expect(rowFor('/late.md').checked).to.equal(true);
 
-    const message = container.querySelector<HTMLTextAreaElement>('textarea');
+    const message = document.body.querySelector<HTMLTextAreaElement>('textarea');
     expect(message).not.to.equal(null);
     await act(async () => typeInto(message!, 'fix: thing'));
 
-    const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    const commitButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Commit',
     );
     expect(commitButton?.disabled).to.equal(false);
@@ -149,14 +149,14 @@ describe('GitCommitDialog', () => {
   it('excludes a file that appeared after the dialog opened in one click', async () => {
     await renderWithLateChange([change('/a.md')], [change('/a.md'), change('/late.md')]);
 
-    const late = rowFor(container, '/late.md');
+    const late = rowFor('/late.md');
     expect(late.checked).to.equal(true);
     await act(async () => late.click());
-    expect(rowFor(container, '/late.md').checked).to.equal(false);
+    expect(rowFor('/late.md').checked).to.equal(false);
 
-    const message = container.querySelector<HTMLTextAreaElement>('textarea');
+    const message = document.body.querySelector<HTMLTextAreaElement>('textarea');
     await act(async () => typeInto(message!, 'fix: thing'));
-    const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    const commitButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Commit',
     );
     await act(async () => commitButton!.click());
@@ -175,15 +175,15 @@ describe('GitCommitDialog', () => {
       );
 
     await act(async () => render([change('/a.md'), change('/b.md')]));
-    await act(async () => rowFor(container, '/a.md').click());
+    await act(async () => rowFor('/a.md').click());
     await act(async () => render([change('/a.md'), change('/b.md'), change('/late.md')]));
 
-    expect(rowFor(container, '/a.md').checked).to.equal(false);
-    expect(rowFor(container, '/late.md').checked).to.equal(true);
+    expect(rowFor('/a.md').checked).to.equal(false);
+    expect(rowFor('/late.md').checked).to.equal(true);
 
-    const message = container.querySelector<HTMLTextAreaElement>('textarea');
+    const message = document.body.querySelector<HTMLTextAreaElement>('textarea');
     await act(async () => typeInto(message!, 'fix: thing'));
-    const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    const commitButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Commit',
     );
     await act(async () => commitButton!.click());
@@ -214,13 +214,13 @@ describe('GitCommitDialog', () => {
       // A live checkbox on /a.md promised an exclusion that never happened.
       await renderDuring('merge', [change('/a.md'), change('/conflict.md', true)]);
 
-      const plain = rowFor(container, '/a.md');
+      const plain = rowFor('/a.md');
       expect(plain.checked).to.equal(true);
       expect(
         plain.disabled,
         'a non-conflicted row must not offer a choice it cannot honour',
       ).to.equal(true);
-      expect(rowFor(container, '/conflict.md').disabled).to.equal(true);
+      expect(rowFor('/conflict.md').disabled).to.equal(true);
     });
 
     it('commits a non-conflicted file during a merge even after a click at it', async () => {
@@ -228,12 +228,12 @@ describe('GitCommitDialog', () => {
 
       // A disabled input ignores clicks, so this asserts the *outcome*:
       // what the dialog shows is what gets committed.
-      await act(async () => rowFor(container, '/a.md').click());
-      expect(rowFor(container, '/a.md').checked).to.equal(true);
+      await act(async () => rowFor('/a.md').click());
+      expect(rowFor('/a.md').checked).to.equal(true);
 
-      const message = container.querySelector<HTMLTextAreaElement>('textarea');
+      const message = document.body.querySelector<HTMLTextAreaElement>('textarea');
       await act(async () => typeInto(message!, 'merge: resolve'));
-      const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      const commitButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
         (button) => button.textContent?.trim() === 'Commit',
       );
       await act(async () => commitButton!.click());
@@ -244,8 +244,8 @@ describe('GitCommitDialog', () => {
     it('explains why nothing can be excluded, and hides the dead bulk toggle', async () => {
       await renderDuring('merge', [change('/a.md')]);
 
-      expect(container.textContent).to.include('cannot be left out');
-      const bulk = [...container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      expect(document.body.textContent).to.include('cannot be left out');
+      const bulk = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
         ['Select all', 'Select none'].includes(button.textContent?.trim() ?? ''),
       );
       expect(bulk, 'a bulk toggle that cannot change anything must not render').to.equal(undefined);
@@ -255,23 +255,23 @@ describe('GitCommitDialog', () => {
       // isMergeCommit() only covered 'merge', so a cherry-pick left every
       // checkbox interactive while the host still ignored them.
       await renderDuring('cherry-pick', [change('/a.md')]);
-      expect(rowFor(container, '/a.md').disabled).to.equal(true);
+      expect(rowFor('/a.md').disabled).to.equal(true);
     });
 
     it('leaves rows interactive when no operation is in progress', async () => {
       await renderDuring(null, [change('/a.md')]);
-      expect(rowFor(container, '/a.md').disabled).to.equal(false);
+      expect(rowFor('/a.md').disabled).to.equal(false);
     });
   });
 
   it('drops a file from the commit once git stops reporting it', async () => {
     await renderWithLateChange([change('/a.md'), change('/gone.md')], [change('/a.md')]);
 
-    expect(container.textContent).to.not.include('gone.md');
+    expect(document.body.textContent).to.not.include('gone.md');
 
-    const message = container.querySelector<HTMLTextAreaElement>('textarea');
+    const message = document.body.querySelector<HTMLTextAreaElement>('textarea');
     await act(async () => typeInto(message!, 'fix: thing'));
-    const commitButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+    const commitButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.trim() === 'Commit',
     );
     await act(async () => commitButton!.click());

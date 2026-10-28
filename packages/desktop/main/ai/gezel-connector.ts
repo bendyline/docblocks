@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ChatCompletionChunk, GezelApp } from '@bendyline/gezel-app-sdk';
 import type {
   DesktopEmbeddingConnection,
+  DesktopEmbeddingImages,
   HostOptions,
   HostServiceModule,
   ModelProgress,
@@ -10,6 +11,7 @@ import type {
 import type { AiKnowledgeAction, AiProgress } from '@bendyline/docblocks/host';
 import { parseAiChatProgress } from '@bendyline/docblocks/host';
 import { AiHostError } from './ai-errors.js';
+import type { ProviderImages } from './ai-image-service.js';
 import type {
   AiConnectOptions,
   AiConnector,
@@ -167,12 +169,58 @@ async function streamFrom(
   })();
 }
 
+/** The aspect ratios DocBlocks offers, all of which Gezel accepts. */
+const IMAGE_ASPECTS = new Set(['1:1', '4:3', '3:4', '16:9', '9:16'] as const);
+type GezelAspect = NonNullable<Parameters<DesktopEmbeddingImages['generate']>[0]['aspectRatio']>;
+
+function adaptImages(images: DesktopEmbeddingImages): ProviderImages {
+  return {
+    access: (signal) => images.access({ signal }),
+    requestAccess: (onVerificationCode) => images.requestAccess({ onVerificationCode }),
+    models: (signal) => images.models({ signal }),
+    async ensure(id, signal) {
+      const result = await images.ensure(id, { signal });
+      return result.status === 'ready'
+        ? { status: 'ready' }
+        : { status: 'downloading', jobId: result.jobId };
+    },
+    ensureEvents: (jobId, signal) => images.ensureEvents(jobId, { signal }),
+    cancelEnsure: (jobId) => images.cancelEnsure(jobId),
+    remove: (id, signal) => images.remove(id, { signal }),
+    generate: (input, { signal, onProgress }) =>
+      images.generate(
+        {
+          prompt: input.prompt,
+          ...(input.negativePrompt ? { negativePrompt: input.negativePrompt } : {}),
+          ...(input.model ? { model: input.model } : {}),
+          ...(input.aspectRatio && IMAGE_ASPECTS.has(input.aspectRatio as GezelAspect & '1:1')
+            ? { aspectRatio: input.aspectRatio as GezelAspect }
+            : {}),
+          ...(input.seed !== undefined ? { seed: input.seed } : {}),
+        },
+        {
+          signal,
+          onProgress: (progress) =>
+            onProgress({
+              phase: progress.phase,
+              step: progress.step,
+              totalSteps: progress.totalSteps,
+              ...(progress.secondsPerStep !== undefined
+                ? { secondsPerStep: progress.secondsPerStep }
+                : {}),
+            }),
+        },
+      ),
+  };
+}
+
 function adaptConnection(
   connection: DesktopEmbeddingConnection,
   knowledgeUnavailable: string | null,
 ): AiProviderConnection {
   return {
     mode: connection.mode,
+    ...(connection.images ? { images: adaptImages(connection.images) } : {}),
     listModels: () => connection.models.list(),
     ...(knowledgeUnavailable
       ? { knowledgeUnavailable }
@@ -248,6 +296,9 @@ export class GezelConnector implements AiConnector {
         appId: GEZEL_APP_ID,
         appName: GEZEL_APP_NAME,
         knowledge: true,
+        // Never part of the first consent: a standalone Gezel grants images
+        // later, from Settings. The Mac App Store build ships no image engine.
+        images: hostNative?.macAppStore !== true,
         approvalTimeoutSec: 300,
         hostWhenRefused: true,
         ...(this.options.standalone === false ? { adoptUserDaemon: false } : {}),

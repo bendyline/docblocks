@@ -5,6 +5,7 @@ import { docToPptx } from '@bendyline/squisq-formats/pptx';
 import { readFrontmatterThemeId } from '@bendyline/squisq/markdown';
 import {
   ExportDialog,
+  PdfReplacementsError,
   buildExportFilename,
   loadLastExportOptions,
   resolveExportDialogInitial,
@@ -45,6 +46,9 @@ export function VscodeExportButton({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  // The options of a PDF export that stopped because its fonts would replace
+  // characters, so the user can save it with the replacements after all.
+  const [pdfReplacements, setPdfReplacements] = useState<ExportOptions | null>(null);
   const [destinationPath, setDestinationPath] = useState('');
   const [destinationError, setDestinationError] = useState<string | null>(null);
   const destinationRequestRef = useRef(0);
@@ -206,18 +210,26 @@ export function VscodeExportButton({
   );
 
   const handleExport = useCallback(
-    async (options: ExportOptions) => {
+    async (options: ExportOptions, allowPdfReplacements = false) => {
       setExporting(true);
       setExportError(null);
+      setPdfReplacements(null);
       try {
         // VS Code webviews can outlive an extension rebuild or update. Loading
         // the PPTX converter with this control keeps a visible Export button
         // from later requesting a hashed chunk that has already been replaced.
-        await runExport(markdownSource, selectedFile, options, mediaContainer, handleSaveBlob, {
-          docToPptx,
-        });
+        await runExport(
+          markdownSource,
+          selectedFile,
+          options,
+          mediaContainer,
+          handleSaveBlob,
+          { docToPptx },
+          { allowPdfReplacements },
+        );
         setDialogOpen(false);
       } catch (caught: unknown) {
+        if (caught instanceof PdfReplacementsError) setPdfReplacements(options);
         setExportError(exportErrorMessage(caught));
       } finally {
         setExporting(false);
@@ -244,6 +256,14 @@ export function VscodeExportButton({
           initial={dialogInitial}
           exporting={exporting}
           error={exportError}
+          errorAction={
+            pdfReplacements
+              ? {
+                  label: 'Save PDF with replacements',
+                  onClick: () => void handleExport(pdfReplacements, true),
+                }
+              : null
+          }
           destination={{
             value: destinationPath,
             onChange: handleDestinationChange,
@@ -260,6 +280,8 @@ export function VscodeExportButton({
 }
 
 function exportErrorMessage(caught: unknown): string {
+  // Not a failure: it says what saving anyway would replace.
+  if (caught instanceof PdfReplacementsError) return caught.message;
   const detail = caught instanceof Error ? caught.message.trim() : '';
   return detail ? `Export failed: ${detail}` : 'Export failed. The document could not be exported.';
 }

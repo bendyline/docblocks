@@ -34,6 +34,16 @@ Automatic slides are titled with their section heading and show the section's
 own sentences beneath it, so a slide never repeats its title as its body. Each
 document image appears once, on a slide from the section that contains it.
 
+A section's embedded videos and diagrams (a `<video>`, a hosted video, a Mermaid
+or SVG fence, or a `diagram` / `tree` / `timeline` fence) appear beside its slide
+text rather than being dropped. The section's slides are shared out among them in
+source order, so every one is shown. A diagram or HTML video stays on screen across
+consecutive slides, and the video plays on from where the previous slide left it
+instead of restarting. A slide that carries one prefers a list over a steps
+diagram, unless the section's layout preference says steps. Timed clips attached
+to a section, such as a `{[audio …]}` music bed, start on its first slide and stop
+where the section ends.
+
 **Use dynamic slides** saves the preferences and selects the Dynamic slides
 summarization mode in one undoable edit. It also disables the redundant automatic
 cover. **Reset design** resets the unsaved preferences and clears saved wording
@@ -62,8 +72,11 @@ its picture.
 Narration is a recording, so changing the spoken text still requires **Speech →
 Generate narration…** again. Retaking the same text automatically re-resolves the
 visual cues. Missing timing files, stale narration, and manually pinned slide
-times are reported; MP4 export refuses an unsynchronized presentation. Without
-narration, the planner uses estimated reading time.
+times are reported; MP4 export refuses an unsynchronized presentation. When pins
+are the cause, the designer still previews the slides and offers **Remove pinned
+times**. The Timeline offers no edge drags on a dynamic-slides document, and a
+section's options there can only clear a pin. Without narration, the planner
+uses estimated reading time.
 
 **Export and share → Export video…** renders the dynamic slides with narration.
 Keep the Markdown and its `<document>_files/` folder together; audio and adjacent
@@ -95,7 +108,8 @@ Without bookmarks, narration uses proportional estimates. Exact cue placement
 does not establish acoustic word-boundary accuracy. Limits remain 40,000 script
 characters, 80 slides, four points per slide, and 160,000 serialized hint
 characters. This creates simple steps/comparison explainers and uses existing
-images; it does not generate images or record application interactions.
+images, videos, and diagrams; it does not generate images or record application
+interactions.
 
 ## Verification
 
