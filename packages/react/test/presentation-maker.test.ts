@@ -2,10 +2,15 @@ import { expect } from 'chai';
 import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { EditorProvider, useEditorContext } from '@bendyline/squisq-editor-react';
+import {
+  EditorProvider,
+  PreviewSettingsProvider,
+  useEditorContext,
+} from '@bendyline/squisq-editor-react';
 import { markdownToDoc } from '@bendyline/squisq/doc';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import { buildNarrationScript } from '@bendyline/squisq/narration';
+import { THEMES } from '@bendyline/squisq/schemas';
 import { MemoryContentContainer } from '@bendyline/squisq/storage';
 
 import { PresentationMaker } from '../src/Presentation/PresentationMaker.js';
@@ -116,6 +121,60 @@ describe('PresentationMaker with a pinned section', () => {
       expect(latestSource).not.to.contain('duration=');
       expect(alert()).to.equal(null);
       expect(status()).to.contain('Follows narration');
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+const DIAGRAM = [
+  '# Squiggly Square is a Swiss army knife for content',
+  '',
+  'Developed libraries and engine for both cases.',
+  '',
+  '```mermaid',
+  'flowchart LR',
+  '  A([SquigglySquare]) --> B[DocBlocks - Simple markdown editor]',
+  '```',
+].join('\n');
+
+describe('PresentationMaker slide preview', () => {
+  it('draws diagrams in the active theme, as the slideshow does', async () => {
+    const theme = THEMES['warm-earth']!;
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: DIAGRAM,
+          children: createElement(PreviewSettingsProvider, {
+            doc: markdownToDoc(parseMarkdown(DIAGRAM)),
+            themeOverride: theme,
+            children: createElement(PresentationMaker, { onClose: () => undefined }),
+          }),
+        }),
+      );
+    });
+    try {
+      await settle();
+      const diagram = () =>
+        document.body.querySelector<HTMLElement>(
+          '.db-presentation-preview .squisq-mermaid-rendered',
+        );
+      for (const slide of Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('.db-presentation-beats button'),
+      )) {
+        if (diagram()) break;
+        await act(async () => slide.click());
+      }
+      expect(diagram(), 'a slide previews the diagram').not.to.equal(null);
+      const panel = document.createElement('div');
+      panel.style.background = theme.colors.backgroundLight;
+      panel.style.color = theme.colors.text;
+      expect(diagram()?.style.background).to.equal(panel.style.background);
+      expect(diagram()?.style.color).to.equal(panel.style.color);
     } finally {
       await act(async () => root.unmount());
       container.remove();

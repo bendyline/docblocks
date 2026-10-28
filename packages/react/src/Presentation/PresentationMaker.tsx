@@ -583,6 +583,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                     animationsEnabled={false}
                     basePath="/"
                     viewport={VIEWPORT_PRESETS.landscape}
+                    theme={preview?.activeTheme}
                   />
                 )}
               </MediaContext.Provider>
