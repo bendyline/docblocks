@@ -2354,9 +2354,12 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   margin-bottom: 0;
 }
 
+/* A link inside running text is underlined: the accent alone sits under the
+   3:1 against the surrounding text that WCAG 1.4.1 asks for. */
 .db-dialog-body a {
   color: var(--db-accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 .db-dialog-body a:hover {
@@ -2370,6 +2373,11 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 16px;
+}
+
+/* The row holds nothing but links, so color alone marks them here. */
+.db-dialog-links a {
+  text-decoration: none;
 }
 
 .db-about-version {
