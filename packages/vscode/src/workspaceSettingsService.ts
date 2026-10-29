@@ -61,11 +61,19 @@ export function registerWorkspaceSettingsService(
 let defaultRenderer: Promise<WorkspaceOutputsRenderer> | null = null;
 function loadRenderer(): Promise<WorkspaceOutputsRenderer> {
   defaultRenderer ??= import('@bendyline/squisq-formats/html').then(
-    ({ htmlToMarkdownDocSync, markdownDocToPlainHtml }) => ({
-      renderCatalogHtml: (document, { title, themeId }) =>
-        markdownDocToPlainHtml(document, { title, themeId }),
-      importHtml: (html) => htmlToMarkdownDocSync(html),
-    }),
+    (formats): WorkspaceOutputsRenderer => {
+      const { htmlToMarkdownDocSync, markdownDocToPlainHtml } = formats;
+      // Squisq releases before page templates have no detector.
+      const { isHtmlPageTemplate } = formats as Partial<{
+        isHtmlPageTemplate: (html: string) => boolean;
+      }>;
+      return {
+        renderCatalogHtml: (document, { title, themeId }) =>
+          markdownDocToPlainHtml(document, { title, themeId }),
+        importHtml: (html) => htmlToMarkdownDocSync(html),
+        ...(typeof isHtmlPageTemplate === 'function' ? { isPageTemplate: isHtmlPageTemplate } : {}),
+      };
+    },
     (error: unknown) => {
       // A failed load must not fail every later catalog run in this window.
       defaultRenderer = null;

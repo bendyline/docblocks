@@ -475,11 +475,19 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
             </>
           )}
 
+          {/* Keyed by provider so a switch starts each section afresh. The keys
+              are siblings, so each needs its own prefix: a shared key makes
+              React duplicate the sections on every status update. */}
           {ready && ai.knowledge && (
-            <AiKnowledgeSettings key={status.provider.mode} knowledge={ai.knowledge} />
+            <AiKnowledgeSettings
+              key={`knowledge-${status.provider.mode}`}
+              knowledge={ai.knowledge}
+            />
           )}
 
-          {ready && ai.images && <AiImageSettings key={status.provider.mode} images={ai.images} />}
+          {ready && ai.images && (
+            <AiImageSettings key={`images-${status.provider.mode}`} images={ai.images} />
+          )}
 
           {ready && status.provider.mode === 'installed' ? (
             <button

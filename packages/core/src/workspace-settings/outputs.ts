@@ -42,10 +42,13 @@ import {
   createWorkspaceCatalog,
   isGeneratedCatalogHtml,
   isGeneratedCatalogJson,
+  normalizeLineEndings,
   readCatalogHtmlDigest,
+  readCatalogDateHistory,
   serializeCatalogJson,
   sha256Hex,
   stampCatalogHtml,
+  stampCatalogDates,
   type CatalogEntry,
   type CatalogSource,
   type WorkspaceCatalog,
@@ -75,6 +78,11 @@ export interface WorkspaceOutputsRenderer {
   ): string | Promise<string>;
   /** Parse rendered HTML that has no Markdown companion yet. Optional. */
   importHtml?(html: string): MarkdownDocument | Promise<MarkdownDocument>;
+  /**
+   * True for an HTML page template — the chrome other pages are generated
+   * through, not a document of its own — which the catalog leaves out. Optional.
+   */
+  isPageTemplate?(html: string): boolean;
 }
 
 export const WORKSPACE_OUTPUT_LIMITS = {
@@ -121,6 +129,8 @@ export interface RefreshWorkspaceOutputsOptions {
   /** Compute everything, write nothing. */
   readonly dryRun?: boolean;
   readonly limits?: Partial<WorkspaceOutputLimits>;
+  /** Time stamped on new or changed documents in the catalog JSON. Defaults to now. */
+  readonly now?: Date;
 }
 
 export type WorkspaceOutputStatus = 'written' | 'unchanged' | 'blocked' | 'would-write';
@@ -335,8 +345,8 @@ async function resolveReadTarget(
 export async function collectWorkspaceCatalog(
   io: WorkspaceOutputsIO,
   resolved: ResolvedCatalogOutputs,
-  renderer: Pick<WorkspaceOutputsRenderer, 'importHtml'>,
-  options: Omit<RefreshWorkspaceOutputsOptions, 'force' | 'dryRun'> = {},
+  renderer: Pick<WorkspaceOutputsRenderer, 'importHtml' | 'isPageTemplate'>,
+  options: Omit<RefreshWorkspaceOutputsOptions, 'force' | 'dryRun' | 'now'> = {},
 ): Promise<WorkspaceCatalog> {
   const limits: WorkspaceOutputLimits = { ...WORKSPACE_OUTPUT_LIMITS, ...options.limits };
   const cache = options.cache;
@@ -384,7 +394,7 @@ export async function collectWorkspaceCatalog(
       const text = new TextDecoder('utf-8').decode(read.data);
       if (target.mode === 'markdown') {
         entry = await catalogEntryFromMarkdown(target.source, text, { includeMarkdown });
-      } else if (isGeneratedCatalogHtml(text)) {
+      } else if (isGeneratedCatalogHtml(text) || renderer.isPageTemplate?.(text)) {
         entry = null;
       } else if (renderer.importHtml) {
         const head = text.slice(0, 64 * 1024);
@@ -395,6 +405,7 @@ export async function collectWorkspaceCatalog(
       } else {
         entry = catalogEntryForUnreadable(target.source);
       }
+      if (entry) entry = { ...entry, contentHash: await sha256Hex(normalizeLineEndings(text)) };
     }
     cache?.set(target.source.path, {
       readPath: target.readPath,
@@ -431,7 +442,8 @@ function sameBytes(left: ArrayBuffer, right: Uint8Array): boolean {
 interface WriteOutputRequest {
   readonly kind: 'html' | 'json';
   readonly path: WorkspacePath;
-  readonly produce: () => Promise<string>;
+  /** Receives the output DocBlocks generated last time, when there is one. */
+  readonly produce: (previous: string | null) => Promise<string>;
   /** HTML only: skip rendering entirely when the existing page has this digest. */
   readonly digest?: string;
 }
@@ -480,7 +492,9 @@ async function writeOutput(
     }
   }
 
-  const bytes = new TextEncoder().encode(await request.produce());
+  const bytes = new TextEncoder().encode(
+    await request.produce(existing ? new TextDecoder('utf-8').decode(existing.data) : null),
+  );
   if (bytes.byteLength > limits.maxOutputBytes) {
     return blocked(
       `The catalog would exceed ${Math.round(limits.maxOutputBytes / 1024 / 1024)} MiB and was not written.`,
@@ -520,14 +534,21 @@ export async function refreshWorkspaceOutputs(
   if (resolved.json) {
     throwIfAborted(options.signal);
     const content = resolved.json.content;
+    const now = options.now ?? new Date();
     outputs.push(
       await writeOutput(
         io,
         {
           kind: 'json',
           path: resolved.json.path,
-          produce: async () =>
-            serializeCatalogJson(content === 'markdown' ? catalog : metadataCatalog),
+          produce: async (previous) =>
+            serializeCatalogJson(
+              stampCatalogDates(
+                content === 'markdown' ? catalog : metadataCatalog,
+                readCatalogDateHistory(previous ?? ''),
+                now,
+              ),
+            ),
         },
         limits,
         options,

@@ -274,10 +274,14 @@ describe('WorkspaceSettingsDialog', () => {
     versioningOverride: 'on',
   };
 
-  async function render(status: 'missing' | 'invalid') {
+  async function render(
+    status: 'missing' | 'invalid',
+    listPageTemplates?: () => Promise<readonly string[]>,
+  ) {
     await act(async () => {
       root.render(
         createElement(WorkspaceSettingsDialog, {
+          ...(listPageTemplates ? { listPageTemplates } : {}),
           workspace,
           globalVersioningPreference: 'browser-only',
           settings:
@@ -330,6 +334,45 @@ describe('WorkspaceSettingsDialog', () => {
     expect(saved).to.deep.equal([
       { versionHistory: { enabled: true }, catalog: { html: { enabled: true } } },
     ]);
+  });
+
+  function pageTemplateField(): HTMLElement {
+    const label = [...document.querySelectorAll<HTMLLabelElement>('label')].find(
+      (candidate) => candidate.textContent === 'Default page template',
+    );
+    return document.getElementById(label!.htmlFor)!;
+  }
+
+  it('picks the default page template from the templates the workspace has', async () => {
+    await render('missing', async () => ['_templates/post.html', 'layouts/landing.html']);
+    const select = pageTemplateField() as HTMLSelectElement;
+    expect(select.tagName).to.equal('SELECT');
+    expect([...select.options].map((option) => option.textContent)).to.deep.equal([
+      'None',
+      '_templates/post.html',
+      'layouts/landing.html',
+    ]);
+    await act(async () => {
+      select.value = '_templates/post.html';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const save = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Save',
+    );
+    await act(async () => {
+      save?.click();
+    });
+    expect(saved[0]?.documents).to.deep.equal({
+      outputTemplates: { html: '_templates/post.html' },
+    });
+  });
+
+  it('says when the workspace has no page templates, and falls back to a path box', async () => {
+    await render('missing', async () => []);
+    expect(document.body.textContent).to.contain('No page templates found.');
+    await act(async () => root.render(createElement('div')));
+    await render('missing');
+    expect(pageTemplateField().tagName).to.equal('INPUT');
   });
 
   it('shows an unusable file read-only with its reason', async () => {

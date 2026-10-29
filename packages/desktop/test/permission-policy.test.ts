@@ -196,6 +196,7 @@ describe('desktop permission policy', () => {
     const details = permissionRequest();
 
     for (const permission of [
+      'clipboard-read',
       'clipboard-sanitized-write',
       'display-capture',
       'fullscreen',
@@ -285,6 +286,47 @@ describe('desktop permission policy', () => {
         'media',
         'https://example.com',
         permissionCheck(),
+      ),
+    ).to.equal(false);
+  });
+
+  it('lets the editor read the clipboard, but never an embedded player', () => {
+    const owner = fakeRenderer();
+    expect(
+      allowsPermissionRequest(
+        owner.contents,
+        owner.contents,
+        'clipboard-read',
+        permissionRequest(),
+      ),
+    ).to.equal(true);
+    expect(
+      allowsPermissionCheck(
+        owner.contents,
+        owner.contents,
+        'clipboard-read',
+        TRUSTED_ORIGIN,
+        permissionCheck(),
+      ),
+    ).to.equal(true);
+    expect(
+      allowsPermissionRequest(
+        owner.contents,
+        owner.contents,
+        'clipboard-read',
+        permissionRequest({
+          isMainFrame: false,
+          requestingUrl: 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+        }),
+      ),
+    ).to.equal(false);
+    expect(
+      allowsPermissionCheck(
+        owner.contents,
+        owner.contents,
+        'clipboard-read',
+        'https://www.youtube-nocookie.com',
+        permissionCheck({ embeddingOrigin: 'app://docblocks', isMainFrame: false }),
       ),
     ).to.equal(false);
   });

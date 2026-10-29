@@ -3,6 +3,7 @@ import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type {
+  AiImagesAPI,
   AiKnowledgeState,
   AiModelDownloadInfo,
   AiModelInfo,
@@ -189,6 +190,24 @@ function knowledgeApi(
         actions.push(action);
         return update(action);
       },
+    },
+  };
+}
+
+function imagesApi(): AiImagesAPI {
+  return {
+    access: async () => ({ kind: 'ready' }),
+    onAccess: () => () => undefined,
+    requestAccess: async () => ({ ok: true, value: { kind: 'ready' } }),
+    models: async () => ({ ok: true, value: [] }),
+    installModel() {
+      throw new Error('not used by this test');
+    },
+    removeModel: async () => ({ ok: true, value: null }),
+    getPreferences: async () => ({ model: null, designModel: null, aspect: '1:1' }),
+    setPreferences: async (patch) => ({ model: null, designModel: null, aspect: '1:1', ...patch }),
+    generate() {
+      throw new Error('not used by this test');
     },
   };
 }
@@ -410,6 +429,28 @@ describe('AI knowledge settings', () => {
       expect(section?.querySelector('[role="alert"]')).to.equal(null);
       expect(section?.textContent).not.to.contain('are included in each request');
       expect(section?.querySelector('button')).to.equal(null);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('shows the knowledge and image sections once each as the provider changes', async () => {
+    const fake = fakeAi(READY, OPTED_IN);
+    const { container, cleanup } = await render({
+      ...knowledgeApi(fake.api, []),
+      images: imagesApi(),
+    });
+    const sections = (heading: string) =>
+      Array.from(container.querySelectorAll('h3')).filter((h3) => h3.textContent === heading);
+    try {
+      for (const mode of ['installed', 'hosted', 'hosted', 'installed'] as const) {
+        await act(async () => {
+          fake.emit({ ...READY, provider: { ...READY.provider, mode } });
+        });
+        await flush();
+        expect(sections('Knowledge catalogs'), mode).to.have.length(1);
+        expect(sections('Image generation'), mode).to.have.length(1);
+      }
     } finally {
       await cleanup();
     }

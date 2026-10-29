@@ -122,6 +122,7 @@ import {
   isEmptyWorkspaceSettingsPatch,
   resolveCatalogOutputs,
   resolveWorkspaceDefaultThemeId,
+  resolveWorkspaceOutputTemplate,
   type WorkspaceSettingsPatch,
 } from '@bendyline/docblocks/workspace-settings';
 import { useDocumentSession } from '../hooks/useDocumentSession.js';
@@ -260,7 +261,9 @@ import {
   defaultOutsideInLayoutMode,
   enableOutsideInMarkdownEditing,
   loadEditableShellDocument,
+  findPageTemplates,
   removeOutsideInCompanion,
+  rerenderPagesUsingTemplate,
   resolveOutsideInLayout,
   relocateOutsideInLayout,
   withOutsideInMetadata,
@@ -276,7 +279,12 @@ import { NewDocumentDialog, type NewDocumentChoice } from '../components/NewDocu
 import { EditorErrorBoundary } from './EditorErrorBoundary.js';
 import { localDateStamp } from '../local-date.js';
 import { openExternalUrl } from '../external-url.js';
-import { setOutsideInPdfWorker } from './outside-in-contract.js';
+import {
+  loadPageTemplateEngine,
+  readOutsideInHtmlOutput,
+  setOutsideInPdfWorker,
+  type OutsideInHtmlOutput,
+} from './outside-in-contract.js';
 import { newFileHtmlOutput, type NewFileFormat } from '../FileExplorer/new-file-formats.js';
 import {
   DEFAULT_NEW_FILE_FORMAT,
@@ -316,7 +324,12 @@ import type { QuickOpenItem, QuickOpenPin } from '../QuickOpen/quick-open-rankin
 import type { WorkspaceSearchOpenRequest } from '../WorkspaceSearch/WorkspaceSearchPanel.js';
 import { FindButton } from '../components/FindButton.js';
 import { focusFindInput } from '../components/find-input.js';
-import { DocumentConflictBanner } from './DocumentConflictBanner.js';
+import { DocumentConflictBanner, DocumentConflictNotice } from './DocumentConflictBanner.js';
+import {
+  dismissConflict,
+  isConflictDismissed,
+  type DismissedConflict,
+} from './conflict-dismissal.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
@@ -615,6 +628,20 @@ function dirnameOf(p: string): string {
   const clean = p.replace(/^\/+/, '');
   const idx = clean.lastIndexOf('/');
   return idx === -1 ? '' : clean.slice(0, idx);
+}
+
+/** Squisq's `PageTemplateSettings`: the Document settings Page template field. */
+interface PageTemplateOption {
+  listTemplates: () => Promise<ReadonlyArray<{ value: string; label: string }>>;
+  defaultLabel?: string;
+}
+
+/**
+ * `EditorShell`'s `pageTemplates` prop, spread untyped so the shell also
+ * builds against Squisq releases that predate it (they ignore it).
+ */
+function editorPageTemplateProps(pageTemplates: PageTemplateOption | null): object {
+  return pageTemplates ? { pageTemplates } : {};
 }
 
 function basenameOf(p: string): string {
@@ -1453,9 +1480,13 @@ export function DocBlocksShell({
   const workspaceDefaultThemeId = resolveWorkspaceDefaultThemeId(workspaceSettings.settings);
   const workspaceDefaultThemeRef = useRef(workspaceDefaultThemeId);
   workspaceDefaultThemeRef.current = workspaceDefaultThemeId;
-  // Read at render time, so a regenerated page always uses the current default.
+  const workspaceSettingsRef = useRef(workspaceSettings.settings);
+  workspaceSettingsRef.current = workspaceSettings.settings;
+  // Read at render time, so a regenerated page always uses the current defaults.
   const outsideInRenderRef = useRef<OutsideInRenderOptions>({
     defaultThemeId: () => workspaceDefaultThemeRef.current,
+    defaultOutputTemplate: (format) =>
+      resolveWorkspaceOutputTemplate(workspaceSettingsRef.current, format),
   });
   const workspaceOutputs = useWorkspaceOutputs(
     provider,
@@ -1688,6 +1719,60 @@ export function DocBlocksShell({
   // The session snapshot is the sole owner of document content and edit
   // identity. React retains only presentation state (path/folder/view).
   const editorContent = documentSnapshot.content;
+  // Frontmatter-derived editor state re-reads only when the frontmatter changes.
+  const editorFrontmatter = useMemo(
+    () => /^---\r?\n[\s\S]*?\r?\n---/.exec(editorContent)?.[0] ?? '',
+    [editorContent],
+  );
+  const [selectedHtmlOutput, setSelectedHtmlOutput] = useState<OutsideInHtmlOutput | null>(null);
+  useEffect(() => {
+    if (selectedOutsideIn?.format !== 'html') {
+      setSelectedHtmlOutput(null);
+      return;
+    }
+    let current = true;
+    void readOutsideInHtmlOutput(editorFrontmatter).then((output) => {
+      if (current) setSelectedHtmlOutput(output);
+    });
+    return () => {
+      current = false;
+    };
+  }, [selectedOutsideIn, editorFrontmatter]);
+  // Document settings offers a Page template field for Web pages that render
+  // through templates: editable static pages, and imported ones that predate
+  // the static/interactive choice. Interactive pages run the player instead.
+  const workspaceDefaultTemplate = resolveWorkspaceOutputTemplate(
+    workspaceSettings.settings,
+    'html',
+  );
+  const listWorkspacePageTemplates = useCallback(
+    async (): Promise<readonly string[]> => (provider ? findPageTemplates(provider) : []),
+    [provider],
+  );
+  const pageTemplates = useMemo<PageTemplateOption | null>(() => {
+    if (
+      !provider ||
+      selectedOutsideIn?.format !== 'html' ||
+      !selectedOutsideInEditingEnabled ||
+      selectedHtmlOutput === 'interactive'
+    ) {
+      return null;
+    }
+    return {
+      listTemplates: async () =>
+        (await listWorkspacePageTemplates()).map((path) => ({ value: `/${path}`, label: path })),
+      ...(workspaceDefaultTemplate
+        ? { defaultLabel: `Workspace default (${workspaceDefaultTemplate})` }
+        : {}),
+    };
+  }, [
+    provider,
+    listWorkspacePageTemplates,
+    selectedOutsideIn,
+    selectedOutsideInEditingEnabled,
+    selectedHtmlOutput,
+    workspaceDefaultTemplate,
+  ]);
   const editorSessionScope = useMemo<DocumentSessionEditScope | null>(
     () =>
       documentSnapshot.targetKey && !documentSnapshot.frozen
@@ -1773,6 +1858,54 @@ export function DocBlocksShell({
     [gitScheduleRefresh, notifyWorkspaceChanged],
   );
 
+  // Saving a page template regenerates the pages generated through it, one
+  // pass at a time; saves during a pass coalesce into one more pass after it.
+  const templatePagesRef = useRef<{
+    running: boolean;
+    next: { provider: FileSystemProvider; workspaceId: string; path: string } | null;
+  }>({ running: false, next: null });
+  const afterTemplateCommit = useCallback(
+    async (fsProvider: FileSystemProvider, workspaceId: string, path: string, html: string) => {
+      const engine = await loadPageTemplateEngine();
+      const inspection = engine?.inspectHtmlPageTemplate(html);
+      // A template mid-edit (an unclosed slot) waits for a save that is usable.
+      if (!inspection?.isTemplate || inspection.errors.length > 0) return;
+      const state = templatePagesRef.current;
+      state.next = { provider: fsProvider, workspaceId, path };
+      if (state.running) return;
+      state.running = true;
+      try {
+        while (state.next) {
+          const job = state.next;
+          state.next = null;
+          const result = await rerenderPagesUsingTemplate(
+            job.provider,
+            job.path,
+            outsideInRenderRef.current,
+          );
+          for (const page of result.updated) afterWorkspaceCommit(job.workspaceId, page);
+          const [first] = result.failed;
+          if (first) {
+            showToast(
+              'error',
+              result.failed.length === 1
+                ? `${basenameOf(first.path)} wasn’t updated from its page template: ${first.message}`
+                : `${result.failed.length} pages weren’t updated from their page template. ${basenameOf(first.path)}: ${first.message}`,
+            );
+          }
+        }
+      } catch (error: unknown) {
+        showToast(
+          'error',
+          `Pages using ${basenameOf(path)} weren’t updated: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        state.running = false;
+      }
+    },
+    [afterWorkspaceCommit, showToast],
+  );
+
   const createDocumentTarget = useCallback(
     (
       fsProvider: FileSystemProvider,
@@ -1803,6 +1936,9 @@ export function DocBlocksShell({
             await assertNotGeneratedCatalog(fsProvider, filePath);
             const result = await baseTarget.commit(request);
             afterWorkspaceCommit(workspaceId, filePath);
+            if (/\.html?$/i.test(filePath)) {
+              void afterTemplateCommit(fsProvider, workspaceId, filePath, request.content);
+            }
             return result;
           },
         };
@@ -1992,7 +2128,7 @@ export function DocBlocksShell({
         },
       };
     },
-    [afterWorkspaceCommit, gitScheduleRefresh],
+    [afterTemplateCommit, afterWorkspaceCommit, gitScheduleRefresh],
   );
 
   /**
@@ -2729,12 +2865,13 @@ export function DocBlocksShell({
     return () => window.removeEventListener('click', handler, true);
   }, [activeWorkspaceId, selectedFile, closeWelcomeGateway]);
 
-  // Dismissing hides the conflict banner, not the conflict: saving stays
-  // blocked, so a blocked save or the next conflict brings the banner back.
-  const [dismissedConflictKey, setDismissedConflictKey] = useState<string | null>(null);
+  // Dismissing shrinks the conflict banner to a notice, not the conflict away:
+  // saving stays blocked, so the notice says so. A newer outside change, a
+  // blocked save or a blocked navigation brings the full banner back.
+  const [dismissedConflict, setDismissedConflict] = useState<DismissedConflict | null>(null);
   const conflictTargetKey = documentSnapshot.conflict?.targetKey ?? null;
   useEffect(() => {
-    if (conflictTargetKey === null) setDismissedConflictKey(null);
+    if (conflictTargetKey === null) setDismissedConflict(null);
   }, [conflictTargetKey]);
 
   const saveActiveDocument = useCallback(() => {
@@ -2743,7 +2880,7 @@ export function DocBlocksShell({
         await documentSession.flush('manual');
         showToast('success', 'Saved. You’re all set.');
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
+        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
         showToast(
           'error',
           isQuotaExceededError(error)
@@ -3033,7 +3170,7 @@ export function DocBlocksShell({
         if (!transitioned || requestId !== navigationRequestRef.current) return false;
         return true;
       } catch (error: unknown) {
-        if (error instanceof DocumentSessionConflictError) setDismissedConflictKey(null);
+        if (error instanceof DocumentSessionConflictError) setDismissedConflict(null);
         showToast(
           'error',
           error instanceof Error
@@ -5448,14 +5585,20 @@ export function DocBlocksShell({
           </div>
         )}
         {documentSnapshot.conflict &&
-          documentSnapshot.conflict.targetKey !== dismissedConflictKey && (
+          (isConflictDismissed(documentSnapshot.conflict, dismissedConflict) ? (
+            <DocumentConflictNotice onReview={() => setDismissedConflict(null)} />
+          ) : (
             <DocumentConflictBanner
               conflict={documentSnapshot.conflict}
               readSavedFile={readConflictFile}
               onCompare={() => setShowConflictComparison(true)}
-              onDismiss={() => setDismissedConflictKey(conflictTargetKey)}
+              onDismiss={() =>
+                setDismissedConflict(
+                  documentSnapshot.conflict ? dismissConflict(documentSnapshot.conflict) : null,
+                )
+              }
             />
-          )}
+          ))}
         {documentSnapshot.conflict && showConflictComparison && (
           <Suspense fallback={<div role="status">Loading version comparison…</div>}>
             <DocumentConflictDialog
@@ -5497,6 +5640,7 @@ export function DocBlocksShell({
             onSave={handleSaveWorkspaceSettings}
             onRegenerate={handleRegenerateWorkspaceOutputs}
             onClose={() => setWorkspaceSettingsOpen(false)}
+            listPageTemplates={listWorkspacePageTemplates}
           />
         )}
         {/* Main area. Both panes always render; in single-pane the sidebar
@@ -5841,6 +5985,7 @@ export function DocBlocksShell({
                               // export -- in the workspace's default theme.
                               defaultThemeId={workspaceDefaultThemeId}
                               defaultThemeLabel="Workspace default"
+                              {...editorPageTemplateProps(pageTemplates)}
                               writeCanvasSettings={editorWriteCanvasSettings}
                               height="100%"
                               placeholder={editorPlaceholder}

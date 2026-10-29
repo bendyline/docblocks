@@ -1,11 +1,13 @@
 import { expect } from 'chai';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import type { DocumentSessionConflict } from '@bendyline/docblocks/document';
+import { DocumentSession, type DocumentSessionConflict } from '@bendyline/docblocks/document';
 import {
   DocumentConflictBanner,
+  DocumentConflictNotice,
   type DocumentConflictBannerProps,
 } from '../src/DocBlocksShell/DocumentConflictBanner.js';
+import { dismissConflict, isConflictDismissed } from '../src/DocBlocksShell/conflict-dismissal.js';
 import { describeAge, describeConflictVersions } from '../src/DocBlocksShell/conflict-summary.js';
 
 const NOW = Date.parse('2026-10-25T12:00:00Z');
@@ -74,6 +76,21 @@ describe('Document conflict banner', () => {
     expect(dismissals).to.equal(1);
   });
 
+  it('says saving is paused before the user can dismiss it', async () => {
+    await render();
+    expect(container.querySelector('[role="alert"]')?.textContent).to.include('saving is paused');
+  });
+
+  it('leaves a notice after dismissal that leads back to the banner', async () => {
+    let reviews = 0;
+    await act(async () =>
+      root.render(createElement(DocumentConflictNotice, { onReview: () => reviews++ })),
+    );
+    expect(container.querySelector('[role="status"]')?.textContent).to.include('Saving paused');
+    await click('Review');
+    expect(reviews).to.equal(1);
+  });
+
   it('omits a save time that belongs to a different file version', async () => {
     props.readSavedFile = async () => ({
       content: 'changed again',
@@ -93,6 +110,41 @@ describe('Document conflict banner', () => {
     expect(container.querySelector('.db-document-conflict-details')?.textContent).to.include(
       'Your version: 318 characters, edited 3 minutes ago.',
     );
+  });
+});
+
+describe('conflict dismissal', () => {
+  async function conflictedSession() {
+    const session = new DocumentSession({ autoSaveDelayMs: 5 });
+    await session.transitionTo({ key: 'ws:a.md', commit: async () => undefined }, 'v0');
+    const scope = () => {
+      const snapshot = session.getSnapshot();
+      return { targetKey: snapshot.targetKey!, generation: snapshot.generation };
+    };
+    session.edit('v0 + my edit', scope());
+    session.observeExternal({ targetKey: 'ws:a.md', content: 'outside v1', version: 1 });
+    return { session, scope };
+  }
+
+  it('stays dismissed while the user keeps typing', async () => {
+    const { session, scope } = await conflictedSession();
+    const dismissed = dismissConflict(session.getSnapshot().conflict!);
+    session.edit('v0 + my edit, and more', scope());
+    expect(isConflictDismissed(session.getSnapshot().conflict!, dismissed)).to.equal(true);
+  });
+
+  it('returns for a newer outside change to the same file', async () => {
+    const { session, scope } = await conflictedSession();
+    const dismissed = dismissConflict(session.getSnapshot().conflict!);
+    session.observeExternal({ targetKey: 'ws:a.md', content: 'outside v2', version: 2 });
+    session.edit('v0 + my edit, typed after', scope());
+    expect(session.getSnapshot().status).to.equal('conflict');
+    expect(isConflictDismissed(session.getSnapshot().conflict!, dismissed)).to.equal(false);
+  });
+
+  it('is never dismissed without a dismissal', async () => {
+    const { session } = await conflictedSession();
+    expect(isConflictDismissed(session.getSnapshot().conflict!, null)).to.equal(false);
   });
 });
 

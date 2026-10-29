@@ -4,6 +4,7 @@ import {
   SQUISQ_RUNTIME_DIRECTORY_NAME,
   getFileSystemProviderV2,
   findWikiArticle,
+  isDiscoverableWorkspaceEntry,
   parseWorkspacePath,
   type FileSystemProvider,
 } from '@bendyline/docblocks/filesystem';
@@ -17,22 +18,30 @@ import {
 } from '@bendyline/docblocks/workspace-settings';
 import type { ContentContainer } from '@bendyline/squisq/storage';
 import type { MarkdownDocument } from '@bendyline/squisq/markdown';
+import type { DiagramRasterizer } from '@bendyline/squisq-formats/diagrams';
+import { resolveShellEditorLinkTarget } from './editor-link-navigation.js';
 import { providerEntryExists, writeProviderText } from './provider-io.js';
 import {
   chooseOutsideInMarkdownPath,
   importOutsideInDocument,
   isOutsideInMarkdownEditingEnabled,
   isOutsideInDataFormat,
+  loadPageTemplateEngine,
+  loadPlainHtmlPreparation,
+  loadPlainHtmlRenderer,
   readFrontmatterTheme,
   readOutsideInHtmlOutput,
   readOutsideInMetadata,
+  readOutsideInOutputTemplate,
   renderOutsideInDocument,
   resolveOutsideInLayout,
   withOutsideInHtmlOutput,
   withOutsideInMarkdownEditing,
   withOutsideInMetadata,
+  type OutsideInFormatId,
   type OutsideInLayout,
   type OutsideInHtmlOutput,
+  type PlainHtmlIcons,
 } from './outside-in-contract.js';
 
 export type { OutsideInLayout } from './outside-in-contract.js';
@@ -84,6 +93,70 @@ export interface OutsideInRenderOptions {
    * exporter lets an explicit theme beat the document's frontmatter.
    */
   defaultThemeId?: () => string | undefined;
+  /**
+   * The workspace default page template for a rendered format, as a
+   * workspace-relative path, read at render time. Applied only to documents
+   * whose frontmatter names no template (`squisq-output-template`) of their
+   * own, and never to interactive Web pages.
+   */
+  defaultOutputTemplate?: (format: OutsideInFormatId) => string | undefined;
+  /**
+   * Draws diagrams and charts as pictures for rendered files that cannot draw
+   * them: static and templated Web pages, Word, PDF, and PowerPoint. Defaults
+   * to Squisq's browser renderer; null leaves them as their source.
+   */
+  renderDiagram?: DiagramRasterizer | null;
+}
+
+/**
+ * Pictures already drawn, by diagram. Every save renders the whole file, so
+ * without this each save would redraw every diagram, not just the one edited.
+ */
+const drawnPictures = new Map<string, ReturnType<DiagramRasterizer>>();
+const DRAWN_PICTURE_LIMIT = 64;
+
+/** Squisq's browser renderer, loaded only once a document has a diagram. */
+const drawWithSquisq: DiagramRasterizer = (diagram) => {
+  const key = `${diagram.kind}\n${diagram.markdown}\n${diagram.source}`;
+  let picture = drawnPictures.get(key);
+  if (picture) {
+    drawnPictures.delete(key);
+  } else {
+    picture = import('@bendyline/squisq-react/diagram-pictures').then(
+      ({ createDiagramPictureRenderer }) => createDiagramPictureRenderer()(diagram),
+    );
+    // A failure is retried on the next save rather than remembered.
+    picture.catch(() => drawnPictures.delete(key));
+  }
+  drawnPictures.set(key, picture);
+  if (drawnPictures.size > DRAWN_PICTURE_LIMIT) {
+    drawnPictures.delete(drawnPictures.keys().next().value!);
+  }
+  return picture;
+};
+
+/** The render's diagram renderer: the host's, else Squisq's browser one. */
+function diagramRendererFor(
+  render: OutsideInRenderOptions | undefined,
+): DiagramRasterizer | undefined {
+  if (render?.renderDiagram !== undefined) return render.renderDiagram ?? undefined;
+  return drawWithSquisq;
+}
+
+/**
+ * A page template that is missing or unusable. Raised while preparing a
+ * render, before anything is written, so the visible page keeps its last good
+ * output and the edit stays a retryable unsaved revision.
+ */
+export class OutsideInTemplateError extends Error {
+  constructor(
+    /** The template as configured: an authored frontmatter value or workspace path. */
+    readonly template: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'OutsideInTemplateError';
+  }
 }
 
 async function resolveFallbackRenderTheme(
@@ -337,6 +410,18 @@ export async function loadEditableShellDocument(
         managedOutput: 'catalog-html',
       };
     }
+    // A page template is edited as HTML source. Importing it would flatten
+    // its chrome into Markdown and regenerate it without its slots.
+    const source = new TextDecoder().decode(rendered);
+    if ((await loadPageTemplateEngine())?.isHtmlPageTemplate(source)) {
+      return {
+        displayPath: selectedPath,
+        sourcePath: selectedPath,
+        content: source,
+        outsideIn: null,
+        outsideInEditingEnabled: true,
+      };
+    }
   }
   const imported = await importOutsideInDocument({
     data: rendered,
@@ -413,13 +498,14 @@ async function writeRuntimeIfNeeded(
   if (current !== PLAYER_BUNDLE) await writeProviderText(provider, runtimePath, PLAYER_BUNDLE);
 }
 
-async function renderPlainOutsideInHtml(
+/**
+ * Companion files — media, attachments, data — addressed from the rendered
+ * page beside the companion folder.
+ */
+async function companionImageMap(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
-  markdown: MarkdownDocument,
-  themeId: string | undefined,
-): Promise<Uint8Array> {
-  const { markdownDocToPlainHtml } = await import('@bendyline/squisq-formats/html');
+): Promise<Map<string, string> | undefined> {
   const container = new FileSystemContentContainer(provider, layout.companionDirectory);
   const images = new Map<string, string>();
   for (const entry of await container.listFiles()) {
@@ -427,13 +513,171 @@ async function renderPlainOutsideInHtml(
     images.set(entry.path, outputPath);
     images.set(`./${entry.path}`, outputPath);
   }
+  return images.size > 0 ? images : undefined;
+}
+
+interface StaticPageContent {
+  markdown: MarkdownDocument;
+  /** Companion files, then pictures of the document's diagrams and charts. */
+  images: Map<string, string> | undefined;
+  /** Companion files, so links to attachments and data resolve from the page. */
+  links: Map<string, string> | undefined;
+  /** Inline icons as SVG outlines, so the page needs no icon font. */
+  icons?: PlainHtmlIcons;
+}
+
+/**
+ * What a script-free page shows: the document with its data tables filled
+ * from the companion's sidecars and its diagrams and charts drawn as
+ * pictures, since nothing on the page can draw them.
+ */
+async function prepareStaticPage(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  markdown: MarkdownDocument,
+  render: OutsideInRenderOptions | undefined,
+): Promise<StaticPageContent> {
+  const files = await companionImageMap(provider, layout);
+  const prepare = await loadPlainHtmlPreparation();
+  const prepared = await prepare(markdown, {
+    renderDiagram: diagramRendererFor(render),
+    container: createOutsideInContentContainer(provider, layout),
+  });
+  return {
+    markdown: prepared.markdownDoc,
+    images: prepared.images.size > 0 ? new Map([...(files ?? []), ...prepared.images]) : files,
+    links: files,
+    icons: prepared.icons,
+  };
+}
+
+async function renderPlainOutsideInHtml(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  markdown: MarkdownDocument,
+  themeId: string | undefined,
+  render: OutsideInRenderOptions | undefined,
+): Promise<Uint8Array> {
+  const markdownDocToPlainHtml = await loadPlainHtmlRenderer();
+  const page = await prepareStaticPage(provider, layout, markdown, render);
   return new TextEncoder().encode(
-    markdownDocToPlainHtml(markdown, {
+    markdownDocToPlainHtml(page.markdown, {
       title: layout.stem,
-      images: images.size > 0 ? images : undefined,
+      images: page.images,
+      links: page.links,
+      icons: page.icons,
       ...(themeId ? { themeId } : {}),
     }),
   );
+}
+
+interface OutputTemplateChoice {
+  /** As configured, for messages. */
+  configured: string;
+  /** Resolved workspace path of the template file. */
+  path: string;
+}
+
+/**
+ * The page template a render must use: the companion's own
+ * `squisq-output-template` (relative to the companion Markdown, or `/`-rooted
+ * at the workspace), else the workspace default, else none. `none` opts out
+ * of the default. Interactive pages render through the player and take no
+ * template; naming one for them is an error rather than a silent no-op.
+ */
+async function resolveOutputTemplate(
+  layout: OutsideInLayout,
+  markdown: string,
+  htmlOutput: OutsideInHtmlOutput | null,
+  render: OutsideInRenderOptions | undefined,
+): Promise<OutputTemplateChoice | null> {
+  const authored = await readOutsideInOutputTemplate(markdown);
+  if (authored === 'none') return null;
+  if (authored === null) {
+    if (layout.format !== 'html' || htmlOutput === 'interactive') return null;
+    const fallback = render?.defaultOutputTemplate?.(layout.format);
+    return fallback ? { configured: fallback, path: parseWorkspacePath(fallback) } : null;
+  }
+  if (layout.format !== 'html') {
+    throw new OutsideInTemplateError(authored, 'Page templates are supported for Web pages only.');
+  }
+  if (htmlOutput === 'interactive') {
+    throw new OutsideInTemplateError(
+      authored,
+      'Interactive Web pages cannot use a page template. Set squisq-html-output to static, or remove squisq-output-template.',
+    );
+  }
+  const target = resolveShellEditorLinkTarget(authored, layout.markdownPath);
+  if (target?.kind !== 'workspace' || !/\.html?$/i.test(target.path)) {
+    throw new OutsideInTemplateError(
+      authored,
+      `The page template "${authored}" must be an .html file in this workspace.`,
+    );
+  }
+  return { configured: authored, path: target.path };
+}
+
+function frontmatterText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return undefined;
+}
+
+async function renderTemplatedOutsideInHtml(
+  provider: FileSystemProvider,
+  layout: OutsideInLayout,
+  markdown: MarkdownDocument,
+  template: OutputTemplateChoice,
+  themeId: string | undefined,
+  render: OutsideInRenderOptions | undefined,
+): Promise<Uint8Array> {
+  const fail: (reason: string) => never = (reason) => {
+    throw new OutsideInTemplateError(
+      template.configured,
+      `The page template "${template.path}" ${reason}`,
+    );
+  };
+  const outputPath = parseWorkspacePath(layout.targetPath);
+  if (template.path === outputPath) fail('is this page itself; a page cannot be its own template.');
+  const engine = await loadPageTemplateEngine();
+  if (!engine)
+    fail('cannot be applied: this version of DocBlocks does not support page templates.');
+  let source: string | null;
+  try {
+    source = await readText(provider, withLegacySlash(template.path, layout.targetPath));
+  } catch (error: unknown) {
+    if (error instanceof FsError && error.code === 'not-found') source = null;
+    else if (error instanceof TypeError) fail('is not UTF-8 text.');
+    else throw error;
+  }
+  if (source === null) fail('was not found.');
+
+  const { inferDocumentTitle } = await import('@bendyline/squisq/markdown');
+  const title = inferDocumentTitle(markdown) ?? layout.stem;
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(markdown.frontmatter ?? {})) {
+    const text = frontmatterText(value);
+    if (text !== undefined) values[key] = text;
+  }
+  const content = await prepareStaticPage(provider, layout, markdown, render);
+  const parts = engine.markdownDocToPlainHtmlParts(content.markdown, {
+    title,
+    images: content.images,
+    links: content.links,
+    icons: content.icons,
+    ...(themeId ? { themeId } : {}),
+  });
+  let page: string;
+  try {
+    page = engine.applyHtmlPageTemplate(
+      source,
+      { bodyHtml: parts.bodyHtml, headHtml: parts.featureHeadHtml, title, values },
+      { templatePath: template.path, outputPath },
+    );
+  } catch (error: unknown) {
+    fail(`can't be used. ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return new TextEncoder().encode(page);
 }
 
 interface PreparedOutsideInRender {
@@ -459,6 +703,20 @@ async function prepareOutsideInRender(
         : null;
     });
   }
+  const template = await resolveOutputTemplate(layout, markdown, htmlOutput, render);
+  if (template) {
+    return {
+      bytes: await renderTemplatedOutsideInHtml(
+        provider,
+        layout,
+        renderedSource as MarkdownDocument,
+        template,
+        themeId,
+        render,
+      ),
+      runtimePath: null,
+    };
+  }
   if (htmlOutput === 'static') {
     return {
       bytes: await renderPlainOutsideInHtml(
@@ -466,6 +724,7 @@ async function prepareOutsideInRender(
         layout,
         renderedSource as MarkdownDocument,
         themeId,
+        render,
       ),
       runtimePath: null,
     };
@@ -482,6 +741,7 @@ async function prepareOutsideInRender(
     },
     {
       ...(themeId ? { themeId } : {}),
+      renderDiagram: diagramRendererFor(render),
       ...(runtimePath
         ? {
             html: {
@@ -496,6 +756,140 @@ async function prepareOutsideInRender(
     },
   );
   return { bytes: rendered.bytes, runtimePath };
+}
+
+/** Outcome of regenerating the pages generated through one page template. */
+export interface TemplatePagesResult {
+  /** Rendered pages whose output changed and was rewritten. */
+  readonly updated: string[];
+  readonly failed: Array<{ readonly path: string; readonly message: string }>;
+}
+
+const TEMPLATE_PAGE_WALK_LIMITS = { maxDepth: 32, maxDirectories: 20_000 } as const;
+
+interface WorkspaceHtmlFile {
+  /** Canonical workspace path. */
+  path: string;
+  /** A `<stem>_files` companion sits beside it: a generated outside-in page. */
+  hasCompanion: boolean;
+}
+
+/** Every discoverable `.html` file in the workspace, sorted by path. */
+async function listWorkspaceHtmlFiles(provider: FileSystemProvider): Promise<WorkspaceHtmlFile[]> {
+  const providerV2 = getFileSystemProviderV2(provider);
+  const pages: WorkspaceHtmlFile[] = [];
+  const pending: Array<{ path: string; depth: number }> = [{ path: '', depth: 0 }];
+  let directories = 0;
+  while (pending.length > 0 && directories < TEMPLATE_PAGE_WALK_LIMITS.maxDirectories) {
+    const { path, depth } = pending.pop()!;
+    directories++;
+    let entries: ReadonlyArray<{ kind: 'file' | 'directory'; name: string; path: string }>;
+    try {
+      entries = providerV2
+        ? await providerV2.readDirectory(parseWorkspacePath(path))
+        : await provider.readDirectory(path ? `/${path}` : '/');
+    } catch (error: unknown) {
+      if (error instanceof FsError && error.code === 'not-found') continue;
+      throw error;
+    }
+    const directoryNames = new Set(
+      entries.filter((entry) => entry.kind === 'directory').map((entry) => entry.name),
+    );
+    for (const entry of entries) {
+      if (!isDiscoverableWorkspaceEntry(entry.name, entry.kind)) continue;
+      const entryPath = parseWorkspacePath(entry.path);
+      if (entry.kind === 'directory') {
+        if (depth < TEMPLATE_PAGE_WALK_LIMITS.maxDepth) {
+          pending.push({ path: entryPath, depth: depth + 1 });
+        }
+      } else if (/\.html?$/i.test(entry.name)) {
+        const companionName = resolveOutsideInLayout(entryPath)?.companionName;
+        pages.push({
+          path: entryPath,
+          hasCompanion: companionName !== undefined && directoryNames.has(companionName),
+        });
+      }
+    }
+  }
+  return pages.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+const PAGE_TEMPLATE_SCAN_LIMITS = { maxFiles: 500, maxBytes: 1024 * 1024 } as const;
+
+/**
+ * The page templates in a workspace, as canonical paths: HTML files with a
+ * `<slot>` outside any `<template>`. Generated outside-in pages are skipped
+ * unread, so a blog of many posts reads only its handful of other HTML files.
+ */
+export async function findPageTemplates(provider: FileSystemProvider): Promise<string[]> {
+  const engine = await loadPageTemplateEngine();
+  if (!engine) return [];
+  const templates: string[] = [];
+  let scanned = 0;
+  for (const file of await listWorkspaceHtmlFiles(provider)) {
+    if (file.hasCompanion) continue;
+    if (++scanned > PAGE_TEMPLATE_SCAN_LIMITS.maxFiles) break;
+    const bytes = await readBytes(
+      provider,
+      getFileSystemProviderV2(provider) ? file.path : `/${file.path}`,
+    );
+    if (!bytes || bytes.byteLength > PAGE_TEMPLATE_SCAN_LIMITS.maxBytes) continue;
+    if (engine.isHtmlPageTemplate(new TextDecoder().decode(bytes))) templates.push(file.path);
+  }
+  return templates;
+}
+
+function sameBytes(a: ArrayBuffer | Uint8Array, b: Uint8Array): boolean {
+  const left = a instanceof Uint8Array ? a : new Uint8Array(a);
+  if (left.byteLength !== b.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index++) if (left[index] !== b[index]) return false;
+  return true;
+}
+
+/**
+ * Regenerate every editable Web page generated through the page template at
+ * `templatePath`, so a change to shared chrome (navigation, footer) reaches
+ * pages nobody is editing. Companion Markdown is never touched, and a page is
+ * rewritten only when its output changes.
+ */
+export async function rerenderPagesUsingTemplate(
+  provider: FileSystemProvider,
+  templatePath: string,
+  render?: OutsideInRenderOptions,
+): Promise<TemplatePagesResult> {
+  const template = parseWorkspacePath(templatePath);
+  const result: TemplatePagesResult = { updated: [], failed: [] };
+  for (const { path: page, hasCompanion } of await listWorkspaceHtmlFiles(provider)) {
+    if (!hasCompanion || page === template) continue;
+    const resolved = resolveOutsideInLayout(page);
+    if (!resolved) continue;
+    const markdownPath = chooseOutsideInMarkdownPath(
+      resolved,
+      await listCompanionFiles(provider, resolved),
+    );
+    if (!markdownPath) continue;
+    const layout: OutsideInLayout = { ...resolved, markdownPath };
+    try {
+      const content = await readText(provider, markdownPath);
+      if (content === null || !(await isOutsideInMarkdownEditingEnabled(content))) continue;
+      const htmlOutput = await readOutsideInHtmlOutput(content);
+      const choice = await resolveOutputTemplate(layout, content, htmlOutput, render).catch(
+        () => null,
+      );
+      if (choice?.path !== template) continue;
+      const rendered = await prepareOutsideInRender(provider, layout, content, render);
+      const current = await readBytes(provider, layout.targetPath);
+      if (current && sameBytes(current, rendered.bytes)) continue;
+      await writeBytes(provider, layout.targetPath, rendered.bytes);
+      result.updated.push(layout.targetPath);
+    } catch (error: unknown) {
+      result.failed.push({
+        path: layout.targetPath,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return result;
 }
 
 /**

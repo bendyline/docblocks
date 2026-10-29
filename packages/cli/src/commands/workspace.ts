@@ -21,7 +21,7 @@ import {
   type WorkspaceOutputsRenderer,
   type WorkspaceOutputsResult,
 } from '@bendyline/docblocks/workspace-settings';
-import { htmlToMarkdownDocSync, markdownDocToPlainHtml } from '@bendyline/squisq-formats/html';
+import * as squisqHtml from '@bendyline/squisq-formats/html';
 import { getAvailableThemeIds } from '../internal/theme.js';
 import { createNodeWorkspaceIO } from '../internal/workspace-io.js';
 import {
@@ -112,11 +112,17 @@ export async function runWorkspaceRefresh(
   };
 }
 
+// Squisq releases before page templates have no detector.
+const { isHtmlPageTemplate } = squisqHtml as Partial<{
+  isHtmlPageTemplate: (html: string) => boolean;
+}>;
+
 /** Squisq's script-free, themed plain HTML page renderer and HTML importer. */
 const renderer: WorkspaceOutputsRenderer = {
   renderCatalogHtml: (document, { title, themeId }) =>
-    markdownDocToPlainHtml(document, { title, themeId }),
-  importHtml: (html) => htmlToMarkdownDocSync(html),
+    squisqHtml.markdownDocToPlainHtml(document, { title, themeId }),
+  importHtml: (html) => squisqHtml.htmlToMarkdownDocSync(html),
+  ...(typeof isHtmlPageTemplate === 'function' ? { isPageTemplate: isHtmlPageTemplate } : {}),
 };
 
 /** One human-readable status line per output, as printed by the command. */

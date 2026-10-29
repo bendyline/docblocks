@@ -58,7 +58,7 @@ export function DocumentConflictBanner({
         <span role="alert">
           {conflict.recoveredDraft
             ? 'A recovery draft from a previous session differs from the saved file. The saved file may be newer. Choose which version to use.'
-            : 'This document changed outside DocBlocks. Your unsaved version is still intact.'}
+            : 'This document changed outside DocBlocks. Your unsaved version is still intact, but saving is paused until you choose a version.'}
         </span>
         <span className="db-document-conflict-details">
           {describeConflictVersions(conflict, savedAt, now)}
@@ -72,6 +72,25 @@ export function DocumentConflictBanner({
           Dismiss
         </button>
       </div>
+    </div>
+  );
+}
+
+export interface DocumentConflictNoticeProps {
+  onReview: () => void;
+}
+
+/**
+ * What stays on screen after the banner is dismissed. The conflict still
+ * blocks every save, so the window must keep saying so until it is resolved.
+ */
+export function DocumentConflictNotice({ onReview }: DocumentConflictNoticeProps) {
+  return (
+    <div className="db-document-conflict-notice" role="status">
+      <span>Saving paused: this document changed outside DocBlocks.</span>
+      <button type="button" onClick={onReview}>
+        Review
+      </button>
     </div>
   );
 }

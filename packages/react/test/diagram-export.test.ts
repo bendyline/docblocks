@@ -56,7 +56,7 @@ const SVG_ATTACHMENT_SOURCE = ['# Logo', '', '![Company logo](logo.svg)', '', 'A
 );
 
 async function exportAs(
-  format: 'docx' | 'pdf' | 'epub' | 'pptx',
+  format: 'docx' | 'pdf' | 'epub' | 'pptx' | 'html',
   diagramRenderer: DiagramRasterizer,
   source = SOURCE,
   mediaContainer: ContentContainer | null = null,
@@ -223,5 +223,32 @@ describe('SVG pictures in exports', () => {
       SVG_ISLAND_SOURCE,
     );
     expect(bytes.byteLength).to.be.greaterThan(0);
+  });
+
+  it('a plain Web page gets pictures of diagrams and charts, a data table, and SVG icons', async () => {
+    const { render, seen } = recordingRenderer();
+    const container = new MemoryContentContainer();
+    await container.writeFile(
+      'data/sales.csv',
+      Uint8Array.from('Region,Revenue\nNorth,120\nSouth,90\n', (c) => c.charCodeAt(0)),
+    );
+    const source = [
+      SOURCE,
+      '## Revenue {[barChart src=data/sales.csv]}',
+      '',
+      '## Ledger {[dataTable src=data/sales.csv]}',
+      '',
+      '## Reviews',
+      '',
+      'Rated {[fa-solid:star]} by readers {[statHighlight]}',
+      '',
+    ].join('\n');
+    const html = new TextDecoder().decode(await exportAs('html', render, source, container));
+    expect(seen.map((diagram) => diagram.kind)).to.deep.equal(['mermaid', 'container', 'chart']);
+    expect(html.match(/<img src="data:image\/png;base64,/g)).to.have.length(3);
+    expect(html).not.to.contain('flowchart LR');
+    expect(html).to.contain('<td>North</td><td>120</td>');
+    expect(html).to.contain('<svg class="squisq-icon"');
+    expect(html).not.to.contain('{[');
   });
 });

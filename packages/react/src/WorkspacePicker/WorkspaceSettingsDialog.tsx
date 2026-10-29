@@ -49,6 +49,8 @@ export interface WorkspaceSettingsDialogProps {
   onSave: (patch: WorkspaceSettingsPatch) => Promise<void>;
   onRegenerate: () => void;
   onClose: () => void;
+  /** The workspace's page templates, for the default page template picker. */
+  listPageTemplates?: () => Promise<readonly string[]>;
 }
 
 const VERSIONING_LABELS: Record<VersioningPreference, string> = {
@@ -99,6 +101,7 @@ export function WorkspaceSettingsDialog({
   onSave,
   onRegenerate,
   onClose,
+  listPageTemplates,
 }: WorkspaceSettingsDialogProps) {
   const writable = isWorkspaceSettingsWritable(settings);
   const base = settings.settings;
@@ -150,6 +153,7 @@ export function WorkspaceSettingsDialog({
     <Dialog
       title="Workspace settings"
       size="wide"
+      className="db-workspace-settings-dialog"
       onClose={onClose}
       closeOnBackdrop={!changed}
       footer={
@@ -197,6 +201,7 @@ export function WorkspaceSettingsDialog({
         catalogStatus={catalogStatusView(outputsStatus)}
         onRegenerate={writable && !changed ? onRegenerate : undefined}
         regenerating={outputsStatus.state === 'running'}
+        listPageTemplates={listPageTemplates}
       />
       {(saveError || (!validation.ok && changed)) && (
         <p className="db-settings-status db-settings-status--warning" role="alert">

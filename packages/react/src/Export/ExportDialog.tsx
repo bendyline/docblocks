@@ -2,7 +2,7 @@
  * ExportDialog — modal for choosing export format and options.
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import type {
   ExportFormat,
   ExportOptions,
@@ -178,6 +178,13 @@ export function ExportDialog({
   const [includeLinkedDocs, setIncludeLinkedDocs] = useState<boolean>(initial.includeLinkedDocs);
   const [entryAsIndex, setEntryAsIndex] = useState<boolean>(initial.entryAsIndex);
   const [transforms, setTransforms] = useState<ExportSummaryOption[]>([]);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+
+  // The error sits at the end of a body that scrolls on short windows, so a
+  // refused export would otherwise explain itself out of sight.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [error]);
 
   const themes = useMemo(() => exportThemeChoices(documentThemes), [documentThemes]);
 
@@ -276,6 +283,18 @@ export function ExportDialog({
       footer={
         <>
           {openAfterSave && <OpenAfterSaveCheckbox {...openAfterSave} disabled={exporting} />}
+          {/* In the footer, not after the error: the footer never scrolls
+              away, and repeating the primary action only refuses again. */}
+          {error && errorAction && (
+            <button
+              type="button"
+              className="db-export-btn db-export-btn--secondary"
+              onClick={errorAction.onClick}
+              disabled={exporting}
+            >
+              {errorAction.label}
+            </button>
+          )}
           <button
             type="button"
             className="db-export-btn db-export-btn--secondary"
@@ -508,21 +527,9 @@ export function ExportDialog({
       </details>
 
       {error && (
-        <p className="db-export-error" role="alert">
+        <p ref={errorRef} className="db-export-error" role="alert">
           {error}
         </p>
-      )}
-      {error && errorAction && (
-        <div className="db-export-error-action">
-          <button
-            type="button"
-            className="db-export-btn db-export-btn--secondary"
-            onClick={errorAction.onClick}
-            disabled={exporting}
-          >
-            {errorAction.label}
-          </button>
-        </div>
       )}
     </Dialog>
   );

@@ -38,7 +38,10 @@ own have no folder, so they have no workspace settings.
 ```json
 {
   "version": 1,
-  "documents": { "defaultTheme": "warm-earth" },
+  "documents": {
+    "defaultTheme": "warm-earth",
+    "outputTemplates": { "html": "_templates/post.html" }
+  },
   "versionHistory": { "enabled": true, "keep": 50 },
   "catalog": {
     "title": "Articles",
@@ -53,20 +56,21 @@ own have no folder, so they have no workspace settings.
 Every section and field except `version` is optional. An absent field means
 "inherit" (version history) or "off" (catalog outputs).
 
-| Field                    | Meaning                                                                                                                                                                                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `documents.defaultTheme` | Theme for documents whose frontmatter names none (`squisq-theme`, or the legacy `themeId` / `theme`).                                                                                                                                                                              |
-| `versionHistory.enabled` | `true` / `false` overrides the app-wide version-history preference for this folder.                                                                                                                                                                                                |
-| `versionHistory.keep`    | Revisions kept per document (1–1000; default 50).                                                                                                                                                                                                                                  |
-| `catalog.title`          | Catalog heading (default `Documents`).                                                                                                                                                                                                                                             |
-| `catalog.sort`           | `title` (default), `date` (frontmatter `date`, newest first), or `path`.                                                                                                                                                                                                           |
-| `catalog.exclude`        | Folder or file paths left out of the catalog. Dot-folders, `node_modules` (also `bower_components` and `__pycache__`), `_files` companions, and `_squisq` folders are always left out, at any depth. Documents are `.md`, `.markdown`, and `.mdown` files plus outside-in exports. |
-| `catalog.html.enabled`   | Keep a catalog page up to date.                                                                                                                                                                                                                                                    |
-| `catalog.html.path`      | Catalog page path (default `index.html`); must end in `.html` or `.htm`.                                                                                                                                                                                                           |
-| `catalog.html.theme`     | Theme for the catalog page only (default: `documents.defaultTheme`).                                                                                                                                                                                                               |
-| `catalog.json.enabled`   | Keep catalog data up to date.                                                                                                                                                                                                                                                      |
-| `catalog.json.path`      | Catalog data path (default `catalog.json`); must end in `.json`.                                                                                                                                                                                                                   |
-| `catalog.json.content`   | `metadata` (default) or `markdown` to include each document's Markdown source.                                                                                                                                                                                                     |
+| Field                            | Meaning                                                                                                                                                                                                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `documents.defaultTheme`         | Theme for documents whose frontmatter names none (`squisq-theme`, or the legacy `themeId` / `theme`).                                                                                                                                                                              |
+| `documents.outputTemplates.html` | [Page template](outside-in.md#page-templates) for static Web pages whose companion names none (`squisq-output-template`); a workspace-relative `.html` or `.htm` path.                                                                                                             |
+| `versionHistory.enabled`         | `true` / `false` overrides the app-wide version-history preference for this folder.                                                                                                                                                                                                |
+| `versionHistory.keep`            | Revisions kept per document (1–1000; default 50).                                                                                                                                                                                                                                  |
+| `catalog.title`                  | Catalog heading (default `Documents`).                                                                                                                                                                                                                                             |
+| `catalog.sort`                   | `title` (default), `date` (frontmatter `date`, newest first), or `path`.                                                                                                                                                                                                           |
+| `catalog.exclude`                | Folder or file paths left out of the catalog. Dot-folders, `node_modules` (also `bower_components` and `__pycache__`), `_files` companions, and `_squisq` folders are always left out, at any depth. Documents are `.md`, `.markdown`, and `.mdown` files plus outside-in exports. |
+| `catalog.html.enabled`           | Keep a catalog page up to date.                                                                                                                                                                                                                                                    |
+| `catalog.html.path`              | Catalog page path (default `index.html`); must end in `.html` or `.htm`.                                                                                                                                                                                                           |
+| `catalog.html.theme`             | Theme for the catalog page only (default: `documents.defaultTheme`).                                                                                                                                                                                                               |
+| `catalog.json.enabled`           | Keep catalog data up to date.                                                                                                                                                                                                                                                      |
+| `catalog.json.path`              | Catalog data path (default `catalog.json`); must end in `.json`.                                                                                                                                                                                                                   |
+| `catalog.json.content`           | `metadata` (default) or `markdown` to include each document's Markdown source.                                                                                                                                                                                                     |
 
 The file is validated exactly. An unknown field makes it **invalid**, and a
 `version` newer than this DocBlocks understands makes it **unsupported**. In
@@ -81,12 +85,13 @@ the patch is applied to the newer file instead of overwriting it.
 
 ## Precedence
 
-| Setting                | Order                                                                                   |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| Document theme         | document frontmatter → `documents.defaultTheme` → standard                              |
-| Export dialog theme    | the theme the editor previews: document frontmatter → workspace default → standard      |
-| Version history on/off | `versionHistory.enabled` → an older browser-local per-workspace choice → app preference |
-| Revisions kept         | `versionHistory.keep` → host default → 50                                               |
+| Setting                | Order                                                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Document theme         | document frontmatter → `documents.defaultTheme` → standard                                                      |
+| Web page template      | companion `squisq-output-template` (`none` opts out) → `documents.outputTemplates.html` → DocBlocks' plain page |
+| Export dialog theme    | the theme the editor previews: document frontmatter → workspace default → standard                              |
+| Version history on/off | `versionHistory.enabled` → an older browser-local per-workspace choice → app preference                         |
+| Revisions kept         | `versionHistory.keep` → host default → 50                                                                       |
 
 The workspace theme is a fallback: a document's own theme always wins.
 Rendered outside-in pages (HTML, DOCX, PDF, …) pick up a changed default the
@@ -109,7 +114,8 @@ formats without a companion are listed by name.
 Each entry carries the document's path, its companion `source` when there is
 one, its format, title (frontmatter `title`, else its shallowest heading, else
 the file name), frontmatter `description` / `author` / `date` / `tags` /
-theme, a heading outline, a word count, and a short excerpt:
+theme, first-published and last-modified dates, a heading outline, a word
+count, a short excerpt, and a content hash:
 
 ```json
 {
@@ -123,13 +129,31 @@ theme, a heading outline, a word count, and a short excerpt:
       "format": "html",
       "title": "The Battle of Britain",
       "date": "2026-09-15",
+      "firstPublishedDate": "2026-09-15T17:42:05Z",
+      "lastModifiedDate": "2026-10-02T08:10:51Z",
       "outline": [{ "level": 1, "title": "The Battle of Britain" }],
       "wordCount": 1840,
-      "excerpt": "In the summer of 1940…"
+      "excerpt": "In the summer of 1940…",
+      "contentHash": "3f0c…"
     }
   ]
 }
 ```
+
+`firstPublishedDate` is when the document first appeared in the catalog JSON;
+`lastModifiedDate` is when the catalog last picked up a change to its content.
+Both are UTC ISO 8601 timestamps. They are kept from one catalog JSON to the
+next by path. A document gets the current time when it is new to the catalog
+(including after a rename, or after it was removed and added back) and a new
+`lastModifiedDate` when its `contentHash` changes. `contentHash` is the
+SHA-256 of the document's source (its Markdown companion for outside-in
+documents) with line endings normalized. Re-rendering an outside-in page
+without editing its Markdown, or checking it out with CRLF line endings, does
+not count as a change. A document listed by name only has no
+hash and keeps its first dates. Only the JSON carries these fields. Deleting
+the catalog JSON or moving its path starts the history over. To backfill
+history, edit the dates in the file: DocBlocks keeps any valid ISO 8601 date
+or timestamp it finds there.
 
 The catalog page is the same list rendered as a themed, script-free HTML page,
 grouped by folder, with links relative to the page itself. Outside-in
@@ -144,9 +168,12 @@ safe in shared and versioned folders:
   catalog marker it writes (the leading `"generator"` key, or an HTML comment
   right after the doctype). A hand-written `index.html` at the configured path
   is left alone, and the settings dialog explains why the catalog is blocked.
-- **Deterministic.** There are no timestamps or file-system dates, and ordering
-  never depends on locale, so identical documents produce byte-identical
-  output on every surface and machine. A file is written only when its bytes
+- **Deterministic.** There are no file-system dates, a document's catalog
+  dates come from the previous catalog JSON and change only with its content,
+  and
+  ordering never depends on locale, so identical documents (and an identical
+  previous catalog) produce byte-identical output on every surface and
+  machine. A file is written only when its bytes
   change; the page also records a digest of its inputs, so a different
   DocBlocks or Squisq version does not rewrite it for styling alone.
 - **Bounded.** A workspace with more than 5,000 documents, 20,000 folders,

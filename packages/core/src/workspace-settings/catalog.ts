@@ -4,8 +4,11 @@
  *
  * Everything here is deterministic: identical inputs produce identical bytes
  * on every surface (shell, VS Code extension host, CLI). There are no
- * timestamps, no filesystem mtimes, and no locale-sensitive ordering, so a
- * catalog committed to git only changes when the documents do.
+ * filesystem mtimes and no locale-sensitive ordering. The only clock reading
+ * is a document's first-published and last-modified dates, carried forward from
+ * the previous catalog JSON and stamped only when a document first appears or
+ * its content changes — so a catalog committed to git still only changes when
+ * the documents do.
  */
 
 import type {
@@ -46,11 +49,17 @@ export interface CatalogEntry {
   readonly description?: string;
   readonly author?: string;
   readonly date?: string;
+  /** When the document first appeared in the catalog JSON (ISO 8601, UTC). */
+  readonly firstPublishedDate?: string;
+  /** When the catalog JSON last picked up a change to the document's content. */
+  readonly lastModifiedDate?: string;
   readonly tags?: readonly string[];
   readonly theme?: string;
   readonly outline: readonly CatalogOutlineEntry[];
   readonly wordCount: number;
   readonly excerpt?: string;
+  /** SHA-256 hex of the source text with normalized line endings; absent when unread. */
+  readonly contentHash?: string;
   /** Present only when the catalog is configured with `content: "markdown"`. */
   readonly markdown?: string;
 }
@@ -292,11 +301,14 @@ function orderedEntry(entry: CatalogEntry): Record<string, unknown> {
     'description',
     'author',
     'date',
+    'firstPublishedDate',
+    'lastModifiedDate',
     'tags',
     'theme',
     'outline',
     'wordCount',
     'excerpt',
+    'contentHash',
     'markdown',
   ];
   for (const key of keys) {
@@ -335,6 +347,83 @@ const CATALOG_JSON_MARKER = /^\uFEFF?\{\s*"generator"\s*:\s*"docblocks-workspace
 
 export function isGeneratedCatalogJson(text: string): boolean {
   return CATALOG_JSON_MARKER.test(text.slice(0, 256));
+}
+
+/** The dates a previously generated catalog recorded for one document. */
+export interface CatalogDateRecord {
+  readonly firstPublishedDate: string;
+  readonly lastModifiedDate: string;
+  readonly contentHash?: string;
+}
+
+// Hand-backfilled dates (`2024-05-01`) are kept as well as the generated form.
+const CATALOG_DATE_PATTERN =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+const CONTENT_HASH_PATTERN = /^[0-9a-f]{64}$/;
+
+function catalogDate(value: unknown): string | undefined {
+  return typeof value === 'string' &&
+    CATALOG_DATE_PATTERN.test(value) &&
+    Number.isFinite(Date.parse(value))
+    ? value
+    : undefined;
+}
+
+/**
+ * Per-path date history from a previously generated catalog JSON. Anything
+ * malformed is skipped, so the worst case is a document dated as new.
+ */
+export function readCatalogDateHistory(text: string): Map<string, CatalogDateRecord> {
+  const history = new Map<string, CatalogDateRecord>();
+  if (!isGeneratedCatalogJson(text)) return history;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch {
+    return history;
+  }
+  const documents = (parsed as { documents?: unknown } | null)?.documents;
+  if (!Array.isArray(documents)) return history;
+  for (const document of documents as unknown[]) {
+    if (!document || typeof document !== 'object') continue;
+    const record = document as Record<string, unknown>;
+    const first = catalogDate(record.firstPublishedDate);
+    if (typeof record.path !== 'string' || !first) continue;
+    const hash = record.contentHash;
+    history.set(record.path, {
+      firstPublishedDate: first,
+      lastModifiedDate: catalogDate(record.lastModifiedDate) ?? first,
+      ...(typeof hash === 'string' && CONTENT_HASH_PATTERN.test(hash) ? { contentHash: hash } : {}),
+    });
+  }
+  return history;
+}
+
+/**
+ * Date each entry. A document keeps the dates `history` holds for its path;
+ * it is stamped `now` when it first appears, and its `lastModifiedDate`
+ * moves to `now` when its content hash changes.
+ */
+export function stampCatalogDates(
+  catalog: WorkspaceCatalog,
+  history: ReadonlyMap<string, CatalogDateRecord>,
+  now: Date,
+): WorkspaceCatalog {
+  const timestamp = now.toISOString().replace(/\.\d{3}Z$/, 'Z');
+  return {
+    ...catalog,
+    documents: catalog.documents.map((entry) => {
+      const previous = history.get(entry.path);
+      return {
+        ...entry,
+        firstPublishedDate: previous?.firstPublishedDate ?? timestamp,
+        lastModifiedDate:
+          previous && previous.contentHash === entry.contentHash
+            ? previous.lastModifiedDate
+            : timestamp,
+      };
+    }),
+  };
 }
 
 const CATALOG_HTML_MARKER = /<!-- docblocks-workspace-catalog v1 inputs=sha256:([0-9a-f]{64}) -->/;

@@ -38,9 +38,24 @@ export type CatalogSortOrder = (typeof CATALOG_SORT_ORDERS)[number];
 export const CATALOG_JSON_CONTENT_MODES = ['metadata', 'markdown'] as const;
 export type CatalogJsonContent = (typeof CATALOG_JSON_CONTENT_MODES)[number];
 
+/** Rendered formats a workspace can name a default page template for. */
+export const WORKSPACE_OUTPUT_TEMPLATE_FORMATS = ['html'] as const;
+export type WorkspaceOutputTemplateFormat = (typeof WORKSPACE_OUTPUT_TEMPLATE_FORMATS)[number];
+
+/** Workspace-relative page template path, by rendered output format. */
+export type WorkspaceOutputTemplates = {
+  readonly [Format in WorkspaceOutputTemplateFormat]?: string;
+};
+
 export interface WorkspaceDocumentSettings {
   /** Theme for documents whose frontmatter names none. */
   readonly defaultTheme?: string;
+  /**
+   * Page template for rendered documents whose frontmatter names none
+   * (`squisq-output-template`). A document's own choice, including `none`,
+   * always wins.
+   */
+  readonly outputTemplates?: WorkspaceOutputTemplates;
 }
 
 export interface WorkspaceVersionHistorySettings {
@@ -175,6 +190,44 @@ function boundedPath(value: unknown, label: string): WorkspacePath {
   return path;
 }
 
+const OUTPUT_TEMPLATE_EXTENSIONS: Record<WorkspaceOutputTemplateFormat, readonly string[]> = {
+  html: ['.html', '.htm'],
+};
+
+/** Validate a configured page template path for one rendered format. */
+export function validateOutputTemplatePath(
+  value: unknown,
+  format: WorkspaceOutputTemplateFormat,
+): WorkspacePath {
+  const label = `documents.outputTemplates.${format}`;
+  const path = boundedPath(value, label);
+  const lower = path.toLowerCase();
+  if (!OUTPUT_TEMPLATE_EXTENSIONS[format].some((extension) => lower.endsWith(extension))) {
+    fail(`${label} must end with ${OUTPUT_TEMPLATE_EXTENSIONS[format].join(' or ')}.`);
+  }
+  return path;
+}
+
+/** Try-form for UI validation messages. */
+export function checkOutputTemplatePath(
+  value: unknown,
+  format: WorkspaceOutputTemplateFormat,
+): { ok: true; path: WorkspacePath } | { ok: false; message: string } {
+  try {
+    return { ok: true, path: validateOutputTemplatePath(value, format) };
+  } catch (error) {
+    return { ok: false, message: shapeMessage(error) };
+  }
+}
+
+function parseOutputTemplates(value: unknown): WorkspaceOutputTemplates | undefined {
+  if (value === undefined) return undefined;
+  const record = exactRecord(value, 'documents.outputTemplates', WORKSPACE_OUTPUT_TEMPLATE_FORMATS);
+  return compact({
+    html: record.html === undefined ? undefined : validateOutputTemplatePath(record.html, 'html'),
+  });
+}
+
 export type CatalogOutputKind = 'html' | 'json';
 
 const OUTPUT_EXTENSIONS: Record<CatalogOutputKind, readonly string[]> = {
@@ -258,6 +311,8 @@ function compact<T extends object>(value: T): T | undefined {
   return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
 }
 
+const DOCUMENT_SETTINGS_KEYS = ['defaultTheme', 'outputTemplates'] as const;
+
 /** Parse an already-decoded settings value with the exact v1 shape. */
 export function parseWorkspaceSettings(value: unknown): WorkspaceSettings {
   const root = isRecord(value) ? value : fail('Workspace settings must be a JSON object.');
@@ -287,9 +342,10 @@ export function parseWorkspaceSettings(value: unknown): WorkspaceSettings {
 
   let documents: WorkspaceDocumentSettings | undefined;
   if (root.documents !== undefined) {
-    const record = exactRecord(root.documents, 'documents', ['defaultTheme']);
+    const record = exactRecord(root.documents, 'documents', DOCUMENT_SETTINGS_KEYS);
     documents = compact({
       defaultTheme: optionalTheme(record.defaultTheme, 'documents.defaultTheme'),
+      outputTemplates: parseOutputTemplates(record.outputTemplates),
     });
   }
 
@@ -412,7 +468,13 @@ export function serializeWorkspaceSettings(settings: WorkspaceSettings): string 
   if (normalized.$schema !== undefined) ordered.$schema = normalized.$schema;
   ordered.version = normalized.version;
   if (normalized.documents) {
-    ordered.documents = pick(normalized.documents, ['defaultTheme']);
+    const { outputTemplates } = normalized.documents;
+    ordered.documents = {
+      ...pick(normalized.documents, ['defaultTheme']),
+      ...(outputTemplates
+        ? { outputTemplates: pick(outputTemplates, WORKSPACE_OUTPUT_TEMPLATE_FORMATS) }
+        : {}),
+    };
   }
   if (normalized.versionHistory) {
     ordered.versionHistory = pick(normalized.versionHistory, ['enabled', 'keep']);
@@ -508,7 +570,7 @@ export function diffWorkspaceSettings(
   after: WorkspaceSettings,
 ): WorkspaceSettingsPatch {
   const base = before ?? EMPTY_WORKSPACE_SETTINGS;
-  const documents = diffFields(base.documents, after.documents, ['defaultTheme']);
+  const documents = diffFields(base.documents, after.documents, DOCUMENT_SETTINGS_KEYS);
   const versionHistory = diffFields(base.versionHistory, after.versionHistory, ['enabled', 'keep']);
   const top = diffFields<Omit<WorkspaceCatalogSettings, 'html' | 'json'>>(
     base.catalog,
@@ -558,12 +620,13 @@ export function parseWorkspaceSettingsPatch(value: unknown): WorkspaceSettingsPa
     field === null ? null : parse(field);
   const result: Record<string, unknown> = {};
   if (root.documents !== undefined) {
-    const record = exactRecord(root.documents, 'documents', ['defaultTheme']);
+    const record = exactRecord(root.documents, 'documents', DOCUMENT_SETTINGS_KEYS);
     result.documents =
       compact({
         defaultTheme: nullable(record.defaultTheme, (input) =>
           optionalTheme(input, 'documents.defaultTheme'),
         ),
+        outputTemplates: nullable(record.outputTemplates, parseOutputTemplates),
       }) ?? {};
   }
   if (root.versionHistory !== undefined) {
@@ -638,7 +701,8 @@ export function tryApplyWorkspaceSettingsPatch(
 
 /**
  * True when settings change nothing about how DocBlocks treats the folder: no
- * default theme, no version-history choice, and no catalog output turned on.
+ * default theme or page template, no version-history choice, and no catalog
+ * output turned on.
  * Fields that only configure a disabled output (a catalog title, path, order,
  * or page theme) are inert. Such settings are never worth creating a
  * `.docblocks/` folder for.
@@ -648,6 +712,7 @@ export function isDefaultWorkspaceSettings(
 ): boolean {
   return (
     settings?.documents?.defaultTheme === undefined &&
+    settings?.documents?.outputTemplates === undefined &&
     settings?.versionHistory?.enabled === undefined &&
     settings?.versionHistory?.keep === undefined &&
     settings?.catalog?.html?.enabled !== true &&
@@ -660,6 +725,15 @@ export function resolveWorkspaceDefaultThemeId(
   settings: WorkspaceSettings | null | undefined,
 ): string | undefined {
   return settings?.documents?.defaultTheme;
+}
+
+/** The workspace default page template for a rendered format, workspace-relative. */
+export function resolveWorkspaceOutputTemplate(
+  settings: WorkspaceSettings | null | undefined,
+  format: string,
+): string | undefined {
+  const templates = settings?.documents?.outputTemplates;
+  return format === 'html' ? templates?.html : undefined;
 }
 
 /**
