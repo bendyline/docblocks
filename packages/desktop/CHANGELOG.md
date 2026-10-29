@@ -1,3 +1,15 @@
+## docblocks-desktop [2.7.9](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.8...docblocks-desktop@2.7.9) (2026-10-29)
+
+### Bug Fixes
+
+* Desktop embeds and conflict/export UX ([#37](https://github.com/bendyline/docblocks/issues/37)) ([5a644b9](https://github.com/bendyline/docblocks/commit/5a644b918cc55a7757e71461524477353569aa17))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.9
+* **@bendyline/docblocks-react:** upgraded to 2.7.9
+
 ## docblocks-desktop [2.7.8](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.7...docblocks-desktop@2.7.8) (2026-10-28)
 
 ### Bug Fixes
