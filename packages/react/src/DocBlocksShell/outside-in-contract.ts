@@ -224,9 +224,9 @@ export interface PageTemplateEngine {
  * Squisq's preparation of a document for a script-free page
  * (`prepareMarkdownDocForPlainHtml`): data references filled from their
  * sidecars, and diagrams and charts swapped for pictures, returned as
- * `data:` URLs keyed by the image URL written into the document. A release
- * that also returns `icons` draws inline icons as SVG, so the page needs no
- * Font Awesome stylesheet.
+ * `data:` URLs keyed by the image URL written into the document. Inline
+ * icons come back as SVG outlines (`icons`), so the page needs no Font
+ * Awesome stylesheet.
  */
 export type PlainHtmlPreparation = (
   doc: MarkdownDocument,
@@ -234,7 +234,7 @@ export type PlainHtmlPreparation = (
 ) => Promise<{
   markdownDoc: MarkdownDocument;
   images: Map<string, string>;
-  icons?: PlainHtmlIcons;
+  icons: PlainHtmlIcons;
 }>;
 
 /** Icon outlines for the plain renderer's `icons` option, passed through as is. */
@@ -265,16 +265,18 @@ export async function loadPlainHtmlRenderer(): Promise<
 }
 
 /**
- * Load the static-page preparation, or null when the installed Squisq
- * predates it; its pages then show diagrams as their source.
+ * Load the static-page preparation with Squisq's icon outliner bound in.
+ * Both are their own entries (`/html-prepare`, `/html-icons`) so that
+ * `/html`, which hosts bundle where they only render, reaches neither the
+ * data readers nor the Font Awesome faces.
  */
-export async function loadPlainHtmlPreparation(): Promise<PlainHtmlPreparation | null> {
-  const html = (await import('@bendyline/squisq-formats/html')) as unknown as {
-    prepareMarkdownDocForPlainHtml?: unknown;
-  };
-  return typeof html.prepareMarkdownDocForPlainHtml === 'function'
-    ? (html.prepareMarkdownDocForPlainHtml as PlainHtmlPreparation)
-    : null;
+export async function loadPlainHtmlPreparation(): Promise<PlainHtmlPreparation> {
+  const [{ prepareMarkdownDocForPlainHtml }, { plainHtmlIcons }] = await Promise.all([
+    import('@bendyline/squisq-formats/html-prepare'),
+    import('@bendyline/squisq-formats/html-icons'),
+  ]);
+  return (doc, options) =>
+    prepareMarkdownDocForPlainHtml(doc, { ...options, outlineIcons: plainHtmlIcons });
 }
 
 /**

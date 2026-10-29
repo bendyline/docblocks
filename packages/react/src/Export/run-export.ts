@@ -419,8 +419,8 @@ async function playerScriptFor(markdown: string): Promise<string> {
 /**
  * What a plain page shows: data tables filled and diagrams and charts drawn
  * as pictures (`images`, as `data:` URLs), since nothing on the page can draw
- * them, and inline icons as SVG. A Squisq release without the preparation
- * step leaves the document as it is.
+ * them, and inline icons as SVG. If preparation fails, the document is
+ * rendered as it is.
  */
 async function preparePlainPage(
   doc: MarkdownDocument,
@@ -429,12 +429,10 @@ async function preparePlainPage(
 ): Promise<{ markdownDoc: MarkdownDocument; images: Map<string, string>; icons?: PlainHtmlIcons }> {
   try {
     const prepare = await loadPlainHtmlPreparation();
-    if (prepare) {
-      return await prepare(doc, {
-        renderDiagram: await diagramRendererFor(overrides),
-        container: mediaContainer,
-      });
-    }
+    return await prepare(doc, {
+      renderDiagram: await diagramRendererFor(overrides),
+      container: mediaContainer,
+    });
   } catch {
     // The page keeps its diagrams as source.
   }

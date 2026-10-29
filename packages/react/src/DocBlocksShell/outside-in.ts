@@ -539,7 +539,6 @@ async function prepareStaticPage(
 ): Promise<StaticPageContent> {
   const files = await companionImageMap(provider, layout);
   const prepare = await loadPlainHtmlPreparation();
-  if (!prepare) return { markdown, images: files, links: files };
   const prepared = await prepare(markdown, {
     renderDiagram: diagramRendererFor(render),
     container: createOutsideInContentContainer(provider, layout),
