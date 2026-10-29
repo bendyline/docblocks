@@ -17,7 +17,15 @@ type PermissionRequestDetails = Parameters<PermissionRequestHandler>[3];
 type PermissionCheckHandler = Exclude<Parameters<Session['setPermissionCheckHandler']>[0], null>;
 type PermissionCheckName = Parameters<PermissionCheckHandler>[1];
 
+/**
+ * `clipboard-read` lets the editor's right-click Paste read the clipboard as
+ * ⌘V does, images included. Chromium refuses `document.execCommand('paste')`
+ * to page script, so without it that menu item has no way to paste. As with
+ * every entry, only the trusted renderer's main frame is granted it, never an
+ * embedded player.
+ */
 const ALLOWED_PERMISSION_REQUESTS = new Set<PermissionRequestName>([
+  'clipboard-read',
   'clipboard-sanitized-write',
   'display-capture',
   'fullscreen',
@@ -25,6 +33,7 @@ const ALLOWED_PERMISSION_REQUESTS = new Set<PermissionRequestName>([
 ]);
 
 const ALLOWED_PERMISSION_CHECKS = new Set<PermissionCheckName>([
+  'clipboard-read',
   'clipboard-sanitized-write',
   'fullscreen',
   'media',

@@ -336,6 +336,8 @@ test('unsupported PDF text is blocked before download and Word remains available
   await expect(page.locator('.ProseMirror')).toContainText('DocBlocks');
   await page.getByRole('treeitem', { name: /^unicode-export/ }).click();
   await expect(page.locator('.ProseMirror')).toContainText('日本語のテキスト');
+  // As short as a VS Code webview in a 1280×690 window, so the dialog body scrolls.
+  await page.setViewportSize({ width: 1280, height: 600 });
   await page.getByRole('button', { name: 'Export and share' }).click();
   await page.getByRole('menuitem', { name: 'Export document...' }).click();
   const dialog = page.getByRole('dialog', { name: 'Export Document' });
@@ -345,7 +347,9 @@ test('unsupported PDF text is blocked before download and Word remains available
   await dialog.getByRole('button', { name: /Save .* to Downloads/ }).click();
   await expect(dialog.getByRole('alert')).toContainText('PDF was not saved', { timeout: 30_000 });
   expect(downloads).toEqual([]);
-  await expect(dialog.getByRole('button', { name: 'Save PDF with replacements' })).toBeVisible();
+  // On screen, not merely rendered: the dialog body scrolls on short windows.
+  await expect(dialog.getByRole('button', { name: 'Save PDF with replacements' })).toBeInViewport();
+  await expect(dialog.getByRole('alert')).toBeInViewport();
   await page.screenshot({ path: testInfo.outputPath('pdf-fidelity-error.png') });
   await dialog.getByRole('radio', { name: 'Word', exact: true }).click();
   const download = page.waitForEvent('download');

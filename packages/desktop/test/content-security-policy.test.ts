@@ -5,7 +5,6 @@ const ONLINE_VIDEO_FRAME_SOURCES = [
   'https://www.youtube-nocookie.com',
   'https://player.vimeo.com',
   'https://www.loom.com',
-  'https://www.dailymotion.com',
   'https://fast.wistia.net',
 ];
 
@@ -40,6 +39,15 @@ describe('desktop renderer content security policy', () => {
     for (const isDevelopment of [false, true]) {
       const policy = directives(desktopContentSecurityPolicy(isDevelopment));
       expect(policy.get('frame-src')).to.deep.equal(ONLINE_VIDEO_FRAME_SOURCES);
+    }
+  });
+
+  it('allows remote images only from the online video thumbnail hosts', () => {
+    for (const isDevelopment of [false, true]) {
+      const imgSrc = directives(desktopContentSecurityPolicy(isDevelopment)).get('img-src') ?? [];
+      expect(imgSrc.filter((source) => source.startsWith('https:'))).to.deep.equal([
+        'https://i.ytimg.com',
+      ]);
     }
   });
 

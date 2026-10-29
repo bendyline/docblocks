@@ -36,6 +36,7 @@ import {
   importOutsideInDataSidecar,
   importOutsideInDocument,
   isOutsideInDataFormat,
+  loadPageTemplateEngine,
   resolveOutsideInLayout,
 } from './outside-in-contract.js';
 import { providerEntryExists, removeProviderEntry, writeProviderText } from './provider-io.js';
@@ -228,6 +229,16 @@ async function importOutsideInFile(
   }
 }
 
+/**
+ * A page template is HTML source other pages are generated through, so it
+ * is kept byte-for-byte rather than imported as a page of its own.
+ */
+async function isPageTemplateFile(file: File, ext: string): Promise<boolean> {
+  if (ext !== '.html' && ext !== '.htm') return false;
+  const engine = await loadPageTemplateEngine();
+  return engine !== null && engine.isHtmlPageTemplate(await file.text());
+}
+
 async function readImportedMarkdown(
   file: File,
   destPath: string,
@@ -291,7 +302,7 @@ export async function importDroppedFiles(
 
     let claimed: string | null = null;
     try {
-      if (OUTSIDE_IN_IMPORT_EXTENSIONS.has(ext)) {
+      if (OUTSIDE_IN_IMPORT_EXTENSIONS.has(ext) && !(await isPageTemplateFile(file, ext))) {
         const imported = await importOutsideInFile(file, provider);
         result.imported.push({ source: file.name, ...imported });
         continue;

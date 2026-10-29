@@ -461,6 +461,10 @@ describe('PDF characters its fonts cannot draw', () => {
       .to.include('PDF was not saved')
       .and.not.include('Export failed');
     expect(saved).to.have.length(0);
+    // Beside Export in the footer, which never scrolls out of a short window.
+    expect(
+      buttonByText(document.body, 'Save PDF with replacements')!.closest('.db-export-footer'),
+    ).not.to.equal(null);
 
     await act(async () => buttonByText(document.body, 'Save PDF with replacements')!.click());
     await waitFor(() => saved.length === 1, 'the PDF to be saved');

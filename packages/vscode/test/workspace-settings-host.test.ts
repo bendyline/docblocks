@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
   parseExtensionToWebviewMessage,
@@ -275,6 +276,7 @@ describe('VS Code workspace filesystem adapter', () => {
       io,
       { version: 1, catalog: { json: { enabled: true } } },
       { renderCatalogHtml: () => '<!DOCTYPE html>\n' },
+      { now: new Date('2026-03-04T05:06:07Z') },
     );
     expect(result.outputs[0]?.status).to.equal('written');
     const json = JSON.parse(textOf(files.get('/ws/catalog.json'))!);
@@ -283,8 +285,11 @@ describe('VS Code workspace filesystem adapter', () => {
         path: 'notes/a.md',
         format: 'markdown',
         title: 'Alpha',
+        firstPublishedDate: '2026-03-04T05:06:07Z',
+        lastModifiedDate: '2026-03-04T05:06:07Z',
         outline: [{ level: 1, title: 'A' }],
         wordCount: 1,
+        contentHash: createHash('sha256').update('---\ntitle: Alpha\n---\n# A\n').digest('hex'),
       },
     ]);
   });

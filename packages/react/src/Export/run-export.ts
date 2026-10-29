@@ -26,6 +26,11 @@ import type {
 import type { ExportOptions, ExportFormat } from './export-options.js';
 import { FORMAT_EXTENSIONS } from './export-options.js';
 import { PdfReplacementsError } from './export-errors.js';
+import {
+  loadPlainHtmlPreparation,
+  loadPlainHtmlRenderer,
+  type PlainHtmlIcons,
+} from '../DocBlocksShell/outside-in-contract.js';
 export { buildExportFilename } from './export-filename.js';
 
 export type ExportBlobSaver = (blob: Blob, filename: string) => Promise<void> | void;
@@ -111,6 +116,54 @@ function imageBytes(
   images: ReadonlyMap<string, { data: ArrayBuffer | Uint8Array }>,
 ): [string, ArrayBuffer | Uint8Array][] {
   return [...images].map(([url, image]) => [url, image.data]);
+}
+
+/**
+ * The Markdown with each `{[dataTable src=…]}` reference's first rows under
+ * its heading. Word, PDF, EPUB, and plain Web pages can't carry the data file,
+ * so without this a reference exports as a bare link. Run before
+ * `pictureDiagrams`, so a chart fed by a data file is drawn from its rows. A
+ * Squisq release with no row bound would embed every row, so it is skipped.
+ */
+async function withDataTables(
+  doc: MarkdownDocument,
+  container: ContentContainer | null | undefined,
+): Promise<MarkdownDocument> {
+  if (!container) return doc;
+  try {
+    const data = (await import('@bendyline/squisq-formats/data')) as unknown as {
+      DATA_PREVIEW_ROWS?: number;
+      materializeDataReferences: (
+        doc: MarkdownDocument,
+        container: ContentContainer,
+        onWarning: undefined,
+        options: { maxRows: number },
+      ) => Promise<MarkdownDocument>;
+    };
+    if (typeof data.DATA_PREVIEW_ROWS !== 'number') return doc;
+    return await data.materializeDataReferences(doc, container, undefined, {
+      maxRows: data.DATA_PREVIEW_ROWS,
+    });
+  } catch {
+    return doc;
+  }
+}
+
+/**
+ * The Doc with each data reference's preview rows filled in — what the editor
+ * preview shows — for exports the player renders (Web pages, PowerPoint).
+ */
+async function withDataPreviews(doc: Doc, container: ContentContainer | null | undefined) {
+  if (!container) return doc;
+  try {
+    const [{ resolveDataReferences }, { defaultDataReaders }] = await Promise.all([
+      import('@bendyline/squisq/doc'),
+      import('@bendyline/squisq-formats/data'),
+    ]);
+    return (await resolveDataReferences(doc, container, { readers: defaultDataReaders() })).doc;
+  } catch {
+    return doc;
+  }
 }
 
 const MIME_TYPES: Record<ExportFormat, string> = {
@@ -226,11 +279,20 @@ async function exportDocument(
   }
 
   if (options.format === 'html') {
-    await runHtmlExport(markdown, filename, options, mediaContainer, selectedFile, saveBlob);
+    await runHtmlExport(
+      markdown,
+      filename,
+      options,
+      mediaContainer,
+      selectedFile,
+      saveBlob,
+      converterOverrides,
+    );
     return;
   }
 
-  const doc = parseMarkdown(markdown);
+  const parsed = parseMarkdown(markdown);
+  const doc = options.format === 'pptx' ? parsed : await withDataTables(parsed, mediaContainer);
 
   if (options.format === 'docx') {
     const { markdownDocToDocx } = await import('@bendyline/squisq-formats/docx');
@@ -304,7 +366,7 @@ async function exportDocument(
     // Use the exact slideshow projection before PPTX conversion. The player
     // and exporter therefore share block flattening, typed template inputs,
     // image interleaving, synthetic timing, and the later expandDocBlocks pass.
-    const baseDoc = markdownToDoc(doc);
+    const baseDoc = await withDataPreviews(markdownToDoc(doc), mediaContainer);
     if (!options.transformStyle) {
       // None also overrides saved slide summaries for this export. Work on a
       // copy: buildPreviewDoc otherwise applies dynamic or legacy plans itself.
@@ -354,6 +416,31 @@ async function playerScriptFor(markdown: string): Promise<string> {
 }
 
 /** Run the HTML export branch — handles all four htmlStyle × htmlBundle combinations. */
+/**
+ * What a plain page shows: data tables filled and diagrams and charts drawn
+ * as pictures (`images`, as `data:` URLs), since nothing on the page can draw
+ * them, and inline icons as SVG. A Squisq release without the preparation
+ * step leaves the document as it is.
+ */
+async function preparePlainPage(
+  doc: MarkdownDocument,
+  mediaContainer: ContentContainer | null | undefined,
+  overrides: ExportConverterOverrides,
+): Promise<{ markdownDoc: MarkdownDocument; images: Map<string, string>; icons?: PlainHtmlIcons }> {
+  try {
+    const prepare = await loadPlainHtmlPreparation();
+    if (prepare) {
+      return await prepare(doc, {
+        renderDiagram: await diagramRendererFor(overrides),
+        container: mediaContainer,
+      });
+    }
+  } catch {
+    // The page keeps its diagrams as source.
+  }
+  return { markdownDoc: doc, images: new Map() };
+}
+
 async function runHtmlExport(
   markdown: string,
   htmlFilename: string,
@@ -361,6 +448,7 @@ async function runHtmlExport(
   mediaContainer?: ContentContainer | null,
   selectedFile?: string | null,
   saveBlob?: ExportBlobSaver,
+  converterOverrides: ExportConverterOverrides = {},
 ): Promise<void> {
   const baseName = htmlFilename.replace(/\.html$/, '');
   const zipName = `${baseName}.zip`;
@@ -430,7 +518,7 @@ async function runHtmlExport(
         playerScriptFor(markdown),
       ]);
     const mdDoc = parseMarkdown(markdown);
-    const baseDoc = markdownToDoc(mdDoc);
+    const baseDoc = await withDataPreviews(markdownToDoc(mdDoc), mediaContainer);
     if (themeId) baseDoc.themeId = themeId;
 
     const images = mediaContainer
@@ -461,19 +549,24 @@ async function runHtmlExport(
   }
 
   // Plain semantic HTML
-  const mdDoc = parseMarkdown(markdown);
+  const page = await preparePlainPage(parseMarkdown(markdown), mediaContainer, converterOverrides);
+  const mdDoc = page.markdownDoc;
   const referencedImages = collectMarkdownImageUrls(mdDoc);
-  const localImages = referencedImages.filter((u) => !isExternalUrl(u));
+  const localImages = referencedImages.filter((u) => !isExternalUrl(u) && !page.images.has(u));
+  const markdownDocToPlainHtml = await loadPlainHtmlRenderer();
 
   if (options.htmlBundle === 'zip' && mediaContainer && localImages.length > 0) {
-    const [{ markdownDocToPlainHtml }, { MemoryContentContainer }, { containerToZip }] =
-      await Promise.all([
-        import('@bendyline/squisq-formats/html'),
-        import('@bendyline/squisq/storage'),
-        import('@bendyline/squisq-formats/container'),
-      ]);
+    const [{ MemoryContentContainer }, { containerToZip }] = await Promise.all([
+      import('@bendyline/squisq/storage'),
+      import('@bendyline/squisq-formats/container'),
+    ]);
     // Mirror the markdown's relative paths inside the zip so <img src="..."> still resolves.
-    const html = markdownDocToPlainHtml(mdDoc, { title: baseName, themeId });
+    const html = markdownDocToPlainHtml(mdDoc, {
+      title: baseName,
+      themeId,
+      images: page.images,
+      icons: page.icons,
+    });
     const container = new MemoryContentContainer();
     await container.writeFile('index.html', new TextEncoder().encode(html));
     for (const url of localImages) {
@@ -487,9 +580,8 @@ async function runHtmlExport(
     return;
   }
 
-  const { markdownDocToPlainHtml } = await import('@bendyline/squisq-formats/html');
   // Single-file plain HTML — embed local images as base64 data URIs.
-  const inlineMap = new Map<string, string>();
+  const inlineMap = new Map<string, string>(page.images);
   if (mediaContainer) {
     for (const url of localImages) {
       const data = await mediaContainer.readFile(url);
@@ -500,6 +592,7 @@ async function runHtmlExport(
   const html = markdownDocToPlainHtml(mdDoc, {
     title: baseName,
     images: inlineMap.size > 0 ? inlineMap : undefined,
+    icons: page.icons,
     themeId,
   });
   await saveExportBlob(new Blob([html], { type: MIME_TYPES.html }), singleHtmlFilename, saveBlob);

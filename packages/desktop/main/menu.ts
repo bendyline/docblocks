@@ -5,8 +5,9 @@
  * events; the DocBlocksShell dispatches these to existing handlers.
  */
 
-import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
+import { BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 import type { MenuCommand } from '@bendyline/docblocks/host';
+import { buildMacAppMenuTemplate } from './app-menu-template.js';
 import { isStoreBuild } from './updater.js';
 import { reloadWindowWithPreparation } from './window-lifecycle.js';
 
@@ -34,31 +35,12 @@ export function buildMenu(
 
   const template: MenuItemConstructorOptions[] = [
     ...(isMac
-      ? ([
-          {
-            label: app.name,
-            submenu: [
-              { role: 'about' },
-              ...(showUpdateCheck
-                ? ([
-                    { type: 'separator' },
-                    {
-                      label: 'Check for Updates...',
-                      click: () => send('help:checkForUpdates'),
-                    },
-                  ] as MenuItemConstructorOptions[])
-                : []),
-              { type: 'separator' },
-              { role: 'services' },
-              { type: 'separator' },
-              { role: 'hide' },
-              { role: 'hideOthers' },
-              { role: 'unhide' },
-              { type: 'separator' },
-              { role: 'quit' },
-            ],
-          },
-        ] as MenuItemConstructorOptions[])
+      ? [
+          buildMacAppMenuTemplate({
+            showUpdateCheck,
+            checkForUpdates: () => send('help:checkForUpdates'),
+          }),
+        ]
       : []),
     {
       label: 'File',

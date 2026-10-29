@@ -4,9 +4,11 @@ const ONLINE_VIDEO_FRAME_SOURCES = [
   'https://www.youtube-nocookie.com',
   'https://player.vimeo.com',
   'https://www.loom.com',
-  'https://www.dailymotion.com',
   'https://fast.wistia.net',
 ].join(' ');
+
+// Poster images Squisq shows for those players before playback.
+const ONLINE_VIDEO_THUMBNAIL_SOURCES = 'https://i.ytimg.com';
 
 /**
  * Renderer CSP for both the packaged app:// origin and the trusted Vite
@@ -25,7 +27,7 @@ const ONLINE_VIDEO_FRAME_SOURCES = [
  * `'wasm-unsafe-eval'` over `'unsafe-eval'` here: it unblocks WebAssembly
  * without re-enabling JavaScript `eval` in the production renderer.
  * Remote frames are limited to the origins emitted by Squisq's supported
- * online video providers.
+ * online video providers, and remote images to those players' thumbnails.
  */
 export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
   if (isDevelopment) {
@@ -33,7 +35,7 @@ export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
       "default-src 'self' app: http://localhost:5221 ws://localhost:5221; " +
       "script-src 'self' app: http://localhost:5221 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; " +
       "style-src 'self' app: http://localhost:5221 'unsafe-inline'; " +
-      "img-src 'self' app: http://localhost:5221 data: blob:; " +
+      `img-src 'self' app: http://localhost:5221 data: blob: ${ONLINE_VIDEO_THUMBNAIL_SOURCES}; ` +
       "media-src 'self' app: http://localhost:5221 blob: data:; " +
       "font-src 'self' app: http://localhost:5221 data:; " +
       "connect-src 'self' app: http://localhost:5221 ws://localhost:5221 blob:; " +
@@ -46,7 +48,7 @@ export function desktopContentSecurityPolicy(isDevelopment: boolean): string {
     "default-src 'self' app:; " +
     "script-src 'self' app: 'wasm-unsafe-eval'; " +
     "style-src 'self' app: 'unsafe-inline'; " +
-    "img-src 'self' app: data: blob:; " +
+    `img-src 'self' app: data: blob: ${ONLINE_VIDEO_THUMBNAIL_SOURCES}; ` +
     "media-src 'self' app: blob: data:; " +
     "font-src 'self' app: data:; " +
     "connect-src 'self' app: blob:; " +

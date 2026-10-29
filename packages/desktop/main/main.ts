@@ -85,6 +85,11 @@ import {
   desktopContentSecurityPolicy,
 } from './content-security-policy.js';
 import { desktopRendererResponseHeaders } from './renderer-response-headers.js';
+import { blocksRendererRedirect } from './renderer-navigation.js';
+import {
+  ONLINE_VIDEO_REFERRER_URLS,
+  onlineVideoRequestHeaders,
+} from './online-video-request-headers.js';
 import {
   aiAvailabilityArguments,
   aiImagesAvailabilityArguments,
@@ -445,9 +450,10 @@ async function createWindow(startupWorkspaceId?: string): Promise<BrowserWindow>
   });
 
   // Server redirects are a distinct Electron event and otherwise bypass the
-  // initial navigation decision.
-  win.webContents.on('will-redirect', (event, url) => {
-    preventUntrustedNavigation(event, url);
+  // initial navigation decision. Electron raises it for hosted-video
+  // subframes too, which the guard must let through.
+  win.webContents.on('will-redirect', (event) => {
+    if (blocksRendererRedirect(event, developmentOrigin)) event.preventDefault();
   });
 
   showWhenReady(win, () => {
@@ -598,6 +604,16 @@ async function bootstrap(): Promise<void> {
     );
     callback(responseHeaders === null ? {} : { responseHeaders });
   });
+
+  // The app:// renderer sends hosted-video frames no Referer; YouTube refuses
+  // those embeds unless the app identifies itself.
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ONLINE_VIDEO_REFERRER_URLS },
+    (details, callback) => {
+      const requestHeaders = onlineVideoRequestHeaders(details);
+      callback(requestHeaders === null ? {} : { requestHeaders });
+    },
+  );
 
   registerAppProtocol();
 

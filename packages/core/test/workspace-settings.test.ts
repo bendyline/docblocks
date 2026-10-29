@@ -4,6 +4,7 @@ import {
   WORKSPACE_SETTINGS_LIMITS,
   applyWorkspaceSettingsPatch,
   checkCatalogOutputPath,
+  checkOutputTemplatePath,
   diffWorkspaceSettings,
   isDefaultWorkspaceSettings,
   isEmptyWorkspaceSettingsPatch,
@@ -11,6 +12,7 @@ import {
   parseWorkspaceSettingsText,
   resolveCatalogOutputs,
   resolveFallbackThemeId,
+  resolveWorkspaceOutputTemplate,
   resolveWorkspaceVersioningEnabled,
   serializeWorkspaceSettings,
   type WorkspaceSettings,
@@ -18,7 +20,7 @@ import {
 
 const FULL: WorkspaceSettings = {
   version: 1,
-  documents: { defaultTheme: 'warm-earth' },
+  documents: { defaultTheme: 'warm-earth', outputTemplates: { html: '_templates/post.html' } },
   versionHistory: { enabled: true, keep: 25 },
   catalog: {
     title: 'Articles',
@@ -145,6 +147,29 @@ describe('catalog output paths', () => {
   });
 });
 
+describe('output template paths', () => {
+  it('accepts workspace-relative HTML templates', () => {
+    expect(checkOutputTemplatePath('_templates/post.html', 'html')).to.deep.equal({
+      ok: true,
+      path: '_templates/post.html',
+    });
+    expect(checkOutputTemplatePath('/layouts/page.htm', 'html')).to.deep.equal({
+      ok: true,
+      path: 'layouts/page.htm',
+    });
+  });
+
+  it('refuses traversal, the root, and non-HTML templates', () => {
+    for (const path of ['../post.html', 'a/../post.html', '', 'post.docx', 'post']) {
+      expect(checkOutputTemplatePath(path, 'html').ok, path).to.equal(false);
+    }
+    expect(
+      parseWorkspaceSettingsText('{"version":1,"documents":{"outputTemplates":{"docx":"a.docx"}}}')
+        .status,
+    ).to.equal('invalid');
+  });
+});
+
 describe('workspace settings patches', () => {
   it('diffs and re-applies field-level changes', () => {
     const before: WorkspaceSettings = { version: 1, documents: { defaultTheme: 'warm-earth' } };
@@ -201,6 +226,15 @@ describe('workspace settings patches', () => {
       documents: { defaultTheme: null },
       catalog: { exclude: ['drafts'], html: { enabled: true, path: 'index.html' } },
     });
+    expect(
+      parseWorkspaceSettingsPatch({ documents: { outputTemplates: { html: 'a/b.html' } } }),
+    ).to.deep.equal({ documents: { outputTemplates: { html: 'a/b.html' } } });
+    expect(parseWorkspaceSettingsPatch({ documents: { outputTemplates: null } })).to.deep.equal({
+      documents: { outputTemplates: null },
+    });
+    expect(() =>
+      parseWorkspaceSettingsPatch({ documents: { outputTemplates: { html: 'a.md' } } }),
+    ).to.throw();
     expect(() => parseWorkspaceSettingsPatch({ documents: { other: 1 } })).to.throw();
     expect(() => parseWorkspaceSettingsPatch({ version: 2 })).to.throw();
     expect(() => parseWorkspaceSettingsPatch({ catalog: { json: { path: 'x.html' } } })).to.throw();
@@ -229,6 +263,7 @@ describe('default workspace settings', () => {
   it('treats any active setting as worth saving', () => {
     for (const settings of [
       { version: 1, documents: { defaultTheme: 'warm-earth' } },
+      { version: 1, documents: { outputTemplates: { html: 'post.html' } } },
       { version: 1, versionHistory: { enabled: false } },
       { version: 1, versionHistory: { keep: 10 } },
       { version: 1, catalog: { html: { enabled: true } } },
@@ -244,6 +279,12 @@ describe('workspace settings resolution', () => {
     expect(resolveFallbackThemeId(undefined, FULL)).to.equal('warm-earth');
     expect(resolveFallbackThemeId('gezellig', FULL)).to.equal(undefined);
     expect(resolveFallbackThemeId(undefined, null)).to.equal(undefined);
+  });
+
+  it('resolves the default page template per rendered format', () => {
+    expect(resolveWorkspaceOutputTemplate(FULL, 'html')).to.equal('_templates/post.html');
+    expect(resolveWorkspaceOutputTemplate(FULL, 'docx')).to.equal(undefined);
+    expect(resolveWorkspaceOutputTemplate(null, 'html')).to.equal(undefined);
   });
 
   it('inherits version history unless the workspace decides', () => {
@@ -282,7 +323,13 @@ describe('workspace settings JSON schema', () => {
     expect(Object.keys(schema.properties).sort()).to.deep.equal(
       ['$schema', 'catalog', 'documents', 'version', 'versionHistory'].sort(),
     );
-    expect(Object.keys(schema.properties.documents.properties)).to.deep.equal(['defaultTheme']);
+    expect(Object.keys(schema.properties.documents.properties)).to.deep.equal([
+      'defaultTheme',
+      'outputTemplates',
+    ]);
+    expect(
+      Object.keys(schema.properties.documents.properties.outputTemplates.properties),
+    ).to.deep.equal(['html']);
     expect(Object.keys(schema.properties.versionHistory.properties)).to.deep.equal([
       'enabled',
       'keep',

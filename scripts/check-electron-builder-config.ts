@@ -458,6 +458,29 @@ function requireLinuxPackageMetadata(): void {
 requireLinuxPackageMetadata();
 
 /**
+ * Electron names its X11 window class after app.name, which comes from the
+ * desktop package.json, while electron-builder writes the launcher's
+ * StartupWMClass from desktopName and otherwise falls back to productName.
+ * When the two differ, docks show the running window as a separate app.
+ */
+function requireLinuxWindowAssociation(): void {
+  const manifest: unknown = JSON.parse(readFileSync(desktopManifestPath, 'utf8'));
+  if (!isRecord(manifest)) {
+    failConfigPolicy('packages/desktop/package.json must contain an object.');
+  }
+  const appName = typeof manifest.productName === 'string' ? manifest.productName : manifest.name;
+  if (typeof appName !== 'string' || manifest.desktopName !== `${appName}.desktop`) {
+    failConfigPolicy(
+      `packages/desktop/package.json desktopName must be "${String(appName)}.desktop" so the Linux launcher's StartupWMClass matches the window class Electron derives from app.name.`,
+    );
+  }
+
+  process.stdout.write(`Linux window association: StartupWMClass=${appName} OK\n`);
+}
+
+requireLinuxWindowAssociation();
+
+/**
  * Linux launchers must not disable the Chromium sandbox.
  *
  * electron-builder's AppImage target writes `Exec=AppRun --no-sandbox %U` into

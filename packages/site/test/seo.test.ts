@@ -21,7 +21,6 @@ const ONLINE_VIDEO_FRAME_SOURCES = [
   'https://www.youtube-nocookie.com',
   'https://player.vimeo.com',
   'https://www.loom.com',
-  'https://www.dailymotion.com',
   'https://fast.wistia.net',
 ];
 

@@ -47,6 +47,20 @@ export const WORKSPACE_SETTINGS_JSON_SCHEMA = {
           description:
             'Theme for documents whose frontmatter does not name one. A document’s own theme always wins.',
         },
+        outputTemplates: {
+          type: 'object',
+          additionalProperties: false,
+          description:
+            'Page templates for rendered documents whose frontmatter names none (squisq-output-template). A document’s own choice, including "none", always wins.',
+          properties: {
+            html: {
+              ...relativePath,
+              pattern: '\\.html?$',
+              description:
+                'Workspace-relative HTML page template for Web pages, such as "_templates/post.html". Its unnamed <slot> receives the page content.',
+            },
+          },
+        },
       },
     },
     versionHistory: {
