@@ -1,3 +1,15 @@
+## docblocks-mobile [1.0.9](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.8...docblocks-mobile@1.0.9) (2026-10-29)
+
+### Bug Fixes
+
+* Desktop embeds and conflict/export UX ([#37](https://github.com/bendyline/docblocks/issues/37)) ([5a644b9](https://github.com/bendyline/docblocks/commit/5a644b918cc55a7757e71461524477353569aa17))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.9
+* **@bendyline/docblocks-react:** upgraded to 2.7.9
+
 ## docblocks-mobile [1.0.8](https://github.com/bendyline/docblocks/compare/docblocks-mobile@1.0.7...docblocks-mobile@1.0.8) (2026-10-28)
 
 ### Bug Fixes
