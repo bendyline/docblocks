@@ -90,6 +90,10 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/reports/**',
       '**/test-results/**',
+      // Gitignored local release audits, including throwaway repro scripts.
+      '.release-audit-*/**',
+      'release-candidate-audit/**',
+      'ship-audit/**',
     ],
   },
 

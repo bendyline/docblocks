@@ -10,8 +10,7 @@ export const SITE_PRECACHE_MAX_BYTES = 18 * 1024 * 1024;
  * formula engine, then lowered from 98 MiB when ffmpeg.wasm was removed from
  * every surface — the eligible total measured 91.0 MiB before and 60.1 MiB
  * after. These optional features still have to work on a plane like every
- * other feature; the ceiling tracks their reviewed asset cost rather than
- * acting as general headroom.
+ * other feature.
  *
  * Raised by 10 MiB for media edits (audio cleanup), measured 72.9 MiB: the
  * RNNoise engine (~4.8 MiB, WASM embedded) ships inside the media-edit worker,
@@ -24,8 +23,13 @@ export const SITE_PRECACHE_MAX_BYTES = 18 * 1024 * 1024;
  * add) embeds the full player, because the light one leaves Mermaid out. It
  * loads only for such exports, and like every optional feature it must work
  * offline.
+ *
+ * Raised to 96 MiB at a measured 80.03 MiB. Routine Squisq releases and shell
+ * features grow the total a few hundred KiB at a time, and precaching costs
+ * only background bandwidth, so the ceiling keeps ~20% headroom and fails
+ * only on a major jump such as a new engine binary.
  */
-export const SITE_PRECACHE_MAX_TOTAL_BYTES = 80 * 1024 * 1024;
+export const SITE_PRECACHE_MAX_TOTAL_BYTES = 96 * 1024 * 1024;
 
 export const SITE_PRECACHE_EXTENSIONS = Object.freeze([
   'html',
