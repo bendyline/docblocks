@@ -126,6 +126,7 @@ import {
   resolveCatalogOutputs,
   resolveWorkspaceDefaultThemeId,
   resolveWorkspaceOutputTemplate,
+  resolveWorkspaceSiteUrl,
   type WorkspaceSettingsPatch,
 } from '@bendyline/docblocks/workspace-settings';
 import { useDocumentSession } from '../hooks/useDocumentSession.js';
@@ -1497,6 +1498,7 @@ export function DocBlocksShell({
     defaultThemeId: () => workspaceDefaultThemeRef.current,
     defaultOutputTemplate: (format) =>
       resolveWorkspaceOutputTemplate(workspaceSettingsRef.current, format),
+    siteUrl: () => resolveWorkspaceSiteUrl(workspaceSettingsRef.current),
   });
   const workspaceOutputs = useWorkspaceOutputs(
     provider,

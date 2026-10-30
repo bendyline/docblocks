@@ -41,8 +41,17 @@ import {
   type OutsideInFormatId,
   type OutsideInLayout,
   type OutsideInHtmlOutput,
+  type PageTemplateImage,
   type PlainHtmlIcons,
 } from './outside-in-contract.js';
+import {
+  SOCIAL_IMAGE_HEIGHT,
+  SOCIAL_IMAGE_TYPE,
+  SOCIAL_IMAGE_WIDTH,
+  paintSocialImage,
+  type SocialImageContent,
+  type SocialImagePainter,
+} from './social-image.js';
 
 export type { OutsideInLayout } from './outside-in-contract.js';
 export {
@@ -65,6 +74,8 @@ const IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
 const SQUISQ_RUNTIME_FILENAME = 'squisq-player.js';
 const PENDING_RENDER_FILENAME = '.docblocks-pending-render';
 const PENDING_RENDER_CONTENT = 'docblocks-outside-in-pending-render-v1\n';
+/** The social preview picture of a templated page, in its companion folder. */
+export const SOCIAL_IMAGE_FILENAME = 'og-image.png';
 
 export interface EditableShellDocument {
   /** User-facing file selected in the explorer. */
@@ -112,6 +123,19 @@ export interface OutsideInRenderOptions {
    * to Squisq's browser renderer; null leaves them as their source.
    */
   renderDiagram?: DiagramRasterizer | null;
+  /**
+   * The public address of the workspace root (`documents.siteUrl`) as a
+   * folder URL, read at render time, so a page's social preview picture gets
+   * the absolute URL social sites require. Without one the URL is relative.
+   */
+  siteUrl?: () => string | undefined;
+  /**
+   * Draws the social preview picture of a templated page whose template shows
+   * one (an `og-image` slot or an `og:image` / `twitter:image` meta tag).
+   * Defaults to a canvas card in the document's theme; null keeps the
+   * template's own image.
+   */
+  renderSocialImage?: SocialImagePainter | null;
 }
 
 /**
@@ -140,6 +164,31 @@ const drawWithSquisq: DiagramRasterizer = (diagram) => {
   }
   return picture;
 };
+
+/**
+ * Pictures already painted, by painter and content, so a save that changes
+ * nothing on the card (most autosaves) does not paint it again.
+ */
+const paintedImages = new WeakMap<SocialImagePainter, Map<string, Promise<Uint8Array>>>();
+const PAINTED_IMAGE_LIMIT = 16;
+
+function paintOnce(painter: SocialImagePainter, content: SocialImageContent): Promise<Uint8Array> {
+  let painted = paintedImages.get(painter);
+  if (!painted) paintedImages.set(painter, (painted = new Map()));
+  const key = JSON.stringify(content);
+  let picture = painted.get(key);
+  if (picture) {
+    painted.delete(key);
+  } else {
+    picture = painter(content);
+    // A failure is retried on the next save rather than remembered.
+    const cache = painted;
+    picture.catch(() => cache.delete(key));
+  }
+  painted.set(key, picture);
+  if (painted.size > PAINTED_IMAGE_LIMIT) painted.delete(painted.keys().next().value!);
+  return picture;
+}
 
 /** The render's diagram renderer: the host's, else Squisq's browser one. */
 function diagramRendererFor(
@@ -238,6 +287,7 @@ async function finishPendingRender(
     throw error;
   }
   if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
+  await writeSocialImage(provider, rendered.socialImage);
   await writeBytes(provider, layout.targetPath, rendered.bytes);
   await clearPendingRender(provider, layout);
   return null;
@@ -644,6 +694,86 @@ function frontmatterText(value: unknown): string | undefined {
   return undefined;
 }
 
+/** A painted social preview picture and where the page finds it. */
+interface PreparedSocialImage {
+  /** Where the picture is written: the page's companion folder. */
+  path: string;
+  bytes: Uint8Array;
+  image: PageTemplateImage;
+}
+
+/** A short, stable fingerprint of `bytes` (FNV-1a), so a changed picture gets a new URL. */
+function contentVersion(bytes: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return hash.toString(16).padStart(8, '0');
+}
+
+function encodeUrlPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
+/**
+ * Paint a templated page's social preview picture in the document's theme.
+ * Null when the host draws none, or when painting fails: the page then keeps
+ * the template's own image rather than failing the save.
+ */
+async function prepareSocialImage(
+  layout: OutsideInLayout,
+  markdown: MarkdownDocument,
+  title: string,
+  description: string | undefined,
+  themeId: string | undefined,
+  render: OutsideInRenderOptions | undefined,
+): Promise<PreparedSocialImage | null> {
+  const painter =
+    render?.renderSocialImage === undefined ? paintSocialImage : render.renderSocialImage;
+  if (!painter) return null;
+  const siteUrl = render?.siteUrl?.();
+  let bytes: Uint8Array;
+  try {
+    const { resolveThemeForDoc } = await import('@bendyline/squisq/doc');
+    bytes = await paintOnce(painter, {
+      title,
+      ...(description?.trim() ? { description } : {}),
+      ...(siteUrl ? { site: new URL(siteUrl).host.replace(/^www\./, '') } : {}),
+      theme: resolveThemeForDoc(markdown, themeId),
+    });
+  } catch {
+    return null;
+  }
+  // Social sites cache a picture by URL, so a changed picture gets a new one.
+  const version = `?v=${contentVersion(bytes)}`;
+  const src = `${encodeUrlPath(layout.companionName)}/${SOCIAL_IMAGE_FILENAME}${version}`;
+  const published = encodeUrlPath(
+    join(parseWorkspacePath(layout.companionDirectory), SOCIAL_IMAGE_FILENAME),
+  );
+  return {
+    path: join(layout.companionDirectory, SOCIAL_IMAGE_FILENAME),
+    bytes,
+    image: {
+      url: siteUrl ? `${new URL(published, siteUrl).href}${version}` : src,
+      src,
+      width: SOCIAL_IMAGE_WIDTH,
+      height: SOCIAL_IMAGE_HEIGHT,
+      alt: title,
+      type: SOCIAL_IMAGE_TYPE,
+    },
+  };
+}
+
+/** Write a social preview picture unless the file already holds it. True when written. */
+async function writeSocialImage(
+  provider: FileSystemProvider,
+  socialImage: PreparedSocialImage | undefined,
+): Promise<boolean> {
+  if (!socialImage) return false;
+  const current = await readBytes(provider, socialImage.path);
+  if (current && sameBytes(current, socialImage.bytes)) return false;
+  await writeBytes(provider, socialImage.path, socialImage.bytes);
+  return true;
+}
+
 async function renderTemplatedOutsideInHtml(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
@@ -651,7 +781,7 @@ async function renderTemplatedOutsideInHtml(
   template: OutputTemplateChoice,
   themeId: string | undefined,
   render: OutsideInRenderOptions | undefined,
-): Promise<Uint8Array> {
+): Promise<{ bytes: Uint8Array; socialImage?: PreparedSocialImage }> {
   const fail: (reason: string) => never = (reason) => {
     throw new OutsideInTemplateError(
       template.configured,
@@ -680,6 +810,9 @@ async function renderTemplatedOutsideInHtml(
     const text = frontmatterText(value);
     if (text !== undefined) values[key] = text;
   }
+  const socialImage = engine.inspectHtmlPageTemplate(source).usesImage
+    ? await prepareSocialImage(layout, markdown, title, values.description, themeId, render)
+    : null;
   const content = await prepareStaticPage(provider, layout, markdown, render);
   const parts = engine.markdownDocToPlainHtmlParts(content.markdown, {
     title,
@@ -692,18 +825,29 @@ async function renderTemplatedOutsideInHtml(
   try {
     page = engine.applyHtmlPageTemplate(
       source,
-      { bodyHtml: parts.bodyHtml, headHtml: parts.featureHeadHtml, title, values },
+      {
+        bodyHtml: parts.bodyHtml,
+        headHtml: parts.featureHeadHtml,
+        title,
+        values,
+        ...(socialImage ? { image: socialImage.image } : {}),
+      },
       { templatePath: template.path, outputPath },
     );
   } catch (error: unknown) {
     fail(`can't be used. ${error instanceof Error ? error.message : String(error)}`);
   }
-  return new TextEncoder().encode(page);
+  return {
+    bytes: new TextEncoder().encode(page),
+    ...(socialImage ? { socialImage } : {}),
+  };
 }
 
 interface PreparedOutsideInRender {
   bytes: Uint8Array;
   runtimePath: string | null;
+  /** Written before the page, which links to it. */
+  socialImage?: PreparedSocialImage;
 }
 
 async function prepareOutsideInRender(
@@ -726,17 +870,15 @@ async function prepareOutsideInRender(
   }
   const template = await resolveOutputTemplate(layout, markdown, htmlOutput, render);
   if (template) {
-    return {
-      bytes: await renderTemplatedOutsideInHtml(
-        provider,
-        layout,
-        renderedSource as MarkdownDocument,
-        template,
-        themeId,
-        render,
-      ),
-      runtimePath: null,
-    };
+    const page = await renderTemplatedOutsideInHtml(
+      provider,
+      layout,
+      renderedSource as MarkdownDocument,
+      template,
+      themeId,
+      render,
+    );
+    return { ...page, runtimePath: null };
   }
   if (htmlOutput === 'static') {
     return {
@@ -899,8 +1041,12 @@ export async function rerenderPagesUsingTemplate(
       );
       if (choice?.path !== template) continue;
       const rendered = await prepareOutsideInRender(provider, layout, content, render);
+      const imageChanged = await writeSocialImage(provider, rendered.socialImage);
       const current = await readBytes(provider, layout.targetPath);
-      if (current && sameBytes(current, rendered.bytes)) continue;
+      if (current && sameBytes(current, rendered.bytes)) {
+        if (imageChanged) result.updated.push(layout.targetPath);
+        continue;
+      }
       await writeBytes(provider, layout.targetPath, rendered.bytes);
       result.updated.push(layout.targetPath);
     } catch (error: unknown) {
@@ -953,6 +1099,7 @@ export async function createNewOutsideInDocument(
   // rendered file remains a valid importable document instead of leaving only
   // a hidden companion behind.
   await writeBytes(provider, layout.targetPath, prepared.bytes, 'create');
+  await writeSocialImage(provider, prepared.socialImage);
   await writeProviderText(provider, layout.markdownPath, content, 'create');
   return {
     displayPath: layout.targetPath,
@@ -1016,6 +1163,7 @@ export function createOutsideInDocumentTarget(
       // A blocked render keeps the marker, so the next save or open finishes it.
       if (rendered) {
         if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
+        await writeSocialImage(provider, rendered.socialImage);
         await writeBytes(provider, layout.targetPath, rendered.bytes);
         await clearPendingRender(provider, layout);
       }

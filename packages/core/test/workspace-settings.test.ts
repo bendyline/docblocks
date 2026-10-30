@@ -5,6 +5,7 @@ import {
   applyWorkspaceSettingsPatch,
   checkCatalogOutputPath,
   checkOutputTemplatePath,
+  checkSiteUrl,
   diffWorkspaceSettings,
   isDefaultWorkspaceSettings,
   isEmptyWorkspaceSettingsPatch,
@@ -13,6 +14,7 @@ import {
   resolveCatalogOutputs,
   resolveFallbackThemeId,
   resolveWorkspaceOutputTemplate,
+  resolveWorkspaceSiteUrl,
   resolveWorkspaceVersioningEnabled,
   serializeWorkspaceSettings,
   type WorkspaceSettings,
@@ -20,7 +22,11 @@ import {
 
 const FULL: WorkspaceSettings = {
   version: 1,
-  documents: { defaultTheme: 'warm-earth', outputTemplates: { html: '_templates/post.html' } },
+  documents: {
+    defaultTheme: 'warm-earth',
+    outputTemplates: { html: '_templates/post.html' },
+    siteUrl: 'https://example.com/posts/',
+  },
   versionHistory: { enabled: true, keep: 25 },
   catalog: {
     title: 'Articles',
@@ -167,6 +173,55 @@ describe('output template paths', () => {
       parseWorkspaceSettingsText('{"version":1,"documents":{"outputTemplates":{"docx":"a.docx"}}}')
         .status,
     ).to.equal('invalid');
+  });
+});
+
+describe('workspace site address', () => {
+  it('accepts an absolute http or https address', () => {
+    for (const url of ['https://example.com/posts/', 'http://localhost:3090', 'https://a.b/c/d']) {
+      expect(checkSiteUrl(url), url).to.deep.equal({ ok: true, url });
+    }
+  });
+
+  it('refuses relative, non-web, and query or fragment addresses', () => {
+    for (const url of [
+      '',
+      '/posts/',
+      'example.com/posts',
+      'ftp://example.com/',
+      'javascript:alert(1)',
+      'https://example.com/?a=1',
+      'https://example.com/#top',
+      'https://example.com/?',
+      42,
+    ]) {
+      expect(checkSiteUrl(url).ok, String(url)).to.equal(false);
+    }
+    expect(
+      parseWorkspaceSettingsText('{"version":1,"documents":{"siteUrl":"posts/"}}').status,
+    ).to.equal('invalid');
+  });
+
+  it('patches and clears the address', () => {
+    expect(parseWorkspaceSettingsPatch({ documents: { siteUrl: null } })).to.deep.equal({
+      documents: { siteUrl: null },
+    });
+    const set = applyWorkspaceSettingsPatch(null, {
+      documents: { siteUrl: 'https://example.com/' },
+    });
+    expect(set).to.deep.equal({ version: 1, documents: { siteUrl: 'https://example.com/' } });
+    expect(isDefaultWorkspaceSettings(set)).to.equal(false);
+    expect(applyWorkspaceSettingsPatch(set, { documents: { siteUrl: null } })).to.deep.equal({
+      version: 1,
+    });
+  });
+
+  it('resolves the address as a folder URL', () => {
+    expect(resolveWorkspaceSiteUrl(FULL)).to.equal('https://example.com/posts/');
+    expect(
+      resolveWorkspaceSiteUrl({ version: 1, documents: { siteUrl: 'https://example.com/posts' } }),
+    ).to.equal('https://example.com/posts/');
+    expect(resolveWorkspaceSiteUrl(null)).to.equal(undefined);
   });
 });
 
@@ -326,7 +381,11 @@ describe('workspace settings JSON schema', () => {
     expect(Object.keys(schema.properties.documents.properties)).to.deep.equal([
       'defaultTheme',
       'outputTemplates',
+      'siteUrl',
     ]);
+    const siteUrl = new RegExp(schema.properties.documents.properties.siteUrl.pattern);
+    expect(siteUrl.test('https://example.com/posts/')).to.equal(true);
+    expect(siteUrl.test('https://example.com/?a=1')).to.equal(false);
     expect(
       Object.keys(schema.properties.documents.properties.outputTemplates.properties),
     ).to.deep.equal(['html']);

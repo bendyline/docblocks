@@ -11,6 +11,7 @@ import {
   type OutsideInRenderOptions,
 } from '../src/DocBlocksShell/outside-in.js';
 import { loadPageTemplateEngine } from '../src/DocBlocksShell/outside-in-contract.js';
+import type { SocialImageContent } from '../src/DocBlocksShell/social-image.js';
 import { importDroppedFiles } from '../src/DocBlocksShell/import-files.js';
 
 const TEMPLATE = `<!doctype html>
@@ -297,6 +298,157 @@ describe('outside-in page templates', function () {
       (await rerenderPagesUsingTemplate(provider, '_templates/post.html', workspaceDefault))
         .updated,
     ).to.deep.equal([]);
+  });
+
+  describe('social preview pictures', function () {
+    const SOCIAL_TEMPLATE = TEMPLATE.replace(
+      '</head>',
+      `  <meta property="og:image" content="https://example.com/logo.png">
+  <meta property="og:image:alt" content="Logo">
+  <meta name="twitter:image" content="https://example.com/logo.png">
+</head>`,
+    ).replace(
+      '<article>',
+      '<article>\n    <slot name="og-image"><img src="../img/logo.png" alt=""></slot>',
+    );
+
+    before(async function () {
+      // Squisq fills image metadata from releases that report `usesImage`.
+      const engine = await loadPageTemplateEngine();
+      if (engine?.inspectHtmlPageTemplate('<meta property="og:image"><slot/>').usesImage !== true) {
+        this.skip();
+      }
+    });
+
+    function painterLog(): {
+      painted: SocialImageContent[];
+      render: OutsideInRenderOptions;
+    } {
+      const painted: SocialImageContent[] = [];
+      return {
+        painted,
+        render: {
+          ...workspaceDefault,
+          defaultThemeId: () => 'warm-earth',
+          siteUrl: () => 'https://example.com/blog/',
+          renderSocialImage: async (content) => {
+            painted.push(content);
+            return new TextEncoder().encode(`png:${content.title}`);
+          },
+        },
+      };
+    }
+
+    it('paints one in the document theme and links it from the page', async () => {
+      const provider = await blogWorkspace('social-image');
+      await provider.writeFile('_templates/post.html', SOCIAL_TEMPLATE);
+      const { painted, render } = painterLog();
+      const created = await createNewOutsideInDocument(
+        provider,
+        'posts/hello world.html',
+        'static',
+        render,
+      );
+      const target = createOutsideInDocumentTarget(provider, created.outsideIn, undefined, render);
+      const next = withFrontmatter(
+        created.content.replace('# hello world', '# Hello world\n\nFirst post.'),
+        { description: 'A first post' },
+      );
+      await target.commit(request(target.key, next, created.content));
+
+      expect(painted.at(-1)).to.deep.include({
+        title: 'Hello world',
+        description: 'A first post',
+        site: 'example.com',
+      });
+      expect(painted.at(-1)?.theme.id).to.equal('warm-earth');
+      const picture = await provider.readBinary('posts/hello world_files/og-image.png');
+      expect(new TextDecoder().decode(picture!)).to.equal('png:Hello world');
+
+      const page = (await provider.readFile('posts/hello world.html'))!;
+      const version = /og-image\.png\?v=([0-9a-f]{8})"/.exec(page)?.[1];
+      expect(version).to.be.a('string');
+      expect(page).to.contain(
+        `<meta property="og:image" content="https://example.com/blog/posts/hello%20world_files/og-image.png?v=${version}">`,
+      );
+      expect(page).to.contain(
+        `<meta name="twitter:image" content="https://example.com/blog/posts/hello%20world_files/og-image.png?v=${version}">`,
+      );
+      expect(page).to.contain('<meta property="og:image:alt" content="Hello world">');
+      expect(page).to.contain(
+        `<img src="hello%20world_files/og-image.png?v=${version}" alt="Hello world" width="1200" height="630">`,
+      );
+
+      // A save that changes nothing on the card paints nothing new.
+      const count = painted.length;
+      const edited = next.replace('First post.', 'First post, edited.');
+      await target.commit(request(target.key, edited, next));
+      expect(painted).to.have.length(count);
+
+      // A changed title is a new picture at a new URL.
+      await target.commit(request(target.key, edited.replace('# Hello world', '# Hi'), edited));
+      const renamed = (await provider.readFile('posts/hello world.html'))!;
+      expect(renamed).not.to.contain(`?v=${version}`);
+      expect(
+        new TextDecoder().decode(
+          (await provider.readBinary('posts/hello world_files/og-image.png'))!,
+        ),
+      ).to.equal('png:Hi');
+    });
+
+    it('links the picture relative to the page without a site address', async () => {
+      const provider = await blogWorkspace('social-image-relative');
+      await provider.writeFile('_templates/post.html', SOCIAL_TEMPLATE);
+      const { render } = painterLog();
+      await createNewOutsideInDocument(provider, 'hello.html', 'static', {
+        ...render,
+        siteUrl: () => undefined,
+      });
+      const page = (await provider.readFile('hello.html'))!;
+      expect(page).to.match(
+        /<meta property="og:image" content="hello_files\/og-image\.png\?v=[0-9a-f]{8}">/,
+      );
+    });
+
+    it('keeps the template image when the template shows none, painting is off, or it fails', async () => {
+      const provider = await blogWorkspace('social-image-off');
+      const { painted, render } = painterLog();
+      await createNewOutsideInDocument(provider, 'plain.html', 'static', render);
+      expect(painted).to.have.length(0);
+      expect(await provider.exists('plain_files/og-image.png')).to.equal(false);
+
+      await provider.writeFile('_templates/post.html', SOCIAL_TEMPLATE);
+      await createNewOutsideInDocument(provider, 'off.html', 'static', {
+        ...render,
+        renderSocialImage: null,
+      });
+      await createNewOutsideInDocument(provider, 'broken.html', 'static', {
+        ...render,
+        renderSocialImage: () => Promise.reject(new Error('no canvas')),
+      });
+      for (const name of ['off', 'broken']) {
+        const page = (await provider.readFile(`${name}.html`))!;
+        expect(page).to.contain(
+          '<meta property="og:image" content="https://example.com/logo.png">',
+        );
+        expect(page).to.contain('<img src="img/logo.png" alt="">');
+        expect(await provider.exists(`${name}_files/og-image.png`)).to.equal(false);
+      }
+    });
+
+    it('repaints when a template starts showing one', async () => {
+      const provider = await blogWorkspace('social-image-rerender');
+      const { painted, render } = painterLog();
+      await createNewOutsideInDocument(provider, 'posts/first.html', 'static', render);
+      expect(painted).to.have.length(0);
+      await provider.writeFile('_templates/post.html', SOCIAL_TEMPLATE);
+      const result = await rerenderPagesUsingTemplate(provider, '_templates/post.html', render);
+      expect(result).to.deep.equal({ updated: ['posts/first.html'], failed: [] });
+      expect(await provider.exists('posts/first_files/og-image.png')).to.equal(true);
+      expect(await provider.readFile('posts/first.html')).to.contain(
+        'content="https://example.com/blog/posts/first_files/og-image.png?v=',
+      );
+    });
   });
 
   it('finds the page templates a document settings picker offers', async () => {

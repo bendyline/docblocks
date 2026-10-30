@@ -303,6 +303,36 @@ export function WorkspaceSettingsControls({
               )}
             </p>
           </div>
+          <div className="db-settings-text">
+            <label htmlFor={`${id}-site-url`}>Site address</label>
+            <input
+              id={`${id}-site-url`}
+              className="db-settings-text-input"
+              type="url"
+              inputMode="url"
+              spellCheck={false}
+              placeholder="https://example.com/posts/"
+              aria-describedby={`${id}-site-url-hint`}
+              value={value.documents?.siteUrl ?? ''}
+              onChange={(event) =>
+                onChange(
+                  withSection(
+                    value,
+                    'documents',
+                    compactObject({
+                      ...(value.documents ?? {}),
+                      siteUrl: optionalText(event.currentTarget.value),
+                    }),
+                  ),
+                )
+              }
+            />
+            <p id={`${id}-site-url-hint`} className="db-settings-hint">
+              Where this folder is published on the web. Pages made with a page template use it to
+              give their social preview picture the full address that sites like LinkedIn and X
+              require.
+            </p>
+          </div>
         </div>
       </fieldset>
 

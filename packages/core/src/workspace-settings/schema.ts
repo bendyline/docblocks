@@ -61,6 +61,14 @@ export const WORKSPACE_SETTINGS_JSON_SCHEMA = {
             },
           },
         },
+        siteUrl: {
+          type: 'string',
+          format: 'uri',
+          pattern: '^https?://[^?#]+$',
+          maxLength: WORKSPACE_SETTINGS_LIMITS.maxUrlCharacters,
+          description:
+            'Public address this folder is published at, such as "https://example.com/posts/". Gives rendered Web pages absolute social preview image URLs.',
+        },
       },
     },
     versionHistory: {

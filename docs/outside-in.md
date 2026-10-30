@@ -130,6 +130,20 @@ element:
   directly in a browser.
 - `<title>` text, `<meta name="description">`, and existing `og:` / `twitter:`
   title and description tags are filled in from the document.
+- A template that declares an `og:image` or `twitter:image` tag, or has a
+  `<slot name="og-image">`, gets a **social preview picture**: a 1200×630 card
+  of the page's title and frontmatter `description`, drawn in the document's
+  theme (its colors and title and body fonts) and saved as `og-image.png` in
+  the page's companion folder. The image tags (with `og:image:width`,
+  `og:image:height`, `og:image:alt`, and `og:image:type`, when declared) point
+  at it, and `<slot name="og-image">` shows it in the page as an `<img>`. Its
+  URL carries a short content fingerprint (`?v=…`), so social sites re-fetch a
+  changed card. Social sites need an absolute URL: set the workspace's
+  `documents.siteUrl` to where the folder is published (see
+  [workspace settings](workspace-settings.md)); without it the URL is relative
+  to the page. A card is repainted only when its title, description, theme, or
+  site changes. If it can't be drawn, the page keeps the template's own image.
+  Set `twitter:card` to `summary_large_image` so X shows the card full width.
 - Relative links and sources in the template are rewritten for each page's
   folder, so `../css/site.css` written next to `_templates/post.html` still
   works from `posts/2026/hello.html`. URLs inside inline `<style>` or `style=""`
