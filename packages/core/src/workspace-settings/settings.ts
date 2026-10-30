@@ -23,6 +23,7 @@ export const WORKSPACE_SETTINGS_LIMITS = {
   maxFileBytes: 64 * 1024,
   maxTitleCharacters: 256,
   maxPathCharacters: 1024,
+  maxUrlCharacters: 2048,
   maxSchemaCharacters: 2048,
   maxExcludes: 64,
   minKeep: 1,
@@ -56,6 +57,12 @@ export interface WorkspaceDocumentSettings {
    * always wins.
    */
   readonly outputTemplates?: WorkspaceOutputTemplates;
+  /**
+   * Public `http(s)` address the workspace root is published at, such as
+   * `https://example.com/posts/`. Rendered Web pages use it to give their
+   * social preview pictures the absolute URLs social sites require.
+   */
+  readonly siteUrl?: string;
 }
 
 export interface WorkspaceVersionHistorySettings {
@@ -220,6 +227,48 @@ export function checkOutputTemplatePath(
   }
 }
 
+/** Validate a configured site address: an absolute `http(s)` URL with no query or fragment. */
+export function validateSiteUrl(value: unknown): string {
+  const label = 'documents.siteUrl';
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > WORKSPACE_SETTINGS_LIMITS.maxUrlCharacters
+  ) {
+    fail(
+      `${label} must be a URL of at most ${WORKSPACE_SETTINGS_LIMITS.maxUrlCharacters} characters.`,
+    );
+  }
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    fail(`${label} must be an absolute URL, such as "https://example.com/posts/".`);
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    fail(`${label} must be an http or https URL.`);
+  }
+  if (url.search || url.hash || value.includes('?') || value.includes('#')) {
+    fail(`${label} must not have a query or fragment.`);
+  }
+  return value;
+}
+
+function optionalSiteUrl(value: unknown): string | undefined {
+  return value === undefined ? undefined : validateSiteUrl(value);
+}
+
+/** Try-form for UI validation messages. */
+export function checkSiteUrl(
+  value: unknown,
+): { ok: true; url: string } | { ok: false; message: string } {
+  try {
+    return { ok: true, url: validateSiteUrl(value) };
+  } catch (error) {
+    return { ok: false, message: shapeMessage(error) };
+  }
+}
+
 function parseOutputTemplates(value: unknown): WorkspaceOutputTemplates | undefined {
   if (value === undefined) return undefined;
   const record = exactRecord(value, 'documents.outputTemplates', WORKSPACE_OUTPUT_TEMPLATE_FORMATS);
@@ -311,7 +360,7 @@ function compact<T extends object>(value: T): T | undefined {
   return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
 }
 
-const DOCUMENT_SETTINGS_KEYS = ['defaultTheme', 'outputTemplates'] as const;
+const DOCUMENT_SETTINGS_KEYS = ['defaultTheme', 'outputTemplates', 'siteUrl'] as const;
 
 /** Parse an already-decoded settings value with the exact v1 shape. */
 export function parseWorkspaceSettings(value: unknown): WorkspaceSettings {
@@ -346,6 +395,7 @@ export function parseWorkspaceSettings(value: unknown): WorkspaceSettings {
     documents = compact({
       defaultTheme: optionalTheme(record.defaultTheme, 'documents.defaultTheme'),
       outputTemplates: parseOutputTemplates(record.outputTemplates),
+      siteUrl: optionalSiteUrl(record.siteUrl),
     });
   }
 
@@ -474,6 +524,7 @@ export function serializeWorkspaceSettings(settings: WorkspaceSettings): string 
       ...(outputTemplates
         ? { outputTemplates: pick(outputTemplates, WORKSPACE_OUTPUT_TEMPLATE_FORMATS) }
         : {}),
+      ...pick(normalized.documents, ['siteUrl']),
     };
   }
   if (normalized.versionHistory) {
@@ -627,6 +678,7 @@ export function parseWorkspaceSettingsPatch(value: unknown): WorkspaceSettingsPa
           optionalTheme(input, 'documents.defaultTheme'),
         ),
         outputTemplates: nullable(record.outputTemplates, parseOutputTemplates),
+        siteUrl: nullable(record.siteUrl, optionalSiteUrl),
       }) ?? {};
   }
   if (root.versionHistory !== undefined) {
@@ -701,8 +753,8 @@ export function tryApplyWorkspaceSettingsPatch(
 
 /**
  * True when settings change nothing about how DocBlocks treats the folder: no
- * default theme or page template, no version-history choice, and no catalog
- * output turned on.
+ * default theme, page template, or site address, no version-history choice,
+ * and no catalog output turned on.
  * Fields that only configure a disabled output (a catalog title, path, order,
  * or page theme) are inert. Such settings are never worth creating a
  * `.docblocks/` folder for.
@@ -713,6 +765,7 @@ export function isDefaultWorkspaceSettings(
   return (
     settings?.documents?.defaultTheme === undefined &&
     settings?.documents?.outputTemplates === undefined &&
+    settings?.documents?.siteUrl === undefined &&
     settings?.versionHistory?.enabled === undefined &&
     settings?.versionHistory?.keep === undefined &&
     settings?.catalog?.html?.enabled !== true &&
@@ -734,6 +787,18 @@ export function resolveWorkspaceOutputTemplate(
 ): string | undefined {
   const templates = settings?.documents?.outputTemplates;
   return format === 'html' ? templates?.html : undefined;
+}
+
+/**
+ * The address the workspace root is published at, as a folder URL (ending in
+ * `/`) that workspace paths resolve against, or undefined when none is set.
+ */
+export function resolveWorkspaceSiteUrl(
+  settings: WorkspaceSettings | null | undefined,
+): string | undefined {
+  const url = settings?.documents?.siteUrl;
+  if (url === undefined) return undefined;
+  return url.endsWith('/') ? url : `${url}/`;
 }
 
 /**

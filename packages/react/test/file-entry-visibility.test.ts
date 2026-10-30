@@ -1,9 +1,11 @@
 import { expect } from 'chai';
-import type { FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import { parseWorkspacePath, type FileSystemEntry } from '@bendyline/docblocks/filesystem';
+import type { WorkspaceOutputsResult } from '@bendyline/docblocks/workspace-settings';
 import {
   filterVisibleFileEntries,
   isHiddenFileEntry,
 } from '../src/FileExplorer/entry-visibility.js';
+import { hiddenCatalogOutputPaths } from '../src/WorkspaceSettings/managed-outputs.js';
 
 function entry(path: string, kind: FileSystemEntry['kind'] = 'directory'): FileSystemEntry {
   return { kind, name: path.split('/').pop() ?? path, path };
@@ -37,5 +39,73 @@ describe('file entry visibility', () => {
     expect(isHiddenFileEntry(entry('/scripts/__pycache__'))).to.equal(true);
     expect(isHiddenFileEntry(entry('/node_modules_notes'))).to.equal(false);
     expect(isHiddenFileEntry(entry('/notes/modules'))).to.equal(false);
+  });
+
+  it('hides host-named files in any case or slash form, but not folders at those paths', () => {
+    const entries = [
+      entry('/Index.HTML', 'file'),
+      entry('catalog.json', 'file'),
+      entry('/notes.md', 'file'),
+      entry('/out/catalog.json'),
+    ];
+
+    expect(
+      filterVisibleFileEntries(entries, ['index.html', 'catalog.json', 'out/catalog.json']).map(
+        ({ path }) => path,
+      ),
+    ).to.deep.equal(['/notes.md', '/out/catalog.json']);
+  });
+});
+
+describe('hidden catalog output paths', () => {
+  const html = parseWorkspacePath('index.html');
+  const json = parseWorkspacePath('data/catalog.json');
+  const settings = {
+    version: 1,
+    catalog: {
+      html: { enabled: true },
+      json: { enabled: true, path: 'data/catalog.json' },
+    },
+  } as const;
+
+  it('hides nothing when no catalog output is enabled', () => {
+    expect(hiddenCatalogOutputPaths(null, null)).to.deep.equal([]);
+    expect(
+      hiddenCatalogOutputPaths({ version: 1, catalog: { html: { enabled: false } } }, null),
+    ).to.deep.equal([]);
+  });
+
+  it('hides each enabled output before and after the catalog writes it', () => {
+    expect(hiddenCatalogOutputPaths(settings, null)).to.deep.equal([
+      'index.html',
+      'data/catalog.json',
+    ]);
+    const written: WorkspaceOutputsResult = {
+      documentCount: 2,
+      outputs: [
+        { kind: 'html', path: html, status: 'unchanged' },
+        { kind: 'json', path: json, status: 'written' },
+      ],
+    };
+    expect(hiddenCatalogOutputPaths(settings, written)).to.deep.equal([
+      'index.html',
+      'data/catalog.json',
+    ]);
+  });
+
+  it('keeps listing a hand-written file the catalog refused to overwrite', () => {
+    const blocked: WorkspaceOutputsResult = {
+      documentCount: 2,
+      outputs: [
+        {
+          kind: 'html',
+          path: html,
+          status: 'blocked',
+          message: 'index.html already exists and was not created by DocBlocks.',
+        },
+        { kind: 'json', path: json, status: 'unchanged' },
+      ],
+    };
+    expect(hiddenCatalogOutputPaths(settings, blocked)).to.deep.equal(['data/catalog.json']);
   });
 });

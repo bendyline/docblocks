@@ -306,3 +306,32 @@ describe('workspace settings JSON Schema resource', () => {
     ).to.deep.equal(JSON.parse(JSON.stringify(WORKSPACE_SETTINGS_JSON_SCHEMA)));
   });
 });
+
+describe('workspace settings watcher paths', () => {
+  type ServiceModule = typeof import('../src/workspaceSettingsService.js');
+  let relativeWorkspacePath: ServiceModule['relativeWorkspacePath'];
+
+  before(async () => {
+    ({ relativeWorkspacePath } =
+      (await import('../src/workspaceSettingsService.js')) as ServiceModule);
+  });
+
+  it('matches a Windows folder in any case', () => {
+    // A folder opened as D:\… while the watcher reports d:\… (and the reverse).
+    expect(
+      relativeWorkspacePath({ path: '/D:/a/ws' }, { path: '/d:/a/ws/.docblocks/workspace.json' }),
+    ).to.equal('.docblocks/workspace.json');
+    expect(relativeWorkspacePath({ path: '/d:/a/WS/' }, { path: '/D:/a/ws/Notes.md' })).to.equal(
+      'Notes.md',
+    );
+    expect(relativeWorkspacePath({ path: '/D:/a/ws' }, { path: '/d:/a/ws-two/notes.md' })).to.equal(
+      null,
+    );
+  });
+
+  it('matches other folders exactly and rejects siblings', () => {
+    expect(relativeWorkspacePath({ path: '/ws' }, { path: '/ws/Notes.md' })).to.equal('Notes.md');
+    expect(relativeWorkspacePath({ path: '/ws' }, { path: '/ws-two/notes.md' })).to.equal(null);
+    expect(relativeWorkspacePath({ path: '/ws' }, { path: '/WS/notes.md' })).to.equal(null);
+  });
+});

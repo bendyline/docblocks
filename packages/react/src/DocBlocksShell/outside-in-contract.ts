@@ -210,14 +210,34 @@ export interface PageTemplateEngine {
       headHtml?: string;
       title: string;
       values?: Readonly<Record<string, string | undefined>>;
+      /** Ignored by a Squisq release that predates social preview pictures. */
+      image?: PageTemplateImage;
     },
     options?: { templatePath?: string; outputPath?: string },
   ) => string;
   isHtmlPageTemplate: (html: string) => boolean;
   inspectHtmlPageTemplate: (html: string) => {
     isTemplate: boolean;
+    /**
+     * Whether the template shows a social preview picture: an `og-image` slot
+     * or an Open Graph / Twitter image `<meta>`. Absent from a Squisq release
+     * that predates them.
+     */
+    usesImage?: boolean;
     errors: ReadonlyArray<{ message: string; line: number }>;
   };
+}
+
+/** A page's social preview picture, as the page template engine takes it. */
+export interface PageTemplateImage {
+  /** For the image `<meta>` tags; absolute when the workspace has a site address. */
+  url: string;
+  /** For the `og-image` slot's `<img>`, relative to the page. */
+  src?: string;
+  width?: number;
+  height?: number;
+  alt?: string;
+  type?: string;
 }
 
 /**

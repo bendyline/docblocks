@@ -129,7 +129,9 @@ const surfaces: BundleSurface[] = [
       extensions: ['.js', '.css'],
       // Mermaid's diagram families are separate deferred chunks, but the
       // aggregate gate still accounts for their complete shipped footprint.
-      budgetBytes: 42_500_000,
+      // Deliberately loose (~18% over the 42.5 MB measured in October 2026):
+      // routine Squisq and shell growth passes; only a major jump fails.
+      budgetBytes: 50_000_000,
     },
   },
 ];
@@ -283,20 +285,21 @@ async function assertSurface(surface: BundleSurface): Promise<string[]> {
 /**
  * VS Code extension-host bundles. Both carry Squisq's Markdown parser and
  * plain-HTML renderer so workspace catalogs regenerate without a webview
- * open; the VSIX ships no node_modules, so they are bundled. The budget keeps
- * an accidental import of a heavy format runtime (DOCX, PDF, PPTX) out of a
- * bundle VS Code parses on activation.
+ * open; the VSIX ships no node_modules, so they are bundled. VS Code parses
+ * them on activation, so the budget catches a major jump, such as an
+ * accidental import of the format runtimes (DOCX, PDF, PPTX). It sits ~20%
+ * over the sizes measured in October 2026 so routine growth passes.
  */
 const extensionHostBundles = [
   {
     name: 'vscode extension host',
     path: 'packages/vscode/dist/extension.js',
-    budgetBytes: 3_200_000,
+    budgetBytes: 3_600_000,
   },
   {
     name: 'vscode web extension host',
     path: 'packages/vscode/dist/extension.web.js',
-    budgetBytes: 3_000_000,
+    budgetBytes: 3_400_000,
   },
 ] as const;
 

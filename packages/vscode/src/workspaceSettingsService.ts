@@ -83,6 +83,24 @@ function loadRenderer(): Promise<WorkspaceOutputsRenderer> {
   return defaultRenderer;
 }
 
+/**
+ * `uri`'s path relative to the folder at `root`, or null outside it. Windows
+ * paths are compared case-insensitively, as `getWorkspaceFolder` does: a URI
+ * keeps the case it was created with, so a folder opened as `D:\…` and a
+ * watcher event for `d:\…` name the same file.
+ */
+export function relativeWorkspacePath(
+  root: Pick<vscode.Uri, 'path'>,
+  uri: Pick<vscode.Uri, 'path'>,
+): string | null {
+  const prefix = `${root.path.replace(/\/$/, '')}/`;
+  const head = uri.path.slice(0, prefix.length);
+  const inside = /^\/[A-Za-z]:/u.test(prefix)
+    ? head.toLowerCase() === prefix.toLowerCase()
+    : head === prefix;
+  return inside ? uri.path.slice(prefix.length) : null;
+}
+
 function isWritableFolder(folder: vscode.WorkspaceFolder): boolean {
   return vscode.workspace.fs.isWritableFileSystem(folder.uri.scheme) !== false;
 }
@@ -105,13 +123,13 @@ export class WorkspaceSettingsService implements vscode.Disposable {
     const documentWatcher = vscode.workspace.createFileSystemWatcher(DOCUMENT_GLOB);
     const onSettings = (uri: vscode.Uri) => {
       const entry = this.entryFor(uri);
-      if (entry && this.relativePath(entry.folder, uri) === WORKSPACE_SETTINGS_PATH) {
+      if (entry && relativeWorkspacePath(entry.folder.uri, uri) === WORKSPACE_SETTINGS_PATH) {
         void this.reload(entry);
       }
     };
     const onDocument = (uri: vscode.Uri) => {
       const entry = this.entryFor(uri);
-      entry?.scheduler?.notify(this.relativePath(entry.folder, uri) ?? undefined);
+      entry?.scheduler?.notify(relativeWorkspacePath(entry.folder.uri, uri) ?? undefined);
     };
     this.disposables.push(
       this.changeEmitter,
@@ -174,14 +192,24 @@ export class WorkspaceSettingsService implements vscode.Disposable {
   }
 
   /** Regenerate every folder's catalog (the `docblocks.refreshWorkspaceOutputs` command). */
-  public async regenerateAll(): Promise<number> {
+  public async regenerateAll(): Promise<{
+    refreshed: number;
+    failed: Array<{ folder: string; message: string }>;
+  }> {
     let refreshed = 0;
+    const failed: Array<{ folder: string; message: string }> = [];
     for (const entry of this.folders.values()) {
       if (!entry.scheduler) continue;
-      await entry.scheduler.regenerate({ force: true });
+      const status = await entry.scheduler.regenerate({ force: true });
       refreshed += 1;
+      if (status.state === 'error') {
+        failed.push({
+          folder: entry.folder.name,
+          message: status.message ?? 'The catalog could not be updated.',
+        });
+      }
     }
-    return refreshed;
+    return { refreshed, failed };
   }
 
   public dispose(): void {
@@ -200,11 +228,6 @@ export class WorkspaceSettingsService implements vscode.Disposable {
   private entryFor(uri: vscode.Uri): FolderEntry | null {
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     return folder ? this.ensureFolder(folder) : null;
-  }
-
-  private relativePath(folder: vscode.WorkspaceFolder, uri: vscode.Uri): string | null {
-    const root = folder.uri.path.replace(/\/$/, '');
-    return uri.path.startsWith(`${root}/`) ? uri.path.slice(root.length + 1) : null;
   }
 
   private ensureFolder(folder: vscode.WorkspaceFolder): FolderEntry {

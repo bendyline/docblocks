@@ -139,4 +139,47 @@ describe('FileExplorer sorting toolbar', () => {
       container.remove();
     }
   });
+
+  it('leaves host-hidden files out of every sort order', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    const provider = createProvider();
+    const listRoot = provider.readDirectory;
+    provider.readDirectory = async (path) =>
+      path === '' || path === '/'
+        ? [
+            ...(await listRoot(path)),
+            {
+              kind: 'file',
+              name: 'index.html',
+              path: 'index.html',
+              lastModified: '2026-07-23T10:00:00.000Z',
+            },
+          ]
+        : listRoot(path);
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(FileExplorer, {
+            provider,
+            sortMode: 'last-modified',
+            hiddenPaths: ['index.html'],
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      });
+
+      expect(renderedPaths(container)).to.deep.equal([
+        'a-folder',
+        'z-folder',
+        'z-new-root.md',
+        'a-old-root.md',
+      ]);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
 });

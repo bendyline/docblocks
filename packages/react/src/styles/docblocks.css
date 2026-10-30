@@ -6673,6 +6673,42 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   outline-offset: 2px;
 }
 
+/* The Markdown saved, but its page template kept the page from updating.
+   People keep writing under it, so it sits where the "Saving paused" notice
+   does (never shown together) instead of over the editor toolbar. */
+.db-page-template-banner {
+  position: fixed;
+  right: 16px;
+  bottom: calc(40px + var(--db-safe-bottom, 0px) + var(--db-keyboard-inset, 0px));
+  z-index: 210;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 8px 8px 12px;
+  font-size: 13px;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-warning, #b7791f);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+}
+
+.db-page-template-banner button {
+  flex: none;
+  padding: 4px 9px;
+  color: var(--db-text);
+  cursor: pointer;
+  background: var(--db-bg);
+  border: 1px solid var(--db-border);
+  border-radius: 5px;
+}
+
+.db-page-template-banner button:focus-visible {
+  outline: 2px solid var(--db-focus, var(--db-accent));
+  outline-offset: 2px;
+}
+
 @keyframes db-save-toast-fade {
   0% {
     opacity: 0;

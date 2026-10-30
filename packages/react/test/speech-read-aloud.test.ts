@@ -15,6 +15,7 @@ import {
 } from '../src/Speech/progressive-player.js';
 import {
   createSpeechInputProvider,
+  stripNonSpeechCues,
   stripPauseEllipses,
 } from '../src/Speech/speech-input-provider.js';
 import { useReadAloud, type ReadAloudState } from '../src/Speech/useReadAloud.js';
@@ -244,6 +245,51 @@ describe('speech input provider', () => {
       signal: new AbortController().signal,
     });
     expect(transcript.text).to.equal('heard or other content');
+  });
+
+  it('drops the captions Whisper writes for room noise and near silence', async () => {
+    // Takes captured from a fan-noise session.
+    expect(stripNonSpeechCues(' [Music]\n')).to.equal('');
+    expect(stripNonSpeechCues('[Music] [Music] [ wind ]')).to.equal('');
+    expect(stripNonSpeechCues(' (wind blowing)\n')).to.equal('');
+    expect(stripNonSpeechCues('(upbeat music) (fan whirring).')).to.equal('');
+    expect(stripNonSpeechCues('♪ ♪')).to.equal('');
+    expect(stripNonSpeechCues('[BLANK_AUDIO]')).to.equal('');
+    expect(stripNonSpeechCues('Thanks for watching!')).to.equal('');
+    expect(stripNonSpeechCues('Thank you so much for watching. [Music]')).to.equal('');
+    expect(stripNonSpeechCues('Please subscribe.')).to.equal('');
+    // Speech around a caption survives with its word breaks.
+    expect(stripNonSpeechCues('[Music] Hello there! How you doing? [Music]')).to.equal(
+      'Hello there! How you doing?',
+    );
+    expect(stripNonSpeechCues('picking up[Music]the\n sound')).to.equal('picking up the sound');
+    // Spoken parentheticals, and sign-offs inside real speech, stay.
+    expect(stripNonSpeechCues('The plan (and the budget) is ready.')).to.equal(
+      'The plan (and the budget) is ready.',
+    );
+    expect(stripNonSpeechCues('(wind blowing) Hello')).to.equal('(wind blowing) Hello');
+    expect(stripNonSpeechCues('Thanks for watching the demo.')).to.equal(
+      'Thanks for watching the demo.',
+    );
+    expect(stripNonSpeechCues('Thank you.')).to.equal('Thank you.');
+
+    const cues: string[] = [];
+    const speech = fakeSpeech({ state: 'ready' });
+    const provider = createSpeechInputProvider(
+      {
+        ...speech,
+        transcribe: async () => ({
+          ok: true,
+          value: { text: cues.shift() ?? '', language: 'en', segments: [], durationMs: 1 },
+        }),
+      },
+      { onRequestSetup: () => undefined },
+    );
+    const take = () =>
+      provider.transcribe(new ArrayBuffer(44), { signal: new AbortController().signal });
+    cues.push(' [Music]\n', 'Hello [Music], everyone...');
+    expect((await take()).text).to.equal('');
+    expect((await take()).text).to.equal('Hello, everyone');
   });
 
   it('passes timed segments through verbatim when timestamps are requested', async () => {

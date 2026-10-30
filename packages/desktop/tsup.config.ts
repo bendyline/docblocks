@@ -40,6 +40,8 @@ export const desktopTsupOptions = [
     external: [
       'electron',
       'electron-updater',
+      // electron-updater's own runtime, shared rather than bundled a second time.
+      'builder-util-runtime',
       'chokidar',
       'electron-window-state',
       '@bendyline/gezel-app-sdk',

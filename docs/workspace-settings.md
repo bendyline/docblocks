@@ -27,7 +27,8 @@ The explorer hides `.docblocks/`, like every dot-folder.
   pull or branch switch.
 
 The file is created lazily, on the first Save that turns something on: a
-default theme, a catalog output, or a version-history choice. Saving only
+default theme, a page template, a site address, a catalog output, or a
+version-history choice. Saving only
 defaults never creates it (so no `.docblocks/` folder appears), and opening a
 folder never writes it. Once the file exists it is updated in place, even back
 to defaults, and never deleted. Single files and `.dbk` bundles opened on their
@@ -40,7 +41,8 @@ own have no folder, so they have no workspace settings.
   "version": 1,
   "documents": {
     "defaultTheme": "warm-earth",
-    "outputTemplates": { "html": "_templates/post.html" }
+    "outputTemplates": { "html": "_templates/post.html" },
+    "siteUrl": "https://example.com/articles/"
   },
   "versionHistory": { "enabled": true, "keep": 50 },
   "catalog": {
@@ -60,6 +62,7 @@ Every section and field except `version` is optional. An absent field means
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `documents.defaultTheme`         | Theme for documents whose frontmatter names none (`squisq-theme`, or the legacy `themeId` / `theme`).                                                                                                                                                                              |
 | `documents.outputTemplates.html` | [Page template](outside-in.md#page-templates) for static Web pages whose companion names none (`squisq-output-template`); a workspace-relative `.html` or `.htm` path.                                                                                                             |
+| `documents.siteUrl`              | The `http` or `https` address the workspace root is published at, such as `https://example.com/articles/`. Templated Web pages use it to give their [social preview picture](outside-in.md#page-templates) an absolute URL. No query or fragment.                                  |
 | `versionHistory.enabled`         | `true` / `false` overrides the app-wide version-history preference for this folder.                                                                                                                                                                                                |
 | `versionHistory.keep`            | Revisions kept per document (1–1000; default 50).                                                                                                                                                                                                                                  |
 | `catalog.title`                  | Catalog heading (default `Documents`).                                                                                                                                                                                                                                             |

@@ -336,11 +336,11 @@ test('Text from narration records a draft, cleans it, inserts once and undoes', 
     }),
   ).toEqual(['ended']);
   const original = await transcript.inputValue();
-  expect(original).toContain('[ Inaudible conversations ]');
-  // Speech input already removes pause ellipses; fillers, stutters and
-  // transcript cues remain until the user requests cleanup.
+  // Speech input already removes pause ellipses and Whisper's bracketed
+  // non-speech captions; fillers and stutters remain until the user requests
+  // cleanup.
   expect(original).toContain('Um the the narrated words.');
-  expect(original).not.toMatch(/\.{3,}|…/u);
+  expect(original).not.toMatch(/\.{3,}|…|\[|\]/u);
   await dialog.getByRole('button', { name: 'Clean up fillers' }).click();
   expect(await transcript.inputValue()).not.toMatch(/Um|the the|\[|\]|\.{2,}|…/u);
   expect(await transcript.inputValue()).toContain('the narrated words.');

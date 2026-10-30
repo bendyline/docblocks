@@ -21,11 +21,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('docblocks.refreshWorkspaceOutputs', async () => {
       if (!(await requireTrustedWorkspace('updates workspace catalogs'))) return;
-      const refreshed = await workspaceSettings.regenerateAll();
+      const { refreshed, failed } = await workspaceSettings.regenerateAll();
       if (refreshed === 0) {
         await vscode.window.showInformationMessage(
           'No folder in this window has a catalog enabled in .docblocks/workspace.json.',
         );
+        return;
+      }
+      const [first] = failed;
+      if (first) {
+        const showOutput = 'Show Output';
+        const choice = await vscode.window.showErrorMessage(
+          failed.length === 1
+            ? `DocBlocks couldn't update the catalog for ${first.folder}: ${first.message}`
+            : `DocBlocks couldn't update ${failed.length} workspace catalogs. ${first.folder}: ${first.message}`,
+          showOutput,
+        );
+        if (choice === showOutput) output.show(true);
       }
     }),
   );

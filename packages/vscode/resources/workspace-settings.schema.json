@@ -36,6 +36,13 @@
               "description": "Workspace-relative HTML page template for Web pages, such as \"_templates/post.html\". Its unnamed <slot> receives the page content."
             }
           }
+        },
+        "siteUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^?#]+$",
+          "maxLength": 2048,
+          "description": "Public address this folder is published at, such as \"https://example.com/posts/\". Gives rendered Web pages absolute social preview image URLs."
         }
       }
     },
