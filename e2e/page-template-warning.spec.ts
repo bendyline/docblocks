@@ -13,6 +13,20 @@ function treeRow(page: Page, path: string) {
   return page.locator(`.db-tree-row[data-path="${path}"], .db-tree-row[data-path="/${path}"]`);
 }
 
+/**
+ * The tree row can appear before the page's own editor mounts, and that mount
+ * starts in Write. Clicking Source earlier switches the outgoing document's
+ * editor instead, so wait for this page's editor first.
+ */
+async function openPageSource(page: Page) {
+  await expect(page.getByRole('textbox', { name: /^Edit \/?hello_files\/hello\.md$/ })).toBeVisible(
+    { timeout: 30_000 },
+  );
+  const sourceTab = page.getByRole('tab', { name: 'Source', exact: true });
+  await sourceTab.click();
+  await expect(sourceTab).toHaveAttribute('aria-selected', 'true');
+}
+
 test('saves the Markdown and warns when a Web page names a missing page template', async ({
   page,
 }) => {
@@ -25,7 +39,7 @@ test('saves the Markdown and warns when a Web page names a missing page template
   await page.locator('.db-new-item-input').press('Enter');
   await expect(treeRow(page, 'hello.html')).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await openPageSource(page);
   const lines = page.locator('.monaco-editor .view-lines');
   await lines.click({ timeout: MONACO_COLD_LOAD_TIMEOUT });
   // Monaco picks shortcuts from the user agent, not the test host.
@@ -46,7 +60,7 @@ test('saves the Markdown and warns when a Web page names a missing page template
   await expect(banner).toHaveCount(0);
   await treeRow(page, 'hello.html').click();
   await expect(banner).toContainText('was not found', { timeout: 15_000 });
-  await page.getByRole('tab', { name: 'Source', exact: true }).click();
+  await openPageSource(page);
   await expect(lines).toContainText('squisq-output-template: /missing.html', {
     timeout: MONACO_COLD_LOAD_TIMEOUT,
   });

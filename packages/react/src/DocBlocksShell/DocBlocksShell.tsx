@@ -1834,13 +1834,20 @@ export function DocBlocksShell({
     return pickEmptyDocumentPrompt();
   }, [editorKey]);
   const [explorerKey, setExplorerKey] = useState(0);
-  // A newly created catalog file is invisible to explorers over providers
-  // that cannot watch (IndexedDB, File System Access) until the tree re-reads.
+  // Over providers that cannot watch (IndexedDB, File System Access), catalog
+  // writes are invisible until something re-reads: the explorer for a newly
+  // created file, and the workspace index (quick open's only route to the
+  // catalog page, which the explorer hides) for every write.
   const workspaceOutputsResult = workspaceOutputs.status.result;
   useEffect(() => {
-    if (!workspaceOutputsResult?.outputs.some((output) => output.created)) return;
+    if (!workspaceOutputsResult) return;
     if (provider && getFileSystemProviderV2(provider)?.capabilities.watch) return;
-    setExplorerKey((key) => key + 1);
+    for (const output of workspaceOutputsResult.outputs) {
+      if (output.status === 'written') workspaceIndexRef.current?.invalidate(output.path);
+    }
+    if (workspaceOutputsResult.outputs.some((output) => output.created)) {
+      setExplorerKey((key) => key + 1);
+    }
   }, [provider, workspaceOutputsResult]);
   const [fileExplorerSortMode, setFileExplorerSortMode] =
     useState<FileExplorerSortMode>(loadFileExplorerSortMode);
