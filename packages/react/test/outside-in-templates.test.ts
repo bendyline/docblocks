@@ -136,7 +136,7 @@ describe('outside-in page templates', function () {
     expect(plain).to.contain('<title>about</title>');
   });
 
-  it('keeps interactive pages on the player and rejects a template named for one', async () => {
+  it('keeps interactive pages on the player and reports a template named for one', async () => {
     const provider = await blogWorkspace('template-interactive');
     const created = await createNewOutsideInDocument(
       provider,
@@ -147,22 +147,31 @@ describe('outside-in page templates', function () {
     expect(await provider.readFile('deck.html')).to.contain('squisq-player.js');
     expect(await provider.readFile('deck.html')).not.to.contain('My Blog');
 
-    const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+    const blocked: Array<OutsideInTemplateError | null> = [];
+    const target = createOutsideInDocumentTarget(provider, created.outsideIn, (renderBlocked) =>
+      blocked.push(renderBlocked),
+    );
     const named = withFrontmatter(created.content, {
       'squisq-output-template': '/_templates/post.html',
     });
-    const error = await target
-      .commit(request(target.key, named, created.content))
-      .catch((caught: unknown) => caught);
-    expect(error).to.be.instanceOf(OutsideInTemplateError);
-    expect((error as Error).message).to.match(/Interactive Web pages/);
+    await target.commit(request(target.key, named, created.content));
+    expect(blocked).to.have.length(1);
+    expect(blocked[0]).to.be.instanceOf(OutsideInTemplateError);
+    expect(blocked[0]?.message).to.match(/Interactive Web pages/);
+    expect(await provider.readFile(created.sourcePath)).to.equal(named);
+    expect(await provider.readFile('deck.html')).to.contain('squisq-player.js');
   });
 
-  it('writes nothing when the template is missing or unusable', async () => {
+  it('saves the Markdown but keeps the last good page when the template is missing or unusable', async () => {
     const provider = await blogWorkspace('template-missing');
     const created = await createNewOutsideInDocument(provider, 'post.html', 'static');
-    const target = createOutsideInDocumentTarget(provider, created.outsideIn);
+    const blocked: Array<OutsideInTemplateError | null> = [];
+    const target = createOutsideInDocumentTarget(provider, created.outsideIn, (renderBlocked) =>
+      blocked.push(renderBlocked),
+    );
     const before = await provider.readFile('post.html');
+    const marker = `${created.outsideIn.companionDirectory}/.docblocks-pending-render`;
+    let persisted = created.content;
 
     for (const [template, message] of [
       ['/_templates/gone.html', /was not found/],
@@ -170,26 +179,80 @@ describe('outside-in page templates', function () {
       ['/post.html', /its own template/],
       ['../../outside.html', /must be an \.html file/],
     ] as const) {
-      const next = withFrontmatter(created.content.replace('# post', '# Changed'), {
+      const next = withFrontmatter(created.content.replace('# post', `# Changed ${template}`), {
         'squisq-output-template': template,
       });
-      const error = await target
-        .commit(request(target.key, next, created.content))
-        .catch((caught: unknown) => caught);
-      expect(error, template).to.be.instanceOf(OutsideInTemplateError);
-      expect((error as Error).message, template).to.match(message);
+      await target.commit(request(target.key, next, persisted));
+      persisted = next;
+      const renderBlocked = blocked.at(-1);
+      expect(renderBlocked, template).to.be.instanceOf(OutsideInTemplateError);
+      expect(renderBlocked?.message, template).to.match(message);
       expect(await provider.readFile('post.html'), template).to.equal(before);
-      expect(await provider.readFile(created.sourcePath), template).to.equal(created.content);
+      expect(await provider.readFile(created.sourcePath), template).to.equal(next);
+      expect(await provider.exists(marker), template).to.equal(true);
     }
 
     await provider.writeFile('_templates/broken.html', '<p><slot name="title"></slot></p>');
     const broken = withFrontmatter(created.content, {
       'squisq-output-template': '/_templates/broken.html',
     });
-    const error = await target
-      .commit(request(target.key, broken, created.content))
-      .catch((caught: unknown) => caught);
-    expect((error as Error).message).to.match(/no unnamed <slot>/);
+    await target.commit(request(target.key, broken, persisted));
+    expect(blocked.at(-1)?.message).to.match(/no unnamed <slot>/);
+    expect(await provider.readFile(created.sourcePath)).to.equal(broken);
+    expect(await provider.readFile('post.html')).to.equal(before);
+  });
+
+  it('finishes a blocked render once the template is back, and still opens while it is not', async () => {
+    const provider = await blogWorkspace('template-restored');
+    const created = await createNewOutsideInDocument(
+      provider,
+      'posts/hello.html',
+      'static',
+      workspaceDefault,
+    );
+    const marker = `${created.outsideIn.companionDirectory}/.docblocks-pending-render`;
+    const blocked: Array<OutsideInTemplateError | null> = [];
+    const target = createOutsideInDocumentTarget(
+      provider,
+      created.outsideIn,
+      (renderBlocked) => blocked.push(renderBlocked),
+      workspaceDefault,
+    );
+
+    // The template disappears (deleted or renamed) while the page is open.
+    await provider.delete('_templates/post.html');
+    const edited = created.content.replace('# hello', '# Hello\n\nAn hour of typing.');
+    await target.commit(request(target.key, edited, created.content));
+    expect(blocked.at(-1)?.message).to.match(/was not found/);
+    expect(await provider.readFile(created.sourcePath)).to.equal(edited);
+    expect(await provider.readFile('posts/hello.html')).not.to.contain('An hour of typing.');
+
+    // Reopening while the template is still missing opens the saved Markdown.
+    const reopened = await loadEditableShellDocument(
+      provider,
+      'posts/hello.html',
+      workspaceDefault,
+    );
+    expect(reopened?.content).to.equal(edited);
+    expect(reopened?.renderBlocked).to.be.instanceOf(OutsideInTemplateError);
+    expect(await provider.exists(marker)).to.equal(true);
+
+    // With the template back, the next open finishes the render it owed.
+    await provider.writeFile('_templates/post.html', TEMPLATE);
+    const restored = await loadEditableShellDocument(
+      provider,
+      'posts/hello.html',
+      workspaceDefault,
+    );
+    expect(restored?.renderBlocked).to.equal(undefined);
+    expect(await provider.readFile('posts/hello.html')).to.contain('<p>An hour of typing.</p>');
+    expect(await provider.exists(marker)).to.equal(false);
+
+    // A later save renders normally and reports nothing blocked.
+    const more = `${edited}\nMore.\n`;
+    await target.commit(request(target.key, more, edited));
+    expect(blocked.at(-1)).to.equal(null);
+    expect(await provider.readFile('posts/hello.html')).to.contain('<p>More.</p>');
   });
 
   it('regenerates the pages that use a template after it changes', async () => {

@@ -174,14 +174,24 @@ export class WorkspaceSettingsService implements vscode.Disposable {
   }
 
   /** Regenerate every folder's catalog (the `docblocks.refreshWorkspaceOutputs` command). */
-  public async regenerateAll(): Promise<number> {
+  public async regenerateAll(): Promise<{
+    refreshed: number;
+    failed: Array<{ folder: string; message: string }>;
+  }> {
     let refreshed = 0;
+    const failed: Array<{ folder: string; message: string }> = [];
     for (const entry of this.folders.values()) {
       if (!entry.scheduler) continue;
-      await entry.scheduler.regenerate({ force: true });
+      const status = await entry.scheduler.regenerate({ force: true });
       refreshed += 1;
+      if (status.state === 'error') {
+        failed.push({
+          folder: entry.folder.name,
+          message: status.message ?? 'The catalog could not be updated.',
+        });
+      }
     }
-    return refreshed;
+    return { refreshed, failed };
   }
 
   public dispose(): void {

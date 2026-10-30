@@ -148,7 +148,12 @@ file, retry without redownload, and malformed manifests.
   button, take cutting (Gezel's progressive dictation), caret, literal-text
   insertion and undo. `Speech/speech-input-provider.ts` adapts `host.speech`;
   `DocBlocksShell` passes it only when `allowRecording` permits the microphone.
-  When a model is missing the button opens Settings.
+  When a model is missing the button opens Settings. The provider also cleans
+  every take before it reaches the document or the next take's prompt: it drops
+  pause ellipses and the captions Whisper writes for room noise and near
+  silence — `[Music]` and other bracketed cues, music notes, a take that is
+  only a parenthetical such as `(wind blowing)`, and a standalone "Thanks for
+  watching!". Dictation and Text from narration share this cleanup.
 - **Read aloud** (`Speech/SpeechToolbarControl.tsx`, `useReadAloud.ts`) plans
   segments from Squisq's narration script — headings and lines each become a
   sentence; fenced code is skipped — and streams them into a progressive Web

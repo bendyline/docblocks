@@ -51,6 +51,47 @@ export async function run(): Promise<void> {
   assert.match(setupTab.input.viewType, /(?:^|-)docblocks\.setupView$/u);
 
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+  await checkWorkspaceCatalog(workspace);
+}
+
+/**
+ * Catalog entries carry a SHA-256 of each document, and VS Code 1.85's Node 18
+ * extension host has no Web Crypto: the catalog must still be written.
+ */
+async function checkWorkspaceCatalog(workspace: vscode.WorkspaceFolder): Promise<void> {
+  const settingsFolder = vscode.Uri.joinPath(workspace.uri, '.docblocks');
+  const catalogUri = vscode.Uri.joinPath(workspace.uri, 'catalog.json');
+  const settings = { version: 1, catalog: { json: { enabled: true } } };
+  await vscode.workspace.fs.writeFile(
+    vscode.Uri.joinPath(settingsFolder, 'workspace.json'),
+    new TextEncoder().encode(`${JSON.stringify(settings, null, 2)}\n`),
+  );
+  try {
+    const catalog = (await waitForJson(catalogUri, 'the workspace catalog was never written')) as {
+      documents: Array<{ path: string; contentHash?: string }>;
+    };
+    const entry = catalog.documents.find((document) => document.path === 'test-doc.md');
+    assert.match(entry?.contentHash ?? '', /^[0-9a-f]{64}$/u);
+    await vscode.commands.executeCommand('docblocks.refreshWorkspaceOutputs');
+  } finally {
+    await vscode.workspace.fs.delete(settingsFolder, { recursive: true, useTrash: false });
+    await Promise.resolve(vscode.workspace.fs.delete(catalogUri, { useTrash: false })).catch(
+      () => undefined,
+    );
+  }
+}
+
+/** Read `uri` as JSON once it exists and has been written completely. */
+async function waitForJson(uri: vscode.Uri, message: string): Promise<unknown> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      return JSON.parse(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
+    } catch {
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+  }
+  assert.fail(message);
 }
 
 function findTab(label: string): vscode.Tab | undefined {

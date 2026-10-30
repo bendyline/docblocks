@@ -113,7 +113,10 @@ import { BackupIcon, SplitViewIcon } from '../icons.js';
 import { WorkspaceSettingsDialog } from '../WorkspacePicker/WorkspaceSettingsDialog.js';
 import { useWorkspaceSettings } from '../WorkspaceSettings/useWorkspaceSettings.js';
 import { useWorkspaceOutputs } from '../WorkspaceSettings/useWorkspaceOutputs.js';
-import { assertNotGeneratedCatalog } from '../WorkspaceSettings/managed-outputs.js';
+import {
+  assertNotGeneratedCatalog,
+  hiddenCatalogOutputPaths,
+} from '../WorkspaceSettings/managed-outputs.js';
 import {
   GeneratedCatalogPage,
   GeneratedFileFrame,
@@ -330,6 +333,13 @@ import {
   isConflictDismissed,
   type DismissedConflict,
 } from './conflict-dismissal.js';
+import {
+  clearRegeneratedPageTemplateWarning,
+  isPageTemplateWarningFor,
+  nextPageTemplateWarning,
+  pageTemplateWarningFor,
+  type PageTemplateWarning,
+} from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
@@ -1576,6 +1586,7 @@ export function DocBlocksShell({
   const [selectedImage, setSelectedImage] = useState<EditableShellDocument['image']>(undefined);
   const [selectedManagedOutput, setSelectedManagedOutput] =
     useState<EditableShellDocument['managedOutput']>(undefined);
+  const [pageTemplateWarning, setPageTemplateWarning] = useState<PageTemplateWarning | null>(null);
   // Squisq's find bar is controlled here so Ctrl/Cmd+F, the toolbar button and
   // the desktop Edit menu all drive one state. Each document starts closed.
   const [findMode, setFindMode] = useState(false);
@@ -1624,8 +1635,14 @@ export function DocBlocksShell({
     setSelectedOutsideInEditingEnabled(document?.outsideInEditingEnabled ?? false);
     setSelectedImage(document?.image);
     setSelectedManagedOutput(document?.managedOutput);
+    setPageTemplateWarning(
+      document?.outsideIn
+        ? pageTemplateWarningFor(document.outsideIn.targetPath, document.renderBlocked)
+        : null,
+    );
   }, []);
   const adoptRegularDocument = useCallback((path: string | null) => {
+    setPageTemplateWarning(null);
     if (path === null) {
       setSelectedFile(null);
       setSelectedSourceFile(null);
@@ -1711,9 +1728,13 @@ export function DocBlocksShell({
   );
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [folderEntries, setFolderEntries] = useState<FileSystemEntry[]>([]);
+  const hiddenOutputPaths = useMemo(
+    () => hiddenCatalogOutputPaths(workspaceSettings.settings, workspaceOutputs.status.result),
+    [workspaceSettings.settings, workspaceOutputs.status.result],
+  );
   const visibleFolderEntries = useMemo(
-    () => filterVisibleFileEntries(folderEntries),
-    [folderEntries],
+    () => filterVisibleFileEntries(folderEntries, hiddenOutputPaths),
+    [folderEntries, hiddenOutputPaths],
   );
   const { session: documentSession, snapshot: documentSnapshot } = useDocumentSession(500);
   // The session snapshot is the sole owner of document content and edit
@@ -1884,6 +1905,9 @@ export function DocBlocksShell({
             outsideInRenderRef.current,
           );
           for (const page of result.updated) afterWorkspaceCommit(job.workspaceId, page);
+          setPageTemplateWarning((current) =>
+            clearRegeneratedPageTemplateWarning(current, result.updated),
+          );
           const [first] = result.failed;
           if (first) {
             showToast(
@@ -1917,7 +1941,12 @@ export function DocBlocksShell({
         return createOutsideInDocumentTarget(
           fsProvider,
           outsideIn,
-          () => afterWorkspaceCommit(workspaceId, outsideIn.targetPath),
+          (renderBlocked) => {
+            afterWorkspaceCommit(workspaceId, outsideIn.targetPath);
+            setPageTemplateWarning((current) =>
+              nextPageTemplateWarning(current, outsideIn.targetPath, renderBlocked),
+            );
+          },
           outsideInRenderRef.current,
         );
       }
@@ -5630,6 +5659,24 @@ export function DocBlocksShell({
             </div>
           </div>
         )}
+        {isPageTemplateWarningFor(pageTemplateWarning, selectedOutsideIn?.targetPath) &&
+          !documentSnapshot.conflict &&
+          !storageFull && (
+            <div className="db-page-template-banner" role="status">
+              <span>
+                {pageTemplateWarning.message} Your Markdown is saved;{' '}
+                {basenameOf(pageTemplateWarning.targetPath)} will update once this is fixed.
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setPageTemplateWarning((current) => current && { ...current, dismissed: true })
+                }
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
         {workspaceSettingsOpen && activeWorkspaceDescriptor && (
           <WorkspaceSettingsDialog
             workspace={activeWorkspaceDescriptor}
@@ -5771,6 +5818,7 @@ export function DocBlocksShell({
               activeWorkspaceId={activeWorkspaceId}
               activeFilePath={selectedFile}
               sortMode={fileExplorerSortMode}
+              hiddenPaths={hiddenOutputPaths}
               onSortModeChange={handleFileExplorerSortModeChange}
               pinnedDocuments={pinnedDocumentItems}
               pinnedPaths={activeWorkspacePinnedPaths}

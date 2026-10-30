@@ -8,13 +8,45 @@ import {
   getFileSystemProviderV2,
   parseWorkspacePath,
   type FileSystemProvider,
+  type WorkspacePath,
 } from '@bendyline/docblocks/filesystem';
 import {
   isGeneratedCatalogHtml,
   isGeneratedCatalogJson,
+  resolveCatalogOutputs,
+  type ResolvedCatalogOutputs,
+  type WorkspaceOutputsResult,
+  type WorkspaceSettings,
 } from '@bendyline/docblocks/workspace-settings';
 
 const CATALOG_EXTENSION = /\.(?:html?|json)$/i;
+
+/**
+ * Catalog outputs the file lists leave out. The catalog rewrites them after
+ * every edit, so sorted by last modified they kept jumping to the top. An
+ * output the latest run reported as blocked is someone's own file at that
+ * path, and stays listed.
+ */
+export function hiddenCatalogOutputPaths(
+  settings: WorkspaceSettings | null | undefined,
+  result: WorkspaceOutputsResult | null,
+): WorkspacePath[] {
+  let resolved: ResolvedCatalogOutputs | null;
+  try {
+    resolved = resolveCatalogOutputs(settings);
+  } catch {
+    return [];
+  }
+  if (!resolved) return [];
+  const blocked = new Set(
+    result?.outputs
+      .filter((output) => output.status === 'blocked')
+      .map((output) => output.path.toLowerCase()),
+  );
+  return [resolved.html?.path, resolved.json?.path].filter(
+    (path): path is WorkspacePath => path !== undefined && !blocked.has(path.toLowerCase()),
+  );
+}
 
 export async function assertNotGeneratedCatalog(
   provider: FileSystemProvider,

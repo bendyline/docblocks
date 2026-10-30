@@ -19,6 +19,7 @@ import type {
 } from '@bendyline/squisq/markdown';
 import type { OutsideInFormatId } from './outside-in-layout.js';
 import type { CatalogSortOrder } from './settings.js';
+import { sha256Bytes } from './sha256.js';
 
 export const CATALOG_GENERATOR = 'docblocks-workspace-catalog';
 export const CATALOG_FORMAT_VERSION = 1;
@@ -520,6 +521,11 @@ export function buildCatalogMarkdownDocument(
 }
 
 export async function sha256Hex(text: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const bytes = new TextEncoder().encode(text);
+  // Optional chaining is load-bearing: Node 18 hosts have no global `crypto`.
+  const subtle = globalThis.crypto?.subtle;
+  const digest = subtle
+    ? new Uint8Array(await subtle.digest('SHA-256', bytes))
+    : sha256Bytes(bytes);
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }

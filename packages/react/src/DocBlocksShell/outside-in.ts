@@ -83,6 +83,12 @@ export interface EditableShellDocument {
    * sandboxed frame) and never saves or imports it.
    */
   managedOutput?: 'catalog-html' | 'catalog-json';
+  /**
+   * Set when the companion Markdown is newer than its rendered page because
+   * the page template is missing or unusable. The page keeps its last good
+   * output, and the render finishes on the first save or open that succeeds.
+   */
+  renderBlocked?: OutsideInTemplateError;
 }
 
 /** Host-supplied rendering context for regenerated outside-in files. */
@@ -145,8 +151,9 @@ function diagramRendererFor(
 
 /**
  * A page template that is missing or unusable. Raised while preparing a
- * render, before anything is written, so the visible page keeps its last good
- * output and the edit stays a retryable unsaved revision.
+ * render, before the page is written, so the visible page keeps its last good
+ * output. Commits still save the Markdown and leave the render pending: the
+ * edit is the user's work and must not wait on a template.
  */
 export class OutsideInTemplateError extends Error {
   constructor(
@@ -212,20 +219,28 @@ async function finishPendingRender(
   layout: OutsideInLayout,
   content: string,
   render?: OutsideInRenderOptions,
-): Promise<void> {
+): Promise<OutsideInTemplateError | null> {
   const marker = await readText(provider, join(layout.companionDirectory, PENDING_RENDER_FILENAME));
-  if (marker === null) return;
+  if (marker === null) return null;
   if (marker !== PENDING_RENDER_CONTENT)
     throw new Error('The pending document render record is corrupt.');
   if (!(await isOutsideInMarkdownEditingEnabled(content))) {
     throw new Error('The document has an unfinished save, but Markdown regeneration is disabled.');
   }
   // Finish the derived output before a new session can acknowledge the source.
-  // A failure keeps the marker for the next open or retry.
-  const rendered = await prepareOutsideInRender(provider, layout, content, render);
+  // A failure keeps the marker for the next open or retry; a template problem
+  // still opens the Markdown, which is already saved.
+  let rendered: PreparedOutsideInRender;
+  try {
+    rendered = await prepareOutsideInRender(provider, layout, content, render);
+  } catch (error: unknown) {
+    if (error instanceof OutsideInTemplateError) return error;
+    throw error;
+  }
   if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
   await writeBytes(provider, layout.targetPath, rendered.bytes);
   await clearPendingRender(provider, layout);
+  return null;
 }
 
 function relativePath(fromDirectory: string, targetPath: string): string {
@@ -384,13 +399,19 @@ export async function loadEditableShellDocument(
     }
     const linkedContent = await withOutsideInMetadata(content, layout);
     if (linkedContent !== content) await writeProviderText(provider, chosen, linkedContent);
-    await finishPendingRender(provider, { ...layout, markdownPath: chosen }, linkedContent, render);
+    const renderBlocked = await finishPendingRender(
+      provider,
+      { ...layout, markdownPath: chosen },
+      linkedContent,
+      render,
+    );
     return {
       displayPath: selectedPath,
       sourcePath: chosen,
       content: linkedContent,
       outsideIn: { ...layout, markdownPath: chosen },
       outsideInEditingEnabled: await isOutsideInMarkdownEditingEnabled(linkedContent),
+      ...(renderBlocked ? { renderBlocked } : {}),
     };
   }
 
@@ -947,11 +968,15 @@ export async function createNewOutsideInDocument(
  * user-facing format. Conversion completes before either durable write; a
  * later output failure remains visible as a dirty DocumentSession revision
  * and a retry safely finishes the derived write.
+ *
+ * A missing or unusable page template is the exception: the Markdown saves,
+ * the page keeps its last good output with its render left pending, and
+ * `onCommitted` receives the template error so the shell can say so.
  */
 export function createOutsideInDocumentTarget(
   provider: FileSystemProvider,
   layout: OutsideInLayout,
-  onCommitted?: () => void,
+  onCommitted?: (renderBlocked: OutsideInTemplateError | null) => void,
   render?: OutsideInRenderOptions,
 ): DocumentCommitTarget {
   const sourceTarget = createFileSystemDocumentTarget(provider, layout.markdownPath);
@@ -964,7 +989,14 @@ export function createOutsideInDocumentTarget(
           'Outside-in editing is read-only until squisq-updatefrommarkdown: true is set.',
         );
       }
-      const rendered = await prepareOutsideInRender(provider, layout, request.content, render);
+      let rendered: PreparedOutsideInRender | null = null;
+      let renderBlocked: OutsideInTemplateError | null = null;
+      try {
+        rendered = await prepareOutsideInRender(provider, layout, request.content, render);
+      } catch (error: unknown) {
+        if (!(error instanceof OutsideInTemplateError)) throw error;
+        renderBlocked = error;
+      }
       await writeProviderText(
         provider,
         join(layout.companionDirectory, PENDING_RENDER_FILENAME),
@@ -981,11 +1013,14 @@ export function createOutsideInDocumentTarget(
       // Keep our source acknowledgement even if a later derived write fails.
       // The source target still checks the real bytes for external changes.
       partialSource = { baseline: request.persistedContent, content: request.content };
-      if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
-      await writeBytes(provider, layout.targetPath, rendered.bytes);
-      await clearPendingRender(provider, layout);
+      // A blocked render keeps the marker, so the next save or open finishes it.
+      if (rendered) {
+        if (rendered.runtimePath) await writeRuntimeIfNeeded(provider, rendered.runtimePath);
+        await writeBytes(provider, layout.targetPath, rendered.bytes);
+        await clearPendingRender(provider, layout);
+      }
       partialSource = undefined;
-      onCommitted?.();
+      onCommitted?.(renderBlocked);
       return {};
     },
   };

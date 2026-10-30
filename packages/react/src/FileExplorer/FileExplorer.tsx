@@ -138,6 +138,8 @@ export interface FileExplorerProps {
   activeFilePath?: string | null;
   /** Presentation order for files within each directory. */
   sortMode?: FileExplorerSortMode;
+  /** Files left out of the tree (workspace paths, any case), e.g. generated catalog outputs. */
+  hiddenPaths?: readonly string[];
   /** Called when a file ordering toolbar button is selected. */
   onSortModeChange?: (mode: FileExplorerSortMode) => void;
   /** Active workspace identity, used to decorate a selected cross-workspace pin. */
@@ -201,6 +203,7 @@ export function FileExplorer({
   metadataRefreshKey,
   activeFilePath,
   sortMode,
+  hiddenPaths,
   onSortModeChange,
   activeWorkspaceId,
   pinnedDocuments = [],
@@ -578,8 +581,8 @@ export function FileExplorer({
 
   const orderedVisibleEntries = useCallback(
     (entries: readonly FileSystemEntry[]) =>
-      sortFileEntries(filterVisibleFileEntries(entries), selectedSortMode),
-    [selectedSortMode],
+      sortFileEntries(filterVisibleFileEntries(entries, hiddenPaths), selectedSortMode),
+    [hiddenPaths, selectedSortMode],
   );
 
   // The same walk renderEntries performs, as data — so arrow keys move
@@ -1015,7 +1018,7 @@ export function FileExplorer({
         <div className="db-tree" role="status" aria-live="polite">
           <div className="db-tree-loading">Loading...</div>
         </div>
-      ) : filterVisibleFileEntries(tree.entries).length === 0 ? (
+      ) : filterVisibleFileEntries(tree.entries, hiddenPaths).length === 0 ? (
         <div className="db-tree">
           <div className="db-tree-empty">No files yet</div>
         </div>

@@ -11,6 +11,22 @@ export function isHiddenFileEntry(entry: FileSystemEntry): boolean {
   return !isBrowsableWorkspaceEntry(name, entry.kind);
 }
 
-export function filterVisibleFileEntries(entries: readonly FileSystemEntry[]): FileSystemEntry[] {
-  return entries.filter((entry) => !isHiddenFileEntry(entry));
+function comparablePath(path: string): string {
+  return path.replace(/^\/+/, '').toLowerCase();
+}
+
+/**
+ * Also leaves out files at `hiddenPaths` (workspace-relative, matched
+ * case-insensitively): host-generated files such as the workspace catalog.
+ */
+export function filterVisibleFileEntries(
+  entries: readonly FileSystemEntry[],
+  hiddenPaths: readonly string[] = [],
+): FileSystemEntry[] {
+  const hidden = new Set(hiddenPaths.map(comparablePath));
+  return entries.filter(
+    (entry) =>
+      !isHiddenFileEntry(entry) &&
+      !(entry.kind === 'file' && hidden.has(comparablePath(entry.path))),
+  );
 }
