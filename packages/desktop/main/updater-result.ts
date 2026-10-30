@@ -40,6 +40,15 @@ function updaterErrorSearchText(error: unknown): string {
 export function userFacingUpdaterErrorMessage(error: unknown): string {
   const text = updaterErrorSearchText(error);
 
+  // First: signature failures quote Windows' own wording ("…root certificate
+  // which is not trusted…"), which the transport patterns below would claim.
+  if (
+    /ERR_CHECKSUM_MISMATCH|CHECKSUM MISMATCH|ERR_UPDATER_INVALID_SIGNATURE|ERR_DOCBLOCKS_SIGNATURE_CHECK/.test(
+      text,
+    )
+  ) {
+    return UPDATE_ERROR_MESSAGES.verification;
+  }
   if (/ERR_PROXY_|ERR_TUNNEL_CONNECTION_FAILED|PROXY AUTH/.test(text)) {
     return UPDATE_ERROR_MESSAGES.proxy;
   }
@@ -68,9 +77,6 @@ export function userFacingUpdaterErrorMessage(error: unknown): string {
   }
   if (/\b(?:EACCES|EPERM|EROFS)\b|READ-ONLY FILE SYSTEM/.test(text)) {
     return UPDATE_ERROR_MESSAGES.fileAccess;
-  }
-  if (/ERR_CHECKSUM_MISMATCH|CHECKSUM MISMATCH|ERR_UPDATER_INVALID_SIGNATURE/.test(text)) {
-    return UPDATE_ERROR_MESSAGES.verification;
   }
   if (
     /ERR_UPDATER_|ERR_HTTP_RESPONSE_CODE_FAILURE|HTTP ERROR (?:4\d\d|5\d\d)|STATUS CODE (?:4\d\d|5\d\d)|\b(?:404|408|429|500|502|503|504)\b/.test(

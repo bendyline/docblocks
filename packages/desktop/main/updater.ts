@@ -22,6 +22,7 @@ import type {
 } from '@bendyline/docblocks/host';
 import { registerTrustedIpcHandler } from './ipc-authority.js';
 import { INTEL_MAC_FINAL_NOTICE, isUnsupportedIntelMac } from './intel-mac-final.js';
+import { createUpdaterLog } from './updater-log.js';
 import {
   classifyUpdateCheck,
   failedUpdateCheck,
@@ -29,8 +30,9 @@ import {
   updaterStatusForError,
   type UpdaterActivity,
 } from './updater-result.js';
+import { verifyWindowsUpdateSignature } from './updater-signature.js';
 
-const { autoUpdater } = pkg;
+const { autoUpdater, NsisUpdater } = pkg;
 
 let updateDownloaded = false;
 let updaterActivity: UpdaterActivity = 'idle';
@@ -99,6 +101,15 @@ export function initAutoUpdater(): void {
   // GitHub updater run in either case.
   if (isStoreBuild() || isFinalIntelMacBuild()) return;
 
+  // The renderer only ever sees generic failure copy; the raw detail lands here.
+  const log = createUpdaterLog(app.getPath('logs'));
+  autoUpdater.logger = log;
+  // electron-updater's own Windows signature check times out after 20 s, which
+  // a freshly downloaded combined installer can exceed. See updater-signature.ts.
+  if (autoUpdater instanceof NsisUpdater) {
+    autoUpdater.verifyUpdateCodeSignature = verifyWindowsUpdateSignature;
+  }
+
   autoUpdater.autoDownload = true;
   // Let the renderer drive installation — no silent quit-and-install on
   // app quit, since the renderer banner gives the user an explicit CTA.
@@ -154,7 +165,9 @@ export function initAutoUpdater(): void {
       updaterActivity = 'idle';
       broadcast({ kind: 'not-available' });
     }
-    console.warn('[updater] initial check failed:', err);
+    log.warn(
+      `Initial update check failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+    );
   });
 }
 

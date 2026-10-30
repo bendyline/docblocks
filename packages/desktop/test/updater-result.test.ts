@@ -61,6 +61,19 @@ describe('desktop updater results', () => {
     expect(userFacingUpdaterErrorMessage(new Error('sha512 checksum mismatch'))).to.equal(
       'The downloaded update couldn\u2019t be verified, so DocBlocks did not install it. Try again later.',
     );
+    // Windows' own signature wording must not read as a TLS failure.
+    expect(
+      userFacingUpdaterErrorMessage(
+        Object.assign(
+          new Error(
+            'New version 2.7.9 is not signed by the application owner: Authenticode status 4: A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider.',
+          ),
+          { code: 'ERR_UPDATER_INVALID_SIGNATURE' },
+        ),
+      ),
+    ).to.equal(
+      'The downloaded update couldn\u2019t be verified, so DocBlocks did not install it. Try again later.',
+    );
     expect(
       userFacingUpdaterErrorMessage(
         Object.assign(new Error('/private/update.zip'), { code: 'ENOSPC' }),
