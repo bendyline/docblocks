@@ -21,7 +21,9 @@ the document's content and slide layouts without summarization. This overrides
 saved presentation settings for that export without changing the document.
 
 Choose a summary density, a preferred layout per section, and whether to add
-supporting visual slides (on by default). A section can override the document-wide preference
+supporting visual slides (on by default). **One slide per section** makes exactly
+one summary slide for each section, timed to that section's narration, however
+long the section is; it never adds supporting slides. A section can override the document-wide preference
 with **Allow** or **Do not add**. A supporting slide is added only when it shows
 something different from the slide before it: an introduction followed by a
 diagram of the sentences that open with First / Then / Next / Finally, or the
@@ -29,6 +31,21 @@ opening sentences of a passage followed by the document image that illustrates
 it. They share that passage's narration interval; they do not add spoken filler
 or extend the take. Layout preferences apply where the source has enough
 material for that layout.
+
+The summary layouts are Title, Section divider, Key idea, Big statement (only the
+headline, when it is 60 characters or fewer), Quote from the text (one sentence of
+the section, word for word), Key number (a prominent figure such as 40% or $3
+million), Definition, List, Comparison, Steps diagram, and Image. The automatic
+planner never picks the divider, big statement, quote, key number, or definition
+on its own; they come from a section preference or an AI suggestion, and an AI
+quote or figure must appear in the passage.
+
+A section can instead be shown **As authored**, labeled with the block type it
+renders with, such as **As authored (Bar Chart)**. That section becomes one slide
+for its whole narration, drawn from its own block with the template chosen in the
+editor's block picker, so charts, tables, maps, and other data blocks keep their
+content. It is not summarized, split into supporting slides, reworded, or sent to
+AI. Change its block type in the editor.
 
 Automatic slides are titled with their section heading and show the section's
 own sentences beneath it, so a slide never repeats its title as its body. Each
@@ -48,6 +65,16 @@ where the section ends.
 summarization mode in one undoable edit. It also disables the redundant automatic
 cover. **Reset design** resets the unsaved preferences and clears saved wording
 from the draft; applying makes that reset durable.
+
+**Hide this slide in the presentation** leaves the selected slide out of the deck
+and video in any density. The narration still speaks its passage, so the shown
+slide before it stays on screen (or, at the very start, the next shown slide opens
+the deck). A section's videos and diagrams move to its shown slides, and its music
+bed still plays. Hidden slides stay in the designer's list, struck through, and
+still preview, so they can be shown again; AI never suggests wording for them. At
+least one slide must stay shown. A hidden slide is remembered by a short key for
+its exact passage, so editing that passage, or a density or layout change that
+splits the section differently, shows it again.
 
 **Customize slide wording (slides only)** overrides a section's opening headline
 or highlights. With an AI model connected, **Suggest with AI** proposes headlines,
@@ -92,7 +119,8 @@ editor exposes the designer beside Summarize in its preview toolbar.
 
 The saved mode is `squisq-transform: dynamic-slides`. Version-1 JSON in
 `squisq-presentation-hints` contains density, the supporting-slide preference,
-and optional per-block preferences keyed by the parsed source block ID. It
+and optional per-block preferences keyed by the parsed source block ID (a layout,
+or `authored` to show the block itself). It
 contains no automatic slide array, source offsets, or generated automatic prose.
 Only explicit manual wording and actual accepted AI summaries carry source-text
 snapshots. Renaming a heading can change its generated block ID; an unmatched

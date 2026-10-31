@@ -9103,6 +9103,25 @@ button.db-git-file-row:hover {
 .db-presentation-fields label {
   width: min(100%, 320px);
 }
+/* A hidden slide stays listed so it can be shown again, set apart without
+   dimming its text below readable contrast. */
+.db-presentation-beats button.db-presentation-beat-hidden {
+  border-style: dashed;
+}
+.db-presentation-beat-hidden .db-presentation-beat-title {
+  color: var(--db-text-secondary);
+  text-decoration: line-through;
+}
+.db-presentation-preview-hidden > * {
+  opacity: 0.45;
+}
+/* Says what the chosen layout shows and which slides it can apply to. */
+.db-presentation-layout-help {
+  flex-shrink: 0;
+  margin: 0;
+  color: var(--db-text-secondary);
+  line-height: 1.5;
+}
 .db-presentation-source {
   flex-shrink: 0;
   padding: 12px;
