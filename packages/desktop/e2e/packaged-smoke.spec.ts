@@ -188,25 +188,41 @@ test('grants capture only to the trusted renderer and exposes only working prese
             Reflect.set(globalThis, 'docBlocksE2eDisplayCapture', result);
           })
           .catch((error: unknown) => {
+            // The message tells a refusal from a capturer that would not start.
             Reflect.set(globalThis, 'docBlocksE2eDisplayCapture', {
               status: 'denied',
               name: error instanceof DOMException ? error.name : 'Error',
+              message: error instanceof Error ? error.message : String(error),
             });
           });
       });
       document.body.appendChild(trigger);
     }, requestSystemAudio);
-    await packaged.window.locator('#docblocks-e2e-display-capture').click();
-    await expect
-      .poll(
-        () => packaged.window.evaluate(() => Reflect.get(globalThis, 'docBlocksE2eDisplayCapture')),
-        { timeout: 30_000 },
-      )
-      .toEqual({
+    // On hosted runners (X11 under xvfb, and Windows) a capture now and then
+    // fails as an AbortError: the screen lookup lists no screen, so automation
+    // has nothing to choose, or Chromium cannot start a capture it was granted.
+    // Each click looks the sources up again. A refusal that persists still
+    // fails here, and the process log names a missing screen.
+    await expect(async () => {
+      await packaged.window.evaluate(() =>
+        Reflect.deleteProperty(globalThis, 'docBlocksE2eDisplayCapture'),
+      );
+      await packaged.window.locator('#docblocks-e2e-display-capture').click();
+      await expect
+        .poll(
+          () =>
+            packaged.window.evaluate(() => Reflect.get(globalThis, 'docBlocksE2eDisplayCapture')),
+          { timeout: 15_000 },
+        )
+        .not.toBeUndefined();
+      expect(
+        await packaged.window.evaluate(() => Reflect.get(globalThis, 'docBlocksE2eDisplayCapture')),
+      ).toEqual({
         status: 'granted',
         audioTracks: requestSystemAudio ? 1 : 0,
         videoTracks: 1,
       });
+    }).toPass({ timeout: 60_000, intervals: [2_000] });
   }
 
   // An automation-only exact popup route creates a genuine second

@@ -7,7 +7,12 @@ import type {
 } from '@bendyline/docblocks/host';
 import { markdownToDoc } from '@bendyline/squisq/doc';
 import { parseMarkdown } from '@bendyline/squisq/markdown';
-import { createPresentationPlan } from '@bendyline/squisq/transform';
+import {
+  createPresentationPlan,
+  defaultPresentationHints,
+  presentationPassageKey,
+  presentationSections,
+} from '@bendyline/squisq/transform';
 import {
   parsePresentationRefinement,
   refinePresentationPlan,
@@ -155,6 +160,69 @@ describe('presentation AI refinement', () => {
     assert.equal(beat?.layout, 'image');
     assert.equal(beat?.imageSrc, 'images/lake.png');
     assert.equal(beat?.headline, 'Mist over a calm lake');
+  });
+  it('never rewords an authored slide and holds new layouts to the passage', async () => {
+    const doc = markdownToDoc(
+      parseMarkdown(
+        '# Your ideas\n\nWrite a few points. Keep your words.\n\n## Share your story\n\nFirst make slides. Then add narration.',
+      ),
+    );
+    const hints = defaultPresentationHints();
+    hints.blocks.push({ blockId: presentationSections(doc)[1]!.blockId, layout: 'authored' });
+    const authored = createPresentationPlan(doc, hints);
+    assert.equal(authored.beats[1]!.layout, 'authored');
+    const api = fake((request) =>
+      JSON.stringify({
+        ...(JSON.parse(request.messages.at(-1)!.content) as { current: object }).current,
+        headline: 'Share your ideas',
+      }),
+    );
+    const result = await refinePresentationPlan(api.ai, authored);
+    assert.equal(api.requests.length, 1);
+    assert.deepEqual(result.refined, [0]);
+    assert.equal(result.retained, 0);
+    assert.deepEqual(result.plan.beats[1], authored.beats[1]);
+    const reword = { layout: 'statement', headline: 'Share your story', points: [] };
+    assert.equal(parsePresentationRefinement(JSON.stringify(reword), authored, 1), null);
+    // A model may not take over the author's block, misquote, or invent a figure.
+    const source = plan();
+    for (const reply of [
+      { layout: 'authored', headline: 'Your ideas', points: [] },
+      { layout: 'quote', headline: 'Keep all of your words.', points: [] },
+      { layout: 'stat', headline: 'Your ideas', points: ['Keep your words.'] },
+    ])
+      assert.equal(parsePresentationRefinement(JSON.stringify(reply), source, 0), null);
+    const quote = { layout: 'quote', headline: 'Keep your words.', points: [] };
+    assert.equal(parsePresentationRefinement(JSON.stringify(quote), source, 0)?.layout, 'quote');
+  });
+  it('never asks about a hidden slide', async () => {
+    const source = plan();
+    const opener = source.sourceText.slice(
+      source.beats[0]!.sourceStart,
+      source.beats[0]!.sourceEnd,
+    );
+    const doc = markdownToDoc(
+      parseMarkdown(
+        '# Your ideas\n\nWrite a few points. Keep your words.\n\n## Share your story\n\nFirst make slides. Then add narration.',
+      ),
+    );
+    const hints = defaultPresentationHints();
+    hints.blocks.push({
+      blockId: presentationSections(doc)[0]!.blockId,
+      hidden: [presentationPassageKey(opener)],
+    });
+    const hidden = createPresentationPlan(doc, hints);
+    assert.equal(hidden.beats[0]!.hidden, true);
+    const api = fake((request) =>
+      JSON.stringify({
+        ...(JSON.parse(request.messages.at(-1)!.content) as { current: object }).current,
+        headline: 'Share your story now',
+      }),
+    );
+    const result = await refinePresentationPlan(api.ai, hidden);
+    assert.equal(api.requests.length, 1);
+    assert.deepEqual(result.refined, [1]);
+    assert.deepEqual(result.plan.beats[0], hidden.beats[0]);
   });
   it('runs serial bounded requests and retains the baseline after one failed repair', async () => {
     const source = plan();
