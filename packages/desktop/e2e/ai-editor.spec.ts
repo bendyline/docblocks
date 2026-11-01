@@ -228,6 +228,8 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
       // Review the document and apply the first applicable finding.
       await openAiMenuItem(window, 'Review document…');
       const panel = window.getByRole('complementary', { name: 'AI document review' });
+      await panel.getByRole('combobox', { name: 'Review style' }).selectOption('general');
+      await panel.getByRole('button', { name: 'Review document' }).click();
       await expect(panel.locator('.db-ai-review-count')).toBeVisible({
         timeout: ANSWER_TIMEOUT_MS,
       });
@@ -259,6 +261,152 @@ test('AI drafts, rewrites and reviews through a connected Gezel, one undo each',
           stream: true,
         });
       }
+    },
+  );
+});
+
+/** Long enough that a model with Apple's 4,096-token window reviews it in parts. */
+const LONG_DOCUMENT = [
+  '# Field notes',
+  ...Array.from(
+    { length: 40 },
+    (_, index) =>
+      `Paragraph ${index + 1}: the crew logged the river level, the water temperature and the ` +
+      'condition of the north bank before moving on to the next survey point downstream. ' +
+      'Readings were taken twice and the second reading was kept when the two disagreed.',
+  ),
+  '',
+].join('\n\n');
+
+test('Review reads a long document in parts on a small model, and stops and continues', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    // Slow enough to stop between parts.
+    { contextWindow: 4_096, chunkDelayMs: 60, document: LONG_DOCUMENT, readyText: 'Paragraph 1:' },
+    async ({ window, file, fake }) => {
+      await openAiMenuItem(window, 'Review document…');
+      const panel = window.getByRole('complementary', { name: 'AI document review' });
+      await panel.getByRole('combobox', { name: 'Review style' }).selectOption('general');
+      await panel.getByRole('button', { name: 'Review document' }).click();
+
+      const progress = panel.getByRole('status').filter({ hasText: /Reviewing part \d+ of/u });
+      await expect(progress).toContainText('Reviewing part 1 of');
+      const parts = Number(/of (\d+)/u.exec((await progress.textContent()) ?? '')?.[1]);
+      expect(parts).toBeGreaterThan(1);
+
+      // Part 1's findings are on screen while part 2 runs; Stop keeps them.
+      await expect(progress).toContainText('Reviewing part 2 of', { timeout: ANSWER_TIMEOUT_MS });
+      await expect(panel.locator('.db-ai-review-finding').first()).toBeVisible();
+      await panel.getByRole('button', { name: 'Stop review' }).click();
+      await expect(panel).toContainText(`Stopped after 1 of ${parts} parts`);
+      await expect(panel.locator('.db-ai-review-count')).toBeVisible();
+
+      await panel.getByRole('button', { name: 'Continue review' }).click();
+      await expect(panel).not.toContainText('Stopped after', { timeout: ANSWER_TIMEOUT_MS });
+      await expect(panel.locator('.db-ai-review-count')).toBeVisible({
+        timeout: ANSWER_TIMEOUT_MS * parts,
+      });
+
+      // Each part went to the model once, part 2 again after the stop, and
+      // together they carried every paragraph.
+      const reviews = fake.chats
+        .filter((chat) =>
+          chat.messages.some((message) => message.content.includes('document reviewer')),
+        )
+        .map((chat) => chat.messages.find((message) => message.role === 'user')?.content ?? '');
+      expect(reviews.map((user) => /This is part (\d+)/u.exec(user)?.[1])).toEqual([
+        '1',
+        '2',
+        ...Array.from({ length: parts - 1 }, (_, index) => String(index + 2)),
+      ]);
+      for (let index = 1; index <= 40; index++) {
+        expect(reviews.some((user) => user.includes(`Paragraph ${index}:`))).toBe(true);
+      }
+
+      // A finding from a later part still applies to the document as saved.
+      const applicable = panel
+        .locator('.db-ai-review-finding')
+        .filter({ has: window.getByRole('button', { name: 'Apply', disabled: false }) })
+        .last();
+      const suggested =
+        (await applicable.locator('.db-ai-review-excerpt--replacement blockquote').textContent()) ??
+        '';
+      await applicable.getByRole('button', { name: 'Apply' }).click();
+      await expect.poll(() => readDocument(file)).toContain(suggested);
+    },
+  );
+});
+
+test('Clicking a review finding selects its text, and finds it again after an edit', async ({
+  launchApp,
+  workspaceDir,
+  gezelHome,
+}) => {
+  test.setTimeout(180_000);
+  await withConnectedEditor(
+    launchApp,
+    workspaceDir,
+    gezelHome,
+    {},
+    async ({ window, editor, file }) => {
+      await openAiMenuItem(window, 'Review document…');
+      const panel = window.getByRole('complementary', { name: 'AI document review' });
+      await panel.getByRole('combobox', { name: 'Review style' }).selectOption('general');
+      await panel.getByRole('button', { name: 'Review document' }).click();
+      await expect(panel.locator('.db-ai-review-count')).toBeVisible({
+        timeout: ANSWER_TIMEOUT_MS,
+      });
+      const card = panel.locator('.db-ai-review-item').first();
+      const quote =
+        (await card.locator('.db-ai-review-excerpt blockquote').first().textContent()) ?? '';
+      expect(DOCUMENT).toContain(quote);
+      const selection = () => window.evaluate(() => document.getSelection()?.toString() ?? '');
+
+      // A click on the card itself selects the quoted text in the Write view.
+      await card.locator('h3').click();
+      await expect.poll(selection).toBe(quote);
+      await expect(card).toHaveClass(/db-ai-review-item--shown/u);
+      await expect(editor).toBeFocused();
+
+      // Change a word inside it: the card finds the edited sentence.
+      await window.evaluate(() => {
+        const paragraph = [...document.querySelectorAll('.squisq-editor-content p')].find((node) =>
+          node.textContent?.includes('three tools'),
+        );
+        const text = paragraph?.firstChild;
+        const at = text?.textContent?.indexOf('three') ?? -1;
+        if (!text || at < 0) throw new Error('The quoted paragraph is missing');
+        const range = document.createRange();
+        range.setStart(text, at);
+        range.setEnd(text, at + 'three'.length);
+        document.getSelection()?.removeAllRanges();
+        document.getSelection()?.addRange(range);
+      });
+      await window.keyboard.type('four');
+      const edited = quote.replace('three', 'four');
+      await expect.poll(() => readDocument(file)).toContain(edited);
+      await card.getByRole('button', { name: 'Show in document' }).click();
+      await expect.poll(selection).toBe(edited);
+      await expect(card.locator('.db-ai-review-locate-note')).toHaveText(
+        'This text has changed since the review. Its closest match is selected.',
+      );
+      // Apply still needs the exact reviewed text.
+      await expect(card.getByRole('button', { name: 'Apply' })).toBeDisabled();
+
+      // The Source view selects the same text in the Markdown itself: typing replaces it.
+      await window.getByRole('tab', { name: 'Source', exact: true }).click();
+      await expect(window.locator('.monaco-editor').first()).toBeVisible();
+      await card.getByRole('button', { name: 'Show in document' }).click();
+      await window.keyboard.type('Replaced from the review panel.');
+      await expect.poll(() => readDocument(file)).toContain('Replaced from the review panel.');
+      expect(readDocument(file)).not.toContain(edited);
     },
   );
 });

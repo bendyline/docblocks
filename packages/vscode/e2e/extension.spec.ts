@@ -63,22 +63,22 @@ async function openFileContextMenu(page: Page, fileName: string): Promise<Locato
 /**
  * Right-click a file in the explorer and select "Open in DocBlocks".
  *
- * Selecting an action can be dropped by the same workbench re-render that
- * affects the initial right-click. Retry the complete interaction until its
- * observable result exists, but stop invoking the command as soon as VS Code
- * attaches a webview so a slow first open cannot create a duplicate panel.
+ * VS Code arms a menu item's mouse-up handler 100ms after rendering it, so the
+ * release of the right-click that opened the menu cannot select an item. A
+ * click inside that window is ignored and leaves the menu open, and the delay
+ * is a timer that a busy workbench stretches well past 100ms. Click again while
+ * the menu stays open: VS Code hides it as it runs the action, so the command
+ * is invoked exactly once.
  */
 async function openFileInDocBlocks(page: Page, fileName: string) {
-  const webviews = page.locator('iframe.webview');
+  const openInDocBlocks = await openFileContextMenu(page, fileName);
 
   await expect(async () => {
-    if ((await webviews.count()) === 0) {
-      const openInDocBlocks = await openFileContextMenu(page, fileName);
-      await openInDocBlocks.click();
-    }
+    if (await openInDocBlocks.isVisible()) await openInDocBlocks.click();
+    await expect(openInDocBlocks).toBeHidden({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 
-    await expect(webviews.last()).toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 30_000 });
+  await expect(page.locator('iframe.webview').last()).toBeVisible({ timeout: 15_000 });
 }
 
 async function openFileByDefault(page: Page, fileName: string) {

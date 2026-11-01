@@ -3,6 +3,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -42,17 +43,28 @@ import {
   applyAiReviewFinding,
   buildDraftContinuation,
   buildDraftRequest,
-  buildReviewRequest,
+  buildReviewFollowUp,
+  buildReviewRequests,
   findUniqueExcerpt,
   aiReviewReplyWasCutOff,
   parseAiReviewResponse,
   parseTruncatedAiReviewResponse,
+  REVIEW_PASSES,
   reviewDocumentCharacters,
   sanitizeGeneratedMarkdown,
   withoutPictureFindings,
   type AiDraftMode,
   type AiReviewFinding,
 } from './ai-assistant.js';
+import { locateReviewExcerpt, type ExcerptLocation } from './review-locate.js';
+import { reviewFindingLimit } from './review-parts.js';
+import { canReveal, revealSourceRange } from './review-reveal.js';
+import {
+  AI_REVIEW_STYLE_DEFINITIONS,
+  AI_REVIEW_STYLES,
+  isAiReviewStyle,
+  type AiReviewStyle,
+} from './review-styles.js';
 import { STUDY_AID_KINDS, STUDY_AID_LABELS, type StudyAidKind } from './study-aids.js';
 
 // The study viewers and pipeline load only when one of their dialogs opens.
@@ -799,6 +811,34 @@ export function AiDraftDialog({
 
 type ReviewPhase = 'idle' | 'running' | 'ready' | 'error';
 
+/** A review in progress: one request per part, sent one at a time. */
+interface ReviewRun {
+  readonly style: AiReviewStyle;
+  /** The document as reviewed; findings that touch its pictures are dropped. */
+  readonly source: string;
+  readonly requests: readonly AiChatRequest[];
+  /** Most findings each request asks for, or null for every one. */
+  readonly findings: number | null;
+}
+
+/** What the review is doing now, for the status line while it runs. */
+function reviewingText(active: { part: number; more: boolean } | null, parts: number): string {
+  const part = active?.part ?? 0;
+  if (parts > 1) {
+    return active?.more
+      ? `Looking for more in part ${part + 1} of ${parts}…`
+      : `Reviewing part ${part + 1} of ${parts}…`;
+  }
+  return active?.more ? 'Looking for more findings…' : 'Reviewing this document…';
+}
+
+/** "Part 3 was" or "Parts 2, 3 and 5 were", for zero-based `indexes`. */
+function partsWere(indexes: readonly number[]): string {
+  const numbers = indexes.map((index) => String(index + 1));
+  const last = numbers.pop() ?? '';
+  return numbers.length === 0 ? `Part ${last} was` : `Parts ${numbers.join(', ')} and ${last} were`;
+}
+
 /** The review as the reporter saw it: each finding and its suggested text. */
 function formatReviewFindings(findings: readonly AiReviewFinding[]): string {
   return findings
@@ -815,7 +855,29 @@ function formatReviewFindings(findings: readonly AiReviewFinding[]): string {
 }
 
 export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
-  const { markdownSource, replaceAll } = useEditorContext();
+  const {
+    activeView,
+    goToBlockByLine,
+    layoutMode,
+    markdownSource,
+    monacoEditor,
+    replaceAll,
+    setActiveView,
+    tiptapEditor,
+  } = useEditorContext();
+  /** The finding last shown in the document, and what to say about where it was found. */
+  const [shown, setShown] = useState<{ id: string; note: string | null } | null>(null);
+  /** A location to select once the view or block it needs is showing. */
+  const [pendingReveal, setPendingReveal] = useState<{
+    id: string;
+    location: ExcerptLocation;
+  } | null>(null);
+  // No default: each review style asks for different changes, so the person
+  // chooses one before the first review runs.
+  const [style, setStyle] = useState<AiReviewStyle | null>(null);
+  /** The style of the review on screen, which the list may since have moved off. */
+  const [reviewedStyle, setReviewedStyle] = useState<AiReviewStyle | null>(null);
+  const styleDescriptionId = useId();
   const [phase, setPhase] = useState<ReviewPhase>('idle');
   const [findings, setFindings] = useState<readonly AiReviewFinding[]>([]);
   const [reviewedSource, setReviewedSource] = useState<string | null>(null);
@@ -825,25 +887,156 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
   const [cutOff, setCutOff] = useState(false);
   const [applyErrorId, setApplyErrorId] = useState<string | null>(null);
   const [reviewModel, setReviewModel] = useState<string | null>(null);
+  const [run, setRun] = useState<ReviewRun | null>(null);
+  /** Parts of `run` reviewed or skipped: the index of the next part to send. */
+  const [partsDone, setPartsDone] = useState(0);
+  const [skippedParts, setSkippedParts] = useState<readonly number[]>([]);
+  /** The part being reviewed, and whether this is a follow-up asking it for more. */
+  const [active, setActive] = useState<{ part: number; more: boolean } | null>(null);
   const handleRef = useRef<AiChatHandle | null>(null);
   const requestRef = useRef(0);
-  const startedRef = useRef(false);
+  const status = useAiStatus(ai);
+  const contextWindow = status?.kind === 'ready' ? (status.model?.contextWindow ?? null) : null;
   const { knowledge, ai: knowledgeAi, reset: resetKnowledge } = useAiKnowledge(ai);
 
+  // Stopping keeps the findings of every part that finished; a review
+  // stopped before any part finished is no review at all.
   const cancelReview = useCallback(() => {
     requestRef.current += 1;
     handleRef.current?.cancel();
     handleRef.current = null;
-    setPhase('idle');
-  }, []);
+    setActive(null);
+    setPhase(partsDone > 0 ? 'ready' : 'idle');
+  }, [partsDone]);
+
+  /**
+   * Send `current`'s parts from `from` on, one at a time, until one fails or
+   * all are done. A reply that fills its room (a small model's few findings,
+   * or any reply cut off at its limit) is followed by another request about
+   * the same part for the issues it had no room for, until one comes back
+   * with nothing new.
+   */
+  const reviewParts = useCallback(
+    (current: ReviewRun, from: number) => {
+      const parts = current.requests.length;
+      const step = (index: number, pass: number, reported: readonly string[]) => {
+        const requestId = ++requestRef.current;
+        let settled = false;
+        setPhase('running');
+        setError(null);
+        setActive({ part: index, more: pass > 0 });
+        const next = () => {
+          if (index + 1 < parts) {
+            step(index + 1, 0, []);
+          } else {
+            setActive(null);
+            setPhase('ready');
+          }
+        };
+        const request =
+          pass === 0
+            ? current.requests[index]
+            : buildReviewFollowUp(current.requests[index], reported);
+        const handle = knowledgeAi.chat(request, (event: AiChatEvent) => {
+          if (
+            requestRef.current !== requestId ||
+            event.kind === 'delta' ||
+            event.kind === 'progress' ||
+            event.kind === 'knowledge'
+          )
+            return;
+          settled = true;
+          handleRef.current = null;
+          // A follow-up only looks for more: when it fails, the part's own
+          // findings still stand, so the review moves on and says there may be more.
+          const fail = (message: string) => {
+            if (pass > 0) {
+              setCutOff(true);
+              next();
+              return;
+            }
+            setError(message);
+            setActive(null);
+            setPhase('error');
+          };
+          if (event.kind === 'error') {
+            fail(event.error.message);
+            return;
+          }
+          // A model with a small reply limit (Apple's on-device model stops at
+          // 1,024 tokens) can stop partway through a finding. Keep the ones it
+          // finished rather than discarding the whole review.
+          const truncated =
+            event.completion.finishReason === 'length' ||
+            aiReviewReplyWasCutOff(event.completion.text);
+          const parsed = truncated
+            ? parseTruncatedAiReviewResponse(event.completion.text)
+            : parseAiReviewResponse(event.completion.text);
+          if (!parsed || (truncated && parsed.length === 0)) {
+            // A cut-off reply comes out the same each time, so retrying is no help.
+            fail(
+              truncated
+                ? "The AI's reply was cut off before it finished a single finding. Try a shorter " +
+                    'document, or choose a different model in AI settings.'
+                : parts > 1
+                  ? 'The AI returned a review DocBlocks could not read.'
+                  : 'The AI returned a review DocBlocks could not read. Try reviewing again.',
+            );
+            return;
+          }
+          setReviewModel(event.completion.model || null);
+          // A small model asked for more often repeats itself.
+          const already = new Set(reported);
+          const fresh = withoutPictureFindings(parsed, current.source).filter(
+            (finding) => !already.has(finding.originalText),
+          );
+          // Each request numbers its findings from 1; the panel needs one id each.
+          setFindings((existing) => [
+            ...existing,
+            ...fresh.map((finding, offset) => ({
+              ...finding,
+              id: `ai-review-${existing.length + offset + 1}`,
+            })),
+          ]);
+          // The part's own findings are in; asking it for more is extra.
+          if (pass === 0) setPartsDone(index + 1);
+          const full =
+            truncated || (current.findings !== null && parsed.length >= current.findings);
+          if (full && fresh.length > 0) {
+            if (pass + 1 < REVIEW_PASSES) {
+              step(index, pass + 1, [...reported, ...fresh.map((finding) => finding.originalText)]);
+              return;
+            }
+            setCutOff(true);
+          }
+          next();
+        });
+        if (!settled) handleRef.current = handle;
+      };
+      step(from, 0, []);
+    },
+    [knowledgeAi],
+  );
 
   const runReview = useCallback(() => {
+    if (!style) return;
+    handleRef.current?.cancel();
+    handleRef.current = null;
+    requestRef.current += 1;
     setCutOff(false);
+    setActive(null);
+    setReviewedStyle(style);
+    setRun(null);
+    setPartsDone(0);
+    setSkippedParts([]);
+    setFindings([]);
+    setResolvedIds(new Set());
+    setApplyErrorId(null);
+    setShown(null);
+    setPendingReveal(null);
+    setError(null);
     if (!markdownSource.trim()) {
-      setFindings([]);
       setReviewedSource(markdownSource);
-      setResolvedIds(new Set());
-      setError(null);
       setPhase('ready');
       return;
     }
@@ -852,72 +1045,41 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       setPhase('error');
       return;
     }
-
-    handleRef.current?.cancel();
-    const requestId = ++requestRef.current;
-    const source = markdownSource;
-    setPhase('running');
-    setFindings([]);
-    setResolvedIds(new Set());
-    setApplyErrorId(null);
-    setError(null);
+    const current: ReviewRun = {
+      style,
+      source: markdownSource,
+      requests: buildReviewRequests(markdownSource, style, contextWindow),
+      findings: reviewFindingLimit(contextWindow),
+    };
+    setRun(current);
+    setReviewedSource(markdownSource);
     resetKnowledge();
-    const handle = knowledgeAi.chat(buildReviewRequest(source), (event: AiChatEvent) => {
-      if (
-        requestRef.current !== requestId ||
-        event.kind === 'delta' ||
-        event.kind === 'progress' ||
-        event.kind === 'knowledge'
-      )
-        return;
-      handleRef.current = null;
-      if (event.kind === 'error') {
-        setError(event.error.message);
-        setPhase('error');
-        return;
-      }
-      // A model with a small reply limit (Apple's on-device model stops at
-      // 1,024 tokens) can stop partway through a finding. Keep the ones it
-      // finished rather than discarding the whole review.
-      const truncated =
-        event.completion.finishReason === 'length' || aiReviewReplyWasCutOff(event.completion.text);
-      const parsed = truncated
-        ? parseTruncatedAiReviewResponse(event.completion.text)
-        : parseAiReviewResponse(event.completion.text);
-      if (!parsed || (truncated && parsed.length === 0)) {
-        // A cut-off reply comes out the same each time, so retrying is no help.
-        setError(
-          truncated
-            ? "The AI's reply was cut off before it finished a single finding. Try a shorter " +
-                'document, or choose a different model in AI settings.'
-            : 'The AI returned a review DocBlocks could not read. Try reviewing again.',
-        );
-        setPhase('error');
-        return;
-      }
-      setCutOff(truncated);
-      setReviewModel(event.completion.model || null);
-      setFindings(withoutPictureFindings(parsed, source));
-      setReviewedSource(source);
-      setPhase('ready');
-    });
-    handleRef.current = handle;
-  }, [knowledgeAi, resetKnowledge, markdownSource]);
+    reviewParts(current, 0);
+  }, [markdownSource, style, contextWindow, resetKnowledge, reviewParts]);
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    runReview();
-  }, [runReview]);
+  /** Pick up at the next part: after Stop, or to retry the part that failed. */
+  const continueReview = useCallback(() => {
+    if (run && partsDone < run.requests.length) reviewParts(run, partsDone);
+  }, [run, partsDone, reviewParts]);
+
+  const skipPart = useCallback(() => {
+    if (!run || partsDone >= run.requests.length) return;
+    const next = partsDone + 1;
+    setSkippedParts((current) => [...current, partsDone]);
+    setPartsDone(next);
+    if (next < run.requests.length) {
+      reviewParts(run, next);
+    } else {
+      setError(null);
+      setPhase('ready');
+    }
+  }, [run, partsDone, reviewParts]);
 
   useEffect(
     () => () => {
       requestRef.current += 1;
       handleRef.current?.cancel();
       handleRef.current = null;
-      // StrictMode replays mount effects in development. The cancelled pass
-      // must allow that next setup to start a live review.
-      startedRef.current = false;
     },
     [],
   );
@@ -942,8 +1104,72 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
     setResolvedIds((current) => new Set([...current, id]));
   }, []);
 
+  const unrevealable = useCallback(
+    (id: string) =>
+      setShown({ id, note: 'DocBlocks could not select this text in this view. Try Source view.' }),
+    [],
+  );
+
+  // Select the text in the document, finding where it went if it has changed.
+  const showFinding = (finding: AiReviewFinding) => {
+    const location = locateReviewExcerpt(
+      markdownSource,
+      run?.source ?? reviewedSource,
+      finding.originalText,
+    );
+    if (!location) {
+      setShown({ id: finding.id, note: 'This text is no longer in the document.' });
+      return;
+    }
+    setShown({
+      id: finding.id,
+      note: location.exact
+        ? null
+        : location.start === location.end
+          ? 'This text was removed after the review. The caret marks where it was.'
+          : 'This text has changed since the review. Its closest match is selected.',
+    });
+    const target = { activeView, tiptapEditor, monacoEditor };
+    if (layoutMode === 'document' && canReveal(target)) {
+      if (!revealSourceRange(target, markdownSource, location.start, location.end)) {
+        unrevealable(finding.id);
+      }
+      return;
+    }
+    // Preview shows no caret; another layout shows one block at a time.
+    if (activeView === 'preview') setActiveView('wysiwyg');
+    if (layoutMode !== 'document') {
+      goToBlockByLine(markdownSource.slice(0, location.start).split('\n').length);
+    }
+    setPendingReveal({ id: finding.id, location });
+  };
+
+  // Finish a reveal once the view switch or block change it waited for has rendered.
+  useEffect(() => {
+    if (!pendingReveal) return;
+    const target = { activeView, tiptapEditor, monacoEditor };
+    if (!canReveal(target)) return;
+    const frame = requestAnimationFrame(() => {
+      setPendingReveal(null);
+      const { id, location } = pendingReveal;
+      if (!revealSourceRange(target, markdownSource, location.start, location.end)) {
+        unrevealable(id);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingReveal, activeView, tiptapEditor, monacoEditor, markdownSource, unrevealable]);
+
   const visibleFindings = findings.filter((finding) => !resolvedIds.has(finding.id));
   const documentChanged = reviewedSource !== null && markdownSource !== reviewedSource;
+  const reviewedLabel = reviewedStyle ? AI_REVIEW_STYLE_DEFINITIONS[reviewedStyle].label : null;
+  const partCount = run?.requests.length ?? 0;
+  const inParts = partCount > 1;
+  const unfinished = run !== null && partsDone < partCount;
+  // Picking up a stopped or failed review only makes sense in its own style;
+  // another style is a new review.
+  const resumable = inParts && unfinished && phase !== 'running' && style === run?.style;
+  const reviewLabel =
+    phase === 'idle' || style !== reviewedStyle ? 'Review document' : 'Review again';
 
   return (
     <aside className="db-ai-review-panel" aria-label="AI document review">
@@ -953,6 +1179,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
           {phase === 'ready' && (
             <span className="db-ai-review-count">
               {visibleFindings.length} {visibleFindings.length === 1 ? 'finding' : 'findings'}
+              {reviewedLabel && ` · ${reviewedLabel}`}
             </span>
           )}
         </div>
@@ -967,20 +1194,72 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       </div>
 
       <div className="db-ai-review-actions">
-        {phase === 'running' ? (
-          <button type="button" onClick={cancelReview}>
-            Stop review
-          </button>
-        ) : (
-          <button type="button" onClick={runReview}>
-            {phase === 'idle' ? 'Review document' : 'Review again'}
-          </button>
+        <label className="db-ai-field db-ai-review-style">
+          Review style
+          {/* Choosing never starts a review: arrowing through a closed list
+              fires a change for each option it passes. */}
+          <select
+            value={style ?? ''}
+            disabled={phase === 'running'}
+            aria-describedby={style ? styleDescriptionId : undefined}
+            onChange={(event) => {
+              const next = event.currentTarget.value;
+              if (isAiReviewStyle(next)) setStyle(next);
+            }}
+          >
+            <option value="" disabled>
+              Choose a review style…
+            </option>
+            {AI_REVIEW_STYLES.map((option) => (
+              <option key={option} value={option}>
+                {AI_REVIEW_STYLE_DEFINITIONS[option].label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {style && (
+          <p id={styleDescriptionId} className="db-ai-review-style-description">
+            {AI_REVIEW_STYLE_DEFINITIONS[style].description}
+          </p>
         )}
+        {/* The first button is the one to press next. */}
+        <div className="db-ai-review-buttons">
+          {phase === 'running' ? (
+            <button type="button" onClick={cancelReview}>
+              Stop review
+            </button>
+          ) : resumable && phase === 'error' ? (
+            <>
+              <button type="button" onClick={continueReview}>
+                Retry part {partsDone + 1}
+              </button>
+              <button type="button" onClick={skipPart}>
+                Skip part {partsDone + 1}
+              </button>
+              <button type="button" onClick={runReview}>
+                Start over
+              </button>
+            </>
+          ) : resumable ? (
+            <>
+              <button type="button" onClick={continueReview}>
+                Continue review
+              </button>
+              <button type="button" onClick={runReview}>
+                Start over
+              </button>
+            </>
+          ) : (
+            <button type="button" disabled={!style} onClick={runReview}>
+              {reviewLabel}
+            </button>
+          )}
+        </div>
       </div>
 
       {phase === 'running' && (
         <div className="db-ai-review-empty" role="status">
-          <span className="db-ai-spinner" aria-hidden="true" /> Reviewing this document…
+          <span className="db-ai-spinner" aria-hidden="true" /> {reviewingText(active, partCount)}
         </div>
       )}
       {phase !== 'idle' && knowledge && (
@@ -990,14 +1269,27 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       )}
       {phase === 'error' && error && (
         <div className="db-ai-review-empty db-ai-error" role="alert">
+          {inParts && unfinished && `Part ${partsDone + 1} of ${partCount} could not be reviewed. `}
           {error}
+        </div>
+      )}
+      {phase === 'ready' && inParts && unfinished && (
+        <div className="db-ai-review-stale" role="status">
+          Stopped after {partsDone} of {partCount} parts, so the rest of the document has not been
+          reviewed.
+        </div>
+      )}
+      {phase !== 'running' && skippedParts.length > 0 && (
+        <div className="db-ai-review-stale" role="status">
+          {partsWere(skippedParts)} skipped, so findings there may be missing.
         </div>
       )}
       {cutOff && phase === 'ready' && (
         <div className="db-ai-review-stale" role="status">
-          The AI ran out of room after {findings.length}{' '}
-          {findings.length === 1 ? 'finding' : 'findings'}, so there may be more. After you apply
-          these, review again to look for others.
+          {inParts
+            ? 'The AI ran out of room in at least one part, so there may be more findings.'
+            : `The AI ran out of room after ${findings.length} ${findings.length === 1 ? 'finding' : 'findings'}, so there may be more.`}{' '}
+          After you apply these, review again to look for others.
         </div>
       )}
       {documentChanged && phase === 'ready' && (
@@ -1008,7 +1300,11 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
       )}
       {phase === 'ready' && visibleFindings.length === 0 && (
         <div className="db-ai-review-empty">
-          {findings.length === 0 ? 'Nothing to report.' : 'All findings have been handled.'}
+          {findings.length > 0
+            ? 'All findings have been handled.'
+            : unfinished
+              ? 'Nothing found in the parts reviewed so far.'
+              : 'Nothing to report.'}
         </div>
       )}
 
@@ -1018,7 +1314,25 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
             finding.replacement !== null &&
             findUniqueExcerpt(markdownSource, finding.originalText) !== null;
           return (
-            <li key={finding.id} className="db-ai-review-finding">
+            // A click anywhere on the card shows its text, for the pointer; the
+            // Show in document button does the same from the keyboard.
+            <li
+              key={finding.id}
+              className={`db-ai-review-finding db-ai-review-item${shown?.id === finding.id ? ' db-ai-review-item--shown' : ''}`}
+              onClick={(event) => {
+                if ((event.target as Element).closest('button')) return;
+                // Selecting the card's text to copy it is not a request to go there.
+                const selection = window.getSelection();
+                if (
+                  selection &&
+                  !selection.isCollapsed &&
+                  event.currentTarget.contains(selection.anchorNode)
+                ) {
+                  return;
+                }
+                showFinding(finding);
+              }}
+            >
               <div className="db-ai-review-finding-meta">
                 <span
                   className={`db-ai-review-severity db-ai-review-severity--${finding.severity}`}
@@ -1039,6 +1353,11 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
                   <blockquote>{finding.replacement}</blockquote>
                 </div>
               )}
+              {shown?.id === finding.id && shown.note && (
+                <p className="db-ai-review-locate-note" role="status">
+                  {shown.note}
+                </p>
+              )}
               {applyErrorId === finding.id && (
                 <p className="db-ai-error" role="alert">
                   This text no longer has one exact match. Review the document again before applying
@@ -1046,6 +1365,13 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
                 </p>
               )}
               <div className="db-ai-review-finding-actions">
+                <button
+                  type="button"
+                  className="db-ai-review-show"
+                  onClick={() => showFinding(finding)}
+                >
+                  Show in document
+                </button>
                 <button type="button" onClick={() => dismissFinding(finding.id)}>
                   Dismiss
                 </button>
@@ -1070,7 +1396,7 @@ export function AiReviewPanel({ ai, onClose }: AiReviewPanelProps) {
           <>
             {' '}
             <AiReportButton
-              feature="Review document"
+              feature={reviewedLabel ? `Review document (${reviewedLabel})` : 'Review document'}
               getOutput={() => formatReviewFindings(findings)}
               model={reviewModel}
             />

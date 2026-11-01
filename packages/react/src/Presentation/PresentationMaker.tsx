@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import {
   setBlockDurationInSource,
   setBlockStartTimeInSource,
+  templateLabel,
   useEditorContext,
   usePreviewSettingsOptional,
 } from '@bendyline/squisq-editor-react';
@@ -19,9 +20,11 @@ import { BlockRenderer, MediaContext } from '@bendyline/squisq-react';
 import {
   markdownToDoc,
   resolveAudioMapping,
+  buildPreviewDoc,
   expandDocBlocks,
   flattenRenderableBlocks,
   getPinnedBlockMeta,
+  previewBlockTemplate,
 } from '@bendyline/squisq/doc';
 import { parseMarkdown, setFrontmatterValues } from '@bendyline/squisq/markdown';
 import { VIEWPORT_PRESETS, type Doc } from '@bendyline/squisq/schemas';
@@ -36,9 +39,13 @@ import {
   DYNAMIC_PRESENTATION_STYLE,
   PRESENTATION_KEY,
   PRESENTATION_LAYOUTS,
+  AUTHORED_PRESENTATION_LAYOUT,
+  presentationPassageKey,
   type PresentationHints,
   type PresentationBlockHint,
   type PresentationBeat,
+  type PresentationBeatLayout,
+  type PresentationLayout,
 } from '@bendyline/squisq/transform';
 import type { DocBlocksHostAiAPI } from '@bendyline/docblocks/host';
 import { Dialog } from '../components/Dialog.js';
@@ -46,13 +53,36 @@ import { useAiStatus, unavailableSentence } from '../Ai/ai-status.js';
 import { AiReportButton } from '../Ai/AiOutputReport.js';
 import { refinePresentationPlan } from './presentation-ai.js';
 
-const LABELS = {
+const LABELS: Record<PresentationLayout, string> = {
   title: 'Title',
+  divider: 'Section divider',
   statement: 'Key idea',
+  emphasis: 'Big statement',
+  quote: 'Quote from the text',
+  stat: 'Key number',
+  definition: 'Definition',
   list: 'List',
   comparison: 'Comparison',
   steps: 'Steps diagram',
   image: 'Image',
+};
+/** What a chosen layout shows, and which slides it can apply to. */
+const LAYOUT_HELP: Record<PresentationBeatLayout, string> = {
+  authored:
+    'Shows this section as written, as one slide for its whole narration. To change its block type, use the block picker in the editor.',
+  title: 'A large headline with one supporting line.',
+  divider: 'A section break that shows only the headline.',
+  statement: 'One idea, with its highlights underneath.',
+  emphasis:
+    'Only the headline, very large. Used on slides whose headline is 60 characters or fewer.',
+  quote:
+    'One sentence from this section, word for word, set large. Used on slides with a sentence of 110 characters or fewer.',
+  stat: 'A prominent number from the text, such as 40% or $3 million. Used on slides that state one.',
+  definition: 'The headline as a term, with the highlights as its definition.',
+  list: 'The highlights as a bulleted list. Used on slides with at least two.',
+  comparison: 'Two highlights side by side. Used on slides with exactly two.',
+  steps: 'The highlights as connected steps. Used on slides with at least two.',
+  image: 'The section’s picture, with the headline as its caption.',
 };
 type Sections = ReturnType<typeof presentationSections>;
 /** Where a suggestion run stands; `active` is the slide a request is open for. */
@@ -73,7 +103,7 @@ function withSuggestion(
   item: PresentationBeat,
 ): PresentationHints {
   const parent = sectionAt(sections, item.sourceStart);
-  if (!parent) return current;
+  if (!parent || item.layout === AUTHORED_PRESENTATION_LAYOUT) return current;
   const source = sourceText.slice(item.sourceStart, item.sourceEnd);
   const existing = current.blocks.find((block) => block.blockId === parent.blockId);
   const target: PresentationBlockHint = {
@@ -147,11 +177,14 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const { workspaceContainer, markdownSource, replaceAll, mediaProvider } = useEditorContext();
   const preview = usePreviewSettingsOptional();
   const originalTextId = useId();
+  const layoutHelpId = useId();
   const [hints, setHints] = useState<PresentationHints>(
     () =>
       parsePresentationHints(parseMarkdown(markdownSource).frontmatter?.[PRESENTATION_HINTS_KEY]) ??
       defaultPresentationHints(),
   );
+  // One slide per section never adds supporting slides, so their controls rest.
+  const perSection = hints.density === 'section';
   const [loaded, setLoaded] = useState<{ doc: Doc; source: string } | null>(null);
   const [selectedSourceStart, setSelectedSourceStart] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -204,14 +237,21 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
   const sections = useMemo(() => (doc ? presentationSections(doc) : []), [doc]);
   const projection = useMemo(() => {
     if (!doc || !plan) return null;
-    const expand = (projected: Doc) =>
-      expandDocBlocks(projected.blocks, {
+    // A hidden slide still previews, so it can be judged and shown again; the
+    // deck itself leaves it out.
+    const every = { ...plan, beats: plan.beats.map(({ hidden: _hidden, ...beat }) => beat) };
+    // Through the deck's own slide projection, so an authored section previews
+    // with the template and content the slideshow and video will use.
+    const expand = (projected: Doc) => {
+      const slides = buildPreviewDoc(projected);
+      return expandDocBlocks(slides.blocks, {
         theme: preview?.activeTheme,
         viewport: VIEWPORT_PRESETS.landscape,
-        audioSegments: projected.audio.segments,
+        audioSegments: slides.audio.segments,
       });
+    };
     try {
-      const projected = compilePresentationPlan(doc, plan);
+      const projected = compilePresentationPlan(doc, every);
       return { doc: projected, blocks: expand(projected), error: null };
     } catch (cause: unknown) {
       // A narration problem must not blank the slides: preview them at reading
@@ -223,7 +263,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
           presentationNarration: undefined,
           documentMedia: doc.documentMedia?.filter((clip) => clip.anchor !== 'document'),
         };
-        blocks = expand(compilePresentationPlan(untimed, plan));
+        blocks = expand(compilePresentationPlan(untimed, every));
       } catch {
         // The plan itself no longer fits the document; the alert says so.
       }
@@ -269,6 +309,21 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       );
     return entries;
   }, [hints]);
+  // Names the block type each section renders with when shown as authored.
+  const authoredLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    if (!doc) return labels;
+    for (const block of flattenRenderableBlocks(doc.blocks))
+      labels.set(
+        block.id,
+        `As authored (${templateLabel(previewBlockTemplate(block, doc), doc.customTemplates)})`,
+      );
+    return labels;
+  }, [doc]);
+  const layoutLabel = (layout: PresentationBeatLayout, blockId: string | undefined) =>
+    layout === AUTHORED_PRESENTATION_LAYOUT
+      ? (authoredLabels.get(blockId ?? '') ?? 'As authored')
+      : LABELS[layout];
   // Layout changes can split or merge slides. Follow the source passage rather
   // than a slide number, which could now belong to a different section.
   const selectedIndex = Math.max(
@@ -328,6 +383,17 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
     }
     setError(null);
     setHints(next);
+  };
+  const hiddenCount = plan?.beats.filter((item) => item.hidden).length ?? 0;
+  const shownCount = (plan?.beats.length ?? 0) - hiddenCount;
+  const slideCount = `${shownCount} ${shownCount === 1 ? 'slide' : 'slides'}${hiddenCount ? ` · ${hiddenCount} hidden` : ''}`;
+  /** Hide or show the selected slide, remembered by its exact source passage. */
+  const setHidden = (hide: boolean) => {
+    if (!plan || !beat) return;
+    const key = presentationPassageKey(plan.sourceText.slice(beat.sourceStart, beat.sourceEnd));
+    const rest = (hint?.hidden ?? []).filter((item) => item !== key);
+    const hidden = hide ? [...rest, key].slice(-80) : rest;
+    updateHint({ hidden: hidden.length ? hidden : undefined });
   };
   const refine = async () => {
     if (!ai || !plan || controller.current) return;
@@ -479,13 +545,14 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
             <option value="concise">Concise — shorter passages per slide</option>
             <option value="balanced">Balanced</option>
             <option value="detailed">Detailed — longer passages per slide</option>
+            <option value="section">One slide per section — no splits or supporting slides</option>
           </select>
         </label>
         <label className="db-presentation-toggle">
           <input
             type="checkbox"
-            checked={hints.inbetweens}
-            disabled={running}
+            checked={hints.inbetweens && !perSection}
+            disabled={running || perSection}
             onChange={(event) => setHints({ ...hints, inbetweens: event.target.checked })}
           />{' '}
           Add supporting visual slides where useful
@@ -493,9 +560,9 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
       </div>
       <p role="status" aria-live="polite">
         {plan && projection?.doc
-          ? `${plan.beats.length} slides · ${projection.doc.duration.toFixed(1)} seconds · ${doc?.presentationNarration ? 'Follows narration' : 'Estimated pacing — add narration to synchronize'}`
+          ? `${slideCount} · ${projection.doc.duration.toFixed(1)} seconds · ${doc?.presentationNarration ? 'Follows narration' : 'Estimated pacing — add narration to synchronize'}`
           : plan && projection?.error
-            ? `${plan.beats.length} slides · Not synchronized with the narration`
+            ? `${slideCount} · Not synchronized with the narration`
             : 'Preparing dynamic slides…'}
       </p>
       {(error || generated?.error || projection?.error) && (
@@ -532,7 +599,10 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                 aiEntries
                   .get(owner.blockId)
                   ?.get(plan.sourceText.slice(item.sourceStart, item.sourceEnd));
-              const suggested = layout !== undefined && (layout !== 'image' || !!item.imageSrc);
+              const suggested =
+                item.layout !== AUTHORED_PRESENTATION_LAYOUT &&
+                layout !== undefined &&
+                (layout !== 'image' || !!item.imageSrc);
               const active = progress?.active;
               const pending =
                 !!active &&
@@ -542,6 +612,7 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                 <button
                   type="button"
                   key={item.id}
+                  className={item.hidden ? 'db-presentation-beat-hidden' : undefined}
                   aria-current={index === selectedIndex ? 'step' : undefined}
                   title={item.headline}
                   onClick={() => {
@@ -553,7 +624,8 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                     {index + 1}. {item.headline}
                   </span>
                   <span className="db-presentation-beat-tags">
-                    <small>{LABELS[item.layout]}</small>
+                    <small>{layoutLabel(item.layout, owner?.blockId)}</small>
+                    {item.hidden && <small>Hidden</small>}
                     {pending ? (
                       <small className="db-presentation-beat-ai">
                         <span className="db-ai-spinner" aria-hidden="true" />
@@ -571,9 +643,9 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
           </nav>
           <div className="db-presentation-detail">
             <div
-              className="db-presentation-preview"
+              className={`db-presentation-preview${beat.hidden ? ' db-presentation-preview-hidden' : ''}`}
               role="img"
-              aria-label={`Slide ${selectedIndex + 1}: ${beat.headline}`}
+              aria-label={`Slide ${selectedIndex + 1}${beat.hidden ? ' (hidden)' : ''}: ${beat.headline}`}
             >
               <MediaContext.Provider value={mediaProvider ?? null}>
                 {visual && (
@@ -588,48 +660,71 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
                 )}
               </MediaContext.Provider>
             </div>
+            <label className="db-presentation-toggle">
+              <input
+                type="checkbox"
+                checked={!!beat.hidden}
+                // A deck needs at least one slide.
+                disabled={running || (!beat.hidden && shownCount <= 1)}
+                onChange={(event) => setHidden(event.target.checked)}
+              />{' '}
+              Hide this slide in the presentation
+            </label>
             <div className="db-presentation-fields">
               <label>
                 Layout preference for this section
                 <select
                   value={hint?.layout ?? ''}
                   disabled={running}
+                  aria-describedby={hint?.layout ? layoutHelpId : undefined}
                   onChange={(event) =>
                     updateHint({
                       layout: (event.target.value || undefined) as
-                        | PresentationBeat['layout']
+                        | PresentationBeatLayout
                         | undefined,
                     })
                   }
                 >
                   <option value="">Automatic</option>
-                  {PRESENTATION_LAYOUTS.filter((layout) => layout !== 'image' || beat.imageSrc).map(
-                    (layout) => (
+                  <option value={AUTHORED_PRESENTATION_LAYOUT}>
+                    {layoutLabel(AUTHORED_PRESENTATION_LAYOUT, section.blockId)}
+                  </option>
+                  <optgroup label="Summary layouts">
+                    {PRESENTATION_LAYOUTS.filter(
+                      (layout) => layout !== 'image' || beat.imageSrc,
+                    ).map((layout) => (
                       <option key={layout} value={layout}>
                         {LABELS[layout]}
                       </option>
-                    ),
-                  )}
+                    ))}
+                  </optgroup>
                 </select>
               </label>
-              <label>
-                Supporting slides for this section
-                <select
-                  value={hint?.inbetweens === undefined ? '' : String(hint.inbetweens)}
-                  disabled={running}
-                  onChange={(event) =>
-                    updateHint({
-                      inbetweens:
-                        event.target.value === '' ? undefined : event.target.value === 'true',
-                    })
-                  }
-                >
-                  <option value="">Use document preference</option>
-                  <option value="true">Allow</option>
-                  <option value="false">Do not add</option>
-                </select>
-              </label>
+              {!perSection && beat.layout !== AUTHORED_PRESENTATION_LAYOUT && (
+                <label>
+                  Supporting slides for this section
+                  <select
+                    value={hint?.inbetweens === undefined ? '' : String(hint.inbetweens)}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateHint({
+                        inbetweens:
+                          event.target.value === '' ? undefined : event.target.value === 'true',
+                      })
+                    }
+                  >
+                    <option value="">Use document preference</option>
+                    <option value="true">Allow</option>
+                    <option value="false">Do not add</option>
+                  </select>
+                </label>
+              )}
             </div>
+            {hint?.layout && (
+              <p id={layoutHelpId} className="db-presentation-layout-help">
+                {LAYOUT_HELP[hint.layout]}
+              </p>
+            )}
             <section className="db-presentation-source" aria-labelledby={originalTextId}>
               <div className="db-presentation-source-label">
                 <h3 id={originalTextId}>Original document text</h3>
@@ -637,51 +732,52 @@ function PresentationDialog({ ai, onClose }: { ai?: DocBlocksHostAiAPI; onClose:
               </div>
               <p>{section.text}</p>
             </section>
-            {beat.sourceStart === section.sourceStart && (
-              <details className="db-presentation-wording">
-                <summary>Customize slide wording (slides only)</summary>
-                <p>
-                  This section’s opening slide can use your wording. If you change the section text,
-                  it returns to an automatic summary.
-                </p>
-                <label>
-                  Slide headline
-                  <input
-                    key={beat.headline}
-                    defaultValue={beat.headline}
-                    maxLength={110}
-                    disabled={running}
-                    onBlur={(event) =>
-                      updateHint({
-                        wording: {
-                          ...(hint?.wording?.source === section.text ? hint.wording : {}),
-                          source: section.text,
-                          headline: event.target.value.trim() || undefined,
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  Slide highlights, one per line
-                  <textarea
-                    rows={3}
-                    key={beat.points.join('\n')}
-                    defaultValue={beat.points.join('\n')}
-                    disabled={running}
-                    onBlur={(event) =>
-                      updateHint({
-                        wording: {
-                          ...(hint?.wording?.source === section.text ? hint.wording : {}),
-                          source: section.text,
-                          points: event.target.value.split('\n').filter(Boolean),
-                        },
-                      })
-                    }
-                  />
-                </label>
-              </details>
-            )}
+            {beat.sourceStart === section.sourceStart &&
+              beat.layout !== AUTHORED_PRESENTATION_LAYOUT && (
+                <details className="db-presentation-wording">
+                  <summary>Customize slide wording (slides only)</summary>
+                  <p>
+                    This section’s opening slide can use your wording. If you change the section
+                    text, it returns to an automatic summary.
+                  </p>
+                  <label>
+                    Slide headline
+                    <input
+                      key={beat.headline}
+                      defaultValue={beat.headline}
+                      maxLength={110}
+                      disabled={running}
+                      onBlur={(event) =>
+                        updateHint({
+                          wording: {
+                            ...(hint?.wording?.source === section.text ? hint.wording : {}),
+                            source: section.text,
+                            headline: event.target.value.trim() || undefined,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Slide highlights, one per line
+                    <textarea
+                      rows={3}
+                      key={beat.points.join('\n')}
+                      defaultValue={beat.points.join('\n')}
+                      disabled={running}
+                      onBlur={(event) =>
+                        updateHint({
+                          wording: {
+                            ...(hint?.wording?.source === section.text ? hint.wording : {}),
+                            source: section.text,
+                            points: event.target.value.split('\n').filter(Boolean),
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </details>
+              )}
           </div>
         </div>
       )}

@@ -1,4 +1,4 @@
-/* global window, document, phase, modelId, setTimeout, performance, fetch, PointerEvent */
+/* global window, document, phase, modelId, setTimeout, performance, fetch, PointerEvent, Event */
 /* Runs only in the isolated iOS test app assembled by ios-ai-smoke.mjs. */
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -109,6 +109,7 @@ if (phase === 'real') {
     const chat = ai.chat;
     const requests = [];
     ai.chat = (request, onEvent) => {
+      const user = request.messages.at(-1)?.content ?? '';
       const evidence = {
         purpose: request.purpose,
         maxTokens: request.maxTokens,
@@ -116,6 +117,9 @@ if (phase === 'real') {
           (sum, message) => sum + message.content.length,
           0,
         ),
+        // A small model reviews a long document in parts, one request each.
+        part: /This is part (\d+ of \d+)/u.exec(user)?.[1] ?? null,
+        documentCharacters: /<document>\n([\s\S]*)\n<\/document>/u.exec(user)?.[1].length ?? 0,
       };
       requests.push(evidence);
       return chat(request, (event) => {
@@ -135,13 +139,27 @@ if (phase === 'real') {
       );
       action.click();
       const panel = await until(() => document.querySelector('.db-ai-review-panel'));
-      await until(() => panel.querySelector('[role=alert], .db-ai-review-count'), 2400);
+      // The panel waits for a review style before it reviews anything.
+      const style = await until(() => panel.querySelector('.db-ai-review-style select'));
+      style.value = 'general';
+      style.dispatchEvent(new Event('change', { bubbles: true }));
+      (
+        await until(() =>
+          [...panel.querySelectorAll('button')].find(
+            (node) => node.textContent.trim() === 'Review document' && !node.disabled,
+          ),
+        )
+      ).click();
+      // A review in parts makes one call per part, each as long as a whole review.
+      await until(() => panel.querySelector('[role=alert], .db-ai-review-count'), 4800);
       assert(
         !panel.querySelector('[role=alert]'),
         JSON.stringify({ text: panel.textContent, requests }),
       );
       assert(
-        requests.some((request) => request.purpose === 'review' && request.promptCharacters > 8000),
+        requests
+          .filter((request) => request.purpose === 'review')
+          .reduce((sum, request) => sum + request.documentCharacters, 0) > 8000,
         'Review must include the full default document',
       );
       review = {

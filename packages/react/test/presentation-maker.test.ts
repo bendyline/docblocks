@@ -128,6 +128,209 @@ describe('PresentationMaker with a pinned section', () => {
   });
 });
 
+const REPORT = [
+  '# Results',
+  '',
+  'Revenue grew 40% last year. Most of it came from new customers.',
+  '',
+  '## By region {[barChart]}',
+  '',
+  'North led every quarter.',
+  '',
+  '| Region | Sales |',
+  '| --- | --- |',
+  '| North | 40 |',
+  '| South | 25 |',
+].join('\n');
+
+describe('PresentationMaker authored sections', () => {
+  it('shows a section as authored, naming its block type, and saves only that choice', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: REPORT,
+          children: [
+            createElement(SourceProbe, { key: 'probe' }),
+            createElement(PresentationMaker, { key: 'maker', onClose: () => undefined }),
+          ],
+        }),
+      );
+    });
+    try {
+      await settle();
+      const region = () =>
+        Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>('.db-presentation-beats button'),
+        ).find((slide) => slide.textContent?.includes('By region'))!;
+      await act(async () => region().click());
+      const layout = () =>
+        document.body.querySelector<HTMLSelectElement>('.db-presentation-detail select')!;
+      const authored = Array.from(layout().options).find((option) => option.value === 'authored');
+      expect(authored?.textContent).to.equal('As authored (Bar Chart)');
+      expect(Array.from(layout().options).map((option) => option.textContent)).to.include.members([
+        'Key number',
+        'Quote from the text',
+        'Big statement',
+        'Definition',
+        'Section divider',
+      ]);
+
+      await act(async () => {
+        layout().value = 'authored';
+        layout().dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await settle();
+      expect(region().querySelector('small')?.textContent).to.equal('As authored (Bar Chart)');
+      expect(layout().getAttribute('aria-describedby')).to.be.a('string');
+      expect(document.body.querySelector('.db-presentation-layout-help')?.textContent).to.contain(
+        'block picker',
+      );
+      // Nothing to word and no supporting slides: the section is shown as written.
+      expect(document.body.querySelector('.db-presentation-wording')).to.equal(null);
+      expect(document.body.querySelectorAll('.db-presentation-detail select')).to.have.length(1);
+      expect(
+        document.body.querySelector('.db-presentation-preview')?.childElementCount,
+      ).to.be.greaterThan(0);
+
+      const apply = Array.from(document.body.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Use dynamic slides',
+      );
+      await act(async () => apply?.click());
+      await settle();
+      expect(latestSource).to.contain('"layout":"authored"');
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+const LONG = [
+  '# Plan',
+  '',
+  'Each slide should carry one idea that the narration explains in more depth. '.repeat(8),
+  '',
+  '## Next',
+  '',
+  'Ship it soon.',
+].join('\n');
+
+describe('PresentationMaker one slide per section', () => {
+  it('collapses each section to one slide and rests the supporting-slide controls', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: LONG,
+          children: createElement(PresentationMaker, { onClose: () => undefined }),
+        }),
+      );
+    });
+    try {
+      await settle();
+      const slides = () => document.body.querySelectorAll('.db-presentation-beats button');
+      const supporting = () =>
+        document.body.querySelector<HTMLInputElement>('.db-presentation-toggle input')!;
+      expect(slides().length).to.be.greaterThan(2);
+      expect(supporting().checked).to.equal(true);
+
+      const density = document.body.querySelector<HTMLSelectElement>(
+        '.db-presentation-preferences select',
+      )!;
+      await act(async () => {
+        density.value = 'section';
+        density.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await settle();
+      expect(slides()).to.have.length(2);
+      expect(supporting().checked).to.equal(false);
+      expect(supporting().disabled).to.equal(true);
+      expect(document.body.querySelectorAll('.db-presentation-detail select')).to.have.length(1);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
+describe('PresentationMaker hidden slides', () => {
+  it('hides a slide by its passage, keeps one slide shown, and saves only a key', async () => {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(EditorProvider, {
+          initialMarkdown: LONG,
+          children: [
+            createElement(SourceProbe, { key: 'probe' }),
+            createElement(PresentationMaker, { key: 'maker', onClose: () => undefined }),
+          ],
+        }),
+      );
+    });
+    try {
+      await settle();
+      const slides = () =>
+        Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>('.db-presentation-beats button'),
+        );
+      const hide = () =>
+        document.body.querySelector<HTMLInputElement>(
+          '.db-presentation-detail > .db-presentation-toggle input',
+        )!;
+      const status = () =>
+        document.body.querySelector('.db-presentation p[role="status"]')?.textContent ?? '';
+      const count = slides().length;
+      await act(async () => slides()[1]!.click());
+      await act(async () => hide().click());
+      await settle();
+      expect(status()).to.match(new RegExp(`^${count - 1} slides · 1 hidden`));
+      expect(slides()).to.have.length(count);
+      expect(slides()[1]!.classList.contains('db-presentation-beat-hidden')).to.equal(true);
+      expect(slides()[1]!.textContent).to.contain('Hidden');
+      expect(hide().checked).to.equal(true);
+      expect(
+        document.body.querySelector('.db-presentation-preview-hidden')?.childElementCount,
+      ).to.be.greaterThan(0);
+
+      // A new split has new passages, so nothing hidden carries over.
+      const density = document.body.querySelector<HTMLSelectElement>(
+        '.db-presentation-preferences select',
+      )!;
+      await act(async () => {
+        density.value = 'section';
+        density.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await settle();
+      expect(status()).not.to.contain('hidden');
+      await act(async () => slides()[0]!.click());
+      await act(async () => hide().click());
+      await settle();
+      expect(status()).to.match(/^1 slide · 1 hidden/);
+      await act(async () => slides()[1]!.click());
+      expect(hide().disabled, 'the last shown slide').to.equal(true);
+
+      const apply = Array.from(document.body.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Use dynamic slides',
+      );
+      await act(async () => apply?.click());
+      await settle();
+      // Both keys are kept, so returning to Balanced hides its slide again.
+      expect(latestSource).to.match(/"hidden":\["[0-9a-z]+-[0-9a-z]+","[0-9a-z]+-[0-9a-z]+"\]/);
+      expect(latestSource.match(/Each slide should carry/g)).to.have.length(8);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+});
+
 const DIAGRAM = [
   '# Squiggly Square is a Swiss army knife for content',
   '',

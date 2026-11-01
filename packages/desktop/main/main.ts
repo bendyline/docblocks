@@ -589,8 +589,24 @@ async function bootstrap(): Promise<void> {
         ? pickDisplayCaptureSource(window, sources, (items) => Menu.buildFromTemplate(items))
         : Promise.resolve(null);
     },
-    getDisplaySources: () =>
-      listDisplayCaptureSources((options) => desktopCapturer.getSources(options)),
+    getDisplaySources: async () => {
+      try {
+        const sources = await listDisplayCaptureSources((options) =>
+          desktopCapturer.getSources(options),
+        );
+        // Automation can only choose a screen, and X11 sometimes lists none.
+        // Say so, or a denied packaged smoke has no cause in its process log.
+        if (automationPrivileges && !sources.some((source) => source.id.startsWith('screen:'))) {
+          process.stderr.write(`[display-capture] no screen among ${sources.length} source(s)\n`);
+        }
+        return sources;
+      } catch (error: unknown) {
+        if (automationPrivileges) {
+          process.stderr.write(`[display-capture] source lookup failed: ${String(error)}\n`);
+        }
+        throw error;
+      }
+    },
   });
 
   // Strict headers on the top-level DocBlocks renderer only. The default

@@ -7120,7 +7120,7 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 .db-ai-study-dialog .db-dialog-footer button:last-child,
 .db-ai-draft-start button,
 .db-ai-review-finding-actions button:last-child,
-.db-ai-review-actions button {
+.db-ai-review-buttons button:first-child {
   border-color: var(--db-accent);
   background: var(--db-accent);
   color: var(--db-text-on-accent);
@@ -7222,6 +7222,22 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   padding: 10px 14px 0;
 }
 
+.db-ai-review-style {
+  margin-bottom: 6px;
+}
+
+.db-ai-review-style-description {
+  margin: 0 0 10px;
+  color: var(--db-text-muted);
+  font-size: 12px;
+}
+
+.db-ai-review-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
 .db-ai-review-empty,
 .db-ai-review-stale {
   margin: 12px 14px;
@@ -7251,6 +7267,26 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   border-radius: 6px;
   background: var(--db-bg);
   box-shadow: 0 1px 2px var(--db-shadow);
+}
+
+/* A review finding's card selects its text in the document when clicked.
+   Illustrate and image cards share the finding card's look, not this. */
+.db-ai-review-item {
+  cursor: pointer;
+}
+
+.db-ai-review-item:hover {
+  border-color: var(--db-border-strong);
+}
+
+.db-ai-review-item--shown,
+.db-ai-review-item--shown:hover {
+  border-color: var(--db-accent);
+}
+
+.db-ai-review-locate-note {
+  color: var(--db-text-muted);
+  font-size: 12px;
 }
 
 .db-ai-review-finding-meta {
@@ -7302,9 +7338,15 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 
 .db-ai-review-finding-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 7px;
   margin-top: 10px;
+}
+
+/* Navigation, apart from the actions that change the finding. */
+.db-ai-review-finding-actions .db-ai-review-show {
+  margin-right: auto;
 }
 
 .db-settings-ai-knowledge-actions {
@@ -7679,7 +7721,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 }
 
 .db-ai-idea-card input,
-.db-ai-idea-card select {
+.db-ai-idea-card select,
+.db-ai-review-style select {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
@@ -7693,13 +7736,15 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 }
 
 .db-ai-idea-card input:focus-visible,
-.db-ai-idea-card select:focus-visible {
+.db-ai-idea-card select:focus-visible,
+.db-ai-review-style select:focus-visible {
   border-color: var(--db-accent);
   outline: none;
   box-shadow: 0 0 0 1px var(--db-accent);
 }
 
-.db-ai-idea-card :is(input, select, textarea):disabled {
+.db-ai-idea-card :is(input, select, textarea):disabled,
+.db-ai-review-style select:disabled {
   opacity: 0.6;
 }
 
@@ -8819,6 +8864,14 @@ button.db-git-file-row:hover {
     -webkit-app-region: drag;
   }
 
+  /* A drag region never receives hover, so while the pointer is elsewhere
+     the grip yields to the page; arriving re-arms it and shows its hint.
+     WindowDragGrip owns the state. */
+  .db-shell .db-window-drag-grip--detect-hover {
+    app-region: no-drag;
+    -webkit-app-region: no-drag;
+  }
+
   /* Let the workspace menu size itself to its contents and cross the sidebar
      boundary above the editor. The explorer still clips its own contents. */
   .db-shell .db-shell-sidebar {
@@ -9102,6 +9155,25 @@ button.db-git-file-row:hover {
 }
 .db-presentation-fields label {
   width: min(100%, 320px);
+}
+/* A hidden slide stays listed so it can be shown again, set apart without
+   dimming its text below readable contrast. */
+.db-presentation-beats button.db-presentation-beat-hidden {
+  border-style: dashed;
+}
+.db-presentation-beat-hidden .db-presentation-beat-title {
+  color: var(--db-text-secondary);
+  text-decoration: line-through;
+}
+.db-presentation-preview-hidden > * {
+  opacity: 0.45;
+}
+/* Says what the chosen layout shows and which slides it can apply to. */
+.db-presentation-layout-help {
+  flex-shrink: 0;
+  margin: 0;
+  color: var(--db-text-secondary);
+  line-height: 1.5;
 }
 .db-presentation-source {
   flex-shrink: 0;
