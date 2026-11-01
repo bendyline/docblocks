@@ -1,3 +1,15 @@
+## docblocks-desktop [2.7.10](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.9...docblocks-desktop@2.7.10) (2026-10-30)
+
+### Bug Fixes
+
+* Add social images to page templates ([#38](https://github.com/bendyline/docblocks/issues/38)) ([41aff4a](https://github.com/bendyline/docblocks/commit/41aff4a70898e8867e2f64da86f4c1f495aa82a4))
+
+
+### Dependencies
+
+* **@bendyline/docblocks:** upgraded to 2.7.10
+* **@bendyline/docblocks-react:** upgraded to 2.7.10
+
 ## docblocks-desktop [2.7.9](https://github.com/bendyline/docblocks/compare/docblocks-desktop@2.7.8...docblocks-desktop@2.7.9) (2026-10-29)
 
 ### Bug Fixes
