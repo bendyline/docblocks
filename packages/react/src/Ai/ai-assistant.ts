@@ -9,6 +9,13 @@ import {
   svgPictureRanges,
   SVG_PICTURE_PLACEHOLDER,
 } from './ai-pictures.js';
+import {
+  reviewFindingLimit,
+  reviewPartCharacters,
+  SMALL_MODEL_FINDINGS,
+  splitReviewParts,
+} from './review-parts.js';
+import { AI_REVIEW_STYLE_DEFINITIONS, type AiReviewStyle } from './review-styles.js';
 
 export type AiDraftMode = 'compose' | 'rewrite';
 
@@ -27,13 +34,6 @@ export const AI_REWRITE_SELECTION_CHARACTERS = 120_000;
 export const AI_REVIEW_DOCUMENT_CHARACTERS = 200_000;
 
 const DRAFT_DOCUMENT_CONTEXT_CHARACTERS = 120_000;
-const REVIEW_FINDING_LIMIT = 20;
-/**
- * How many findings a review asks for. Each runs to about 150 tokens, and
- * Apple's on-device model stops every reply at 1,024: asked for 12, it was cut
- * off partway through the eighth. Six leave room for the array around them.
- */
-const REVIEW_FINDING_REQUEST = 6;
 const REVIEW_QUOTE_CHARACTERS = 2_000;
 const REVIEW_REPLACEMENT_CHARACTERS = 12_000;
 const REVIEW_MESSAGE_CHARACTERS = 1_000;
@@ -171,20 +171,61 @@ export function buildDraftContinuation(request: AiChatRequest, draft: string): A
   };
 }
 
-export function buildReviewRequest(source: string): AiChatRequest {
+/** One part of a document reviewed in several requests. */
+export interface AiReviewPart {
+  /** The part as cut from the document with its pictures elided. */
+  readonly text: string;
+  readonly index: number;
+  readonly count: number;
+}
+
+const REVIEW_TITLE_CHARACTERS = 120;
+
+function reviewUserMessage(source: string, document: string, part?: AiReviewPart): string {
+  if (!part) return `Review this Markdown document:\n<document>\n${document}\n</document>`;
+  const title = documentTitle(source).slice(0, REVIEW_TITLE_CHARACTERS);
+  // Without this, a part with no opening reads as a document missing one.
+  return (
+    `This is part ${part.index + 1} of ${part.count} of a longer Markdown document` +
+    `${title ? ` titled "${title}"` : ''}. The other parts are reviewed separately, so review only ` +
+    'this part and do not report anything as missing from it.\n' +
+    `<document>\n${part.text}\n</document>`
+  );
+}
+
+export interface AiReviewRequestOptions {
+  /** The part of a long document this request carries; the whole document when absent. */
+  readonly part?: AiReviewPart;
+  /**
+   * Most findings to ask for, or null for every one the model finds. A small
+   * model's reply holds only a few: see {@link reviewFindingLimit}.
+   */
+  readonly findings?: number | null;
+}
+
+/** Every style shares the findings contract; only the reviewer's brief changes. */
+export function buildReviewRequest(
+  source: string,
+  style: AiReviewStyle = 'general',
+  { part, findings = SMALL_MODEL_FINDINGS }: AiReviewRequestOptions = {},
+): AiChatRequest {
   const document = elideSvgPictures(source);
+  const { brief, temperature } = AI_REVIEW_STYLE_DEFINITIONS[style];
+  const count =
+    findings === null
+      ? 'with one object for each meaningful issue you find'
+      : `with at most ${findings} objects`;
   return {
     purpose: 'review',
-    temperature: 0.2,
+    temperature,
     maxTokens: 8_192,
     messages: [
       {
         role: 'system',
         content:
-          'You are a careful document reviewer inside DocBlocks. Find meaningful issues in clarity, structure, ' +
-          'tone, consistency, and unsupported or ambiguous wording. Do not critique Markdown syntax, code, URLs, ' +
-          `frontmatter, or authorial choices that are already clear. Return only a JSON array with at most ${REVIEW_FINDING_REQUEST} ` +
-          'objects, most important first. Every object must have exactly these keys: "quote" (a short, exact, ' +
+          `You are a careful document reviewer inside DocBlocks. ${brief} Do not critique Markdown syntax, ` +
+          `code, URLs, or frontmatter. Return only a JSON array ${count}, ` +
+          'most important first. Every object must have exactly these keys: "quote" (a short, exact, ' +
           'contiguous excerpt copied from the document), "replacement" (improved Markdown for that excerpt, or ' +
           'null for an informational finding), "category" (a short label), "severity" ("info", "suggestion", or ' +
           '"warning"), "message" (one short sentence), and "rationale" (one short sentence, or null). Do not use a ' +
@@ -193,10 +234,98 @@ export function buildReviewRequest(source: string): AiChatRequest {
       },
       {
         role: 'user',
-        content: `Review this Markdown document:\n<document>\n${document}\n</document>`,
+        content: reviewUserMessage(source, document, part),
       },
     ],
   };
+}
+
+function requestCharacters(request: AiChatRequest): number {
+  return request.messages.reduce((sum, message) => sum + message.content.length, 0);
+}
+
+/**
+ * Most requests sent about one part: the first, then a follow-up after each
+ * reply that filled its room with new findings. Only a guard against a model
+ * that never runs out of things to say.
+ */
+export const REVIEW_PASSES = 5;
+/** Characters of already-reported passages a follow-up lists; part sizing leaves room for them. */
+const REVIEW_FOLLOW_UP_CHARACTERS = 1_500;
+const REPORTED_PASSAGE_CHARACTERS = 60;
+
+/** The start of a reported passage, enough for a model to recognize it. */
+function passageStart(quote: string): string {
+  const text = quote.replace(/\s+/gu, ' ').trim();
+  if (text.length <= REPORTED_PASSAGE_CHARACTERS) return text;
+  return `${text.slice(0, REPORTED_PASSAGE_CHARACTERS).replace(/\s+\S*$/u, '')}…`;
+}
+
+/**
+ * Ask about the same document or part again, after a reply that filled its
+ * room, for issues it had no room for. Names the passages already reported,
+ * most recent last; the oldest are left off when they would not fit.
+ */
+export function buildReviewFollowUp(
+  request: AiChatRequest,
+  reported: readonly string[],
+): AiChatRequest {
+  const lines: string[] = [];
+  let characters = 0;
+  for (const quote of [...new Set(reported)].reverse()) {
+    const line = `- "${passageStart(quote)}"`;
+    if (characters + line.length + 1 > REVIEW_FOLLOW_UP_CHARACTERS) break;
+    lines.unshift(line);
+    characters += line.length + 1;
+  }
+  return {
+    ...request,
+    messages: request.messages.map((message, index) =>
+      index === request.messages.length - 1
+        ? {
+            ...message,
+            content:
+              `${message.content}\n\nFindings were already reported for these passages, so do not ` +
+              `report them again:\n${lines.join('\n')}\nReport any other meaningful issues in the same ` +
+              'JSON format, most important first. Return [] when there are no others.',
+          }
+        : message,
+    ),
+  };
+}
+
+/**
+ * The review of `source` as requests that each fit `contextWindow`, in
+ * document order: one request when the whole document fits, else one per
+ * part. Each leaves room to become a follow-up. Unknown windows are treated as 4K.
+ */
+export function buildReviewRequests(
+  source: string,
+  style: AiReviewStyle,
+  contextWindow: number | null,
+): AiChatRequest[] {
+  const document = elideSvgPictures(source);
+  const findings = reviewFindingLimit(contextWindow);
+  // What a part's follow-up sends besides its text; a first request sends less.
+  const overhead =
+    requestCharacters(
+      buildReviewFollowUp(
+        buildReviewRequest(source, style, { part: { text: '', index: 98, count: 99 }, findings }),
+        [],
+      ),
+    ) + REVIEW_FOLLOW_UP_CHARACTERS;
+  const max = Math.min(
+    AI_REVIEW_DOCUMENT_CHARACTERS,
+    reviewPartCharacters(contextWindow, overhead),
+  );
+  if (document.length <= max) return [buildReviewRequest(source, style, { findings })];
+  const parts = splitReviewParts(document, max);
+  return parts.map((text, index) =>
+    buildReviewRequest(source, style, {
+      part: { text, index, count: parts.length },
+      findings,
+    }),
+  );
 }
 
 /** A whole reply inside a Markdown fence. */
@@ -356,11 +485,13 @@ function reviewFindings(values: readonly unknown[]): AiReviewFinding[] | null {
   return findings;
 }
 
-/** Parse model output as untrusted data and keep only exact, bounded findings. */
+/**
+ * Parse model output as untrusted data and keep only exact, bounded findings.
+ * There is no limit on how many: the request's reply budget is the bound.
+ */
 export function parseAiReviewResponse(response: string): AiReviewFinding[] | null {
   const values = jsonArrayFromResponse(response);
-  if (!values || values.length > REVIEW_FINDING_LIMIT) return null;
-  return reviewFindings(values);
+  return values ? reviewFindings(values) : null;
 }
 
 /**
@@ -370,7 +501,7 @@ export function parseAiReviewResponse(response: string): AiReviewFinding[] | nul
  */
 export function parseTruncatedAiReviewResponse(response: string): AiReviewFinding[] | null {
   const scan = completeLeadingObjects(response);
-  return scan ? reviewFindings(scan.values.slice(0, REVIEW_FINDING_LIMIT)) : null;
+  return scan ? reviewFindings(scan.values) : null;
 }
 
 export function findUniqueExcerpt(source: string, excerpt: string): number | null {

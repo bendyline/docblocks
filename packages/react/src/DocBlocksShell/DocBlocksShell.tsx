@@ -343,6 +343,7 @@ import {
 } from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
 import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
+import { WindowDragGrip } from './WindowDragGrip.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
 import {
@@ -5802,7 +5803,7 @@ export function DocBlocksShell({
                   <SplitViewIcon />
                 </button>
               )}
-              <span className={'db-window-drag-grip'} aria-hidden={true} />
+              <WindowDragGrip />
             </div>
             {git.available && (
               <Suspense fallback={null}>

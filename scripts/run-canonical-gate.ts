@@ -28,10 +28,27 @@ export function npmChildEnvironment(source: NodeJS.ProcessEnv = process.env): No
   return environment;
 }
 
-export function runNpmStep(script: string): number {
+/**
+ * Steps after the gate's own `build` get DOCBLOCKS_E2E_PREBUILT, so the E2E
+ * web servers start from that build instead of repeating it inside their
+ * startup timeouts.
+ */
+export function gateStepEnvironment(
+  afterBuild: boolean,
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const environment = npmChildEnvironment(source);
+  if (afterBuild) environment.DOCBLOCKS_E2E_PREBUILT = '1';
+  return environment;
+}
+
+export function runNpmStep(
+  script: string,
+  environment: NodeJS.ProcessEnv = npmChildEnvironment(),
+): number {
   const result = spawnSync(process.execPath, [npmCli, ...canonicalGateArguments(script)], {
     cwd: repoRoot,
-    env: npmChildEnvironment(),
+    env: environment,
     shell: false,
     stdio: 'inherit',
     windowsHide: true,
@@ -46,14 +63,16 @@ export function runNpmStep(script: string): number {
 }
 
 export function runCanonicalGate(): number {
+  let built = false;
   for (const script of canonicalGateScripts) {
-    const status = runNpmStep(script);
+    const status = runNpmStep(script, gateStepEnvironment(built));
     if (status !== 0) {
       process.stderr.write(
         `Canonical gate stopped because ${canonicalGateCommand(script)} failed with exit code ${status}. Later steps were not run.\n`,
       );
       return status;
     }
+    if (script === 'build') built = true;
   }
   return 0;
 }

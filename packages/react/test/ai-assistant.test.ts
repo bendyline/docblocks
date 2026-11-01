@@ -12,6 +12,11 @@ import {
   sanitizeGeneratedMarkdown,
   type AiReviewFinding,
 } from '../src/Ai/ai-assistant.js';
+import {
+  AI_REVIEW_STYLE_DEFINITIONS,
+  AI_REVIEW_STYLES,
+  isAiReviewStyle,
+} from '../src/Ai/review-styles.js';
 
 describe('AI editor assistant', () => {
   it('builds bounded compose and rewrite requests that treat document text as content', () => {
@@ -115,6 +120,43 @@ describe('AI editor assistant', () => {
     );
   });
 
+  it('gives every review style its own brief over the same findings contract', () => {
+    const source = '# Title\n\nText.';
+    const contract = buildReviewRequest(source).messages[0]?.content.split('Do not critique')[1];
+    expect(buildReviewRequest(source).messages).to.deep.equal(
+      buildReviewRequest(source, 'general').messages,
+    );
+    const briefs = new Set<string>();
+    for (const style of AI_REVIEW_STYLES) {
+      const request = buildReviewRequest(source, style);
+      const system = request.messages[0]?.content ?? '';
+      expect(request.purpose, style).to.equal('review');
+      expect(system, style).to.contain(AI_REVIEW_STYLE_DEFINITIONS[style].brief);
+      expect(system.split('Do not critique')[1], style).to.equal(contract);
+      expect(request.messages[1]?.content, style).to.contain('<document>\n# Title');
+      briefs.add(AI_REVIEW_STYLE_DEFINITIONS[style].brief);
+    }
+    expect(briefs.size).to.equal(AI_REVIEW_STYLES.length);
+    expect(buildReviewRequest(source, 'creative').temperature).to.be.greaterThan(
+      buildReviewRequest(source, 'general').temperature ?? 0,
+    );
+  });
+
+  it('keeps review styles that touch facts from inventing them', () => {
+    const facts = buildReviewRequest('Text.', 'facts').messages[0]?.content;
+    expect(facts).to.contain('Never invent a source, link or citation');
+    expect(facts).to.contain('set "replacement" to null');
+    expect(buildReviewRequest('Text.', 'resume').messages[0]?.content).to.contain(
+      'Never invent an employer, title, date, skill or metric',
+    );
+    expect(buildReviewRequest('Text.', 'creative').messages[0]?.content).to.contain(
+      'add no name, date, number, place or quotation',
+    );
+    expect(isAiReviewStyle('facts')).to.equal(true);
+    expect(isAiReviewStyle('toString')).to.equal(false);
+    expect(isAiReviewStyle('')).to.equal(false);
+  });
+
   it('removes prompt tags a model echoes around its whole reply', () => {
     // Qwen 3.5 0.8B returned a rewrite inside the prompt's <selection> tags,
     // and Replace wrote them into the document.
@@ -160,6 +202,20 @@ describe('AI editor assistant', () => {
       null,
     );
     expect(parseAiReviewResponse('not json')).to.equal(null);
+  });
+
+  it('keeps every finding however many there are', () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({
+      quote: `excerpt ${index}`,
+      replacement: null,
+      category: 'Clarity',
+      severity: 'info',
+      message: `Finding ${index}.`,
+      rationale: null,
+    }));
+    expect(parseAiReviewResponse(JSON.stringify(many))).to.have.length(30);
+    const cutOff = `${JSON.stringify(many).slice(0, -1)}, {"quote": "unfin`;
+    expect(parseTruncatedAiReviewResponse(cutOff)).to.have.length(30);
   });
 
   it('keeps the findings a cut-off review finished and drops the unfinished one', () => {
