@@ -267,6 +267,11 @@ export function registerAiIpc(service: AiService, images: AiImageService | null 
     registerTrustedIpcHandler('ai:images:access', 0, () => images.access());
     registerTrustedIpcHandler('ai:images:requestAccess', 0, () => images.requestAccess());
     registerTrustedIpcHandler('ai:images:models', 0, () => images.models());
+    registerTrustedIpcHandler('ai:images:styles', 0, () => images.styles());
+    registerTrustedIpcHandler('ai:images:removeStyle', 1, (_event, value: unknown) => {
+      if (!isAiImageModelId(value)) throw new Error('Invalid image style id');
+      return images.removeStyle(value);
+    });
     registerTrustedIpcHandler('ai:images:remove', 1, (_event, value: unknown) => {
       if (!isAiImageModelId(value)) throw new Error('Invalid image model id');
       return images.removeModel(value);
@@ -336,5 +341,36 @@ export function registerAiIpc(service: AiService, images: AiImageService | null 
         images.cancelInstall(streamKey(ownerId, requestId));
       }
     });
+    registerTrustedIpcHandler(
+      'ai:images:install-style:start',
+      2,
+      (event, requestIdValue: unknown, styleIdValue: unknown): void => {
+        const requestId = parseRequestId(requestIdValue);
+        if (!isAiImageModelId(styleIdValue)) throw new Error('Invalid image style id');
+        const sender = event.sender;
+        const ownerId = sender.id;
+        watch(sender);
+        claim(imageInstallOwners, ownerId, requestId);
+        images.startStyleInstall(streamKey(ownerId, requestId), styleIdValue, (installEvent) => {
+          if (installEvent.kind !== 'progress') {
+            imageInstallOwners.get(ownerId)?.delete(requestId);
+          }
+          if (!sender.isDestroyed()) {
+            sender.send('ai:images:install-style:event', { requestId, event: installEvent });
+          }
+        });
+      },
+    );
+    registerTrustedIpcHandler(
+      'ai:images:install-style:cancel',
+      1,
+      (event, requestIdValue: unknown) => {
+        const requestId = parseRequestId(requestIdValue);
+        const ownerId = event.sender.id;
+        if (imageInstallOwners.get(ownerId)?.has(requestId)) {
+          images.cancelInstall(streamKey(ownerId, requestId));
+        }
+      },
+    );
   }
 }

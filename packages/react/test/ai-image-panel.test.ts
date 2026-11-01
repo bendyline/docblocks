@@ -11,8 +11,10 @@ import type {
   AiImageAccess,
   AiImageEvent,
   AiImageModel,
+  AiImageStyle,
   AiImageRequest,
   AiImageResult,
+  AiProgress,
   AiImagesAPI,
   AiResult,
   DocBlocksHostAiAPI,
@@ -45,6 +47,7 @@ const FLUX: AiImageModel = {
   downloadBytes: 5_207_178_964,
   shared: false,
   license: 'Apache 2.0',
+  licenseUrl: 'https://huggingface.co/example/model/blob/main/LICENSE',
   commercialUse: true,
   rendersText: true,
   promptStyle: 'sentences',
@@ -343,8 +346,125 @@ describe('AiImagePanel', () => {
   });
 });
 
+async function renderImageSettings(images: AiImagesAPI) {
+  const container = document.createElement('div');
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => root.render(createElement(AiImageSettings, { images })));
+  await waitFor(() => Boolean(container.textContent?.includes('Add model…')), 'image settings');
+  return {
+    container,
+    cleanup: async () => {
+      await act(async () => root.unmount());
+      container.remove();
+    },
+  };
+}
+
 describe('AiImageSettings', () => {
-  it('states size, license and hardware, and refuses a model that cannot run here', async () => {
+  for (const kind of ['model', 'style'] as const) {
+    it(`keeps an image ${kind} download across Settings mounts and allows explicit cancellation`, async () => {
+      let installed = false;
+      let starts = 0;
+      let cancellations = 0;
+      let progress: (value: AiProgress) => void = () => undefined;
+      let finish!: (value: AiResult<AiImageModel & AiImageStyle>) => void;
+      const item: AiImageModel & AiImageStyle = {
+        ...FLUX,
+        id: 'background-image',
+        label: 'Background image',
+        baseModels: [FLUX.id],
+      };
+      const fixture = fakeImages();
+      fixture.images.models = async () => ({
+        ok: true,
+        value: [
+          FLUX,
+          ...(kind === 'model'
+            ? [
+                {
+                  ...item,
+                  state: installed ? ('installed' as const) : ('download-required' as const),
+                },
+              ]
+            : []),
+        ],
+      });
+      fixture.images.styles = async () => ({
+        ok: true,
+        value:
+          kind === 'style'
+            ? [{ ...item, state: installed ? 'installed' : 'download-required' }]
+            : [],
+      });
+      fixture.images.removeStyle = async () => ({ ok: true, value: null });
+      const install = (_id: string, listener?: (value: AiProgress) => void) => {
+        starts++;
+        progress = listener ?? (() => undefined);
+        return {
+          done: new Promise<AiResult<AiImageModel & AiImageStyle>>((resolve) => {
+            finish = resolve;
+          }),
+          cancel: () => {
+            cancellations++;
+            finish({ ok: false, error: { code: 'cancelled', message: 'Stopped' } });
+          },
+        };
+      };
+      fixture.images.installModel = install;
+      fixture.images.installStyle = install;
+      let view: Awaited<ReturnType<typeof renderImageSettings>> | null = await renderImageSettings(
+        fixture.images,
+      );
+      const start = async () => {
+        await act(async () =>
+          Array.from(view!.container.querySelectorAll('button'))
+            .find((b) => b.textContent === `Add ${kind}…`)!
+            .click(),
+        );
+        const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+        await act(async () =>
+          dialog
+            .querySelector<HTMLButtonElement>('button[aria-label="Download Background image"]')!
+            .click(),
+        );
+      };
+      try {
+        await start();
+        await view.cleanup();
+        view = null;
+        progress({ phase: 'downloading', message: 'Downloading', percent: 64 });
+        expect(cancellations).to.equal(0);
+        view = await renderImageSettings(fixture.images);
+        expect(view.container.querySelector('progress')?.value).to.equal(64);
+        expect(starts).to.equal(1);
+        await act(async () =>
+          Array.from(view!.container.querySelectorAll('button'))
+            .find((b) => b.textContent === 'Cancel')!
+            .click(),
+        );
+        expect(cancellations).to.equal(1);
+        expect(view.container.querySelector('progress')).to.equal(null);
+        expect(view.container.querySelector('[role="alert"]')).to.equal(null);
+        await start();
+        await view.cleanup();
+        view = null;
+        installed = true;
+        await act(async () => finish({ ok: true, value: item }));
+        view = await renderImageSettings(fixture.images);
+        expect(view.container.querySelector('progress')).to.equal(null);
+        expect(
+          view.container.querySelector('button[aria-label="Remove Background image"]'),
+        ).not.to.equal(null);
+        expect(starts).to.equal(2);
+        expect(cancellations).to.equal(1);
+      } finally {
+        await view?.cleanup();
+      }
+    });
+  }
+
+  it('shows installed models, links licenses, and hides models that do not fit from the catalog', async () => {
     expect(imageModelFacts(MING)).to.deep.equal([
       '45.9 GB',
       'MIT',
@@ -357,18 +477,172 @@ describe('AiImageSettings', () => {
       'Shared with Gezel, no download needed',
     ]);
 
-    const { images } = fakeImages({ models: [FLUX, MING] });
+    const smaller = {
+      ...FLUX,
+      id: 'smaller',
+      label: 'Small model',
+      state: 'download-required' as const,
+    };
+    const limited = {
+      ...MING,
+      id: 'limited',
+      label: 'Over limit',
+      fit: { verdict: 'over-limit' as const, reason: 'Raise the limit' },
+    };
+    const { images } = fakeImages({ models: [FLUX, MING, smaller, limited] });
     const container = document.createElement('div');
     document.body.append(container);
     const root = createRoot(container);
     await act(async () => root.render(createElement(AiImageSettings, { images })));
-    await waitFor(() => container.querySelectorAll('li').length === 2, 'the model rows');
+    await waitFor(() => container.querySelectorAll('li').length === 1, 'the model rows');
     const buttons = Array.from(container.querySelectorAll('button'));
     expect(buttons.some((b) => b.textContent === 'Remove')).to.equal(true);
-    expect(buttons.find((b) => b.textContent === 'Download')?.disabled).to.equal(true);
+    expect(buttons.some((b) => b.textContent === 'Download')).to.equal(false);
+    expect(container.querySelector('a')?.href).to.equal(FLUX.licenseUrl);
+    await act(async () => buttons.find((b) => b.textContent === 'Add model…')!.click());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).to.include('Small model');
+    expect(dialog.textContent).not.to.include(MING.label);
+    expect(dialog.textContent).not.to.include('Over limit');
+    await setField(
+      dialog.querySelector<HTMLInputElement>('input[type="search"]')!,
+      'nothing matches',
+    );
+    expect(dialog.querySelectorAll('li').length).to.equal(0);
+    await act(async () =>
+      Array.from(dialog.querySelectorAll('button'))
+        .find((b) => b.textContent === 'Done')!
+        .click(),
+    );
     const selects = Array.from(container.querySelectorAll('select'));
     expect(selects.map((select) => select.options.length)).to.deep.equal([2, 2]);
     await act(async () => root.unmount());
     container.remove();
+  });
+});
+
+describe('image rendering styles', () => {
+  const watercolor: AiImageStyle = {
+    id: 'watercolor',
+    label: 'Watercolor',
+    description: 'A soft watercolor.',
+    state: 'installed',
+    downloadBytes: 100,
+    license: 'MIT',
+    licenseUrl: 'https://huggingface.co/example/style/blob/main/LICENSE',
+    commercialUse: true,
+    baseModels: [FLUX.id],
+  };
+
+  it('offers only installed compatible styles and sends the selection to the renderer', async () => {
+    const second = { ...FLUX, id: 'sd-cpp:second', label: 'Second model' };
+    const fixture = fakeImages({ models: [FLUX, second] });
+    fixture.images.styles = async () => ({
+      ok: true,
+      value: [
+        watercolor,
+        { ...watercolor, id: 'wrong', label: 'Wrong base', baseModels: ['other'] },
+        { ...watercolor, id: 'missing', label: 'Not downloaded', state: 'download-required' },
+      ],
+    });
+    const panel = await renderPanel(fixture.images);
+    await waitFor(
+      () => Boolean(panel.container.textContent?.includes('Rendering style')),
+      'style selector',
+    );
+    const selects = Array.from(panel.container.querySelectorAll('select'));
+    const style = selects.find((select) =>
+      select.parentElement?.textContent?.includes('Rendering style'),
+    )!;
+    expect(Array.from(style.options).map((option) => option.text)).to.deep.equal([
+      'No style',
+      'Watercolor',
+    ]);
+    await act(async () => {
+      style.value = 'watercolor';
+      style.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await setField(panel.container.querySelector('textarea')!, 'A lighthouse');
+    await act(async () => panel.button('Generate').click());
+    expect(fixture.requests[0]?.style).to.equal('watercolor');
+    await act(async () =>
+      fixture.renders[0]!.finish({ ok: false, error: { code: 'cancelled', message: 'Stopped' } }),
+    );
+    const model = selects.find((select) => select !== style)!;
+    await act(async () => {
+      model.value = second.id;
+      model.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => panel.button('Generate').click());
+    expect(fixture.requests[1]?.style).to.equal(undefined);
+    await panel.cleanup();
+  });
+
+  it('uses a separate compatible-style catalog and keeps download progress after closing it', async () => {
+    const fixture = fakeImages();
+    let finish!: (value: AiResult<AiImageStyle>) => void;
+    let downloaded = false;
+    fixture.images.styles = async () => ({
+      ok: true,
+      value: [
+        { ...watercolor, state: downloaded ? 'installed' : 'download-required' },
+        {
+          ...watercolor,
+          id: 'wrong',
+          label: 'Wrong base',
+          baseModels: ['other'],
+          state: 'download-required',
+        },
+      ],
+    });
+    fixture.images.installStyle = (_id, onProgress) => {
+      onProgress?.({ phase: 'downloading', message: 'Downloading style…', percent: 25 });
+      return {
+        done: new Promise((resolve) => {
+          finish = resolve;
+        }),
+        cancel: () => undefined,
+      };
+    };
+    fixture.images.removeStyle = async () => ({ ok: true, value: null });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(createElement(AiImageSettings, { images: fixture.images })),
+      );
+      await waitFor(
+        () => Boolean(container.textContent?.includes('Add style…')),
+        'style catalog button',
+      );
+      expect(container.textContent).not.to.include('Watercolor');
+      await act(async () =>
+        Array.from(container.querySelectorAll('button'))
+          .find((b) => b.textContent === 'Add style…')!
+          .click(),
+      );
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+      expect(dialog.textContent).to.include('Watercolor');
+      expect(dialog.textContent).not.to.include('Wrong base');
+      expect(dialog.querySelector('a')?.href).to.equal(watercolor.licenseUrl);
+      await act(async () =>
+        dialog
+          .querySelector<HTMLButtonElement>('button[aria-label="Download Watercolor"]')!
+          .click(),
+      );
+      await act(async () =>
+        Array.from(dialog.querySelectorAll('button'))
+          .find((b) => b.textContent === 'Done')!
+          .click(),
+      );
+      expect(container.querySelector('progress')?.value).to.equal(25);
+      downloaded = true;
+      await act(async () => finish({ ok: true, value: watercolor }));
+      expect(container.querySelector('button[aria-label="Remove Watercolor"]')).not.to.equal(null);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
   });
 });

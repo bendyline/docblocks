@@ -19,3 +19,8 @@ export function imageModelFacts(model: AiImageModel): string[] {
   if (model.fit && model.fit.verdict !== 'fits' && model.fit.reason) facts.push(model.fit.reason);
   return facts;
 }
+
+/** Respect the provider's device assessment; uncertainty remains visible in the facts. */
+export function imageModelFits(model: AiImageModel): boolean {
+  return model.fit?.verdict !== 'wont-run' && model.fit?.verdict !== 'over-limit';
+}

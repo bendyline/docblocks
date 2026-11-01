@@ -10,13 +10,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AiImageSettings } from './AiImageSettings.js';
 import { AiKnowledgeSettings } from './AiKnowledgeSettings.js';
+import { textModelDownloads, useModelDownload } from './model-downloads.js';
 import type {
   AiError,
   AiModelDownloadInfo,
   AiModelInfo,
-  AiModelInstallHandle,
   AiPreferences,
-  AiProgress,
   AiStatus,
   DocBlocksHostAiAPI,
 } from '@bendyline/docblocks/host';
@@ -117,16 +116,17 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const [availableModels, setAvailableModels] = useState<readonly AiModelDownloadInfo[]>([]);
   const [showModelDownloads, setShowModelDownloads] = useState(false);
   const [downloadModelId, setDownloadModelId] = useState('');
-  const [downloadProgress, setDownloadProgress] = useState<AiProgress | null>(null);
+  const downloads = textModelDownloads(ai);
+  const download = useModelDownload(downloads);
+  const downloadProgress = download.active?.progress ?? null;
+  const installingModel = download.active !== null;
   const [loadingAvailableModels, setLoadingAvailableModels] = useState(false);
-  const [installingModel, setInstallingModel] = useState(false);
   /** An optional provider switch is in flight. */
   const [busy, setBusy] = useState(false);
   /** A preference write is in flight. */
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<AiError | null>(null);
   const mounted = useRef(true);
-  const installHandle = useRef<AiModelInstallHandle | null>(null);
   const modelSelectId = useId();
 
   useEffect(() => {
@@ -150,7 +150,6 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
     });
     return () => {
       mounted.current = false;
-      installHandle.current?.cancel();
       unsubscribe();
     };
   }, [ai]);
@@ -191,7 +190,14 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
       return;
     }
     void refreshModels();
-  }, [ready, refreshModels]);
+    void ai.getPreferences().then((next) => {
+      if (mounted.current) setPreferences(next);
+    });
+  }, [ai, ready, refreshModels, download.completed]);
+
+  useEffect(() => {
+    if (ready && (showModelDownloads || installingModel)) void refreshAvailableModels();
+  }, [ready, showModelDownloads, installingModel, refreshAvailableModels, download.completed]);
 
   const connect = useCallback(async () => {
     setBusy(true);
@@ -259,33 +265,17 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   );
 
   const addModel = useCallback(async () => {
-    if (!downloadModelId || !ai.installModel) return;
+    const selected = availableModels.find((model) => model.id === downloadModelId);
+    if (!selected || !ai.installModel) return;
     setFailure(null);
-    setDownloadProgress({ phase: 'starting', message: 'Starting download…', percent: null });
-    setInstallingModel(true);
-    const handle = ai.installModel(downloadModelId, (progress) => {
-      if (mounted.current) setDownloadProgress(progress);
-    });
-    installHandle.current = handle;
-    try {
-      const result = await handle.done;
-      if (!mounted.current) return;
-      if (!result.ok) {
-        if (result.error.code !== 'cancelled') setFailure(result.error);
-        return;
-      }
-      const nextPreferences = await ai.setPreferences({ model: result.value.id });
-      if (!mounted.current) return;
-      setPreferences(nextPreferences);
-      await Promise.all([refreshModels(), refreshAvailableModels()]);
-    } finally {
-      if (installHandle.current === handle) installHandle.current = null;
-      if (mounted.current) {
-        setInstallingModel(false);
-        setDownloadProgress(null);
-      }
-    }
-  }, [ai, downloadModelId, refreshAvailableModels, refreshModels]);
+    await downloads.start(
+      selected,
+      (progress) => ai.installModel!(selected.id, progress),
+      async (model) => {
+        await ai.setPreferences({ model: model.id });
+      },
+    );
+  }, [ai, availableModels, downloadModelId, downloads]);
 
   if (!preferences || !status) return null;
 
@@ -296,15 +286,22 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
   const hasReadyModels = models.some(modelReady);
   const unavailableModels = models.filter((model) => !modelReady(model));
   const modelManagement = Boolean(ai.availableModels && ai.installModel);
-  const selectedDownload = availableModels.find((model) => model.id === downloadModelId) ?? null;
+  const downloadOptions =
+    download.active && !availableModels.some((model) => model.id === download.active?.item.id)
+      ? [download.active.item, ...availableModels]
+      : availableModels;
+  const selectedDownload =
+    download.active?.item ?? downloadOptions.find((model) => model.id === downloadModelId) ?? null;
+  const downloadsVisible = showModelDownloads || installingModel;
   // The status line already carries an error status's message; repeat a
   // failed attempt's message only when it adds something.
   const failureMessage =
-    failure &&
+    download.failure?.message ??
+    (failure &&
     !(status.kind === 'error' && status.error.message === failure.message) &&
     !(status.kind === 'unavailable' && failure.code === 'provider-unavailable')
       ? failure.message
-      : null;
+      : null);
 
   return (
     <fieldset className="db-settings-fieldset">
@@ -392,19 +389,21 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                     onClick={() => {
                       const next = !showModelDownloads;
                       setShowModelDownloads(next);
-                      if (next) void refreshAvailableModels();
                     }}
                   >
-                    {showModelDownloads ? 'Hide model downloads' : 'Add model…'}
+                    {downloadsVisible ? 'Hide model downloads' : 'Add model…'}
                   </button>
 
-                  {showModelDownloads && (
+                  {downloadsVisible && (
                     <div className="db-settings-ai-model-downloads">
+                      <p className="db-settings-hint">
+                        Downloads continue when Settings is closed.
+                      </p>
                       {loadingAvailableModels ? (
                         <p className="db-settings-hint" role="status">
                           Looking for models…
                         </p>
-                      ) : availableModels.length === 0 ? (
+                      ) : downloadOptions.length === 0 ? (
                         <p className="db-settings-hint">
                           No downloadable models are available for this device.
                         </p>
@@ -414,11 +413,11 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                             <span className="db-settings-select-header">Model to download</span>
                             <select
                               className="db-settings-select-input"
-                              value={downloadModelId}
+                              value={download.active?.item.id ?? downloadModelId}
                               disabled={installingModel}
                               onChange={(event) => setDownloadModelId(event.currentTarget.value)}
                             >
-                              {availableModels.map((model) => (
+                              {downloadOptions.map((model) => (
                                 <option key={model.id} value={model.id}>
                                   {downloadOptionLabel(model)}
                                 </option>
@@ -446,23 +445,24 @@ export function AiSettingsControls({ ai }: AiSettingsControlsProps) {
                           </button>
                         </>
                       )}
-                      {installingModel && downloadProgress && (
+                      {installingModel && (
                         <div className="db-settings-ai-download-progress" role="status">
                           <progress
                             max={100}
-                            value={downloadProgress.percent ?? undefined}
+                            value={downloadProgress?.percent ?? undefined}
                             aria-label="Model download progress"
                           />
                           <button
                             type="button"
                             className="db-settings-action db-settings-action--secondary"
-                            onClick={() => installHandle.current?.cancel()}
+                            onClick={downloads.cancel}
                           >
                             Cancel download
                           </button>
                           <span>
-                            {downloadProgress.message}
-                            {downloadProgress.percent === null
+                            {downloadProgress?.message ??
+                              `Downloading ${download.active?.item.label}…`}
+                            {downloadProgress?.percent == null
                               ? ''
                               : ` (${Math.round(downloadProgress.percent)}%)`}
                           </span>

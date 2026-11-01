@@ -135,6 +135,11 @@ function fakeSpeech(
     api,
     calls,
     progress: (p: SpeechProgress) => reportProgress(p),
+    fail: () =>
+      finishInstall({
+        ok: false,
+        error: { code: 'model-download-failed', message: 'The voice download stopped.' },
+      }),
     complete: () => {
       installed = true;
       finishInstall({ ok: true, value: { ...BASE, installed: true, source: 'app' } });
@@ -217,6 +222,59 @@ describe('Speech settings', () => {
       expect(view.container.textContent).to.contain('Ready. Use the microphone button');
     } finally {
       await view.cleanup();
+    }
+  });
+
+  for (const kind of ['stt', 'tts'] as const) {
+    it(`keeps the ${kind} download running while Settings is closed and restores its progress`, async () => {
+      const fake = fakeSpeech();
+      const model = kind === 'stt' ? BASE : KOKORO;
+      let view: Awaited<ReturnType<typeof render>> | null = await render(fake.api);
+      try {
+        const section = Array.from(view.container.querySelectorAll('fieldset'))[
+          kind === 'stt' ? 0 : 1
+        ]!;
+        await act(async () => button(section, 'Download')!.click());
+        await view.cleanup();
+        view = null;
+        fake.progress({ phase: 'downloading', receivedBytes: 72, totalBytes: 100 });
+        expect(fake.calls).to.deep.equal([`install ${model.id}`]);
+        view = await render(fake.api);
+        expect(view.container.querySelector('progress')?.value).to.equal(72);
+        expect(button(view.container, 'Cancel')).not.to.equal(undefined);
+        expect(button(view.container, 'Download')?.disabled).to.equal(true);
+        await view.cleanup();
+        view = null;
+        fake.complete();
+        await flush();
+        view = await render(fake.api);
+        expect(view.container.querySelector('progress')).to.equal(null);
+        expect(button(view.container, 'Remove')).not.to.equal(undefined);
+        expect(fake.calls).to.deep.equal([`install ${model.id}`]);
+      } finally {
+        await view?.cleanup();
+      }
+    });
+  }
+
+  it('retains a narration download failure that arrives while Settings is closed', async () => {
+    const fake = fakeSpeech();
+    const first = await render(fake.api);
+    const narration = first.container.querySelectorAll('fieldset')[1]!;
+    await act(async () => button(narration, 'Download')!.click());
+    await first.cleanup();
+    fake.fail();
+    await flush();
+    const next = await render(fake.api);
+    try {
+      const [dictation, narration] = next.container.querySelectorAll('fieldset');
+      expect(dictation.querySelector('[role="alert"]')).to.equal(null);
+      expect(narration.querySelector('[role="alert"]')?.textContent).to.equal(
+        'The voice download stopped.',
+      );
+      expect(button(narration, 'Download')?.disabled).to.equal(false);
+    } finally {
+      await next.cleanup();
     }
   });
 

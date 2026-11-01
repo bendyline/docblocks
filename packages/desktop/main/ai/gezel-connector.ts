@@ -11,7 +11,11 @@ import type {
 import type { AiKnowledgeAction, AiProgress } from '@bendyline/docblocks/host';
 import { parseAiChatProgress } from '@bendyline/docblocks/host';
 import { AiHostError } from './ai-errors.js';
-import type { ProviderImages } from './ai-image-service.js';
+import type {
+  ProviderImages,
+  ProviderImageStyle,
+  ProviderEnsureEvent,
+} from './ai-image-service.js';
 import type {
   AiConnectOptions,
   AiConnector,
@@ -174,7 +178,47 @@ const IMAGE_ASPECTS = new Set(['1:1', '4:3', '3:4', '16:9', '9:16'] as const);
 type GezelAspect = NonNullable<Parameters<DesktopEmbeddingImages['generate']>[0]['aspectRatio']>;
 
 function adaptImages(images: DesktopEmbeddingImages): ProviderImages {
+  // Published SDKs can predate styles; keep ordinary image generation available.
+  const styles = images as DesktopEmbeddingImages &
+    Partial<{
+      styles(opts: { signal: AbortSignal }): Promise<ProviderImageStyle[]>;
+      ensureStyle(
+        id: string,
+        opts: { signal: AbortSignal },
+      ): Promise<{ status: 'ready' } | { status: 'downloading'; jobId: string }>;
+      styleEnsureEvents(
+        id: string,
+        opts: { signal: AbortSignal },
+      ): AsyncIterable<ProviderEnsureEvent>;
+      cancelStyleEnsure(id: string): Promise<void>;
+      removeStyle(id: string, opts: { signal: AbortSignal }): Promise<void>;
+    }>;
+  const styleApi =
+    typeof styles.styles === 'function' &&
+    typeof styles.ensureStyle === 'function' &&
+    typeof styles.styleEnsureEvents === 'function' &&
+    typeof styles.cancelStyleEnsure === 'function' &&
+    typeof styles.removeStyle === 'function'
+      ? {
+          models: styles.styles.bind(images),
+          ensure: styles.ensureStyle.bind(images),
+          events: styles.styleEnsureEvents.bind(images),
+          cancel: styles.cancelStyleEnsure.bind(images),
+          remove: styles.removeStyle.bind(images),
+        }
+      : null;
   return {
+    ...(styleApi
+      ? {
+          styles: {
+            models: (signal: AbortSignal) => styleApi.models({ signal }),
+            ensure: (id: string, signal: AbortSignal) => styleApi.ensure(id, { signal }),
+            ensureEvents: (id: string, signal: AbortSignal) => styleApi.events(id, { signal }),
+            cancelEnsure: (id: string) => styleApi.cancel(id),
+            remove: (id: string, signal: AbortSignal) => styleApi.remove(id, { signal }),
+          },
+        }
+      : {}),
     access: (signal) => images.access({ signal }),
     requestAccess: (onVerificationCode) => images.requestAccess({ onVerificationCode }),
     models: (signal) => images.models({ signal }),
@@ -197,6 +241,7 @@ function adaptImages(images: DesktopEmbeddingImages): ProviderImages {
             ? { aspectRatio: input.aspectRatio as GezelAspect }
             : {}),
           ...(input.seed !== undefined ? { seed: input.seed } : {}),
+          ...(input.style ? { style: input.style } : {}),
         },
         {
           signal,

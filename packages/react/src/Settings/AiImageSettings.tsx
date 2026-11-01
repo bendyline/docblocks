@@ -1,147 +1,236 @@
-/**
- * Image models: which renders "Generate image" and which draws Illustrate's
- * design graphics, plus downloads. Image models are large — a design model
- * can be tens of gigabytes — so every download follows a click, shows its
- * size and license, and says plainly when a model needs a workstation or
- * cannot run on this computer at all.
- */
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type {
-  AiImageInstallHandle,
   AiImageModel,
+  AiImageStyle,
   AiImagePreferences,
   AiImagesAPI,
-  AiProgress,
 } from '@bendyline/docblocks/host';
+import { parseExternalHttpUrl } from '@bendyline/docblocks/host';
 import { imageAccessSentence, useImageAccess } from '../Ai/ai-image-access.js';
-import { imageModelFacts } from './image-model-facts.js';
+import { openExternalUrl } from '../external-url.js';
+import { formatModelSize } from '../Speech/format.js';
+import { imageModelFacts, imageModelFits } from './image-model-facts.js';
+import { ImageCatalogDialog } from './ImageCatalogDialog.js';
+import { imageModelDownloads, useModelDownload } from './model-downloads.js';
 
 export interface AiImageSettingsProps {
   images: AiImagesAPI;
 }
+type Kind = 'model' | 'style';
+type Item = AiImageModel | AiImageStyle;
 
 export function AiImageSettings({ images }: AiImageSettingsProps) {
   const access = useImageAccess(images);
   const [models, setModels] = useState<readonly AiImageModel[] | null>(null);
+  const [styles, setStyles] = useState<readonly AiImageStyle[]>([]);
   const [preferences, setPreferences] = useState<AiImagePreferences | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [installing, setInstalling] = useState<{ id: string; progress: AiProgress | null } | null>(
-    null,
-  );
+  const [styleFailure, setStyleFailure] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<Kind | null>(null);
+  const downloads = imageModelDownloads(images);
+  const download = useModelDownload(downloads);
+  const installing = download.active
+    ? {
+        kind: download.active.item.kind,
+        id: download.active.item.model.id,
+        progress: download.active.progress,
+      }
+    : null;
+  const failureMessage = failure ?? download.failure?.message ?? null;
+  const [removing, setRemoving] = useState(false);
   const [allowing, setAllowing] = useState(false);
-  const installHandle = useRef<AiImageInstallHandle | null>(null);
   const mounted = useRef(true);
   const ready = access?.kind === 'ready';
+  const busy = installing !== null || removing;
 
   const refresh = useCallback(async () => {
-    const result = await images.models();
-    if (!mounted.current) return;
-    if (result.ok) setModels(result.value);
-    else setFailure(result.error.message);
+    await Promise.all([
+      images
+        .models()
+        .then((result) => {
+          if (!mounted.current) return;
+          if (result.ok) setModels(result.value);
+          else setFailure(result.error.message);
+        })
+        .catch((error: unknown) => {
+          if (mounted.current) setFailure(String(error));
+        }),
+      images
+        .styles?.()
+        .then((result) => {
+          if (!mounted.current) return;
+          if (result.ok) {
+            setStyles(result.value);
+            setStyleFailure(null);
+          } else {
+            setStyles([]);
+            setStyleFailure(result.error.message);
+          }
+        })
+        .catch((error: unknown) => {
+          if (mounted.current) setStyleFailure(String(error));
+        }),
+    ]);
   }, [images]);
 
   useEffect(() => {
     mounted.current = true;
-    void images.getPreferences().then(
-      (initial) => {
+    void images
+      .getPreferences()
+      .then((initial) => {
         if (mounted.current) setPreferences(initial);
-      },
-      () => undefined,
-    );
+      })
+      .catch((error: unknown) => {
+        if (mounted.current) setFailure(String(error));
+      });
     return () => {
       mounted.current = false;
-      installHandle.current?.cancel();
     };
   }, [images]);
-
   useEffect(() => {
     if (ready) void refresh();
-  }, [ready, refresh]);
+  }, [ready, refresh, download.completed]);
 
-  const install = async (model: AiImageModel) => {
+  const install = async (kind: Kind, item: Item) => {
     setFailure(null);
-    setInstalling({ id: model.id, progress: null });
-    const handle = images.installModel(model.id, (progress) => {
-      if (mounted.current) setInstalling({ id: model.id, progress });
+    await downloads.start<Item>({ kind, model: item }, (progress) => {
+      const handle =
+        kind === 'model'
+          ? images.installModel(item.id, progress)
+          : images.installStyle?.(item.id, progress);
+      if (!handle) throw new Error('Update the app to add image styles.');
+      return handle;
     });
-    installHandle.current = handle;
+  };
+  const remove = async (kind: Kind, item: Item) => {
+    setFailure(null);
+    setRemoving(true);
     try {
-      const result = await handle.done;
+      const result =
+        kind === 'model' ? await images.removeModel(item.id) : await images.removeStyle?.(item.id);
       if (!mounted.current) return;
-      if (!result.ok && result.error.code !== 'cancelled') setFailure(result.error.message);
+      if (result && !result.ok) setFailure(result.error.message);
+      else setPreferences(await images.getPreferences());
       await refresh();
+    } catch (error) {
+      if (mounted.current) setFailure(String(error));
     } finally {
-      if (installHandle.current === handle) installHandle.current = null;
-      if (mounted.current) setInstalling(null);
+      if (mounted.current) setRemoving(false);
     }
   };
-
-  const remove = async (model: AiImageModel) => {
-    setFailure(null);
-    const result = await images.removeModel(model.id);
-    if (!mounted.current) return;
-    if (!result.ok) setFailure(result.error.message);
-    else setPreferences(await images.getPreferences());
-    await refresh();
-  };
-
   const choose = async (patch: Partial<AiImagePreferences>) => {
-    setPreferences(await images.setPreferences(patch));
+    try {
+      const next = await images.setPreferences(patch);
+      if (mounted.current) setPreferences(next);
+    } catch (error) {
+      if (mounted.current) setFailure(String(error));
+    }
   };
-
   const allow = async () => {
     setAllowing(true);
     setFailure(null);
-    const result = await images.requestAccess();
-    if (!mounted.current) return;
-    setAllowing(false);
-    if (!result.ok) setFailure(result.error.message);
+    try {
+      const result = await images.requestAccess();
+      if (mounted.current && !result.ok) setFailure(result.error.message);
+    } catch (error) {
+      if (mounted.current) setFailure(String(error));
+    } finally {
+      if (mounted.current) setAllowing(false);
+    }
   };
 
-  const installed = (models ?? []).filter((model) => model.state === 'installed');
+  const installed = (models ?? []).filter(
+    (model) => model.state === 'installed' && imageModelFits(model),
+  );
   const designModels = installed.filter((model) => model.rendersText);
+  const downloadable = (models ?? []).filter(imageModelFits);
+  const compatibleStyles = styles.filter((style) =>
+    style.baseModels.some((id) => installed.some((model) => model.id === id)),
+  );
   const blocked = imageAccessSentence(access);
+  const styleSupport = Boolean(images.styles && images.installStyle && images.removeStyle);
 
-  const modelRow = (model: AiImageModel) => {
-    const busy = installing?.id === model.id;
-    const percent = busy && installing.progress ? installing.progress.percent : null;
-    const wontRun = model.fit?.verdict === 'wont-run';
+  const row = (kind: Kind, item: Item, inCatalog = false) => {
+    const active = installing?.kind === kind && installing.id === item.id;
+    const progress = active ? installing.progress : null;
+    const facts =
+      'fit' in item
+        ? imageModelFacts(item)
+        : [
+            item.downloadBytes !== null ? formatModelSize(item.downloadBytes) : null,
+            item.license,
+            item.commercialUse === false ? 'Not for commercial use' : null,
+          ].filter((fact): fact is string => Boolean(fact));
+    const licenseUrl = parseExternalHttpUrl(item.licenseUrl);
     return (
-      <li className="db-settings-speech-model" key={model.id}>
+      <li className="db-settings-speech-model" key={item.id}>
         <div className="db-settings-speech-model-text">
-          <span className="db-settings-speech-model-name">{model.label}</span>
-          <span className="db-settings-hint">{imageModelFacts(model).join(' · ')}</span>
+          <span className="db-settings-speech-model-name">{item.label}</span>
+          {inCatalog && item.description && (
+            <span className="db-settings-hint">{item.description}</span>
+          )}
+          <span className="db-settings-hint">
+            {facts.map((fact, i) => (
+              <Fragment key={i}>
+                {i > 0 ? ' · ' : ''}
+                {fact === item.license && licenseUrl ? (
+                  <a
+                    href={licenseUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      void openExternalUrl(licenseUrl).catch((error: unknown) =>
+                        setFailure(String(error)),
+                      );
+                    }}
+                  >
+                    {fact}
+                  </a>
+                ) : (
+                  fact
+                )}
+              </Fragment>
+            ))}
+          </span>
+          {'baseModels' in item && (
+            <span className="db-settings-hint">
+              For{' '}
+              {item.baseModels
+                .map((id) => models?.find((model) => model.id === id)?.label ?? id)
+                .join(', ')}
+            </span>
+          )}
         </div>
-        {busy ? (
+        {active ? (
           <div className="db-settings-ai-download-progress" role="status">
             <progress
               max={100}
-              value={percent ?? undefined}
-              aria-label={`${model.label} download progress`}
+              value={progress?.percent ?? undefined}
+              aria-label={`${item.label} download progress`}
             />
             <span>
-              {installing.progress?.phase === 'verifying'
-                ? 'Verifying…'
-                : percent === null
-                  ? 'Starting…'
-                  : `${String(Math.round(percent))}%`}
+              {progress?.message ?? 'Starting…'}
+              {progress?.percent != null ? ` ${String(Math.round(progress.percent))}%` : ''}
             </span>
             <button
               type="button"
               className="db-settings-action db-settings-action--secondary"
-              onClick={() => installHandle.current?.cancel()}
+              onClick={downloads.cancel}
             >
               Cancel
             </button>
           </div>
-        ) : model.state === 'installed' ? (
-          model.shared ? null : (
+        ) : item.state === 'installed' ? (
+          inCatalog ? (
+            <span className="db-knowledge-catalog-added">Downloaded</span>
+          ) : 'shared' in item && item.shared ? null : (
             <button
               type="button"
               className="db-settings-action db-settings-action--secondary"
-              disabled={installing !== null}
-              onClick={() => void remove(model)}
+              disabled={busy}
+              aria-label={`Remove ${item.label}`}
+              onClick={() => void remove(kind, item)}
             >
               Remove
             </button>
@@ -150,17 +239,16 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
           <button
             type="button"
             className="db-settings-action"
-            disabled={installing !== null || wontRun}
-            title={wontRun ? (model.fit?.reason ?? undefined) : undefined}
-            onClick={() => void install(model)}
+            disabled={busy}
+            aria-label={`Download ${item.label}`}
+            onClick={() => void install(kind, item)}
           >
-            {model.state === 'downloading' ? 'Show download' : 'Download'}
+            {item.state === 'downloading' ? 'Show download' : 'Download'}
           </button>
         )}
       </li>
     );
   };
-
   return (
     <section className="db-settings-ai-knowledge" aria-label="Image generation">
       <h3 className="db-settings-select-header">Image generation</h3>
@@ -172,8 +260,8 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
         </p>
       ) : (
         <p className="db-settings-hint">
-          Images are generated on this computer. Models download only when you choose, and some are
-          large.
+          Images are generated on this computer. Add models and styles from the catalog when you
+          need them. Downloads continue when Settings is closed.
         </p>
       )}
       {access?.kind === 'needs-approval' && (
@@ -186,9 +274,9 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
           Allow image generation…
         </button>
       )}
-      {failure && (
+      {failureMessage && (
         <p className="db-settings-hint db-settings-ai-error" role="alert">
-          {failure}
+          {failureMessage}
         </p>
       )}
       {ready && preferences && installed.length > 0 && (
@@ -196,8 +284,10 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
           <span className="db-settings-select-header">Model for Generate image</span>
           <select
             className="db-settings-select-input"
-            value={preferences.model ?? ''}
-            onChange={(event) => void choose({ model: event.currentTarget.value || null })}
+            value={installed.some((m) => m.id === preferences.model) ? preferences.model! : ''}
+            onChange={(event) =>
+              void choose({ model: event.currentTarget.value || null, style: null })
+            }
           >
             <option value="">First installed</option>
             {installed.map((model) => (
@@ -213,7 +303,11 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
           <span className="db-settings-select-header">Model for design graphics</span>
           <select
             className="db-settings-select-input"
-            value={preferences.designModel ?? ''}
+            value={
+              designModels.some((m) => m.id === preferences.designModel)
+                ? preferences.designModel!
+                : ''
+            }
             onChange={(event) => void choose({ designModel: event.currentTarget.value || null })}
           >
             <option value="">None</option>
@@ -225,7 +319,83 @@ export function AiImageSettings({ images }: AiImageSettingsProps) {
           </select>
         </label>
       )}
-      {ready && models && <ul className="db-settings-speech-models">{models.map(modelRow)}</ul>}
+      {ready && models && (
+        <>
+          <button
+            type="button"
+            className="db-settings-action db-settings-action--secondary"
+            onClick={() => setCatalog('model')}
+          >
+            Add model…
+          </button>
+          {!models.some((model) => model.state !== 'download-required') && !installing && (
+            <p className="db-settings-hint">No image models downloaded yet.</p>
+          )}
+          <ul className="db-settings-speech-models">
+            {models
+              .filter(
+                (model) =>
+                  model.state !== 'download-required' ||
+                  (installing?.kind === 'model' && installing.id === model.id),
+              )
+              .map((model) => row('model', model))}
+          </ul>
+          {styleSupport && (
+            <>
+              <h3 className="db-settings-select-header">Rendering styles</h3>
+              <p className="db-settings-hint">
+                Download a style, then choose it in Generate image. Styles work with specific image
+                models.
+              </p>
+              {styleFailure ? (
+                <p className="db-settings-hint" role="status">
+                  {styleFailure}
+                </p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="db-settings-action db-settings-action--secondary"
+                    onClick={() => setCatalog('style')}
+                  >
+                    Add style…
+                  </button>
+                  {installed.length === 0 && (
+                    <p className="db-settings-hint">
+                      Download an image model to see compatible styles.
+                    </p>
+                  )}
+                  <ul className="db-settings-speech-models">
+                    {styles
+                      .filter(
+                        (style) =>
+                          style.state !== 'download-required' ||
+                          (installing?.kind === 'style' && installing.id === style.id),
+                      )
+                      .map((style) => row('style', style))}
+                  </ul>
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {ready && catalog && (
+        <ImageCatalogDialog<Item>
+          title={catalog === 'model' ? 'Add image model' : 'Add rendering style'}
+          items={catalog === 'model' ? downloadable : compatibleStyles}
+          description={
+            catalog === 'model'
+              ? 'Models that exceed this device’s memory or configured limit are hidden. Downloads start only when you choose Download.'
+              : 'Styles compatible with your downloaded image models. Each style downloads separately.'
+          }
+          busy={busy}
+          failure={failureMessage}
+          renderRow={(item) => row(catalog, item, true)}
+          onRefresh={() => void refresh()}
+          onClose={() => setCatalog(null)}
+        />
+      )}
     </section>
   );
 }

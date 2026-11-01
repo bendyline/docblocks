@@ -9,7 +9,6 @@ import type {
   DocBlocksHostSpeechAPI,
   SpeechCatalog,
   SpeechError,
-  SpeechInstallHandle,
   SpeechModelInfo,
   SpeechModelKind,
   SpeechPreferences,
@@ -17,6 +16,7 @@ import type {
   SpeechStatus,
   SpeechSynthesisHandle,
 } from '@bendyline/docblocks/host';
+import { speechModelDownloads, useModelDownload } from './model-downloads.js';
 import { ProgressivePlayer } from '../Speech/progressive-player.js';
 
 const PREVIEW_TEXT = 'This is how I sound when I read your documents aloud.';
@@ -57,8 +57,8 @@ export interface SpeechSettingsSession {
 
 /**
  * One speech session for as long as the calling component is mounted, or
- * `null` when the host has no speech API. Unmounting cancels a download or
- * preview still in progress.
+ * `null` when the host has no speech API. Unmounting stops the voice preview;
+ * downloads belong to the renderer and continue while Settings is closed.
  */
 export function useSpeechSettings(
   speech: DocBlocksHostSpeechAPI | undefined,
@@ -66,11 +66,14 @@ export function useSpeechSettings(
   const [status, setStatus] = useState<SpeechStatus | null>(null);
   const [catalog, setCatalog] = useState<SpeechCatalog | null>(null);
   const [preferences, setPreferences] = useState<SpeechPreferences | null>(null);
-  const [installing, setInstalling] = useState<SpeechSettingsSession['installing']>(null);
+  const downloads = speechModelDownloads(speech);
+  const download = useModelDownload(downloads);
+  const installing = download.active
+    ? { id: download.active.item.id, progress: download.active.progress }
+    : null;
   const [failure, setFailure] = useState<SpeechFailure | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const mounted = useRef(true);
-  const installHandle = useRef<SpeechInstallHandle | null>(null);
   const preview = useRef<{ handle: SpeechSynthesisHandle; player: ProgressivePlayer } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -103,7 +106,6 @@ export function useSpeechSettings(
         if (mounted.current && result.ok) setCatalog(result.value);
       });
     });
-    void refresh();
     void speech.getPreferences().then(
       (initial) => {
         if (mounted.current) setPreferences(initial);
@@ -114,38 +116,26 @@ export function useSpeechSettings(
     );
     return () => {
       mounted.current = false;
-      installHandle.current?.cancel();
       preview.current?.handle.cancel();
       preview.current?.player.dispose();
       unsubscribe();
     };
   }, [refresh, speech]);
 
+  useEffect(() => {
+    void refresh();
+  }, [refresh, download.completed]);
+
   const install = useCallback(
     async (model: SpeechModelInfo) => {
       if (!speech) return;
       setFailure(null);
-      setInstalling({ id: model.id, progress: null });
-      const handle = speech.installModel(model.id, (progress) => {
-        if (mounted.current) setInstalling({ id: model.id, progress });
-      });
-      installHandle.current = handle;
-      try {
-        const result = await handle.done;
-        if (!mounted.current) return;
-        if (!result.ok && result.error.code !== 'cancelled') {
-          setFailure({ error: result.error, kind: model.kind });
-        }
-        await refresh();
-      } finally {
-        if (installHandle.current === handle) installHandle.current = null;
-        if (mounted.current) setInstalling(null);
-      }
+      await downloads.start(model, (progress) => speech.installModel(model.id, progress));
     },
-    [refresh, speech],
+    [downloads, speech],
   );
 
-  const cancelInstall = useCallback(() => installHandle.current?.cancel(), []);
+  const cancelInstall = downloads.cancel;
 
   const remove = useCallback(
     async (model: SpeechModelInfo) => {
@@ -211,7 +201,14 @@ export function useSpeechSettings(
     catalog,
     preferences,
     installing,
-    failure,
+    failure:
+      failure ??
+      (download.failure
+        ? {
+            kind: download.failure.item.kind,
+            error: { code: 'model-download-failed', message: download.failure.message },
+          }
+        : null),
     previewing,
     install,
     cancelInstall,

@@ -7,6 +7,7 @@ import type {
   AiImageEvent,
   AiImageInstallEvent,
   AiImagePreferences,
+  AiImageStyle,
   AiStatus,
 } from '@bendyline/docblocks/host';
 import {
@@ -38,6 +39,7 @@ const FLUX: ProviderImageModel = {
   availability: 'download-required',
   download_bytes: 5_207_178_964,
   license: 'Apache 2.0',
+  license_url: 'https://huggingface.co/example/model/blob/main/LICENSE',
   commercial_use: true,
   renders_text: true,
   prompt_style: 'sentences',
@@ -73,6 +75,7 @@ function sdkError(code: string, message = code): Error {
 
 /** A scripted provider image surface. */
 class FakeImages implements ProviderImages {
+  styles?: ProviderImages['styles'];
   accessValue: 'granted' | 'needs-approval' | 'no-engine' | 'unsupported' = 'granted';
   installed = new Set<string>();
   lastGenerate: { input: Record<string, unknown>; signal: AbortSignal } | null = null;
@@ -360,6 +363,83 @@ describe('AiImageService', () => {
     expect(again.images!.cancelled).to.deep.equal(['flux-job']);
   });
 
+  it('downloads styles, forwards the chosen style, and clears removed preferences', async () => {
+    const fixture = setup();
+    let installed = false;
+    const cancelled: string[] = [];
+    const removed: string[] = [];
+    fixture.images!.styles = {
+      models: async () => [
+        {
+          id: 'watercolor',
+          name: 'Watercolor',
+          availability: installed ? 'available' : 'download-required',
+          base_models: [FLUX.id],
+          license_url: 'javascript:alert(1)',
+        },
+      ],
+      ensure: async () => ({ status: 'downloading', jobId: 'style-job' }),
+      ensureEvents: async function* () {
+        yield { type: 'progress', bytesWritten: 5, totalBytes: 10 };
+        installed = true;
+        yield { type: 'done' };
+      },
+      cancelEnsure: async (id) => {
+        cancelled.push(id);
+      },
+      remove: async (id) => {
+        removed.push(id);
+      },
+    };
+    const out = collect<AiImageInstallEvent<AiImageStyle>>();
+    fixture.service.startStyleInstall('1:style', 'watercolor', out.emit);
+    const done = await out.ended;
+    expect(done.kind === 'done' && done.model.baseModels).to.deep.equal([FLUX.id]);
+    expect(done.kind === 'done' && done.model.licenseUrl).to.equal(null);
+    expect(out.events.map((event) => event.kind)).to.deep.equal(['progress', 'done']);
+    const render = collect<AiImageEvent>();
+    fixture.service.startGenerate(
+      '1:render',
+      { prompt: 'a lighthouse', model: FLUX.id, style: 'watercolor' },
+      render.emit,
+    );
+    fixture.images!.render.resolve();
+    expect((await render.ended).kind).to.equal('done');
+    expect(fixture.images!.lastGenerate?.input.style).to.equal('watercolor');
+    fixture.preferences.value = {
+      model: FLUX.id,
+      designModel: null,
+      aspect: '1:1',
+      style: 'watercolor',
+    };
+    expect(await fixture.service.removeStyle('watercolor')).to.deep.equal({
+      ok: true,
+      value: null,
+    });
+    expect(removed).to.deep.equal(['watercolor']);
+    expect(fixture.preferences.value.style).to.equal(null);
+    expect(fixture.preferences.value.model).to.equal(FLUX.id);
+    fixture.images!.styles.ensureEvents = async function* (_id, signal) {
+      yield { type: 'progress', bytesWritten: 1, totalBytes: 10 };
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
+    };
+    const stopped = collect<AiImageInstallEvent<AiImageStyle>>();
+    fixture.service.startStyleInstall('1:stop', 'watercolor', stopped.emit);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    fixture.service.cancelInstall('1:stop');
+    expect((await stopped.ended).kind).to.equal('error');
+    expect(cancelled).to.deep.equal(['style-job']);
+    fixture.service.dispose();
+  });
+
+  it('keeps old providers usable when styles are unsupported', async () => {
+    const fixture = setup();
+    const styles = await fixture.service.styles();
+    expect(!styles.ok && styles.error.code).to.equal('unsupported');
+    expect((await fixture.service.models()).ok).to.equal(true);
+    fixture.service.dispose();
+  });
+
   it('lists models in the provider-neutral shape and forgets a removed preference', async () => {
     const fixture = setup();
     const models = await fixture.service.models();
@@ -371,6 +451,7 @@ describe('AiImageService', () => {
       downloadBytes: 5_207_178_964,
       shared: false,
       license: 'Apache 2.0',
+      licenseUrl: FLUX.license_url,
       commercialUse: true,
       rendersText: true,
       promptStyle: 'sentences',

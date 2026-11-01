@@ -766,6 +766,100 @@ describe('AiSettingsControls', () => {
     }
   });
 
+  for (const outcome of ['complete', 'fail', 'cancel'] as const) {
+    it(`keeps a text download across Settings mounts and handles ${outcome}`, async () => {
+      const downloadable: AiModelDownloadInfo = {
+        id: 'llama-cpp:background-writer',
+        label: 'Background Writer',
+        contextWindow: 4096,
+        downloadBytes: 100,
+        state: 'download-required',
+        fit: null,
+        score: null,
+        recommended: false,
+      };
+      const installed: AiModelInfo = {
+        id: downloadable.id,
+        label: downloadable.label,
+        contextWindow: 4096,
+        local: true,
+        isDefault: false,
+      };
+      const fake = fakeAi({ ...READY, model: null }, OPTED_IN, false);
+      let installedModels: AiModelInfo[] = [];
+      let starts = 0;
+      let cancellations = 0;
+      let progress: (p: AiProgress) => void = () => undefined;
+      const done = deferred<AiResult<AiModelInfo>>();
+      fake.api.models = async () => ({ ok: true, value: installedModels });
+      fake.api.availableModels = async () => ({ ok: true, value: [downloadable] });
+      fake.api.installModel = (_id, listener) => {
+        starts++;
+        progress = listener ?? (() => undefined);
+        return {
+          done: done.promise,
+          cancel: () => {
+            cancellations++;
+            done.resolve({ ok: false, error: { code: 'cancelled', message: 'Cancelled' } });
+          },
+        };
+      };
+      let view: Awaited<ReturnType<typeof render>> | null = await render(fake.api);
+      try {
+        await clickButton(view.container, 'Add model…');
+        await clickButton(view.container, 'Download model');
+        await view.cleanup();
+        view = null;
+        expect(cancellations).to.equal(0);
+        progress({ phase: 'downloading', message: 'Downloading weights', percent: 61 });
+        // Providers may stop listing an item as downloadable once its transfer starts.
+        fake.api.availableModels = async () => ({ ok: true, value: [] });
+        view = await render(fake.api);
+        expect(view.container.querySelector('progress')?.value).to.equal(61);
+        expect(
+          view.container.querySelector(`option[value="${downloadable.id}"]`)?.textContent,
+        ).to.contain(downloadable.label);
+        expect(view.container.textContent).not.to.contain('No downloadable models');
+        expect(starts).to.equal(1);
+        expect(buttonLabels(view.container)).to.include('Cancel download');
+        if (outcome === 'cancel') {
+          await clickButton(view.container, 'Cancel download');
+          expect(cancellations).to.equal(1);
+          expect(view.container.querySelector('progress')).to.equal(null);
+          expect(view.container.querySelector('[role="alert"]')).to.equal(null);
+        } else {
+          await view.cleanup();
+          view = null;
+          await act(async () => {
+            if (outcome === 'complete') {
+              installedModels = [installed];
+              done.resolve({ ok: true, value: installed });
+            } else
+              done.resolve({
+                ok: false,
+                error: { code: 'model-download-failed', message: 'Download interrupted' },
+              });
+          });
+          await flush();
+          if (outcome === 'complete')
+            expect((await fake.api.getPreferences()).model).to.equal(installed.id);
+          view = await render(fake.api);
+          expect(view.container.querySelector('progress')).to.equal(null);
+          if (outcome === 'complete') {
+            expect(view.container.querySelector(`option[value="${installed.id}"]`)).not.to.equal(
+              null,
+            );
+          } else
+            expect(view.container.querySelector('[role="alert"]')?.textContent).to.equal(
+              'Download interrupted',
+            );
+        }
+      } finally {
+        await view?.cleanup();
+      }
+    });
+  }
+
   it('offers the recommended download first and rates the rest for this device', async () => {
     const base = { contextWindow: 32_768, state: 'download-required' as const };
     const recommended: AiModelDownloadInfo = {
