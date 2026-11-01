@@ -63,6 +63,8 @@ export interface FakeGezelOptions {
   readonly upstream?: { readonly baseUrl: string; readonly model: string };
   /** Pause between scripted chunks, so a test can stop a stream midway. */
   readonly chunkDelayMs?: number;
+  /** The model's reported context window; 4,096 matches Apple's on-device model. */
+  readonly contextWindow?: number;
   /** Request-local engine metadata before visible reply text. */
   readonly chatProgress?: readonly AiChatProgress[];
   /** Replies for exercising truncation and continuation across requests. */
@@ -478,7 +480,7 @@ export async function startFakeGezel(options: FakeGezelOptions): Promise<FakeGez
               created: 0,
               owned_by: 'mlx',
               name: 'Fake Writer',
-              context_window: 32_768,
+              context_window: options.contextWindow ?? 32_768,
             },
           ],
         });

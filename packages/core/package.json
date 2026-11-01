@@ -1,6 +1,6 @@
 {
   "name": "@bendyline/docblocks",
-  "version": "2.7.9",
+  "version": "2.7.11",
   "description": "Core data structures and filesystem abstractions for DocBlocks",
   "license": "MIT",
   "author": "Bendyline",
@@ -126,7 +126,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.13.9",
+    "@bendyline/squisq": "2.13.10",
     "zod": "3.25.76"
   }
 }

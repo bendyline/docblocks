@@ -1,6 +1,6 @@
 {
   "name": "@bendyline/docblocks-cli",
-  "version": "2.7.9",
+  "version": "2.7.11",
   "description": "Build, preview, convert, render, inspect, and automate documents",
   "license": "MIT",
   "author": "Bendyline",
@@ -47,12 +47,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/docblocks": "2.7.9",
-    "@bendyline/squisq": "2.13.9",
-    "@bendyline/squisq-cli": "2.9.25",
-    "@bendyline/squisq-formats": "2.8.11",
-    "@bendyline/squisq-react": "2.12.21",
-    "@bendyline/squisq-video": "2.4.15",
+    "@bendyline/docblocks": "2.7.11",
+    "@bendyline/squisq": "2.13.10",
+    "@bendyline/squisq-cli": "2.9.26",
+    "@bendyline/squisq-formats": "2.8.12",
+    "@bendyline/squisq-react": "2.12.22",
+    "@bendyline/squisq-video": "2.4.16",
     "@modelcontextprotocol/sdk": "1.32.1",
     "commander": "13.1.0",
     "jszip": "3.10.1",

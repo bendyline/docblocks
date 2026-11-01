@@ -142,8 +142,25 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
 
   // The sidebar titlebar ends with a desktop-only dotted grip so the
   // draggable space beside the workspace gear is visually discoverable.
+  // A drag region never receives hover, so the grip yields to the page while
+  // the pointer is elsewhere and re-arms when the pointer reaches it. CDP input
+  // skips the OS caption hit test, so this pins the renderer's half of that
+  // hand-off; a press on the armed grip moving the window is native behavior.
   const sidebarHeader = window.locator('.db-shell-sidebar-header');
   const gripElement = sidebarHeader.locator('.db-window-drag-grip');
+  const gripTooltip = window.locator('.db-window-drag-grip-tooltip');
+  const gripAppRegion = () =>
+    gripElement.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return style.getPropertyValue('-webkit-app-region') || style.getPropertyValue('app-region');
+    });
+  await window.mouse.move(8, 200);
+  await expect(gripElement).toHaveClass(/db-window-drag-grip--detect-hover/);
+  expect(await gripAppRegion()).toBe('no-drag');
+  await gripElement.hover();
+  await expect(gripTooltip).toHaveText('Use this grippie to drag and move your window around.');
+  await expect(gripTooltip).toBeVisible();
+  await expect(gripElement).not.toHaveClass(/db-window-drag-grip--detect-hover/);
   const grip = await gripElement.evaluate((element) => {
     const style = getComputedStyle(element);
     const headerRect = element.getBoundingClientRect();
@@ -173,6 +190,10 @@ test('uses the editor toolbar as the custom titlebar', async ({ launchApp }) => 
   expect(grip.appRegion).toBe('drag');
   expect(grip.gutterIsGrip).toBe(true);
   expect(grip.gutterAppRegion).toBe('drag');
+  // Moving over the page again closes the hint and yields the grip once more.
+  await window.mouse.move(8, 200);
+  await expect(gripTooltip).toHaveCount(0);
+  expect(await gripAppRegion()).toBe('no-drag');
 
   // Squisq's flexible actions lane owns the empty space between its final
   // formatting control and the fixed document controls. That exact gap must

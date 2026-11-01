@@ -22,13 +22,16 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
   ],
   webServer: {
-    command: process.env.CI
-      ? 'npm run dev -w docblocks-site -- --strictPort'
-      : 'npm run build && npm run dev -w docblocks-site -- --strictPort',
+    // Same contract as playwright.config.ts: skip the local build when CI or
+    // the canonical gate (DOCBLOCKS_E2E_PREBUILT) has already built.
+    command:
+      process.env.CI || process.env.DOCBLOCKS_E2E_PREBUILT
+        ? 'npm run dev -w docblocks-site -- --strictPort'
+        : 'npm run build && npm run dev -w docblocks-site -- --strictPort',
     url: 'http://localhost:5220',
     reuseExistingServer: !process.env.CI,
-    // Locally the command builds every package first, which alone takes close
-    // to three minutes; CI only starts the dev server.
-    timeout: process.env.CI ? 180_000 : 360_000,
+    // A local build of every package takes about five minutes on an idle
+    // Windows machine; the dev server itself is ready in seconds.
+    timeout: process.env.CI || process.env.DOCBLOCKS_E2E_PREBUILT ? 180_000 : 600_000,
   },
 });
