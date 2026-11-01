@@ -90,6 +90,8 @@ export const AI_REVIEW_STYLE_DEFINITIONS: Readonly<Record<AiReviewStyle, AiRevie
         'player" or "hard-working"; bullets longer than two lines; a missing or generic summary; and dated or ' +
         'unneeded items such as an objective statement, "References available upon request", or personal ' +
         'details such as age or marital status. Never invent an employer, title, date, skill or metric. When ' +
+        'a date needs confirmation and the document does not establish the correct date, set "replacement" ' +
+        'to null and ask the author to verify it. When ' +
         'a bullet needs a number only the author knows, set "replacement" to null and say in "message" what ' +
         'to quantify. Use a category such as "Impact", "Action verb", "Quantify", "Consistency", "Concision" ' +
         'or "Relevance".',
