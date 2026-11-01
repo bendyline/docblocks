@@ -1,9 +1,30 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { constants } from 'node:os';
 import path from 'node:path';
 import { defineConfig } from 'tsup';
 import treeKill from 'tree-kill';
 import { desktopTsupOptions } from './tsup.config';
 import { createDevBuildPolicy } from './scripts/dev-build-policy';
+
+/**
+ * Everything the main and preload bundles are built from. tsup's default
+ * watches the whole package, which holds a directory handle open in every
+ * folder under dist/: Windows cannot rename or delete a folder while one is
+ * open inside it, so a dev watcher broke `npm run stage:gezel-native` and
+ * electron-builder's staging of the Gezel engines. Setting `watch` here turns
+ * watch mode on; a CLI `--watch` would replace this list with the package root.
+ */
+const watchedSources = [
+  'main',
+  'preload',
+  'shared',
+  'intel-mac-final.json',
+  'native-platform-policy.json',
+  'package.json',
+  'tsconfig.json',
+  'tsconfig.main.json',
+  'tsconfig.preload.json',
+];
 
 let activeLauncher: ChildProcess | undefined;
 
@@ -58,15 +79,18 @@ const buildCompleted = createDevBuildPolicy(launchElectron, () => {
 
 // Terminal shutdown is explicit. Never return this as an onSuccess cleanup:
 // tsup invokes those cleanups before EVERY rebuild, killing unsaved recordings.
+// A signal listener replaces Node's default exit, so exit once the app is
+// stopped. Otherwise Ctrl+C on Windows ends npm and cmd around this watcher
+// and leaves it running, orphaned, with its file watches still open.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
   process.once(signal, () => {
     const launcher = activeLauncher;
     activeLauncher = undefined;
-    if (launcher) {
-      void stopProcessTree(launcher).catch((error: unknown) => {
+    void (launcher ? stopProcessTree(launcher) : Promise.resolve())
+      .catch((error: unknown) => {
         process.stderr.write(`Failed to stop the Electron launcher: ${String(error)}\n`);
-      });
-    }
+      })
+      .finally(() => process.exit(128 + constants.signals[signal]));
   });
 }
 
@@ -78,11 +102,13 @@ export default defineConfig([
   {
     ...desktopTsupOptions[0],
     clean: false,
+    watch: watchedSources,
     onSuccess: onBuildSuccess('main'),
   },
   {
     ...desktopTsupOptions[1],
     clean: false,
+    watch: watchedSources,
     onSuccess: onBuildSuccess('preload'),
   },
 ]);

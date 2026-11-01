@@ -17,7 +17,7 @@
   "scripts": {
     "predev": "npm run build:gezel-linked --prefix ../.. && npm run build:main",
     "dev": "node scripts/dev.cjs",
-    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.dev.config.ts --watch",
+    "dev:electron": "wait-on http://localhost:5221 && tsup --config tsup.dev.config.ts",
     "build": "npm run build:renderer && npm run build:main",
     "build:main": "tsup --config tsup.config.ts",
     "build:renderer": "tsc --noEmit -p tsconfig.renderer.json && tsx ../../scripts/vite-build.ts --config vite.config.ts",
