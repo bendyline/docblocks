@@ -151,7 +151,7 @@ function requireBundledGezelEngines(): void {
     !isRecord(config.mas) ||
     !Array.isArray(config.mas.signIgnore) ||
     !config.mas.signIgnore.includes('/Contents/Resources/gezel-native/') ||
-    !config.mas.signIgnore.includes('/Contents/Helpers/(gezel-apple-fm|gezel-llama-server|uv)$') ||
+    !config.mas.signIgnore.includes('/Contents/Helpers/(gezel-apple-fm|gezel-llama-server)$') ||
     !config.mas.signIgnore.includes('/Contents/(Frameworks|Helpers)/[^/]+\\.(dylib|so)$')
   ) {
     failConfigPolicy(
@@ -164,6 +164,12 @@ function requireBundledGezelEngines(): void {
   );
   if (!/<key>com\.apple\.security\.network\.server<\/key>\s*<true\s*\/>/u.test(entitlements)) {
     failConfigPolicy('MAS must permit bundled inference engines to listen on loopback.');
+  }
+  if (
+    !isRecord(config.mas.extendInfo) ||
+    config.mas.extendInfo.ITSAppUsesNonExemptEncryption !== false
+  ) {
+    failConfigPolicy('MAS must declare its exempt encryption use for App Store Connect.');
   }
   process.stdout.write(
     'electron-builder.yml: bundled Gezel engines and signature preservation OK\n',

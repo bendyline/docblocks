@@ -41,6 +41,11 @@ try {
     await page.locator('.db-app-menu-btn').click({ timeout: 1500 });
   }).toPass({ timeout: 15_000 });
   await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  // Settings opens on Appearance. Phone widths choose sections from a menu, wider ones from tabs.
+  await page.locator('.db-settings-sections').waitFor();
+  const section = page.getByRole('combobox', { name: 'Settings section', exact: true });
+  if (await section.isVisible()) await section.selectOption({ label: 'AI' });
+  else await page.getByRole('tab', { name: 'AI', exact: true }).click();
   const toggle = page.getByRole('checkbox', { name: 'Use AI features' });
   await expect(toggle).not.toBeChecked();
   await toggle.check();

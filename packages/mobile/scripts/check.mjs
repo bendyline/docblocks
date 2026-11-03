@@ -28,7 +28,26 @@ assert.doesNotMatch(
   read('android/app/src/main/AndroidManifest.xml'),
   /MANAGE_EXTERNAL_STORAGE|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|usesCleartextTraffic="true"/,
 );
-assert.match(read('ios/App/App/Info.plist'), /net.daringfireball.markdown/);
+const infoPlist = read('ios/App/App/Info.plist');
+assert.match(infoPlist, /net.daringfireball.markdown/);
+// Files shows device storage as On My iPhone › DocBlocks and the container as iCloud Drive › DocBlocks.
+for (const key of [
+  'UIFileSharingEnabled',
+  'LSSupportsOpeningDocumentsInPlace',
+  'NSUbiquitousContainerIsDocumentScopePublic',
+])
+  assert.match(infoPlist, new RegExp(`<key>${key}</key>\\s*<true/>`));
+assert.match(infoPlist, /<key>iCloud\.com\.bendyline\.docblocks<\/key>/);
+assert.match(
+  read('ios/App/App/App.entitlements'),
+  /<key>com\.apple\.developer\.ubiquity-container-identifiers<\/key>\s*<array>\s*<string>iCloud\.com\.bendyline\.docblocks<\/string>/,
+);
+assert.equal(
+  read('ios/App/App.xcodeproj/project.pbxproj').match(
+    /CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;/g,
+  )?.length,
+  2,
+);
 assert.match(read('dist/index.html'), /Content-Security-Policy/);
 assert.match(read('dist/index.html'), /fonts\/fonts.css/);
 assert.doesNotMatch(read('dist/index.html'), /https?:\/\/[^"']+\.js/);

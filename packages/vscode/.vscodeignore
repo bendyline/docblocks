@@ -18,3 +18,5 @@ webview/**
 tsconfig*.json
 tsup.config.ts
 web-extension-build.ts
+
+resources/marketplace/**

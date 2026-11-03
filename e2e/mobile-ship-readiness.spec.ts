@@ -3,17 +3,18 @@ import { expect, test } from './helpers/test.js';
 test.describe('mobile web-editor ship readiness', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('welcomes first-time users in the file pane and keeps every command reachable', async ({
+  test('welcomes first-time users over the whole app and keeps every command reachable', async ({
     page,
   }) => {
     await page.goto('/');
 
     await expect(page.locator('.db-shell')).toBeVisible();
-    await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
-    // The welcome document behind the drawer has the same title; the card is the one in view.
+    // The welcome document behind the drawer has the same title; the screen is the one in view.
     await expect(
       page.locator('.db-mobile-first-run').getByRole('heading', { name: 'Welcome to DocBlocks' }),
     ).toBeVisible();
+    // It covers both panes, so nothing beneath it is reachable until it goes.
+    await expect(page.locator('.db-shell-panes')).toHaveAttribute('inert', '');
     // The editor pane is always mounted now -- unmounting it tore down Tiptap,
     // Monaco, undo history and scroll position on every drawer toggle. While
     // the file pane is showing it is held out of reach with `inert`, which is a
@@ -87,6 +88,34 @@ test.describe('mobile web-editor ship readiness', () => {
     await exportAndShare.click();
     await page.getByRole('button', { name: 'Show file list' }).click();
     await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
+  });
+
+  test('fits the first-run welcome on a small phone and dismisses it to the file pane', async ({
+    page,
+  }) => {
+    // Roughly what a 1080px-wide Android phone lays out at its largest display size.
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.goto('/');
+
+    const welcome = page.locator('.db-mobile-first-run');
+    const tour = welcome.getByRole('button', { name: 'Tour the welcome document' });
+    await expect(tour).toBeVisible();
+    // Both choices are on screen without scrolling -- the drawer card was not.
+    await expect(welcome.getByRole('button', { name: 'Create a document' })).toBeInViewport({
+      ratio: 1,
+    });
+    await expect(tour).toBeInViewport({ ratio: 1 });
+
+    await welcome.getByRole('button', { name: 'Dismiss welcome' }).click();
+    await expect(welcome).toHaveCount(0);
+    await expect(page.locator('.db-shell-panes')).not.toHaveAttribute('inert');
+    await expect(page.getByRole('complementary', { name: 'Workspace and files' })).toBeVisible();
+    await expect(page.locator('main.db-shell-editor-area')).toHaveAttribute('inert', '');
+
+    // Dismissed for good: a returning visitor goes straight to the editor.
+    await page.reload();
+    await expect(page.locator('.squisq-toolbar')).toBeVisible({ timeout: 20_000 });
+    await expect(welcome).toHaveCount(0);
   });
 
   test('keeps CLI installation steps separate and usable at phone width', async ({ page }) => {

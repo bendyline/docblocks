@@ -1561,6 +1561,16 @@
   touch-action: pan-y;
 }
 
+/* A scroller restarts touch-action for everything inside it, so the rule above
+   never reaches the file list or the editor: left at `auto`, the browser claims
+   a sideways drag and cancels the pointer after one move, and the drawer can be
+   neither swiped open over the document nor swiped shut over the files. */
+[data-db-layout='single-pane'][data-db-pointer='coarse']
+  .db-shell-panes
+  :is(.db-shell-sidebar, .db-tree, .squisq-wysiwyg-container) {
+  touch-action: pan-y pinch-zoom;
+}
+
 .db-shell-editor-area {
   flex: 1;
   overflow: hidden;
@@ -1637,6 +1647,13 @@
      the drawer is open is visually identical, because progress is 1 and
      translateX(0) moves nothing. */
   transform: none;
+}
+
+/* Under a finger the drawer sits wherever the drag has it, open or closed;
+   useEdgeSwipe writes the progress and clears this attribute on release. */
+[data-db-layout='single-pane'] .db-shell-sidebar[data-db-dragging] {
+  visibility: visible;
+  transform: translateX(calc((var(--db-drawer-progress) - 1) * 100%));
 }
 
 .db-shell-scrim {
@@ -1890,28 +1907,64 @@ body.db-resizing-sidebar * {
 
 /* ── Mobile Layout ──────────────────────────────────────────── */
 
-.db-shell--mobile:has(.db-mobile-first-run) .db-file-explorer {
-  flex: 0 0 170px;
-  height: 170px;
-  min-height: 170px;
-}
-
+/* Single-pane first run: one screen over the whole app, clear of the system
+   bars. It scrolls when a large font scale outgrows the viewport, and centers
+   its column when it does not -- `margin: auto` rather than `justify-content`,
+   which would clip the top of an overflowing column out of scroll reach. */
 .db-mobile-first-run {
-  flex: 0 0 auto;
-  margin: 12px 12px auto;
-  padding: 20px;
-  border: 1px solid var(--db-border-strong);
-  border-radius: 14px;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--db-safe-top) + 56px) calc(var(--db-safe-right) + 24px)
+    calc(var(--db-safe-bottom) + 24px) calc(var(--db-safe-left) + 24px);
   background:
     radial-gradient(circle at 92% 4%, var(--db-accent-soft-15), transparent 42%),
     var(--db-bg-subtle);
-  box-shadow: 0 12px 30px var(--db-shadow);
+  color: var(--db-text);
+}
+
+.db-mobile-first-run-body {
+  width: 100%;
+  max-width: 440px;
+  margin: auto;
+}
+
+.db-mobile-first-run-dismiss {
+  position: absolute;
+  top: calc(var(--db-safe-top) + 8px);
+  right: calc(var(--db-safe-right) + 8px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--db-target-min);
+  height: var(--db-target-min);
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--db-text-muted);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.db-mobile-first-run-dismiss:hover {
+  background: var(--db-bg-hover);
+  color: var(--db-text);
+}
+
+.db-mobile-first-run-dismiss:focus-visible {
+  outline: 2px solid var(--db-focus);
+  outline-offset: 2px;
 }
 
 .db-mobile-first-run-eyebrow {
-  margin: 0 0 7px;
+  margin: 0 0 8px;
   color: var(--db-accent);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1920,32 +1973,38 @@ body.db-resizing-sidebar * {
 .db-mobile-first-run h1 {
   margin: 0;
   color: var(--db-text);
-  font-size: 23px;
-  line-height: 1.2;
+  font-size: 28px;
+  line-height: 1.15;
 }
 
-.db-mobile-first-run > p:not(.db-mobile-first-run-eyebrow) {
-  margin: 10px 0 0;
+.db-mobile-first-run-body > p:not(.db-mobile-first-run-eyebrow) {
+  margin: 14px 0 0;
   color: var(--db-text-secondary);
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.5;
+}
+
+.db-mobile-first-run-body > .db-mobile-first-run-note {
+  margin-top: 8px;
+  color: var(--db-text-muted);
 }
 
 .db-mobile-first-run-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 17px;
+  gap: 10px;
+  margin-top: 24px;
 }
 
 .db-mobile-first-run-actions button {
-  min-height: 42px;
+  min-height: 46px;
   padding: 8px 12px;
   border: 1px solid var(--db-accent);
   border-radius: 7px;
   background: var(--db-accent);
   color: var(--db-text-on-accent);
   font: inherit;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
 }
@@ -2013,6 +2072,41 @@ body.db-resizing-sidebar * {
 .db-shell--mobile .squisq-toolbar > .squisq-toolbar-button,
 .db-shell--mobile .squisq-toolbar > .db-toolbar-menu {
   flex: 0 0 auto;
+  /* Hang the menu from the full-width toolbar, like the overflow menu below:
+     from its own trigger's right edge, a trigger that wraps to the start of a
+     row opens its menu off the left of the screen. */
+  position: static;
+}
+
+.db-shell--mobile .db-toolbar-menu-dropdown {
+  max-width: calc(100vw - 8px);
+}
+
+/* In a Use mode, the second row's preview controls (more, format, print) and
+   the document controls after them (layouts through Export) do not fit one
+   phone-width row, and wrapping item by item stranded Export alone at the
+   start of a third row. Break before the document controls instead, and keep
+   that row right-aligned so Export stays at the right edge, as in Write. The
+   `::after` is the line break; the `::before` springs the row to the right. */
+.db-shell[data-db-form-factor='phone'][data-db-orientation='portrait']
+  .squisq-toolbar:has(> .squisq-preview-controls)::after {
+  content: '';
+  flex-basis: 100%;
+  order: 1;
+}
+
+.db-shell[data-db-form-factor='phone'][data-db-orientation='portrait']
+  .squisq-toolbar:has(> .squisq-preview-controls)::before {
+  content: '';
+  flex: 1 0 0;
+  order: 2;
+}
+
+.db-shell[data-db-form-factor='phone'][data-db-orientation='portrait']
+  .squisq-toolbar
+  > .squisq-preview-controls
+  ~ :not(.squisq-presentation-control, .squisq-print-trigger) {
+  order: 2;
 }
 
 /* The compact layout puts Squisq's overflow trigger part-way along the second
@@ -3322,11 +3416,32 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   padding-bottom: 10px;
 }
 
-/* Keep the preview-mode chevron on the same lifted baseline as its tab
-   label. Squisq's native 9px bottom padding is paired with the native 4px
-   tab padding; the DocBlocks override above adds 6px to the latter. */
+/* The Use-mode chooser beside Slideshow reads as a button, not a stray glyph:
+   a bordered 22px box centred on the label. The label's centre rises with
+   its line box, and Android scales text to the system font size while
+   leaving padding alone, so a fixed offset left the arrow 3px low at 115%.
+   The offset is therefore half a line box (`lh`) at the label's own 13px,
+   which Android scales in step. The trigger still spans the tab's height as
+   the tap target. */
 .db-shell .squisq-use-mode-trigger {
-  padding-bottom: 15px;
+  width: auto;
+  padding: 0 6px 11px 2px;
+  padding-bottom: calc(0.5lh + 2.5px);
+  font-size: 13px;
+}
+
+.db-shell .squisq-use-mode-trigger > svg {
+  box-sizing: content-box;
+  padding: 5px;
+  border: 1px solid var(--db-border-strong);
+  border-radius: 5px;
+  transform: none;
+  transition: background-color 0.12s ease;
+}
+
+.db-shell .squisq-use-mode-trigger:hover > svg,
+.db-shell .squisq-use-mode-trigger--open > svg {
+  background: var(--db-bg-hover);
 }
 
 .squisq-toolbar-button[aria-label='Insert image'] {
@@ -4072,9 +4187,16 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   --squisq-desk-bg: var(--db-gutter-bg);
 }
 
+/* The outline inside Squisq's phone-width navigation sheet sits on the sheet's
+   own surface, so it is left out here and from the pane hairline further down. */
 .db-shell
   .squisq-editor-shell
-  :is(.squisq-wysiwyg-container, .squisq-block-card, .squisq-block-preview-panel, .squisq-outline) {
+  :is(
+    .squisq-wysiwyg-container,
+    .squisq-block-card,
+    .squisq-block-preview-panel,
+    .squisq-outline:not(.squisq-outline--sheet)
+  ) {
   background: var(--squisq-desk-bg);
 }
 
@@ -5622,15 +5744,6 @@ html:has(.db-shell[data-theme='dark'])
   border-top-color: var(--db-border-strong);
 }
 
-/* The stronger accent keeps small status text readable on the tinted bar. */
-.db-shell .squisq-status-ok {
-  color: var(--db-accent-hover);
-}
-
-.db-shell[data-theme='dark'] .squisq-status-ok {
-  color: var(--db-accent-hover);
-}
-
 .db-autosave-pending {
   opacity: 0.62;
 }
@@ -5651,7 +5764,7 @@ html:has(.db-shell[data-theme='dark'])
    these mark where the panes end without the --db-border-strong stripe
    that used to divide two different surfaces — the page's own shadow
    does the heavier separating. */
-.db-shell .squisq-outline {
+.db-shell .squisq-outline:not(.squisq-outline--sheet) {
   border-right: 1px solid var(--db-border);
 }
 
@@ -5891,8 +6004,8 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
 /* ── Welcome screen ─────────────────────────────────────────── */
 /* First visit on a two-pane layout: covers the editor area -- the welcome
    document mounts, inert, beneath it -- with what DocBlocks is and two
-   choices. Dismissed for good via localStorage. Phones keep their card in
-   the file pane (`.db-mobile-first-run`). The class names predate this
+   choices. Dismissed for good via localStorage. Single-pane has its own
+   screen over the whole app (`.db-mobile-first-run`). The class names predate this
    screen; they were a toast over a slideshow. */
 
 .db-shell-editor-content {
@@ -8818,8 +8931,10 @@ button.db-git-file-row:hover {
     transform: translateY(1px);
   }
 
+  /* The label's padding is 8px less here, and so is the button's. */
   .db-shell .squisq-use-mode-trigger {
-    padding-bottom: 10px;
+    padding-bottom: 3px;
+    padding-bottom: calc(0.5lh - 5.5px);
   }
 
   /* The 32px caption row leaves little room around Squisq's 28px action

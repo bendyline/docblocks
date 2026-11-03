@@ -5,6 +5,8 @@ import process from 'node:process';
 // Pure release-signing checks for store-native.mjs. Everything here runs
 // without signing material or native SDKs, so the Mocha suite covers it on Linux.
 export const APP_ID = 'com.bendyline.docblocks.mobile';
+// Product-wide, so the Mac App Store build can later share iCloud Drive › DocBlocks.
+export const ICLOUD_CONTAINER = 'iCloud.com.bendyline.docblocks';
 export const STORE_SECRETS = {
   // ANDROID_UPLOAD_KEYSTORE_PATH may replace the base64 secret on a local machine.
   android: [
@@ -64,6 +66,10 @@ export function profileSettings(profile, identities, now = new Date()) {
       (prefix) => entitlements['application-identifier'] === `${prefix}.${APP_ID}`,
     ),
     `The provisioning profile must be explicitly registered for ${APP_ID}.`,
+  );
+  ensure(
+    entitlements['com.apple.developer.ubiquity-container-identifiers']?.includes(ICLOUD_CONTAINER),
+    `The provisioning profile must grant iCloud Documents for ${ICLOUD_CONTAINER}; enable it on the App ID and regenerate the profile.`,
   );
   // Xcode matches PROVISIONING_PROFILE_SPECIFIER against the UUID
   // case-sensitively, and Apple issues lowercase UUIDs: pass it through verbatim.
@@ -127,6 +133,8 @@ export function exportOptions(settings) {
     provisioningProfiles: { [APP_ID]: settings.profile },
     manageAppVersionAndBuildNumber: false,
     uploadSymbols: true,
+    // The profile allows both iCloud environments; store builds use Production.
+    iCloudContainerEnvironment: 'Production',
   };
 }
 /** Parses `security list-keychains` output so the search list can be restored. */

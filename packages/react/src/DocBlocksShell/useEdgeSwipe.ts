@@ -14,6 +14,8 @@ export interface EdgeSwipeOptions {
   readonly surfaceRef: RefObject<HTMLElement | null>;
   /** The drawer being dragged. */
   readonly drawerRef: RefObject<HTMLElement | null>;
+  /** The scrim that darkens the pane behind it, faded in step with the drag. */
+  readonly scrimRef?: RefObject<HTMLElement | null>;
   readonly enabled: boolean;
   readonly open: boolean;
   readonly onOpen: () => void;
@@ -24,8 +26,11 @@ export interface EdgeSwipeOptions {
  * Edge-swipe to open the drawer, and swipe-back to close it.
  *
  * Pointer Events only, matching the sidebar resizer. `--db-drawer-progress` is
- * written straight onto the drawer node during the drag, exactly as the resizer
- * writes `style.width`, so a gesture costs zero React renders.
+ * written straight onto the drawer and scrim nodes during the drag, exactly as
+ * the resizer writes `style.width`, so a gesture costs zero React renders.
+ * `data-db-dragging` on the drawer tells the stylesheet to show it at that
+ * progress whichever state it started in: the closed drawer is otherwise
+ * hidden, and the open one drops its transform.
  *
  * Known limitation: on iOS Safari the left screen edge belongs to the system
  * interactive-back gesture, so open-by-swipe is unreliable *in the browser*. It
@@ -37,6 +42,7 @@ export interface EdgeSwipeOptions {
 export function useEdgeSwipe({
   surfaceRef,
   drawerRef,
+  scrimRef,
   enabled,
   open,
   onOpen,
@@ -54,15 +60,20 @@ export function useEdgeSwipe({
     let width = 1;
 
     const drawer = (): HTMLElement | null => drawerRef.current;
+    const dragged = (): HTMLElement[] =>
+      [drawerRef.current, scrimRef?.current ?? null].filter(
+        (node): node is HTMLElement => node !== null,
+      );
 
     const setProgress = (value: number): void => {
-      drawer()?.style.setProperty('--db-drawer-progress', String(value));
+      for (const node of dragged()) node.style.setProperty('--db-drawer-progress', String(value));
     };
     const clearProgress = (): void => {
-      const node = drawer();
-      if (!node) return;
-      node.style.removeProperty('--db-drawer-progress');
-      node.style.removeProperty('transition');
+      for (const node of dragged()) {
+        node.style.removeProperty('--db-drawer-progress');
+        node.style.removeProperty('transition');
+      }
+      drawer()?.removeAttribute('data-db-dragging');
     };
 
     const onPointerDown = (event: PointerEvent): void => {
@@ -94,7 +105,9 @@ export function useEdgeSwipe({
         if (axis === 'horizontal') {
           surface.setPointerCapture(event.pointerId);
           // Suppress the transition so the drawer tracks the finger exactly.
-          drawer()?.style.setProperty('transition', 'none');
+          for (const node of dragged()) node.style.setProperty('transition', 'none');
+          drawer()?.setAttribute('data-db-dragging', '');
+          setProgress(open ? 1 : 0);
         }
         return;
       }
@@ -141,5 +154,5 @@ export function useEdgeSwipe({
       surface.removeEventListener('pointercancel', finish);
       clearProgress();
     };
-  }, [surfaceRef, drawerRef, enabled, open, onOpen, onClose]);
+  }, [surfaceRef, drawerRef, scrimRef, enabled, open, onOpen, onClose]);
 }

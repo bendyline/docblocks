@@ -8,3 +8,54 @@ body,
   width: 100%;
   overflow: hidden;
 }
+
+/* main.tsx scales the iPhone viewport up, but WebKit reports safe-area insets
+   in points, which that scale would enlarge too; divide them back so the shell
+   clears the bars exactly. Outranks the shell's own `:root, .db-shell` tokens. */
+html:root,
+:root .db-shell {
+  --db-safe-top: calc(env(safe-area-inset-top, 0px) / var(--db-viewport-scale, 1));
+  --db-safe-right: calc(env(safe-area-inset-right, 0px) / var(--db-viewport-scale, 1));
+  --db-safe-bottom: calc(env(safe-area-inset-bottom, 0px) / var(--db-viewport-scale, 1));
+  --db-safe-left: calc(env(safe-area-inset-left, 0px) / var(--db-viewport-scale, 1));
+}
+
+/* iPhone (main.tsx stamps the attribute): the top chrome rises 10px into the
+   status-bar inset. A notch or Dynamic Island inset (47pt and up) leaves that
+   much clear below the cutout; a status-bar-only inset (20pt, home-button
+   iPhones) leaves none, so the lift never takes the inset below 30px. */
+:root[data-db-device='iphone'],
+:root[data-db-device='iphone'] .db-shell {
+  --db-safe-top: max(
+    calc(env(safe-area-inset-top, 0px) / var(--db-viewport-scale, 1) - 10px),
+    min(calc(env(safe-area-inset-top, 0px) / var(--db-viewport-scale, 1)), 30px)
+  );
+}
+
+/* The bottom bars run to the screen edge instead of floating over a strip of
+   page background: their text drops to about 5pt above the home indicator
+   (which reaches 13pt up the 34pt inset), and sits 20px in from the edges,
+   clear of the rounded corners at that height. Where the inset is small
+   (landscape, home-button iPhones) they keep Squisq's own 4px, and a side
+   inset already clears the corners. */
+:root[data-db-device='iphone'] {
+  --db-bottom-bar-pad: max(4px, calc(var(--db-safe-bottom) - 13px));
+}
+
+:root[data-db-device='iphone'] .db-shell-editor-area:has(.squisq-status-bar) {
+  padding-bottom: var(--db-keyboard-inset);
+}
+
+:root[data-db-device='iphone'] .db-shell-editor-area .squisq-status-bar {
+  padding-bottom: var(--db-bottom-bar-pad);
+  padding-left: max(12px, calc(20px - var(--db-safe-left)));
+  padding-right: max(12px, calc(20px - var(--db-safe-right)));
+}
+
+/* The drawer's footer keeps the status bar's height, so their top borders
+   still meet in the strip of editor beside the open drawer. */
+:root[data-db-device='iphone'] .db-shell-sidebar-footer {
+  height: calc(21px + var(--db-bottom-bar-pad));
+  padding-bottom: calc(var(--db-bottom-bar-pad) - 4px);
+  padding-left: max(18px, calc(20px - var(--db-safe-left)));
+}

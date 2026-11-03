@@ -50,6 +50,29 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual((response["error"] as? [String: Any])?["code"] as? String, "disposed")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [])
     }
+    func testCloudStubsAreListedUnderTheirNamesWithoutDownloading() throws {
+        let stub = try PropertyListSerialization.data(fromPropertyList: ["NSURLNameKey": "note.md", "NSURLFileSizeKey": 42], format: .binary, options: 0)
+        try stub.write(to: root.appendingPathComponent(".note.md.icloud"))
+        try Data("kept".utf8).write(to: root.appendingPathComponent("local.md"))
+        try storage.register("cloud", root: root, cloud: true)
+        _ = storage.request(["op": "open", "instanceId": "cloud", "providerId": "cloud", "label": "iCloud"])
+        let entries = try XCTUnwrap(storage.request(["op": "list", "instanceId": "cloud", "path": ""])["value"] as? [[String: Any]])
+        XCTAssertEqual(entries.map { $0["name"] as? String }, ["local.md", "note.md"])
+        let note = try XCTUnwrap(entries.last)
+        XCTAssertEqual(note["kind"] as? String, "file"); XCTAssertEqual(note["size"] as? Int, 42)
+        XCTAssertTrue((note["version"] as? String)?.hasPrefix("icloud-") == true)
+        let begin = storage.request(["op": "writeBegin", "instanceId": "cloud", "path": "note.md", "byteLength": 1, "options": ["mode": "create"]])
+        let token = try XCTUnwrap(begin["value"] as? String)
+        _ = storage.request(["op": "writeChunk", "instanceId": "cloud", "transferId": token, "offset": 0, "data": "eA=="])
+        XCTAssertEqual(storage.request(["op": "writeFinish", "instanceId": "cloud", "transferId": token])["ok"] as? Bool, false)
+        let snapshot = storage.request(["op": "snapshot", "instanceId": "cloud"])
+        XCTAssertEqual((snapshot["error"] as? [String: Any])?["code"] as? String, "busy")
+        // Device storage keeps the literal name and never treats it as a cloud item.
+        let device = try XCTUnwrap(storage.request(["op": "list", "instanceId": "test", "path": ""])["value"] as? [[String: Any]])
+        XCTAssertEqual(device.map { $0["name"] as? String }, [".note.md.icloud", "local.md"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(".note.md.icloud").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("note.md").path))
+    }
     func testExportStagingRequiresCompleteOrderedDataAndCancels() throws {
         let staging = try ExportStaging(root: root.appendingPathComponent("exports"))
         let token = try staging.begin(filename: "report.md", size: 3)

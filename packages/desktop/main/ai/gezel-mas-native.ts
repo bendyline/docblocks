@@ -21,11 +21,8 @@ const run = promisify(execFile);
 const STORE_CERTIFICATE = 'certificate leaf[field.1.2.840.113635.100.6.1.9] exists';
 const SIGNING_REQUIREMENT = `=anchor apple generic and (certificate leaf[subject.OU] = "5B7Y53BF56" or certificate leaf[subject.OU] = "JXA5M4VK3V" or ${STORE_CERTIFICATE})`;
 const COMMAND_OPTIONS = { timeout: 60_000, maxBuffer: 1024 * 1024 };
-const REQUIRED = [
-  'darwin-arm64/gezel-apple-fm',
-  'darwin-arm64/uv',
-  'darwin-arm64-metal/gezel-llama-server',
-];
+// The only executables MAS ships. UV (MLX's Python installer) is deliberately absent.
+const REQUIRED = ['darwin-arm64/gezel-apple-fm', 'darwin-arm64-metal/gezel-llama-server'];
 const MAX_FILE = 2 * 1024 ** 3;
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -147,7 +144,7 @@ export function parseMasNativeManifest(value: unknown, release: string): MasNati
     REQUIRED.some((logical) => files[logical]?.kind !== 'executable') ||
     Object.keys(files).some((logical) => !Object.hasOwn(symlinks, logical))
   )
-    throw new Error('MAS native manifest is missing Apple, UV or Metal inference.');
+    throw new Error('MAS native manifest is missing Apple or Metal inference.');
   return { schemaVersion: 3, release, files, symlinks };
 }
 

@@ -14,7 +14,7 @@ public final class ExportStaging {
         }
     }
     public func begin(filename: String, size: Int) throws -> String {
-        guard size >= 0, size <= Storage.fileBytes, filename.utf16.count <= 255, !filename.isEmpty, filename != ".", filename != "..", !filename.contains("/"), !filename.contains("\\"), !filename.contains(":"), filename.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 }) else { throw StorageFailure("corrupt") }
+        guard size >= 0, size <= Storage.exportBytes, filename.utf16.count <= 255, !filename.isEmpty, filename != ".", filename != "..", !filename.contains("/"), !filename.contains("\\"), !filename.contains(":"), filename.unicodeScalars.allSatisfy({ $0.value >= 32 && $0.value != 127 }) else { throw StorageFailure("corrupt") }
         for (id, entry) in entries where Date().timeIntervalSince(entry.created) > 900 { try cancel(id) }
         guard entries.count < 2 else { throw StorageFailure("busy") }
         let id = UUID().uuidString, folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)

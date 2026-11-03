@@ -26,7 +26,17 @@ const pins = await read(path.join(mobile, 'vendor/native-release.json'));
 for (const pin of Object.values(pins.archives))
   if (hash(await readFile(path.join(releaseDir, pin.file))) !== pin.sha256)
     throw new Error(`Native release archive integrity mismatch: ${pin.file}`);
+// The plugin builds against the whole chain, but only it is vendored: Gezel
+// publishes the others, and the plugin must depend on those exact releases.
 const packages = ['gezk', 'core', 'client', 'app-sdk', 'capacitor'];
+const vendored = new Set(['capacitor']);
+// Distinguish unpublished source from registry releases with the same producer version.
+const preview = 'docblocks.3';
+const npmCli = path.join(mobile, '../../node_modules/npm/bin/npm-cli.js');
+// The recorded tree hash must describe exactly what is packed.
+for (const folder of vendored)
+  if (run('git', ['status', '--porcelain', '--', `packages/${folder}`], repo).trim())
+    throw new Error(`Commit packages/${folder} in the Gezel checkout before packing it.`);
 await withDependencyReadLease(
   repo,
   async ({ leaseEnv }) => {
@@ -35,14 +45,18 @@ await withDependencyReadLease(
       const manifests = await Promise.all(
         packages.map((folder) => read(path.join(repo, 'packages', folder, 'package.json'))),
       );
-      // Distinguish unpublished source from registry releases with the same producer version.
-      const versions = Object.fromEntries(
-        manifests.map((pkg) => [pkg.name, `${pkg.version}-docblocks.2`]),
-      );
       const provenance = {
         repository: 'https://github.com/bendyline/gezel',
         baseCommit: run('git', ['rev-parse', 'HEAD'], repo).trim(),
+        // Content-addressed, so it can be matched against any public commit.
+        trees: Object.fromEntries(
+          [...vendored].map((folder) => [
+            `packages/${folder}`,
+            run('git', ['rev-parse', `HEAD:packages/${folder}`], repo).trim(),
+          ]),
+        ),
         nativeRelease: pins,
+        published: {},
         packages: {},
       };
       const pnpm = async (args) => {
@@ -61,6 +75,7 @@ await withDependencyReadLease(
       for (const [index, folder] of packages.entries()) {
         const pkg = manifests[index];
         await pnpm(['--filter', pkg.name, 'build']);
+        if (!vendored.has(folder)) continue;
         const raw = path.join(work, folder);
         await mkdir(raw);
         await pnpm([
@@ -75,10 +90,21 @@ await withDependencyReadLease(
         run('tar', ['-xzf', path.join(raw, original), '-C', raw], repo);
         const staged = path.join(raw, 'package');
         const manifest = await read(path.join(staged, 'package.json'));
-        manifest.version = versions[pkg.name];
+        manifest.version = `${pkg.version}-${preview}`;
         for (const key of ['dependencies', 'optionalDependencies'])
-          for (const name of Object.keys(manifest[key] ?? {}))
-            if (versions[name]) manifest[key][name] = versions[name];
+          for (const [name, version] of Object.entries(manifest[key] ?? {})) {
+            if (!name.startsWith('@bendyline/')) continue;
+            if (!/^\d+\.\d+\.\d+$/u.test(version))
+              throw new Error(`${pkg.name} must pin an exact ${name} release, not ${version}.`);
+            const published = run(
+              process.execPath,
+              [npmCli, 'view', `${name}@${version}`, 'version'],
+              mobile,
+            ).trim();
+            if (published !== version)
+              throw new Error(`${name}@${version} is not published; publish it first.`);
+            provenance.published[name] = version;
+          }
         await write(path.join(staged, 'package.json'), manifest);
         if (folder === 'capacitor') {
           const { stageNative, writeEmbeddingManifest, verifyCapacitorPackage } = await load(
@@ -114,7 +140,7 @@ await withDependencyReadLease(
           run(
             process.execPath,
             [
-              path.join(mobile, '../../node_modules/npm/bin/npm-cli.js'),
+              npmCli,
               'pack',
               '--ignore-scripts',
               '--json',
@@ -138,5 +164,5 @@ await withDependencyReadLease(
   { command: 'Refresh DocBlocks mobile embedding SDK preview', env: process.env },
 );
 process.stdout.write(
-  'Preview packages refreshed. Install the five pinned tarballs, regenerate notices, sync and qualify native builds.\n',
+  'Capacitor preview refreshed. Install it with the published pins in provenance.json, regenerate notices, sync and qualify native builds.\n',
 );

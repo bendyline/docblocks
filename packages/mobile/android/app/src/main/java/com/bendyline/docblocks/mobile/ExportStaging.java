@@ -18,7 +18,7 @@ public final class ExportStaging {
         try (DirectoryStream<Path> files = Files.newDirectoryStream(folder)) { for (Path file : files) Files.delete(file); } Files.delete(folder);
     }
     public String begin(String filename, int size) throws Exception {
-        if (size < 0 || size > Storage.FILE_BYTES || filename.isEmpty() || filename.length() > 255 || filename.equals(".") || filename.equals("..") || filename.matches(".*[\\\\/:\\x00-\\x1f\\x7f].*")) throw new IOException("Invalid export");
+        if (size < 0 || size > Storage.EXPORT_BYTES || filename.isEmpty() || filename.length() > 255 || filename.equals(".") || filename.equals("..") || filename.matches(".*[\\\\/:\\x00-\\x1f\\x7f].*")) throw new IOException("Invalid export");
         for (String id : new ArrayList<>(entries.keySet())) if (System.currentTimeMillis() - entries.get(id).created > 900_000) cancel(id);
         if (entries.size() >= 2) throw new IOException("Another export is in progress");
         Entry entry = new Entry(); entry.size = size; entry.created = System.currentTimeMillis();

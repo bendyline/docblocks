@@ -68,11 +68,6 @@ npm run test:e2e:vscode     # Playwright + VS Code for Web (port 3100)
 # Screenshot inventory for visual/UX review (not a test; writes to reports/)
 npm run ux:crawl            # build the site, serve it locally, crawl and capture
 
-# Visual regression — a PRE-RELEASE gate, deliberately not part of `npm run all`
-npm run test:e2e:visual           # site, VS Code webview, desktop native chrome
-npm run test:e2e:visual -- --site # one surface (also --vscode, --desktop)
-npm run test:e2e:visual:update    # recapture baselines (Linux only; see below)
-
 # Quality gates
 npm run check:dependency-governance # exact install-script allowlist + seven-day dependency cooldown
 npm run check:linux-launchers # packaged AppImage/.deb desktop entries keep the Chromium sandbox
@@ -325,10 +320,12 @@ download an engine at runtime; `dev:desktop` warns when that payload is missing
 or stale. macOS distributions support Apple Silicon only.
 2.7.1 is Intel Macs' final version: never add x64 Mac targets. Its x64 update
 zip stays in every `latest-mac.yml` (`packages/desktop/README.md`, "Intel Macs").
-MAS requires the new native release's Apple Foundation Models helper, UV and
+MAS requires the new native release's Apple Foundation Models helper and
 llama.cpp/Metal; the old native 0.1.46 pin cannot package it. Apple Intelligence
 readiness is visible, and unavailable system models cannot be selected. Store
-profiles withhold MLX until a frozen Python runtime ships. Gezel never downloads
+profiles withhold MLX until a frozen Python runtime ships, so MAS packaging strips
+UV (MLX's runtime Python installer) and its verifier rejects a manifest that
+lists it. Gezel never downloads
 weights implicitly; the Settings **Add model** gesture may request a catalog
 model and shows progress while Gezel installs it.
 

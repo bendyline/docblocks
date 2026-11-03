@@ -9,7 +9,7 @@ export const WELCOME_HEADLINE = 'The Markdown editor that turns one file into an
 export const WELCOME_SUMMARY =
   'Write the way you normally would, then share the same file as a PDF, a Word document, a slide deck, or a video.';
 
-/** The trust line, kept apart so the compact phone card can reuse it. */
+/** The trust line, kept apart so it can sit on its own line beneath the summary. */
 export const WELCOME_PRIVACY_NOTE = 'No account, and your documents stay on this device.';
 
 /**
@@ -86,6 +86,55 @@ export function WelcomeScreen({
           </div>
         </div>
         <WelcomeLoop />
+      </div>
+    </section>
+  );
+}
+
+export interface CompactWelcomeScreenProps {
+  /** Opens the New Document dialog. */
+  onCreateDocument: () => void;
+  /** Shows the welcome document in the editor. */
+  onTour: () => void;
+  /** Closes the screen for good, leaving the file pane beneath. */
+  onDismiss: () => void;
+}
+
+/**
+ * First-run screen for the single-pane layout. It covers the whole app rather
+ * than sharing the file drawer, which left a phone too little height for the
+ * card. The shell makes the panes beneath it inert; the class names are what
+ * the suites look for.
+ */
+export function CompactWelcomeScreen({
+  onCreateDocument,
+  onTour,
+  onDismiss,
+}: CompactWelcomeScreenProps) {
+  return (
+    <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
+      <button
+        type="button"
+        className="db-mobile-first-run-dismiss"
+        onClick={onDismiss}
+        aria-label="Dismiss welcome"
+        title="Dismiss"
+      >
+        &times;
+      </button>
+      <div className="db-mobile-first-run-body">
+        <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
+        <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
+        <p>{WELCOME_SUMMARY}</p>
+        <p className="db-mobile-first-run-note">{WELCOME_PRIVACY_NOTE}</p>
+        <div className="db-mobile-first-run-actions">
+          <button type="button" onClick={onCreateDocument}>
+            Create a document
+          </button>
+          <button type="button" className="db-mobile-first-run-secondary" onClick={onTour}>
+            Tour the welcome document
+          </button>
+        </div>
       </div>
     </section>
   );

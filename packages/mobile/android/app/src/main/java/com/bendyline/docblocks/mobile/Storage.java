@@ -13,6 +13,8 @@ import java.util.*;
 /** Native authority and mutation serialization. Also runs unchanged in the JVM conformance harness. */
 public final class Storage {
     public static final int FILE_BYTES = 16 * 1024 * 1024, CHUNK_BYTES = 256 * 1024, TOTAL_BYTES = 32 * 1024 * 1024;
+    /** Exports stream to a staging file, not memory, so a rendered video may exceed FILE_BYTES. */
+    public static final int EXPORT_BYTES = 1024 * 1024 * 1024;
     private final Map<String, StorageNode> roots = new HashMap<>();
     private final Map<String, Object> identities = new HashMap<>();
     private final Map<String, String> instances = new HashMap<>();
