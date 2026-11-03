@@ -1,8 +1,12 @@
 {
   "name": "docblocks-vscode",
-  "displayName": "DocBlocks",
-  "description": "DocBlocks markdown editor powered by Squisq",
+  "displayName": "DocBlocks: Visual Markdown Editor",
+  "description": "Edit Markdown visually: rich writing, tables, charts, and diagrams, slideshow previews, and export to Word, PDF, and PowerPoint. Your files stay plain Markdown.",
   "icon": "resources/extension-icon.png",
+  "galleryBanner": {
+    "color": "#231F18",
+    "theme": "dark"
+  },
   "version": "0.1.0",
   "license": "MIT",
   "publisher": "bendyline",
@@ -13,11 +17,43 @@
     "directory": "packages/vscode"
   },
   "homepage": "https://docblocks.com/vscode/",
+  "bugs": {
+    "url": "https://github.com/bendyline/docblocks/issues"
+  },
+  "qna": "https://github.com/bendyline/docblocks/issues",
+  "pricing": "Free",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Visualization",
+    "Other",
+    "AI"
+  ],
+  "keywords": [
+    "markdown",
+    "md",
+    "wysiwyg",
+    "visual editor",
+    "rich text",
+    "markdown editor",
+    "markdown preview",
+    "slides",
+    "slideshow",
+    "presentation",
+    "export",
+    "docx",
+    "pdf",
+    "pptx",
+    "epub",
+    "diagram",
+    "chart",
+    "table",
+    "notes",
+    "writing",
+    "documentation",
+    "mcp",
+    "cli"
   ],
   "main": "./dist/extension.js",
   "browser": "./dist/extension.web.js",

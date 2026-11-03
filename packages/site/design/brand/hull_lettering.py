@@ -182,6 +182,7 @@ def icon_svg(
     size: float = 1024.0,
     fill: float = 0.62,
     radius: float = 0.18,
+    offset_y: float = 0.0,
     title: str = "DocBlocks",
 ) -> str:
     """A square icon: the lettering centred within `fill` of the square.
@@ -189,7 +190,9 @@ def icon_svg(
     The letters' faces are centred across, and the shade hangs off them: the
     eye reads the face as the letter, so centring the shade too would push
     the face off centre by half the shade vector. Down, the shaded letters are
-    centred as a whole, which leaves the faces a touch above centre.
+    centred as a whole, with `offset_y` (a fraction of the square) supplying
+    the optical correction for plated icons. Transparent source glyphs stay
+    unshifted so their tight canvas does not clip the shade.
 
     `plate` is the background color, or None for a transparent glyph. A
     `radius` of 0 gives a full-bleed square for platforms that apply their
@@ -206,7 +209,7 @@ def icon_svg(
     def place(geom):
         geom = affinity.translate(geom, -cx, -cy)
         geom = affinity.scale(geom, scale, scale, origin=(0, 0))
-        return affinity.translate(geom, size / 2, size / 2)
+        return affinity.translate(geom, size / 2, size * (0.5 + offset_y))
 
     body = [f"<title>{title}</title>"]
     if plate:

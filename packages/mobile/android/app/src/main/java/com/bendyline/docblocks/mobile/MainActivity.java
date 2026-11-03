@@ -12,6 +12,11 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         receive(getIntent());
         BridgeBoundary.install(getBridge());
+        // Android paints a stretched gray play button under any <video> with no poster
+        // and no decoded frame yet; a transparent default lets the page show through.
+        getBridge().getWebView().setWebChromeClient(new com.getcapacitor.BridgeWebChromeClient(getBridge()) {
+            @Override public android.graphics.Bitmap getDefaultVideoPoster() { return android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888); }
+        });
         getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { getBridge().eval("window.dispatchEvent(new Event('docblocksNativeBack'))", null); }
         });

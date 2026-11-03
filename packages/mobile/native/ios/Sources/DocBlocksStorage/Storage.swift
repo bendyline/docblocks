@@ -4,13 +4,16 @@ import Darwin
 
 public struct StorageFailure: Error {
     public let code: String
-    public init(_ code: String) { self.code = code }
+    public let message: String?
+    public init(_ code: String, _ message: String? = nil) { self.code = code; self.message = message }
 }
 
 /// One instance per WebView. The lock includes compare, mutation and snapshot.
 /// Registered roots and transfer ownership never come from renderer paths.
 public final class Storage {
     public static let fileBytes = 16 * 1024 * 1024
+    /// Exports stream to a staging file, not memory, so a rendered video may exceed `fileBytes`.
+    public static let exportBytes = 1024 * 1024 * 1024
     public static let chunkBytes = 256 * 1024
     public static let totalBytes = 32 * 1024 * 1024
     public static let capabilities: [String: Any] = ["writeAtomicity": "process", "moveAtomicity": "process", "snapshotAtomicity": "process", "conditionalWrite": "process", "recursiveRemove": true, "watch": false, "caseSensitivity": "platform", "symlinkPolicy": "reject", "durability": "best-effort"]
@@ -18,6 +21,11 @@ public final class Storage {
     private let fm = FileManager.default
     private var roots: [String: URL]
     private var rootIdentities: [String: String] = [:]
+    /// Roots synced by iCloud: items can be stubs until downloaded and can carry conflict versions.
+    private var cloudRoots: Set<String> = []
+    private var activeCloud = false
+    private static let evicted = FileAttributeKey("DocBlocksNotDownloaded")
+    private static let downloading = "This file is still downloading from iCloud. Try again in a moment."
     private var instances: [String: String] = [:]
     private struct Transfer {
         let owner: String
@@ -45,16 +53,18 @@ public final class Storage {
         guard attributes[.type] as? FileAttributeType == .typeDirectory else { throw StorageFailure("permission-denied") }
         return "\(attributes[.systemNumber] ?? ""):\(attributes[.systemFileNumber] ?? "")"
     }
-    public func register(_ id: String, root: URL) throws {
+    public func register(_ id: String, root: URL, cloud: Bool = false) throws {
         lock.lock(); defer { lock.unlock() }
         guard !dead, roots.count < 64 else { throw StorageFailure("busy") }
         let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
         let pinned = try identity(canonical)
         roots[id] = canonical; rootIdentities[id] = pinned
+        if cloud { cloudRoots.insert(id) } else { cloudRoots.remove(id) }
     }
     public func importDocument(_ source: URL) throws -> String {
         lock.lock(); defer { lock.unlock() }
         guard !dead, let root = roots["local"], ["md", "markdown"].contains(source.pathExtension.lowercased()) else { throw StorageFailure("not-supported") }
+        activeCloud = false
         let name = source.lastPathComponent
         try canonical(name); guard !name.contains("/"), name.utf16.count <= 255 else { throw StorageFailure("invalid-path") }
         let bytes = try readBytes(source)
@@ -63,7 +73,7 @@ public final class Storage {
     }
     public func unregister(_ id: String) {
         lock.lock(); defer { lock.unlock() }
-        roots.removeValue(forKey: id); rootIdentities.removeValue(forKey: id)
+        roots.removeValue(forKey: id); rootIdentities.removeValue(forKey: id); cloudRoots.remove(id)
         for (instance, root) in instances where root == id { instances.removeValue(forKey: instance); transfers = transfers.filter { $0.value.owner != instance } }
     }
     public func shutdown() {
@@ -76,7 +86,11 @@ public final class Storage {
             guard !dead else { throw StorageFailure("disposed") }
             let r = try object(input)
             let value: Any
-            if let owner = r["instanceId"] as? String, let provider = instances[owner], provider != "local", let root = roots[provider] {
+            activeCloud = false
+            // Every root is coordinated: device storage is also visible to, and editable from, the Files app.
+            if let owner = r["instanceId"] as? String, let provider = instances[owner], let root = roots[provider] {
+                activeCloud = cloudRoots.contains(provider)
+                if activeCloud { try prefetch(r, root) }
                 var failure: NSError?, result: Result<Any, Error>?
                 NSFileCoordinator().coordinate(writingItemAt: root, options: .forMerging, error: &failure) { coordinated in
                     result = Result {
@@ -90,8 +104,8 @@ public final class Storage {
             } else { value = try dispatch(r) }
             return ["ok": true, "value": value]
         } catch {
-            let code: String
-            if let failure = error as? StorageFailure { code = failure.code }
+            let code: String, message: String?
+            if let failure = error as? StorageFailure { code = failure.code; message = failure.message }
             else {
                 let ns = error as NSError
                 if ns.domain == NSCocoaErrorDomain {
@@ -103,8 +117,9 @@ public final class Storage {
                     default: code = "io"
                     }
                 } else { code = "io" }
+                message = nil
             }
-            return ["ok": false, "error": ["name": "FsError", "code": code, "message": "Native storage: \(code).", "operation": NSNull(), "path": NSNull(), "destinationPath": NSNull(), "retryable": ["io", "busy", "aborted"].contains(code)]]
+            return ["ok": false, "error": ["name": "FsError", "code": code, "message": message ?? "Native storage: \(code).", "operation": NSNull(), "path": NSNull(), "destinationPath": NSNull(), "retryable": ["io", "busy", "aborted"].contains(code)]]
         }
     }
     private func object(_ value: Any) throws -> [String: Any] {
@@ -146,8 +161,74 @@ public final class Storage {
         if !path.isEmpty { guard path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }), path.split(separator: "/").count <= 128 else { throw StorageFailure("invalid-path") } }
     }
     private func attributes(_ url: URL) throws -> [FileAttributeKey: Any]? {
-        do { return try fm.attributesOfItem(atPath: url.path) }
-        catch { let e = error as NSError; if e.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(e.code) { return nil }; throw error }
+        var found: [FileAttributeKey: Any]?
+        do { found = try fm.attributesOfItem(atPath: url.path) }
+        catch { let e = error as NSError; if !(e.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(e.code)) { throw error } }
+        guard activeCloud else { return found }
+        if found != nil {
+            if found?[.type] as? FileAttributeType == .typeRegular, (try? URL(fileURLWithPath: url.path).resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus == .notDownloaded { found?[Self.evicted] = true }
+            return found
+        }
+        // iCloud represents a file that is not downloaded as a hidden ".name.icloud" stub.
+        let stub = Self.stub(url)
+        guard let attrs = try? fm.attributesOfItem(atPath: stub.path), attrs[.type] as? FileAttributeType == .typeRegular else { return nil }
+        var size = 0
+        if let handle = try? FileHandle(forReadingFrom: stub) {
+            defer { try? handle.close() }
+            if let data = try? handle.read(upToCount: 65536), let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] { size = (plist["NSURLFileSizeKey"] as? NSNumber)?.intValue ?? 0 }
+        }
+        return [.type: FileAttributeType.typeRegular, .size: NSNumber(value: max(size, 0)), .modificationDate: attrs[.modificationDate] ?? Date(timeIntervalSince1970: 0), Self.evicted: true]
+    }
+    private static func stub(_ url: URL) -> URL { url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud") }
+    private static func stubTarget(_ name: String) -> String? {
+        guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > 8 else { return nil }
+        return String(name.dropFirst().dropLast(7))
+    }
+    /// Downloads a file before its content is read, replaced, moved or removed. This runs before
+    /// root coordination is taken, because iCloud writes the download with coordination of its own.
+    private func materialize(_ url: URL) throws {
+        guard try attributes(url)?[Self.evicted] != nil else { return }
+        try fm.startDownloadingUbiquitousItem(at: url)
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            Thread.sleep(forTimeInterval: 0.1)
+            let fresh = URL(fileURLWithPath: url.path)
+            if (try? fresh.resourceValues(forKeys: [.ubiquitousItemDownloadingErrorKey]))?.ubiquitousItemDownloadingError != nil { throw StorageFailure("busy", "This file could not be downloaded from iCloud. Check your connection and try again.") }
+            if try attributes(fresh)?[Self.evicted] == nil { return }
+        } while Date() < deadline
+        throw StorageFailure("busy", Self.downloading)
+    }
+    private func prefetch(_ r: [String: Any], _ root: URL) throws {
+        let path: String?
+        switch r["op"] as? String {
+        case "readBegin", "remove": path = r["path"] as? String
+        case "move": path = r["oldPath"] as? String
+        case "writeFinish":
+            guard let token = r["transferId"] as? String, let transfer = transfers[token], transfer.owner == r["instanceId"] as? String else { return }
+            path = transfer.path
+        default: return
+        }
+        // Invalid paths are rejected by dispatch with their usual errors.
+        guard let path, !path.isEmpty, let url = try? resolve(root, path) else { return }
+        try materialize(url)
+    }
+    /// Keeps each losing iCloud version as a visible sibling instead of letting sync choose silently.
+    private func preserveConflicts(_ root: URL, _ path: String) throws {
+        let url = try resolve(root, path)
+        guard let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url), !versions.isEmpty else { return }
+        let base = url.deletingPathExtension().lastPathComponent, suffix = url.pathExtension.isEmpty ? "" : "." + url.pathExtension
+        let folder = path.contains("/") ? String(path[..<path.lastIndex(of: "/")!]) + "/" : ""
+        let stamp = DateFormatter(); stamp.locale = Locale(identifier: "en_US_POSIX"); stamp.dateFormat = "yyyy-MM-dd HHmmss"
+        for version in versions {
+            let device = String((version.localizedNameOfSavingComputer ?? "another device").unicodeScalars.filter { $0.value >= 32 && $0.value != 127 && !"/\\:".unicodeScalars.contains($0) }.prefix(40))
+            let label = "\(base) (conflict from \(device.isEmpty ? "another device" : device) \(stamp.string(from: version.modificationDate ?? Date())))"
+            var name = label + suffix, attempt = 1
+            while try attributes(url.deletingLastPathComponent().appendingPathComponent(name)) != nil { attempt += 1; name = "\(label) \(attempt)" + suffix }
+            guard name.utf16.count <= 255 else { throw StorageFailure("conflict") }
+            _ = try write(root, folder + name, try readBytes(version.url), ["mode": "create"])
+            version.isResolved = true
+        }
+        try NSFileVersion.removeOtherVersionsOfItem(at: url)
     }
     private func resolve(_ root: URL, _ path: String) throws -> URL {
         try canonical(path)
@@ -179,7 +260,9 @@ public final class Storage {
             guard names.count < 10_000 else { throw StorageFailure("quota-exceeded") }; names.append(item.lastPathComponent)
         }
         if let failure { throw failure }
-        return names.sorted()
+        guard activeCloud else { return names.sorted() }
+        // A stub is listed under its file's name; a downloaded file and a leftover stub appear once.
+        return Set(names.map { Self.stubTarget($0) ?? $0 }).sorted()
     }
     private func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private struct Budget { var bytes = 0; var entries = 0 }
@@ -192,6 +275,14 @@ public final class Storage {
         let date = (attrs[.modificationDate] as? Date) ?? Date(timeIntervalSince1970: 0)
         let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var entry: [String: Any] = ["path": path, "name": path.isEmpty ? "" : url.lastPathComponent, "lastModified": iso.string(from: date), "kind": kind == .typeRegular ? "file" : "directory"]
+        if kind == .typeRegular, attrs[Self.evicted] != nil {
+            // Listing never downloads; content is fetched when the file is opened or changed.
+            if includeBytes { try? fm.startDownloadingUbiquitousItem(at: url); throw StorageFailure("busy", "Some files are still downloading from iCloud. Try again in a moment.") }
+            let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
+            guard size <= Self.fileBytes else { throw StorageFailure("quota-exceeded") }
+            entry["size"] = size; entry["version"] = "icloud-" + hash(Data("\(size):\(date.timeIntervalSince1970)".utf8))
+            return [entry]
+        }
         if kind == .typeRegular {
             let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
             guard size <= Self.fileBytes, budget.bytes + size <= Self.totalBytes else { throw StorageFailure("quota-exceeded") }
@@ -286,11 +377,17 @@ public final class Storage {
             if op == "list" {
                 guard let current = try stat(root, path) else { throw StorageFailure("not-found") }
                 guard current["kind"] as? String == "directory" else { throw StorageFailure("type-mismatch") }
+                if activeCloud {
+                    for name in try names(url) where (try? url.appendingPathComponent(name).resourceValues(forKeys: [.ubiquitousItemHasUnresolvedConflictsKey]))?.ubiquitousItemHasUnresolvedConflicts == true {
+                        try preserveConflicts(root, path.isEmpty ? name : path + "/" + name)
+                    }
+                }
                 return try names(url).map { name -> [String: Any] in guard let item = try stat(root, path.isEmpty ? name : path + "/" + name) else { throw StorageFailure("conflict") }; return item }.sorted { a, b in
                     let ak = a["kind"] as! String, bk = b["kind"] as! String
                     return ak == bk ? (a["name"] as! String) < (b["name"] as! String) : ak == "directory"
                 }
             }
+            if activeCloud, try attributes(url) != nil { try preserveConflicts(root, path) }
             guard var item = try stat(root, path) else { return NSNull() }
             guard item["kind"] as? String == "file" else { throw StorageFailure("type-mismatch") }
             let data = try readBytes(url); guard data.count <= Self.fileBytes else { throw StorageFailure("quota-exceeded") }

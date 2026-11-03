@@ -635,8 +635,8 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
   await step(`mobile first load (${theme})`, async () => {
     await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
     await page.locator('.db-shell').waitFor({ state: 'visible', timeout: READY_TIMEOUT });
-    // The mobile first run settles in the file pane; its tour CTA is the signal
-    // that seeding finished, and the explorer toolbar covers restored profiles.
+    // The mobile first run covers the app; its tour CTA is the signal that
+    // seeding finished, and the explorer toolbar covers restored profiles.
     await page
       .getByRole('button', { name: 'Tour the welcome document' })
       .or(page.locator('.db-explorer-toolbar'))
@@ -647,9 +647,9 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
   });
 
   await step(`mobile editor (${theme})`, async () => {
-    // Mobile first-run intentionally stays in the file pane and explains
-    // the product there. Follow the pane-local tour CTA; retain the row tap
-    // fallback so the crawl can still audit restored/pre-migration profiles.
+    // Mobile first-run explains the product on its own screen over the app.
+    // Follow its tour CTA; retain the row tap fallback so the crawl can still
+    // audit restored/pre-migration profiles.
     const tour = page.getByRole('button', { name: 'Tour the welcome document' });
     if (await tour.isVisible().catch(() => false)) {
       await tour.tap();
@@ -660,7 +660,7 @@ async function crawlAppMobile(browser: Browser, theme: 'light' | 'dark'): Promis
     await shoot(
       page,
       `mobile-doc-opened-${theme}`,
-      `Mobile welcome document after leaving the file-pane first run, ${theme}`,
+      `Mobile welcome document after leaving the first-run screen, ${theme}`,
     );
     const writeTab = page.getByRole('tab', { name: 'Write' });
     await writeTab.waitFor({ state: 'visible', timeout: 20_000 });

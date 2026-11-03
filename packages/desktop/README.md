@@ -60,13 +60,13 @@ agent orchestration, MCP server or complete community catalog. `afterPack`
 checks that the full service did not return and that runtime assets remain.
 
 The desktop pins published releases exactly: `@bendyline/gezel-inference`
-`1.0.1` and `@bendyline/gezel-app-sdk` `1.1.6` at runtime, plus Gezel core
-`1.2.6` as a dev dependency that tsup bundles into main. The inference package
-brings its matching client, catalog and knowledge packages. Inference `1.0.1`
-selects native release `0.1.49`. Mobile still uses its own unpublished
-`-docblocks.2` previews, so npm nests the desktop's copies where the two differ.
+`1.0.6` and `@bendyline/gezel-app-sdk` `1.1.11` at runtime, plus Gezel core
+`1.2.11` as a dev dependency that tsup bundles into main. The inference package
+brings its matching client, catalog and knowledge packages. Inference `1.0.6`
+selects native release `0.1.54`. Mobile pins the same published core and App
+SDK, so both surfaces share one copy.
 
-Kokoro narration uses Gezel core `1.2.6`'s `planKokoroSpeech` export
+Kokoro narration uses Gezel core's `planKokoroSpeech` export
 from `@bendyline/gezel/kokoro`, which preserves word/source ranges for the
 timestamped ONNX model. The model pin itself uses an existing upstream artifact
 and requires no new native
@@ -168,7 +168,9 @@ The first MAS implementation offers Apple Intelligence through the bundled
 Foundation Models helper and downloaded GGUF weights through llama.cpp/Metal.
 Apple readiness failures remain visible in Settings. ML Kit GenAI is an Android
 provider, not a macOS API. MLX is withheld in packaged builds until a frozen
-Python runtime is bundled; bundling UV alone does not supply that runtime.
+Python runtime is bundled; bundling UV alone does not supply that runtime. MAS
+packaging therefore omits UV, which would otherwise install Python packages at
+runtime.
 
 MAS packaging first verifies the upstream native pins, moves executables into
 `Contents/Helpers` and Metal libraries into `Contents/Frameworks`, and preserves
@@ -181,7 +183,7 @@ permit changed hashes. Runtime also verifies native locations, symlinks,
 signatures and executable inheritance. Direct macOS builds preserve the upstream
 Developer ID signatures.
 
-The service pin `1.2.4` selects notarized native release `0.1.48`.
+The inference pin `1.0.6` selects notarized native release `0.1.54`.
 Signed MAS build and runtime qualification remain separate release gates.
 See [the native release handoff](../../docs/desktop-ai-native-release.md).
 
@@ -290,6 +292,32 @@ normal signing and notarization configuration.
 Direct-download releases include Apple Silicon builds for macOS and x64 and
 arm64 builds for Windows and Linux. Linux ships both AppImage and Debian packages
 for each architecture.
+
+### Store packages
+
+The **Release Store Builds** workflow (`.github/workflows/store-release.yml`)
+builds the Mac App Store `.pkg` and x64 and arm64 Microsoft Store packages, with
+the mobile store builds, and attaches them only to a private draft release.
+
+```bash
+# MAS needs embedded.provisionprofile and the MAS signing identities.
+npm run dist:mas -- -c.mas.bundleVersion=42
+npm run check:store-packages -- mas 42
+# Windows only; one electron-builder process per architecture.
+npm run dist:appx
+npm run check:store-packages -- msix
+```
+
+The workflow's `build_number` input becomes the MAS `CFBundleVersion` through
+`mas.bundleVersion`. Never set `BUILD_NUMBER` in a desktop build's environment:
+electron-builder appends it to the version (`2.7.8.42`), which App Store Connect
+rejects. The Microsoft Store reserves the fourth MSIX version field, so a Store
+resubmission needs a new desktop version. `check-store-packages.ts` reads the
+built bytes: each AppX package's identity, architecture and version against
+`electron-builder.yml`; for MAS, the installer and app signatures against the
+embedded profile's team, the entitlements, `Info.plist` (including the
+exempt-encryption declaration), the helper set, and the app's own runtime
+verifier over its Gezel engines.
 
 ### Intel Macs
 

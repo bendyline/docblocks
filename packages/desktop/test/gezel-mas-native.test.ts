@@ -128,15 +128,24 @@ describe('MAS native provenance, layout and signing', () => {
   it('verifies source pins, relocates code and signs executable inheritance separately from .so libraries', async () => {
     const { original, operation, signed } = await prepare();
     const manifest = parseMasNativeManifest(await operation, release);
-    expect(signed).to.have.length(5);
-    expect(signed.find((entry) => entry.file.endsWith('/uv'))?.entitlements).to.equal(
+    expect(signed).to.have.length(4);
+    expect(signed.find((entry) => entry.file.endsWith('/gezel-apple-fm'))?.entitlements).to.equal(
       '/app-source/entitlements.mas.inherit.plist',
     );
     expect(signed.find((entry) => entry.file.endsWith('.so'))?.entitlements).to.equal(null);
-    expect(manifest.files['darwin-arm64/uv'].sha256).not.to.equal(
-      original.platforms['darwin-arm64'].files.uv.sha256,
+    expect(manifest.files['darwin-arm64/gezel-apple-fm'].sha256).not.to.equal(
+      original.platforms['darwin-arm64'].files['gezel-apple-fm'].sha256,
     );
-    expect(await readlink(path.join(root, 'darwin-arm64', 'uv'))).to.equal('../../../Helpers/uv');
+    expect(await readlink(path.join(root, 'darwin-arm64', 'gezel-apple-fm'))).to.equal(
+      '../../../Helpers/gezel-apple-fm',
+    );
+    // UV installs Python packages at runtime; MAS withholds MLX, its only consumer.
+    expect(signed.some((entry) => entry.file.endsWith('/uv'))).to.equal(false);
+    expect(manifest.files).not.to.have.property('darwin-arm64/uv');
+    expect(
+      ((await rejected(readFile(path.join(root, 'darwin-arm64', 'uv')))) as NodeJS.ErrnoException)
+        .code,
+    ).to.equal('ENOENT');
     expect(await readlink(path.join(app, 'Contents', 'Frameworks', 'libggml.1.dylib'))).to.equal(
       'libggml.dylib',
     );
@@ -172,6 +181,8 @@ describe('MAS native provenance, layout and signing', () => {
     expect(await machoKind(path.join(root, 'darwin-arm64-metal', 'libggml-metal.so'))).to.equal(
       'library',
     );
+    await rm(path.join(root, 'darwin-arm64', 'uv'));
+    await nativeManifest(root, release);
     await rm(path.join(root, 'darwin-arm64', 'gezel-apple-fm'));
     expect((await rejected(nativeManifest(root, release))).message).to.contain('Publish and pin');
   });
@@ -185,32 +196,39 @@ describe('MAS native provenance, layout and signing', () => {
       const value = structuredClone(valid);
       Object.defineProperty(value.files, logical, {
         enumerable: true,
-        value: valid.files['darwin-arm64/uv'],
+        value: valid.files['darwin-arm64/gezel-apple-fm'],
       });
       expect(() => parseMasNativeManifest(value, release)).to.throw();
     }
+    const withUv = structuredClone(valid);
+    withUv.files['darwin-arm64/uv'] = {
+      ...valid.files['darwin-arm64/gezel-apple-fm'],
+      bundlePath: 'Contents/Helpers/uv',
+    };
+    withUv.symlinks['darwin-arm64/uv'] = '../../../Helpers/uv';
+    expect(() => parseMasNativeManifest(withUv, release)).to.throw('Invalid MAS native file pin');
     const value = structuredClone(valid);
-    value.files['darwin-arm64/uv'].bundlePath = 'Contents/Helpers/../../escape';
+    value.files['darwin-arm64/gezel-apple-fm'].bundlePath = 'Contents/Helpers/../../escape';
     expect(() => parseMasNativeManifest(value, release)).to.throw();
-    delete value.files['darwin-arm64/uv'];
+    delete value.files['darwin-arm64/gezel-apple-fm'];
     expect(() => parseMasNativeManifest(value, release)).to.throw();
   });
 
   it('rejects changed byte hashes, added executables and redirected native symlinks', async () => {
     const { operation } = await prepare();
     const manifest = parseMasNativeManifest(await operation, release);
-    const uv = path.join(app, 'Contents', 'Helpers', 'uv');
-    const bytes = await readFile(uv);
-    await writeFile(uv, Buffer.alloc(bytes.length, 0x78));
+    const helper = path.join(app, 'Contents', 'Helpers', 'gezel-apple-fm');
+    const bytes = await readFile(helper);
+    await writeFile(helper, Buffer.alloc(bytes.length, 0x78));
     expect((await rejected(verify(manifest))).message).to.contain('hash mismatch');
-    await writeFile(uv, bytes);
+    await writeFile(helper, bytes);
     const unexpected = path.join(root, 'darwin-arm64', 'unexpected');
     await writeFile(unexpected, 'binary', { mode: 0o755 });
     expect((await rejected(verify(manifest))).message).to.contain('Unexpected native code');
     await rm(unexpected);
-    const link = path.join(root, 'darwin-arm64', 'uv');
+    const link = path.join(root, 'darwin-arm64', 'gezel-apple-fm');
     await rm(link);
-    await symlink('../../../Helpers/gezel-apple-fm', link);
+    await symlink('../../../Helpers/gezel-llama-server', link);
     expect((await rejected(verify(manifest))).message).to.contain('symlink set changed');
   });
 
@@ -226,10 +244,10 @@ describe('MAS native provenance, layout and signing', () => {
   it('permits store re-signing only with authenticated seals before and after verification', async () => {
     const { operation } = await prepare();
     const manifest = parseMasNativeManifest(await operation, release);
-    const uv = path.join(app, 'Contents', 'Helpers', 'uv');
+    const helper = path.join(app, 'Contents', 'Helpers', 'gezel-apple-fm');
     await writeFile(
-      uv,
-      Buffer.concat([await readFile(uv), Buffer.from(' Apple delivery signature')]),
+      helper,
+      Buffer.concat([await readFile(helper), Buffer.from(' Apple delivery signature')]),
     );
     expect((await rejected(verify(manifest))).message).to.contain('hash mismatch');
     let seals = 0;

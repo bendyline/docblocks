@@ -27,6 +27,17 @@ const pins = read(new URL('vendor/native-release.json', mobile));
 assert.deepEqual(provenance.nativeRelease, pins);
 for (const platform of ['ios', 'android'])
   assert.equal(compatibility.native[platform].version, pins.version);
+const installed = (name) =>
+  name === '@bendyline/gezel-capacitor'
+    ? root
+    : path.resolve(
+        path.dirname(
+          fileURLToPath(
+            import.meta.resolve(name === '@bendyline/gezel-app-sdk' ? `${name}/browser` : name),
+          ),
+        ),
+        '..',
+      );
 for (const [name, entry] of Object.entries(provenance.packages)) {
   assert.equal(
     createHash('sha256')
@@ -34,18 +45,13 @@ for (const [name, entry] of Object.entries(provenance.packages)) {
       .digest('hex'),
     entry.sha256,
   );
-  const installed =
-    name === '@bendyline/gezel-capacitor'
-      ? root
-      : path.resolve(
-          path.dirname(
-            fileURLToPath(
-              import.meta.resolve(name === '@bendyline/gezel-app-sdk' ? `${name}/browser` : name),
-            ),
-          ),
-          '..',
-        );
-  assert.equal(read(path.join(installed, 'package.json')).version, entry.version);
+  assert.equal(read(path.join(installed(name), 'package.json')).version, entry.version);
+}
+// The vendored plugin was built against these published releases; mobile must run them.
+const dependencies = read(new URL('package.json', mobile)).dependencies;
+for (const [name, version] of Object.entries(provenance.published)) {
+  assert.equal(dependencies[name], version, `${name} must be pinned to ${version}`);
+  assert.equal(read(path.join(installed(name), 'package.json')).version, version);
 }
 
 const privacy = readFileSync(new URL('ios/App/App/PrivacyInfo.xcprivacy', mobile), 'utf8');

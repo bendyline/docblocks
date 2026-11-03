@@ -56,11 +56,10 @@ async function nativeManifest(root, release) {
   }
   if (
     !platforms['darwin-arm64']?.files['gezel-apple-fm'] ||
-    !platforms['darwin-arm64']?.files['uv'] ||
     !platforms['darwin-arm64-metal']?.files['gezel-llama-server']
   ) {
     throw new Error(
-      'MAS requires a Gezel inference pin whose native release includes gezel-apple-fm, uv and llama.cpp Metal. Publish and pin the new native release, then update the desktop Gezel inference dependency.',
+      'MAS requires a Gezel inference pin whose native release includes gezel-apple-fm and llama.cpp Metal. Publish and pin the new native release, then update the desktop Gezel inference dependency.',
     );
   }
   return { schemaVersion: 2, release, platforms };
@@ -95,8 +94,9 @@ async function prepareMasNative({
   for (const [key, platform] of Object.entries(original.platforms)) {
     for (const file of Object.keys(platform.files).sort()) {
       const source = path.join(root, key, file);
-      // First MAS text inference needs Apple, UV and the Metal payload.
-      if (key === 'darwin-arm64' && !['gezel-apple-fm', 'uv'].includes(file)) {
+      // MAS text inference needs Apple and the Metal payload. UV only provisions
+      // Python for MLX, which store builds withhold, and installs code at runtime.
+      if (key === 'darwin-arm64' && file !== 'gezel-apple-fm') {
         await rm(source);
         continue;
       }

@@ -166,6 +166,37 @@ async function requirePrivateStoreReleaseWorkflow(relativePath: string): Promise
       }
     }
   }
+
+  // Desktop packages are verified on the runner before they reach the draft.
+  // electron-builder appends a BUILD_NUMBER variable to bundle versions
+  // (2.7.8.42), which App Store Connect rejects, so no desktop job may export one.
+  for (const [jobName, mode] of [
+    ['build-msix', 'msix'],
+    ['build-mas', 'mas'],
+  ] as const) {
+    const job = parsed.jobs[jobName];
+    const steps = isRecord(job) && Array.isArray(job.steps) ? job.steps.filter(isRecord) : [];
+    const check = steps.findIndex(
+      (step) =>
+        typeof step.run === 'string' && step.run.includes(`check-store-packages.ts ${mode}`),
+    );
+    const upload = steps.findIndex(
+      (step) =>
+        typeof step.uses === 'string' && step.uses.startsWith('softprops/action-gh-release@'),
+    );
+    if (check < 0 || check > upload) {
+      throw new Error(
+        `${relativePath}: ${jobName} must run check-store-packages.ts ${mode} before attaching packages`,
+      );
+    }
+    if (
+      [parsed, job, ...steps].some(
+        (item) => isRecord(item) && isRecord(item.env) && 'BUILD_NUMBER' in item.env,
+      )
+    ) {
+      throw new Error(`${relativePath}: ${jobName} must not export BUILD_NUMBER`);
+    }
+  }
 }
 
 function requireScript(manifest: PackageManifest, name: string, fragment: string): void {

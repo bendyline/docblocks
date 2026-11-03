@@ -1,7 +1,7 @@
 # Desktop AI native release handoff
 
 The MAS integration is prepared. DocBlocks now pins published Gezel inference
-`1.0.0`, which selects notarized native release `0.1.49`. The publication and
+`1.0.6`, which selects notarized native release `0.1.54`. The publication and
 dependency update steps below describe the release process; signed MAS build
 and runtime qualification are still required. No prospective version or hash
 is trusted.
@@ -13,7 +13,9 @@ The Gezel checkout's native workflow already builds `gezel-apple-fm` using Xcode
 weak-links Foundation Models for older macOS and reports Apple Intelligence
 readiness. The first MAS release needs these published payloads:
 
-- `darwin-arm64`: `gezel-apple-fm`, UV, and the native support binaries/libraries.
+- `darwin-arm64`: `gezel-apple-fm` and the native support binaries/libraries. The
+  archive also carries UV for MLX; MAS packaging strips it with the other
+  engines it does not ship.
 - `darwin-arm64-metal`: llama.cpp server and its Metal libraries.
 - Complete archive hashes and `NATIVE_FILE_MANIFESTS.json`, generated from the
   signed native bytes, with macOS notarization completed.
@@ -31,7 +33,7 @@ node scripts/pin-native-release.mjs <native-version> --macos-notarized
 ```
 
 Review both generated inference pins (`native-manifest.ts` and
-`native-file-manifest.json`). They must include the Apple helper, UV and Metal
+`native-file-manifest.json`). They must include the Apple helper and Metal
 engine, and the new release's complete hashes. Preserve the upstream Developer
 ID signatures; MAS transforms its own copy after provenance verification.
 
@@ -90,6 +92,10 @@ Set `masDev.provisioningProfile` to the development profile when qualifying;
   streams. Damaged or missing engines fail verification visibly.
 - The resulting app passes codesign verification and its native executables have
   exactly `com.apple.security.app-sandbox` and `com.apple.security.inherit` enabled.
+- `Contents/Helpers` holds only `gezel-apple-fm` and `gezel-llama-server` (plus
+  ggml plugin links). UV only provisions Python for MLX, which store profiles
+  withhold and Gezel refuses to provision there; shipping it would put an
+  unreachable package installer in the sandbox.
 
 ML Kit GenAI uses [Android's AICore](https://developers.google.com/ml-kit/genai);
 macOS uses Apple's Foundation Models API. Apple's

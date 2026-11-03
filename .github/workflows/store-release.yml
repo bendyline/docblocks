@@ -2,7 +2,7 @@
 # App Store Release Workflow
 #
 # Builds every store-submission package of DocBlocks:
-#   - Windows: MSIX/APPX for the Microsoft Store (Partner Center)
+#   - Windows: x64 and arm64 MSIX/APPX for the Microsoft Store (Partner Center)
 #   - macOS:   signed .pkg for the Mac App Store (App Store Connect)
 #   - Android: .aab signed with the upload key, for Google Play (Play Console)
 #   - iOS:     App Store .ipa plus dSYMs, for App Store Connect
@@ -17,10 +17,18 @@
 #     draft assets for each store, then delete the draft when it is no longer
 #     needed. Nothing is uploaded to a store from CI.
 #   - Versions are NOT stamped with a -build.N prerelease suffix; stores require
-#     a clean x.y.z version. Mobile builds take x.y.z from
-#     packages/mobile/package.json and the explicit `build_number` input as the
-#     Android versionCode and iOS CFBundleVersion. Play and App Store Connect
-#     reject a build number that is not higher than every earlier upload.
+#     a clean x.y.z version. The Mac App Store build takes x.y.z from
+#     packages/desktop/package.json and the explicit `build_number` input as its
+#     CFBundleVersion; mobile builds take x.y.z from packages/mobile/package.json
+#     and `build_number` as the Android versionCode and iOS CFBundleVersion.
+#     App Store Connect and Play reject a build number that is not higher than
+#     every earlier upload. The Microsoft Store reserves the MSIX version's
+#     fourth field, so resubmitting there needs a new desktop version. Never
+#     export BUILD_NUMBER in a desktop job: electron-builder appends it to the
+#     bundle version (2.7.8.42), which App Store Connect rejects.
+#   - Every package is verified before it is attached: desktop packages by
+#     packages/desktop/scripts/check-store-packages.ts, mobile ones by
+#     mobile:store.
 #
 # Prerequisites (one-time setup):
 #   Microsoft Store:  reserve the app in Partner Center, fill the appx: identity
@@ -65,7 +73,7 @@ on:
           - android
           - ios
       build_number:
-        description: 'Mobile build number (Play versionCode / iOS CFBundleVersion), higher than any upload; required for android and ios'
+        description: 'Store build number (macOS and iOS CFBundleVersion, Android versionCode), higher than every earlier upload; required for macos, android and ios'
         required: false
         type: string
 
@@ -126,9 +134,9 @@ jobs:
               status=1
             fi
           done
-          if [[ " $targets " == *" android "* || " $targets " == *" ios "* ]] &&
+          if [[ " $targets " == *" macos "* || " $targets " == *" android "* || " $targets " == *" ios "* ]] &&
             ! [[ "$BUILD_NUMBER" =~ ^[1-9][0-9]{0,8}$ ]]; then
-            echo "::error::build_number must be a positive integer of at most 9 digits, higher than every mobile build already uploaded"
+            echo "::error::build_number must be a positive integer of at most 9 digits, higher than every build already uploaded to App Store Connect and Google Play"
             status=1
           fi
           exit "$status"
@@ -200,7 +208,8 @@ jobs:
 
             - Target: `${{ inputs.target }}`
             - Desktop version: `${{ steps.versions.outputs.desktop }}`
-            - Mobile version: `${{ steps.versions.outputs.mobile }}`, build number `${{ inputs.build_number || 'n/a' }}`
+            - Mobile version: `${{ steps.versions.outputs.mobile }}`
+            - Build number (Mac App Store, App Store, Google Play): `${{ inputs.build_number || 'n/a' }}`
             - Source commit: `${{ github.sha }}`
             - Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
@@ -212,7 +221,8 @@ jobs:
           make_latest: false
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Windows — Microsoft Store MSIX (unsigned; the Store re-signs on ingestion)
+  # Windows — Microsoft Store MSIX for x64 and arm64 (unsigned; the Store
+  # re-signs on ingestion). Submit both packages in the same submission.
   # ──────────────────────────────────────────────────────────────────────────
   build-msix:
     needs: [preflight, quality, create-draft-release]
@@ -246,14 +256,28 @@ jobs:
 
       # Invoke electron-builder directly — on Windows, npm/cmd swallows the
       # `--publish` flag when forwarded through `npm run … -- --publish never`.
-      - name: Build MSIX package
+      # Without an architecture flag electron-builder packages only the runner's
+      # own (x64), so ARM64 Windows would run x64 Gezel engines under emulation.
+      # One process per architecture, as for the Linux packages. pwsh does not
+      # stop on a failing native command, so check each exit code.
+      - name: Build MSIX packages
         working-directory: packages/desktop
         run: |
           npm run build
-          npx --no-install electron-builder --win appx --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($arch in @('x64', 'arm64')) {
+            npx --no-install electron-builder --win appx "--$arch" --publish never
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
         env:
           # Release artifacts must carry the app-local Visual C++ runtime.
           DOCBLOCKS_VCRUNTIME_REQUIRED: '1'
+
+      # Partner Center matches each package's identity against the app
+      # reservation; check both architectures before they leave the runner.
+      - name: Verify Microsoft Store packages
+        working-directory: packages/desktop
+        run: npx --no-install tsx scripts/check-store-packages.ts msix
 
       - name: Attach MSIX to private draft release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -333,14 +357,26 @@ jobs:
           fi
           echo "$MAS_PROVISIONING_PROFILE_BASE64" | base64 --decode > packages/desktop/embedded.provisionprofile
 
+      # The build number becomes CFBundleVersion through mas.bundleVersion.
+      # Never name it BUILD_NUMBER here: electron-builder appends that variable
+      # to the version (2.7.8.42), which App Store Connect rejects.
       - name: Build MAS package
         run: |
           sudo launchctl limit maxfiles 524288 524288
           ulimit -n 524288
-          npm run dist:mas -w docblocks-desktop -- --publish never
+          npm run dist:mas -w docblocks-desktop -- --publish never "-c.mas.bundleVersion=$MAS_BUILD_NUMBER"
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           UV_THREADPOOL_SIZE: 16
+          MAS_BUILD_NUMBER: ${{ inputs.build_number }}
+
+      # The installer and app signatures, entitlements, Info.plist and helper
+      # set, plus the runtime verifier the shipped app runs over its engines.
+      - name: Verify MAS package
+        working-directory: packages/desktop
+        run: npx --no-install tsx scripts/check-store-packages.ts mas "$MAS_BUILD_NUMBER"
+        env:
+          MAS_BUILD_NUMBER: ${{ inputs.build_number }}
 
       - name: Clean up
         if: always()

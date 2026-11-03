@@ -19,6 +19,7 @@ import process from 'node:process';
 import { findJdk21 } from './jdk.mjs';
 import {
   APP_ID,
+  ICLOUD_CONTAINER,
   configureProject,
   decodeSecret,
   exportOptions,
@@ -180,6 +181,14 @@ function verifyIpa(ipa, settings) {
     throw new Error('The IPA is signed for development (get-task-allow).');
   if (!plistValue(entitlements, 'application-identifier')?.endsWith(`.${APP_ID}`))
     throw new Error(`The IPA is not signed for ${APP_ID}.`);
+  if (
+    !plistValue(
+      entitlements,
+      'com.apple.developer.ubiquity-container-identifiers',
+      'json',
+    )?.includes(ICLOUD_CONTAINER)
+  )
+    throw new Error(`The IPA is not signed for iCloud Documents in ${ICLOUD_CONTAINER}.`);
   verifyPayload(extracted);
 }
 function buildIos() {

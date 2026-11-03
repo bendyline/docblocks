@@ -12,6 +12,7 @@ parameter change, not hand-editing of paths or pixels.
 | `hull_lettering.py`     | The letterforms, the extruded shade, and the SVG writers                   |
 | `make_brand.py`         | Writes every SVG below, the shipped wordmarks, and `og-paper.png`          |
 | `render-brand.mjs`      | Rasterizes the PNG icons and renders the OG card and DMG background        |
+| `icon-layout.json`      | Shared optical positioning for app icons across platforms                  |
 | `app-icon.svg`          | The D on a rounded espresso plate (favicon, PWA, VS Code, iOS splash)      |
 | `app-icon-square.svg`   | Full-bleed plate for platforms that mask it themselves (iOS, apple-touch)  |
 | `app-icon-maskable.svg` | Full-bleed plate with the D inside the maskable safe zone                  |
@@ -44,3 +45,8 @@ In `hull_lettering.py`: `STEM`, `BAR` and `CUT` set the letter weight and the
 house chamfer; `D_CUT` and `D_INNER_CUT` set the deeper chamfer that keeps the
 D reading as a D at icon sizes. In `make_brand.py`: the `Paint` colors and the
 shade `vector` (cap-height units; positive x and y drop the shade down-right).
+
+`icon-layout.json` sets the app logo's optical offset: 1px down at a 64px
+icon size, scaled with the plate. The SVG, Android, and desktop generators
+share it. The tightly cropped source glyph stays unshifted; Android and
+desktop apply the offset after padding it, so no artwork is clipped.

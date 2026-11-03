@@ -37,10 +37,26 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>DocBlocks uses the camera only when you choose Take Photo or Video to add a picture or clip to a document.</string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.bendyline.docblocks</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>DocBlocks</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>DocBlocks uses the microphone only to record sound for a video you take to add to a document.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -64,6 +80,8 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

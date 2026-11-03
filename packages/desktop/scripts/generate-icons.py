@@ -56,6 +56,9 @@ SOURCE_SVG = REPO_ROOT / "packages/site/design/brand/app-icon-glyph.svg"
 RESOURCES = REPO_ROOT / "packages/desktop/resources"
 INSTALLER = REPO_ROOT / "packages/desktop/installer"
 MARGIN_RATIO = 0.19  # the D, shade included, fills the middle 62%
+# Shared optical correction from icon-layout.json, scaled to the plate.
+ICON_LAYOUT = json.loads((SOURCE.parent / "icon-layout.json").read_text())
+ICON_OFFSET_Y = ICON_LAYOUT["verticalOffset"] / ICON_LAYOUT["referenceSize"]
 # Espresso plate behind the paper-white D: the brand's dark, and legible on
 # light and dark OS chrome alike (dock, taskbar, alt-tab thumbnails).
 BACKGROUND = (35, 31, 24, 255)
@@ -85,7 +88,7 @@ SVG_NS = "http://www.w3.org/2000/svg"
 
 
 def square_canvas(src: Image.Image, size: int, *, rounded: bool = False) -> Image.Image:
-    """Centre `src` on an espresso square canvas of `size` pixels.
+    """Optically centre `src` on an espresso square canvas of `size` pixels.
 
     The plate is a solid square block by default (Windows/Linux). Pass
     ``rounded=True`` for the macOS icon: a rounded body inset on Apple's icon
@@ -111,7 +114,8 @@ def square_canvas(src: Image.Image, size: int, *, rounded: bool = False) -> Imag
     scale = min(inner / src.width, inner / src.height)
     nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
     resized = src.resize((nw, nh), Image.LANCZOS)
-    canvas.paste(resized, ((size - nw) // 2, (size - nh) // 2), resized)
+    offset_y = int(body * ICON_OFFSET_Y + 0.5)
+    canvas.paste(resized, ((size - nw) // 2, (size - nh) // 2 + offset_y), resized)
     return canvas
 
 
@@ -331,7 +335,9 @@ def _write_icon_composer(icon_path: Path) -> None:
                         "name": name,
                         "position": {
                             "scale": 1 - 2 * MARGIN_RATIO,
-                            "translation-in-points": [0, 0],
+                            "translation-in-points": [
+                                0, float(svg.get("height")) * ICON_OFFSET_Y,
+                            ],
                         },
                     }
                     for name in ("face", "shade")

@@ -2,24 +2,34 @@
 
 Edit Markdown visually without leaving VS Code. DocBlocks adds a rich editor for `*.md` files while keeping ordinary Markdown as the source of truth.
 
+![A Markdown document open in the DocBlocks editor in VS Code, beside the Explorer](resources/marketplace/01-write.png)
+
 [Learn more about DocBlocks for VS Code](https://docblocks.com/vscode/)
 
 ## Highlights
 
 - Write in a rich document editor powered by Squisq.
-- Switch between **Editor**, **Markdown**, and **Play** views at any time.
+- Switch between **Write**, **Source**, and **Slideshow** views at any time.
 - Preview the document as a video, slideshow, document, or page.
 - Use images, audio, and video from the document's sibling `<name>_files/` folder.
 - Export through the built-in DocBlocks export experience.
 - Work in desktop VS Code or VS Code for the Web.
 - Keep VS Code's familiar tabs, file explorer, themes, save flow, and conflict handling.
 
+Present any document as a slideshow: each heading starts a slide, and tables become charts.
+
+![The DocBlocks Slideshow view showing a column chart slide](resources/marketplace/02-slideshow.png)
+
+Switch to **Source** whenever you want the Markdown itself. Both views edit the same file.
+
+![The DocBlocks Source view showing a document's Markdown](resources/marketplace/05-source.png)
+
 ## Getting started
 
 1. Install the extension.
 2. Open a `.md` file. DocBlocks is registered as its default custom editor.
 3. If needed, right-click a Markdown file and choose **Open in DocBlocks**, or run **DocBlocks: Open Editor** from the Command Palette.
-4. Use **Editor**, **Markdown**, and **Play** in the editor header to choose how you work.
+4. Use **Write**, **Source**, and **Slideshow** in the editor toolbar to choose how you work.
 5. Save normally with **File > Save** or `Ctrl+S` / `Cmd+S`.
 
 Your Markdown remains a regular text file that works with source control and other editors. Clean changes made outside DocBlocks reload automatically. If an external edit overlaps an unsaved local draft, DocBlocks shows an explicit conflict instead of silently replacing either version.

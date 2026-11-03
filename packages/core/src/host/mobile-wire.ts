@@ -7,6 +7,9 @@ import type { DocBlocksHostFsV2API, HostFileSystemV2Result } from './filesystem-
 
 export const MOBILE_STORAGE_LIMITS = Object.freeze({
   fileBytes: 16 * 1024 * 1024,
+  // Exports append to a native staging file instead of a memory buffer, so a
+  // rendered video can be far larger than a workspace file.
+  exportBytes: 1024 * 1024 * 1024,
   chunkBytes: 256 * 1024,
   totalBytes: 32 * 1024 * 1024,
   entries: 10_000,
@@ -340,14 +343,14 @@ const mobileExportRequests = {
     .object({
       op: z.literal('begin'),
       filename: exportFilename,
-      byteLength: integer.max(MOBILE_STORAGE_LIMITS.fileBytes),
+      byteLength: integer.max(MOBILE_STORAGE_LIMITS.exportBytes),
     })
     .strict(),
   append: z
     .object({
       op: z.literal('append'),
       transferId: id,
-      offset: integer.max(MOBILE_STORAGE_LIMITS.fileBytes),
+      offset: integer.max(MOBILE_STORAGE_LIMITS.exportBytes),
       data: base64.max(Math.ceil(MOBILE_STORAGE_LIMITS.chunkBytes / 3) * 4),
     })
     .strict(),

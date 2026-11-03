@@ -45,8 +45,7 @@ public class DocBlocksMobilePlugin extends Plugin {
         if (call.getData().length() != 0 || storage == null || registry == null || exportStaging == null) { call.reject("Device storage could not be opened."); return; }
         try {
             String version = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName;
-            org.json.JSONArray workspaces = new org.json.JSONArray().put(Storage.object("id", "local", "name", "On this device", "rootPath", "On this device / DocBlocks"));
-            org.json.JSONArray granted = registry.list(); for (int index = 0; index < granted.length(); index++) workspaces.put(granted.get(index));
+            org.json.JSONArray workspaces = registry.list(Storage.object("id", "local", "name", "On this device", "rootPath", "On this device / DocBlocks"));
             call.resolve(JSObject.fromJSONObject(Storage.object("env", Storage.object("surface", "capacitor", "surfaceLabel", "Android", "platform", "android", "appVersion", version, "isDev", false), "workspaces", workspaces, "folderPicker", true, "capabilities", Storage.capabilities())));
         } catch (Exception e) { call.reject("Device storage could not be opened."); }
     }
@@ -80,11 +79,55 @@ public class DocBlocksMobilePlugin extends Plugin {
         }
         return true;
     }
+    /** Opens at shared Documents, where a DocBlocks folder outlives the app and is visible to other apps and sync tools. */
+    private static Intent folderPicker() {
+        return new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION)
+            .putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Documents"));
+    }
     @PluginMethod public void pickFolder(PluginCall call) {
         if (call.getData().length() != 0 || pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }
         pickingFolder = true;
-        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
-        getActivity().runOnUiThread(() -> { try { startActivityForResult(call, picker, "folderResult"); } catch (Exception e) { pickingFolder = false; call.reject("The folder picker could not be opened."); } });
+        getActivity().runOnUiThread(() -> { try { startActivityForResult(call, folderPicker(), "folderResult"); } catch (Exception e) { pickingFolder = false; call.reject("The folder picker could not be opened."); } });
+    }
+    /** First launch only, like desktop's first-run dialog: a picked folder becomes the default workspace. */
+    @PluginMethod public void chooseStorage(PluginCall call) {
+        if (call.getData().length() != 0 || registry == null) { call.reject("Device storage could not be opened."); return; }
+        if (registry.decided()) { call.resolve(); return; }
+        if (pickingFolder || exportToken != null) { call.reject("Close the current picker first."); return; }
+        pickingFolder = true;
+        getActivity().runOnUiThread(() -> {
+            try {
+                androidx.appcompat.app.AlertDialog dialog = new androidx.appcompat.app.AlertDialog.Builder(getActivity())
+                    .setTitle("Where should DocBlocks keep your documents?")
+                    .setMessage("Choose folder… opens your Documents folder. Pick or create a DocBlocks folder there. Other apps and sync tools can see it, and it stays if you reinstall DocBlocks.\n\nOn this device only keeps documents inside the app. They are removed if you uninstall it.\n\nYou can open other folders later from the workspace menu.")
+                    .setPositiveButton("Choose folder…", (shown, which) -> {
+                        try { startActivityForResult(call, folderPicker(), "storageResult"); }
+                        catch (Exception e) { settleStorage(call, null, 0); }
+                    })
+                    .setNegativeButton("On this device only", (shown, which) -> settleStorage(call, null, 0))
+                    .setOnCancelListener((shown) -> settleStorage(call, null, 0))
+                    .create();
+                dialog.setCanceledOnTouchOutside(false); dialog.show();
+            } catch (Exception e) { settleStorage(call, null, 0); }
+        });
+    }
+    @ActivityCallback private void storageResult(PluginCall call, ActivityResult result) {
+        if (call == null) { pickingFolder = false; return; }
+        Intent data = result.getData();
+        settleStorage(call, result.getResultCode() == Activity.RESULT_OK && data != null ? data.getData() : null, data == null ? 0 : data.getFlags());
+    }
+    /** Every outcome records the decision, so a cancelled or failed choice never prompts again and falls back to device storage. */
+    private void settleStorage(PluginCall call, Uri folder, int flags) {
+        pickingFolder = false;
+        submit(call, () -> {
+            String chosen = null;
+            if (folder != null) {
+                try { chosen = registry.add(folder, flags, storage).getString("id"); }
+                catch (Exception e) { getActivity().runOnUiThread(() -> android.widget.Toast.makeText(getContext(), "That folder could not be opened. Documents will stay on this device.", android.widget.Toast.LENGTH_LONG).show()); }
+            }
+            try { registry.choose(chosen); } catch (Exception e) { /* Unrecorded, device storage stays the default; with no folder added, the next launch asks again. */ }
+            call.resolve();
+        });
     }
     @ActivityCallback private void folderResult(PluginCall call, ActivityResult result) {
         pickingFolder = false; if (call == null) return;
@@ -131,11 +174,11 @@ public class DocBlocksMobilePlugin extends Plugin {
                 switch (op) {
                 case "begin":
                     keys(request, "op", "filename", "byteLength");
-                    String token = exportStaging.begin(requiredString(request, "filename", 255), requiredNumber(request, "byteLength", Storage.FILE_BYTES));
+                    String token = exportStaging.begin(requiredString(request, "filename", 255), requiredNumber(request, "byteLength", Storage.EXPORT_BYTES));
                     call.resolve(new JSObject().put("transferId", token)); break;
                 case "append":
                     keys(request, "op", "transferId", "offset", "data");
-                    exportStaging.append(requiredString(request, "transferId", 256), requiredNumber(request, "offset", Storage.FILE_BYTES), requiredString(request, "data", ((Storage.CHUNK_BYTES + 2) / 3) * 4)); call.resolve(); break;
+                    exportStaging.append(requiredString(request, "transferId", 256), requiredNumber(request, "offset", Storage.EXPORT_BYTES), requiredString(request, "data", ((Storage.CHUNK_BYTES + 2) / 3) * 4)); call.resolve(); break;
                 case "cancel":
                     keys(request, "op", "transferId");
                     String id = requiredString(request, "transferId", 256); if (id.equals(exportToken)) throw new IllegalStateException("Picker is active"); exportStaging.cancel(id); call.resolve(); break;

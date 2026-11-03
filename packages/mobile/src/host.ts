@@ -34,10 +34,13 @@ interface MobilePlugin {
   takeOpenRequests(): Promise<unknown>;
   pickFolder(): Promise<unknown>;
   forgetFolder(options: { workspaceId: string }): Promise<void>;
+  /** Android only: the one-time choice between a shared folder and device storage. */
+  chooseStorage(): Promise<unknown>;
 }
 const native = registerPlugin<MobilePlugin>('DocBlocksMobile');
 
 export async function installMobileHost(): Promise<void> {
+  if (Capacitor.getPlatform() === 'android') await native.chooseStorage();
   const info = parseMobileBootstrap(await native.bootstrap());
   const mobileAi = Capacitor.isPluginAvailable('GezelRuntime') ? installMobileAi() : undefined;
   const prepare = new Set<(request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>>();
@@ -63,16 +66,16 @@ export async function installMobileHost(): Promise<void> {
     ...(mobileAi ? { ai: mobileAi.ai } : {}),
     fsV2: createMobileFileSystemBridge((request) => native.request({ request }), info.capabilities),
     workspaces: {
-      // The first bootstrap workspace is the app's own storage, also returned
-      // by getDefault(); picked folders follow it and are never default.
+      // Native lists the current default workspace first; it can change after
+      // launch (Android's first-launch folder is forgotten, for example).
       list: async () =>
-        parseMobileBootstrap(await native.bootstrap()).workspaces.map((workspace) =>
-          workspace.id === info.workspaces[0]?.id ? { ...workspace, isDefault: true } : workspace,
+        parseMobileBootstrap(await native.bootstrap()).workspaces.map((workspace, index) =>
+          index === 0 ? { ...workspace, isDefault: true } : workspace,
         ),
       ...(info.folderPicker
         ? { pickFolder: async () => parseMobilePickedFolder(await native.pickFolder()) }
         : {}),
-      getDefault: async () => ({ ...info.workspaces[0] }),
+      getDefault: async () => ({ ...parseMobileBootstrap(await native.bootstrap()).workspaces[0] }),
       register: async (id) => {
         if (
           !parseMobileBootstrap(await native.bootstrap()).workspaces.some(

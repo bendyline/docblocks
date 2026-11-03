@@ -15,11 +15,13 @@ import { chromium } from 'playwright';
 const BRAND = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(BRAND, '../../../..');
 const at = (relative) => path.join(REPO, relative);
+const iconLayout = JSON.parse(readFileSync(path.join(BRAND, 'icon-layout.json'), 'utf8'));
+const iconOffsetY = iconLayout.verticalOffset / iconLayout.referenceSize;
 
 const dataUri = (file, type) => `data:${type};base64,${readFileSync(file).toString('base64')}`;
 const svg = (name) => dataUri(path.join(BRAND, name), 'image/svg+xml');
 
-/** Square rasters: [source SVG, output, pixel size, scale of the art within the square]. */
+/** Square rasters: [source SVG, output, pixel size, art scale, optional vertical offset ratio]. */
 const ICONS = [
   ['app-icon.svg', 'packages/site/public/favicon.png', 32, 1],
   ['app-icon.svg', 'packages/site/public/icons/pwa-192.png', 192, 1],
@@ -46,6 +48,8 @@ const ICONS = [
     'packages/mobile/android/app/src/main/res/drawable-nodpi/docblocks_mark.png',
     1024,
     0.62,
+    // Move the tightly cropped glyph after scaling it into its padded canvas.
+    iconOffsetY,
   ],
   // Source art for packages/desktop/scripts/generate-icons.py.
   ['app-icon-glyph.svg', 'packages/site/design/brand/app-icon-glyph.png', 1024, 1],
@@ -97,12 +101,12 @@ function dmgBackground() {
 
 const browser = await chromium.launch();
 try {
-  for (const [source, output, size, scale] of ICONS) {
+  for (const [source, output, size, scale, offsetY = 0] of ICONS) {
     const page = await browser.newPage({ viewport: { width: size, height: size } });
     const inner = Math.round(size * scale);
     await page.setContent(
       `<style>html,body{margin:0;background:transparent}body{width:${size}px;height:${size}px;display:grid;place-items:center}</style>` +
-        `<img src="${svg(source)}" width="${inner}" height="${inner}">`,
+        `<img src="${svg(source)}" width="${inner}" height="${inner}" style="transform:translateY(${size * offsetY}px)">`,
     );
     await page.waitForLoadState('load');
     writeFileSync(at(output), await page.screenshot({ omitBackground: true }));

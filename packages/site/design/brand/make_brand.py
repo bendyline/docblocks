@@ -7,6 +7,7 @@ And the desktop icons:   python packages/desktop/scripts/generate-icons.py
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -28,6 +29,8 @@ WORDMARK_DARK = Paint(face=PAPER, shade="#0F0D0A")
 # The app icon: a single D on the espresso plate, with a tan shade so the
 # depth still reads against the dark plate.
 ICON_D = Paint(face=PAPER, shade="#8C7B57")
+ICON_LAYOUT = json.loads((BRAND / "icon-layout.json").read_text())
+ICON_OFFSET_Y = ICON_LAYOUT["verticalOffset"] / ICON_LAYOUT["referenceSize"]
 
 
 def write(path: Path, text: str) -> None:
@@ -69,10 +72,16 @@ def main() -> None:
     # docb.lk keeps its own lockup; the period is part of the address.
     write(BRAND / "docblk.svg", wordmark_svg(["DOC", "B.LK"], WORDMARK_LIGHT, title="docb.lk"))
 
-    write(BRAND / "app-icon.svg", icon_svg(["D"], ICON_D, ESPRESSO))
-    write(BRAND / "app-icon-square.svg", icon_svg(["D"], ICON_D, ESPRESSO, radius=0))
+    write(BRAND / "app-icon.svg", icon_svg(["D"], ICON_D, ESPRESSO, offset_y=ICON_OFFSET_Y))
+    write(
+        BRAND / "app-icon-square.svg",
+        icon_svg(["D"], ICON_D, ESPRESSO, radius=0, offset_y=ICON_OFFSET_Y),
+    )
     # Maskable icons keep their content inside the central 80% circle.
-    write(BRAND / "app-icon-maskable.svg", icon_svg(["D"], ICON_D, ESPRESSO, radius=0, fill=0.5))
+    write(
+        BRAND / "app-icon-maskable.svg",
+        icon_svg(["D"], ICON_D, ESPRESSO, radius=0, fill=0.5, offset_y=ICON_OFFSET_Y),
+    )
     # A transparent glyph, trimmed tight; generate-icons.py and the Android
     # adaptive icon add their own plate and padding.
     write(BRAND / "app-icon-glyph.svg", icon_svg(["D"], ICON_D, None, fill=0.98))
