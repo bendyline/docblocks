@@ -89,6 +89,22 @@ export const SHARED_ALLOWED_RUNTIME_ERRORS: readonly AllowedRuntimeError[] = [
       /^Unhandled Promise Rejection: RuntimeError: Unreachable code should not be executed \(evaluating 'wasm(?:\$1)?\.__wbindgen_start\(\)'\)\n[\s\S]*?\bat __wbg_finalize_init(?:\$1)? \([^)\s]*\/node_modules\/\.vite\/deps\/harper__js\.js\?/u,
   },
   {
+    // The same WebKit trap inside harper.js's lint worker (2.7 through 2.13):
+    // under parallel load the worker's WASM traps in `linter_lint`, and the
+    // worker runs each request in an async `processRequest` with no catch, so
+    // the rejection is unhandled in the inlined blob: worker and no reply is
+    // posted. WorkerLinter answers requests strictly in order, so proofing
+    // then stops for that page until it reloads. Nothing in DocBlocks or
+    // Squisq can catch a rejection inside harper's worker; the fix belongs in
+    // harper.js, and recovering (a timeout that rebuilds the engine) in
+    // Squisq's harper provider. Anchored on harper's wasm-bindgen export and
+    // the blob: worker URL that reports it.
+    reason: 'upstream: harper.js lint worker leaves a WebKit WASM trap unhandled',
+    match:
+      /^Unhandled Promise Rejection: RuntimeError: access to a null reference \(evaluating 'wasm\.linter_lint\(/u,
+    location: /^blob:http:\/\/localhost:\d+\/[0-9a-f-]{36}:\d+:\d+$/u,
+  },
+  {
     // Chromium logs the network failure before any application code can see the
     // response, so an offline test that deliberately severs the network cannot
     // suppress it at the source.

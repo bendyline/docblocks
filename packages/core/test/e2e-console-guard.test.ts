@@ -138,6 +138,33 @@ describe('E2E runtime-error guard', () => {
         ),
       ).to.equal(false);
     });
+
+    it("allow only harper's lint-worker WASM trap on WebKit", () => {
+      // Exact CI text; WebKit names the worker by its blob: URL.
+      const trap =
+        "Unhandled Promise Rejection: RuntimeError: access to a null reference (evaluating 'wasm.linter_lint(this.__wbg_ptr, ptr0, len0, language, all_headings, ptr1, len1, dedup, isolate_english)')";
+      const worker = 'blob:http://localhost:5220/3b9473dd-654f-4440-97c0-2f2648bb9ce3:3440:40';
+      const allowed = (text: string, location: string) =>
+        isAllowedRuntimeError(consoleError(text, location), SHARED_ALLOWED_RUNTIME_ERRORS);
+
+      expect(allowed(trap, worker)).to.equal(true);
+      // The same trap reported by page code is not harper's worker.
+      expect(allowed(trap, 'http://localhost:5220/src/main.tsx:12:3')).to.equal(false);
+      // Another trap in the worker is a different failure.
+      expect(
+        allowed(
+          "Unhandled Promise Rejection: RuntimeError: Out of bounds memory access (evaluating 'wasm.linter_lint(this.__wbg_ptr)')",
+          worker,
+        ),
+      ).to.equal(false);
+      // A null reference in any other export is not this defect.
+      expect(
+        allowed(
+          "Unhandled Promise Rejection: RuntimeError: access to a null reference (evaluating 'wasm.calc_evaluate(ptr0)')",
+          worker,
+        ),
+      ).to.equal(false);
+    });
   });
 
   describe('filtering a run', () => {
