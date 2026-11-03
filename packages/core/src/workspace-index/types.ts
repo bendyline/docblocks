@@ -97,7 +97,9 @@ export type IndexedDocumentIssue =
   | 'not-utf8'
   | 'read-error'
   | 'no-companion'
-  | 'over-budget';
+  | 'over-budget'
+  /** Kept online by a cloud sync client; reading it would download it. */
+  | 'online-only';
 
 export interface IndexedDocument {
   /** Navigation identity: the rendered file for outside-in documents. */

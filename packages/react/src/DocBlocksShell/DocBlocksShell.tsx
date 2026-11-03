@@ -360,6 +360,8 @@ import {
   looseFileMediaReader,
 } from './document-relative-media.js';
 import { createNativeFileActions } from './native-file-actions.js';
+import { OpeningNotice } from './OpeningNotice.js';
+import { useOpeningNotice } from './useOpeningNotice.js';
 import {
   isAppDefaultWorkspace,
   isWelcomeDocumentPath,
@@ -1166,6 +1168,9 @@ export function DocBlocksShell({
     if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
     saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 3000);
   }, []);
+  // "Opening …" while a clicked document is still loading, so a slow open
+  // (a cloud file downloading first) never looks like a dead click.
+  const { notice: openingNotice, track: trackOpening } = useOpeningNotice();
 
   // The shell's stand-in for `window.prompt()`, which Electron's renderer does
   // not implement -- calling it there throws and the action dies silently.
@@ -4199,62 +4204,68 @@ export function DocBlocksShell({
         setFolderEntries(entries);
         pushHash(activeWorkspaceId, null);
       } else {
-        let openedDocument: EditableShellDocument | null = null;
+        const stopOpeningNotice = trackOpening(path);
         try {
-          const transitioned = await documentSession.transitionWithLoad(async () => {
-            if (requestId !== navigationRequestRef.current) return null;
-            if (createWikiArticle) {
-              if (
-                await ensureShellWikiArticle(
-                  provider,
-                  parseWorkspacePath(path),
-                  defaultNewFileFormat,
-                  outsideInRenderRef.current,
-                )
-              ) {
-                notifyWorkspaceChanged(activeWorkspaceId, path);
-              }
+          let openedDocument: EditableShellDocument | null = null;
+          try {
+            const transitioned = await documentSession.transitionWithLoad(async () => {
               if (requestId !== navigationRequestRef.current) return null;
-            }
-            openedDocument = await loadEditableShellDocument(
-              provider,
-              path,
-              outsideInRenderRef.current,
-            );
-            if (requestId !== navigationRequestRef.current || openedDocument === null) return null;
-            return {
-              target: createDocumentTarget(
+              if (createWikiArticle) {
+                if (
+                  await ensureShellWikiArticle(
+                    provider,
+                    parseWorkspacePath(path),
+                    defaultNewFileFormat,
+                    outsideInRenderRef.current,
+                  )
+                ) {
+                  notifyWorkspaceChanged(activeWorkspaceId, path);
+                }
+                if (requestId !== navigationRequestRef.current) return null;
+              }
+              openedDocument = await loadEditableShellDocument(
                 provider,
-                activeWorkspaceId,
-                openedDocument.sourcePath,
-                openedDocument.outsideIn,
-              ),
-              content: openedDocument.content,
-            };
-          });
-          if (!transitioned) return;
-        } catch (error: unknown) {
-          showToast(
-            'error',
-            error instanceof Error ? error.message : 'Could not switch documents.',
-          );
-          return;
+                path,
+                outsideInRenderRef.current,
+              );
+              if (requestId !== navigationRequestRef.current || openedDocument === null)
+                return null;
+              return {
+                target: createDocumentTarget(
+                  provider,
+                  activeWorkspaceId,
+                  openedDocument.sourcePath,
+                  openedDocument.outsideIn,
+                ),
+                content: openedDocument.content,
+              };
+            });
+            if (!transitioned) return;
+          } catch (error: unknown) {
+            showToast(
+              'error',
+              error instanceof Error ? error.message : 'Could not switch documents.',
+            );
+            return;
+          }
+          if (requestId !== navigationRequestRef.current) return;
+          if (!openedDocument) return;
+          // A first open of a rendered file creates its Markdown companion.
+          if ((openedDocument as EditableShellDocument).outsideIn) {
+            notifyWorkspaceChanged(activeWorkspaceId, path);
+          }
+          adoptSelectedDocument(openedDocument);
+          setSelectedFolder(null);
+          setFolderEntries([]);
+          setInitialView('wysiwyg');
+          setInitialSharedMode(null);
+          closeWelcomeGateway();
+          pushHash(activeWorkspaceId, path);
+          saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
+          if (singlePane) setMobileShowEditor(true);
+        } finally {
+          stopOpeningNotice();
         }
-        if (requestId !== navigationRequestRef.current) return;
-        if (!openedDocument) return;
-        // A first open of a rendered file creates its Markdown companion.
-        if ((openedDocument as EditableShellDocument).outsideIn) {
-          notifyWorkspaceChanged(activeWorkspaceId, path);
-        }
-        adoptSelectedDocument(openedDocument);
-        setSelectedFolder(null);
-        setFolderEntries([]);
-        setInitialView('wysiwyg');
-        setInitialSharedMode(null);
-        closeWelcomeGateway();
-        pushHash(activeWorkspaceId, path);
-        saveLastState({ workspaceId: activeWorkspaceId, filePath: path, view: 'wysiwyg' });
-        if (singlePane) setMobileShowEditor(true);
       }
     },
     [
@@ -4269,6 +4280,7 @@ export function DocBlocksShell({
       notifyWorkspaceChanged,
       transitionAwayFromDocument,
       showToast,
+      trackOpening,
       defaultNewFileFormat,
     ],
   );
@@ -5618,6 +5630,7 @@ export function DocBlocksShell({
             {saveToast.message}
           </div>
         )}
+        {!saveToast && <OpeningNotice notice={openingNotice} />}
         {offlineReadyToast && !saveToast && (
           <div className="db-save-toast db-save-toast--success" role="status" aria-live="polite">
             DocBlocks is ready to work offline.

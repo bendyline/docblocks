@@ -6,6 +6,8 @@
  * stable across updates.
  */
 
+// First: libuv sizes its pool on first use, and every other import may use it.
+import './thread-pool.js';
 import {
   app,
   BrowserWindow,

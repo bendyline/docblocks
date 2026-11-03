@@ -6324,6 +6324,28 @@ html:has(.db-shell) :is(.squisq-view-menu-checkbox, .squisq-view-menu-radio) {
   background: var(--db-danger, #a33a35);
 }
 
+/* Shown where the toast appears while a document takes a moment to open. */
+.db-opening-notice {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  z-index: 200;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--db-text);
+  background: var(--db-bg-elevated, var(--db-bg));
+  border: 1px solid var(--db-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px var(--db-shadow);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 .db-document-conflict {
   position: fixed;
   top: 16px;

@@ -125,6 +125,8 @@ describe('Core exports', () => {
       'parseAiImagePreferencesPatch',
       'parseAiImageRequest',
       'parseAiImageResult',
+      'parseAiImageStyle',
+      'parseAiImageStyleList',
       'parseAiKnowledgeAction',
       'parseAiKnowledgeState',
       'parseAiModelDownloadInfo',

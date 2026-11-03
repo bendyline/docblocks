@@ -546,11 +546,16 @@ function normalizeEntry(entry: FileSystemEntrySnapshot): FileSystemEntrySnapshot
       throw new TypeError('Filesystem file size must be a non-negative safe integer.');
     }
     const readIssue = normalizeReadIssue(entry.readIssue);
+    const onlineOnly: unknown = entry.onlineOnly;
+    if (onlineOnly !== undefined && onlineOnly !== true) {
+      throw new TypeError('Filesystem entry online-only flag must be true when present.');
+    }
     return Object.freeze({
       ...common,
       kind: 'file',
       size: entry.size,
       ...(readIssue ? { readIssue } : {}),
+      ...(onlineOnly === true ? { onlineOnly: true as const } : {}),
     });
   }
   if (entry.kind === 'directory') {
