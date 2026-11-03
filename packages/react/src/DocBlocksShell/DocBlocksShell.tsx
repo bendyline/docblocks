@@ -23,6 +23,7 @@ import type {
   CalcEngineFactory,
   EditorColorScheme,
   EditorView,
+  NavigationSheetPanel,
   ProofingCapability,
   ProofingIgnoreStore,
   ViewPreferences,
@@ -342,7 +343,7 @@ import {
   type PageTemplateWarning,
 } from './page-template-warning.js';
 import { UpdateAvailableNotice } from './UpdateAvailableNotice.js';
-import { WELCOME_PRIVACY_NOTE, WELCOME_SUMMARY, WelcomeScreen } from './WelcomeScreen.js';
+import { CompactWelcomeScreen, WelcomeScreen } from './WelcomeScreen.js';
 import { WindowDragGrip } from './WindowDragGrip.js';
 import { useDocumentLinkProvider } from './useDocumentLinkProvider.js';
 import { useWorkspaceIndex, type WorkspaceIndexMode } from '../WorkspaceIndex/useWorkspaceIndex.js';
@@ -1196,6 +1197,7 @@ export function DocBlocksShell({
   );
   const panesRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
   // Contain focus in whichever pane the user can actually see.
   useInert(sidebarRef, singlePane && !drawerOpen);
   useInert(editorAreaRef, drawerOpen);
@@ -1205,6 +1207,7 @@ export function DocBlocksShell({
   useEdgeSwipe({
     surfaceRef: panesRef,
     drawerRef: sidebarRef,
+    scrimRef,
     enabled: singlePane,
     open: drawerOpen,
     onOpen: openDrawer,
@@ -1598,6 +1601,16 @@ export function DocBlocksShell({
   useEffect(() => {
     setFindMode(false);
   }, [selectedFile]);
+  // Squisq's phone-width outline and previews sheet, held here so it closes
+  // with the document, and when the drawer covers it: left open underneath,
+  // it would take the next Back press meant for the drawer.
+  const [navigationSheet, setNavigationSheet] = useState<NavigationSheetPanel | null>(null);
+  useEffect(() => {
+    setNavigationSheet(null);
+  }, [selectedFile]);
+  useEffect(() => {
+    if (drawerOpen) setNavigationSheet(null);
+  }, [drawerOpen]);
   const openFind = useCallback(() => {
     if (!findModeRef.current) {
       setFindMode(true);
@@ -1861,11 +1874,13 @@ export function DocBlocksShell({
   // First-run gateway over the welcome document's Play view.
   const [showWelcomeGateway, setShowWelcomeGateway] = useState(false);
   // Two-pane first run: the welcome screen covers the editor area while the
-  // welcome document mounts in Write beneath it. Phones keep their card in the
-  // file pane instead.
+  // welcome document mounts in Write beneath it. Single-pane covers the whole
+  // app instead, so both panes go inert.
   const welcomeScreenShown = showWelcomeGateway && !singlePane;
+  const compactWelcomeShown = showWelcomeGateway && singlePane;
   const welcomeCoveredRef = useRef<HTMLDivElement>(null);
   useInert(welcomeCoveredRef, welcomeScreenShown);
+  useInert(panesRef, compactWelcomeShown);
   /** Hide the welcome gateway and never show it again. Safe to call from
    *  paths where it may not be showing -- only persists when it was. */
   const closeWelcomeGateway = useCallback(() => {
@@ -2647,9 +2662,13 @@ export function DocBlocksShell({
       const candidates = electron
         ? workspaces.filter((w) => w.type === 'host-native')
         : workspaces.filter((w) => w.type !== 'host-native');
-      // Pick the most recently opened workspace
-      const sorted = [...candidates].sort((a, b) =>
-        (b.lastOpened ?? '').localeCompare(a.lastOpened ?? ''),
+      // Pick the most recently opened workspace. Reconciliation stamps every
+      // newly listed host workspace with the same time, so on a first launch
+      // the host's default (e.g. iCloud Drive on iOS) wins the tie.
+      const sorted = [...candidates].sort(
+        (a, b) =>
+          (b.lastOpened ?? '').localeCompare(a.lastOpened ?? '') ||
+          Number(defaultHostWorkspaceIds.has(b.id)) - Number(defaultHostWorkspaceIds.has(a.id)),
       );
       for (const ws of sorted) {
         if (ws.type === 'host-native') {
@@ -4021,7 +4040,9 @@ export function DocBlocksShell({
       ...(singlePane && !mobileShowEditor
         ? {
             'close-overlay': () => {
-              if (!dismissTopmostDialog()) setMobileShowEditor(true);
+              if (dismissTopmostDialog()) return;
+              if (compactWelcomeShown) closeWelcomeGateway();
+              else setMobileShowEditor(true);
             },
           }
         : {}),
@@ -4038,6 +4059,8 @@ export function DocBlocksShell({
       openKeyboardShortcuts,
       singlePane,
       mobileShowEditor,
+      compactWelcomeShown,
+      closeWelcomeGateway,
       canRestoreSplitView,
       updateSidebarPreference,
     ],
@@ -4047,6 +4070,10 @@ export function DocBlocksShell({
     () =>
       maybeGetDocBlocksHost()?.lifecycle?.onBack?.(() => {
         if (dismissTopmostDialog()) return true;
+        if (compactWelcomeShown) {
+          closeWelcomeGateway();
+          return true;
+        }
         const escape = new KeyboardEvent('keydown', {
           key: 'Escape',
           bubbles: true,
@@ -4064,7 +4091,7 @@ export function DocBlocksShell({
         }
         return false;
       }),
-    [singlePane, mobileShowEditor],
+    [singlePane, mobileShowEditor, compactWelcomeShown, closeWelcomeGateway],
   );
 
   const actionNewHandledRef = useRef(false);
@@ -5871,48 +5898,32 @@ export function DocBlocksShell({
                 />
               </Suspense>
             )}
-            {singlePane && showWelcomeGateway && (
-              <section className="db-mobile-first-run" aria-labelledby="db-mobile-first-run-title">
-                <p className="db-mobile-first-run-eyebrow">Local-first Markdown editor</p>
-                <h1 id="db-mobile-first-run-title">Welcome to DocBlocks</h1>
-                <p>
-                  {WELCOME_SUMMARY} {WELCOME_PRIVACY_NOTE}
-                </p>
-                <div className="db-mobile-first-run-actions">
-                  <button type="button" onClick={() => void handleNewFile()}>
-                    Create a document
-                  </button>
-                  <button
-                    type="button"
-                    className="db-mobile-first-run-secondary"
-                    onClick={() => {
-                      closeWelcomeGateway();
-                      setMobileShowEditor(true);
-                    }}
-                  >
-                    Tour the welcome document
-                  </button>
-                </div>
-              </section>
-            )}
             {git.available && git.pendingGrant && (
               <Suspense fallback={null}>
                 <GitGrantNotice />
               </Suspense>
             )}
             <div className="db-shell-sidebar-footer">
-              <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
-                Docs
-              </a>
-              <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                &bull;
-              </span>
-              <a href="https://docblocks.com/terms/" target="_blank" rel="noopener noreferrer">
-                Terms
-              </a>
-              <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
-                &bull;
-              </span>
+              {/* Site links belong to the browser build; the apps reach Docs
+                  from the app menu. Every surface keeps Report issue: Google
+                  Play's AI-generated content policy requires an in-app way to
+                  report content. */}
+              {hostEnvironment === null && (
+                <>
+                  <a href="https://docblocks.com/docs/" target="_blank" rel="noopener noreferrer">
+                    Docs
+                  </a>
+                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                    &bull;
+                  </span>
+                  <a href="https://docblocks.com/terms/" target="_blank" rel="noopener noreferrer">
+                    Terms
+                  </a>
+                  <span className="db-shell-sidebar-footer-separator" aria-hidden="true">
+                    &bull;
+                  </span>
+                </>
+              )}
               <a href={issueReportUrl} target="_blank" rel="noopener noreferrer">
                 Report issue
               </a>
@@ -5957,6 +5968,7 @@ export function DocBlocksShell({
 
           {singlePane && (
             <div
+              ref={scrimRef}
               className="db-shell-scrim"
               aria-hidden={true}
               onPointerDown={() => setMobileShowEditor(true)}
@@ -6070,6 +6082,8 @@ export function DocBlocksShell({
                               onViewPreferencesChange={handleViewPreferencesChange}
                               findMode={findMode}
                               onFindModeChange={setFindMode}
+                              navigationSheet={navigationSheet}
+                              onNavigationSheetChange={setNavigationSheet}
                               versionBasename={
                                 versionBasename ?? stripExtension(basenameOf(selectedFile))
                               }
@@ -6311,6 +6325,17 @@ export function DocBlocksShell({
             )}
           </main>
         </div>
+        {/* Outside the panes, so the drawer's edge swipe never sees its touches. */}
+        {compactWelcomeShown && (
+          <CompactWelcomeScreen
+            onCreateDocument={() => void handleNewFile()}
+            onTour={() => {
+              closeWelcomeGateway();
+              setMobileShowEditor(true);
+            }}
+            onDismiss={closeWelcomeGateway}
+          />
+        )}
       </GitContext.Provider>
     </div>
   );

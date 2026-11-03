@@ -10,6 +10,7 @@ import { HostFileSystemProviderV2 } from '../../core/src/filesystem/host-provide
 import {
   createMobileFileSystemBridge,
   MOBILE_STORAGE_LIMITS,
+  parseMobileExportRequest,
 } from '../../core/src/host/mobile-wire.js';
 import { parseFileSystemCapabilities } from '../../core/src/filesystem/capabilities.js';
 
@@ -109,5 +110,28 @@ describe('mobile native wire', () => {
       () => expect.fail('accepted malformed response'),
       (error: unknown) => expect(error).to.be.instanceOf(Error),
     );
+  });
+
+  it('stages exports past the workspace file limit, up to its own', () => {
+    // A minute of rendered video is already larger than a workspace file.
+    const video = 24.6 * 1024 * 1024;
+    expect(video).to.be.greaterThan(MOBILE_STORAGE_LIMITS.fileBytes);
+    const begin = (byteLength: number) =>
+      parseMobileExportRequest({
+        op: 'begin',
+        filename: 'deck.mp4',
+        byteLength: Math.round(byteLength),
+      });
+    expect(begin(video).op).to.equal('begin');
+    expect(begin(MOBILE_STORAGE_LIMITS.exportBytes).op).to.equal('begin');
+    expect(() => begin(MOBILE_STORAGE_LIMITS.exportBytes + 1)).to.throw();
+    expect(
+      parseMobileExportRequest({
+        op: 'append',
+        transferId: 'transfer',
+        offset: Math.round(video),
+        data: '',
+      }).op,
+    ).to.equal('append');
   });
 });

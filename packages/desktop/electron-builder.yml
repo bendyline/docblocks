@@ -132,12 +132,13 @@ nsis:
   installerSidebar: installer/sidebar.bmp
   uninstallerSidebar: installer/sidebar.bmp
 
-# Microsoft Store build variant — built with `electron-builder --win appx`.
+# Microsoft Store build variant — `npm run dist:appx` builds x64 and arm64.
 # The Store re-signs the package, so it is left unsigned here (the Azure
 # Trusted Signing hook only applies to the nsis target's signtoolOptions).
 # Auto-update is disabled at runtime via process.windowsStore. The identity
-# values below MUST match the app reservation in Partner Center exactly —
-# see RELEASING.md. Tile assets are read from resources/appx/ if present,
+# values below MUST match the app reservation in Partner Center exactly;
+# check-store-packages.ts compares them with each built package (README.md,
+# "Store packages"). Tile assets are read from resources/appx/ if present,
 # otherwise electron-builder generates them from resources/icon.png.
 appx:
   identityName: BendylineLLC.DocBlocks
@@ -208,7 +209,8 @@ mac:
 # Runs inside the App Sandbox (distinct from the Developer ID `mac` block
 # above, which notarizes for direct download). Auto-update is disabled at
 # runtime via process.mas. Requires an "Apple Distribution" + "Mac Installer
-# Distribution" cert and a Mac App Store provisioning profile — see RELEASING.md.
+# Distribution" cert and a Mac App Store provisioning profile — see README.md,
+# "Store packages".
 mas:
   entitlements: entitlements.mas.plist
   entitlementsInherit: entitlements.mas.inherit.plist
@@ -217,11 +219,17 @@ mas:
   provisioningProfile: embedded.provisionprofile
   # The sandbox replaces the hardened runtime for MAS.
   hardenedRuntime: false
+  # DocBlocks uses only the encryption built into macOS (HTTPS, hashing), which
+  # is exempt from export documentation. Declaring it here answers App Store
+  # Connect's export-compliance question for every upload. Merges with
+  # mac.extendInfo above.
+  extendInfo:
+    ITSAppUsesNonExemptEncryption: false
   # The afterPack hook signs these with the child inherit entitlements and
   # records their resulting hashes before the enclosing app seals resources.
   signIgnore:
     - /Contents/Resources/gezel-native/
-    - /Contents/Helpers/(gezel-apple-fm|gezel-llama-server|uv)$
+    - /Contents/Helpers/(gezel-apple-fm|gezel-llama-server)$
     - /Contents/(Frameworks|Helpers)/[^/]+\.(dylib|so)$
 
 dmg:

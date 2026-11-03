@@ -325,6 +325,17 @@ test('aligns the sidebar footer with the editor status bar', async ({ launchApp 
   expect(chrome.statusBarBorderColor).toBe(chrome.sidebarFooterBorderColor);
 });
 
+test('keeps only the issue report in the sidebar footer', async ({ launchApp }) => {
+  const { window } = await launchApp();
+  const footer = window.locator('.db-shell-sidebar-footer');
+  await expect(footer.getByRole('link', { name: 'Report issue' })).toBeVisible({
+    timeout: 30_000,
+  });
+  // Docs and Terms are the browser build's site links; the app menu has Docs.
+  await expect(footer.getByRole('link', { name: 'Docs' })).toHaveCount(0);
+  await expect(footer.getByRole('link', { name: 'Terms' })).toHaveCount(0);
+});
+
 test('default workspace folder exists on disk after first launch', async ({
   launchApp,
   workspaceDir,

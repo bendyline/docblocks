@@ -63,10 +63,13 @@ await writeFile(
 const projectFile = path.join(project, 'App.xcodeproj/project.pbxproj');
 await writeFile(
   projectFile,
-  (await readFile(projectFile, 'utf8')).replaceAll(
-    'PRODUCT_BUNDLE_IDENTIFIER = com.bendyline.docblocks.mobile;',
-    `PRODUCT_BUNDLE_IDENTIFIER = ${appId};`,
-  ),
+  (await readFile(projectFile, 'utf8'))
+    .replaceAll(
+      'PRODUCT_BUNDLE_IDENTIFIER = com.bendyline.docblocks.mobile;',
+      `PRODUCT_BUNDLE_IDENTIFIER = ${appId};`,
+    )
+    // The test app keeps device storage only and never joins the iCloud container.
+    .replaceAll('\t\t\t\tCODE_SIGN_ENTITLEMENTS = App/App.entitlements;\n', ''),
 );
 await cp(
   path.join(mobile, 'native/ios-smoke/ai-smoke.js'),

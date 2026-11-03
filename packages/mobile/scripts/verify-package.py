@@ -17,6 +17,10 @@ if platform == 'ios':
     info = plistlib.loads((app / 'Info.plist').read_bytes())
     assert info['CFBundleIdentifier'] == 'com.bendyline.docblocks.mobile'
     assert info['CFBundleShortVersionString'] == version and info['CFBundleVersion'] == build_number
+    assert info.get('UIFileSharingEnabled') is True and info.get('LSSupportsOpeningDocumentsInPlace') is True, 'Device documents are hidden from Files'
+    assert info['NSUbiquitousContainers']['iCloud.com.bendyline.docblocks']['NSUbiquitousContainerIsDocumentScopePublic'] is True, 'iCloud Drive folder is not public'
+    # Exempt encryption only (HTTPS, hashing): answers App Store Connect's export-compliance question.
+    assert info.get('ITSAppUsesNonExemptEncryption') is False, 'Missing export-compliance declaration'
     privacy = plistlib.loads((app / 'PrivacyInfo.xcprivacy').read_bytes())
     assert {'NSPrivacyAccessedAPICategoryDiskSpace', 'NSPrivacyAccessedAPICategorySystemBootTime'} <= {item['NSPrivacyAccessedAPIType'] for item in privacy['NSPrivacyAccessedAPITypes']}
     actual = {str(p.relative_to(app / 'public')): hashlib.sha256(p.read_bytes()).hexdigest() for p in (app / 'public').rglob('*') if p.is_file()}

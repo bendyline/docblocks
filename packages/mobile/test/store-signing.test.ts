@@ -5,6 +5,7 @@ import path from 'node:path';
 import { expect } from 'chai';
 import {
   APP_ID,
+  ICLOUD_CONTAINER,
   STORE_SECRETS,
   configureProject,
   decodeSecret,
@@ -33,6 +34,7 @@ function storeProfile(overrides: Record<string, unknown> = {}) {
     entitlements: {
       'application-identifier': `TEAM123456.${APP_ID}`,
       'com.apple.developer.team-identifier': 'TEAM123456',
+      'com.apple.developer.ubiquity-container-identifiers': [ICLOUD_CONTAINER],
       'get-task-allow': false,
     },
     provisionedDevices: undefined,
@@ -88,9 +90,10 @@ describe('mobile store signing', () => {
     expect(options.signingStyle).to.equal('manual');
     expect(options.manageAppVersionAndBuildNumber).to.equal(false);
     expect(options.provisioningProfiles).to.deep.equal({ [APP_ID]: settings.profile });
+    expect(options.iCloudContainerEnvironment).to.equal('Production');
   });
 
-  it('rejects development, ad hoc, enterprise, expired, and foreign profiles', () => {
+  it('rejects development, ad hoc, enterprise, expired, foreign, and iCloud-less profiles', () => {
     const entitlements = storeProfile().entitlements;
     for (const [overrides, reason] of [
       [{ provisionedDevices: ['00008110-000000000000001E'] }, /not a development/u],
@@ -106,6 +109,24 @@ describe('mobile store signing', () => {
         /team is inconsistent/u,
       ],
       [{ uuid: 'not-a-uuid' }, /UUID/u],
+      [
+        {
+          entitlements: {
+            ...entitlements,
+            'com.apple.developer.ubiquity-container-identifiers': undefined,
+          },
+        },
+        /iCloud Documents/u,
+      ],
+      [
+        {
+          entitlements: {
+            ...entitlements,
+            'com.apple.developer.ubiquity-container-identifiers': ['iCloud.com.other.app'],
+          },
+        },
+        /iCloud Documents/u,
+      ],
     ] as const) {
       expect(() => profileSettings(storeProfile(overrides), identities)).to.throw(reason);
     }

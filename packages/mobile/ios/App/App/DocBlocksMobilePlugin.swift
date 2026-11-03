@@ -31,7 +31,12 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
     private var registry: WorkspaceRegistry?
     private var folderCall: CAPPluginCall?
     private var startupError: Error?
+    /// Shown in Files as iCloud Drive › DocBlocks; shared by every DocBlocks app on the account.
+    private static let cloudContainer = "iCloud.com.bendyline.docblocks"
+    private var cloudConnected = false
+    private var deviceLabel = "On My iPhone"
     public override func load() {
+        deviceLabel = UIDevice.current.userInterfaceIdiom == .pad ? "On My iPad" : "On My iPhone"
         do {
             let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             let root = documents.appendingPathComponent("Workspace", isDirectory: true)
@@ -40,23 +45,39 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
             registry = try WorkspaceRegistry()
             for workspace in registry!.workspaces {
                 if let url = workspace.url {
-                    do { try storage?.register(workspace.id, root: url) }
+                    do { try storage?.register(workspace.id, root: url, cloud: Self.isCloud(url)) }
                     catch { /* Preserve unavailable folder metadata; other workspaces remain usable. */ }
                 }
             }
             let caches = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             exportStaging = try ExportStaging(root: caches.appendingPathComponent("DocBlocksExports", isDirectory: true))
         } catch { startupError = error }
+        // The container lookup can block, so it runs on the storage queue; bootstrap waits behind it.
+        queue.async { self.connectCloud() }
     }
+    private func connectCloud() {
+        guard let storage, FileManager.default.ubiquityIdentityToken != nil,
+              let container = FileManager.default.url(forUbiquityContainerIdentifier: Self.cloudContainer) else { return }
+        let root = container.appendingPathComponent("Documents", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try storage.register("icloud", root: root, cloud: true); cloudConnected = true
+        } catch { /* iCloud is listed only once it opens; device storage remains available. */ }
+    }
+    private static func isCloud(_ url: URL) -> Bool { (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true }
     deinit { storage?.shutdown() }
     @objc func bootstrap(_ call: CAPPluginCall) {
         guard call.options.isEmpty, storage != nil, startupError == nil else { call.reject("Device storage could not be opened."); return }
-        call.resolve([
-            "env": ["surface": "capacitor", "surfaceLabel": "iOS", "platform": "ios", "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6.2", "isDev": false],
-            "workspaces": [["id": "local", "name": "On this device", "rootPath": "On this device / DocBlocks"]] + (registry?.workspaces.map { $0.info } ?? []),
-            "folderPicker": true,
-            "capabilities": Storage.capabilities
-        ])
+        queue.async {
+            // The first workspace is the default: iCloud Drive when signed in, otherwise this device.
+            let cloud: [[String: Any]] = self.cloudConnected ? [["id": "icloud", "name": "iCloud Drive", "rootPath": "iCloud Drive / DocBlocks"]] : []
+            call.resolve([
+                "env": ["surface": "capacitor", "surfaceLabel": "iOS", "platform": "ios", "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.6.2", "isDev": false],
+                "workspaces": cloud + [["id": "local", "name": self.deviceLabel, "rootPath": self.deviceLabel + " / DocBlocks / Workspace"]] + (self.registry?.workspaces.map { $0.info } ?? []),
+                "folderPicker": true,
+                "capabilities": Storage.capabilities
+            ])
+        }
     }
     @objc func request(_ call: CAPPluginCall) {
         guard Set(call.options.keys) == ["request"], let input = call.getObject("request"), let storage else { call.reject("Invalid storage request."); return }
@@ -165,7 +186,7 @@ public class DocBlocksMobilePlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicke
             folderCall = nil
             do {
                 guard let url = urls.first, let registry else { throw StorageFailure("permission-denied") }
-                let workspace = try registry.add(url); try storage?.register(workspace.id, root: url)
+                let workspace = try registry.add(url); try storage?.register(workspace.id, root: url, cloud: Self.isCloud(url))
                 call.resolve(["workspace": workspace.info])
             } catch { call.reject("The folder could not be opened.", nil, error) }
         } else { finishExport(urls.isEmpty ? "cancelled" : "saved") }
@@ -186,6 +207,12 @@ class DocBlocksViewController: CAPBridgeViewController {
         original.contentController.removeScriptMessageHandler(forName: "bridge")
         original.contentController.add(boundary, name: "bridge")
         webView?.navigationDelegate = boundary
+        // The shell paints its own chrome under the status bar and home indicator;
+        // iOS 26's scroll edge effects would dim it into a gradient with a divider.
+        if #available(iOS 26.0, *), let scrollView = webView?.scrollView {
+            scrollView.topEdgeEffect.isHidden = true
+            scrollView.bottomEdgeEffect.isHidden = true
+        }
         bridge?.registerPluginInstance(DocBlocksMobilePlugin())
     }
 }

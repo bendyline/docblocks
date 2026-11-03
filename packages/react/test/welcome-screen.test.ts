@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import * as React from 'react';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import { WelcomeScreen } from '../src/DocBlocksShell/WelcomeScreen.js';
+import { CompactWelcomeScreen, WelcomeScreen } from '../src/DocBlocksShell/WelcomeScreen.js';
 
 // The root Mocha/tsx loader does not inherit the package's react-jsx setting.
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
@@ -55,6 +55,37 @@ describe('WelcomeScreen', () => {
       expect(appsLink(container)).to.equal(undefined);
     } finally {
       await cleanup();
+    }
+  });
+});
+
+describe('CompactWelcomeScreen', () => {
+  it('routes each choice to its own handler', async () => {
+    const calls: string[] = [];
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        createElement(CompactWelcomeScreen, {
+          onCreateDocument: () => calls.push('create'),
+          onTour: () => calls.push('tour'),
+          onDismiss: () => calls.push('dismiss'),
+        }),
+      );
+    });
+    try {
+      const button = (name: string) =>
+        Array.from(container.querySelectorAll('button')).find(
+          (candidate) => (candidate.getAttribute('aria-label') ?? candidate.textContent) === name,
+        );
+      button('Create a document')?.click();
+      button('Tour the welcome document')?.click();
+      button('Dismiss welcome')?.click();
+      expect(calls).to.deep.equal(['create', 'tour', 'dismiss']);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
     }
   });
 });

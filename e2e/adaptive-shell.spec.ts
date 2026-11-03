@@ -12,7 +12,7 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   await expect(page.locator('.db-shell')).toBeVisible();
   // Each test gets a fresh context, so a first-run gateway is deterministic --
   // but which one depends on the layout. Single-pane shows the compact
-  // first-run card; split-pane shows the slideshow gateway. Wait for whichever
+  // first-run screen; split-pane shows the slideshow gateway. Wait for whichever
   // arrives rather than probing: `isVisible()` on a not-yet-rendered gateway
   // returns false immediately and silently skips opening the document.
   const tour = page.getByRole('button', { name: 'Tour the welcome document' });
@@ -26,6 +26,36 @@ async function openWelcomeDocument(page: Page): Promise<void> {
   if ((await shell.getAttribute('data-db-layout')) === 'single-pane') {
     await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
   }
+}
+
+/**
+ * A touch drag through Chromium's own input pipeline. Synthetic DOM events
+ * would skip the part that matters: the browser deciding, from touch-action,
+ * whether a sideways move is its scroll or the page's pointer drag.
+ */
+async function touchDrag(
+  page: Page,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  /** Runs with the finger halfway there and still down. */
+  midway?: () => Promise<void>,
+): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  const STEPS = 12;
+  await cdp.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [{ x: from.x, y: from.y, id: 1 }],
+  });
+  for (let step = 1; step <= STEPS; step++) {
+    if (step === STEPS / 2 + 1) await midway?.();
+    const t = step / STEPS;
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, id: 1 }],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
 }
 
 /** The stamped contract that `docblocks.css` keys off. */
@@ -105,6 +135,76 @@ test.describe('adaptive shell on a phone', () => {
         document.querySelector('.squisq-editor-shell')?.getAttribute('data-identity-probe') ?? null,
     );
     expect(survived, 'the editor node was replaced across a drawer toggle').toBe('original');
+  });
+
+  test('swipes the drawer open over the document and shut over the files', async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    test.skip(browserName !== 'chromium', 'drives touch input through CDP');
+    await openWelcomeDocument(page);
+    const shell = page.locator('.db-shell');
+
+    // Both drags start inside a scroller -- the editor, then the file tree --
+    // where the browser takes a sideways move for itself unless told not to.
+    const editorBox = await page.locator('.squisq-wysiwyg-container').boundingBox();
+    if (!editorBox) throw new Error('editor not laid out');
+    const y = editorBox.y + editorBox.height / 2;
+    const sidebar = page.locator('aside.db-shell-sidebar');
+    // Halfway through, the drawer is on screen and part way out, under the finger.
+    const partWayOut = async () => {
+      await expect(sidebar).toBeVisible();
+      const box = await sidebar.boundingBox();
+      if (!box) throw new Error('drawer not laid out');
+      expect(box.x).toBeLessThan(-box.width * 0.2);
+      expect(box.x).toBeGreaterThan(-box.width * 0.8);
+    };
+    await touchDrag(page, { x: 2, y }, { x: editorBox.width * 0.8, y }, partWayOut);
+    await expect(shell).toHaveAttribute('data-db-drawer', 'open');
+    await expect
+      .poll(async () =>
+        Math.round((await page.locator('aside.db-shell-sidebar').boundingBox())?.x ?? -1),
+      )
+      .toBe(0);
+
+    const treeBox = await page.locator('.db-tree').boundingBox();
+    if (!treeBox) throw new Error('file tree not laid out');
+    const treeY = treeBox.y + Math.min(treeBox.height / 2, 120);
+    await touchDrag(
+      page,
+      { x: treeBox.x + treeBox.width * 0.7, y: treeY },
+      { x: treeBox.x + 8, y: treeY },
+      partWayOut,
+    );
+    await expect(shell).toHaveAttribute('data-db-drawer', 'closed');
+  });
+
+  test('opens the outline from the right edge and closes it under the drawer', async ({
+    page,
+    browserName,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    test.skip(browserName !== 'chromium', 'drives touch input through CDP');
+    await openWelcomeDocument(page);
+    const body = await page.locator('.squisq-editor-with-gutter').boundingBox();
+    if (!body) throw new Error('editor body not laid out');
+    const y = body.y + body.height / 2;
+
+    await touchDrag(page, { x: body.x + body.width - 2, y }, { x: body.x + 80, y });
+    const sheet = page.getByTestId('navigation-sheet');
+    await expect(sheet).toHaveAttribute('data-state', 'open');
+    // The outline sits on the sheet's surface, not on the side pane's desk.
+    const outline = sheet.locator('.squisq-outline');
+    await expect(outline).toBeVisible();
+    expect(await outline.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+      'rgba(0, 0, 0, 0)',
+    );
+
+    // Left open under the drawer, the sheet would take the next Back press.
+    await page.getByRole('button', { name: 'Show file list' }).click();
+    await expect(page.locator('.db-shell')).toHaveAttribute('data-db-drawer', 'open');
+    await expect(sheet).toHaveAttribute('data-state', 'closed');
   });
 
   test('mounts one editor for a newly created document', async ({ page }, testInfo) => {
@@ -205,6 +305,10 @@ test.describe('adaptive shell on a phone', () => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await page.goto('/');
     await expect(page.locator('.db-shell')).toBeVisible();
+    // The first-run welcome covers the app; dismiss it to reach the drawer.
+    const dismissWelcome = page.getByRole('button', { name: 'Dismiss welcome' });
+    await expect(dismissWelcome).toBeVisible({ timeout: 30_000 });
+    await dismissWelcome.click();
     // First run seeds the default workspace after the shell mounts, and the
     // picker loads its list asynchronously. Opened before then, the list
     // arrives mid-click: the new row pushes New Workspace down between press
@@ -222,6 +326,68 @@ test.describe('adaptive shell on a phone', () => {
     // Below 16px, focusing the field makes iOS Safari zoom the whole page and
     // it never zooms back out.
     expect(fontSize).toBeGreaterThanOrEqual(16);
+  });
+
+  test('centres the Use-mode button on the Slideshow label at any text size', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+    const trigger = page.getByRole('button', { name: 'Choose Use mode', exact: true });
+    await expect(trigger).toBeVisible();
+    // Android scales every font to the system text size and leaves padding
+    // alone; scaling both font sizes reproduces that here.
+    for (const zoom of [1, 1.15, 1.3]) {
+      await page.locator('.db-shell').evaluate((shell, scale) => {
+        for (const node of shell.querySelectorAll<HTMLElement>(
+          '.squisq-toolbar-view-tab, .squisq-use-mode-trigger',
+        )) {
+          node.style.fontSize = `${13 * scale}px`;
+        }
+      }, zoom);
+      const geometry = await trigger.evaluate((button) => {
+        const label = document.querySelector('.squisq-toolbar-use-tab .squisq-toolbar-view-tab');
+        if (!label) throw new Error('Slideshow tab not found');
+        const range = document.createRange();
+        range.selectNodeContents(label);
+        const text = range.getBoundingClientRect();
+        const box = button.querySelector('svg');
+        if (!box) throw new Error('Use-mode glyph not found');
+        const rect = box.getBoundingClientRect();
+        return {
+          offset: (rect.top + rect.bottom) / 2 - (text.top + text.bottom) / 2,
+          border: Number.parseFloat(getComputedStyle(box).borderTopWidth),
+        };
+      });
+      expect(Math.abs(geometry.offset), `at ${zoom * 100}% text`).toBeLessThanOrEqual(1);
+      // A visible outline, so the arrow reads as a button.
+      expect(geometry.border).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test('keeps the document controls on one row in a Use mode, with Export on screen', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+    await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
+    await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
+
+    const exportTrigger = page.getByRole('button', { name: 'Export and share', exact: true });
+    const viewport = page.viewportSize();
+    if (!viewport) throw new Error('no viewport');
+    const triggerBox = await exportTrigger.boundingBox();
+    if (!triggerBox) throw new Error('Export trigger not laid out');
+    // Export ends its row at the right edge rather than starting a row alone.
+    expect(viewport.width - (triggerBox.x + triggerBox.width)).toBeLessThanOrEqual(2);
+    const viewMenu = await page.locator('.squisq-toolbar > .squisq-view-menu').boundingBox();
+    expect(viewMenu?.y).toBe(triggerBox.y);
+
+    await exportTrigger.click();
+    const menu = await page.locator('.db-toolbar-menu-dropdown').boundingBox();
+    if (!menu) throw new Error('Export menu did not open');
+    expect(menu.x).toBeGreaterThanOrEqual(0);
+    expect(menu.x + menu.width).toBeLessThanOrEqual(viewport.width + 1);
   });
 
   test('never scrolls horizontally', async ({ page }, testInfo) => {
