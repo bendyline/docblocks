@@ -126,7 +126,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@bendyline/squisq": "2.13.10",
+    "@bendyline/squisq": "2.13.11",
     "zod": "3.25.76"
   }
 }
