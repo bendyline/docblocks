@@ -928,18 +928,29 @@ export const DOCBLOCKS_MCP_TOOL_OUTPUT_SCHEMAS: Readonly<
 export const materializationOptionsSchema = z.discriminatedUnion('ifExists', [
   z
     .object({
-      rootId: idSchema,
-      path: workspacePathSchema,
-      ifExists: z.literal('error'),
-      expectedSha256: z.null().optional().default(null),
+      rootId: idSchema.describe('A write root id from list_roots.'),
+      path: workspacePathSchema.describe('Path below that root.'),
+      ifExists: z.literal('error').describe('Create the file; fails if one is already there.'),
+      expectedSha256: z
+        .null()
+        .optional()
+        .default(null)
+        .describe('Omit or null when creating a file.'),
     })
     .strict(),
   z
     .object({
-      rootId: idSchema,
-      path: workspacePathSchema,
-      ifExists: z.literal('replace'),
-      expectedSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+      rootId: idSchema.describe('A write root id from list_roots.'),
+      path: workspacePathSchema.describe('Path below that root.'),
+      ifExists: z
+        .literal('replace')
+        .describe('Replace the file already at this path; fails if nothing is there.'),
+      expectedSha256: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/u)
+        .describe(
+          'SHA-256 of the file now at this path (the sha256 returned when it was saved), not of the artifact being saved.',
+        ),
     })
     .strict(),
 ]);

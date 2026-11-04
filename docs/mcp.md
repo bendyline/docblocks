@@ -627,7 +627,11 @@ or conditional replacement:
 
 No-replace publication is the safest default. Replacement is serialized in the
 server process, verifies the existing file's bounded SHA-256, stages the new bytes,
-and revalidates immediately before atomic publication. Node filesystems do not offer
+and revalidates immediately before atomic publication. `expectedSha256` is the hash
+of the file being replaced, which a successful `save_artifact` returns as `sha256`;
+replacing a path where nothing exists fails. Each correctable refusal (`conflict`)
+carries a `hint` that names the call that works: save to a new path, create with
+`"ifExists": "error"`, or pass the current file's hash. Node filesystems do not offer
 one portable storage-atomic compare-and-swap primitive, so an unrelated external
 writer can still race the final publication boundary.
 

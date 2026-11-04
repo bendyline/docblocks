@@ -230,6 +230,40 @@ describe('MCP root aliases and safe materialization', function () {
     expect(await readFile(target, 'utf8')).to.equal('replacement');
   });
 
+  it('names the call that works when a destination refuses the save', async () => {
+    const existing = path.join(allowed, 'hinted.bin');
+    await writeFile(existing, 'baseline', 'utf8');
+    const authority = await McpFileAuthority.create({ writeRoots: [allowed] });
+    const hintOf = async (promise: Promise<unknown>) => {
+      const error = await promise.then(
+        () => null,
+        (caught: unknown) => caught as { code?: unknown; hint?: unknown },
+      );
+      expect(error?.code).to.equal('conflict');
+      return String(error?.hint);
+    };
+
+    expect(await hintOf(authority.materializeBytes(existing, Buffer.from('new'), 64))).to.include(
+      'Save to a new path',
+    );
+    expect(
+      await hintOf(
+        authority.materializeBytes(existing, Buffer.from('new'), 64, {
+          ifExists: 'replace',
+          expectedSha256: sha256('new'),
+        }),
+      ),
+    ).to.include('not of the artifact being saved');
+    expect(
+      await hintOf(
+        authority.materializeBytes(path.join(allowed, 'absent.bin'), Buffer.from('new'), 64, {
+          ifExists: 'replace',
+          expectedSha256: sha256('new'),
+        }),
+      ),
+    ).to.include('nothing to replace');
+  });
+
   it('rejects a stale expected hash after an intervening writer changes the target', async () => {
     const target = path.join(allowed, 'stale.bin');
     await writeFile(target, 'baseline', 'utf8');
