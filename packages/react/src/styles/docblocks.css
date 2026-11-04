@@ -3448,32 +3448,18 @@ html:has(.db-shell--mobile) .squisq-toolbar-overflow-menu {
   padding-bottom: 10px;
 }
 
-/* The Use-mode chooser beside Slideshow reads as a button, not a stray glyph:
-   a bordered 22px box centred on the label. The label's centre rises with
-   its line box, and Android scales text to the system font size while
-   leaving padding alone, so a fixed offset left the arrow 3px low at 115%.
-   The offset is therefore half a line box (`lh`) at the label's own 13px,
-   which Android scales in step. The trigger still spans the tab's height as
-   the tap target. */
-.db-shell .squisq-use-mode-trigger {
-  width: auto;
-  padding: 0 6px 11px 2px;
-  padding-bottom: calc(0.5lh + 2.5px);
+/* The ▾ mode buttons beside Write and Slideshow centre their 24px face on the
+   tab label. Squisq anchors the face to the underline, matched to its own 4px
+   label padding, so the lifted label above needs the button's padding lifted
+   with it. The label's centre rises with its line box, and Android scales
+   text to the system font size while leaving padding alone, so a fixed
+   offset left the arrow 3px low at 115%. The offset is therefore half a line
+   box (`lh`) at the label's own 13px, which Android scales in step. The
+   trigger still spans the tab's height as the tap target. */
+.db-shell .squisq-view-mode-trigger {
+  padding-bottom: 9.5px;
+  padding-bottom: calc(0.5lh + 1px);
   font-size: 13px;
-}
-
-.db-shell .squisq-use-mode-trigger > svg {
-  box-sizing: content-box;
-  padding: 5px;
-  border: 1px solid var(--db-border-strong);
-  border-radius: 5px;
-  transform: none;
-  transition: background-color 0.12s ease;
-}
-
-.db-shell .squisq-use-mode-trigger:hover > svg,
-.db-shell .squisq-use-mode-trigger--open > svg {
-  background: var(--db-bg-hover);
 }
 
 .squisq-toolbar-button[aria-label='Insert image'] {
@@ -8986,9 +8972,9 @@ button.db-git-file-row:hover {
   }
 
   /* The label's padding is 8px less here, and so is the button's. */
-  .db-shell .squisq-use-mode-trigger {
-    padding-bottom: 3px;
-    padding-bottom: calc(0.5lh - 5.5px);
+  .db-shell .squisq-view-mode-trigger {
+    padding-bottom: 1.5px;
+    padding-bottom: calc(0.5lh - 7px);
   }
 
   /* The 32px caption row leaves little room around Squisq's 28px action
