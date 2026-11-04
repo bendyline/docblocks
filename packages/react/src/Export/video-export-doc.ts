@@ -15,6 +15,7 @@
 import { parseMarkdown } from '@bendyline/squisq/markdown';
 import type { Doc } from '@bendyline/squisq/schemas';
 import type { ContentContainer } from '@bendyline/squisq/storage';
+import { PresentationInvalidError } from './export-errors.js';
 
 /** Rows per `{[dataTable src=…]}` preview — the editor's own window. */
 const DATA_PREVIEW_ROWS = 50;
@@ -111,7 +112,7 @@ export async function buildVideoExportDoc(
   const invalidPresentation = projected.diagnostics?.find(
     (diagnostic) => diagnostic.code === 'presentation-invalid',
   );
-  if (invalidPresentation) throw new Error(invalidPresentation.message);
+  if (invalidPresentation) throw new PresentationInvalidError(invalidPresentation.message);
   // A document without narration gets a placeholder `{ src: '' }` segment
   // from `buildPreviewDoc` so a live player has a clock to run. The exporter
   // would treat it as real audio to fetch and mix; the preview likewise takes
