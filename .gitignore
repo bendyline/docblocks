@@ -80,6 +80,17 @@ web_modules/
 .env.*
 !.env.example
 
+# Store signing material. CI decodes these from repository secrets; a local
+# store build (e.g. the Mac App Store profile at
+# packages/desktop/embedded.provisionprofile) must never be committed.
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
