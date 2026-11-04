@@ -86,9 +86,9 @@ export interface FileSystemFileSnapshot extends FileSystemEntrySnapshotBase {
   /**
    * Present when a cloud sync client (OneDrive, iCloud Drive) keeps the bytes
    * online until something reads them. Reading downloads the whole file
-   * first, so background work should leave it alone. A listing does not hash
-   * it, so its version may reflect metadata only; a content read still
-   * returns a content-derived version.
+   * first, so background work should leave it alone. A listing or stat does
+   * not hash it, so its version may reflect metadata only; a content read
+   * still returns a content-derived version.
    */
   readonly onlineOnly?: true;
 }

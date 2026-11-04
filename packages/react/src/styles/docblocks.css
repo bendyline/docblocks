@@ -192,6 +192,12 @@
 
 :root:has(.db-shell[data-theme='dark']),
 .db-shell[data-theme='dark'] {
+  /* Native control chrome (a <select>'s chevron, an unchecked radio or
+     checkbox, a number spinner) is painted from `color-scheme`, not from
+     the tokens below. Without it a dark shell keeps light-scheme widgets:
+     iOS draws a black chevron on the dark input. On the root too, because
+     Squisq portals its menus and dialogs onto <body>. */
+  color-scheme: dark;
   --db-bg: #1a1812;
   --db-bg-subtle: #262219;
   --db-bg-hover: #3a3528;
@@ -246,6 +252,7 @@
 @media (prefers-color-scheme: dark) {
   :root:has(.db-shell:not([data-theme='light'])),
   .db-shell:not([data-theme='light']) {
+    color-scheme: dark;
     --db-bg: #1a1812;
     --db-bg-subtle: #262219;
     --db-bg-hover: #3a3528;
@@ -2100,6 +2107,9 @@ body.db-resizing-sidebar * {
   content: '';
   flex: 1 0 0;
   order: 2;
+  /* The spring is the one item every document-controls row has, so it sets
+     that row to Write's 44px. */
+  height: 44px;
 }
 
 .db-shell[data-db-form-factor='phone'][data-db-orientation='portrait']
@@ -2107,6 +2117,28 @@ body.db-resizing-sidebar * {
   > .squisq-preview-controls
   ~ :not(.squisq-presentation-control, .squisq-print-trigger) {
   order: 2;
+}
+
+/* Use modes put Squisq's preview controls where Write has its actions row.
+   Squisq sizes them as a compact desktop cluster (24px segments, a 14px print
+   glyph), so on a phone they read smaller than Write's 28px buttons and their
+   rows packed to about 31px. Match Write instead: 44px rows, 28px segments,
+   and toolbar-sized glyphs. Squisq icons are 1.15em, so 15px gives Write's
+   17px glyph. */
+.db-shell--mobile .squisq-toolbar > .squisq-preview-controls {
+  height: 44px;
+}
+
+.db-shell--mobile .squisq-preview-seg-btn {
+  min-height: 28px;
+}
+
+.db-shell--mobile .squisq-print-trigger .squisq-icon {
+  font-size: 15px;
+}
+
+.db-shell--mobile .squisq-presentation-menu-trigger {
+  width: 24px;
 }
 
 /* The compact layout puts Squisq's overflow trigger part-way along the second

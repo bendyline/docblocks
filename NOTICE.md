@@ -8,7 +8,7 @@ This file is the distribution-level entry point for third-party software used by
 
 | Distribution                           | Notice shipped with the artifact                                                             | Inventory basis       |
 | -------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------- |
-| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 224 locked components |
+| DocBlocks Capacitor distribution       | [packages/mobile/THIRD_PARTY_NOTICES.txt](packages/mobile/THIRD_PARTY_NOTICES.txt)           | 228 locked components |
 | @bendyline/docblocks npm package       | [packages/core/THIRD_PARTY_NOTICES.txt](packages/core/THIRD_PARTY_NOTICES.txt)               | 113 locked components |
 | @bendyline/docblocks-react npm package | [packages/react/THIRD_PARTY_NOTICES.txt](packages/react/THIRD_PARTY_NOTICES.txt)             | 382 locked components |
 | @bendyline/docblocks-cli npm package   | [packages/cli/THIRD_PARTY_NOTICES.txt](packages/cli/THIRD_PARTY_NOTICES.txt)                 | 353 locked components |

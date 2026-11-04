@@ -1,4 +1,4 @@
-import { builtinModules } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
@@ -36,6 +36,63 @@ const mobileBoundary = (): Plugin => ({
   },
 });
 
+/**
+ * Files @bendyline/gezel-capacitor ships for the WebView, as hashed web assets
+ * named by a virtual module: `export const <exportName> = { key: url, … }`.
+ * The dev server has no emitted files, so it serves the package's own copies.
+ */
+const gezelAssets = (
+  id: string,
+  exportName: string,
+  files: Record<string, { path: string; name: string }>,
+): Plugin => {
+  const root = () =>
+    path.dirname(createRequire(import.meta.url).resolve('@bendyline/gezel-capacitor/package.json'));
+  const urls: Record<string, string> = {};
+  let serve = false;
+  return {
+    name: `docblocks-${id}`,
+    configResolved: (config) => {
+      serve = config.command === 'serve';
+    },
+    resolveId: (source) => (source === `virtual:${id}` ? `\0virtual:${id}` : null),
+    buildStart() {
+      for (const [key, file] of Object.entries(files)) {
+        const source = path.join(root(), file.path);
+        if (!existsSync(source))
+          throw new Error(`${source} is missing; @bendyline/gezel-capacitor is too old.`);
+        urls[key] = serve
+          ? JSON.stringify(`/@fs${source}`)
+          : `import.meta.ROLLUP_FILE_URL_${this.emitFile({ type: 'asset', name: file.name, source: readFileSync(source) })}`;
+      }
+    },
+    load: (source) =>
+      source === `\0virtual:${id}`
+        ? `export const ${exportName} = { ${Object.entries(urls)
+            .map(([key, url]) => `${key}: ${url}`)
+            .join(', ')} };\n`
+        : null,
+  };
+};
+
+/**
+ * Kokoro's pronunciation dictionaries: narration plans phonemes in the
+ * WebView. Android's asset packager treats a final `.gz` specially inside
+ * APKs, so the same gzip bytes publish under a neutral `.bin` name.
+ */
+const kokoroLexicon = () =>
+  gezelAssets('docblocks-kokoro-lexicon', 'kokoroLexiconUrls', {
+    us: { path: 'kokoro-lexicon/lexicon-us-en.txt.gz', name: 'lexicon-us-en.bin' },
+    gb: { path: 'kokoro-lexicon/lexicon-gb-en.txt.gz', name: 'lexicon-gb-en.bin' },
+  });
+
+/** The knowledge worker and the SQLite build it reads catalogs with. */
+const gezelKnowledge = () =>
+  gezelAssets('docblocks-gezel-knowledge', 'gezelKnowledgeUrls', {
+    workerUrl: { path: 'dist/knowledge-worker.js', name: 'knowledge-worker.js' },
+    wasmUrl: { path: 'dist/sqlite3.wasm', name: 'sqlite3.wasm' },
+  });
+
 export default defineConfig({
   base: './',
   publicDir: '../site/public',
@@ -61,6 +118,8 @@ export default defineConfig({
       },
     },
     mobileBoundary(),
+    kokoroLexicon(),
+    gezelKnowledge(),
     harperWasmPlugin(),
     ironCalcWasmPlugin(),
     thirdPartyComponentManifestPlugin(),

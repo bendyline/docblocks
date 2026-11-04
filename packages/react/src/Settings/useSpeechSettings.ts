@@ -26,7 +26,7 @@ function unreachable(cause: unknown): SpeechError {
   const detail = cause instanceof Error ? cause.message : undefined;
   return {
     code: 'unknown',
-    message: 'DocBlocks could not check speech on this computer.',
+    message: 'DocBlocks could not check speech on this device.',
     ...(detail ? { detail } : {}),
   };
 }

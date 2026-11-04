@@ -102,6 +102,8 @@ describe('Core exports', () => {
       'isSerializedFsError',
       'isSpeechModelId',
       'isTrustedRendererUrl',
+      'knowledgeChatEvent',
+      'knowledgeSources',
       'listWorkspaces',
       'loadDirectoryHandle',
       'mapDomExceptionToFsErrorCode',

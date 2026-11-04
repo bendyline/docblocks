@@ -588,6 +588,12 @@ export interface DocBlocksShellProps {
   onCopyCode?: CodeBlockCopyHandler;
   /** Whether the editor may expose microphone, camera, and screen recording. */
   allowRecording?: boolean;
+  /**
+   * Whether dictation may use the microphone. Defaults to `allowRecording`; a
+   * host that qualifies microphone capture but not camera or screen recording
+   * can allow dictation alone.
+   */
+  allowDictation?: boolean;
   /** Whether presentation may open a synchronized audience window. */
   allowPresentationWindow?: boolean;
   /** Whether presentation may enter the browser/Electron Fullscreen API. */
@@ -971,6 +977,7 @@ export function DocBlocksShell({
   showCodeCopyButton = true,
   onCopyCode,
   allowRecording = true,
+  allowDictation = allowRecording,
   allowPresentationWindow = true,
   allowPresentationFullscreen = true,
   offlineReady = false,
@@ -6084,8 +6091,7 @@ export function DocBlocksShell({
                               showCodeCopyButton={showCodeCopyButton}
                               onCopyCode={onCopyCode}
                               allowRecording={allowRecording}
-                              // Dictation uses the microphone, so it follows the same policy.
-                              speechInput={allowRecording ? speechInput : null}
+                              speechInput={allowDictation ? speechInput : null}
                               allowPresentationWindow={allowPresentationWindow}
                               allowPresentationFullscreen={allowPresentationFullscreen}
                               documentLinkProvider={documentLinkProvider}

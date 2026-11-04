@@ -2,12 +2,14 @@ package com.bendyline.docblocks.mobile;
 
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.MessageHandler;
+import com.bendyline.gezel.capacitor.KnowledgeFiles;
 import java.util.Collections;
 
 /** Only the packaged top-level editor can call native code, including core Capacitor plugins. */
@@ -42,6 +44,11 @@ public final class BridgeBoundary {
                     return true;
                 }
                 return !"about".equals(request.getUrl().getScheme()) && !"blob".equals(request.getUrl().getScheme());
+            }
+            // Knowledge catalogs are read in byte ranges by the in-WebView reader.
+            @Override public WebResourceResponse shouldInterceptRequest(WebView webView, WebResourceRequest request) {
+                WebResourceResponse catalog = KnowledgeFiles.intercept(webView.getContext(), request);
+                return catalog != null ? catalog : super.shouldInterceptRequest(webView, request);
             }
         });
     }

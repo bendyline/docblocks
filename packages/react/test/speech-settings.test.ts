@@ -365,12 +365,12 @@ describe('Speech settings', () => {
       [
         'status',
         (api) => ({ ...api, status: denied }),
-        'DocBlocks could not check speech on this computer.',
+        'DocBlocks could not check speech on this device.',
       ],
       [
         'preferences',
         (api) => ({ ...api, getPreferences: denied }),
-        'DocBlocks could not check speech on this computer.',
+        'DocBlocks could not check speech on this device.',
       ],
       [
         'the catalog',
@@ -412,7 +412,7 @@ describe('Speech settings', () => {
         await flush();
         expect(hook.result.current?.tts).to.deep.equal({
           state: 'unavailable',
-          reason: 'DocBlocks could not check speech on this computer.',
+          reason: 'DocBlocks could not check speech on this device.',
         });
       } finally {
         await hook.unmount();

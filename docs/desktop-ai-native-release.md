@@ -1,7 +1,7 @@
 # Desktop AI native release handoff
 
 The MAS integration is prepared. DocBlocks now pins published Gezel inference
-`1.0.6`, which selects notarized native release `0.1.54`. The publication and
+`1.0.7`, which selects notarized native release `0.1.57`. The publication and
 dependency update steps below describe the release process; signed MAS build
 and runtime qualification are still required. No prospective version or hash
 is trusted.

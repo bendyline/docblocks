@@ -58,7 +58,7 @@
 		</dict>
 	</dict>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>DocBlocks uses the microphone only to record sound for a video you take to add to a document.</string>
+	<string>DocBlocks uses the microphone only while you dictate, which is transcribed on this device, or to record sound for a video you take to add to a document.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>DocBlocks adds an image or video to your photo library only when you choose to save an export there.</string>
 	<key>UIApplicationSceneManifest</key>

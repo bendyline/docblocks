@@ -94,8 +94,9 @@ checks the PNG signature of a finished render.
   usable models. The Generate image panel offers only downloaded styles for the
   chosen model, plus **No style**. Switching models clears the style selection.
   Design graphics retain their compiled prompt style; this preference applies to
-  Generate image. An older SDK or daemon shows an update message for styles and
-  keeps ordinary image generation available.
+  Generate image. A standalone Gezel daemon that predates styles refuses them with
+  `styles_unsupported`; Settings shows an update message for styles and keeps
+  ordinary image generation available.
 
 ## Gezel rollout
 
@@ -107,10 +108,10 @@ Hosted inference stages Gilde's `image-loras` alongside image models. The servic
 accepts only catalog style ids and refuses a style not installed for the chosen
 model. Existing image permissions also cover these routes.
 
-These features require the updated Gezel SDK and inference runtime (and the
-updated daemon when using standalone Gezel). Use the repository's supported
-`link:gezel` workflow for local testing, or pin the corresponding published
-releases for distribution; do not patch installed packages.
+These shipped in App SDK `1.1.12`, inference `1.0.7` and core `1.2.12`, which
+the desktop pins; the embedded runtime serves styles. A standalone Gezel needs
+service `1.2.12` or later. Use the repository's supported `link:gezel` workflow
+to test unreleased Gezel changes; do not patch installed packages.
 
 ## Design graphics
 

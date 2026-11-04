@@ -23,7 +23,9 @@ function run(command, args, cwd) {
   return result.stdout;
 }
 const pins = await read(path.join(mobile, 'vendor/native-release.json'));
-for (const pin of Object.values(pins.archives))
+// The offline speech runtime is pinned separately: `native/mobile/speech/build.py
+// --package` output for each platform, archived beside the release archives.
+for (const pin of [...Object.values(pins.archives), ...Object.values(pins.speechArchives ?? {})])
   if (hash(await readFile(path.join(releaseDir, pin.file))) !== pin.sha256)
     throw new Error(`Native release archive integrity mismatch: ${pin.file}`);
 // The plugin builds against the whole chain, but only it is vendored: Gezel
@@ -107,9 +109,8 @@ await withDependencyReadLease(
           }
         await write(path.join(staged, 'package.json'), manifest);
         if (folder === 'capacitor') {
-          const { stageNative, writeEmbeddingManifest, verifyCapacitorPackage } = await load(
-            'packages/capacitor/scripts/embedding-package.mjs',
-          );
+          const { stageNative, stageSpeech, writeEmbeddingManifest, verifyCapacitorPackage } =
+            await load('packages/capacitor/scripts/embedding-package.mjs');
           for (const platform of ['ios', 'android']) {
             const source = path.join(work, platform);
             await mkdir(source);
@@ -119,6 +120,12 @@ await withDependencyReadLease(
               repo,
             );
             await stageNative(platform, source, path.join(staged, 'native', platform));
+          }
+          for (const [platform, pin] of Object.entries(pins.speechArchives ?? {})) {
+            const source = path.join(work, `speech-${platform}`);
+            await mkdir(source);
+            run('tar', ['-xzf', path.join(releaseDir, pin.file), '-C', source], repo);
+            await stageSpeech(platform, source, path.join(staged, 'native', `speech-${platform}`));
           }
           // Pair native bridge calls with the published runtime's API, not unreleased engines.
           for (const [relative, expected] of Object.entries(pins.bridgeSources)) {

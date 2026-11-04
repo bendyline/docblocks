@@ -390,6 +390,34 @@ test.describe('adaptive shell on a phone', () => {
     expect(menu.x + menu.width).toBeLessThanOrEqual(viewport.width + 1);
   });
 
+  test('sizes Use-mode controls and rows like Write', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
+    await openWelcomeDocument(page);
+    const measure = async (selector: string) => {
+      // Visible only: Squisq keeps a hidden measuring copy of the preview controls.
+      const control = page.locator(selector).filter({ visible: true }).first();
+      const box = await control.boundingBox();
+      const glyph = await control.locator('svg').first().boundingBox();
+      if (!box || !glyph) throw new Error(`${selector} is not laid out`);
+      return { center: box.y + box.height / 2, height: box.height, glyph: glyph.width };
+    };
+    const write = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+
+    await page.locator('.squisq-toolbar-use-tab .squisq-toolbar-view-tab').click();
+    await expect(page.locator('.squisq-toolbar > .squisq-preview-controls')).toBeVisible();
+    // Squisq sizes these as a compact desktop cluster; on a phone they sat in
+    // ~31px rows with 24px segments and a 14px print glyph.
+    for (const selector of ['.squisq-preview-seg-btn', '.squisq-print-trigger']) {
+      const control = await measure(selector);
+      expect(Math.abs(control.center - write.center), selector).toBeLessThanOrEqual(1);
+      expect(control.height, selector).toBeGreaterThanOrEqual(write.height);
+    }
+    expect((await measure('.squisq-print-trigger')).glyph).toBeCloseTo(write.glyph, 0);
+    // The document controls wrap to their own row, a full Write row below.
+    const documentRow = await measure('.squisq-toolbar > .squisq-view-menu .squisq-toolbar-button');
+    expect(documentRow.center - write.center).toBeGreaterThanOrEqual(44);
+  });
+
   test('never scrolls horizontally', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name.startsWith('ipad'), 'phone projects only');
     await openWelcomeDocument(page);

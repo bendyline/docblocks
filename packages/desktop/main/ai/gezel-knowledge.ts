@@ -1,15 +1,6 @@
 import type { GezelApp, ChatMessage } from '@bendyline/gezel-app-sdk';
-import { AI_WIRE_LIMITS } from '@bendyline/docblocks/host';
-import type {
-  AiChatKnowledge,
-  AiChatKnowledgeSource,
-  AiChatMessage,
-  AiKnowledgeAction,
-} from '@bendyline/docblocks/host';
-
-type KnowledgePassage = Awaited<
-  ReturnType<typeof import('@bendyline/gezel-app-sdk').knowledgeContext>
->['passages'][number];
+import { AI_WIRE_LIMITS, knowledgeChatEvent } from '@bendyline/docblocks/host';
+import type { AiChatKnowledge, AiChatMessage, AiKnowledgeAction } from '@bendyline/docblocks/host';
 
 interface CatalogSnapshot {
   readonly at: number;
@@ -90,32 +81,6 @@ export function updateGezelKnowledge(
   );
 }
 
-/** Group cited passages by catalog, in the order Gezel ranked them. */
-function knowledgeSources(
-  passages: readonly KnowledgePassage[],
-  names: ReadonlyMap<string, string> | undefined,
-): AiChatKnowledgeSource[] {
-  const sources = new Map<string, { name: string; titles: string[] }>();
-  for (const passage of passages) {
-    let source = sources.get(passage.catalogId);
-    if (!source) {
-      if (sources.size >= AI_WIRE_LIMITS.knowledgeSources) continue;
-      const name = names?.get(passage.catalogId) ?? passage.catalogId;
-      source = { name: name.slice(0, 256), titles: [] };
-      sources.set(passage.catalogId, source);
-    }
-    const title = passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters);
-    if (
-      title &&
-      !source.titles.includes(title) &&
-      source.titles.length < AI_WIRE_LIMITS.knowledgeTitles
-    ) {
-      source.titles.push(title);
-    }
-  }
-  return [...sources].map(([catalogId, { name, titles }]) => ({ catalogId, name, titles }));
-}
-
 export interface GezelKnowledgeContext {
   readonly messages: ChatMessage[];
   /** Null when no catalog is enabled, or Gezel could not say whether one is. */
@@ -164,21 +129,13 @@ export async function withGezelKnowledge(
         cited.map((passage) => passage.catalogId),
       )
     : null;
-  if (context.status === 'used') {
-    return {
-      messages: context.messages,
-      knowledge: {
-        outcome: 'used',
-        sources: knowledgeSources(cited, snapshot?.names),
-        // In citation order: the model was asked to cite `evidence[0]` as [1].
-        evidence: cited.map((passage) => ({
-          title: passage.title.trim().slice(0, AI_WIRE_LIMITS.knowledgeTitleCharacters),
-          catalogId: passage.catalogId,
-          text: passage.text,
-        })),
-      },
-    };
-  }
-  if (!snapshot?.enabled) return { messages: context.messages, knowledge: null };
-  return { messages: context.messages, knowledge: { outcome: context.status } };
+  return {
+    messages: context.messages,
+    knowledge: knowledgeChatEvent(
+      context.status,
+      cited,
+      snapshot?.names,
+      context.status === 'used' || snapshot?.enabled === true,
+    ),
+  };
 }
