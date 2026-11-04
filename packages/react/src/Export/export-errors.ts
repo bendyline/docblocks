@@ -21,3 +21,15 @@ export class PdfReplacementsError extends Error {
     this.replacements = replacements;
   }
 }
+
+/**
+ * The document's saved presentation cannot be played as authored, so a video
+ * of it would not match the preview. Squisq's message is already user-facing
+ * and names the fix, such as "The narration no longer matches the document."
+ */
+export class PresentationInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PresentationInvalidError';
+  }
+}
