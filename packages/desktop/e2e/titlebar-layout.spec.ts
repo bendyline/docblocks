@@ -1,4 +1,5 @@
 import { expect, test, tourWelcome } from './fixtures.js';
+import { showWriteView } from '../../../e2e/helpers/toolbar.js';
 
 test('keeps toolbar controls outside the native caption button area', async ({ launchApp }) => {
   const { window } = await launchApp();
@@ -8,7 +9,7 @@ test('keeps toolbar controls outside the native caption button area', async ({ l
   await window.evaluate(() => globalThis.resizeTo(972, 600));
   await expect.poll(() => window.evaluate(() => globalThis.innerWidth)).toBeLessThan(1_000);
   await expect(window.locator('.db-shell')).toHaveClass(/db-shell--desktop-toolbar-wrapped/);
-  await toolbar.getByRole('tab', { name: 'Write' }).click();
+  await showWriteView(toolbar);
   await expect(toolbar.getByRole('button', { name: 'Export and share' })).toBeVisible();
 
   const geometry = await toolbar.evaluate((element) => {
@@ -94,7 +95,7 @@ test('keeps the compact toolbar visible after the sidebar is collapsed', async (
   const toolbar = window.locator('.squisq-toolbar');
   await expect(toolbar).toBeVisible({ timeout: 30_000 });
   await tourWelcome(window);
-  await toolbar.getByRole('tab', { name: 'Write' }).click();
+  await showWriteView(toolbar);
 
   const resizer = window.getByRole('separator', { name: 'Resize sidebar' });
   const resizerBox = await resizer.boundingBox();

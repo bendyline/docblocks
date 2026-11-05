@@ -4995,11 +4995,11 @@ html:has(.db-shell[data-theme='dark'][data-accent='gray']) {
   --db-badge-text-hover: #ffffff;
 }
 
-/* The Use mode menu is portaled to document.body, outside both the DocBlocks
-   shell and the Squisq editor shell. Consume the palette hoisted to `html`
-   above so its surface, states, icons, and text follow every DocBlocks theme
-   and accent instead of falling back to Squisq's standalone blue/slate UI. */
-html:has(.db-shell) .squisq-use-mode-menu {
+/* The Write and Use mode menus are portaled to document.body, outside both the
+   DocBlocks shell and the Squisq editor shell. Consume the palette hoisted to
+   `html` above so their surface, states, icons, and text follow every DocBlocks
+   theme and accent instead of falling back to Squisq's standalone blue/slate UI. */
+html:has(.db-shell) .squisq-view-mode-menu {
   background: var(--db-bg-raised);
   border-color: var(--db-border);
   box-shadow:
@@ -5007,39 +5007,39 @@ html:has(.db-shell) .squisq-use-mode-menu {
     0 2px 6px var(--db-shadow);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item {
   color: var(--db-text-secondary);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:hover,
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item:focus-visible {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item:hover,
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item:focus-visible {
   background: var(--db-bg-hover);
   color: var(--db-text);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-item--selected {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-item--selected {
   background: var(--db-accent-tint-strong);
   color: var(--db-accent-deep);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-icon {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-icon {
   background: var(--db-bg-hover);
   color: var(--db-text-muted);
 }
 
 html:has(.db-shell)
-  .squisq-use-mode-menu
-  .squisq-use-mode-menu-item--selected
-  .squisq-use-mode-menu-icon {
+  .squisq-view-mode-menu
+  .squisq-view-mode-menu-item--selected
+  .squisq-view-mode-menu-icon {
   background: var(--db-accent-soft-25);
   color: var(--db-accent-hover);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-summary {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-summary {
   color: var(--db-text-secondary);
 }
 
-html:has(.db-shell) .squisq-use-mode-menu .squisq-use-mode-menu-check {
+html:has(.db-shell) .squisq-view-mode-menu .squisq-view-mode-menu-check {
   color: var(--db-accent-hover);
 }
 
@@ -5803,7 +5803,7 @@ html:has(.db-shell[data-theme='dark'])
 
 /* Toolbar overflow menu. Squisq portals it onto <body> (2.12+), outside the
    shell, so these rules reach it through `html:has(.db-shell)` like the
-   Insert and Use mode menus. Squisq intentionally ships a neutral slate
+   Insert and Write/Use mode menus. Squisq intentionally ships a neutral slate
    palette; inside DocBlocks this popover should use the same surfaces,
    borders, text, and interaction colors as our other shell menus. The
    contextual template/transition controls need explicit treatment too,

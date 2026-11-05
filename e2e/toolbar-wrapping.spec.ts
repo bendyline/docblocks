@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './helpers/test.js';
+import { showWriteView } from './helpers/toolbar.js';
 
 /**
  * Between the compact breakpoint (768px) and roughly 1000px the shell keeps
@@ -22,8 +23,7 @@ async function openWelcomeDocument(page: Page) {
   if (await tour.isVisible()) await tour.click();
 
   await expect(toolbar).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('tab', { name: 'Write' }).click();
-  await expect(page.getByRole('tab', { name: 'Write' })).toHaveAttribute('aria-selected', 'true');
+  await showWriteView(page);
 }
 
 /** Formatting buttons a user can actually see and reach, and any that overhang. */

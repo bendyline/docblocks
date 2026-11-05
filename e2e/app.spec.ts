@@ -854,7 +854,7 @@ test.describe('Squisq overflow menu theming', () => {
   });
 });
 
-test.describe('Squisq Use mode menu theming', () => {
+test.describe('Squisq Write and Use mode menu theming', () => {
   test('uses the active DocBlocks palette when portaled outside the shell', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('docblocks:themePreference', 'dark');
@@ -869,80 +869,93 @@ test.describe('Squisq Use mode menu theming', () => {
       timeout: 10_000,
     });
 
-    await page.getByRole('button', { name: 'Choose Use mode' }).click();
-    const menu = page.getByRole('menu', { name: 'Use mode' });
-    await expect(menu).toBeVisible();
+    // Both ▾ menus share Squisq's markup; check each against the palette.
+    for (const { label, unselected } of [
+      { label: 'Write mode', unselected: 'Blocks' },
+      { label: 'Use mode', unselected: 'Video' },
+    ]) {
+      await page.getByRole('button', { name: `Choose ${label}` }).click();
+      const menu = page.getByRole('menu', { name: label });
+      await expect(menu).toBeVisible();
 
-    const colors = await menu.evaluate((element) => {
-      const probe = document.createElement('div');
-      probe.style.cssText = [
-        'position:absolute',
-        'visibility:hidden',
-        'background:var(--db-bg-raised)',
-        'border:1px solid var(--db-border)',
-        'color:var(--db-text-secondary)',
-      ].join(';');
-      const hoverProbe = document.createElement('span');
-      hoverProbe.style.background = 'var(--db-bg-hover)';
-      const selectedProbe = document.createElement('span');
-      selectedProbe.style.cssText = [
-        'background:var(--db-accent-tint-strong)',
-        'color:var(--db-accent-deep)',
-      ].join(';');
-      const accentProbe = document.createElement('span');
-      accentProbe.style.color = 'var(--db-accent-hover)';
-      const selectedIconProbe = document.createElement('span');
-      selectedIconProbe.style.background = 'var(--db-accent-soft-25)';
-      probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe);
-      document.body.appendChild(probe);
+      const colors = await menu.evaluate((element) => {
+        const probe = document.createElement('div');
+        probe.style.cssText = [
+          'position:absolute',
+          'visibility:hidden',
+          'background:var(--db-bg-raised)',
+          'border:1px solid var(--db-border)',
+          'color:var(--db-text-secondary)',
+        ].join(';');
+        const hoverProbe = document.createElement('span');
+        hoverProbe.style.background = 'var(--db-bg-hover)';
+        const selectedProbe = document.createElement('span');
+        selectedProbe.style.cssText = [
+          'background:var(--db-accent-tint-strong)',
+          'color:var(--db-accent-deep)',
+        ].join(';');
+        const accentProbe = document.createElement('span');
+        accentProbe.style.color = 'var(--db-accent-hover)';
+        const selectedIconProbe = document.createElement('span');
+        selectedIconProbe.style.background = 'var(--db-accent-soft-25)';
+        probe.append(hoverProbe, selectedProbe, accentProbe, selectedIconProbe);
+        document.body.appendChild(probe);
 
-      const menuStyle = getComputedStyle(element);
-      const normalItem = element.querySelector<HTMLElement>(
-        '.squisq-use-mode-menu-item:not(.squisq-use-mode-menu-item--selected)',
-      );
-      const selectedItem = element.querySelector<HTMLElement>(
-        '.squisq-use-mode-menu-item--selected',
-      );
-      const selectedIcon = selectedItem?.querySelector<HTMLElement>('.squisq-use-mode-menu-icon');
-      const summary = normalItem?.querySelector<HTMLElement>('.squisq-use-mode-menu-summary');
-      const check = selectedItem?.querySelector<HTMLElement>('.squisq-use-mode-menu-check');
-      const probeStyle = getComputedStyle(probe);
-      const result = {
-        menuBackground: menuStyle.backgroundColor,
-        menuBorder: menuStyle.borderTopColor,
-        normalText: normalItem ? getComputedStyle(normalItem).color : '',
-        selectedBackground: selectedItem ? getComputedStyle(selectedItem).backgroundColor : '',
-        selectedText: selectedItem ? getComputedStyle(selectedItem).color : '',
-        selectedIconBackground: selectedIcon ? getComputedStyle(selectedIcon).backgroundColor : '',
-        selectedIconText: selectedIcon ? getComputedStyle(selectedIcon).color : '',
-        summaryText: summary ? getComputedStyle(summary).color : '',
-        checkText: check ? getComputedStyle(check).color : '',
-        expectedBackground: probeStyle.backgroundColor,
-        expectedBorder: probeStyle.borderTopColor,
-        expectedNormalText: probeStyle.color,
-        expectedHover: getComputedStyle(hoverProbe).backgroundColor,
-        expectedSelectedBackground: getComputedStyle(selectedProbe).backgroundColor,
-        expectedSelectedText: getComputedStyle(selectedProbe).color,
-        expectedAccent: getComputedStyle(accentProbe).color,
-        expectedSelectedIconBackground: getComputedStyle(selectedIconProbe).backgroundColor,
-      };
-      probe.remove();
-      return result;
-    });
+        const menuStyle = getComputedStyle(element);
+        const normalItem = element.querySelector<HTMLElement>(
+          '.squisq-view-mode-menu-item:not(.squisq-view-mode-menu-item--selected)',
+        );
+        const selectedItem = element.querySelector<HTMLElement>(
+          '.squisq-view-mode-menu-item--selected',
+        );
+        const selectedIcon = selectedItem?.querySelector<HTMLElement>(
+          '.squisq-view-mode-menu-icon',
+        );
+        const summary = normalItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-summary');
+        const check = selectedItem?.querySelector<HTMLElement>('.squisq-view-mode-menu-check');
+        const probeStyle = getComputedStyle(probe);
+        const result = {
+          menuBackground: menuStyle.backgroundColor,
+          menuBorder: menuStyle.borderTopColor,
+          normalText: normalItem ? getComputedStyle(normalItem).color : '',
+          selectedBackground: selectedItem ? getComputedStyle(selectedItem).backgroundColor : '',
+          selectedText: selectedItem ? getComputedStyle(selectedItem).color : '',
+          selectedIconBackground: selectedIcon
+            ? getComputedStyle(selectedIcon).backgroundColor
+            : '',
+          selectedIconText: selectedIcon ? getComputedStyle(selectedIcon).color : '',
+          summaryText: summary ? getComputedStyle(summary).color : '',
+          checkText: check ? getComputedStyle(check).color : '',
+          expectedBackground: probeStyle.backgroundColor,
+          expectedBorder: probeStyle.borderTopColor,
+          expectedNormalText: probeStyle.color,
+          expectedHover: getComputedStyle(hoverProbe).backgroundColor,
+          expectedSelectedBackground: getComputedStyle(selectedProbe).backgroundColor,
+          expectedSelectedText: getComputedStyle(selectedProbe).color,
+          expectedAccent: getComputedStyle(accentProbe).color,
+          expectedSelectedIconBackground: getComputedStyle(selectedIconProbe).backgroundColor,
+        };
+        probe.remove();
+        return result;
+      });
 
-    expect(colors.menuBackground).toBe(colors.expectedBackground);
-    expect(colors.menuBorder).toBe(colors.expectedBorder);
-    expect(colors.normalText).toBe(colors.expectedNormalText);
-    expect(colors.selectedBackground).toBe(colors.expectedSelectedBackground);
-    expect(colors.selectedText).toBe(colors.expectedSelectedText);
-    expect(colors.selectedIconBackground).toBe(colors.expectedSelectedIconBackground);
-    expect(colors.selectedIconText).toBe(colors.expectedAccent);
-    expect(colors.summaryText).toBe(colors.expectedNormalText);
-    expect(colors.checkText).toBe(colors.expectedAccent);
+      expect(colors.menuBackground, label).toBe(colors.expectedBackground);
+      expect(colors.menuBorder, label).toBe(colors.expectedBorder);
+      expect(colors.normalText, label).toBe(colors.expectedNormalText);
+      expect(colors.selectedBackground, label).toBe(colors.expectedSelectedBackground);
+      expect(colors.selectedText, label).toBe(colors.expectedSelectedText);
+      expect(colors.selectedIconBackground, label).toBe(colors.expectedSelectedIconBackground);
+      expect(colors.selectedIconText, label).toBe(colors.expectedAccent);
+      expect(colors.summaryText, label).toBe(colors.expectedNormalText);
+      expect(colors.checkText, label).toBe(colors.expectedAccent);
 
-    const normalItem = menu.locator('.squisq-use-mode-menu-item').filter({ hasText: 'Video' });
-    await normalItem.hover();
-    await expect(normalItem).toHaveCSS('background-color', colors.expectedHover);
+      // By exact name: Timeline's summary mentions blocks too.
+      const normalItem = menu.getByRole('menuitemradio', { name: unselected, exact: true });
+      await normalItem.hover();
+      await expect(normalItem).toHaveCSS('background-color', colors.expectedHover);
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+    }
   });
 });
 

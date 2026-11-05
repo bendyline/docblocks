@@ -13,7 +13,7 @@ import { MemoryContentContainer } from '@bendyline/squisq/storage';
 import { containerToZip, zipToContainer } from '@bendyline/squisq-formats/container';
 import { expect, test } from './helpers/test.js';
 import { openInitializedSite } from './helpers/site.js';
-import { openInsertMenu } from './helpers/toolbar.js';
+import { openInsertMenu, showWriteView } from './helpers/toolbar.js';
 import { collectRuntimeErrors, unexpectedRuntimeErrors } from './helpers/console-guard.js';
 import { readWorkspaceBackup } from '../packages/core/src/workspace/backup.js';
 
@@ -22,7 +22,7 @@ async function newDocument(page: Page, name: string): Promise<void> {
   const input = page.getByRole('textbox', { name: 'New file name' });
   await input.fill(`${name}.md`);
   await input.press('Enter');
-  await page.getByRole('tab', { name: 'Write', exact: true }).click();
+  await showWriteView(page);
   await expect(page.locator('.ProseMirror')).toHaveText('');
 }
 
