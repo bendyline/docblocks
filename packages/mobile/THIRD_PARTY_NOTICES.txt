@@ -10,7 +10,6 @@ Components: 228.
 
 Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.
 The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.
-The offline speech engines (whisper.cpp and ONNX Runtime, in the gezel-speech native runtime) are listed with their license texts and ONNX Runtime third-party notices in NATIVE_NOTICES.txt; the same ONNX Runtime embeds knowledge search questions.
 The knowledge catalog reader (`knowledge-worker.js` with SQLite in `sqlite3.wasm`) and the question tokenizer are compiled into `@bendyline/gezel-capacitor`; their packages are listed above from the license manifest that package carries.
 AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.
 
@@ -18,10 +17,10 @@ AI models, speech models, and voices are not part of this distribution. They are
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
-| @bendyline/gezel | 1.2.11 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-app-sdk | 1.1.11 | MIT | https://github.com/bendyline/gezel |
-| @bendyline/gezel-capacitor | 0.1.0-docblocks.3 | MIT | https://www.npmjs.com/package/@bendyline/gezel-capacitor |
-| @bendyline/gezk | 1.0.5 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel | 1.2.13 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-app-sdk | 1.1.13 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezel-capacitor | 1.0.0 | MIT | https://github.com/bendyline/gezel |
+| @bendyline/gezk | 1.0.6 | MIT | https://github.com/bendyline/gezel |
 | @bendyline/squisq | 2.13.11 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-calc | 2.11.2 | MIT | https://github.com/bendyline/squisq |
 | @bendyline/squisq-editor-react | 2.13.18 | MIT | https://github.com/bendyline/squisq |
@@ -261,7 +260,7 @@ The following locked packages declare a license identifier but publish no packag
 | fastdom | 1.0.12 | MIT | https://github.com/wilsonpage/fastdom |
 
 ==============================================================================
-Components: @bendyline/gezel-app-sdk@1.1.11, @bendyline/gezel-capacitor@0.1.0-docblocks.3, @bendyline/gezel@1.2.11, @bendyline/gezk@1.0.5
+Components: @bendyline/gezel-app-sdk@1.1.13, @bendyline/gezel-capacitor@1.0.0, @bendyline/gezel@1.2.13, @bendyline/gezk@1.0.6
 Source files: node_modules/@bendyline/gezel-app-sdk/LICENSE, node_modules/@bendyline/gezel-capacitor/LICENSE, node_modules/@bendyline/gezel/LICENSE, node_modules/@bendyline/gezk/LICENSE
 ==============================================================================
 MIT License
@@ -564,6 +563,45 @@ Source files: node_modules/@bendyline/gezel-capacitor/dist/licenses/npm/texts/c7
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+==============================================================================
+Components: @xmldom/xmldom@0.9.12
+Source files: node_modules/@bendyline/gezel/node_modules/@xmldom/xmldom/LICENSE
+==============================================================================
+Copyright 2019 - present Christopher J. Brody and other contributors, as listed in: https://github.com/xmldom/xmldom/graphs/contributors
+Copyright 2012 - 2017 @jindw <jindw@xidea.org> and other contributors, as listed in: https://github.com/jindw/xmldom/graphs/contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+==============================================================================
+Components: zod@3.25.76, zod@4.6.7
+Source files: node_modules/@bendyline/gezk/node_modules/zod/LICENSE, node_modules/zod/LICENSE
+==============================================================================
+MIT License
+
+Copyright (c) 2025 Colin McDonnell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ==============================================================================
 Components: @bendyline/squisq-calc@2.11.2, @bendyline/squisq-editor-react@2.13.18, @bendyline/squisq-formats@2.8.13, @bendyline/squisq-graph@2.13.1, @bendyline/squisq-grid-react@2.11.40, @bendyline/squisq-react@2.12.23, @bendyline/squisq-video-react@2.5.24, @bendyline/squisq-video@2.4.17, @bendyline/squisq@2.13.11
@@ -13923,45 +13961,6 @@ INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
 OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
-
-==============================================================================
-Components: zod@3.25.76, zod@4.6.7
-Source files: node_modules/zod/LICENSE, packages/desktop/node_modules/zod/LICENSE
-==============================================================================
-MIT License
-
-Copyright (c) 2025 Colin McDonnell
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-==============================================================================
-Components: @xmldom/xmldom@0.9.12
-Source files: packages/desktop/node_modules/@xmldom/xmldom/LICENSE
-==============================================================================
-Copyright 2019 - present Christopher J. Brody and other contributors, as listed in: https://github.com/xmldom/xmldom/graphs/contributors
-Copyright 2012 - 2017 @jindw <jindw@xidea.org> and other contributors, as listed in: https://github.com/jindw/xmldom/graphs/contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 Components: @ironcalc/wasm@0.8.4

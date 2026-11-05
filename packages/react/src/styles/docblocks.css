@@ -342,8 +342,19 @@
   color: var(--db-text-muted);
 }
 
+/* The heading is the workspace's name, which can be long: it gives way to the
+   actions and is cut short rather than wrapping or pushing them off. */
+.db-explorer-toolbar > .db-explorer-title {
+  min-width: 0;
+  margin-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .db-explorer-actions {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 2px;
 }

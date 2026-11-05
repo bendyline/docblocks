@@ -144,6 +144,8 @@ export interface FileExplorerProps {
   onSortModeChange?: (mode: FileExplorerSortMode) => void;
   /** Active workspace identity, used to decorate a selected cross-workspace pin. */
   activeWorkspaceId?: string | null;
+  /** Active workspace's name, shown as the tree's heading; "Files" without one. */
+  workspaceName?: string | null;
   /** Documents pinned across every workspace, shown above the active file tree. */
   pinnedDocuments?: readonly PinnedDocumentListItem[];
   /** Canonical paths pinned inside the active workspace. */
@@ -206,6 +208,7 @@ export function FileExplorer({
   hiddenPaths,
   onSortModeChange,
   activeWorkspaceId,
+  workspaceName,
   pinnedDocuments = [],
   pinnedPaths = [],
   onPinnedDocumentSelect,
@@ -764,7 +767,10 @@ export function FileExplorer({
 
       {/* Toolbar */}
       <div className="db-explorer-toolbar">
-        <span className="db-explorer-title">Files</span>
+        {/* A long name is cut short; the tooltip carries all of it. */}
+        <span className="db-explorer-title" title={workspaceName || undefined}>
+          {workspaceName || 'Files'}
+        </span>
         <div className="db-explorer-actions">
           <div className="db-explorer-sort-actions" role="group" aria-label="File sorting">
             <button

@@ -5873,6 +5873,13 @@ export function DocBlocksShell({
               onNewFileFormatUsed={rememberNewFileFormat}
               metadataRefreshKey={`${documentSnapshot.targetKey ?? ''}:${documentSnapshot.persistedRevision}`}
               activeWorkspaceId={activeWorkspaceId}
+              // The descriptor follows renames; the provider's label covers the
+              // moment after a switch, before the new descriptor has loaded.
+              workspaceName={
+                activeWorkspaceDescriptor?.id === activeWorkspaceId
+                  ? activeWorkspaceDescriptor.name
+                  : provider?.label
+              }
               activeFilePath={selectedFile}
               sortMode={fileExplorerSortMode}
               hiddenPaths={hiddenOutputPaths}

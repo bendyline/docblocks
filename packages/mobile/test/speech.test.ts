@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createMobileSpeech, type GezelSpeechPlugin } from '@bendyline/gezel-capacitor';
+import { createMobileSpeech, type GezelOfflineSpeechPlugin } from '@bendyline/gezel-capacitor';
 import type { SpeechPreferences, SpeechSynthesizeEvent } from '@bendyline/docblocks/host';
 import { createMobileSpeechHost } from '../src/speech/host';
 
@@ -51,7 +51,7 @@ function fixture({
   const listeners: ((event: { id: string; receivedBytes: number; totalBytes: number }) => void)[] =
     [];
   let saved: SpeechPreferences | undefined;
-  const plugin: GezelSpeechPlugin = {
+  const plugin: GezelOfflineSpeechPlugin = {
     status: async () => ({ available, models: installed }),
     install: async ({ id }) => {
       calls.push(`install:${id}`);

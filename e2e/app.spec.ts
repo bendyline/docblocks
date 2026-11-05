@@ -382,10 +382,10 @@ test.describe('DocBlocks App', () => {
     expect(bytes.toString('utf8')).toBe(WELCOME_DOCUMENT_CONTENT);
   });
 
-  test('shows file explorer with FILES heading', async ({ page }) => {
-    const title = page.locator('.db-explorer-title');
+  test('heads the file explorer with the workspace name', async ({ page }) => {
+    const title = page.locator('.db-explorer-toolbar > .db-explorer-title');
     await expect(title).toBeVisible();
-    await expect(title).toHaveText('Files');
+    await expect(title).toHaveText('My Documents');
   });
 
   test('has toolbar with new file and new folder buttons', async ({ page }) => {

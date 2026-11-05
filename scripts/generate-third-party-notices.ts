@@ -557,7 +557,6 @@ function surfaceAssetNotes(surface: Surface): readonly string[] {
     return [
       'Fonts and their license texts ship under fonts/. The native app bundles this notice and all WASM licenses for offline access.',
       "The narration frontend compiled in from `@bendyline/gezel` embeds Kokoro's phoneme vocabulary (https://github.com/hexgrad/kokoro) and pronunciation readings generated from misaki's dictionaries (https://github.com/hexgrad/misaki), both Apache-2.0; the Apache License 2.0 text is reproduced below. The pronunciation dictionaries ship gzipped as `assets/lexicon-*-en-*.bin`, from `@bendyline/gezel-capacitor/kokoro-lexicon/`, which carries their license.",
-      'The offline speech engines (whisper.cpp and ONNX Runtime, in the gezel-speech native runtime) are listed with their license texts and ONNX Runtime third-party notices in NATIVE_NOTICES.txt; the same ONNX Runtime embeds knowledge search questions.',
       'The knowledge catalog reader (`knowledge-worker.js` with SQLite in `sqlite3.wasm`) and the question tokenizer are compiled into `@bendyline/gezel-capacitor`; their packages are listed above from the license manifest that package carries.',
       'AI models, speech models, and voices are not part of this distribution. They are downloaded only when you choose them, and each remains under the license published by its provider.',
     ];

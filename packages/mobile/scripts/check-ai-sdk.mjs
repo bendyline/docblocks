@@ -1,7 +1,7 @@
 import { URL, fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 const require = createRequire(new URL('../package.json', import.meta.url));
@@ -22,37 +22,42 @@ assert.match(
   readFileSync(new URL('android/capacitor.settings.gradle', mobile), 'utf8'),
   /bendyline-gezel-capacitor/,
 );
-const provenance = read(new URL('vendor/provenance.json', mobile));
-const pins = read(new URL('vendor/native-release.json', mobile));
-assert.deepEqual(provenance.nativeRelease, pins);
-for (const platform of ['ios', 'android'])
-  assert.equal(compatibility.native[platform].version, pins.version);
 const installed = (name) =>
-  name === '@bendyline/gezel-capacitor'
-    ? root
-    : path.resolve(
-        path.dirname(
-          fileURLToPath(
-            import.meta.resolve(name === '@bendyline/gezel-app-sdk' ? `${name}/browser` : name),
-          ),
-        ),
-        '..',
-      );
-for (const [name, entry] of Object.entries(provenance.packages)) {
-  assert.equal(
-    createHash('sha256')
-      .update(readFileSync(new URL(entry.file, new URL('vendor/', mobile))))
-      .digest('hex'),
-    entry.sha256,
+  path.resolve(
+    path.dirname(
+      fileURLToPath(
+        import.meta.resolve(name === '@bendyline/gezel-app-sdk' ? `${name}/browser` : name),
+      ),
+    ),
+    '..',
   );
-  assert.equal(read(path.join(installed(name), 'package.json')).version, entry.version);
-}
-// The vendored plugin was built against these published releases; mobile must run them.
+const plugin = read(path.join(root, 'package.json'));
 const dependencies = read(new URL('package.json', mobile)).dependencies;
-for (const [name, version] of Object.entries(provenance.published)) {
+assert.equal(dependencies[plugin.name], plugin.version, `${plugin.name} must be pinned exactly`);
+// The plugin was built against these published releases; mobile must run them.
+for (const [name, version] of Object.entries(plugin.dependencies)) {
   assert.equal(dependencies[name], version, `${name} must be pinned to ${version}`);
   assert.equal(read(path.join(installed(name), 'package.json')).version, version);
 }
+
+// The Gradle lock must name exactly the Maven artifacts the installed plugin stages.
+// Gezel's published plugin carries no speech runtime; a locally staged one needs its lock line.
+const native = compatibility.native.android.version;
+assert.equal(compatibility.native.ios.version, native);
+const speechManifest = path.join(root, 'native/speech-android/sdk-manifest.json');
+const speech = existsSync(speechManifest) ? read(speechManifest).packageVersion : undefined;
+assert.deepEqual(
+  readFileSync(new URL('android/app/gradle.lockfile', mobile), 'utf8')
+    .split(/\r?\n/)
+    .map((line) => line.split('=')[0])
+    .filter((coordinate) => coordinate.startsWith('com.bendyline.gezel:')),
+  [
+    `gezel-llama:${native}`,
+    `gezel-runtime:${native}`,
+    ...(speech ? [`gezel-speech:${speech}`] : []),
+  ].map((artifact) => `com.bendyline.gezel:${artifact}`),
+  'The Gradle lock must match the installed Gezel native payload',
+);
 
 const privacy = readFileSync(new URL('ios/App/App/PrivacyInfo.xcprivacy', mobile), 'utf8');
 assert.match(privacy, /NSPrivacyAccessedAPICategoryDiskSpace/);

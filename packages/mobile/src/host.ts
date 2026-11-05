@@ -44,7 +44,7 @@ export async function installMobileHost(): Promise<void> {
   if (Capacitor.getPlatform() === 'android') await native.chooseStorage();
   const info = parseMobileBootstrap(await native.bootstrap());
   const mobileAi = Capacitor.isPluginAvailable('GezelRuntime') ? installMobileAi() : undefined;
-  const mobileSpeech = Capacitor.isPluginAvailable('GezelSpeech')
+  const mobileSpeech = Capacitor.isPluginAvailable('GezelOfflineSpeech')
     ? installMobileSpeech()
     : undefined;
   const prepare = new Set<(request: HostPrepareCloseRequest) => Promise<HostPrepareCloseResult>>();
