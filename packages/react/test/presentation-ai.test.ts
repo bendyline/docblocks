@@ -195,6 +195,96 @@ describe('presentation AI refinement', () => {
     const quote = { layout: 'quote', headline: 'Keep your words.', points: [] };
     assert.equal(parsePresentationRefinement(JSON.stringify(quote), source, 0)?.layout, 'quote');
   });
+  it('asks for fewer, shorter points on a slide that also shows a feature', async () => {
+    const source = createPresentationPlan(
+      markdownToDoc(
+        parseMarkdown(
+          '# Your ideas\n\nWrite a few points. Keep your words.\n\n## How it fits\n\n```mermaid\nflowchart LR\n  a --> b\n```\n\nFirst organize your points. Then add diagrams.',
+        ),
+      ),
+    );
+    assert.ok(source.beats.some((beat) => beat.media?.length));
+    const api = fake((request) =>
+      JSON.stringify((JSON.parse(request.messages.at(-1)!.content) as { current: object }).current),
+    );
+    await refinePresentationPlan(api.ai, source);
+    const asked = api.requests.map(
+      (request) => JSON.parse(request.messages.at(-1)!.content) as { feature?: boolean },
+    );
+    assert.deepEqual(
+      asked.map((item) => item.feature === true),
+      source.beats.map((beat) => !!beat.media?.length),
+    );
+    assert.match(api.requests[0]!.messages[0]!.content, /"feature" is true/u);
+  });
+  it('shows the model the layouts just before each slide so the deck can vary', async () => {
+    const source = plan();
+    const api = fake((request) =>
+      JSON.stringify((JSON.parse(request.messages.at(-1)!.content) as { current: object }).current),
+    );
+    await refinePresentationPlan(api.ai, source);
+    const asked = api.requests.map(
+      (request) => JSON.parse(request.messages.at(-1)!.content) as { previous?: string[] },
+    );
+    assert.equal(asked[0]!.previous, undefined);
+    assert.deepEqual(asked[1]!.previous, [source.beats[0]!.layout]);
+    assert.match(api.requests[1]!.messages[0]!.content, /avoid repeating the last one/u);
+  });
+  it('plans a longer deck’s layouts together before wording each slide', async () => {
+    const source = createPresentationPlan(
+      markdownToDoc(
+        parseMarkdown(
+          '# Your ideas\n\nWrite a few points. Keep your words.\n\n## Share your story\n\nFirst make slides. Then add narration.\n\n## Show your work\n\nCharts explain numbers. Diagrams explain systems.',
+        ),
+      ),
+    );
+    assert.ok(source.beats.length >= 3);
+    const storyboarding = (request: AiChatRequest) =>
+      (request.responseFormat as { name?: string } | undefined)?.name === 'presentation_storyboard';
+    const run = async (layouts: string[]) => {
+      const api = fake((request) =>
+        storyboarding(request)
+          ? JSON.stringify({ layouts })
+          : JSON.stringify(
+              (JSON.parse(request.messages.at(-1)!.content) as { current: object }).current,
+            ),
+      );
+      await refinePresentationPlan(api.ai, source);
+      return api.requests;
+    };
+    const layouts = source.beats.map((_, index) => (index === 1 ? 'steps' : 'list'));
+    const requests = await run(layouts);
+    assert.equal(requests.length, source.beats.length + 1);
+    assert.ok(storyboarding(requests[0]!));
+    const board = JSON.parse(requests[0]!.messages.at(-1)!.content) as {
+      slides: Array<{ n: number; passage: string }>;
+    };
+    assert.deepEqual(
+      board.slides.map((slide) => slide.n),
+      source.beats.map((_, index) => index + 1),
+    );
+    const asked = requests
+      .slice(1)
+      .map(
+        (request) =>
+          JSON.parse(request.messages.at(-1)!.content) as { planned?: string; previous?: string[] },
+      );
+    assert.deepEqual(
+      asked.map((item) => item.planned),
+      layouts,
+    );
+    assert.ok(asked.every((item) => item.previous === undefined));
+    // A plan that does not name one layout per slide is set aside; the slides
+    // then vary by the layouts just before them.
+    const fallback = (await run(['list'])).slice(1);
+    assert.ok(
+      fallback.every(
+        (request) =>
+          (JSON.parse(request.messages.at(-1)!.content) as { planned?: string }).planned ===
+          undefined,
+      ),
+    );
+  });
   it('never asks about a hidden slide', async () => {
     const source = plan();
     const opener = source.sourceText.slice(
